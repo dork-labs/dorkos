@@ -14,6 +14,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, type Db } from '@dorkos/db';
 import type { RelayCore } from '@dorkos/relay';
@@ -35,8 +36,9 @@ useLoginOffConfig();
 
 const JUNO = '/made-up/agents/juno';
 const RIO = '/made-up/agents/rio';
-const RIO_SUBJECT = 'relay.agent.default.rio';
-const JUNO_SUBJECT = 'relay.agent.default.juno';
+const MIMIC = '/made-up/agents/mimic';
+const RIO_SUBJECT = 'relay.agent.default.rio-id';
+const JUNO_SUBJECT = 'relay.agent.default.juno-id';
 /** A chat the person started with Juno. */
 const PERSON_CHAT = '00000000-0000-4000-8000-00000000a001';
 /** A chat Juno runs that recorded no agent, standing in Juno's home. */
@@ -45,22 +47,32 @@ const JUNO_CHAT = '00000000-0000-4000-8000-00000000a002';
 const RIO_CHAT = '00000000-0000-4000-8000-00000000a003';
 /** An id no runtime holds. */
 const FRESH_CHAT = '00000000-0000-4000-8000-00000000a004';
+/** A chat only a runtime knows, and that runtime's lookup fails. */
+const LOOKUP_FAILS_CHAT = '00000000-0000-4000-8000-00000000a005';
+/** A chat a runtime is running now, with no binding row. */
+const LIVE_ONLY_CHAT = '00000000-0000-4000-8000-00000000a006';
+/** An id only a runtime's own store answers to, as a renamed chat's old id is. */
+const RUNTIME_ONLY_CHAT = '00000000-0000-4000-8000-00000000a007';
 /** Test-only: the request comes from an agent whose token verified. */
 const AGENT_HEADER = 'x-test-agent-path';
 /** Test-only: that agent's token no longer counts (revoked or expired). */
 const INACTIVE_HEADER = 'x-test-agent-inactive';
 
+/** The ids Mesh knows as agents, by id; a test may add one. */
+let meshIds: Record<string, string>;
 const mesh = {
-  listWithPaths: () => [
-    { id: 'juno-id', name: 'juno', projectPath: JUNO },
-    { id: 'rio-id', name: 'rio', projectPath: RIO },
-  ],
-  getProjectPath: (id: string) => ({ 'juno-id': JUNO, 'rio-id': RIO })[id],
+  listWithPaths: () =>
+    Object.entries(meshIds).map(([id, projectPath]) => ({ id, name: id, projectPath })),
+  getProjectPath: (id: string) => meshIds[id],
 };
 
 let db: Db;
 let live: Record<string, string>;
 let relayCore: RelayCore;
+/** The relay adapter's agent-key to conversation map. */
+let agentSessions: Map<string, string>;
+/** What the test runtime's own store answers, by id, with no binding row. */
+let runtimeHeld: Record<string, string>;
 
 /** Bind a chat as a launch binds it. */
 function chat(sessionId: string, agentPath: string | null, runningIn?: string): void {
@@ -85,6 +97,10 @@ function mount(): void {
             agentSubjectOf: (agentPath) =>
               agentPath === RIO ? RIO_SUBJECT : agentPath === JUNO ? JUNO_SUBJECT : undefined,
             chatMesh: () => mesh as never,
+            agentSessions: () => ({
+              get: (key) => agentSessions.get(key),
+              set: (key, id) => void agentSessions.set(key, id),
+            }),
           }),
         },
         { path: '/api/sessions', routes: sessions },
@@ -107,11 +123,28 @@ function mount(): void {
   );
 }
 
-function send(subject: string, headers: Record<string, string> = {}, from = 'relay.human.console') {
+function send(
+  subject: string,
+  headers: Record<string, string> = {},
+  from = 'relay.human.console',
+  payload: Record<string, unknown> = { content: 'hello' }
+) {
   return request(target.server)
     .post('/api/relay/messages')
     .set(headers)
-    .send({ subject, payload: { content: 'hello' }, from });
+    .send({ subject, payload, from });
+}
+
+/** A runtime that is running one chat with no binding row, and whose lookup of another fails. */
+function registerLookupRuntime(): void {
+  const runtime: FakeAgentRuntime & { findSession?: (id: string) => Promise<null> } =
+    new FakeAgentRuntime('lookup-test');
+  runtime.findSession = async (sessionId: string) => {
+    if (sessionId === LOOKUP_FAILS_CHAT) throw new Error('store unreadable');
+    return null;
+  };
+  runtime.getSessionCwd = (sessionId: string) => runtimeHeld[sessionId];
+  runtimeRegistry.register(runtime as never);
 }
 
 const asRio = { [AGENT_HEADER]: RIO };
@@ -120,7 +153,11 @@ beforeEach(() => {
   db = createTestDb();
   runtimeRegistry.setDb(db);
   live = {};
-  registerTestHomes([JUNO, RIO]);
+  meshIds = { 'juno-id': JUNO, 'rio-id': RIO, mimic: MIMIC };
+  agentSessions = new Map();
+  runtimeHeld = {};
+  registerTestHomes([JUNO, RIO, MIMIC]);
+  registerLookupRuntime();
   setSessionAgentSources({ liveCwd: (sessionId) => live[sessionId] });
   relayCore = createMockRelayCore();
   chat(PERSON_CHAT, JUNO, JUNO);
@@ -211,6 +248,65 @@ describe("a verified agent's message into a chat", () => {
         body: sessions.body,
       });
     }
+  });
+});
+
+describe('which chat a message reaches', () => {
+  it('refuses a chat only a runtime knows when that runtime cannot look it up', async () => {
+    const res = await send(`relay.agent.claude-code.${LOOKUP_FAILS_CHAT}`, asRio);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
+  });
+
+  it("refuses a chat whose id Mesh also knows as an agent, when the chat is someone else's", async () => {
+    meshIds[PERSON_CHAT] = RIO;
+    const res = await send(`relay.agent.default.${PERSON_CHAT}`, asRio);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
+    expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+  });
+
+  it("refuses an id a runtime is running now in another agent's folder, with no binding row", async () => {
+    live[LIVE_ONLY_CHAT] = JUNO;
+    const res = await send(`relay.agent.claude-code.${LIVE_ONLY_CHAT}`, asRio);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
+  });
+
+  it("refuses an id only a runtime's own store answers to, with no binding row", async () => {
+    runtimeHeld[RUNTIME_ONLY_CHAT] = JUNO;
+    const res = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
+  });
+
+  it('refuses the chat the relay would run the message in, not only the one the subject names', async () => {
+    agentSessions.set(`${FRESH_CHAT}:thread-1`, PERSON_CHAT);
+    const res = await send(`relay.agent.claude-code.${FRESH_CHAT}`, asRio, 'relay.human.console', {
+      content: 'hello',
+      conversationId: 'thread-1',
+    });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DESK_NOT_OWN');
+  });
+
+  it("refuses an agent's own chat when its record cannot be read", async () => {
+    const read = vi
+      .spyOn(runtimeRegistry, 'getSessionAgentPath')
+      .mockRejectedValue(new Error('database busy'));
+    try {
+      const res = await send(`relay.agent.claude-code.${RIO_CHAT}`, asRio);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('DESK_NOT_OWN');
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('delivers to another agent whose conversation it already has', async () => {
+    agentSessions.set('juno-id', JUNO_CHAT);
+    const res = await send(JUNO_SUBJECT, asRio);
+    expect(res.status).toBe(200);
   });
 });
 

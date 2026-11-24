@@ -51,6 +51,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getDefault: vi.fn(() => fakeRuntime),
     getDefaultType: vi.fn(() => 'fake'),
     has: vi.fn(() => true),
+    listRuntimes: vi.fn(() => [fakeRuntime]),
     persistSessionRuntime: vi.fn(async () => true),
     resolveForSession: vi.fn(async () => fakeRuntime),
     resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: false })),
@@ -98,6 +99,7 @@ vi.mock('../../services/session/message-dispatcher.js', async (importOriginal) =
 import { Hono } from 'hono';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { createSessionRoutes } from '../sessions.js';
+import { createRelayRoutes } from '../relay.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { dispatchMessage } from '../../services/session/message-dispatcher.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
@@ -339,6 +341,51 @@ describe('POST /:id/messages from an agent', () => {
     expect(res.status).toBe(403);
     expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('gives a relay message from A into that chat the same answer (DOR-5200)', async () => {
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
+      runtime: fakeRuntime as never,
+      bound: true,
+    });
+    vi.mocked(runtimeRegistry.resolveSessionRuntime).mockResolvedValue({
+      type: 'fake',
+      bound: true,
+    });
+    fakeRuntime.getSessionCwd = vi.fn(() => freeFolder);
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(homeB);
+    const publish = vi.fn();
+    const relay = new Hono<ApiEnv>()
+      .use('*', async (c, next) => {
+        c.set('agentIdentity', identityA());
+        c.set('body', {
+          subject: `relay.agent.claude-code.${SESSION}`,
+          payload: { content: 'do it as B' },
+          from: 'relay.agent.anyone',
+        });
+        await next();
+      })
+      .route(
+        '/api/relay',
+        createRelayRoutes({
+          relayCore: { publish } as never,
+          isRoomSession: () => false,
+          chatMesh: () => ({ ...mesh(), getProjectPath: () => undefined }) as never,
+        })
+      );
+    const headers = { 'content-type': 'application/json', host: 'localhost:4242' };
+    const viaRelay = await relay.request(
+      '/api/relay/messages',
+      { method: 'POST', headers, body: '{}' },
+      { incoming: { headers, socket: { remoteAddress: '127.0.0.1' } }, outgoing: {} } as never
+    );
+    const viaSessions = await post('/messages', { content: 'do it as B' }, AS_A);
+    expect(viaSessions.status).toBe(403);
+    expect({ status: viaRelay.status, body: await viaRelay.json() }).toEqual({
+      status: viaSessions.status,
+      body: await viaSessions.json(),
+    });
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("refuses A posting into a chat that stands in B's home", async () => {

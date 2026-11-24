@@ -6,7 +6,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
-import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
+import type { AgentSessionStoreLike, RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
@@ -199,6 +199,8 @@ export interface RelayRouteDeps extends RelayPublishDeps {
   agentSubjectOf?: AgentSubjectLookup;
   /** Mesh, read at request time, so an agent's message into a chat meets the chat route's place rule (DOR-5200). */
   chatMesh?: () => RelayChatMesh | undefined;
+  /** The relay adapter's conversation map, so the place rule asks of the chat a turn would run in. */
+  agentSessions?: () => AgentSessionStoreLike | undefined;
 }
 
 /** Why a message addressed to a room's own conversation is refused. */
@@ -274,7 +276,10 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
 
     // DOR-5200: a verified agent's message into a chat follows the chat route's place rule.
     const facts = honoRequestFacts(c);
-    const placeRefused = await relayChatPlaceRefusal(facts, result.data.subject, deps.chatMesh?.());
+    const placeRefused = await relayChatPlaceRefusal(facts, result.data, {
+      mesh: deps.chatMesh?.(),
+      agentSessions: deps.agentSessions?.(),
+    });
     if (placeRefused) return problem(c, 'desk_not_own', { detail: placeRefused.error });
 
     // DOR-5151: the server sets the sender, by the chat route's own reading of the caller.

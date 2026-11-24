@@ -37,6 +37,7 @@ import { relayRoutesListener } from './relay-routes-listener.js';
 const target = swappableServer();
 const SUBJECT = 'relay.agent.default.scout';
 const PORTER = '/made-up/agents/porter';
+const SCOUT = '/made-up/agents/scout';
 const PORTER_SUBJECT = 'relay.agent.default.porter';
 const NOW = Date.UTC(2026, 10, 24, 12, 0, 0);
 const ZW = '​';
@@ -64,6 +65,15 @@ function mount(): void {
     {
       relayCore,
       agentSubjectOf: (agentPath) => (agentPath === PORTER ? PORTER_SUBJECT : undefined),
+      // Mesh knows both addresses as agents, as it does in production (DOR-5200).
+      chatMesh: () =>
+        ({
+          listWithPaths: () => [
+            { id: 'scout', name: 'scout', projectPath: SCOUT },
+            { id: 'porter', name: 'porter', projectPath: PORTER },
+          ],
+          getProjectPath: (id: string) => ({ scout: SCOUT, porter: PORTER })[id],
+        }) as never,
     },
     {
       before: async (c, next) => {
