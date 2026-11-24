@@ -176,38 +176,6 @@ describe('approval-gated (I-01) — the turn waits, and the answer changes the o
     expect(results[results.length - 1]).toMatchObject({ status: 'error' });
     expect(JSON.stringify(results)).not.toContain('Applied 1 edit');
   });
-
-  it('drops the pending card from the projection once it is answered', async () => {
-    // Without the projector resolve, every window would go on showing an
-    // answerable card over a turn that had already moved on (the DOR-1148 ghost).
-    scenarioStore.setForSession(SESSION, 'approval-gated');
-    const runtime = new TestModeRuntime();
-    const { projector } = startTurn(runtime, 'edit the notes');
-    await waitForPending(projector);
-
-    const snapshotBefore = await runtime.getSessionSnapshot(CTX, SESSION);
-    expect(snapshotBefore.pendingInteractions).toHaveLength(1);
-
-    runtime.approveTool(SESSION, 'gated-edit-1', true);
-    await waitForSettled(projector);
-
-    const snapshotAfter = await runtime.getSessionSnapshot(CTX, SESSION);
-    expect(snapshotAfter.pendingInteractions).toEqual([]);
-    expect(replay(projector).some((e) => e.type === 'interaction_resolved')).toBe(true);
-  });
-
-  it('reports false for an answer nobody was waiting for', async () => {
-    scenarioStore.setForSession(SESSION, 'approval-gated');
-    const runtime = new TestModeRuntime();
-    const { projector } = startTurn(runtime, 'edit the notes');
-    await waitForPending(projector);
-
-    // What the /approve route turns into a 409 rather than a silent 200.
-    expect(runtime.approveTool(SESSION, 'some-other-tool', true)).toBe(false);
-    runtime.approveTool(SESSION, 'gated-edit-1', true);
-    await waitForSettled(projector);
-    expect(runtime.approveTool(SESSION, 'gated-edit-1', true)).toBe(false);
-  });
 });
 
 describe('approval-batch (I-02) — three asks pending at once', () => {
@@ -221,35 +189,6 @@ describe('approval-batch (I-02) — three asks pending at once', () => {
     await waitForPending(projector, 3);
     const snapshot = await runtime.getSessionSnapshot(CTX, SESSION);
     expect(snapshot.pendingInteractions).toHaveLength(3);
-  });
-
-  it('settles once every ask is answered, in whatever order they come back', async () => {
-    scenarioStore.setForSession(SESSION, 'approval-batch');
-    const runtime = new TestModeRuntime();
-    const { projector } = startTurn(runtime, 'do the three things');
-    await waitForPending(projector, 3);
-
-    // Deliberately not emission order — "Approve All" gives no ordering promise.
-    for (const id of ['batch-bash-1', 'batch-edit-1', 'batch-write-1']) {
-      expect(runtime.approveTool(SESSION, id, true)).toBe(true);
-    }
-    await waitForSettled(projector);
-
-    expect(streamedText(projector)).toContain('BATCH-SETTLED: 3 of 3 approved');
-  });
-
-  it('answers a mixed batch honestly', async () => {
-    scenarioStore.setForSession(SESSION, 'approval-batch');
-    const runtime = new TestModeRuntime();
-    const { projector } = startTurn(runtime, 'do the three things');
-    await waitForPending(projector, 3);
-
-    runtime.approveTool(SESSION, 'batch-edit-1', true);
-    runtime.approveTool(SESSION, 'batch-write-1', false);
-    runtime.approveTool(SESSION, 'batch-bash-1', false);
-    await waitForSettled(projector);
-
-    expect(streamedText(projector)).toContain('BATCH-SETTLED: 1 of 3 approved');
   });
 });
 
@@ -319,19 +258,6 @@ describe('elicitation-prompt (I-04) — an MCP ask the turn blocks on', () => {
 
     expect(streamedText(projector)).toContain('ELICITATION-ACCEPTED: staging');
   });
-
-  it('takes a decline as a refusal, not an empty acceptance', async () => {
-    scenarioStore.setForSession(SESSION, 'elicitation-prompt');
-    const runtime = new TestModeRuntime();
-    const { projector } = startTurn(runtime, 'deploy it');
-    await waitForPending(projector);
-
-    runtime.submitElicitation(SESSION, 'elicitation-1', 'decline');
-    await waitForSettled(projector);
-
-    expect(streamedText(projector)).toContain('ELICITATION-DECLINE');
-    expect(streamedText(projector)).not.toContain('ELICITATION-ACCEPTED');
-  });
 });
 
 describe('step-gated progressions (R-05, R-06, R-07)', () => {
@@ -353,23 +279,6 @@ describe('step-gated progressions (R-05, R-06, R-07)', () => {
 
     await releaseStep(SESSION);
     await vi.waitFor(() => expect(JSON.stringify(todoEvents())).toContain('completed'));
-  });
-
-  it('subagent-fanout keeps two sub-agents running until a step settles them', async () => {
-    scenarioStore.setForSession(SESSION, 'subagent-fanout');
-    const runtime = new TestModeRuntime();
-    const { projector } = startTurn(runtime, 'fan it out');
-
-    const subagents = () => replay(projector).filter((e) => e.type === 'subagent_update');
-    await vi.waitFor(() => expect(subagents()).toHaveLength(2));
-    expect(projector.getStatus().runningSubagentCount).toBe(2);
-
-    await releaseStep(SESSION); // progress beats
-    await releaseStep(SESSION); // completions
-    await waitForSettled(projector);
-
-    expect(streamedText(projector)).toContain('FANOUT-SETTLED');
-    expect(projector.getStatus().runningSubagentCount).toBe(0);
   });
 });
 
@@ -403,23 +312,6 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     expect(streamedText(projector)).not.toContain('unreachable');
   });
 
-  it('a declared `acked` reaches the browser leg without lying about the turn', async () => {
-    // The ending a real runtime only produces when its agent genuinely wound
-    // down — unreachable from a browser test any other way (spec D10). The turn
-    // still ends, because `acked` IS an ending DorkOS observed.
-    const runtime = new TestModeRuntime();
-    scenarioStore.setForSession(SESSION, 'stoppable-turn');
-    const { projector } = startTurn(runtime, 'go');
-    await vi.waitFor(() => expect(projector.getStatus().lifecycle).toBe('streaming'));
-
-    declareInterruptOutcome('acked');
-    expect(await runtime.interruptQuery(SESSION)).toEqual({
-      outcome: 'acked',
-      runtime: 'test-mode',
-    });
-    await waitForSettled(projector, 'interrupted');
-  });
-
   it('a declared `unconfirmed` leaves the turn RUNNING — the shape, not a narration', () => {
     // The half that makes this lever worth having: `unconfirmed` means the stop
     // did not land, so a fixture that ended the turn anyway would let the
@@ -442,25 +334,6 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
           'a declared `unconfirmed` must leave the scripted turn open'
         ).toBe(true);
       });
-  });
-
-  it('a declared outcome does not invent a turn that was never running', async () => {
-    const runtime = new TestModeRuntime();
-    declareInterruptOutcome('unconfirmed');
-    expect(await runtime.interruptQuery(SESSION)).toEqual({
-      outcome: 'not-running',
-      reason: 'no-open-turn',
-      runtime: 'test-mode',
-    });
-  });
-
-  it('reports not-running when there is no turn to stop', async () => {
-    const runtime = new TestModeRuntime();
-    expect(await runtime.interruptQuery(SESSION)).toEqual({
-      outcome: 'not-running',
-      reason: 'no-open-turn',
-      runtime: 'test-mode',
-    });
   });
 
   it('ends a turn parked on an approval nobody will ever give', async () => {

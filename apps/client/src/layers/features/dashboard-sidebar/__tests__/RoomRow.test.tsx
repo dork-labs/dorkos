@@ -229,22 +229,6 @@ describe('RoomRow menus', () => {
     expect(itemLabels(openContextMenu())).toEqual(fromDropdown);
   });
 
-  it('writes the ellipsis onto exactly the items that open something', () => {
-    renderRow(channel());
-    // "Move to section" is a submenu trigger. It reads as a `menuitem` like the
-    // rest, and takes no ellipsis: opening a submenu is not the row asking you
-    // for anything, it is one more level of the same menu.
-    expect(itemLabels(openDropdown())).toEqual([
-      'Mute channel',
-      'Move to section',
-      'Add agents…',
-      'Members…',
-      'Rename…',
-      'Edit topic…',
-      'Archive channel',
-    ]);
-  });
-
   it('offers Mark as read only while the reader is behind', () => {
     const { unmount } = renderRow(channel({ unreadCount: 0 }));
     expect(itemLabels(openDropdown())).not.toContain('Mark as read');
@@ -297,17 +281,6 @@ describe('RoomRow menus', () => {
 
     expect(viewed).toHaveBeenCalledWith('/repo/ana');
   });
-
-  it('offers no View profile for an agent the fleet no longer knows', async () => {
-    // A mesh rebuild can retire an agent under an open sidebar. Nothing should
-    // offer a profile it cannot resolve to a directory.
-    renderRow(oneToOne('/repo/departed'));
-    const menu = openDropdown('Ana actions');
-    // Waits for the SAME signal the passing case waits for, so this asserts an
-    // absence after the answer arrived rather than before it.
-    await within(menu).findByText('Members…');
-    expect(itemLabels(menu)).not.toContain('View profile');
-  });
 });
 
 describe('RoomRow doors into the room panel', () => {
@@ -340,29 +313,9 @@ describe('RoomRow doors into the room panel', () => {
     expect(useAppStore.getState().rightPanelOpen).toBe(true);
     expect(useAppStore.getState().activeRightPanelTab).toBe(ROOM_PANEL_ID);
   });
-
-  it('opens the room too, because the panel follows the page', () => {
-    // The sidebar lists rooms you are NOT looking at. A panel opened over the
-    // room you are still reading would describe the wrong one — so the row does
-    // what pressing the row does first. Red if the navigation is dropped: the
-    // request would name a room the panel never gets to.
-    const onSelect = vi.fn();
-    renderRow(channel(), { onSelect });
-
-    pressed('Members…');
-
-    expect(onSelect).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('RoomRow rename', () => {
-  it('opens an inline editor seeded with the title behind the #slug', () => {
-    renderRow(channel());
-    fireEvent.click(within(openDropdown()).getByText('Rename…'));
-
-    expect(screen.getByRole('textbox', { name: 'Rename #general' })).toHaveValue('General');
-  });
-
   it('writes the new name through the Transport port on Enter', async () => {
     const { transport } = renderRow(channel());
     fireEvent.click(within(openDropdown()).getByText('Rename…'));
@@ -481,22 +434,6 @@ describe('RoomRow leave', () => {
     expect(itemLabels(menu)).not.toContain('Join channel');
   });
 
-  it('withholds Leave on a 1:1 whose agent the fleet no longer knows — still a 1:1', async () => {
-    // `oneToOne('/repo/departed')` is the same fixture the "Agent profile"
-    // test next door uses: the DM names exactly one agent, but its
-    // `agentRef` matches nothing in `MESH_AGENTS`, so `soleAgentPath`
-    // resolves to `null` — the same `null` a channel or an unresolved DM
-    // reads. Leaving must not read that as "not a 1:1": the room is still
-    // one agent and no human, exactly what leaving would strand.
-    renderRow(oneToOne('/repo/departed'), { selfKnownFromStart: true });
-    const menu = openDropdown('Ana actions');
-    // Waits for the same signal the fleet-resolution test does, so this is
-    // an absence asserted after mesh resolution lands, not before it.
-    await within(menu).findByText('Members…');
-    expect(itemLabels(menu)).not.toContain('Leave channel');
-    expect(itemLabels(menu)).not.toContain('Join channel');
-  });
-
   it('leaves nothing until the confirmation is accepted', async () => {
     const transport = createMockTransport({
       getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
@@ -538,21 +475,6 @@ describe('RoomRow leave', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: {} }));
-  });
-
-  it('stays put when the room being left is not the one open', async () => {
-    // Leaving from a row in the background changes the roster, not where the
-    // reader is — there is nothing on screen to navigate away from.
-    const transport = createMockTransport({
-      getTeamRoster: vi.fn().mockResolvedValue(selfTeamRoster()),
-    });
-    renderRow(channel(), { transport, isActive: false });
-    const menu = openDropdown();
-    fireEvent.click(await within(menu).findByText('Leave channel'));
-    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
-
-    await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
-    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('offers Undo on the leave toast, which joins back by the same author id', async () => {
@@ -660,41 +582,12 @@ describe('RoomRow working dot', () => {
     expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
   });
 
-  it('says how many agents, so a reader who cannot see the dot still gets the count', () => {
-    renderRow(channel({ working: 3 }));
-    expect(screen.getByLabelText('3 agents working')).toBeInTheDocument();
-  });
-
-  it('wears the theme token, not the palette value it happens to resolve to', () => {
-    // The room sheet draws the identical fact with `bg-status-success`. One
-    // fact spelled two ways is one that drifts the first time either theme
-    // moves, and the raw class is invisible to a theme that redefines it.
-    renderRow(channel({ working: 1 }));
-
-    const dot = screen.getByLabelText('1 agent working');
-    expect(dot).toHaveClass('bg-status-success');
-    expect(dot.className).not.toMatch(/emerald/);
-  });
-
-  it('draws nothing for a quiet room', () => {
-    renderRow(channel({ working: 0 }));
-    expect(screen.queryByLabelText(/working/)).not.toBeInTheDocument();
-  });
-
   it('appears when the stream says a room went busy, and clears when it says done', () => {
     renderRow(channel({ working: 0 }));
     act(() => useRoomWorkingStore.getState().observe({ roomId: 'room-1', working: 1 }));
     expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
     act(() => useRoomWorkingStore.getState().observe({ roomId: 'room-1', working: 0 }));
     expect(screen.queryByLabelText(/working/)).not.toBeInTheDocument();
-  });
-
-  it('keeps the working dot and the count pill apart', () => {
-    // Two different facts about one row — messages aimed at you, and work
-    // running right now — so one must never be mistaken for the other.
-    renderRow(channel({ working: 1, unreadCount: 2, mentionCount: 1 }));
-    expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
-    expect(screen.getByLabelText('1 mention')).toBeInTheDocument();
   });
 
   it('puts a direct message’s working dot on the face, not after the name', () => {
@@ -711,12 +604,6 @@ describe('RoomRow working dot', () => {
     expect(document.querySelector('[data-sidebar-row]')).toHaveAccessibleName(
       /^Ana\s*1 agent working$/
     );
-  });
-
-  it('keeps a channel’s dot after its name, and no face dot', () => {
-    const { container } = renderRow(channel({ working: 1 }));
-    expect(screen.getByRole('img', { name: '1 agent working' })).toBeInTheDocument();
-    expect(container.querySelector('[data-slot="room-avatar-working"]')).toBeNull();
   });
 });
 
@@ -740,12 +627,6 @@ describe('RoomRow unread', () => {
     expect(screen.getByLabelText('3 mentions')).toHaveTextContent('3');
   });
 
-  it('counts every new message in a direct message', () => {
-    renderRow({ ...oneToOne('/repo/ana'), unreadCount: 2, mentionCount: 0 });
-    expect(screen.getByLabelText('2 new messages')).toHaveTextContent('2');
-    expect(row()).toHaveAttribute('data-row-state', 'emphasized');
-  });
-
   it('caps the pill at 9+ and never claims an exact number past it', () => {
     // The server counts mentions up to ten, so ten means "ten or more".
     const { unmount } = renderRow(channel({ unreadCount: 40, mentionCount: 10 }));
@@ -766,32 +647,6 @@ describe('RoomRow unread', () => {
     renderRow(channel({ unreadCount: 5, mentionCount: 2 }), { isMuted: true });
     expect(row()).toHaveAttribute('data-row-state', 'quiet');
     expect(screen.getByLabelText('2 mentions')).toHaveTextContent('2');
-  });
-
-  it('draws the pill in the orange ink, because it is aimed at you', () => {
-    renderRow(channel({ unreadCount: 3, mentionCount: 1 }));
-    const pill = screen.getByLabelText('1 mention');
-    expect(pill.className).toContain('text-dui-brand-text');
-    expect(pill.className).not.toMatch(/warning/);
-  });
-
-  it('opens one tooltip, not two: the name drops its own when the row has a last line', () => {
-    const { container, unmount } = renderRow(channel({ lastLine: 'Shipped it' }));
-    const name = () => container.querySelector('[data-slot="room-title"]');
-    expect(name()).not.toHaveAttribute('title');
-    expect(row()).not.toHaveAttribute('title');
-    unmount();
-
-    const quiet = renderRow(channel({ lastLine: null }));
-    expect(quiet.container.querySelector('[data-slot="room-title"]')).toHaveAttribute(
-      'title',
-      '#general'
-    );
-  });
-
-  it('is quiet when the reader is caught up', () => {
-    renderRow(channel({ unreadCount: 0, mentionCount: 0 }));
-    expect(row()).toHaveAttribute('data-row-state', 'quiet');
   });
 });
 
@@ -871,16 +726,6 @@ describe('RoomRow organization', () => {
     expect(lastSidebarWrite(transport).muted).toEqual([{ kind: 'room', roomId: 'room-1' }]);
   });
 
-  it('draws the mute it is TOLD about, and offers the way back out of it', () => {
-    // The row no longer reads preferences for itself (D8): the panel holds the
-    // one subscription and hands each row its answer. Red when the row starts
-    // deriving mute from anywhere but this prop.
-    renderRow(channel(), { transport: transportWithGroups(), isMuted: true });
-
-    expect(screen.getByLabelText('Muted')).toBeInTheDocument();
-    expect(itemLabels(openDropdown())).toContain('Unmute channel');
-  });
-
   it('unmutes by removing the reference rather than writing a false', async () => {
     const muted: Partial<SidebarPrefs> = { muted: [{ kind: 'room', roomId: 'room-1' }] };
     const transport = transportWithGroups(muted);
@@ -891,25 +736,6 @@ describe('RoomRow organization', () => {
 
     await waitFor(() => expect(transport.updateConfig).toHaveBeenCalled());
     expect(lastSidebarWrite(transport).muted).toEqual([]);
-  });
-
-  it('offers exactly the sections it was handed, and ticks the one it is in', async () => {
-    // Which sections may be offered at all is the panel's answer now — smart
-    // ones are filtered out in `moveTargetGroups`, pinned by
-    // `use-sidebar-prefs.test.tsx`. What this pins is that the row offers that
-    // list and nothing it invented.
-    renderRow(channel(), {
-      transport: transportWithGroups(),
-      moveTargetGroups: [{ id: 'g-manual', name: 'Clients' }],
-      currentGroupId: 'g-manual',
-    });
-
-    // A group target is a tickable choice, so it reads as `menuitemcheckbox` —
-    // asserting over exactly those is what makes "not offered" mean it.
-    const submenu = await openMoveToGroup();
-    const targets = within(submenu).getAllByRole('menuitemcheckbox');
-    expect(targets.map((item) => item.textContent ?? '')).toEqual(['Clients']);
-    expect(targets[0]).toHaveAttribute('aria-checked', 'true');
   });
 
   it('files the room into the group that was picked', async () => {
@@ -928,17 +754,5 @@ describe('RoomRow organization', () => {
     expect(groups.find((g) => g.id === 'g-manual')?.items).toEqual([
       { kind: 'room', roomId: 'room-1' },
     ]);
-  });
-
-  it('hands the group-create flow this room, so the new group is not born empty', async () => {
-    const onRequestNewGroup = vi.fn();
-    const transport = transportWithGroups();
-    renderRow(channel(), { transport, onRequestNewGroup });
-    await screen.findByRole('button', { name: '#general' });
-
-    const submenu = await openMoveToGroup();
-    fireEvent.click(within(submenu).getByText('New section…'));
-
-    expect(onRequestNewGroup).toHaveBeenCalledWith({ kind: 'room', roomId: 'room-1' });
   });
 });

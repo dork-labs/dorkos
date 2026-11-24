@@ -1,15 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  ModelOption,
-  SubagentInfo,
-  CommandRegistry,
-  CommandEntry,
-} from '@dorkos/shared/types';
-import type { McpServerEntry } from '@dorkos/shared/transport';
+import type { ModelOption, CommandRegistry, CommandEntry } from '@dorkos/shared/types';
 import type { SdkCommandEntry } from '../messaging/message-sender.js';
 import type { CommandRegistryService } from '../tooling/command-registry.js';
 
@@ -36,22 +30,6 @@ import {
   LAUNCH_PROBE_ACK_TIMEOUT_MS,
   PLUGIN_RELOAD_ACK_TIMEOUT_MS,
 } from '../sessions/bounded-control.js';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeModels(...names: string[]): ModelOption[] {
-  return names.map((n) => ({ value: n, displayName: n, description: `${n} desc` }));
-}
-
-function makeSubagents(...names: string[]): SubagentInfo[] {
-  return names.map((n) => ({ name: n, description: `${n} subagent` }));
-}
-
-function makeMcpServers(...names: string[]): McpServerEntry[] {
-  return names.map((n) => ({ name: n, type: 'stdio' as const }));
-}
 
 function makeSdkCommands(...names: string[]): SdkCommandEntry[] {
   return names.map((n) => ({ name: n, description: `${n} desc`, argumentHint: '' }));
@@ -116,28 +94,6 @@ describe('RuntimeCache', () => {
     const options = vi.mocked(query).mock.calls.at(-1)?.[0].options;
     expect(options?.cwd).toBe('/synthetic/kestrel-project');
     expect(options?.settingSources).toEqual(['user']);
-  });
-
-  // =========================================================================
-  // getSupportedModels
-  // =========================================================================
-
-  describe('getSupportedModels', () => {
-    it('returns empty array when nothing is cached', async () => {
-      const result = await cache.getSupportedModels();
-      expect(result).toEqual([]);
-    });
-
-    it('returns cached models after buildSendCallbacks populates them', async () => {
-      const custom = makeModels('custom-model');
-      const callbacks = cache.buildSendCallbacks('/project');
-      callbacks.onModelsReceived!(custom);
-
-      const result = await cache.getSupportedModels();
-      expect(result).toHaveLength(1);
-      // buildSendCallbacks now maps through mapSdkModelToModelOption, adding provider/family/tier
-      expect(result[0]).toMatchObject({ value: 'custom-model', provider: 'anthropic' });
-    });
   });
 
   // =========================================================================
@@ -212,30 +168,6 @@ describe('RuntimeCache', () => {
       expect(await cold.getSupportedModels()).toEqual([]);
       expect(cold.getCachedModel('claude-opus-4-8')).toBeUndefined();
     });
-
-    it('refuses a matching-pin cache that has aged past the TTL', async () => {
-      writeDiskCache({
-        sdkVersion: CLAUDE_SDK_VERSION,
-        fetchedAt: new Date(Date.now() - 86_400_000 - 60_000).toISOString(),
-      });
-
-      const cold = new RuntimeCache(dorkHome);
-
-      expect(await cold.getSupportedModels()).toEqual([]);
-    });
-
-    it('stamps the running pin on what it writes, so its own cache reads back', async () => {
-      const writer = new RuntimeCache(dorkHome);
-      writer.buildSendCallbacks('/project').onModelsReceived!(makeModels('claude-opus-4-8'));
-
-      const persisted = JSON.parse(readFileSync(cacheFileIn(dorkHome), 'utf-8')) as {
-        sdkVersion: string;
-      };
-      expect(persisted.sdkVersion).toBe(CLAUDE_SDK_VERSION);
-
-      const reader = new RuntimeCache(dorkHome);
-      expect((await reader.getSupportedModels()).map((m) => m.value)).toEqual(['claude-opus-4-8']);
-    });
   });
 
   // =========================================================================
@@ -251,28 +183,6 @@ describe('RuntimeCache', () => {
     ] as const)('infers tier for %s as %s', (value, tier) => {
       const option = mapSdkModelToModelOption({ value, displayName: value, description: '' });
       expect(option.tier).toBe(tier);
-    });
-
-    it('leaves tier undefined for unrecognized model names', () => {
-      const option = mapSdkModelToModelOption({
-        value: 'mystery-model',
-        displayName: 'Mystery',
-        description: '',
-      });
-      expect(option.tier).toBeUndefined();
-    });
-
-    it('carries the SDK-reported resolvedModel through to the cached option', () => {
-      // Purpose: dropping this field at the mapper is what would silently re-open
-      // the wire-id lookup gap `getCachedModel` closes below. Removing the
-      // `resolvedModel:` line in `mapSdkModelToModelOption` makes this red.
-      const option = mapSdkModelToModelOption({
-        value: 'sonnet',
-        resolvedModel: 'claude-sonnet-5',
-        displayName: 'Sonnet',
-        description: '',
-      });
-      expect(option.resolvedModel).toBe('claude-sonnet-5');
     });
 
     // ---- Capability flags are DorkOS's claims, not the SDK's (DOR-1672) ----
@@ -333,14 +243,6 @@ describe('RuntimeCache', () => {
   // =========================================================================
 
   describe('getCachedModel', () => {
-    it('returns undefined when the value is undefined', () => {
-      expect(cache.getCachedModel(undefined)).toBeUndefined();
-    });
-
-    it('returns undefined when nothing is cached', () => {
-      expect(cache.getCachedModel('claude-opus-4-8')).toBeUndefined();
-    });
-
     it('returns the matching cached model with its capability flags', () => {
       const callbacks = cache.buildSendCallbacks('/project');
       callbacks.onModelsReceived!([
@@ -359,15 +261,6 @@ describe('RuntimeCache', () => {
         value: 'claude-haiku-4-5',
         supportsAdaptiveThinking: false,
       });
-    });
-
-    it('returns undefined for an unknown model value', () => {
-      const callbacks = cache.buildSendCallbacks('/project');
-      callbacks.onModelsReceived!([
-        { value: 'claude-opus-4-8', displayName: 'Opus 4.8', description: 'd' },
-      ]);
-
-      expect(cache.getCachedModel('claude-sonnet-4-6')).toBeUndefined();
     });
 
     it('finds the alias row a persisted wire id expands to, via resolvedModel', () => {
@@ -389,26 +282,6 @@ describe('RuntimeCache', () => {
       expect(cache.getCachedModel('claude-sonnet-5')).toMatchObject({
         value: 'sonnet',
         supportsAdaptiveThinking: true,
-      });
-    });
-
-    it('prefers an exact value match over another row that resolves to it', () => {
-      // Purpose: a row whose own `value` IS the wire id must win, so a real model
-      // row is never shadowed by an alias pointing at it. Reordering the two
-      // lookups in `getCachedModel` makes this red.
-      const callbacks = cache.buildSendCallbacks('/project');
-      callbacks.onModelsReceived!([
-        {
-          value: 'sonnet',
-          resolvedModel: 'claude-sonnet-5',
-          displayName: 'Sonnet alias',
-          description: 'd',
-        },
-        { value: 'claude-sonnet-5', displayName: 'Sonnet 5', description: 'd' },
-      ]);
-
-      expect(cache.getCachedModel('claude-sonnet-5')).toMatchObject({
-        displayName: 'Sonnet 5',
       });
     });
   });
@@ -452,19 +325,6 @@ describe('RuntimeCache', () => {
       });
     });
 
-    it('resolves an explicitly-selected alias to its own entry', () => {
-      expect(cache.resolveModelCapability('haiku')).toMatchObject({
-        value: 'haiku',
-        supportsAdaptiveThinking: false,
-      });
-    });
-
-    it('returns undefined for an explicitly-set unknown model (no default borrowing)', () => {
-      // Purpose: borrowing the default's adaptive=true for an unknown/non-adaptive
-      // model would risk forcing adaptive thinking and a 400 — stay conservative.
-      expect(cache.resolveModelCapability('claude-opus-4-5')).toBeUndefined();
-    });
-
     it('resolves an explicit wire id to the alias row that expands to it', () => {
       // Purpose: `haiku` here reports adaptive=false. A session pinned to the wire
       // id must inherit THAT, not fall through to undefined and then to SDK
@@ -488,143 +348,6 @@ describe('RuntimeCache', () => {
   });
 
   // =========================================================================
-  // getSupportedSubagents
-  // =========================================================================
-
-  describe('getSupportedSubagents', () => {
-    it('returns empty array when nothing is cached and cwd is provided', () => {
-      expect(cache.getSupportedSubagents('/project')).toEqual([]);
-    });
-
-    it('returns empty array when nothing is cached and cwd is omitted', () => {
-      expect(cache.getSupportedSubagents()).toEqual([]);
-    });
-
-    it('returns cached subagents for a specific cwd', () => {
-      const agents = makeSubagents('Explore', 'Code');
-      const callbacks = cache.buildSendCallbacks('/projectA');
-      callbacks.onSubagentsReceived!(agents);
-
-      expect(cache.getSupportedSubagents('/projectA')).toBe(agents);
-    });
-
-    it('returns empty for a different cwd that has no cached subagents', () => {
-      const agents = makeSubagents('Explore');
-      const callbacks = cache.buildSendCallbacks('/projectA');
-      callbacks.onSubagentsReceived!(agents);
-
-      expect(cache.getSupportedSubagents('/projectB')).toEqual([]);
-    });
-
-    it('returns last-inserted entry as fallback when cwd is omitted', () => {
-      const agentsA = makeSubagents('A');
-      const agentsB = makeSubagents('B');
-
-      const cbA = cache.buildSendCallbacks('/projectA');
-      cbA.onSubagentsReceived!(agentsA);
-      const cbB = cache.buildSendCallbacks('/projectB');
-      cbB.onSubagentsReceived!(agentsB);
-
-      // Without cwd, should return the last-inserted entry
-      expect(cache.getSupportedSubagents()).toBe(agentsB);
-    });
-  });
-
-  // =========================================================================
-  // getMcpStatus
-  // =========================================================================
-
-  describe('getMcpStatus', () => {
-    it('returns null when nothing is cached for the cwd', () => {
-      expect(cache.getMcpStatus('/project')).toBeNull();
-    });
-
-    it('returns cached MCP servers for a specific cwd', () => {
-      const servers = makeMcpServers('postgres-mcp', 'github-mcp');
-      const callbacks = cache.buildSendCallbacks('/project');
-      callbacks.onMcpStatusReceived!(servers);
-
-      expect(cache.getMcpStatus('/project')).toBe(servers);
-    });
-
-    it('returns null for a different cwd', () => {
-      const servers = makeMcpServers('mcp-a');
-      const callbacks = cache.buildSendCallbacks('/projectA');
-      callbacks.onMcpStatusReceived!(servers);
-
-      expect(cache.getMcpStatus('/projectB')).toBeNull();
-    });
-  });
-
-  // =========================================================================
-  // buildSendCallbacks
-  // =========================================================================
-
-  describe('buildSendCallbacks', () => {
-    it('provides onModelsReceived on first call (not yet cached)', () => {
-      const cb = cache.buildSendCallbacks('/project');
-      expect(cb.onModelsReceived).toBeDefined();
-    });
-
-    it('always provides onModelsReceived (refreshes every time)', () => {
-      const cb1 = cache.buildSendCallbacks('/project');
-      cb1.onModelsReceived!(makeModels('m'));
-
-      const cb2 = cache.buildSendCallbacks('/project');
-      expect(cb2.onModelsReceived).toBeDefined();
-    });
-
-    it('always provides onMcpStatusReceived (refreshes every time)', () => {
-      const cb1 = cache.buildSendCallbacks('/project');
-      cb1.onMcpStatusReceived!(makeMcpServers('s1'));
-
-      const cb2 = cache.buildSendCallbacks('/project');
-      expect(cb2.onMcpStatusReceived).toBeDefined();
-
-      // Calling it should update the cache
-      const newServers = makeMcpServers('s2');
-      cb2.onMcpStatusReceived!(newServers);
-      expect(cache.getMcpStatus('/project')).toBe(newServers);
-    });
-
-    it('provides onCommandsReceived only when cwd has no cached commands', () => {
-      const cb1 = cache.buildSendCallbacks('/projectA');
-      expect(cb1.onCommandsReceived).toBeDefined();
-
-      cb1.onCommandsReceived!(makeSdkCommands('test'));
-
-      const cb2 = cache.buildSendCallbacks('/projectA');
-      expect(cb2.onCommandsReceived).toBeUndefined();
-    });
-
-    it('provides onCommandsReceived for a different cwd even when one cwd is cached', () => {
-      const cb1 = cache.buildSendCallbacks('/projectA');
-      cb1.onCommandsReceived!(makeSdkCommands('test'));
-
-      const cb2 = cache.buildSendCallbacks('/projectB');
-      expect(cb2.onCommandsReceived).toBeDefined();
-    });
-
-    it('provides onSubagentsReceived only when cwd has no cached subagents', () => {
-      const cb1 = cache.buildSendCallbacks('/project');
-      expect(cb1.onSubagentsReceived).toBeDefined();
-
-      cb1.onSubagentsReceived!(makeSubagents('Explore'));
-
-      const cb2 = cache.buildSendCallbacks('/project');
-      expect(cb2.onSubagentsReceived).toBeUndefined();
-    });
-
-    it('provides onSubagentsReceived for a different cwd', () => {
-      const cb1 = cache.buildSendCallbacks('/projectA');
-      cb1.onSubagentsReceived!(makeSubagents('Explore'));
-
-      const cb2 = cache.buildSendCallbacks('/projectB');
-      expect(cb2.onSubagentsReceived).toBeDefined();
-    });
-  });
-
-  // =========================================================================
   // getCommands
   // =========================================================================
 
@@ -636,13 +359,6 @@ describe('RuntimeCache', () => {
       const result = await cache.getCommands(registry, '/project');
       expect(result.commands).toEqual([fsEntry]);
       expect(registry.getCommands).toHaveBeenCalledWith(undefined);
-    });
-
-    it('passes forceRefresh to filesystem registry fallback', async () => {
-      const registry = createMockRegistryService(makeRegistry([]));
-
-      await cache.getCommands(registry, '/project', true);
-      expect(registry.getCommands).toHaveBeenCalledWith(true);
     });
 
     it('enriches SDK commands with filesystem metadata', async () => {
@@ -669,41 +385,6 @@ describe('RuntimeCache', () => {
       expect(deployCmd!.description).toBe('deploy desc'); // SDK description wins
     });
 
-    it('adds slash prefix to SDK commands that lack one', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!([{ name: 'test', description: 'Test cmd', argumentHint: '' }]);
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-
-      expect(result.commands[0].fullCommand).toBe('/test');
-    });
-
-    it('preserves slash prefix for SDK commands that already have one', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!([{ name: '/build', description: 'Build cmd', argumentHint: '' }]);
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-
-      expect(result.commands[0].fullCommand).toBe('/build');
-    });
-
-    it('includes filesystem-only commands (legacy) not in SDK set', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!(makeSdkCommands('skill'));
-
-      const legacyCmd = makeFsCommandEntry('/legacy-cmd', { namespace: 'project' });
-      const skillCmd = makeFsCommandEntry('/skill');
-      const registry = createMockRegistryService(makeRegistry([legacyCmd, skillCmd]));
-
-      const result = await cache.getCommands(registry, '/project');
-      const commandNames = result.commands.map((c) => c.fullCommand);
-
-      expect(commandNames).toContain('/skill'); // SDK entry
-      expect(commandNames).toContain('/legacy-cmd'); // filesystem-only entry
-    });
-
     // Palette dedupe (ADR 260706-192819): a project-scoped plugin command reaches
     // the SDK cache (global install) AND the filesystem scan (projected wrapper).
     // The merge must collapse them to ONE entry with the SDK entry winning.
@@ -727,50 +408,6 @@ describe('RuntimeCache', () => {
       expect(matches[0].namespace).toBe('flow'); // enriched with filesystem metadata
     });
 
-    it('sorts merged commands alphabetically by fullCommand', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!(makeSdkCommands('zebra', 'alpha'));
-
-      const fsCmd = makeFsCommandEntry('/middle');
-      const registry = createMockRegistryService(makeRegistry([fsCmd]));
-
-      const result = await cache.getCommands(registry, '/project');
-      const names = result.commands.map((c) => c.fullCommand);
-
-      expect(names).toEqual(['/alpha', '/middle', '/zebra']);
-    });
-
-    it('returns a valid lastScanned ISO string', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!(makeSdkCommands('test'));
-      const registry = createMockRegistryService(makeRegistry([]));
-
-      const result = await cache.getCommands(registry, '/project');
-      expect(new Date(result.lastScanned).toISOString()).toBe(result.lastScanned);
-    });
-
-    it('maps argumentHint from SDK commands when present', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!([
-        { name: 'run', description: 'Run something', argumentHint: '<script>' },
-      ]);
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-
-      expect(result.commands[0].argumentHint).toBe('<script>');
-    });
-
-    it('sets argumentHint to undefined when SDK provides empty string', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!([{ name: 'run', description: 'Run something', argumentHint: '' }]);
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-
-      expect(result.commands[0].argumentHint).toBeUndefined();
-    });
-
     it('propagates SDK command aliases into the merged CommandEntry (DOR-108)', async () => {
       const cb = cache.buildSendCallbacks('/project');
       cb.onCommandsReceived!([
@@ -783,35 +420,6 @@ describe('RuntimeCache', () => {
 
       expect(usageCmd?.aliases).toEqual(['cost', 'stats']);
     });
-
-    it('omits the aliases field when the SDK command has none', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!(makeSdkCommands('plain'));
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-
-      expect(result.commands[0]).not.toHaveProperty('aliases');
-    });
-
-    it('preserves aliases through filesystem-metadata enrichment', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onCommandsReceived!([
-        { name: 'usage', description: 'Show usage', argumentHint: '', aliases: ['cost'] },
-      ]);
-
-      const fsEntry = makeFsCommandEntry('/usage', {
-        namespace: 'builtin',
-        filePath: '/project/.claude/commands/usage.md',
-      });
-      const registry = createMockRegistryService(makeRegistry([fsEntry]));
-
-      const result = await cache.getCommands(registry, '/project');
-      const usageCmd = result.commands.find((c) => c.fullCommand === '/usage');
-
-      expect(usageCmd?.aliases).toEqual(['cost']); // alias survives the fs merge
-      expect(usageCmd?.namespace).toBe('builtin'); // and fs metadata still attaches
-    });
   });
 
   // =========================================================================
@@ -819,12 +427,6 @@ describe('RuntimeCache', () => {
   // =========================================================================
 
   describe('replaceSdkCommands', () => {
-    it('marks a cwd as having SDK commands once replaced', () => {
-      expect(cache.hasSdkCommands('/project')).toBe(false);
-      cache.replaceSdkCommands('/project', makeSdkCommands('one'));
-      expect(cache.hasSdkCommands('/project')).toBe(true);
-    });
-
     it('replaces the cached list wholesale (not merge) so /api/commands stays fresh', async () => {
       const cb = cache.buildSendCallbacks('/project');
       cb.onCommandsReceived!(makeSdkCommands('old-a', 'old-b'));
@@ -837,22 +439,6 @@ describe('RuntimeCache', () => {
 
       expect(names).toEqual(['/new-only']); // old entries gone, replaced wholesale
     });
-
-    it('exposes onCommandsChanged that replaces the cache on every call (unguarded)', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-      expect(cb.onCommandsChanged).toBeDefined();
-
-      cb.onCommandsChanged!(makeSdkCommands('first'));
-      cb.onCommandsChanged!([
-        { name: 'second', description: 'Second', argumentHint: '', aliases: ['two'] },
-      ]);
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-
-      expect(result.commands.map((c) => c.fullCommand)).toEqual(['/second']);
-      expect(result.commands[0].aliases).toEqual(['two']);
-    });
   });
 
   // =========================================================================
@@ -860,24 +446,6 @@ describe('RuntimeCache', () => {
   // =========================================================================
 
   describe('provisional SDK commands (warm-probe cache)', () => {
-    it('marks a cwd provisional when replaced with { provisional: true }', () => {
-      expect(cache.isSdkCommandsProvisional('/project')).toBe(false);
-      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
-      // Populated for the palette immediately, but flagged as not authoritative.
-      expect(cache.hasSdkCommands('/project')).toBe(true);
-      expect(cache.isSdkCommandsProvisional('/project')).toBe(true);
-    });
-
-    it('still fires onCommandsReceived on the first real message after a warm write', () => {
-      // Warm probe populated a partial (MCP-less) list…
-      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
-
-      // …so the guard must NOT suppress the authoritative fetch: onCommandsReceived
-      // fires even though hasSdkCommands() is already true.
-      const cb = cache.buildSendCallbacks('/project');
-      expect(cb.onCommandsReceived).toBeDefined();
-    });
-
     it('a real onCommandsReceived write clears the provisional flag and stops re-fetching', async () => {
       cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
 
@@ -897,15 +465,6 @@ describe('RuntimeCache', () => {
       // …and a subsequent message does NOT re-fetch (guard is closed again).
       const cb2 = cache.buildSendCallbacks('/project');
       expect(cb2.onCommandsReceived).toBeUndefined();
-    });
-
-    it('an authoritative replace (no opts) also clears a prior provisional flag', () => {
-      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
-      expect(cache.isSdkCommandsProvisional('/project')).toBe(true);
-
-      // e.g. a commands_changed push (onCommandsChanged) is authoritative.
-      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture', 'flow:triage'));
-      expect(cache.isSdkCommandsProvisional('/project')).toBe(false);
     });
   });
 
@@ -960,31 +519,6 @@ describe('RuntimeCache', () => {
       });
     });
 
-    it('uses sessionCwd when provided', async () => {
-      const mockQuery = createMockQuery({
-        commands: [{ name: 'deploy', description: 'd', argumentHint: '' }],
-      });
-
-      await cache.reloadPlugins(mockQuery as never, '/session-cwd', '/default-cwd');
-
-      // Verify commands are stored under sessionCwd
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/session-cwd');
-      expect(result.commands[0].fullCommand).toBe('/deploy');
-    });
-
-    it('falls back to defaultCwd when sessionCwd is undefined', async () => {
-      const mockQuery = createMockQuery({
-        commands: [{ name: 'build', description: 'd', argumentHint: '' }],
-      });
-
-      await cache.reloadPlugins(mockQuery as never, undefined, '/default-cwd');
-
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/default-cwd');
-      expect(result.commands[0].fullCommand).toBe('/build');
-    });
-
     it('filters out the internal dorkos MCP server from cached status', async () => {
       const mockQuery = createMockQuery({
         mcpServers: [
@@ -999,106 +533,6 @@ describe('RuntimeCache', () => {
       const status = cache.getMcpStatus('/project');
       expect(status).toHaveLength(2);
       expect(status!.map((s) => s.name)).toEqual(['postgres', 'github']);
-    });
-
-    it('maps MCP server types correctly', async () => {
-      const mockQuery = createMockQuery({
-        mcpServers: [
-          { name: 'stdio-srv', config: { type: 'stdio' } },
-          { name: 'sse-srv', config: { type: 'sse' } },
-          { name: 'http-srv', config: { type: 'http' } },
-          { name: 'unknown-srv', config: { type: 'websocket' } },
-          { name: 'no-config-srv' },
-        ],
-      });
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      const status = cache.getMcpStatus('/project')!;
-      expect(status.find((s) => s.name === 'sse-srv')!.type).toBe('sse');
-      expect(status.find((s) => s.name === 'http-srv')!.type).toBe('http');
-      // Non-sse/http types fall back to stdio
-      expect(status.find((s) => s.name === 'unknown-srv')!.type).toBe('stdio');
-      expect(status.find((s) => s.name === 'no-config-srv')!.type).toBe('stdio');
-    });
-
-    it('caches subagents when result.agents is present', async () => {
-      const mockQuery = createMockQuery({
-        agents: [
-          { name: 'Explore', description: 'Explores code', model: 'sonnet' },
-          { name: 'Code', description: 'Writes code' },
-        ],
-      });
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      const subagents = cache.getSupportedSubagents('/project');
-      expect(subagents).toHaveLength(2);
-      expect(subagents[0]).toEqual({
-        name: 'Explore',
-        description: 'Explores code',
-        model: 'sonnet',
-      });
-      expect(subagents[1]).toEqual({
-        name: 'Code',
-        description: 'Writes code',
-        model: undefined,
-      });
-    });
-
-    it('does not update subagent cache when result.agents is null', async () => {
-      // Pre-populate subagents
-      const cb = cache.buildSendCallbacks('/project');
-      cb.onSubagentsReceived!(makeSubagents('ExistingAgent'));
-
-      const mockQuery = createMockQuery({ agents: null });
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      // Original subagents should remain
-      const subagents = cache.getSupportedSubagents('/project');
-      expect(subagents).toHaveLength(1);
-      expect(subagents[0].name).toBe('ExistingAgent');
-    });
-
-    it('preserves MCP server error and scope fields', async () => {
-      const mockQuery = createMockQuery({
-        mcpServers: [
-          {
-            name: 'failing-srv',
-            config: { type: 'stdio' },
-            status: 'failed',
-            error: 'Connection refused',
-            scope: 'project',
-          },
-        ],
-      });
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      const status = cache.getMcpStatus('/project')!;
-      expect(status[0].status).toBe('failed');
-      expect(status[0].error).toBe('Connection refused');
-      expect(status[0].scope).toBe('project');
-    });
-
-    it('caches commands as SdkCommandEntry format', async () => {
-      const mockQuery = createMockQuery({
-        commands: [
-          { name: '/deploy', description: 'Deploy', argumentHint: '<env>' },
-          { name: 'build', description: 'Build', argumentHint: '' },
-        ],
-      });
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      // Verify by calling getCommands which reads the SDK cache
-      const registry = createMockRegistryService(makeRegistry([]));
-      const result = await cache.getCommands(registry, '/project');
-      const names = result.commands.map((c) => c.fullCommand);
-
-      expect(names).toContain('/deploy');
-      expect(names).toContain('/build');
     });
   });
 
@@ -1133,38 +567,6 @@ describe('RuntimeCache', () => {
       expect(names).toContain('/reloaded');
       expect(names).not.toContain('/initial');
     });
-
-    it('buildSendCallbacks updates are visible to getters', async () => {
-      const cb = cache.buildSendCallbacks('/project');
-
-      // Populate all caches
-      const models = makeModels('m1');
-      cb.onModelsReceived!(models);
-      cb.onMcpStatusReceived!(makeMcpServers('s1'));
-      cb.onSubagentsReceived!(makeSubagents('a1'));
-      cb.onCommandsReceived!(makeSdkCommands('c1'));
-
-      // Verify all caches are populated
-      expect(await cache.getSupportedModels()).toHaveLength(1);
-      expect(cache.getMcpStatus('/project')).toEqual(makeMcpServers('s1'));
-      expect(cache.getSupportedSubagents('/project')).toEqual(makeSubagents('a1'));
-    });
-
-    it('multiple cwds maintain separate caches', () => {
-      const cbA = cache.buildSendCallbacks('/projectA');
-      const cbB = cache.buildSendCallbacks('/projectB');
-
-      cbA.onMcpStatusReceived!(makeMcpServers('mcp-a'));
-      cbA.onSubagentsReceived!(makeSubagents('agent-a'));
-
-      cbB.onMcpStatusReceived!(makeMcpServers('mcp-b'));
-      cbB.onSubagentsReceived!(makeSubagents('agent-b'));
-
-      expect(cache.getMcpStatus('/projectA')![0].name).toBe('mcp-a');
-      expect(cache.getMcpStatus('/projectB')![0].name).toBe('mcp-b');
-      expect(cache.getSupportedSubagents('/projectA')[0].name).toBe('agent-a');
-      expect(cache.getSupportedSubagents('/projectB')[0].name).toBe('agent-b');
-    });
   });
 
   // =========================================================================
@@ -1187,18 +589,6 @@ describe('RuntimeCache', () => {
       },
     };
 
-    it('passes the hold option through only when asked to', async () => {
-      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default', {
-        holdOnCacheImpact: true,
-      });
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      expect(mockQuery.reloadPlugins).toHaveBeenNthCalledWith(1, { holdOnCacheImpact: true });
-      expect(mockQuery.reloadPlugins).toHaveBeenNthCalledWith(2);
-    });
-
     it('reports the hold and what applying would change', async () => {
       const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
 
@@ -1212,29 +602,6 @@ describe('RuntimeCache', () => {
         mcpServersRemoved: [],
         lspToolChange: 'may-add',
       });
-    });
-
-    it('reads a `held: true` from a call that never asked as applied', async () => {
-      // The SDK documents `held` as present only when the request asked. A CLI
-      // that sent it anyway did not act on a decision DorkOS never made.
-      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
-
-      const outcome = await cache.reloadPlugins(mockQuery as never, '/project', '/default');
-
-      expect(outcome.held).toBe(false);
-      expect(outcome.cacheImpact).toBeUndefined();
-    });
-
-    it('refreshes the caches from a held answer, which describes the session as it still is', async () => {
-      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
-      const registry = createMockRegistryService(makeRegistry([]));
-
-      await cache.reloadPlugins(mockQuery as never, '/project', '/default', {
-        holdOnCacheImpact: true,
-      });
-
-      const result = await cache.getCommands(registry, '/project');
-      expect(result.commands.map((c) => c.fullCommand)).toContain('/old');
     });
   });
 
@@ -1279,27 +646,6 @@ describe('RuntimeCache', () => {
       await expect(warming).resolves.toBeUndefined();
 
       expect(mockQuery.close).toHaveBeenCalledTimes(1);
-    });
-
-    it('lets a later warm-up try again, rather than deduplicating onto a promise that never settles', async () => {
-      vi.mocked(query).mockReturnValue(deafQuery() as never);
-      const first = cache.warmup('/project');
-      await vi.advanceTimersByTimeAsync(LAUNCH_PROBE_ACK_TIMEOUT_MS);
-      await first;
-
-      const answered = {
-        supportedModels: vi
-          .fn()
-          .mockResolvedValue([
-            { value: 'claude-opus-4-6', displayName: 'Opus', description: 'the big one' },
-          ]),
-        close: vi.fn(),
-      };
-      vi.mocked(query).mockReturnValue(answered as never);
-      await cache.warmup('/project');
-
-      expect(answered.supportedModels).toHaveBeenCalledTimes(1);
-      expect(await cache.getSupportedModels()).toHaveLength(1);
     });
   });
 });

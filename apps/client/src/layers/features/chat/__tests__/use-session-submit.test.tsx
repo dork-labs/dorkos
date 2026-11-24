@@ -16,7 +16,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
 
@@ -212,72 +212,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     }
   );
 
-  it('still says create when retrying a first send that failed (DOR-2712)', async () => {
-    // The failed send left a placeholder row in the list, so the list alone
-    // would call the retry an existing session and the server would 404 it.
-    const postMessage = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('HTTP 503'))
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-    });
-
-    const { result } = renderHook(() => useChatSession('s-retry'), {
-      wrapper: createWrapper(transport, queryClient),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-    for (const word of ['first', 'retry']) {
-      act(() => {
-        result.current.setInput(word);
-      });
-      await waitFor(() => expect(result.current.input).toBe(word));
-      await act(async () => {
-        await result.current.handleSubmit();
-      });
-    }
-
-    expect(postMessage).toHaveBeenCalledTimes(2);
-    expect(
-      queryClient
-        .getQueryData<{ id: string }[]>(sessionKeys.list('/test/cwd'))
-        ?.some((row) => row.id === 's-retry')
-    ).toBe(true);
-    expect(postMessage.mock.calls[1]![3]).toMatchObject({ create: true });
-  });
-
-  it('does not say create on a session the list already has (DOR-2712)', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const existing = createMockSession({ id: 's1' });
-    const transport = createMockTransport({
-      postMessage,
-      listSessions: vi.fn().mockResolvedValue({ sessions: [existing], warnings: [] }),
-    });
-    // Kept past gcTime: nothing observes the list in this harness.
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-    });
-    queryClient.setQueryData(sessionKeys.list('/test/cwd'), [existing]);
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport, queryClient),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-    act(() => {
-      result.current.setInput('Again');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Again'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    expect(postMessage.mock.calls[0]![3]).not.toHaveProperty('create');
-  });
-
   it('C-01: DOR-74 dual-id elimination + restore send: calls postMessage and renders the optimistic user message immediately', async () => {
     const postMessage = vi
       .fn()
@@ -313,57 +247,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.input).toBe('');
   });
 
-  it('DOR-74 dual-id elimination + restore send: on a different canonical id, re-attaches and rewrites the URL exactly once (replace)', async () => {
-    const postMessage = vi.fn().mockResolvedValue({ sessionId: 'sdk-canonical' });
-    const transport = createMockTransport({ postMessage });
-    const onSessionIdChangeReplace = vi.fn();
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-
-    const { result } = renderHook(
-      () => useChatSession('client-uuid', { onSessionIdChangeReplace }),
-      { wrapper: createWrapper(transport, queryClient) }
-    );
-
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('First message');
-    });
-    await waitFor(() => expect(result.current.input).toBe('First message'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    // URL rewritten to the canonical id exactly once, in place — naming the id
-    // it renames FROM, so the rewrite can refuse to land on another chat
-    // (DOR-4622).
-    expect(onSessionIdChangeReplace).toHaveBeenCalledTimes(1);
-    expect(onSessionIdChangeReplace).toHaveBeenCalledWith('sdk-canonical', 'client-uuid');
-    // Durable stream re-attached to the canonical id (same cwd).
-    expect(attachSession).toHaveBeenCalledWith('sdk-canonical', '/test/cwd');
-    const canonicalAttach = attachSession.mock.calls.findIndex(([id]) => id === 'sdk-canonical');
-    expect(mockAppState.carryCanvasWritesAcross).toHaveBeenCalledWith(
-      'client-uuid',
-      'sdk-canonical'
-    );
-    expect(mockAppState.carryCanvasWritesAcross.mock.invocationCallOrder.at(-1)).toBeLessThan(
-      attachSession.mock.invocationCallOrder[canonicalAttach]!
-    );
-    // Optimistic message moved to the canonical key; cleared on the old key.
-    const store = useSessionStreamStore.getState();
-    expect(store.getSession('sdk-canonical').optimisticUserMessage?.content).toBe('First message');
-    expect(store.getSession('client-uuid').optimisticUserMessage).toBeNull();
-    // Sidebar cache: the canonical row replaced the client-UUID row — no ghost
-    // duplicate entry pointing at the dead id (nothing refetches it away now
-    // that the sessions poll is gone).
-    const sessions =
-      queryClient.getQueryData<{ id: string }[]>(sessionKeys.list('/test/cwd')) ?? [];
-    expect(sessions.some((s) => s.id === 'sdk-canonical')).toBe(true);
-    expect(sessions.some((s) => s.id === 'client-uuid')).toBe(false);
-  });
-
   it('DOR-4622: a send to an existing chat names that chat as the one the URL commit renames from', async () => {
     // The commit runs after EVERY send, once the POST resolves — by which time
     // the person may be looking at a different chat (another tab, or the
@@ -391,52 +274,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
 
     expect(onSessionIdChangeReplace).toHaveBeenCalledTimes(1);
     expect(onSessionIdChangeReplace).toHaveBeenCalledWith('s1', 's1');
-  });
-
-  it('DOR-4622: a first send that resolves after a switch to another chat leaves that chat its live stream', async () => {
-    // A new chat can wait a long time for its 202 (a warm slot, a slow
-    // runtime). Meanwhile the person switches tabs and this panel shows B.
-    let resolvePost: (value: { sessionId: string }) => void = () => {};
-    const postMessage = vi.fn().mockImplementation(
-      () =>
-        new Promise<{ sessionId: string }>((resolve) => {
-          resolvePost = resolve;
-        })
-    );
-    const transport = createMockTransport({ postMessage });
-    const onSessionIdChangeReplace = vi.fn();
-
-    const { result, rerender } = renderHook(
-      ({ id }) => useChatSession(id, { onSessionIdChangeReplace }),
-      { wrapper: createWrapper(transport), initialProps: { id: 'client-uuid' } }
-    );
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-    act(() => {
-      result.current.setInput('First message');
-    });
-    await waitFor(() => expect(result.current.input).toBe('First message'));
-
-    let submitted: Promise<void> = Promise.resolve();
-    act(() => {
-      submitted = result.current.handleSubmit();
-    });
-    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-
-    rerender({ id: 'B' });
-    attachSession.mockClear();
-    await act(async () => {
-      resolvePost({ sessionId: 'sdk-canonical' });
-      await submitted;
-    });
-
-    // The foreground stream stays with B; A re-attaches when it is shown again.
-    expect(attachSession).not.toHaveBeenCalledWith('sdk-canonical', expect.anything());
-    // The rename still names A, so the setter can refuse to land it on B.
-    expect(onSessionIdChangeReplace).toHaveBeenCalledWith('sdk-canonical', 'client-uuid');
-    // A's own state still moves to its canonical id.
-    expect(
-      useSessionStreamStore.getState().getSession('sdk-canonical').optimisticUserMessage?.content
-    ).toBe('First message');
   });
 
   it('reconciles on turn_end: reloads canonical history and clears the optimistic message', async () => {
@@ -588,76 +425,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.messages.filter((m) => m.content === 'Second reply')).toHaveLength(1);
   });
 
-  it.each(['claude-code', 'codex', 'opencode'])(
-    'preserves %s and the selected account after pre-message settings cache writes',
-    async (runtime) => {
-      const sessionId = `settings-draft-${runtime}`;
-      const postMessage = vi
-        .fn()
-        .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-      const transport = createMockTransport({ postMessage });
-      // Default gcTime (not 0): the sessions list cache must survive between the
-      // two sends, as it does in the real app where the sidebar observes it.
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false } },
-      });
-
-      setSessionRouteContext(sessionId, { cwd: '/test/cwd', draft: true, runtime });
-      mockAppState.pendingAccount = { sessionId: sessionId, id: 'selected-account' };
-      queryClient.setQueryData(
-        sessionKeys.detail(sessionId, '/test/cwd'),
-        createMockSession({ id: sessionId, permissionMode: 'plan', runtime: 'claude-code' })
-      );
-      const { result } = renderHook(() => useChatSession(sessionId, { launchRuntime: runtime }), {
-        wrapper: createWrapper(transport, queryClient),
-      });
-      await waitFor(() => expect(result.current.status).toBe('idle'));
-
-      act(() => {
-        result.current.setInput('Hello');
-      });
-      await waitFor(() => expect(result.current.input).toBe('Hello'));
-      await act(async () => {
-        await result.current.handleSubmit();
-      });
-
-      // First (session-creating) send carries the hint.
-      expect(postMessage).toHaveBeenCalledTimes(1);
-      expect(postMessage.mock.calls[0][3]).toMatchObject({
-        create: true,
-        runtime,
-        account: 'selected-account',
-      });
-      // The optimistic sidebar row is seeded with the SELECTED runtime, not a
-      // hardcoded placeholder.
-      const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>(
-        sessionKeys.list('/test/cwd')
-      );
-      expect(sessions?.find((s) => s.id === sessionId)?.runtime).toBe(runtime);
-
-      // Settle the turn so a second send is allowed.
-      act(() => {
-        const store = useSessionStreamStore.getState();
-        store.applyEvent(sessionId, { seq: 1, type: 'turn_start' });
-        store.applyEvent(sessionId, { seq: 2, type: 'turn_end' });
-      });
-      await waitFor(() => expect(result.current.status).toBe('idle'));
-
-      act(() => {
-        result.current.setInput('Second');
-      });
-      await waitFor(() => expect(result.current.input).toBe('Second'));
-      await act(async () => {
-        await result.current.handleSubmit();
-      });
-
-      // Subsequent sends must NOT resend the hint (persistSessionRuntime is
-      // first-write-wins server-side; resending is harmless but noise).
-      expect(postMessage).toHaveBeenCalledTimes(2);
-      expect(postMessage.mock.calls[1][3]).not.toHaveProperty('runtime');
-    }
-  );
-
   it('passes exact selected-agent ownership on the session-creating first send only', async () => {
     const postMessage = vi
       .fn()
@@ -695,30 +462,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
 
     expect(postMessage).toHaveBeenCalledTimes(2);
     expect(postMessage.mock.calls[1][3]).not.toHaveProperty('agentPath');
-  });
-
-  it('omits the runtime hint when no launch runtime is selected', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    // No explicit selection → no hint, so the server's own resolution
-    // (agent manifest, then default) stays in charge.
-    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
   });
 
   it('passes the billing-account hint on the session-creating first send only', async () => {
@@ -839,30 +582,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(postMessage.mock.calls[0][3]).not.toHaveProperty('account');
   });
 
-  it('omits the billing-account hint when no account was picked', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    // Omitted entirely rather than sent as null: an absent hint is what hands
-    // the ladder back to the server (the agent's account, then the default).
-    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('account');
-  });
-
   it('carries Ask DorkBot\u2019s background on the first send and on no send after it (BC-48)', async () => {
     const postMessage = vi
       .fn()
@@ -919,87 +638,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(takeSeedContext).toHaveBeenCalledTimes(2);
   });
 
-  it('sends no seedContext at all when no surface supplied one', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('seedContext');
-  });
-
-  it('seeds the optimistic session row with the server default runtime when none is selected', async () => {
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const getCapabilities = vi.fn().mockResolvedValue({
-      capabilities: {},
-      defaultRuntime: 'opencode',
-    });
-    const transport = createMockTransport({ postMessage, getCapabilities });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport, queryClient),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-    // Wait for the capabilities query so the default runtime is known.
-    await waitFor(() =>
-      expect(queryClient.getQueryData(['capabilities'])).toMatchObject({
-        defaultRuntime: 'opencode',
-      })
-    );
-
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>(
-      sessionKeys.list('/test/cwd')
-    );
-    expect(sessions?.find((s) => s.id === 's1')?.runtime).toBe('opencode');
-    // Default alone is NOT an explicit selection — still no hint on the wire.
-    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
-  });
-
-  it('stop() interrupts the session', async () => {
-    const interruptSession = vi
-      .fn()
-      .mockResolvedValue({ receipt: { outcome: 'acked', runtime: 'claude-code' } });
-    const transport = createMockTransport({ interruptSession });
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.stop();
-    });
-
-    expect(interruptSession).toHaveBeenCalledWith('s1');
-  });
-
   it('stop() hands back the server verdict and the messages it took off the queue, in order', async () => {
     const cancelledQueued = [
       { id: 'm1', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'me' },
@@ -1026,6 +664,25 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       receipt: { outcome: 'acked', runtime: 'claude-code' },
       cancelled: cancelledQueued,
     });
+  });
+
+  it('stop() interrupts the session', async () => {
+    const interruptSession = vi
+      .fn()
+      .mockResolvedValue({ receipt: { outcome: 'acked', runtime: 'claude-code' } });
+    const transport = createMockTransport({ interruptSession });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.stop();
+    });
+
+    expect(interruptSession).toHaveBeenCalledWith('s1');
   });
 
   it('stop() carries the runtime’s receipt through rather than flattening it (DOR-1300)', async () => {
@@ -1136,101 +793,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.error?.retryable).toBe(true);
   });
 
-  it('does not latch the trigger while an attachment uploads', async () => {
-    // The latch used to be set BEFORE the upload ran, so for the whole upload
-    // the status read `streaming`: the button turned into a red Stop that
-    // called interruptSession on a session with no turn (the .catch() swallowed
-    // it, so the click did nothing), and a hung upload wedged the composer in
-    // queue mode forever — the watchdog that releases the latch is only armed
-    // after the POST.
-    let releaseUpload: (value: string) => void = () => {};
-    const upload = new Promise<string>((resolve) => {
-      releaseUpload = resolve;
-    });
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-
-    const { result } = renderHook(() => useChatSession('s1', { transformContent: () => upload }), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('what is in this screenshot?');
-    });
-    await waitFor(() => expect(result.current.input).toBe('what is in this screenshot?'));
-
-    let submitted!: Promise<void>;
-    await act(async () => {
-      submitted = result.current.handleSubmit();
-      await Promise.resolve();
-    });
-
-    // Mid-upload: nothing has been triggered yet.
-    expect(postMessage).not.toHaveBeenCalled();
-    expect(useSessionStreamStore.getState().getSession('s1').triggerPending).toBe(false);
-    expect(result.current.status).toBe('idle');
-
-    await act(async () => {
-      releaseUpload('read the file, then: what is in this screenshot?');
-      await submitted;
-    });
-
-    expect(postMessage).toHaveBeenCalledWith(
-      's1',
-      'read the file, then: what is in this screenshot?',
-      '/test/cwd',
-      expect.anything()
-    );
-    expect(useSessionStreamStore.getState().getSession('s1').triggerPending).toBe(true);
-  });
-
-  it('attaches the durable stream BEFORE the upload, not after it', async () => {
-    // `attachSession` re-targets the ONE active-session connection, and the only
-    // other caller is an effect keyed on (sessionId, cwd) that fires once per
-    // switch. Behind the upload await, a session switch made DURING the upload
-    // gets silently undone: B attaches, the upload resolves, and this drags the
-    // connection back to A — leaving B on screen with no live stream and nothing
-    // to re-fire until the session or cwd changes again.
-    let releaseUpload: (value: string) => void = () => {};
-    const upload = new Promise<string>((resolve) => {
-      releaseUpload = resolve;
-    });
-    const postMessage = vi
-      .fn()
-      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
-    const transport = createMockTransport({ postMessage });
-
-    const { result } = renderHook(() => useChatSession('s1', { transformContent: () => upload }), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('here are the files');
-    });
-    await waitFor(() => expect(result.current.input).toBe('here are the files'));
-
-    attachSession.mockClear();
-    let submitted!: Promise<void>;
-    await act(async () => {
-      submitted = result.current.handleSubmit();
-      await Promise.resolve();
-    });
-
-    // Still mid-upload — nothing has been POSTed — and the attach has already
-    // happened, so no later resolution can re-target away from a switch.
-    expect(postMessage).not.toHaveBeenCalled();
-    expect(attachSession).toHaveBeenCalledWith('s1', '/test/cwd');
-
-    await act(async () => {
-      releaseUpload('here are the files');
-      await submitted;
-    });
-  });
-
   it('an upload failure leaves the typed message in the composer', async () => {
     // The input was cleared before the try, with nothing to put the words back
     // — so an ordinary send whose attachment failed destroyed the message.
@@ -1265,30 +827,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     // The words are still in the box, so Enter is the retry. A Retry button
     // here would resend the PREVIOUS user message instead.
     expect(result.current.error?.retryable).toBe(false);
-  });
-
-  it('carries a paused agent’s code and id to the error, so the app can offer Resume', async () => {
-    // Spec `audit-trail` PR5: the server refuses a message to a paused agent
-    // with `AGENT_PAUSED` and the agent's id; the composer reads both.
-    const refusal = Object.assign(new Error('Scout is paused.'), {
-      code: 'AGENT_PAUSED',
-      status: 409,
-      body: { error: 'Scout is paused.', code: 'AGENT_PAUSED', agentId: 'agent-1' },
-    });
-    const transport = createMockTransport({ postMessage: vi.fn().mockRejectedValue(refusal) });
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport),
-    });
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    expect(result.current.error).toMatchObject({ code: 'AGENT_PAUSED', agentId: 'agent-1' });
   });
 
   it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {

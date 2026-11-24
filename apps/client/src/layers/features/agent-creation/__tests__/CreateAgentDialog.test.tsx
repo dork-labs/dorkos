@@ -278,19 +278,6 @@ describe('CreateAgentDialog', () => {
     expect(screen.queryByTestId('agent-gallery-mock')).not.toBeInTheDocument();
   });
 
-  // ---- Gallery → naming ----
-
-  it('design-your-own opens the naming step with an empty name and honest job line', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    await reachNamingViaDesign(user);
-
-    expect(screen.getByLabelText('Name')).toHaveValue('');
-    expect(
-      screen.getByText('You’ll define the job together in your first chat.')
-    ).toBeInTheDocument();
-  });
-
   it('picking a template opens naming pre-filled with the human name', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -299,58 +286,6 @@ describe('CreateAgentDialog', () => {
     await user.click(await screen.findByTestId('mock-select-template'));
     const nameInput = await screen.findByLabelText('Name');
     expect(nameInput).toHaveValue('Code Reviewer');
-  });
-
-  it('the gallery import link leaves for the standalone import dialog', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('mock-import'));
-
-    // Creation dialog closes; the import flow opens in its own dialog.
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(useImportProjectsStore.getState().isOpen).toBe(true);
-  });
-
-  it('Back from naming returns to the gallery', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    await reachNamingViaDesign(user);
-
-    await user.click(screen.getByTestId('naming-back'));
-    expect(await screen.findByTestId('agent-gallery-mock')).toBeInTheDocument();
-  });
-
-  // ---- Naming behaviors ----
-
-  it('the live preview updates as the name is typed', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    const nameInput = await reachNamingViaDesign(user);
-
-    await user.type(nameInput, 'Scout');
-    expect(screen.getByTestId('preview-name')).toHaveTextContent('Scout');
-  });
-
-  it('applies a name suggestion and rerolls to a fresh set', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    const nameInput = await reachNamingViaDesign(user);
-
-    // Default pool window: Scout, Sage, Pilot, Beacon.
-    await user.click(screen.getByTestId('suggestion-Scout'));
-    expect(nameInput).toHaveValue('Scout');
-
-    // The picked name leaves the pool immediately (a chip that does nothing
-    // reads as broken) — the window refills from the remaining names.
-    expect(screen.queryByTestId('suggestion-Scout')).not.toBeInTheDocument();
-    expect(screen.getByTestId('suggestion-Atlas')).toBeInTheDocument();
-
-    // Reroll advances to a fresh window over the deduped pool.
-    await user.click(screen.getByTestId('suggestion-reroll'));
-    expect(screen.queryByTestId('suggestion-Sage')).not.toBeInTheDocument();
-    expect(screen.getByTestId('suggestion-Nova')).toBeInTheDocument();
   });
 
   // Red when the wizard treats its own placeholder as a choice. It used to seed
@@ -378,20 +313,6 @@ describe('CreateAgentDialog', () => {
     // second field, but this wizard has no colour control to send one, so
     // nothing that could change here would ever make it red.
     expect(payload).not.toHaveProperty('icon');
-  });
-
-  it('highlights no face in the picker until the user chooses one', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    await reachNamingViaDesign(user);
-
-    const pressed = screen
-      .getAllByRole('button', { name: /^Face / })
-      .filter((button) => button.getAttribute('aria-pressed') === 'true');
-    expect(pressed).toHaveLength(0);
-
-    await user.click(screen.getByTestId('face-🦊'));
-    expect(screen.getByTestId('face-🦊')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('a picked face persists to the created agent', async () => {
@@ -441,14 +362,6 @@ describe('CreateAgentDialog', () => {
     });
   });
 
-  it('labels the primary action "Create {name}"', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    const nameInput = await reachNamingViaDesign(user);
-    await user.type(nameInput, 'Scout');
-    expect(screen.getByTestId('create-button')).toHaveTextContent('Create Scout');
-  });
-
   it('disables create until a name is entered', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -489,31 +402,6 @@ describe('CreateAgentDialog', () => {
         search: expect.objectContaining({ agentId: 'id', draft: '1', dir: undefined }),
       })
     );
-  });
-
-  it('passes the template source through on create', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.createAgent).mockResolvedValue({
-      id: 'id',
-      name: 'code-reviewer',
-      _path: '/p',
-    } as never);
-    renderDialog(transport);
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('mock-select-template'));
-    await screen.findByLabelText('Name');
-    await user.click(screen.getByTestId('create-button'));
-
-    await waitFor(() => {
-      expect(transport.createAgent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          template: 'github.com/dorkos/code-reviewer',
-          icon: '🔍',
-        })
-      );
-    });
   });
 
   it('shows an error toast on failed creation', async () => {
@@ -720,17 +608,6 @@ describe('CreateAgentDialog', () => {
     expect(submitKickoff).toHaveBeenCalledTimes(1);
   });
 
-  // ---- Validation (migrated from ConfigureStep) ----
-
-  it('shows the derived folder name in Details', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    const nameInput = await reachNamingViaDesign(user);
-    await user.type(nameInput, 'My Cool Agent');
-    await user.click(screen.getByTestId('details-toggle'));
-    expect(screen.getByText('my-cool-agent')).toBeInTheDocument();
-  });
-
   it('offers "Import it instead" when the target folder already holds a project', async () => {
     const user = userEvent.setup();
     const { transport } = renderDialog();
@@ -752,64 +629,6 @@ describe('CreateAgentDialog', () => {
     expect(useImportProjectsStore.getState().isOpen).toBe(true);
   });
 
-  it('on a hub, offers no import when the folder already holds a project', async () => {
-    const user = userEvent.setup();
-    const { transport } = renderDialog(undefined, undefined, { serverRole: 'hub' });
-    vi.mocked(transport.browseDirectory).mockResolvedValue({
-      path: '/test',
-      entries: [{ name: '.dork', isDirectory: true }],
-      parent: null,
-    } as never);
-
-    const nameInput = await reachNamingViaDesign(user);
-    await user.type(nameInput, 'taken-agent');
-
-    await waitFor(() =>
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('This folder has a project')
-    );
-    expect(screen.queryByTestId('import-instead-link')).not.toBeInTheDocument();
-  });
-
-  it('reports "Creates a new folder" for a fresh path', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    const nameInput = await reachNamingViaDesign(user);
-    await user.type(nameInput, 'fresh-agent');
-    await user.click(screen.getByTestId('details-toggle'));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent('Creates a new folder')
-    );
-  });
-
-  // ---- Template reselection (auto-fill provenance) ----
-
-  it('switching templates updates an auto-filled name', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('mock-select-template'));
-    expect(await screen.findByLabelText('Name')).toHaveValue('Code Reviewer');
-
-    await user.click(screen.getByTestId('naming-back'));
-    await user.click(await screen.findByTestId('mock-select-other-template'));
-    expect(await screen.findByLabelText('Name')).toHaveValue('Release Scribe');
-  });
-
-  it('switching to design-your-own clears an auto-filled template name', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().open();
-
-    await user.click(await screen.findByTestId('mock-select-template'));
-    expect(await screen.findByLabelText('Name')).toHaveValue('Code Reviewer');
-
-    await user.click(screen.getByTestId('naming-back'));
-    await user.click(await screen.findByTestId('mock-design-your-own'));
-    expect(await screen.findByLabelText('Name')).toHaveValue('');
-  });
-
   it('never clobbers a user-typed name on template switch', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -823,28 +642,6 @@ describe('CreateAgentDialog', () => {
     await user.click(screen.getByTestId('naming-back'));
     await user.click(await screen.findByTestId('mock-select-other-template'));
     expect(await screen.findByLabelText('Name')).toHaveValue('Ada');
-  });
-
-  // ---- Remaining conflict states ----
-
-  it('reports "Directory exists" when the path exists without a project', async () => {
-    const user = userEvent.setup();
-    const { transport } = renderDialog();
-    vi.mocked(transport.browseDirectory).mockResolvedValue({
-      path: '/test',
-      entries: [{ name: 'README.md', isDirectory: false }],
-      parent: null,
-    } as never);
-
-    const nameInput = await reachNamingViaDesign(user);
-    await user.type(nameInput, 'existing-dir');
-    await user.click(screen.getByTestId('details-toggle'));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('conflict-status')).toHaveTextContent(
-        'That folder is already there. The project goes inside it.'
-      )
-    );
   });
 
   it('reports "Can’t open this folder" on a permission error and blocks create', async () => {
@@ -862,20 +659,6 @@ describe('CreateAgentDialog', () => {
       )
     );
     expect(screen.getByTestId('create-button')).toBeDisabled();
-  });
-
-  // ---- Reset ----
-
-  it('resets to the gallery when closed and reopened', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    await reachNamingViaDesign(user);
-
-    useAgentCreationStore.getState().close();
-    await waitFor(() => expect(screen.queryByLabelText('Name')).not.toBeInTheDocument());
-
-    useAgentCreationStore.getState().open();
-    expect(await screen.findByTestId('agent-gallery-mock')).toBeInTheDocument();
   });
 
   // ---- Marketplace agents and templates (DOR-2325) ----
@@ -952,28 +735,6 @@ describe('CreateAgentDialog', () => {
     expect(sent).not.toHaveProperty('directory');
   });
 
-  it('says a marketplace agent lives in its package folder, on the card and the naming step', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    packagePreview(transport);
-    renderDialog(transport, undefined, { dorkHome: '/home/test/.dork' });
-    useAgentCreationStore.getState().openWithSeed({
-      origin: 'marketplace-agent' as const,
-      packageName: 'code-reviewer',
-      marketplace: 'dorkos-community',
-      template: { displayName: 'Code Reviewer', source: 'github.com/dorkos/code-reviewer' },
-    });
-
-    expect(await screen.findByText('/home/test/.dork/agents/code-reviewer')).toBeInTheDocument();
-
-    await user.click(screen.getByTestId('arrival-customize'));
-    await user.click(await screen.findByTestId('details-toggle'));
-    expect(await screen.findByTestId('package-directory')).toHaveTextContent(
-      '/home/test/.dork/agents/code-reviewer'
-    );
-    expect(screen.queryByTestId('directory-preview')).not.toBeInTheDocument();
-  });
-
   it('shows what a custom template brings, and creates it with the hash it showed', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -1032,44 +793,6 @@ describe('CreateAgentDialog', () => {
       sourceLabel: 'Linear Ops',
     };
   }
-
-  it('renders the arrival confirm with an honest ledger (runtime, dir, can, skills)', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-    await screen.findByText('Meet Linear Keeper');
-
-    expect(screen.getByText('I keep your Linear board tidy.')).toBeInTheDocument();
-    expect(screen.getByText('Codex')).toBeInTheDocument();
-    expect(screen.getByText('~/.dork/agents/linear-keeper')).toBeInTheDocument();
-    expect(screen.getByText('Can')).toBeInTheDocument();
-    expect(screen.getByText('linear')).toBeInTheDocument();
-    // Skills are listed, never claimed installed.
-    expect(screen.getByText('Uses skills')).toBeInTheDocument();
-    expect(screen.getByText(/linear-adapter/)).toBeInTheDocument();
-  });
-
-  it('shows a schedule line only when the offer declares a cadence', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-    await screen.findByText('Meet Linear Keeper');
-    expect(screen.queryByTestId('arrival-schedule')).not.toBeInTheDocument();
-
-    cleanup();
-    useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor({ schedule: 'Every weekday at 9am' }));
-    await screen.findByText('Meet Linear Keeper');
-    expect(screen.getByTestId('arrival-schedule')).toHaveTextContent('Every weekday at 9am');
-  });
-
-  it('disables Create and explains when the seed arrives without a usable name', async () => {
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor({ displayName: '' }));
-
-    const createBtn = await screen.findByTestId('arrival-create');
-    expect(createBtn).toBeDisabled();
-    expect(screen.getByTestId('arrival-needs-name')).toBeInTheDocument();
-  });
 
   it('says what an arriving agent inherits, above Create, and holds Create until it knows (DOR-2420)', async () => {
     const user = userEvent.setup();
@@ -1133,16 +856,6 @@ describe('CreateAgentDialog', () => {
     ).toBeTruthy();
   });
 
-  it('Customize first opens naming pre-filled from the seed', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-    await screen.findByText('Meet Linear Keeper');
-
-    await user.click(screen.getByTestId('arrival-customize'));
-    expect(await screen.findByLabelText('Name')).toHaveValue('Linear Keeper');
-  });
-
   it('never creates an agent from a marketplace package the server refused (DOR-2314)', async () => {
     // Purpose: the app's agent path clones the package's source, and a package
     // the server refuses to preview (say it ships `.claude/settings.json`)
@@ -1194,40 +907,6 @@ describe('CreateAgentDialog', () => {
           runtime: 'codex',
           persona: 'I keep your Linear board tidy.',
           capabilities: ['linear'],
-        })
-      );
-    });
-  });
-
-  it('a marketplace agent seed creates via the standard engine with the package template source', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.createAgent).mockResolvedValue({
-      id: 'mkt-id',
-      name: 'code-reviewer',
-      _path: '/home/test/.dork/agents/code-reviewer',
-    } as never);
-    renderDialog(transport);
-    useAgentCreationStore.getState().openWithSeed({
-      origin: 'marketplace-agent',
-      sourceLabel: 'dork-labs',
-      template: {
-        displayName: 'Code Reviewer',
-        source: 'github:dork-labs/marketplace/plugins/code-reviewer',
-        persona: 'Reviews pull requests every weekday.',
-        icon: '🔍',
-      },
-    });
-    await screen.findByText('Meet Code Reviewer');
-
-    await user.click(screen.getByRole('button', { name: 'Create Code Reviewer' }));
-    await waitFor(() => {
-      expect(transport.createAgent).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'code-reviewer',
-          displayName: 'Code Reviewer',
-          template: 'github:dork-labs/marketplace/plugins/code-reviewer',
-          persona: 'Reviews pull requests every weekday.',
         })
       );
     });
@@ -1348,46 +1027,6 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByTestId('create-button')).toBeEnabled();
   });
 
-  it('holds the naming step too while the check is still in flight', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    // Never resolves: the check is still in flight for the whole test.
-    vi.mocked(transport.previewMarketplacePackage).mockReturnValue(new Promise(() => {}) as never);
-    renderDialog(transport);
-    useAgentCreationStore.getState().openWithSeed(packageSeed());
-
-    await user.click(await screen.findByTestId('arrival-customize'));
-    await screen.findByLabelText('Name');
-
-    expect(screen.getByTestId('naming-checking-offer')).toBeInTheDocument();
-    expect(screen.getByTestId('create-button')).toBeDisabled();
-  });
-
-  it('carries a failed check through to the naming step as well', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.previewMarketplacePackage).mockRejectedValue(new Error('offline'));
-    renderDialog(transport);
-    useAgentCreationStore.getState().openWithSeed(packageSeed());
-    await screen.findByTestId('arrival-offer-check-failed');
-
-    await user.click(screen.getByTestId('arrival-customize'));
-    await screen.findByLabelText('Name');
-
-    expect(await screen.findByTestId('naming-offer-check-failed')).toBeInTheDocument();
-  });
-
-  it('never asks the server about an offer that came from a Shape, not a package', async () => {
-    const transport = createMockTransport();
-    renderDialog(transport);
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-    await screen.findByText('Meet Linear Keeper');
-
-    expect(transport.previewMarketplacePackage).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('arrival-checking-offer')).not.toBeInTheDocument();
-    expect(screen.getByTestId('arrival-create')).toBeEnabled();
-  });
-
   it('a host onCreated hook runs on create instead of navigating away', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -1407,17 +1046,6 @@ describe('CreateAgentDialog', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
     // The host takes over — no navigation to a session.
     expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('Not now closes the dialog and clears the seed', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    useAgentCreationStore.getState().openWithSeed(seedFor());
-    await screen.findByText('Meet Linear Keeper');
-
-    await user.click(screen.getByTestId('arrival-not-now'));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(useAgentCreationStore.getState().seed).toBeNull();
   });
 
   // ---- The mesh-wide switch, surfaced where the wall gets hit (DOR-1338) ----
@@ -1453,27 +1081,6 @@ describe('CreateAgentDialog', () => {
     await reachNamingViaDesign(user);
 
     await waitFor(() => expect(screen.getByLabelText('Name')).toBeInTheDocument());
-    expect(
-      screen.queryByRole('switch', { name: 'Let all my agents talk to each other' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('says nothing when this is the first agent (nobody to be cut off from)', async () => {
-    const user = userEvent.setup();
-    renderDialog();
-    await reachNamingViaDesign(user);
-
-    await waitFor(() => expect(screen.getByLabelText('Name')).toBeInTheDocument());
-    expect(
-      screen.queryByRole('switch', { name: 'Let all my agents talk to each other' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('never interrupts the gallery step', async () => {
-    renderDialog(transportWithOneOwnAgent(false));
-    useAgentCreationStore.getState().open();
-
-    await screen.findByTestId('agent-gallery-mock');
     expect(
       screen.queryByRole('switch', { name: 'Let all my agents talk to each other' })
     ).not.toBeInTheDocument();

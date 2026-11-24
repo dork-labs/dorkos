@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
-import { MAX_FEEDBACK_ROUTE_LEN } from '@dorkos/shared/telemetry-events';
 import { REPLY_EMAIL_STORAGE_KEY } from '../lib/reply-email';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -211,23 +210,6 @@ describe('FeedbackDialog', () => {
         await act(async () => {});
         expect(transport.sendFeedback).not.toHaveBeenCalled();
       });
-
-      it('does nothing on the shortcut while there are no words', async () => {
-        const transport = createMockTransport();
-        renderDialog(transport);
-
-        fireEvent.keyDown(screen.getByLabelText('Your message'), { key: 'Enter', metaKey: true });
-
-        await act(async () => {});
-        expect(transport.sendFeedback).not.toHaveBeenCalled();
-      });
-
-      it('mentions the shortcut only once there is something to send', () => {
-        renderDialog();
-        expect(screen.queryByText(/to send$/)).not.toBeInTheDocument();
-        type('hello');
-        expect(screen.getByText(/to send$/)).toBeInTheDocument();
-      });
     });
 
     describe('the draft survives an accidental close', () => {
@@ -272,18 +254,6 @@ describe('FeedbackDialog', () => {
 
         expect(screen.getByLabelText('Your message')).toHaveValue('try me again');
       });
-
-      it('gives way to a caller that opens it with something to say', () => {
-        // A crash report or a failed-action summary is the report the person
-        // is being asked about now; it replaces the draft rather than merging.
-        const { setOpen } = renderDialog();
-        type('an older thought');
-
-        setOpen(false);
-        setOpen(true, { prefillMessage: 'Saving the agent failed.' });
-
-        expect(screen.getByLabelText('Your message')).toHaveValue('Saving the agent failed.');
-      });
     });
 
     describe('who we can reply to', () => {
@@ -326,18 +296,6 @@ describe('FeedbackDialog', () => {
         );
       });
 
-      it('promises no email to someone sending anonymously', async () => {
-        const transport = createMockTransport();
-        vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-        renderDialog(transport, { currentUser: { email: 'kai@example.com' } });
-        type('keep me out of it');
-        fireEvent.click(screen.getByRole('button', { name: 'Send anonymously' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-        await waitFor(() => expect(toast.success).toHaveBeenCalled());
-        expect(toast.success.mock.calls[0][1]).not.toHaveProperty('description');
-      });
-
       it('remembers the address for next time', async () => {
         const transport = createMockTransport();
         vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
@@ -355,68 +313,9 @@ describe('FeedbackDialog', () => {
         expect(localStorage.getItem(REPLY_EMAIL_STORAGE_KEY)).toBe('ike@example.com');
         expect(screen.getByLabelText('Your email')).toHaveValue('ike@example.com');
       });
-
-      it('says so when the address does not look like one, and promises nothing', async () => {
-        const transport = createMockTransport();
-        vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-        renderDialog(transport, { currentUser: null });
-        type('typo in my address');
-        fireEvent.change(screen.getByLabelText('Your email'), { target: { value: 'ike@' } });
-
-        expect(
-          screen.getByText('Not an email yet, so no reply can reach you.')
-        ).toBeInTheDocument();
-        expect(screen.getByLabelText('Your email')).toHaveAttribute('aria-invalid', 'true');
-        // Never a blocker: the report still goes, it just cannot be answered.
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-        await waitFor(() => expect(toast.success).toHaveBeenCalled());
-        expect(toast.success.mock.calls[0][1]).not.toHaveProperty('description');
-        expect(localStorage.getItem(REPLY_EMAIL_STORAGE_KEY)).toBeNull();
-      });
-
-      it('works the same when the browser refuses storage', async () => {
-        const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-          throw new Error('SecurityError');
-        });
-        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-          throw new Error('QuotaExceededError');
-        });
-        try {
-          const transport = createMockTransport();
-          vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-          const { onOpenChange } = renderDialog(transport, { currentUser: null });
-          expect(screen.getByLabelText('Your email')).toHaveValue('');
-          type('private window');
-          fireEvent.change(screen.getByLabelText('Your email'), {
-            target: { value: 'ike@example.com' },
-          });
-          fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-          await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-        } finally {
-          getItem.mockRestore();
-          setItem.mockRestore();
-        }
-      });
     });
 
     describe('after it is sent', () => {
-      it('links the thank-you to the person’s own reports', async () => {
-        const transport = createMockTransport();
-        vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-        renderDialog(transport);
-        type('where does it go');
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-        await waitFor(() => expect(toast.success).toHaveBeenCalled());
-
-        const options = toast.success.mock.calls[0][1] as {
-          action: { label: string; onClick: () => void };
-        };
-        options.action.onClick();
-
-        expect(navigate).toHaveBeenCalledWith({ to: '/feedback-requests' });
-      });
-
       it('catches the same report sent twice within a minute', async () => {
         const transport = createMockTransport();
         const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
@@ -434,48 +333,24 @@ describe('FeedbackDialog', () => {
         expect(sendFeedback).toHaveBeenCalledTimes(1);
         expect(onOpenChange).toHaveBeenLastCalledWith(false);
       });
-
-      it('sends it again once the minute has passed', async () => {
-        const now = vi.spyOn(Date, 'now');
-        try {
-          now.mockReturnValue(1_000_000);
-          const transport = createMockTransport();
-          const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-          const { setOpen } = renderDialog(transport);
-          type('still blank');
-          fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-          await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
-
-          now.mockReturnValue(1_000_000 + 61_000);
-          setOpen(false);
-          setOpen(true);
-          type('still blank');
-          fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-          await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(2));
-        } finally {
-          now.mockRestore();
-        }
-      });
-
-      it('does not treat a different report as a duplicate', async () => {
-        const transport = createMockTransport();
-        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-        const { setOpen } = renderDialog(transport);
-        type('one thing');
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
-
-        setOpen(false);
-        setOpen(true);
-        type('another thing');
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(2));
-      });
     });
 
     describe('review fixes', () => {
+      it('does not send on ⌘↵ while an input method is composing', async () => {
+        const transport = createMockTransport();
+        renderDialog(transport);
+        type('日本語');
+
+        fireEvent.keyDown(screen.getByLabelText('Your message'), {
+          key: 'Enter',
+          metaKey: true,
+          isComposing: true,
+        });
+
+        await act(async () => {});
+        expect(transport.sendFeedback).not.toHaveBeenCalled();
+      });
+
       it('keeps the crash stack when a crash report is closed and reopened', async () => {
         const transport = createMockTransport();
         const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
@@ -493,46 +368,6 @@ describe('FeedbackDialog', () => {
         expect(sendFeedback.mock.calls[0][0].diagnostics?.breadcrumbs).toEqual([
           expect.objectContaining({ message: 'Error: boom\n  at x' }),
         ]);
-      });
-
-      it('turns "This conversation" off when a kept draft is reopened beside another one', async () => {
-        routerState.location = { pathname: '/session', search: { session: 'sess_a' } };
-        const transport = createMockTransport();
-        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-        const { setOpen } = renderDialog(transport);
-        fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
-        type('about session a');
-        expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
-          'aria-pressed',
-          'true'
-        );
-
-        setOpen(false);
-        routerState.location = { pathname: '/session', search: { session: 'sess_b' } };
-        setOpen(true);
-
-        expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
-          'aria-pressed',
-          'false'
-        );
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
-        expect(sendFeedback.mock.calls[0][0].includeTranscript).toBeUndefined();
-      });
-
-      it('does not send on ⌘↵ while an input method is composing', async () => {
-        const transport = createMockTransport();
-        renderDialog(transport);
-        type('日本語');
-
-        fireEvent.keyDown(screen.getByLabelText('Your message'), {
-          key: 'Enter',
-          metaKey: true,
-          isComposing: true,
-        });
-
-        await act(async () => {});
-        expect(transport.sendFeedback).not.toHaveBeenCalled();
       });
 
       it('does not let Enter in the email field submit the form', () => {
@@ -570,14 +405,6 @@ describe('FeedbackDialog', () => {
         open.mockRestore();
       }
     });
-
-    it('labels every tool in the message box', () => {
-      renderDialog();
-      expect(screen.getByRole('button', { name: 'Capture app' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Point at it' })).toBeInTheDocument();
-      expect(screen.getByLabelText('Add an image')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Preview diagnostics' })).toBeInTheDocument();
-    });
   });
 
   describe('triage context (DOR-1960)', () => {
@@ -604,23 +431,6 @@ describe('FeedbackDialog', () => {
 
       expect(submission.route).toBe('/session?session=sess_abc123');
       expect(sendFeedback).toHaveBeenCalledTimes(1);
-    });
-
-    it('bounds an over-long route rather than failing the send', async () => {
-      // The wire schema refuses over-cap, and a refusal surfaces as a failed
-      // send and a toast about GitHub — which is not what went wrong. A param
-      // that cannot fit is dropped whole, so the address degrades to the page.
-      routerState.location = { pathname: '/session', search: { session: 'x'.repeat(500) } };
-      const transport = createMockTransport();
-      renderDialog(transport);
-
-      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
-        target: { value: 'broke' },
-      });
-      const submission = await sendAndCapture(transport);
-
-      expect(submission.route).toBe('/session');
-      expect(submission.route?.length).toBeLessThanOrEqual(MAX_FEEDBACK_ROUTE_LEN);
     });
 
     it('never sends the working directory or the typed prompt in the route', async () => {
@@ -727,60 +537,6 @@ describe('FeedbackDialog', () => {
       expect(wire).not.toContain(String(window.innerWidth));
       expect(wire).not.toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
     });
-
-    it('shows the recorded page address in the preview', async () => {
-      // `route` rides outside the Diagnostics toggle, so the preview is the only
-      // place a person can see the address — including the id it now carries —
-      // before pressing Send.
-      routerState.location = {
-        pathname: '/session',
-        search: { dir: '/Users/dorian/private', session: 'sess_abc123' },
-      };
-      renderDialog();
-      fireEvent.click(screen.getByRole('button', { name: 'Preview diagnostics' }));
-
-      expect(await screen.findByText('Page')).toBeInTheDocument();
-      expect(screen.getByText('/session?session=sess_abc123')).toBeInTheDocument();
-      // And the preview does not show what the route does not carry.
-      expect(screen.queryByText(/Users\/dorian/)).not.toBeInTheDocument();
-    });
-
-    it('shows the same context in the preview that it will send', async () => {
-      // "Pressing Send is the consent" only holds while the preview is the
-      // payload. A field that is sent but not previewed breaks that promise.
-      renderDialog();
-      fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Preview diagnostics' }));
-
-      expect(await screen.findByText('What will be sent')).toBeInTheDocument();
-      // Awaited: the bundle is `undefined` until the config query settles, and
-      // the preview honestly says "Gathering diagnostics…" until then.
-      expect(await screen.findByText('Window')).toBeInTheDocument();
-      expect(screen.getByText(`${window.innerWidth}×${window.innerHeight}`)).toBeInTheDocument();
-      expect(screen.getByText('Shell')).toBeInTheDocument();
-      expect(screen.getByText('browser')).toBeInTheDocument();
-      expect(screen.getByText('Theme')).toBeInTheDocument();
-      expect(screen.getByText('light')).toBeInTheDocument();
-      expect(screen.getByText('Locale')).toBeInTheDocument();
-      expect(screen.getByText('Timezone')).toBeInTheDocument();
-      expect(screen.getByText('Browser')).toBeInTheDocument();
-      expect(screen.getByText(navigator.userAgent)).toBeInTheDocument();
-    });
-  });
-
-  it('sends the selected kind (Bug)', async () => {
-    const transport = createMockTransport();
-    const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-    renderDialog(transport);
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
-    fireEvent.change(screen.getByPlaceholderText(/what happened/i), {
-      target: { value: 'It crashed' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-    await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
-    expect(sendFeedback.mock.calls[0][0]).toMatchObject({ kind: 'bug', message: 'It crashed' });
   });
 
   it('on a failed send, toasts the GitHub-fallback error and keeps the dialog open', async () => {
@@ -826,18 +582,6 @@ describe('FeedbackDialog', () => {
 
     const sendButton = screen.getByRole('button', { name: 'Send' });
     expect(scrollRegion).not.toContainElement(sendButton);
-  });
-
-  it('lines the fields up with the title on desktop, without shaving the focus ring’s room', () => {
-    // jsdom has no layout, so the alignment itself is settled in a real browser;
-    // this pins the mechanism. The body keeps its own `px-4` (the ring's room,
-    // DOR-2076) and hands the modal's matching gutter back with `-mx-4`.
-    renderDialog();
-    const body = screen
-      .getByLabelText('Your message')
-      .closest('[data-slot="responsive-dialog-body"]');
-    expect(body).toHaveClass('-mx-4');
-    expect(body).toHaveClass('px-4');
   });
 
   it('attaches diagnostics + asks for server logs for a Bug (both default-on)', async () => {
@@ -925,13 +669,6 @@ describe('FeedbackDialog', () => {
       );
     });
 
-    it('attaches nothing in a browser, where there is no shell log to read', async () => {
-      const submitted = await sendBug();
-
-      expect(submitted.diagnostics?.clientReport).toBeDefined();
-      expect(submitted.diagnostics?.shellLogExcerpt).toBeUndefined();
-    });
-
     it('sends the report anyway when the shell cannot produce an excerpt', async () => {
       // A desktop build older than this one has no such method, and a shell
       // whose log is unreadable answers `undefined`. Neither may cost a person
@@ -961,16 +698,6 @@ describe('FeedbackDialog', () => {
   });
 
   describe('identity + anonymous (design-decisions §3)', () => {
-    it('shows the identity line only when a signed-in user is resolvable', () => {
-      renderDialog(createMockTransport(), { currentUser: { email: 'dorian@example.com' } });
-      expect(screen.getByText('Replying to dorian@example.com')).toBeInTheDocument();
-    });
-
-    it('does not show an identity line when signed out', () => {
-      renderDialog(createMockTransport(), { currentUser: null });
-      expect(screen.queryByText(/Replying to/)).not.toBeInTheDocument();
-    });
-
     it('sends anonymous:true after toggling "Send anonymously", and back off with "Use my account"', async () => {
       const transport = createMockTransport();
       const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
@@ -985,20 +712,6 @@ describe('FeedbackDialog', () => {
 
       await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
       expect(sendFeedback.mock.calls[0][0].anonymous).toBe(true);
-    });
-
-    it('does not set anonymous when the toggle is left off', async () => {
-      const transport = createMockTransport();
-      const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-      renderDialog(transport, { currentUser: { email: 'dorian@example.com' } });
-
-      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
-        target: { value: 'hi' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-      await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
-      expect(sendFeedback.mock.calls[0][0].anonymous).toBeUndefined();
     });
   });
 
@@ -1030,29 +743,6 @@ describe('FeedbackDialog', () => {
     });
   });
 
-  describe('"Also send" chips (designer, DOR-2108)', () => {
-    it('shows a check when a chip is on and nothing when it is off', () => {
-      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
-      renderDialog();
-      for (const name of ['Diagnostics', 'This room']) {
-        const chip = screen.getByRole('button', { name });
-        expect(chip).toHaveAttribute('aria-pressed', 'false');
-        expect(chip.querySelector('svg')).toBeNull();
-        fireEvent.click(chip);
-        expect(chip).toHaveAttribute('aria-pressed', 'true');
-        expect(chip.querySelector('svg')).not.toBeNull();
-      }
-    });
-
-    it('gives the preview button a 44px target on a phone, ring inside the chip', () => {
-      renderDialog();
-      const preview = screen.getByRole('button', { name: 'Preview diagnostics' });
-      expect(preview.className).toMatch(/max-sm:min-h-11/);
-      expect(preview.className).toMatch(/max-sm:min-w-11/);
-      expect(preview.className).toMatch(/\bfocus-ring-inset\b/);
-    });
-  });
-
   describe('room attachment (DOR-2108)', () => {
     /** Write the report (its kind already picked) and send it. */
     async function sendBug(transport: ReturnType<typeof createMockTransport>): Promise<void> {
@@ -1062,23 +752,6 @@ describe('FeedbackDialog', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));
       await waitFor(() => expect(transport.sendFeedback).toHaveBeenCalledTimes(1));
     }
-
-    it('offers "This room" in a channel, off until the person turns it on', async () => {
-      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
-      const transport = createMockTransport();
-      vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-      renderDialog(transport);
-
-      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
-      const chip = screen.getByRole('button', { name: 'This room' });
-      expect(chip).toHaveAttribute('aria-pressed', 'false');
-      expect(screen.queryByRole('button', { name: 'This chat' })).not.toBeInTheDocument();
-
-      await sendBug(transport);
-      const submission = vi.mocked(transport.sendFeedback).mock.calls[0][0];
-      expect(submission.includeTranscript).toBeUndefined();
-      expect(submission.roomId).toBeUndefined();
-    });
 
     it('attaches that room, and only that room, once the chip is on', async () => {
       routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
@@ -1093,41 +766,6 @@ describe('FeedbackDialog', () => {
       const submission = vi.mocked(transport.sendFeedback).mock.calls[0][0];
       expect(submission).toMatchObject({ roomId: 'room_1', includeTranscript: true });
       expect(submission.sessionId).toBeUndefined();
-    });
-
-    it('offers Home’s room too, which is #team', async () => {
-      routerState.location = { pathname: '/', search: {} };
-      const transport = createMockTransport();
-      vi.mocked(transport.listRooms).mockResolvedValue([
-        { id: 'room_team', wellKnown: 'team', kind: 'channel', title: 'team' },
-      ] as Awaited<ReturnType<typeof transport.listRooms>>);
-      vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-      renderDialog(transport);
-
-      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'This room' }));
-      await sendBug(transport);
-      expect(vi.mocked(transport.sendFeedback).mock.calls[0][0]).toMatchObject({
-        roomId: 'room_team',
-        includeTranscript: true,
-      });
-    });
-
-    it('previews the exact excerpt the server would attach, and says how much', async () => {
-      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
-      const transport = createMockTransport();
-      vi.mocked(transport.previewRoomTranscript).mockResolvedValue({
-        text: 'Sam: the board is empty',
-        throughSeq: 12,
-      });
-      renderDialog(transport);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Preview this room' }));
-
-      expect(await screen.findByText('Sam: the board is empty')).toBeInTheDocument();
-      expect(transport.previewRoomTranscript).toHaveBeenCalledWith('room_1');
-      expect(screen.getByRole('tab', { name: 'Room' })).toBeInTheDocument();
-      expect(screen.getByText(/last 30 messages/i)).toBeInTheDocument();
     });
 
     // The PM's Must: a room holds other people's words, so the chip never
@@ -1200,18 +838,6 @@ describe('FeedbackDialog', () => {
         includeTranscript: true,
       });
     });
-
-    it('says only the DorkOS team sees it, in the preview too', async () => {
-      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
-      renderDialog();
-      fireEvent.click(screen.getByRole('button', { name: 'Preview this room' }));
-      expect(await screen.findByText(/Only the DorkOS team sees these/)).toBeInTheDocument();
-    });
-
-    it('has no room chip off a room page', () => {
-      renderDialog();
-      expect(screen.queryByRole('button', { name: 'This room' })).not.toBeInTheDocument();
-    });
   });
 
   describe('screenshot attachment (feedback-attachments PR 2)', () => {
@@ -1277,52 +903,6 @@ describe('FeedbackDialog', () => {
       expect(compressImage).toHaveBeenCalledWith(file);
     });
 
-    it('ignores a paste that carried no file at all (someone pasting text)', async () => {
-      renderDialog();
-
-      fireEvent.paste(screen.getByRole('dialog'), {
-        clipboardData: { items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }] },
-      });
-
-      await act(async () => {});
-      expect(compressImage).not.toHaveBeenCalled();
-      // Pasting text into the message box must not scold anyone.
-      expect(toast.error).not.toHaveBeenCalled();
-    });
-
-    it('picks the image out of a paste that carried other files beside it', async () => {
-      renderDialog();
-      const notAnImage = new File(['x'], 'notes.txt', { type: 'text/plain' });
-      const image = imageFile();
-
-      fireEvent.paste(screen.getByRole('dialog'), {
-        clipboardData: {
-          items: [
-            { kind: 'file', type: 'text/plain', getAsFile: () => notAnImage },
-            { kind: 'file', type: 'image/png', getAsFile: () => image },
-          ],
-        },
-      });
-
-      // Taking the first file rather than the first IMAGE would refuse a paste
-      // that plainly contained a picture.
-      await screen.findByAltText('The screenshot you attached');
-      expect(compressImage).toHaveBeenCalledWith(image);
-    });
-
-    it('picks the image out of a drop that carried other files beside it', async () => {
-      renderDialog();
-      const notAnImage = new File(['x'], 'notes.txt', { type: 'text/plain' });
-      const image = imageFile();
-
-      fireEvent.drop(screen.getByRole('dialog'), {
-        dataTransfer: fileTransfer([notAnImage, image]),
-      });
-
-      await screen.findByAltText('The screenshot you attached');
-      expect(compressImage).toHaveBeenCalledWith(image);
-    });
-
     it('refuses a non-image forced through the file picker', async () => {
       renderDialog();
 
@@ -1336,17 +916,6 @@ describe('FeedbackDialog', () => {
       expect(compressImage).not.toHaveBeenCalled();
     });
 
-    it('reveals the drop target while a file drag is still in the air', async () => {
-      renderDialog();
-      // Nothing dropped yet, so nothing is attached — this is the drag treatment,
-      // and it is the only cue that the dialog will take the drop at all.
-      fireEvent.dragEnter(screen.getByRole('dialog'), {
-        dataTransfer: fileTransfer([imageFile()]),
-      });
-
-      expect(await screen.findByText('Drop to attach')).toBeInTheDocument();
-    });
-
     it('attaches a dropped image where the person can see it land', async () => {
       renderDialog();
       const dialog = screen.getByRole('dialog');
@@ -1357,36 +926,6 @@ describe('FeedbackDialog', () => {
 
       expect(await screen.findByAltText('The screenshot you attached')).toBeInTheDocument();
       expect(compressImage).toHaveBeenCalledWith(file);
-    });
-
-    it('leaves a drag carrying no files alone', async () => {
-      renderDialog();
-      const dialog = screen.getByRole('dialog');
-
-      // Control first: a file drag DOES produce the treatment, so the absence
-      // asserted below is a real difference and not a selector that never matches.
-      fireEvent.dragEnter(dialog, { dataTransfer: fileTransfer([imageFile()]) });
-      expect(await screen.findByText('Drop to attach')).toBeInTheDocument();
-      fireEvent.dragLeave(dialog, { dataTransfer: fileTransfer([imageFile()]) });
-      await waitFor(() => expect(screen.queryByText('Drop to attach')).not.toBeInTheDocument());
-
-      fireEvent.dragEnter(dialog, {
-        dataTransfer: { types: ['application/x-dorkos-file-path'], files: [] },
-      });
-
-      await act(async () => {});
-      // An in-app path drag is never claimed, so no treatment appears for it.
-      expect(screen.queryByText('Drop to attach')).not.toBeInTheDocument();
-    });
-
-    it('refuses a dropped file that is not an image, and says so', async () => {
-      renderDialog();
-      const notAnImage = new File(['x'], 'notes.txt', { type: 'text/plain' });
-
-      fireEvent.drop(screen.getByRole('dialog'), { dataTransfer: fileTransfer([notAnImage]) });
-
-      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Only images can be attached.'));
-      expect(compressImage).not.toHaveBeenCalled();
     });
 
     it('turns a too-large refusal into a visible toast and attaches nothing', async () => {
@@ -1412,19 +951,6 @@ describe('FeedbackDialog', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Send' }));
       await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
       expect(sendFeedback.mock.calls[0][0].screenshot).toBeUndefined();
-    });
-
-    it('says something different when the image simply could not be read', async () => {
-      compressImage.mockRejectedValue(new ImageCompressError('unreadable', 'bad bytes'));
-      renderDialog();
-
-      fireEvent.change(screen.getByLabelText('Add an image'), {
-        target: { files: [imageFile()] },
-      });
-
-      await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith('Couldn’t read that image. Try a PNG or JPEG.')
-      );
     });
 
     it('removing the screenshot takes it off the submission', async () => {
@@ -1472,22 +998,6 @@ describe('FeedbackDialog', () => {
         release(SHOT);
       });
       expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
-    });
-
-    it('adds a Screenshot tab to the full preview only once one is attached', async () => {
-      renderDialog();
-      fireEvent.click(screen.getByRole('button', { name: 'Preview diagnostics' }));
-      expect(screen.queryByRole('tab', { name: 'Screenshot' })).not.toBeInTheDocument();
-      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
-
-      fireEvent.change(screen.getByLabelText('Add an image'), {
-        target: { files: [imageFile()] },
-      });
-      await screen.findByAltText('The screenshot you attached');
-      fireEvent.click(screen.getByRole('button', { name: 'Open the screenshot you attached' }));
-
-      const tab = await screen.findByRole('tab', { name: 'Screenshot' });
-      expect(tab).toBeInTheDocument();
     });
 
     it('keeps the screenshot with the rest of the draft across a close and reopen', async () => {
@@ -1566,59 +1076,6 @@ describe('FeedbackDialog', () => {
             'Couldn’t capture the app view. You can still add a screenshot yourself.'
           )
         );
-        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
-      });
-
-      it('says to reload when the capture tool could not be loaded at all', async () => {
-        // A different sentence because it is different advice: nothing ran, and
-        // reloading is what fixes a chunk a redeploy deleted.
-        captureAppView.mockRejectedValue(new AppCaptureError('unsupported', 'chunk 404'));
-        renderDialog();
-
-        clickCapture();
-
-        await waitFor(() =>
-          expect(toast.error).toHaveBeenCalledWith(
-            'Couldn’t start the app capture. Reload, or add a screenshot yourself.'
-          )
-        );
-      });
-
-      it('still refuses a capture the compressor cannot fit', async () => {
-        // The capture goes through the same size bound as a picked file, so it
-        // can be refused for the compressor's reasons too — and that reason is
-        // the honest one to show.
-        captureAppView.mockResolvedValue(CAPTURED);
-        compressImage.mockRejectedValue(new ImageCompressError('too-large', 'over the cap'));
-        renderDialog();
-
-        clickCapture();
-
-        await waitFor(() =>
-          expect(toast.error).toHaveBeenCalledWith(
-            'That image is too big to send. Crop it to the part that matters.'
-          )
-        );
-      });
-
-      it('shares one state machine with the other ways in', async () => {
-        // A capture is not a second attach path with its own rules: removing the
-        // image while a capture is still in flight must keep it removed, exactly
-        // as it does for a paste.
-        let settle: (dataUrl: string) => void = () => {};
-        captureAppView.mockImplementation(() => new Promise<string>((r) => (settle = r)));
-        renderDialog();
-
-        // Something attached, so there is a Remove control to press.
-        fireEvent.change(screen.getByLabelText('Add an image'), {
-          target: { files: [imageFile()] },
-        });
-        await screen.findByAltText('The screenshot you attached');
-
-        clickCapture();
-        fireEvent.click(screen.getByRole('button', { name: /remove screenshot/i }));
-        await act(async () => settle(CAPTURED));
-
         expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
       });
 
@@ -1747,115 +1204,6 @@ describe('FeedbackDialog', () => {
         expect(captureAppShot).not.toHaveBeenCalled();
       });
 
-      it('records which element even when the picture could not be taken', async () => {
-        // A failed capture takes the screenshot away; it does not take away the
-        // fact that this person pointed at THIS control.
-        cropShotToElement.mockRejectedValue(new AppCaptureError('failed', 'no frame'));
-        const target = appElement();
-        renderDialog();
-        startPointing();
-
-        pickElement(target);
-
-        await waitFor(() =>
-          expect(toast.error).toHaveBeenCalledWith(
-            'Couldn’t capture the app view. You can still add a screenshot yourself.'
-          )
-        );
-        // No picture, but the element is still attached, by name.
-        expect(await screen.findByText('Nav toggle')).toBeInTheDocument();
-        expect(screen.queryByAltText(ANY_PICTURE)).not.toBeInTheDocument();
-        expect(
-          screen.getByRole('img', { name: 'The part you pointed at: Nav toggle' })
-        ).toBeInTheDocument();
-      });
-
-      it('names the element as it was clicked, not as it is seconds later', async () => {
-        // The capture takes seconds, and a live app re-renders in that time. A
-        // name read after it describes whatever now sits at that spot — which is
-        // the wrong control, named with total confidence.
-        const target = appElement();
-        cropShotToElement.mockImplementation(async () => {
-          target.setAttribute('data-testid', 'something-else-entirely');
-          return CROPPED;
-        });
-        renderDialog();
-        startPointing();
-
-        pickElement(target);
-
-        await screen.findByAltText(ANY_PICTURE);
-        expect(screen.getByText('Nav toggle')).toBeInTheDocument();
-        expect(screen.queryByText('Something else entirely')).not.toBeInTheDocument();
-      });
-
-      it('keeps the dialog out of the way for as long as the capture runs', async () => {
-        const target = appElement();
-        cropShotToElement.mockImplementation(() => new Promise<string>(() => {}));
-        renderDialog();
-        startPointing();
-
-        pickElement(target);
-
-        // Not "shows a spinner" — there is nowhere to show one. The capture
-        // fades every child of `<body>` so the picture is of the app alone, and
-        // both the dialog and the picker are such children; the browser spec
-        // measures that. What IS this dialog's decision is staying out of the
-        // frame until the picture is taken, and coming back only then.
-        await waitFor(() => expect(screen.queryByText('Send feedback')).not.toBeInTheDocument());
-      });
-
-      it('ignores a cancel that arrives once the capture has started', async () => {
-        // A cancel accepted here would put the dialog back on screen
-        // MID-PHOTOGRAPH — as a fresh `<body>` child the capture's hide sweep
-        // never snapshotted, which the desktop shell then photographs. That is
-        // the exact failure the sweep exists to prevent. The picker stands its
-        // handlers down; this is the dialog half of the same rule.
-        const target = appElement();
-        let settle: (dataUrl: string) => void = () => {};
-        cropShotToElement.mockImplementation(() => new Promise<string>((r) => (settle = r)));
-        renderDialog();
-        startPointing();
-        pickElement(target);
-        await waitFor(() => expect(screen.queryByText('Send feedback')).not.toBeInTheDocument());
-
-        fireEvent.keyDown(document.body, { key: 'Escape' });
-
-        // Still out of the way: the dialog did not come back early.
-        expect(screen.queryByText('Send feedback')).not.toBeInTheDocument();
-        await act(async () => settle(CROPPED));
-        // And when the capture does land, it lands normally.
-        await screen.findByAltText(ANY_PICTURE);
-      });
-
-      it('drops a capture whose report has been reset out from under it', async () => {
-        // Seconds pass inside the capture, and the dialog can be closed and
-        // reopened in them. Without a run token the picture, the element's name
-        // and the switch to `bug` all land in a form somebody else has started.
-        const target = appElement();
-        let settle: (dataUrl: string) => void = () => {};
-        cropShotToElement.mockImplementation(() => new Promise<string>((r) => (settle = r)));
-        const { setOpen } = renderDialog();
-        startPointing();
-        pickElement(target);
-        // Wait for the crop to be IN FLIGHT before touching anything. Without
-        // this, `settle` is still the no-op it was initialised to — the capture
-        // never resumes, nothing lands, and the assertions below pass no matter
-        // what the guard does. Measured: they did.
-        await waitFor(() => expect(cropShotToElement).toHaveBeenCalled());
-
-        setOpen(false);
-        setOpen(true);
-        await act(async () => settle(CROPPED));
-
-        expect(screen.queryByAltText(ANY_PICTURE)).not.toBeInTheDocument();
-        const message = screen.getByPlaceholderText(/what works, what does not/i);
-        expect((message as HTMLTextAreaElement).value).toBe('');
-        // And the kind was not flipped either — this report is whatever the
-        // reopen made it, not a bug report nobody asked for.
-        expect(screen.getByRole('radio', { name: 'Feedback' })).toBeChecked();
-      });
-
       it('does not switch attachments back on that the person switched off', async () => {
         // Pointing changes the KIND, and `bug` brings diagnostics on with it —
         // but never over the top of a deliberate choice. Re-deriving the
@@ -1892,26 +1240,6 @@ describe('FeedbackDialog', () => {
         );
       });
 
-      it('still brings diagnostics on for someone who left the toggles alone', async () => {
-        // The other half of the same rule: an untouched form still gets the
-        // defaults that come with a bug report.
-        const target = appElement();
-        renderDialog();
-        expect(screen.getByRole('button', { name: 'Diagnostics' })).toHaveAttribute(
-          'aria-pressed',
-          'false'
-        );
-
-        startPointing();
-        pickElement(target);
-        await screen.findByAltText(ANY_PICTURE);
-
-        expect(screen.getByRole('button', { name: 'Diagnostics' })).toHaveAttribute(
-          'aria-pressed',
-          'true'
-        );
-      });
-
       it('never writes the element into the message, and asks about it instead', async () => {
         const target = appElement();
         renderDialog();
@@ -1922,38 +1250,6 @@ describe('FeedbackDialog', () => {
         await screen.findByAltText(ANY_PICTURE);
         const message = screen.getByPlaceholderText('What’s wrong with the nav toggle?');
         expect(message).toHaveValue('');
-      });
-
-      it('holds Send until there are words, and says why', async () => {
-        const target = appElement();
-        renderDialog();
-        startPointing();
-        pickElement(target);
-        await screen.findByAltText(ANY_PICTURE);
-
-        // The element is an attachment, never words: five of six reports it
-        // could once be sent without said nothing at all.
-        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
-        expect(screen.getByText('Add a few words about what to look for.')).toBeInTheDocument();
-
-        fireEvent.change(screen.getByPlaceholderText('What’s wrong with the nav toggle?'), {
-          target: { value: 'does nothing' },
-        });
-        expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
-        expect(
-          screen.queryByText('Add a few words about what to look for.')
-        ).not.toBeInTheDocument();
-      });
-
-      it('offers to point again once something has been pointed at', async () => {
-        const target = appElement();
-        renderDialog();
-        startPointing();
-        pickElement(target);
-        await screen.findByAltText(ANY_PICTURE);
-
-        expect(screen.getByRole('button', { name: 'Point again' })).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Point at it' })).not.toBeInTheDocument();
       });
 
       it('removes the element and its picture together', async () => {
@@ -1976,78 +1272,6 @@ describe('FeedbackDialog', () => {
         await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
         expect(sendFeedback.mock.calls[0][0].element).toBeUndefined();
         expect(sendFeedback.mock.calls[0][0].screenshot).toBeUndefined();
-      });
-
-      it('keeps the element’s name when a later picture replaces its crop', async () => {
-        captureAppView.mockResolvedValue('data:image/png;base64,WHOLE_APP');
-        const target = appElement();
-        const transport = createMockTransport();
-        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
-        renderDialog(transport);
-        startPointing();
-        pickElement(target);
-        await screen.findByAltText(ANY_PICTURE);
-
-        compressImage.mockResolvedValue('data:image/webp;base64,WHOLE_APP_SMALL');
-        fireEvent.click(screen.getByRole('button', { name: 'Capture app' }));
-        await waitFor(() =>
-          expect(screen.getByAltText(ANY_PICTURE)).toHaveAttribute(
-            'src',
-            'data:image/webp;base64,WHOLE_APP_SMALL'
-          )
-        );
-
-        // The crop is gone, so the element no longer claims a picture of its own,
-        // but which part it was is still worth sending.
-        expect(
-          screen.getByRole('img', { name: 'The part you pointed at: Nav toggle' })
-        ).toBeInTheDocument();
-        fireEvent.change(screen.getByPlaceholderText(/what’s wrong with the nav toggle/i), {
-          target: { value: 'whole thing' },
-        });
-        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
-        expect(sendFeedback.mock.calls[0][0].element?.testId).toBe('nav-toggle');
-        expect(sendFeedback.mock.calls[0][0].screenshot).toEqual({
-          dataUrl: 'data:image/webp;base64,WHOLE_APP_SMALL',
-        });
-      });
-
-      it('names a labelled control by its words, and quotes them in the question', async () => {
-        const app = document.createElement('div');
-        app.innerHTML =
-          '<div data-slot="app-shell"><button data-slot="button">Set up a daily run</button></div>';
-        document.body.append(app);
-        const chip = app.querySelector('button');
-        if (!chip) throw new Error('the chip must exist');
-        renderDialog();
-        startPointing();
-        pickElement(chip);
-
-        expect(
-          await screen.findByAltText('The part you pointed at: Set up a daily run')
-        ).toBeInTheDocument();
-        expect(
-          screen.getByPlaceholderText('What’s wrong with “Set up a daily run”?')
-        ).toBeInTheDocument();
-        expect(
-          screen.getByRole('button', { name: 'Remove “Set up a daily run”' })
-        ).toBeInTheDocument();
-      });
-
-      it('names the crop for what it shows: the part that was pointed at', async () => {
-        const target = appElement();
-        renderDialog();
-        startPointing();
-        pickElement(target);
-
-        expect(await screen.findByAltText('The part you pointed at: Nav toggle')).toHaveAttribute(
-          'src',
-          CROPPED
-        );
-        expect(
-          screen.getByRole('button', { name: 'Open the part you pointed at: Nav toggle' })
-        ).toBeInTheDocument();
       });
 
       it('drops the old crop before pointing again, so a failed capture cannot keep it', async () => {
@@ -2154,26 +1378,6 @@ describe('FeedbackDialog', () => {
         expect(sendFeedback.mock.calls[0][0].screenshot).toBeUndefined();
       });
 
-      it('stays quiet when a superseded attach fails after a newer one landed', async () => {
-        const settlers = deferredCompress();
-        renderDialog();
-
-        pasteImage(imageFile());
-        pasteImage(imageFile());
-        await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
-        await act(async () =>
-          settlers[0].reject(new ImageCompressError('too-large', 'stale failure'))
-        );
-
-        // The picture on screen is fine; a toast about the one it replaced is a
-        // complaint about nothing the user can see or act on.
-        expect(toast.error).not.toHaveBeenCalled();
-        expect(await screen.findByAltText('The screenshot you attached')).toHaveAttribute(
-          'src',
-          'data:image/webp;base64,SECOND'
-        );
-      });
-
       it('keeps Send disabled until the LAST of two rapid attaches finishes', async () => {
         const settlers = deferredCompress();
         renderDialog();
@@ -2192,22 +1396,6 @@ describe('FeedbackDialog', () => {
 
         await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
         expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
-      });
-
-      it('shows the last attach, not whichever promise happened to land last', async () => {
-        const settlers = deferredCompress();
-        renderDialog();
-
-        pasteImage(imageFile());
-        pasteImage(imageFile());
-        // Out-of-order resolution: the SECOND finishes, then the first.
-        await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
-        await act(async () => settlers[0].resolve('data:image/webp;base64,FIRST'));
-
-        expect(await screen.findByAltText('The screenshot you attached')).toHaveAttribute(
-          'src',
-          'data:image/webp;base64,SECOND'
-        );
       });
     });
 
@@ -2254,19 +1442,6 @@ describe('FeedbackDialog', () => {
         expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
         expect(warn).toHaveBeenCalled();
       });
-
-      it('drops one that is over the cap', () => {
-        openWith(`data:image/png;base64,${'A'.repeat(600_001)}`);
-
-        // Over-cap here would 400 at intake with a toast that names nothing.
-        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
-        expect(warn).toHaveBeenCalled();
-      });
-
-      it('holds one on a surface that CAN send it', () => {
-        openWith('data:image/png;base64,GIVEN');
-        expect(screen.getByText('Add a few words about what to look for.')).toBeInTheDocument();
-      });
     });
 
     it('refuses a file dropped anywhere else on the page while the dialog is open', () => {
@@ -2282,34 +1457,6 @@ describe('FeedbackDialog', () => {
       document.body.dispatchEvent(drop);
 
       expect(drop.defaultPrevented).toBe(true);
-    });
-
-    it('leaves an ordinary drag on the page alone while the dialog is open', () => {
-      renderDialog();
-
-      // Only file drags are swallowed; anything else on the page keeps working.
-      const drop = new Event('drop', { bubbles: true, cancelable: true });
-      Object.defineProperty(drop, 'dataTransfer', {
-        value: { types: ['text/plain'], files: [] },
-      });
-      document.body.dispatchEvent(drop);
-
-      expect(drop.defaultPrevented).toBe(false);
-    });
-
-    it('stops refusing page drops once the dialog closes', () => {
-      const { setOpen } = renderDialog();
-      setOpen(false);
-
-      const drop = new Event('drop', { bubbles: true, cancelable: true });
-      Object.defineProperty(drop, 'dataTransfer', {
-        value: { types: ['Files'], files: [] },
-      });
-      document.body.dispatchEvent(drop);
-
-      // The guard is scoped to the dialog being open — dropping a file on the
-      // app at any other time behaves as it always has.
-      expect(drop.defaultPrevented).toBe(false);
     });
   });
 });

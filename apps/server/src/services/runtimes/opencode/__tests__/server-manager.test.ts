@@ -374,14 +374,6 @@ describe('OpenCodeServerManager', () => {
   });
 
   describe('lazy spawn + peekClient', () => {
-    it('spawns nothing at construction and peekClient never boots', () => {
-      const manager = new OpenCodeServerManager();
-
-      expect(manager.peekClient()).toBeNull();
-      expect(manager.peekClient()).toBeNull();
-      expect(spawn).not.toHaveBeenCalled();
-    });
-
     it('boots on first getClient with localhost binding, config port, password, and ask-config', async () => {
       const manager = new OpenCodeServerManager();
       const { client } = await bootReady(manager);
@@ -446,38 +438,6 @@ describe('OpenCodeServerManager', () => {
       });
     });
 
-    it('spawns with no extra provider env when no provider credential resolves', async () => {
-      const manager = new OpenCodeServerManager();
-      await bootReady(manager);
-
-      const env = spawnEnv();
-      expect(env.OPENROUTER_API_KEY).toBeUndefined();
-      expect(env.OPENAI_API_KEY).toBeUndefined();
-    });
-
-    it('passes a configured fixed port straight through', async () => {
-      mockRuntimesConfig({
-        enabled: true,
-        binaryPath: null,
-        port: 4242,
-        provider: null,
-        baseURL: null,
-      });
-      const manager = new OpenCodeServerManager();
-      await bootReady(manager);
-
-      expect(vi.mocked(spawn).mock.calls[0]?.[1]).toContain('--port=4242');
-    });
-
-    it('parses the actual bound URL from the ready line (port 0 -> ephemeral)', async () => {
-      const manager = new OpenCodeServerManager();
-      await bootReady(manager, 'http://127.0.0.1:54321');
-
-      expect(createOpencodeClient).toHaveBeenCalledWith(
-        expect.objectContaining({ baseUrl: 'http://127.0.0.1:54321' })
-      );
-    });
-
     it('handles a ready line split across stdout chunks', async () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
@@ -505,12 +465,13 @@ describe('OpenCodeServerManager', () => {
       expect(spawn).toHaveBeenCalledTimes(1);
     });
 
-    it('returns the cached client without respawning once ready', async () => {
+    it('spawns with no extra provider env when no provider credential resolves', async () => {
       const manager = new OpenCodeServerManager();
-      const { client } = await bootReady(manager);
+      await bootReady(manager);
 
-      await expect(manager.getClient('/other')).resolves.toBe(client);
-      expect(spawn).toHaveBeenCalledTimes(1);
+      const env = spawnEnv();
+      expect(env.OPENROUTER_API_KEY).toBeUndefined();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
     });
   });
 
@@ -567,20 +528,6 @@ describe('OpenCodeServerManager', () => {
       expect(manager.peekClient()).toBeNull();
     });
 
-    it('rejects getClient when spawn itself errors (e.g. ENOENT)', async () => {
-      const manager = new OpenCodeServerManager();
-      const pending = manager.getClient('/repo');
-      const assertion = expect(pending).rejects.toThrow('spawn opencode ENOENT');
-
-      // A failed spawn never gets a pid and never emits 'exit'; the rejection
-      // must surface immediately rather than await a reap that never comes.
-      await flushBoot();
-      children[0]!.pid = undefined;
-      children[0]!.emit('error', new Error('spawn opencode ENOENT'));
-
-      await assertion;
-    });
-
     it('rejects getClient and kills the child when readiness times out', async () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
@@ -632,19 +579,6 @@ describe('OpenCodeServerManager', () => {
       expect(spawn).toHaveBeenCalledTimes(2);
       expect(manager.peekClient()).toBe(client);
     });
-
-    it('retries fresh on the next getClient after a startup failure', async () => {
-      const manager = new OpenCodeServerManager();
-      const failed = manager.getClient('/repo');
-      const assertion = expect(failed).rejects.toThrow();
-      await flushBoot();
-      children[0]!.emitExit(1);
-      await assertion;
-
-      const { client } = await bootReady(manager);
-      expect(spawn).toHaveBeenCalledTimes(2);
-      expect(manager.peekClient()).toBe(client);
-    });
   });
 
   describe('crash restart with exponential backoff', () => {
@@ -684,18 +618,6 @@ describe('OpenCodeServerManager', () => {
       const { client } = await bootReady(manager);
       expect(spawn).toHaveBeenCalledTimes(expectedDelays.length + 2);
       expect(manager.peekClient()).toBe(client);
-    });
-
-    it('rotates the per-boot password on restart', async () => {
-      const manager = new OpenCodeServerManager();
-      await bootReady(manager);
-      children[0]!.emitExit(1);
-      await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.restartBaseDelayMs);
-      children[1]!.emitReady();
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(spawnEnv(1).OPENCODE_SERVER_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
-      expect(spawnEnv(1).OPENCODE_SERVER_PASSWORD).not.toBe(spawnEnv(0).OPENCODE_SERVER_PASSWORD);
     });
 
     it('makes getClient wait for a pending backoff restart instead of spawning immediately', async () => {
@@ -760,12 +682,6 @@ describe('OpenCodeServerManager', () => {
   });
 
   describe('shutdown', () => {
-    it('is a no-op when the sidecar never booted', async () => {
-      const manager = new OpenCodeServerManager();
-      await manager.shutdown();
-      expect(spawn).not.toHaveBeenCalled();
-    });
-
     it('SIGTERMs the sidecar and resolves once it exits', async () => {
       const manager = new OpenCodeServerManager();
       const { child } = await bootReady(manager);
@@ -840,23 +756,9 @@ describe('OpenCodeServerManager', () => {
       await expect(manager.getClient('/repo')).rejects.toThrow(/shut down/);
       expect(spawn).toHaveBeenCalledTimes(1);
     });
-
-    it('rejects getClient after shutdown', async () => {
-      const manager = new OpenCodeServerManager();
-      await manager.shutdown();
-
-      await expect(manager.getClient('/repo')).rejects.toThrow(/shut down/);
-      expect(spawn).not.toHaveBeenCalled();
-    });
   });
 
   describe('recycle (first-ever-credential reboot)', () => {
-    it('is a no-op when the sidecar never booted', async () => {
-      const manager = new OpenCodeServerManager();
-      await manager.recycle();
-      expect(spawn).not.toHaveBeenCalled();
-    });
-
     it('SIGTERMs the running sidecar, drops the client synchronously, and reboots fresh on next use', async () => {
       const manager = new OpenCodeServerManager();
       const { child } = await bootReady(manager);

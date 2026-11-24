@@ -17,7 +17,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils/mock-factories';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 
 // Stub the shared StreamManager so attach/connect never opens a real fetch in
@@ -61,6 +61,8 @@ import { useChatSession } from '../model/use-chat-session';
 import {
   useSessionStreamStore,
   useSessionChatStore,
+  setSessionRouteContext,
+  useSessionStatus,
   resetSessionStreamBinding,
 } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
@@ -83,6 +85,105 @@ beforeEach(() => {
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
   resetSessionStreamBinding();
+});
+
+describe('useChatSession — first send during an allocated chat’s settings save', () => {
+  /** Start a real settings edit on an allocated chat and hold its server acknowledgement. */
+  async function editDraftSettings(id: string) {
+    let confirm!: () => void;
+    let refuse!: (reason: Error) => void;
+    const saving = new Promise<void>((resolve, reject) => {
+      confirm = resolve;
+      refuse = reject;
+    });
+    let model = 'original-model';
+    const saveModel: Transport['updateSession'] = async (sessionId, settings) => {
+      model = settings.model ?? model;
+      return createMockSession({ id: sessionId, model });
+    };
+    const received: { id: string; content: string; model: string }[] = [];
+    const transport = createMockTransport({
+      updateSession: vi.fn(saveModel).mockImplementationOnce(async (...args) => {
+        await saving;
+        return saveModel(...args);
+      }),
+      postMessage: vi.fn<Transport['postMessage']>(async (sessionId, content) => {
+        received.push({ id: sessionId, content, model });
+        return { sessionId };
+      }),
+    });
+    setSessionRouteContext(id, { cwd: '/test/cwd', draft: true, runtime: 'codex' });
+    const hook = renderHook(
+      ({ id: sessionId }) => ({
+        chat: useChatSession(sessionId, { launchRuntime: 'codex' }),
+        settings: useSessionStatus(sessionId, null, false, 'codex'),
+      }),
+      { wrapper: createWrapper(transport), initialProps: { id } }
+    );
+    await waitFor(() => expect(hook.result.current.chat.status).toBe('idle'));
+    act(() => hook.result.current.chat.setInput('First message'));
+    let send!: Promise<void>;
+    act(() => {
+      void hook.result.current.settings.updateSession({ model: 'chosen-model' });
+      send = hook.result.current.chat.handleSubmit();
+    });
+    return { ...hook, transport, received, confirm, refuse, send };
+  }
+
+  it('sends once to the allocated id with its confirmed model after a settings edit', async () => {
+    const id = 'allocated-settings-success';
+    const { result, received, confirm, send, transport } = await editDraftSettings(id);
+    let repeated!: Promise<void>;
+    act(() => {
+      repeated = result.current.chat.handleSubmit();
+    });
+    expect(received).toEqual([]);
+    expect(result.current.chat.input).toBe('First message');
+    await act(async () => {
+      confirm();
+      await Promise.all([send, repeated]);
+    });
+    expect(received).toEqual([{ id, content: 'First message', model: 'chosen-model' }]);
+    expect(transport.postMessage).toHaveBeenCalledWith(
+      id,
+      'First message',
+      '/test/cwd',
+      expect.objectContaining({ create: true, runtime: 'codex' })
+    );
+    expect(result.current.chat.input).toBe('');
+  });
+
+  it('keeps the draft when settings fail and allows an explicit retry', async () => {
+    const id = 'allocated-settings-failure';
+    const { result, received, refuse, send } = await editDraftSettings(id);
+    await act(async () => {
+      refuse(new Error('Save failed'));
+      await send;
+    });
+    expect(received).toEqual([]);
+    expect(result.current.chat.input).toBe('First message');
+    expect(result.current.chat.error?.retryable).toBe(false);
+    await act(async () => {
+      await result.current.settings.updateSession({ model: 'chosen-model' });
+      await result.current.chat.handleSubmit();
+    });
+    expect(received).toEqual([{ id, content: 'First message', model: 'chosen-model' }]);
+  });
+
+  it('leaves the first message in its draft if the person switches chats during the save', async () => {
+    const id = 'allocated-settings-switch';
+    const { result, rerender, received, confirm, send } = await editDraftSettings(id);
+    rerender({ id: 'another-chat' });
+    act(() => result.current.chat.setInput('Another draft'));
+    await act(async () => {
+      confirm();
+      await send;
+    });
+    expect(received).toEqual([]);
+    expect(result.current.chat.input).toBe('Another draft');
+    rerender({ id });
+    expect(result.current.chat.input).toBe('First message');
+  });
 });
 
 describe('useChatSession — launch-runtime handoff (opencode connect → first send)', () => {

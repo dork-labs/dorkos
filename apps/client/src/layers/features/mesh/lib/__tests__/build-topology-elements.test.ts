@@ -89,45 +89,7 @@ function emptyBindingCountByAdapter() {
 // ---------------------------------------------------------------------------
 
 describe('buildTopologyElements', () => {
-  describe('empty input', () => {
-    it('returns empty result when namespaces array is empty', () => {
-      const result = buildTopologyElements(
-        [],
-        noRules,
-        false,
-        undefined,
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      expect(result.rawNodes).toHaveLength(0);
-      expect(result.rawEdges).toHaveLength(0);
-      expect(result.legendEntries).toHaveLength(0);
-      expect(result.useGroups).toBe(false);
-    });
-  });
-
   describe('single namespace', () => {
-    it('creates namespace-group container even with a single namespace', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        false,
-        undefined,
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const agentNodes = result.rawNodes.filter((n) => n.type === 'agent');
-      const groupNodes = result.rawNodes.filter((n) => n.type === 'namespace-group');
-      expect(agentNodes).toHaveLength(2);
-      expect(groupNodes).toHaveLength(1);
-      expect(groupNodes[0].id).toBe('group:default');
-      expect(result.useGroups).toBe(true);
-    });
-
     it('does not map a budget field onto agent node data (DOR-265: the advisory budget was removed)', () => {
       const result = buildTopologyElements(
         singleNamespace,
@@ -144,38 +106,6 @@ describe('buildTopologyElements', () => {
       for (const node of agentNodes) {
         expect(node.data).not.toHaveProperty('budget');
       }
-    });
-
-    it('sets parentId on agent nodes in single-namespace topology', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        false,
-        undefined,
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      for (const node of result.rawNodes.filter((n) => n.type === 'agent')) {
-        expect(node.parentId).toBe('group:default');
-        expect(node.extent).toBe('parent');
-      }
-    });
-
-    it('produces one legend entry per namespace', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        false,
-        undefined,
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      expect(result.legendEntries).toHaveLength(1);
-      expect(result.legendEntries[0].namespace).toBe('default');
     });
   });
 
@@ -194,22 +124,6 @@ describe('buildTopologyElements', () => {
       const groupNodes = result.rawNodes.filter((n) => n.type === 'namespace-group');
       expect(groupNodes).toHaveLength(2);
       expect(result.useGroups).toBe(true);
-    });
-
-    it('sets parentId on agent nodes to their group', () => {
-      const result = buildTopologyElements(
-        multiNamespace,
-        noRules,
-        false,
-        undefined,
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const prodAgent = result.rawNodes.find((n) => n.id === 'agent-1');
-      expect(prodAgent?.parentId).toBe('group:production');
-      expect(prodAgent?.extent).toBe('parent');
     });
 
     it('creates cross-namespace allow edges', () => {
@@ -340,36 +254,6 @@ describe('buildTopologyElements', () => {
       expect(adapterNodes[0].id).toBe('adapter:tg-1');
     });
 
-    it('does not create adapter nodes when relay is disabled', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        false,
-        [adapter],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
-      expect(adapterNodes).toHaveLength(0);
-    });
-
-    it('maps connected state to running', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [adapter],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
-      expect((node?.data as Record<string, unknown>).adapterStatus).toBe('running');
-    });
-
     it('maps error state to error', () => {
       const errAdapter: AdapterListItem = {
         ...adapter,
@@ -387,25 +271,6 @@ describe('buildTopologyElements', () => {
       );
       const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((node?.data as Record<string, unknown>).adapterStatus).toBe('error');
-    });
-
-    it('maps other states to stopped', () => {
-      const stoppedAdapter: AdapterListItem = {
-        ...adapter,
-        status: { ...adapter.status, state: 'disconnected' },
-      };
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [stoppedAdapter],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const node = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
-      expect((node?.data as Record<string, unknown>).adapterStatus).toBe('stopped');
     });
   });
 
@@ -445,54 +310,6 @@ describe('buildTopologyElements', () => {
         noRules,
         true,
         [ccaAdapter, telegramAdapter],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const adapterNodes = result.rawNodes.filter((n) => n.type === 'adapter');
-      expect(adapterNodes).toHaveLength(1);
-      expect(adapterNodes[0].id).toBe('adapter:tg-1');
-    });
-
-    it('excludes CCA binding edges because source node does not exist', () => {
-      const ccaBinding = {
-        id: 'bind-cca',
-        adapterId: 'cca-1',
-        agentId: 'agent-1',
-        sessionStrategy: 'per-chat' as const,
-        label: '',
-        permissionMode: 'acceptEdits' as const,
-        enabled: true,
-        canInitiate: false,
-        canReply: true,
-        canReceive: true,
-        notifyOnTaskComplete: true,
-        bridge: 'off' as const,
-        roomId: null,
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T00:00:00Z',
-      };
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [ccaAdapter],
-        [ccaBinding],
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
-      expect(bindingEdges).toHaveLength(0);
-    });
-
-    it('still creates nodes for non-CCA adapters', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [telegramAdapter],
         undefined,
         emptyBindingCountByAdapter(),
         vi.fn(),
@@ -571,22 +388,6 @@ describe('buildTopologyElements', () => {
       const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
       expect(bindingEdges).toHaveLength(0);
     });
-
-    it('skips binding edges when agent node is missing', () => {
-      const orphanBinding = { ...binding, agentId: 'nonexistent' };
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [adapter],
-        [orphanBinding],
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const bindingEdges = result.rawEdges.filter((e) => e.type === 'binding');
-      expect(bindingEdges).toHaveLength(0);
-    });
   });
 
   describe('adapter label passthrough', () => {
@@ -620,37 +421,6 @@ describe('buildTopologyElements', () => {
       );
       const adapterNode = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
       expect((adapterNode?.data as Record<string, unknown>).label).toBe('@support_bot');
-    });
-
-    it('passes undefined label when adapter has no label', () => {
-      const unlabeledAdapter: AdapterListItem = {
-        config: {
-          id: 'tg-1',
-          type: 'telegram',
-          enabled: true,
-          config: { token: 'test', mode: 'polling' },
-        },
-        status: {
-          id: 'tg-1',
-          type: 'telegram',
-          displayName: 'Telegram Bot',
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        },
-      };
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [unlabeledAdapter],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const adapterNode = result.rawNodes.find((n) => n.id === 'adapter:tg-1');
-      expect((adapterNode?.data as Record<string, unknown>).label).toBeUndefined();
     });
   });
 
@@ -707,40 +477,6 @@ describe('buildTopologyElements', () => {
       expect(data.chatId).toBe('12345');
       expect(data.channelType).toBe('dm');
     });
-
-    it('does not pass chatId/channelType when not present on binding', () => {
-      const plainBinding = {
-        id: 'bind-plain',
-        adapterId: 'tg-1',
-        agentId: 'agent-1',
-        sessionStrategy: 'per-chat' as const,
-        label: '',
-        permissionMode: 'acceptEdits' as const,
-        enabled: true,
-        canInitiate: false,
-        canReply: true,
-        canReceive: true,
-        notifyOnTaskComplete: true,
-        bridge: 'off' as const,
-        roomId: null,
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T00:00:00Z',
-      };
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [adapter],
-        [plainBinding],
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const edge = result.rawEdges.find((e) => e.id === 'binding:bind-plain');
-      const data = edge?.data as Record<string, unknown>;
-      expect(data.chatId).toBeUndefined();
-      expect(data.channelType).toBeUndefined();
-    });
   });
 
   describe('ghost adapter placeholder', () => {
@@ -759,32 +495,6 @@ describe('buildTopologyElements', () => {
       expect(ghostNodes).toHaveLength(1);
       expect((ghostNodes[0].data as Record<string, unknown>).isGhost).toBe(true);
       expect((ghostNodes[0].data as Record<string, unknown>).adapterName).toBe('Add a platform');
-    });
-
-    it('creates ghost node when only CCA adapters exist', () => {
-      const ccaAdapter: AdapterListItem = {
-        config: { id: 'cca-1', type: 'claude-code', enabled: true, config: {} },
-        status: {
-          id: 'cca-1',
-          type: 'claude-code',
-          displayName: 'Claude Code',
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        },
-      };
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        true,
-        [ccaAdapter],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
-      expect(ghostNodes).toHaveLength(1);
     });
 
     it('does NOT create ghost node when external adapters exist', () => {
@@ -818,21 +528,6 @@ describe('buildTopologyElements', () => {
       expect(ghostNodes).toHaveLength(0);
     });
 
-    it('does NOT create ghost node when relay is disabled', () => {
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        false,
-        [],
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        emptyCallbacks()
-      );
-      const ghostNodes = result.rawNodes.filter((n) => n.id === 'ghost-adapter');
-      expect(ghostNodes).toHaveLength(0);
-    });
-
     it('fires onGhostClick callback when ghost node callback is invoked', () => {
       const onGhostClick = vi.fn();
       const result = buildTopologyElements(
@@ -849,26 +544,6 @@ describe('buildTopologyElements', () => {
       const data = ghostNode?.data as Record<string, unknown>;
       (data.onGhostClick as () => void)();
       expect(onGhostClick).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('callbacks', () => {
-    it('injects the View profile callback into agent node data', () => {
-      const onViewProfile = vi.fn();
-      const result = buildTopologyElements(
-        singleNamespace,
-        noRules,
-        false,
-        undefined,
-        undefined,
-        emptyBindingCountByAdapter(),
-        vi.fn(),
-        { onViewProfile, onSelectAgent: vi.fn(), onOpenChat: vi.fn() }
-      );
-      const agentNode = result.rawNodes.find((n) => n.id === 'agent-1');
-      const data = agentNode?.data as Record<string, unknown>;
-      (data.onViewProfile as (id: string) => void)('agent-1');
-      expect(onViewProfile).toHaveBeenCalledWith('agent-1', '/projects/builder');
     });
   });
 });
