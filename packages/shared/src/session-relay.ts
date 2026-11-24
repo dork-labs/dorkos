@@ -94,6 +94,7 @@ import {
   type StepUpStatementV1,
 } from '@dork-labs/cloud-api';
 import { z } from 'zod';
+import { AGENT_ID_PATTERN } from './dork-ref.js';
 import type { AgentComputerFrame, AgentComputerWebFrame } from './session-relay-agent-computer.js';
 import {
   DENY_REASON_MAX_LENGTH,
@@ -221,7 +222,7 @@ export const RelaySessionIdSchema = z
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 /** A registered agent on the computer, by its Mesh id (a ULID). Never a directory. */
-export const RelayAgentIdSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+export const RelayAgentIdSchema = z.string().regex(AGENT_ID_PATTERN);
 
 /** A tool call a chat is waiting on, as its runtime named it. */
 const ToolCallIdSchema = z
