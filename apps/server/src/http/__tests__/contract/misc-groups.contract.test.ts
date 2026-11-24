@@ -633,7 +633,11 @@ contractSuite(
     {
       name: 'GET /api/debug/sessions/:id refuses an id that is not one',
       path: '/api/debug/sessions/not-a-uuid',
-      expect: { status: 400, body: { error: 'Invalid session ID', code: 'INVALID_SESSION_ID' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'That isn’t a chat id.' }),
+      },
     },
     {
       name: 'GET /api/debug/sessions/:id answers a session nothing has bound',
@@ -654,7 +658,11 @@ contractSuite(
       name: 'GET /api/debug/sessions/:id hides a session from an agent that may not read it',
       path: `/api/debug/sessions/${UUID}`,
       headers: AGENT,
-      expect: { status: 404, body: { error: 'Session not found', code: 'SESSION_NOT_FOUND' } },
+      expect: {
+        status: 404,
+        headers: PROBLEM_TYPE,
+        body: problemBody('session_not_found', { detail: 'No chat with that id.' }),
+      },
     },
     {
       name: 'GET /api/debug/rooms/:id/bindings answers a room with none',
