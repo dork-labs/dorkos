@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { MergeSchema, ReleaseContentsSchema } from './release-facts.ts';
 
 const Counts = z.record(z.string(), z.number());
 /**
@@ -300,6 +301,17 @@ export const SnapshotSchema = z
      * was never measured must not read as a day with no releases.
      */
     desktop_release_runs: z.array(DesktopReleaseRunSchema).optional(),
+    /**
+     * The merge commit of each PR merged that day (`tracked.merged-to-released`).
+     * Absent, not empty, on a day collected before it was recorded, until
+     * `refreshOlderDays` fills it in.
+     */
+    merges: z.array(MergeSchema).optional(),
+    /**
+     * What each release published that day shipped (`tracked.merged-to-released`).
+     * Absent, not empty, on a day collected before it was recorded.
+     */
+    release_contents: z.array(ReleaseContentsSchema).optional(),
     releases: z.array(z.object({ tag: z.string(), published_at: z.string() }).strict()),
     cache: z.object({ bytes: z.number(), count: z.number() }).strict().nullable(),
     /**

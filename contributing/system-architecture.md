@@ -75,7 +75,7 @@ This view is the accepted direction of ADR [`261015-042933`](../decisions/261015
 
 What the one program does **not** share: a request chain (the space role has its own Hono app and census-pinned routes), a database (server-merge D2: two stores and no layer that hides which is underneath; today the machine store holds this computer's agents and rooms, and after launch it narrows to execution state while the space store holds every space's data, ADR `261122-173853`), or a login (a hub signs in with the DorkOS account; a Mac keeps its own owner, ADR 0319). Only one place may run an agent at a time; the active-runner lease that enforces it across two servers is server-merge step 8, after launch (DOR-2883).
 
-The [message-system decision](../decisions/261006-235240-one-message-system.md) still puts messages in conversations after launch. ADR [`261017-211859`](../decisions/261017-211859-a-conversation-is-the-shared-log-a-session-is-private.md) (proposed) names the conversation log as the record and keeps Relay's Maildir as the internal delivery bus. See the [roadmap](../plans/architecture-improvement-roadmap.md) for the ranked risks that follow from this shape.
+The [message-system decision](../decisions/261006-235240-one-message-system.md) still puts messages in conversations after launch. ADR [`261017-211859`](../decisions/261017-211859-a-conversation-is-the-shared-log-a-session-is-private.md) (accepted 2026-11-24) names the conversation log as the record. Relay stays as the delivery engine; its Maildir store carries delivery only and then retires, so there is one message system at the end. See the [roadmap](../plans/architecture-improvement-roadmap.md) for the ranked risks that follow from this shape.
 
 ### System context
 

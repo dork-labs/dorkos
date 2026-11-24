@@ -1,0 +1,4 @@
+# Age public keys (recipients) that a failing cloud Security lens's details are
+# encrypted to (scripts/security-findings.sh post). Read from main's copy only.
+# One age1... recipient per line; a change here goes through Security.
+age1gnv8cvkr74yl3hdysegj6r7r2x9vn5wqz4d5zzvk65ad74kyluuqpeen64

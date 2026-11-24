@@ -40,9 +40,24 @@ export const IDENTITY_MAX_LENGTH = 80;
  */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
-/** C0 controls, DEL and the C1 range — CR, LF and NEL (U+0085) among them. */
-// eslint-disable-next-line no-control-regex -- stripping control characters is the point
-const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+/**
+ * One C0 control, DEL or C1 control: CR, LF and NEL (U+0085) among them. A
+ * name or label holding one can split the line it is written into. Test with
+ * it to refuse; {@link sanitizeIdentity} replaces them instead.
+ */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+export const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/;
+
+/**
+ * One invisible format character (`\p{Cf}`: direction overrides and marks,
+ * zero-width characters) or a Unicode line or paragraph separator. A name
+ * holding one can read as another name, or break a line where a transcript
+ * does not.
+ */
+export const INVISIBLE_CHARACTER = /[\p{Cf}\u2028\u2029]/u;
+
+/** {@link CONTROL_CHARACTER}, for replacing every one. */
+const CONTROL_CHARS = new RegExp(CONTROL_CHARACTER.source, 'g');
 
 /**
  * Sanitize a label for inclusion in a line DorkOS wrote.

@@ -77,7 +77,8 @@ export interface InProcessTestServer {
  * `start()` grows a new process-global singleton that the turn path reads,
  * this boot must wire it too — the eval harness's structural self-test
  * (`@dorkos/evals` widget-round-trip on test-mode) is the tripwire that goes
- * red when they drift.
+ * red when they drift. It skips `loadLocalSpaceId` on purpose: it runs only
+ * test-mode turns, which never read the space id.
  *
  * @param dorkHome - The sandbox data directory every wired singleton is scoped to.
  * @returns The server's routing and a teardown that closes the DB.

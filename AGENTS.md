@@ -51,7 +51,7 @@ DorkOS Cloud is the hosted, paid layer. Its control plane is closed-source and l
 pnpm dev               # API server + Vite dev server (loads .env)
 pnpm dev:dogfood       # Dev preview (:6241) + the built CLI app (:4242), the default workflow
 pnpm verify            # Affected-only typecheck + lint + test, the full gate
-pnpm verify:preopen    # The lighter check before you open a PR (no package tests)
+pnpm verify:preopen    # Optional lighter check, for debugging (no package tests)
 pnpm vitest run <path> # One test file (~1-2s); works for every package
 pnpm test -- --run     # Full suite via turbo
 pnpm --filter @dorkos/server typecheck   # One package (~4s vs ~28s full)
@@ -121,7 +121,7 @@ All enforced, so a break fails a check. Rules 1-5 ride `lint`, 6-7 are hooks, 9 
 
 ## Testing
 
-Vitest, with tests in `__tests__/` beside the source. Patterns: `.claude/rules/testing.md`. Mock only at the edges (network, clock, filesystem, a model, a runtime SDK). The count of `vi.mock` calls on our own modules is a ratchet that may only fall (`pnpm check:own-mocks`). Fewer, better tests: write the fewest that would catch real failures and delete those that fail the keep-questions in `.claude/rules/testing.md`; there is no coverage target, and each package's test budget only tightens (`pnpm check:test-ratio`).
+Vitest, with tests in `__tests__/` beside the source. Patterns: `.claude/rules/testing.md`. Mock only at the edges (network, clock, filesystem, a model, a runtime SDK). The count of `vi.mock` calls on our own modules is a ratchet that may only fall (`pnpm check:own-mocks`). Fewer, better tests: write the fewest that would catch real failures and delete those that fail the keep-questions in `.claude/rules/testing.md`; coverage is an aim of about 60% (never a gate), and each package's test budget only tightens (`pnpm check:test-ratio`).
 
 ## CI
 
@@ -130,7 +130,7 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 - **Change the pipeline as an experiment.** Every pipeline change carries a ledger entry in `ci/ledger/` with a hypothesis (`stewarding-ci-pipeline` skill).
 - **`main` merges through a merge queue, with no human approval.** Don't update a branch to satisfy a gate; being behind blocks nothing.
 - **Required checks** come from `ci/required-checks.json`. Each must report on both `pull_request` and `merge_group`, with no path filter that can skip it.
-- **Before opening a PR,** run `pnpm verify:preopen` on your final head with a clean tree. A PR touching `.github/` needs a full `pnpm verify`.
+- **Done means open the PR; CI judges.** Locally only the git hooks run; `pnpm verify:preopen`/`pnpm verify` are optional, for debugging.
 - **Open PRs only with `scripts/open-pr.sh`.** It turns on auto-merge, so a PR merges once every required check is green, including `pr-gates` (Security's sign-off: the cloud review's Security lens or Security's label). Never merge directly or with admin rights (`.claude/hooks/merge-guard.mjs` refuses that). Use the `hold` label, with a `hold:` comment, to keep a green PR from merging.
 - **Only Security's `label-pr.sh` adds or removes `security-*` labels.** Ask Security if you think a PR needs one.
 - **A red is not a reason to add load.** After a first queue ejection, read the failing job; once it's plainly not yours, re-queue it once with `gh pr merge --auto <n>`. The same check failing again at the same head is real: read the log and push a fix. Don't push empty commits.

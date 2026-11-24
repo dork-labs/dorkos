@@ -242,7 +242,7 @@ Every test has a cost: CI minutes, a review each time it changes, an edit each t
 
 **How many to write.** The fewest that would catch the change's realistic failures: usually one path through the public surface, plus the edge cases that broke before or are easy to get wrong. Not one test per branch, and not one per prop. A bug fix gets one test that was red before the fix.
 
-**There is no coverage target, and there won't be one.** Once a coverage number becomes the goal, people write tests that run code without checking it (Fowler, "TestCoverage"; Google, "Code Coverage Best Practices"). Use a coverage report to find untested code a person depends on, never as a score.
+**Coverage is an aim, never a gate.** We aim for about 60% line coverage, and only to size a pruning pass: well above it means there is more to cut. No check fails on coverage, and a low number is never a reason to add a test. Once a coverage number becomes the goal, people write tests that run code without checking it (Fowler, "TestCoverage"; Google, "Code Coverage Best Practices"). Use a coverage report to find untested code a person depends on, never as a score.
 
 **The budget.** Each package has a test budget in `scripts/test-ratio/baseline.json`, held by `pnpm check:test-ratio` at pre-push and in the required `typecheck` check. A package fails only when it adds tests faster than source: more lines of test than its recorded count _and_ more per line of source than its recorded ratio. So deleting dead code never fails, and tests that come with new source are fine. Each budget leaves room for about 300 more lines of test, and budgets only tighten. Over budget, delete weaker tests in that package before adding more. Moving test code into a non-test helper to dodge the count is the same bloat; reviewers treat it that way. The browser suite (`apps/e2e`) and the space test tiers (`apps/space`) have no budget, because they test code in other packages; the rubric still applies to them.
 
@@ -385,10 +385,10 @@ Failures that blame the wrong thing, each measured on this machine:
   refused with exit 2 before any check runs. Forced forms that work:
   `turbo run typecheck lint --force` and `turbo run test --force -- --run`
   (they record no proof).
-- **Before you open a PR, run `pnpm verify:preopen`** on the final head with a
-  clean tree. Arming needs green required checks and all six test shards at the
-  exact head (or a full local `pnpm verify` proof). A PR that touches `.github/`
-  still needs a full `pnpm verify` or a PM waiver. A preopen proof never arms.
+- **No local check is a step before opening a PR.** When the work is done, open
+  it with `scripts/open-pr.sh`; CI runs the typecheck, lint and tests, and
+  auto-merge waits for every required check. `pnpm verify:preopen` and
+  `pnpm verify` are optional, for debugging a failure (`.github/` PRs included).
 - **Targeted server vitest runs read some `@dorkos/shared` subpaths from `dist`**
   (only aliased subpaths load from source), so a source-edited schema tests stale
   until `pnpm --filter @dorkos/shared build`. CI is safe via turbo `^build`;

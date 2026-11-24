@@ -137,8 +137,17 @@ export const ALLOWED_VERBS: readonly string[] = [
  */
 export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
 
-/** Error schemas a 4xx or 5xx body may reference. DOR-4979 adds `Problem`. */
-export const SHARED_ERROR_SCHEMAS: readonly string[] = ['ErrorResponse'];
+/**
+ * Schemas a 4xx or 5xx body may reference. DOR-4979 adds `Problem`. The two 428
+ * "confirm first" answers are shared, deliberate shapes, not error one-offs:
+ * `StepUpRequired` on every held write and `PasskeyCheckRequired` on the
+ * passkey-checked device writes.
+ */
+export const SHARED_ERROR_SCHEMAS: readonly string[] = [
+  'ErrorResponse',
+  'StepUpRequired',
+  'PasskeyCheckRequired',
+];
 
 /** The paths whose `registerPath(` calls count as hand registrations. */
 const HAND_REGISTRY_FILE =

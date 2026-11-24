@@ -42,6 +42,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import path from 'node:path';
 import { BASELINE_ENV_NAMES } from '../../shared/runtime-environment-catalog.js';
 import { runtimeInheritedNames } from '../../shared/runtime-environment-config.js';
+import { TURN_REFERENCE_ENV_NAMES } from '../../shared/references/turn-reference-env.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   CreditsUnavailableError,
@@ -58,6 +59,7 @@ const CREDITS_OWN_NAMES = [
   'CLAUDE_CODE_ENABLE_TODO_TOOLS',
   'DORKOS_AGENT_TOKEN',
   'DORKOS_SESSION_ID',
+  ...TURN_REFERENCE_ENV_NAMES,
   'FLOW_RUNTIME',
   'FLOW_HARNESS',
   'MCP_TOOL_TIMEOUT',
