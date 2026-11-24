@@ -32,6 +32,7 @@
     "vitest-flake-reporter.ts",
     "lib/load-wait.ts",
     "load-gate/**/*.ts",
+    "release/**/*.ts",
     "check-knip.ts",
     "knip/**/*.ts",
     "sharding/**/*.ts",

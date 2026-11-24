@@ -48,6 +48,9 @@ const config: KnipConfig = {
         'scripts/composio-money-word-candidates.mjs',
         // scripts/heavy-run-lock.sh runs load-gate/turn.ts through tsx (DOR-4209).
         'scripts/load-gate/turn.ts',
+        // The daily release builds its release commit with this (DOR-5123); ci-steward's
+        // daily-release.yml will run it, and until then it is run by hand.
+        'scripts/release/release-commit.ts',
       ],
     },
     'apps/client': {

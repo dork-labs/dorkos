@@ -1,0 +1,19 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Fixture API",
+    "version": "0.20.0",
+    "description": "A fixture."
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "example": {
+          "version": "0.20.0"
+        }
+      }
+    }
+  }
+}
