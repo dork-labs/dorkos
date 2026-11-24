@@ -68,7 +68,7 @@ describe('Relay routes', () => {
           .post('/api/relay/messages')
           .send({ subject: 'relay.agent.ana', payload: { text: 'run the deploy' }, from });
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('NOT_FROM_WIFI');
+        expect(res.body.code).toBe('not_from_wifi');
         expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
       }
     );
@@ -81,7 +81,7 @@ describe('Relay routes', () => {
       expect(res.status).toBe(200);
     });
 
-    it('returns 422 when publish throws', async () => {
+    it('returns 400 when publish throws, never with the bus’s own words', async () => {
       const error = Object.assign(new Error('Access denied'), { code: 'ACCESS_DENIED' });
       vi.mocked(relayCore.publish).mockRejectedValue(error);
 
@@ -91,8 +91,13 @@ describe('Relay routes', () => {
         from: 'relay.agent.sender',
       });
 
-      expect(res.status).toBe(422);
-      expect(res.body).toMatchObject({ error: 'Access denied', code: 'ACCESS_DENIED' });
+      expect(res.status).toBe(400);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({
+        code: 'invalid_request',
+        detail: 'DorkOS couldn’t send that message. Check its address and sender.',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('Access denied');
     });
 
     // DOR-277 review follow-up: this route accepts a client-supplied `from`. It
@@ -119,9 +124,7 @@ describe('Relay routes', () => {
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('RESERVED_SENDER');
-      // It points at an address a program may send from, never a person's (DOR-5151).
-      expect(res.body.error).toContain('(e.g. relay.external.<name>)');
+      expect(res.body.code).toBe('reserved_sender');
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
 
@@ -152,10 +155,8 @@ describe('Relay routes', () => {
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('RESERVED_SUBJECT');
-      expect(res.body.error).toContain(
-        'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.'
-      );
+      expect(res.body.code).toBe('reserved_subject');
+      expect(res.body.detail).toBe('DorkOS keeps that address for itself. Send somewhere else.');
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
 
@@ -212,7 +213,7 @@ describe('Relay routes', () => {
               from: 'relay.human.console.x',
             });
           expect(res.status).toBe(403);
-          expect(res.body.code).toBe('ROOM_SESSION');
+          expect(res.body.code).toBe('room_conversation');
           expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
         }
       );
@@ -328,15 +329,16 @@ describe('Relay routes', () => {
       expect(vi.mocked(relayCore.registerEndpoint)).toHaveBeenCalledWith('relay.test.mine');
     });
 
-    it('returns 422 when registration fails', async () => {
+    it('returns 400 when registration fails, never with the error’s words', async () => {
       vi.mocked(relayCore.registerEndpoint).mockRejectedValue(new Error('Duplicate endpoint'));
 
       const res = await request(server)
         .post('/api/relay/endpoints')
         .send({ subject: 'relay.test.dup' });
 
-      expect(res.status).toBe(422);
-      expect(res.body.error).toBe('Duplicate endpoint');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_request');
+      expect(JSON.stringify(res.body)).not.toContain('Duplicate endpoint');
     });
 
     // Login is off by default, so this route is reachable by anything that can

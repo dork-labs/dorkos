@@ -100,8 +100,8 @@ describe('notification confirmation', () => {
     const held = await owner.call('post', `${PREFIX}/subscriptions`, 'own-tunnel').send(CREATE);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
       ok: true,
-      status: 409,
-      result: { code: 'definition_changed' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
   });
 

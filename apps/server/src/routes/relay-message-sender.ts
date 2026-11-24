@@ -41,7 +41,7 @@ export type AgentSubjectLookup = (agentPath: string) => string | undefined;
 
 /** What the route sends: who from, and the payload, or why it refuses. */
 export type RelayMessageSend =
-  { refused: { error: string; code: 'person_required' } } | { from: string; payload: unknown };
+  { refused: { detail: string } } | { from: string; payload: unknown };
 
 /** Whether a value is a plain JSON object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,7 +79,7 @@ export function relayMessageSender(
     return { from: data.from, payload: without(data.payload, [CARRIED_TURN_LIMITS_FIELD]) };
   }
   if (launcher.kind === 'unidentified' && data.from.startsWith('relay.human.')) {
-    return { refused: { error: PERSON_SENDER_REFUSAL, code: 'person_required' } };
+    return { refused: { detail: PERSON_SENDER_REFUSAL } };
   }
   const from =
     (launcher.kind === 'agent' ? agentSubjectOf?.(launcher.agentPath) : undefined) ??

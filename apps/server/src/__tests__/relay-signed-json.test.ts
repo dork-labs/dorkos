@@ -23,7 +23,13 @@ import {
   type RelayCore,
   type RelayPublisher,
 } from '@dorkos/relay';
+import { problemBody } from '@dorkos/http-kit';
 import { env } from '../env.js';
+
+/** The one problem every unverified webhook request gets, byte for byte (DOR-3650). */
+const INVALID_SIGNATURE = problemBody('invalid_signature', {
+  detail: 'The signature, time or nonce didn’t check out.',
+});
 import { createRelayWebhookRoutes, relayWebhookBodyRule } from '../routes/relay-webhooks.js';
 import { composedListener } from '../http/__tests__/composed-listener.js';
 import { frontDoorListener } from '../http/front-door.js';
@@ -198,19 +204,19 @@ describe('signed Relay JSON through the finalized application', () => {
     const headers = signed(malformed);
     const response = await send(malformed, headers);
     expect(response.status).toBe(401);
-    expect(response.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(response.body).toEqual(INVALID_SIGNATURE);
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledTimes(0);
     const replay = await send(EXACT, signed(EXACT, headers['X-Nonce']));
     expect(replay.status).toBe(401);
-    expect(replay.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(replay.body).toEqual(INVALID_SIGNATURE);
     expect(inbound).toHaveBeenCalledTimes(2);
     expect(publish).toHaveBeenCalledTimes(0);
 
     const invalid = { ...signed(malformed), 'X-Signature': '0'.repeat(64) };
     const rejected = await send(malformed, invalid);
     expect(rejected.status).toBe(401);
-    expect(rejected.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(rejected.body).toEqual(INVALID_SIGNATURE);
     expect(inbound).toHaveBeenCalledTimes(3);
     const control = await send(EXACT, signed(EXACT, invalid['X-Nonce']));
     expect(control.status).toBe(200);
@@ -225,7 +231,10 @@ describe('signed Relay JSON through the finalized application', () => {
       .send(EXACT.toString('utf8'))
       .unset('Content-Type');
     expect(response.status).toBe(400);
-    expect(response.body).toEqual({ error: 'Send a request body with a content type.' });
+    expect(response.body).toMatchObject({
+      code: 'malformed_request',
+      detail: 'Send a request body with a content type.',
+    });
     expect(inbound).toHaveBeenCalledTimes(0);
     expect(publish).toHaveBeenCalledTimes(0);
     expect((await send()).status).toBe(200);
@@ -250,7 +259,7 @@ describe('signed Relay JSON through the finalized application', () => {
       }
       const rejected = await send(body, headers);
       expect(rejected.status).toBe(401);
-      expect(rejected.body).toEqual({ error: 'INVALID_SIGNATURE' });
+      expect(rejected.body).toEqual(INVALID_SIGNATURE);
       expect(inbound).toHaveBeenCalledTimes(1);
       expect(publish).toHaveBeenCalledTimes(0);
       const control = await send(EXACT, signed(EXACT, headers['X-Nonce']));
@@ -265,7 +274,7 @@ describe('signed Relay JSON through the finalized application', () => {
     expect((await send(EXACT, headers)).status).toBe(200);
     const replay = await send(EXACT, headers);
     expect(replay.status).toBe(401);
-    expect(replay.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(replay.body).toEqual(INVALID_SIGNATURE);
     expect(inbound).toHaveBeenCalledTimes(2);
     expect(publish).toHaveBeenCalledTimes(1);
   });
@@ -406,7 +415,7 @@ describe('signed Relay JSON through the finalized application', () => {
   ])('answers %s with the one flat 401 (DOR-3650)', async (_what, override) => {
     const result = await send(EXACT, { ...signed(), ...override } as ReturnType<typeof signed>);
     expect(result.status).toBe(401);
-    expect(result.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(result.body).toEqual(INVALID_SIGNATURE);
     expect(publish).toHaveBeenCalledTimes(0);
   });
 
@@ -417,7 +426,7 @@ describe('signed Relay JSON through the finalized application', () => {
       .set(signed())
       .send(EXACT.toString('utf8'));
     expect(result.status).toBe(401);
-    expect(result.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(result.body).toEqual(INVALID_SIGNATURE);
   });
 
   it.each(['host', 'origin', 'admission'] as const)(
@@ -458,7 +467,7 @@ describe('signed Relay JSON through the finalized application', () => {
     const empty = Buffer.alloc(0);
     const typed = await send(empty);
     expect(typed.status).toBe(401);
-    expect(typed.body).toEqual({ error: 'INVALID_SIGNATURE' });
+    expect(typed.body).toEqual(INVALID_SIGNATURE);
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(inbound.mock.calls[0]![0]).toEqual(empty);
     const untyped = await request(target.server).post(URL).set(signed(empty));

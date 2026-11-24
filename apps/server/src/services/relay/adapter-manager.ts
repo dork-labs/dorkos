@@ -634,7 +634,7 @@ export class AdapterManager {
    */
   async enable(id: string): Promise<void> {
     const config = this.configs.find((c) => c.id === id);
-    if (!config) throw new Error(`Adapter not found: ${id}`);
+    if (!config) throw new AdapterError(`Adapter not found: ${id}`, 'NOT_FOUND', id);
 
     // Only a paused one: a running bot is not rebuilt below, so it would stay open.
     if (!config.enabled && closeDmPolicyOnEnable(config)) {
@@ -684,7 +684,7 @@ export class AdapterManager {
    */
   async disable(id: string): Promise<void> {
     const config = this.configs.find((c) => c.id === id);
-    if (!config) throw new Error(`Adapter not found: ${id}`);
+    if (!config) throw new AdapterError(`Adapter not found: ${id}`, 'NOT_FOUND', id);
 
     config.enabled = false;
     this.awaitingConfirmation.delete(id);

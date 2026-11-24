@@ -248,11 +248,13 @@ describe('connector management routes', () => {
     const conflict = await request(app)
       .post('/api/connectors/agent-requests/request-a/decision')
       .send({ decision: 'current_access', connectionId: 'connection-a' })
-      .expect(409);
-    expect(conflict.body).toEqual({
-      code: 'review_conflict',
-      error: 'Those updates changed while you were choosing them. Pick them again.',
+      .expect(412);
+    expect(conflict.headers['content-type']).toContain('application/problem+json');
+    expect(conflict.body).toMatchObject({
+      code: 'precondition_failed',
+      detail: 'Those updates changed while you chose them. Pick them again.',
     });
+    expect(conflict.body).not.toHaveProperty('error');
 
     agentRequests.resolve.mockRejectedValueOnce(
       new ConnectorSubscriptionError('destination_unavailable')
@@ -260,7 +262,7 @@ describe('connector management routes', () => {
     const refused = await request(app)
       .post('/api/connectors/agent-requests/request-a/decision')
       .send({ decision: 'current_access', connectionId: 'connection-a' })
-      .expect(422);
+      .expect(409);
     expect(refused.body.code).toBe('destination_unavailable');
   });
 
@@ -357,10 +359,13 @@ describe('connector management routes', () => {
   it('refuses invalid and agent-bearing program status calls before reading a review', async () => {
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/program/reviews/review-a')
-      .expect(401, {
-        error: 'This program needs a verified API key to request an account change.',
-        code: 'connector_program_credential_required',
-      });
+      .expect(401)
+      .expect((res) =>
+        expect(res.body).toMatchObject({
+          code: 'unauthenticated',
+          detail: 'Use a verified API key to ask for an account change.',
+        })
+      );
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/program/reviews/review-a')
       .set('Authorization', 'Bearer invalid')
@@ -567,7 +572,8 @@ describe('connector management routes', () => {
     );
     await request(fixtureTarget.mount(buildApp()))
       .put('/api/connectors/connections/connection-b/exclusions/agent-a')
-      .expect(404, { error: 'Connection not found.', code: 'connection_not_found' });
+      .expect(404)
+      .expect((res) => expect(res.body.code).toBe('not_found'));
   });
 
   it('answers a refused managed-cloud call behind a preview honestly instead of a 500', async () => {
@@ -575,7 +581,7 @@ describe('connector management routes', () => {
       [ConstructorParameters<typeof ManagedConnectorCloudError>[0], number, string]
     > = [
       ['unauthorized', 401, 'cloud_link_required'],
-      ['permission_upgrade_required', 409, 'cloud_link_needs_update'],
+      ['permission_upgrade_required', 401, 'cloud_link_required'],
       ['unavailable', 503, 'cloud_unavailable'],
       ['network_error', 503, 'cloud_unavailable'],
       ['request_failed', 502, 'cloud_refused'],
@@ -668,10 +674,9 @@ describe('connector management routes', () => {
       const app = fixtureTarget.mount(buildApp({ user: member, loginEnabled: true }));
       const call = request(app)[method](url).set('Origin', 'http://localhost:4242');
       const res = await (body === undefined ? call : call.send(body)).expect(403);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({
         code: 'owner_only',
-        error: 'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
-        message: 'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
+        detail: 'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
       });
       expect(reviews.resolve).not.toHaveBeenCalled();
       expect(agentRequests.resolve).not.toHaveBeenCalled();
@@ -773,54 +778,57 @@ describe('connector management routes', () => {
           .post('/api/connectors/reviews')
           .set('Origin', CORS_ONLY_ORIGIN)
           .send(reviewInput),
-        code: 'connector_owner_origin_required',
+        status: 403,
+        code: 'origin_not_allowed',
         explanation: 'Open this account action from the DorkOS app.',
-        mirrorsMessage: true,
       },
       {
         response: await request(app)
           .post('/api/connectors/reviews')
           .set('x-dorkos-approval', 'approval-token')
           .send(reviewInput),
-        code: 'connector_owner_required',
-        explanation: 'An agent or approval token cannot make account decisions.',
-        mirrorsMessage: true,
+        status: 403,
+        code: 'person_only',
+        explanation: 'Agents and approval tokens can’t make account decisions.',
       },
       {
         response: await request(app).get('/api/connectors/reviews').set('Origin', CORS_ONLY_ORIGIN),
-        code: 'connector_owner_origin_required',
+        status: 403,
+        code: 'origin_not_allowed',
         explanation: 'Open this account action from the DorkOS app.',
-        mirrorsMessage: true,
       },
       {
         response: await request(app)
           .get('/api/connectors/reviews')
           .set('Authorization', 'Bearer program-key'),
-        code: 'connector_owner_required',
-        explanation: 'Programs and agents cannot make account decisions.',
-        mirrorsMessage: true,
+        status: 403,
+        code: 'person_only',
+        explanation: 'Programs and agents can’t make account decisions.',
       },
       {
         response: await request(fixtureTarget.mount(buildApp({ loginEnabled: true }))).get(
           '/api/connectors/reviews'
         ),
-        code: 'operator_cookie_required',
-        explanation: 'Sign in to the DorkOS app to make this account decision.',
-        mirrorsMessage: true,
+        status: 403,
+        code: 'person_only',
+        explanation: 'Sign in to the DorkOS app to make this decision.',
       },
       {
         response: await request(fixtureTarget.mount(buildApp({ ownerUnavailable: true }))).get(
           '/api/connectors/reviews'
         ),
-        explanation: 'DorkOS could not verify who owns this account.',
+        status: 401,
+        code: 'unauthenticated',
+        explanation: 'DorkOS couldn’t confirm who owns this account.',
       },
       {
         response: await request(app)
           .post('/api/connectors/reviews')
           .set('Authorization', 'Bearer invalid')
           .send(reviewInput),
-        code: 'connector_program_credential_required',
-        explanation: 'This program needs a verified API key to request an account change.',
+        status: 401,
+        code: 'unauthenticated',
+        explanation: 'Use a verified API key to ask for an account change.',
       },
       {
         response: await request(
@@ -838,7 +846,9 @@ describe('connector management routes', () => {
           .post('/api/connectors/reviews')
           .set('Authorization', 'Bearer verified')
           .send(reviewInput),
-        explanation: 'DorkOS could not verify who owns this account.',
+        status: 401,
+        code: 'unauthenticated',
+        explanation: 'DorkOS couldn’t confirm who owns this account.',
       },
       {
         response: await request(
@@ -848,25 +858,23 @@ describe('connector management routes', () => {
         )
           .post('/api/connectors/reviews')
           .send(reviewInput),
-        code: 'connector_program_credential_required',
-        explanation: 'This program needs a verified API key to request an account change.',
+        status: 401,
+        code: 'unauthenticated',
+        explanation: 'Use a verified API key to ask for an account change.',
       },
       {
         response: await request(app).get('/api/connectors/program/reviews/review-a'),
-        code: 'connector_program_credential_required',
-        explanation: 'This program needs a verified API key to request an account change.',
+        status: 401,
+        code: 'unauthenticated',
+        explanation: 'Use a verified API key to ask for an account change.',
       },
     ];
 
-    for (const { response, code, explanation, mirrorsMessage } of cases) {
-      expect(response.status).toBe(
-        code?.startsWith('connector_owner') || code === 'operator_cookie_required' ? 403 : 401
-      );
-      expect(response.body).toEqual({
-        error: explanation,
-        ...(code ? { code } : {}),
-        ...(mirrorsMessage ? { message: explanation } : {}),
-      });
+    for (const { response, status, code, explanation } of cases) {
+      expect(response.status).toBe(status);
+      expect(response.headers['content-type']).toContain('application/problem+json');
+      expect(response.body).toMatchObject({ status, code, detail: explanation });
+      expect(response.body).not.toHaveProperty('error');
       expect(new ApiError(response.status, response.body).message).toBe(explanation);
     }
   });
@@ -878,9 +886,11 @@ describe('connector management routes', () => {
         action: { version: 1, kind: 'pause', connectionId: 'connection-a' },
         idempotencyKey: 'pause-a',
       })
-      .expect(503, {
-        status: 'migration_failed',
-        error: 'connector migration failed',
+      .expect(503)
+      .expect((res) => {
+        expect(res.body.code).toBe('temporarily_unavailable');
+        // The failed step stays in the log, never in the answer.
+        expect(JSON.stringify(res.body)).not.toContain('connector migration failed');
       });
     await request(fixtureTarget.mount(buildApp({ migrationFailed: true })))
       .post('/api/connectors/reconciliation/previews')

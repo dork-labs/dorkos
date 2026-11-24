@@ -70,8 +70,9 @@ describe('the owner bar on a connection’s secrets', () => {
     for (const method of ['POST', 'DELETE'] as const) {
       const res = await confirm(router, method);
       expect(res.status).toBe(403);
-      expect(await res.json()).toEqual({
-        error: 'Only the owner of this DorkOS can confirm this setting.',
+      expect(res.headers.get('content-type')).toContain('application/problem+json');
+      expect(await res.json()).toMatchObject({
+        detail: 'Only the owner of this DorkOS can confirm this setting.',
         code: 'owner_only',
       });
     }

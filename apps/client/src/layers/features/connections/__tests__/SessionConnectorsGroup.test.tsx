@@ -225,7 +225,7 @@ describe('SessionConnectorsGroup', () => {
     });
     vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(
       Object.assign(new Error('You limited this app in this chat for another agent.'), {
-        code: 'session_access_other_agent',
+        code: 'other_agent_chat',
         status: 409,
       })
     );

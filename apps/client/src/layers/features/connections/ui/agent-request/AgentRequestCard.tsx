@@ -41,7 +41,7 @@ const DECLINE_FAILED = 'Couldn’t save your answer. Nothing changed. Try again.
 
 /** Whether an answer was refused because this chat has the app turned off. */
 function refusedAsOffHere(error: Error | null): boolean {
-  return (error as { code?: string } | null)?.code === 'session_access_off';
+  return (error as { code?: string } | null)?.code === 'app_off_in_chat';
 }
 
 /** Why turning the app back on for this chat did not land. */
@@ -59,7 +59,7 @@ function unansweredReason(
   serviceName: string
 ): { reason: string; fix: 'retry' | 'turn_on' | 'updates' | null } {
   switch ((error as { code?: string } | null)?.code) {
-    case 'session_access_off':
+    case 'app_off_in_chat':
       // The chat's own switch is off. Turning it on is the same switch the
       // chat's details show: it only undoes that off, putting back the access
       // this chat had (its own hand-picked access, else what the agent has
@@ -69,29 +69,27 @@ function unansweredReason(
         reason: `This chat has ${serviceName} turned off for ${agentName}.`,
         fix: 'turn_on',
       };
-    case 'request_already_resolved':
+    case 'already_resolved':
       return {
         reason: `It was answered somewhere else. Ask ${agentName} again if it still needs this.`,
         fix: null,
       };
-    case 'request_expired':
+    case 'expired':
       return { reason: `The request ran out of time. Ask ${agentName} again.`, fix: null };
-    case 'request_not_found':
+    case 'not_found':
       return { reason: 'The request is no longer open.', fix: null };
-    case 'authority_sync_failed':
+    case 'temporarily_unavailable':
       return { reason: 'The access is still being set up.', fix: 'retry' };
-    case 'event_selection_unavailable':
-    case 'review_conflict':
+    case 'invalid_request':
+    case 'precondition_failed':
     case 'destination_unavailable':
-    case 'definition_changed':
-    case 'invalid_filter':
       // Sending the same updates again would fail the same way, so the card
       // offers the two answers that can work instead of a retry.
       return {
         reason: `The updates you picked can’t be set up. Pick again, or answer without them.`,
         fix: 'updates',
       };
-    case 'selection_invalid':
+    case 'conflict':
       return { reason: 'That account isn’t ready for it yet.', fix: 'retry' };
     default:
       return { reason: 'The answer didn’t reach DorkOS.', fix: 'retry' };

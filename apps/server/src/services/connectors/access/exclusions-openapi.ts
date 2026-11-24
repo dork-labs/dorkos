@@ -19,14 +19,11 @@ import {
   ConnectorWritesBackChangeSchema,
   ConnectorWritesBackSchema,
 } from '@dorkos/shared/connector-exclusion-schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
-const ErrorSchema = z.object({ error: z.string(), code: z.string() });
-
-const notFound = {
-  description:
-    'No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)',
-  content: { 'application/json': { schema: ErrorSchema } },
-};
+const notFound = problemResponse(
+  '`not_found`: no such app account here, it belongs to someone else, or no such agent'
+);
 
 /**
  * Register the exclusion routes.
@@ -95,10 +92,7 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
         description: 'The change',
         content: { 'application/json': { schema: ConnectorAccessChangeSchema } },
       },
-      404: {
-        description: 'No such change on your apps (`UNDO_NOT_FOUND`)',
-        content: { 'application/json': { schema: ErrorSchema } },
-      },
+      404: problemResponse('`not_found`: no such change on your apps'),
     },
   });
   registry.registerPath({
@@ -115,14 +109,8 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
         description: 'Put back',
         content: { 'application/json': { schema: ConnectorAccessChangeUndoSchema } },
       },
-      404: {
-        description: 'Nothing to undo under that id (`UNDO_NOT_FOUND`)',
-        content: { 'application/json': { schema: ErrorSchema } },
-      },
-      409: {
-        description: 'Access changed since (`UNDO_STALE`)',
-        content: { 'application/json': { schema: ErrorSchema } },
-      },
+      404: problemResponse('`not_found`: nothing to undo under that id'),
+      412: problemResponse('`precondition_failed`: access changed since'),
     },
   });
   registry.registerPath({
@@ -176,20 +164,11 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
         description: 'What the change did',
         content: { 'application/json': { schema: ConnectorWritesBackChangeSchema } },
       },
-      422: {
-        description:
-          'The switch is not offered for this app, because its changes can reach other people (`writes_back_unsupported_app`)',
-        content: { 'application/json': { schema: ErrorSchema } },
-      },
-      400: {
-        description: 'The body is invalid, or turns it on without the confirmation',
-        content: { 'application/json': { schema: z.unknown() } },
-      },
-      404: {
-        description:
-          'No such app account here, or it belongs to someone else (`connection_not_found`)',
-        content: { 'application/json': { schema: ErrorSchema } },
-      },
+      422: problemResponse(
+        '`app_not_supported`: the switch is not offered for this app, because its changes can reach other people'
+      ),
+      400: problemResponse('The body is invalid, or turns it on without the confirmation'),
+      404: problemResponse('`not_found`: no such app account here, or it belongs to someone else'),
     },
   });
 }

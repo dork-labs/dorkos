@@ -73,7 +73,7 @@ describe('Adapter routes', () => {
       ['reload', 'post', '/api/relay/adapters/reload', 500],
       ['testConnection', 'post', '/api/relay/adapters/test', 500],
     ] as const)(
-      'answers %s throwing with %i and its message',
+      'answers %s throwing with %i and a fixed sentence, never its message',
       async (method, verb, path, status) => {
         vi.mocked(adapterManager[method]).mockImplementation(() => {
           throw new Error('Unexpected failure');
@@ -84,7 +84,10 @@ describe('Adapter routes', () => {
           .send({ type: 'telegram', config: { token: 'x' } });
 
         expect(res.status).toBe(status);
-        expect(res.body.error).toBe('Unexpected failure');
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body.code).toBe('internal_error');
+        expect(res.body.detail).toMatch(/^Couldn’t .*Try again\.$/);
+        expect(JSON.stringify(res.body)).not.toContain('Unexpected failure');
       }
     );
 
@@ -155,7 +158,7 @@ describe('Adapter routes', () => {
         .send('{}');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('INVALID_SIGNATURE');
+      expect(res.body.code).toBe('invalid_signature');
     });
 
     it('returns 401 when signature verification fails', async () => {
@@ -170,7 +173,7 @@ describe('Adapter routes', () => {
         .send('{}');
 
       expect(res.status).toBe(401);
-      expect(res.body.error).toBe('INVALID_SIGNATURE');
+      expect(res.body.code).toBe('invalid_signature');
     });
   });
 
@@ -255,13 +258,13 @@ describe('Adapter routes', () => {
       expect(vi.mocked(adapterManager.updateConfig).mock.calls.at(-1)?.[2]).toBe('agent');
     });
 
-    // Each AdapterError code maps to its own status, with the code beside it.
-    // DOR-2432: a refused config carries its rule to the caller (it used to 500).
+    // Each AdapterError code maps to its own problem, with a fixed sentence:
+    // the error's own message (which can name a field or value) stays in the log.
     it.each([
-      ['DUPLICATE_ID', 409],
-      ['INVALID_CONFIG', 400],
-      ['MULTI_INSTANCE_DENIED', 400],
-    ] as const)('answers %s with %i', async (code, status) => {
+      ['DUPLICATE_ID', 409, 'connection_id_taken'],
+      ['INVALID_CONFIG', 400, 'invalid_request'],
+      ['MULTI_INSTANCE_DENIED', 400, 'invalid_request'],
+    ] as const)('answers %s with %i %s', async (code, status, problemCode) => {
       vi.mocked(adapterManager.addAdapter).mockRejectedValue(new AdapterError('refused', code));
 
       const res = await request(server)
@@ -269,7 +272,9 @@ describe('Adapter routes', () => {
         .send({ type: 'telegram', id: 'tg-main', config: { token: 'x', mode: 'polling' } });
 
       expect(res.status).toBe(status);
-      expect(res.body).toEqual({ error: 'refused', code });
+      expect(res.body.code).toBe(problemCode);
+      expect(res.body).not.toHaveProperty('error');
+      expect(JSON.stringify(res.body)).not.toContain('refused');
     });
   });
 
@@ -292,7 +297,7 @@ describe('Adapter routes', () => {
       const res = await request(server).delete('/api/relay/adapters/claude-code');
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('REMOVE_BUILTIN_DENIED');
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 

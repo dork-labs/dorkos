@@ -160,7 +160,7 @@ function notSetUp(error: unknown): boolean {
     typeof error === 'object' &&
     error !== null &&
     'code' in error &&
-    error.code === 'provider_not_found'
+    error.code === 'app_not_set_up'
   );
 }
 

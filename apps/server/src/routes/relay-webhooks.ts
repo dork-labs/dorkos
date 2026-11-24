@@ -22,14 +22,16 @@
  */
 import bodyParser from 'body-parser';
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { WebhookAdapter } from '@dorkos/relay';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, type BodyRule } from '@dorkos/http-kit';
+import { problem, readJsonBody, type BodyRule } from '@dorkos/http-kit';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 
-/** The one answer to any request whose signature was not verified (DOR-3650). */
-const INVALID_SIGNATURE_BODY = { error: 'INVALID_SIGNATURE' } as const;
+/**
+ * The one sentence for any request whose signature was not verified
+ * (DOR-3650): the same for every check, so it says nothing about which failed.
+ */
+const INVALID_SIGNATURE = 'The signature, time or nonce didn’t check out.';
 
 /** The receiver's raw byte ceiling. */
 const WEBHOOK_BODY_LIMIT = '1mb';
@@ -69,7 +71,7 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
     // Every refusal before a verified signature is the same flat 401, so an
     // unsigned caller learns nothing: not which connections exist or run, nor
     // which check failed (Security's condition 1).
-    const refused = () => c.json(INVALID_SIGNATURE_BODY, 401);
+    const refused = () => problem(c, 'invalid_signature', { detail: INVALID_SIGNATURE });
     const adapterInfo = adapterManager.getAdapter(c.req.param('adapterId'));
     if (!adapterInfo || adapterInfo.config.type !== 'webhook') return refused();
     const registry = adapterManager.getRegistry();
@@ -85,7 +87,9 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
     // an absent body (or a body consumed by an earlier parser) back into bytes.
     const rawBody = readJsonBody(c);
     if (!Buffer.isBuffer(rawBody)) {
-      return c.json({ error: 'Send a request body with a content type.' }, 400);
+      return problem(c, 'malformed_request', {
+        detail: 'Send a request body with a content type.',
+      });
     }
     const webhookAdapter = adapter as WebhookAdapter;
     const result = await webhookAdapter.handleInbound(
@@ -93,12 +97,15 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
       c.env.incoming.headers as Record<string, string | string[] | undefined>
     );
     if (result.ok) return c.json({ ok: true }, 200);
-    // A signature, timestamp or nonce refusal is the flat 401; anything else
-    // (an adapter that failed after verifying) keeps its own status.
-    if (result.status === undefined || result.status === 401 || result.status === 400) {
-      return refused();
+    // A signature, timestamp or nonce refusal is the flat 401. The adapter's
+    // only other refusal is a 403 for an address DorkOS keeps for itself, a
+    // setting of the connection's, not of the sender's request.
+    if (result.status === 403) {
+      return problem(c, 'reserved_subject', {
+        detail: 'This connection posts to an address DorkOS keeps. Change it in Settings.',
+      });
     }
-    return c.json({ error: result.error }, result.status as ContentfulStatusCode);
+    return refused();
   });
 
   return router;

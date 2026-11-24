@@ -137,10 +137,10 @@ describe('Undo on an agent’s access change', () => {
       undoAccessChange: vi
         .fn()
         .mockRejectedValue(
-          Object.assign(
-            new Error('Access has changed since then. Set it on the Connections page instead.'),
-            { status: 409, code: 'UNDO_STALE' }
-          )
+          Object.assign(new Error('Access changed since then. Set it on the Connections page.'), {
+            status: 412,
+            code: 'precondition_failed',
+          })
         ),
     });
 

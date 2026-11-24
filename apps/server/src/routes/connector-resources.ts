@@ -14,7 +14,7 @@ import {
   ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import {
   requestAbortSignal,
@@ -47,6 +47,14 @@ import { resolveConnectReturnTo } from '../services/connectors/resources/connect
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { logError, logger } from '../lib/logger.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import {
+  APP_ACTIONS_PROBLEM,
+  AUTHENTICATION_FLOW_PROBLEM,
+  LIFECYCLE_PROBLEM,
+  OPERATOR_QUERY_PROBLEM,
+  SESSION_ACCESS_PROBLEM,
+  sendConnectorProblem,
+} from './connector-problems.js';
 import { CONNECTED_APPS } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
@@ -106,15 +114,7 @@ function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
     return validationProblem(c, error);
   }
   if (error instanceof ConnectorAuthenticationFlowError) {
-    const status =
-      error.code === 'flow_not_found' ||
-      error.code === 'provider_not_found' ||
-      error.code === 'connection_not_found'
-        ? 404
-        : error.code === 'idempotency_conflict'
-          ? 409
-          : 422;
-    return c.json({ error: error.message, code: error.code }, status);
+    return sendConnectorProblem(c, AUTHENTICATION_FLOW_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorAppActionsError) {
     // A listing that failed because the managed cloud refused says which
@@ -123,24 +123,23 @@ function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
       const managed = managedCloudErrorResponse(c, error.cause);
       if (managed) return managed;
     }
-    return c.json(
-      { error: error.message, code: error.code },
-      error.code === 'provider_not_found' ? 404 : 502
-    );
+    return sendConnectorProblem(c, APP_ACTIONS_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorSessionAccessError) {
-    return c.json({ error: error.message, code: error.code }, 409);
+    return sendConnectorProblem(c, SESSION_ACCESS_PROBLEM[error.code], error);
   }
-  if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
-    return c.json(
-      { error: error.message, code: error.code },
-      error.code === 'connection_not_disconnected' ? 409 : 404
-    );
+  if (error instanceof ConnectorLifecycleError) {
+    return sendConnectorProblem(c, LIFECYCLE_PROBLEM[error.code], error);
+  }
+  if (error instanceof ConnectorOperatorQueryError) {
+    return sendConnectorProblem(c, OPERATOR_QUERY_PROBLEM[error.code], error);
   }
   const managed = managedCloudErrorResponse(c, error);
   if (managed) return managed;
   logger.error('[Connectors] Connection request failed', logError(error));
-  return c.json({ error: 'DorkOS could not complete this connection request. Try again.' }, 500);
+  return problem(c, 'internal_error', {
+    detail: 'DorkOS couldn’t finish that for this app. Try again.',
+  });
 }
 
 /** Run `run` with a signal that fires if the client goes away first. */
@@ -219,9 +218,8 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
       const logo = await deps.logos.get(c.req.param('serviceSlug'));
       if (!logo) {
         // Briefly cacheable: the server itself waits before trying a failed logo again.
-        return c.json({ error: 'This app has no logo.' }, 404, {
-          'Cache-Control': 'private, max-age=300',
-        });
+        c.header('Cache-Control', 'private, max-age=300');
+        return problem(c, 'not_found', { detail: 'This app has no logo.' });
       }
       return c.body(new Uint8Array(logo.bytes), 200, {
         'Content-Type': logo.contentType,

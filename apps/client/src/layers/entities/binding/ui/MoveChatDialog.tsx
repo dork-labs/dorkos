@@ -42,8 +42,7 @@ export function readChatConflict(
   next: { id: string; name: string }
 ): ChatConflict | null {
   const err = error as { code?: string; body?: unknown } | null;
-  // Old spelling until relay-adapters moves (DOR-4979).
-  if (!err || (err.code !== 'chat_already_bound' && err.code !== 'CHAT_ALREADY_BOUND')) return null;
+  if (!err || err.code !== 'chat_already_bound') return null;
   const conflict = (err.body as { conflict?: Record<string, unknown> } | undefined)?.conflict;
   const bindingId = typeof conflict?.bindingId === 'string' ? conflict.bindingId : null;
   if (!bindingId) return null;

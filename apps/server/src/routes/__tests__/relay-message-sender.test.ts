@@ -185,7 +185,7 @@ describe('a relay message from someone other than the person', () => {
   it('is refused a person’s address at this computer without a session, and nothing is sent', async () => {
     const res = await send({ from: 'relay.human.console' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('person_required');
+    expect(res.body.code).toBe('person_only');
     expect(relayCore.publish).not.toHaveBeenCalled();
   });
 
@@ -211,7 +211,7 @@ describe('a relay message from someone other than the person', () => {
     configManager.set('auth', { enabled: true });
     const res = await send({ from: 'relay.human.console' }, { authorization: `Bearer ${apiKey}` });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('person_required');
+    expect(res.body.code).toBe('person_only');
     expect(relayCore.publish).not.toHaveBeenCalled();
   });
 
