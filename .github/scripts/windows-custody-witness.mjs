@@ -1,7 +1,17 @@
 /** Keep exact private Windows witness outputs and raw logs from the opt-in hosted proof. */
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { appendFile, copyFile, mkdir, readdir, realpath, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -159,8 +169,80 @@ async function witness(arch, handoff, evidence) {
   if (execution.error) throw execution.error;
 }
 
+/** Build with the selected Node distribution's own tool and a fresh per-run SDK directory. */
+async function inboxWitness(temporary, evidence) {
+  const { arch, versions } = process;
+  const inbox = join(root, 'inbox');
+  const gyp = join(dirname(process.execPath), 'node_modules', 'npm', 'node_modules', 'node-gyp');
+  const cache = await mkdtemp(join(temporary, 'custody-inbox-node-sdk-'));
+  const build = await child(
+    join(gyp, 'bin', 'node-gyp.js'),
+    [
+      'rebuild',
+      '--directory=' + inbox,
+      '--target=' + versions.node,
+      '--arch=' + arch,
+      '--devdir=' + cache,
+      '--dist-url=https://nodejs.org/dist',
+    ],
+    evidence,
+    'build'
+  );
+  if (build.error) throw build.error;
+
+  // node-gyp checks its newly downloaded headers and node.lib against Node's release sums.
+  const sdk = join(cache, versions.node);
+  const includes = join(sdk, 'include', 'node');
+  const header = await readFile(join(includes, 'node_version.h'), 'utf8');
+  const version = ['MAJOR', 'MINOR', 'PATCH']
+    .map(
+      (part) =>
+        header.match(new RegExp('^#define NODE_' + part + '_VERSION\\s+(\\d+)\\s*$', 'm'))?.[1]
+    )
+    .join('.');
+  if (version !== versions.node) throw new Error('The built inbox headers do not match this Node');
+
+  const digest = async (file) =>
+    createHash('sha256')
+      .update(await readFile(file))
+      .digest('hex');
+  const file = 'custody_inbox.node';
+  const compiled = join(inbox, 'build', 'Release', file);
+  const retained = join(evidence, file);
+  await copyFile(compiled, retained, constants.COPYFILE_EXCL);
+  const artifactSha256 = await digest(retained);
+  const inputs = {
+    node: versions.node,
+    architecture: arch,
+    nodeGyp: JSON.parse(await readFile(join(gyp, 'package.json'), 'utf8')).version,
+    headersVersion: version,
+    nodeApiHeaderSha256: await digest(join(includes, 'node_api.h')),
+    nodeLibSha256: await digest(join(sdk, arch, 'node.lib')),
+    artifactSha256,
+  };
+  await writeFile(join(evidence, 'build.json'), JSON.stringify(inputs, null, 2) + '\n', {
+    flag: 'wx',
+  });
+
+  const result = await child(join(inbox, 'inbox-witness.mjs'), [], evidence, 'witness');
+  if (result.error) throw result.error;
+  const observed = JSON.parse(result.stdout);
+  if (
+    observed.platform !== 'win32' ||
+    observed.arch !== arch ||
+    observed.directory !== 'removed' ||
+    observed.workerIdentityMatched !== true ||
+    observed.inheritedRecordAcl !== true ||
+    (await digest(compiled)) !== artifactSha256
+  )
+    throw new Error('Windows inbox fixture did not confirm this build and its cleanup');
+  await writeFile(join(evidence, 'receipt.json'), JSON.stringify(observed, null, 2) + '\n', {
+    flag: 'wx',
+  });
+}
+
 async function main() {
-  const [phase, ...remaining] = process.argv.slice(2);
+  const [phase, scope, ...remaining] = process.argv.slice(2);
   const phases = {
     prepare: ['x64', '24.19.0'],
     companion: ['x64', '24.19.0'],
@@ -168,7 +250,11 @@ async function main() {
     ia32: ['ia32', '22.23.3'],
     arm64: ['arm64', '24.19.0'],
   };
-  if (remaining.length || !Object.hasOwn(phases, phase)) {
+  if (
+    remaining.length ||
+    !Object.hasOwn(phases, phase) ||
+    (scope !== undefined && (scope !== 'inbox' || !['x64', 'ia32', 'arm64'].includes(phase)))
+  ) {
     throw new Error('Choose one Windows custody proof phase');
   }
   const [expectedArch, expectedVersion] = phases[phase];
@@ -188,7 +274,7 @@ async function main() {
   }
   const temporary = await realpath(process.env.RUNNER_TEMP);
   const handoff = join(temporary, 'windows-custody-handoff');
-  const evidence = join(temporary, 'windows-custody-evidence', phase);
+  const evidence = join(temporary, 'windows-custody-evidence', phase, scope ?? '');
   await mkdir(evidence, { recursive: true });
   await writeFile(
     join(evidence, 'provenance.json'),
@@ -210,7 +296,8 @@ async function main() {
     { flag: 'wx' }
   );
 
-  if (phase === 'prepare') await prepare(evidence);
+  if (scope === 'inbox') await inboxWitness(temporary, evidence);
+  else if (phase === 'prepare') await prepare(evidence);
   else if (phase === 'companion') await prepareCompanion(handoff, evidence);
   else await witness(phase, handoff, evidence);
 }
