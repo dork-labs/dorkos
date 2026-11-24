@@ -345,6 +345,52 @@ export const PROBLEM_CODE_LIST = [
   // Money.
   /** The monthly spending limit for paid actions is reached: nothing was spent. */
   { code: 'spend_limit_reached', status: 409, title: 'This month’s spending limit is reached.' },
+  // Signing in, confirming it's you, devices and remote access.
+  /** The password typed for a step-up or the person session didn't match the owner's. */
+  { code: 'wrong_password', status: 403, title: 'That’s not your DorkOS password.' },
+  /** One held action took its last wrong password and was dropped. */
+  { code: 'too_many_tries', status: 403, title: 'Too many wrong passwords. Nothing changed.' },
+  /** The password matched but is too short to confirm with: choose a longer one. */
+  { code: 'password_too_short', status: 409, title: 'That password is too short to confirm with.' },
+  { code: 'no_password', status: 409, title: 'This computer’s owner has no password yet.' },
+  { code: 'no_owner', status: 409, title: 'Create an owner account first.' },
+  /** A password may not cross this connection: confirm at the computer DorkOS runs on. */
+  {
+    code: 'insecure_connection',
+    status: 403,
+    title: 'Confirm this on the computer DorkOS runs on.',
+  },
+  /** A loaded mini app an agent can edit keeps confirming off. `blockedBy` names them. */
+  { code: 'extension_risk', status: 409, title: 'A mini app an agent can edit is loaded.' },
+  /** The sign-in began before a risky mini app was cleared: sign in again. */
+  { code: 'stale_sign_in', status: 409, title: 'Sign in again, then try once more.' },
+  /** The page opened before a risky mini app was cleared: reload it. */
+  { code: 'stale_page', status: 409, title: 'Reload this page, then try again.' },
+  { code: 'passkey_needed', status: 409, title: 'Add a passkey on this computer first.' },
+  /** The owner's passkey belongs to another address of this computer: open DorkOS there. */
+  {
+    code: 'passkey_on_other_address',
+    status: 409,
+    title: 'Your passkey works at another address of this computer.',
+  },
+  { code: 'passkey_refused', status: 401, title: 'That passkey check didn’t work.' },
+  /** Opening DorkOS to other devices needs sign-in on: create the owner account first. */
+  {
+    code: 'auth_required_for_exposure',
+    status: 409,
+    title: 'Turn on sign-in before other devices can reach DorkOS.',
+  },
+  { code: 'lan_access_unsupported', status: 409, title: 'Network access doesn’t work here yet.' },
+  /** An environment variable decides this setting, so it can't be changed here. */
+  { code: 'set_by_environment', status: 409, title: 'An environment setting decides this.' },
+  {
+    code: 'remote_access_unavailable',
+    status: 409,
+    title: 'Remote access isn’t available here right now.',
+  },
+  { code: 'signin_no_retry', status: 409, title: 'This sign-in can’t start again here.' },
+  /** The browser won't keep a sign-in cookie over plain http at this address. */
+  { code: 'sign_in_needs_https', status: 409, title: 'Open DorkOS over https to stay signed in.' },
   // Tasks, to-dos, the work queue and settings.
   {
     code: 'schedule_package_owned',

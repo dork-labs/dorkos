@@ -271,29 +271,35 @@ function ActionStepUpSheet({
       });
       return;
     }
-    if (result.reason === 'password-too-short' && stage.kind === 'password') {
+    if (result.reason === 'password_too_short' && stage.kind === 'password') {
       setFailure(null);
       setStage({ kind: 'change', view: stage.view, minLength: result.minLength ?? 8 });
       return;
     }
     // It expired while open: the action is asked for again, and the new sheet
     // says why (designer, DOR-3467: an expired proof reopens on the same method).
-    if (result.reason === 'expired' || result.reason === 'different-request') {
+    if (result.reason === 'expired' || result.reason === 'precondition_failed') {
       finishActionStepUp(heldActionId, {
         kind: 'ask-again',
-        ...(result.reason === 'different-request' ? { reason: 'different-request' as const } : {}),
+        ...(result.reason === 'precondition_failed'
+          ? { reason: 'different-request' as const }
+          : {}),
       });
       return;
     }
     // Refused as too old while the sheet was open: the same body the read shows.
-    if (result.reason === 'stale-page' || result.reason === 'stale-sign-in') {
+    if (result.reason === 'stale_page' || result.reason === 'stale_sign_in') {
       setStage({
         kind: 'password',
-        view: { ...stage.view, methods: [], passwordUnavailable: result.reason },
+        view: {
+          ...stage.view,
+          methods: [],
+          passwordUnavailable: result.reason === 'stale_page' ? 'stale-page' : 'stale-sign-in',
+        },
       });
       return;
     }
-    if (result.reason === 'too-many-attempts') {
+    if (result.reason === 'rate_limited') {
       setWaitUntil(Date.now() + (result.retryAfterSeconds ?? 60) * 1000);
     }
     const ended = endedBy(
@@ -306,7 +312,7 @@ function ActionStepUpSheet({
       return;
     }
     setFailure(result);
-    if (result.reason === 'wrong-password') queueMicrotask(() => passwordRef.current?.select());
+    if (result.reason === 'wrong_password') queueMicrotask(() => passwordRef.current?.select());
   }
 
   function handleSubmit(e: FormEvent) {
@@ -404,7 +410,7 @@ function ActionStepUpSheet({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={waiting || stage.kind === 'loading'}
-                aria-invalid={failure?.reason === 'wrong-password' || undefined}
+                aria-invalid={failure?.reason === 'wrong_password' || undefined}
                 aria-describedby={failure ? failureId : undefined}
                 required
                 autoFocus
@@ -464,26 +470,26 @@ function endedBy(
   remote = false
 ): Extract<Stage, { kind: 'ended' }> | null {
   switch (failure.reason) {
-    case 'too-many-tries':
+    case 'too_many_tries':
       return {
         kind: 'ended',
         message: approval
           ? 'Too many wrong passwords. Nothing was allowed, and the request is still waiting.'
           : 'Too many wrong passwords. Nothing changed.',
       };
-    case 'insecure-connection':
+    case 'insecure_connection':
       return {
         kind: 'ended',
         message: 'Confirm this on the computer running DorkOS.',
       };
-    case 'not-your-action':
-    case 'not-a-person':
-    case 'extension-risk':
-    case 'stale-sign-in':
-    case 'stale-page':
+    case 'forbidden':
+    case 'person_only':
+    case 'extension_risk':
+    case 'stale_sign_in':
+    case 'stale_page':
     case 'offline':
       return { kind: 'ended', message: failure.message };
-    case 'no-password':
+    case 'no_password':
       return {
         kind: 'ended',
         message: remote
@@ -506,9 +512,9 @@ function FailureLine({
   secondsLeft: number;
 }) {
   const text =
-    failure.reason === 'too-many-attempts'
+    failure.reason === 'rate_limited'
       ? `Too many tries. Try again in ${Math.max(1, secondsLeft)} sec.`
-      : failure.reason === 'wrong-password'
+      : failure.reason === 'wrong_password'
         ? 'That’s not your DorkOS password.'
         : failure.message;
   return (

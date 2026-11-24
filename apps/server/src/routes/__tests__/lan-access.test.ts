@@ -35,12 +35,7 @@ import type { LanAccessStatus } from '@dorkos/shared/types';
 import { configManager } from '../../services/core/config-manager.js';
 import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { NEEDS_PERSON_AT_THIS_COMPUTER } from '../../lib/caller-authority.js';
-import {
-  createLanAccessRoutes,
-  LAN_ACCESS_SET_BY_ENVIRONMENT,
-  LAN_ACCESS_UNSUPPORTED,
-} from '../lan-access.js';
+import { createLanAccessRoutes } from '../lan-access.js';
 
 const target = swappableServer();
 const mockConfigGet = vi.mocked(configManager.get) as unknown as ReturnType<typeof vi.fn>;
@@ -94,7 +89,7 @@ describe('POST /api/lan-access { enabled: true }', () => {
     current.canExpose.mockReturnValue(false);
     const res = await request(app()).post('/api/lan-access').send({ enabled: true });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('AUTH_REQUIRED_FOR_EXPOSURE');
+    expect(res.body.code).toBe('auth_required_for_exposure');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
@@ -102,8 +97,8 @@ describe('POST /api/lan-access { enabled: true }', () => {
     current = deps({ setByEnvironment: 'DORKOS_HOST=0.0.0.0' });
     const res = await request(app()).post('/api/lan-access').send({ enabled: true });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe(LAN_ACCESS_SET_BY_ENVIRONMENT);
-    expect(res.body.error).toContain('DORKOS_HOST=0.0.0.0');
+    expect(res.body.code).toBe('set_by_environment');
+    expect(res.body.detail).toContain('DORKOS_HOST=0.0.0.0');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
@@ -111,7 +106,7 @@ describe('POST /api/lan-access { enabled: true }', () => {
     current = deps({ supported: false });
     const res = await request(app()).post('/api/lan-access').send({ enabled: true });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe(LAN_ACCESS_UNSUPPORTED);
+    expect(res.body.code).toBe('lan_access_unsupported');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
@@ -121,7 +116,7 @@ describe('POST /api/lan-access { enabled: true }', () => {
       .set('x-dorkos-agent', 'agent-token')
       .send({ enabled: true });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.code).toBe('person_only');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
@@ -135,7 +130,7 @@ describe('POST /api/lan-access { enabled: true }', () => {
       .set('Host', 'box.ngrok.app')
       .send({ enabled: true });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(res.body.code).toBe('operator_only');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
@@ -167,13 +162,15 @@ describe('POST /api/lan-access { enabled: true }', () => {
       .set('Host', 'box.ngrok.app')
       .send({ enabled: true });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_cookie_required');
+    expect(res.body.code).toBe('person_only');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 
   it('refuses a body that is not a yes or a no', async () => {
     const res = await request(app()).post('/api/lan-access').send({ enabled: 'yes' });
     expect(res.status).toBe(400);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('invalid_request');
     expect(current.writeSetting).not.toHaveBeenCalled();
   });
 });

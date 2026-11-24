@@ -123,8 +123,8 @@ export type WifiSignInApproval = z.infer<typeof WifiSignInApprovalSchema>;
 /** Answer code (428) when an action waits for a fresh passkey check; carries `options`. */
 export const PASSKEY_CHECK_CODE = 'PASSKEY_CHECK_REQUIRED';
 
-/** Answer code (409) when an action needs a passkey on this computer and there is none. */
-export const PASSKEY_NEEDED_CODE = 'PASSKEY_NEEDED';
+/** Problem code (409) when an action needs a passkey on this computer and there is none. */
+export const PASSKEY_NEEDED_CODE = 'passkey_needed';
 
 /** What the app asks the server about the person's own sign-ins. */
 export interface SignedInDevicesTransport {

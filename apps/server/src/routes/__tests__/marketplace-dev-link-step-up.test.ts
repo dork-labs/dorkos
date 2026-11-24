@@ -60,9 +60,7 @@ describe('dev link confirmation', () => {
     });
     expect(held.status).toBe(428);
     expect(devLinks.link).not.toHaveBeenCalled();
-    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
-    );
+    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
     expect(devLinks.link).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
       ok: true,

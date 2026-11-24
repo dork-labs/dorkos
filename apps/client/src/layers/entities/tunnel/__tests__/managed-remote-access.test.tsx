@@ -197,7 +197,7 @@ describe('a switch dispatches by the selected mode', () => {
 describe('the managed-only writes', () => {
   it('routes a setup refused for want of a login into owner setup, then retries', async () => {
     const refusal = Object.assign(new Error('Remote access needs a login.'), {
-      code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      code: 'auth_required_for_exposure',
       status: 409,
     });
     const transport = createMockTransport({

@@ -11,7 +11,8 @@
  *
  * @module routes/sign-in-landings
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
@@ -22,7 +23,9 @@ import {
 import { logger } from '../lib/logger.js';
 
 /** The answer when the record is gone (expired, or never written). */
-const GONE = { error: 'This sign-in page expired.', code: 'SIGNIN_LANDING_GONE' } as const;
+function gone(c: Context): Response {
+  return problem(c, 'expired', { detail: 'This sign-in page expired.', status: 404 });
+}
 
 /**
  * Build the routes mounted at `/api/sign-in-landings`.
@@ -37,27 +40,24 @@ export function createSignInLandingRoutes(
 
   router.use('*', async (c, next) => {
     if (!isAtThisComputer(honoRequestFacts(c))) {
-      return c.json({ error: 'Not available.', code: 'NOT_AT_THIS_COMPUTER' }, 403);
+      return problem(c, 'operator_only', { detail: 'Open this on the computer DorkOS runs on.' });
     }
     return next();
   });
 
   router.get('/:id', (c) => {
     const landing = landings.get(c.req.param('id'));
-    if (!landing) return c.json(GONE, 404);
+    if (!landing) return gone(c);
     c.header('Cache-Control', 'no-store');
     return c.json(landing);
   });
 
   router.post('/:id/retry', async (c) => {
     const id = c.req.param('id');
-    if (!landings.get(id)) return c.json(GONE, 404);
+    if (!landings.get(id)) return gone(c);
     const restarted = landings.retry(id);
     if (!restarted) {
-      return c.json(
-        { error: 'This sign-in can’t start again here.', code: 'SIGNIN_NO_RETRY' },
-        409
-      );
+      return problem(c, 'signin_no_retry', { detail: 'This sign-in can’t start again here.' });
     }
     try {
       return c.json(await restarted);
@@ -65,10 +65,7 @@ export function createSignInLandingRoutes(
       logger.warn('[sign-in-landings] Try again could not start the sign-in', {
         reason: err instanceof Error ? err.message : String(err),
       });
-      return c.json(
-        { error: 'Couldn’t start the sign-in again.', code: 'SIGNIN_RETRY_FAILED' },
-        502
-      );
+      return problem(c, 'upstream_unavailable', { detail: 'Couldn’t start the sign-in again.' });
     }
   });
 

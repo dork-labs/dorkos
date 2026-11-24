@@ -22,9 +22,7 @@ describe('tunnel confirmation', () => {
     expect(held.status).toBe(428);
     expect(tunnelManager.start).not.toHaveBeenCalled();
     expect(configManager.get('tunnel').enabled).toBe(false);
-    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
-    );
+    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
     expect(tunnelManager.start).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
       ok: true,

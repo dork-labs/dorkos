@@ -19,9 +19,9 @@
  *    own tunnel, managed access itself and DorkOS's own `https` listener pass;
  * 3b. the front-door bar (`refuseFrontDoorChange`, DOR-2969): only the
  *    install's owner using the app, never an API key;
- * 4. for anything managed, a real login (`canExpose`), answered with the same
- *    `AUTH_REQUIRED_FOR_EXPOSURE` the person's own tunnel uses, so the client
- *    routes the person into creating an owner account.
+ * 4. for anything managed, a real login (`canExpose`), answered with the
+ *    `auth_required_for_exposure` problem, so the client routes the person
+ *    into creating an owner account.
  *
  * Withdrawing runs the first three bars and never the fourth: like every
  * narrowing, it must work with login, the exposure prerequisites or Cloud
@@ -38,13 +38,13 @@
  * @module routes/remote-access
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
 
 import type { ApiEnv } from '../http/api-chain.js';
-import { runFrontDoorWrite } from './front-door-step-up.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { frontDoorProblem, runFrontDoorWrite } from './front-door-step-up.js';
+import { problem, readJsonBody, validationProblem, type ProblemStatus } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
   refuseFrontDoorChange,
@@ -53,18 +53,18 @@ import {
 } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
 import {
-  AUTH_REQUIRED_FOR_EXPOSURE,
   EXPOSURE_REQUIRES_LOGIN_MESSAGE,
   canExpose,
 } from '../services/core/auth/exposure-guard.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
+import { OPERATOR_ONLY_CONFIG_ERROR } from '../services/core/operator/config-write-policy.js';
 import {
-  OPERATOR_ONLY_CONFIG_CODE,
-  OPERATOR_ONLY_CONFIG_ERROR,
-} from '../services/core/operator/config-write-policy.js';
-import {
+  MANAGED_REMOTE_ALREADY_SET_UP,
+  MANAGED_REMOTE_NOT_SET_UP,
+  MANAGED_REMOTE_SETUP_FAILED,
+  MANAGED_REMOTE_UNAVAILABLE,
   managedRemoteCoordinator,
   type CoordinatorResult,
   type ManagedRemoteCoordinator,
@@ -72,8 +72,16 @@ import {
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth/gate-policy.js';
 
-/** Refusal code for a remote access action from anywhere but this computer. */
-export const REMOTE_SETUP_NEEDS_THIS_COMPUTER = 'REMOTE_SETUP_NEEDS_THIS_COMPUTER';
+/**
+ * The problem code for each way the managed remote coordinator refuses. Its
+ * own codes stay its own; this is where they meet the API's one list.
+ */
+const COORDINATOR_PROBLEM: Record<string, ProblemCode> = {
+  [MANAGED_REMOTE_UNAVAILABLE]: 'remote_access_unavailable',
+  [MANAGED_REMOTE_ALREADY_SET_UP]: 'conflict',
+  [MANAGED_REMOTE_NOT_SET_UP]: 'conflict',
+  [MANAGED_REMOTE_SETUP_FAILED]: 'upstream_unavailable',
+};
 
 const ModeRequestSchema = z.object({ mode: z.enum(['off', 'byo', 'managed']) });
 
@@ -106,27 +114,23 @@ function refusePersonBars(c: Context<ApiEnv>): Response | undefined {
   const caller = honoRequestFacts(c);
   const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'remote access');
   if (cookieRefusal) {
-    return c.json(
-      { error: cookieRefusal.error, code: cookieRefusal.code },
-      cookieRefusal.status as ContentfulStatusCode
-    );
+    return problem(c, 'person_only', {
+      detail: `${cookieRefusal.error}.`,
+      status: cookieRefusal.status as ProblemStatus,
+    });
   }
   if (!trustedCaller(readCallerAuthority(caller))) {
     logger.warn('[RemoteAccess] Refused a remote access action from an agent');
-    return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
+    return problem(c, 'person_only', { detail: `${OPERATOR_ONLY_CONFIG_ERROR}.` });
   }
   if (!isAtThisComputer(caller) && !isOnEncryptedConnection(caller)) {
-    return c.json(
-      {
-        error: 'Remote access can only be changed on the computer DorkOS runs on.',
-        code: REMOTE_SETUP_NEEDS_THIS_COMPUTER,
-      },
-      403
-    );
+    return problem(c, 'operator_only', {
+      detail: 'Remote access can only be changed on the computer DorkOS runs on.',
+    });
   }
   // The front-door bar: the install's owner, using the app, never a key.
   const frontDoor = refuseFrontDoorChange(caller, 'remote access');
-  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
+  if (frontDoor) return frontDoorProblem(c, frontDoor);
   return undefined;
 }
 
@@ -143,10 +147,10 @@ export function createRemoteAccessRoutes(
   /** Answer an action: its refusal, or the full report. */
   async function answer(c: Context<ApiEnv>, result: CoordinatorResult | void): Promise<Response> {
     if (result && !result.ok) {
-      return c.json(
-        { error: result.error, code: result.code },
-        result.status as ContentfulStatusCode
-      );
+      return problem(c, COORDINATOR_PROBLEM[result.code] ?? 'conflict', {
+        detail: result.error,
+        status: result.status as ProblemStatus,
+      });
     }
     const report: RemoteAccessReport = await deps.coordinator.report();
     return c.json(report);
@@ -155,10 +159,7 @@ export function createRemoteAccessRoutes(
   /** The exposure guard's refusal, or `undefined` when a real login is set up. */
   function refuseWithoutLogin(c: Context<ApiEnv>): Response | undefined {
     if (deps.canExpose()) return undefined;
-    return c.json(
-      { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
-      409
-    );
+    return problem(c, 'auth_required_for_exposure', { detail: EXPOSURE_REQUIRES_LOGIN_MESSAGE });
   }
 
   /** GET /api/remote-access/report — where remote access stands. */
@@ -187,7 +188,7 @@ export function createRemoteAccessRoutes(
     if (refusal) return refusal;
     const parsed = ModeRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Choose off, byo or managed.', code: 'INVALID_MODE' }, 400);
+      return validationProblem(c, parsed.error, { detail: 'Choose off, byo or managed.' });
     }
     const { mode } = parsed.data;
     const loginRefusal = mode === 'managed' ? refuseWithoutLogin(c) : undefined;

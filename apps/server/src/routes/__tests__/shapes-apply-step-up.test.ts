@@ -109,9 +109,7 @@ describe('Shape apply confirmation', () => {
     const held = await owner.call('post', `/api/shapes/${SHAPE}/apply`, via).send({});
     expect(held.status).toBe(428);
     expect(setActiveShape).not.toHaveBeenCalled();
-    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
-    );
+    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
     expect(setActiveShape).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
       ok: true,

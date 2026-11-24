@@ -34,7 +34,7 @@ export interface ConfirmActionFailure {
   message: string;
   /** Wrong passwords this action will still take. */
   triesLeft?: number;
-  /** For `too-many-attempts`: how long until it is checked again. */
+  /** For `rate_limited`: how long until it is checked again, in seconds. */
   retryAfterSeconds?: number;
   /** For a too-short password: the shortest one allowed. */
   minLength?: number;
@@ -55,15 +55,17 @@ const KNOWN: readonly string[] = STEP_UP_REFUSAL_CODES;
 async function failureOf(res: Response): Promise<ConfirmActionFailure> {
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
   const code = typeof body?.code === 'string' ? body.code : '';
-  const number = (key: string) => (typeof body?.[key] === 'number' ? body[key] : undefined);
+  const number = (key: string): number | undefined => {
+    const value = body?.[key];
+    return typeof value === 'number' ? value : undefined;
+  };
+  const retryAfterMs = number('retryAfterMs');
   return {
     ok: false,
     reason: KNOWN.includes(code) ? (code as StepUpRefusalCode) : 'other',
     message: readErrorBody(body, 'That didn’t work. Try again.').message,
     ...(number('triesLeft') !== undefined ? { triesLeft: number('triesLeft') } : {}),
-    ...(number('retryAfterSeconds') !== undefined
-      ? { retryAfterSeconds: number('retryAfterSeconds') }
-      : {}),
+    ...(retryAfterMs !== undefined ? { retryAfterSeconds: Math.ceil(retryAfterMs / 1000) } : {}),
     ...(number('minLength') !== undefined ? { minLength: number('minLength') } : {}),
   };
 }

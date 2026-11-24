@@ -37,9 +37,8 @@ import type { RemoteAccessReport } from '@dorkos/shared/types';
 import { configManager } from '../../services/core/config-manager.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { createRemoteAccessRoutes, REMOTE_SETUP_NEEDS_THIS_COMPUTER } from '../remote-access.js';
+import { createRemoteAccessRoutes } from '../remote-access.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { NEEDS_PERSON_AT_THIS_COMPUTER } from '../../lib/caller-authority.js';
 
 const REPORT: RemoteAccessReport = {
   mode: 'off',
@@ -129,7 +128,7 @@ describe.each([
   it('refuses a caller that names itself an agent', async () => {
     const res = await request(app()).post(path).set('x-dorkos-agent', 'agent-token').send(body);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_config');
+    expect(res.body.code).toBe('person_only');
     expect(effect()).not.toHaveBeenCalled();
   });
 
@@ -139,7 +138,7 @@ describe.each([
       .post(path)
       .send(body);
     expect(key.status).toBe(403);
-    expect(key.body.code).toBe('operator_cookie_required');
+    expect(key.body.code).toBe('person_only');
     expect(effect()).not.toHaveBeenCalled();
 
     const cookie = await request(
@@ -157,7 +156,7 @@ describe.each([
       .set('Host', 'box.ngrok.app')
       .send(body);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
+    expect(res.body.code).toBe('operator_only');
     expect(effect()).not.toHaveBeenCalled();
   });
 
@@ -166,13 +165,13 @@ describe.each([
       .post(path)
       .send(body);
     expect(guest.status).toBe(403);
-    expect(guest.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(guest.body.code).toBe('operator_only');
     const bearer = await request(app())
       .post(path)
       .set('Authorization', 'Bearer some-key')
       .send(body);
     expect(bearer.status).toBe(403);
-    expect(bearer.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(bearer.body.code).toBe('operator_only');
     expect(effect()).not.toHaveBeenCalled();
   });
 
@@ -181,7 +180,7 @@ describe.each([
     // always asked, whatever "Ask for a password on this computer too" says.
     const res = await request(app()).post(path).set('Host', 'box.ngrok.app').send(body);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_cookie_required');
+    expect(res.body.code).toBe('person_only');
     expect(effect()).not.toHaveBeenCalled();
   });
 
@@ -193,7 +192,7 @@ describe.each([
       .post(path)
       .send(body);
     expect(guest.status).toBe(403);
-    expect(guest.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(guest.body.code).toBe('operator_only');
     expect(effect()).not.toHaveBeenCalled();
     const owner = await request(app({ managed: true, user: SIGNED_IN }))
       .post(path)
@@ -206,7 +205,7 @@ describe.each([
     current.canExpose.mockReturnValue(false);
     const res = await request(app()).post(path).send(body);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('AUTH_REQUIRED_FOR_EXPOSURE');
+    expect(res.body.code).toBe('auth_required_for_exposure');
     expect(effect()).not.toHaveBeenCalled();
   });
 });
@@ -221,7 +220,13 @@ describe('POST /api/remote-access/enrolment', () => {
     } as never);
     const res = await request(app()).post('/api/remote-access/enrolment');
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ code: 'MANAGED_REMOTE_UNAVAILABLE', error: 'Not available.' });
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      status: 409,
+      code: 'remote_access_unavailable',
+      detail: 'Not available.',
+    });
+    expect(res.body).not.toHaveProperty('error');
   });
 });
 
@@ -288,15 +293,15 @@ describe('POST /api/remote-access/withdraw, a person at this computer', () => {
   it('refuses an agent and another device (signed in or not), and lets the owner over managed access', async () => {
     const agent = await request(app()).post(path).set('x-dorkos-agent', 'agent-token');
     expect(agent.status).toBe(403);
-    expect(agent.body.code).toBe('operator_only_config');
+    expect(agent.body.code).toBe('person_only');
     const remote = await request(app({ user: SIGNED_IN }))
       .post(path)
       .set('Host', 'box.ngrok.app');
     expect(remote.status).toBe(403);
-    expect(remote.body.code).toBe(REMOTE_SETUP_NEEDS_THIS_COMPUTER);
+    expect(remote.body.code).toBe('operator_only');
     const unsigned = await request(app()).post(path).set('Host', 'box.ngrok.app');
     expect(unsigned.status).toBe(403);
-    expect(unsigned.body.code).toBe('operator_cookie_required');
+    expect(unsigned.body.code).toBe('person_only');
     expect(current.coordinator.withdraw).not.toHaveBeenCalled();
     // The owner over managed access may withdraw, as at the desk (DOR-3172).
     const managed = await request(app({ managed: true, user: SIGNED_IN })).post(path);
@@ -310,7 +315,7 @@ describe('POST /api/remote-access/withdraw, a person at this computer', () => {
       app({ user: { userId: 'u1', credential: 'api-key' } as RequestUser })
     ).post(path);
     expect(key.status).toBe(403);
-    expect(key.body.code).toBe('operator_cookie_required');
+    expect(key.body.code).toBe('person_only');
     expect(current.coordinator.withdraw).not.toHaveBeenCalled();
     const cookie = await request(
       app({ user: { userId: 'u1', credential: 'cookie' } as RequestUser })

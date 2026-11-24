@@ -211,7 +211,7 @@ describe.each(ROUTES)('$name with a person’s setting', ({ send, call, reason }
 
   it('a wrong password runs nothing; the right one runs it as the person', async () => {
     const id = StepUpRequiredBodySchema.parse((await send(request(app()))).body).heldActionId;
-    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong-password');
+    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong_password');
     expect(call()).not.toHaveBeenCalled();
     const done = await confirmWith(id, PASSWORD);
     expect(done.body.ok).toBe(true);

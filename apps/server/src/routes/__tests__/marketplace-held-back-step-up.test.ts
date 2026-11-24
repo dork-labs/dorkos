@@ -102,7 +102,7 @@ describe('held-back package and kept files confirmation', () => {
       .send({ decision: 'allow', effects, bindsTo });
     expect(held.status).toBe(428);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(heldBackCards.onGranted).not.toHaveBeenCalled();
     expect(await shown('northwind-held')).toBeDefined();
@@ -157,7 +157,7 @@ describe('held-back package and kept files confirmation', () => {
       .send({ keepKey });
     expect(held.status).toBe(428);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect((await readInstalledFiles(root))?.unproven).toBeDefined();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

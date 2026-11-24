@@ -88,9 +88,7 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
         .send({ url: 'https://northwind.example.test', installName: 'Northwind desk' });
       expect(held.status).toBe(428);
       expect(pairing.start).not.toHaveBeenCalled();
-      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
-      );
+      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
       expect(pairing.start).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
         ok: true,
@@ -116,7 +114,7 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
     expect(held.status).toBe(428);
     expect(wake.from).toBe('me');
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(wake.from).toBe('me');
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -139,7 +137,7 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
     expect(held.status).toBe(428);
     expect(wake.answerIn).toEqual([]);
     expect((await owner.confirm(held.body.heldActionId, 'managed', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(policy.setAnswerIn).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'managed')).body).toMatchObject({

@@ -147,10 +147,12 @@ describe('ActionStepUpHost', () => {
 
   it('re-holds after a confirmation for a different request', async () => {
     heldWith(VIEW, [
-      409,
+      412,
       {
-        code: 'different-request',
-        error: 'That confirmation was for a different request. Confirm this one.',
+        title: 'Something changed since you last looked.',
+        status: 412,
+        code: 'precondition_failed',
+        detail: 'That confirmation was for a different request. Confirm this one.',
       },
     ]);
     render(<ActionStepUpHost />);
@@ -241,7 +243,10 @@ describe('ActionStepUpHost', () => {
   });
 
   it('says how many tries are left after a wrong password, and stays open', async () => {
-    heldWith(VIEW, [403, { code: 'wrong-password', error: 'Wrong.', triesLeft: 4 }]);
+    heldWith(VIEW, [
+      403,
+      { title: 'x', status: 403, code: 'wrong_password', detail: 'Wrong.', triesLeft: 4 },
+    ]);
     render(<ActionStepUpHost />);
     void ask();
     await confirmWith('nope');
@@ -250,7 +255,7 @@ describe('ActionStepUpHost', () => {
   });
 
   it('ends on the last wrong password: nothing changed', async () => {
-    heldWith(VIEW, [403, { code: 'too-many-tries', error: 'x' }]);
+    heldWith(VIEW, [403, { title: 'x', status: 403, code: 'too_many_tries', detail: 'x' }]);
     render(<ActionStepUpHost />);
     void ask();
     await confirmWith('nope');
@@ -507,7 +512,10 @@ describe('ActionStepUpHost', () => {
     });
 
     it('shows the Reload body when the password step is refused as too old', async () => {
-      heldWith(VIEW, [409, { code: 'stale-page', error: STALE_LINE, stale: 'stale-page' }]);
+      heldWith(VIEW, [
+        409,
+        { title: 'x', status: 409, code: 'stale_page', detail: STALE_LINE, stale: 'stale-page' },
+      ]);
       const navigate = vi.fn();
       render(<ActionStepUpHost navigate={navigate} />);
       void ask();
@@ -654,7 +662,10 @@ describe('ActionStepUpHost', () => {
     const fetchSpy = server((method, url) => {
       if (method === 'GET') return [200, VIEW];
       if (url.endsWith('/password'))
-        return [409, { code: 'password-too-short', error: 'x', minLength: 8 }];
+        return [
+          409,
+          { title: 'x', status: 409, code: 'password_too_short', detail: 'x', minLength: 8 },
+        ];
       if (url.endsWith('/change-password')) return [200, { ok: true, status: 201, result: {} }];
       return [204, null];
     });

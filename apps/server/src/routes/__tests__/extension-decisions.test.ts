@@ -665,7 +665,7 @@ describe('remote extension confirmation', () => {
       .set({ revision: 99 })
       .where(eq(extensionDecisions.id, id))
       .run();
-    expect((await confirm(offered.body.heldActionId)).body.code).toBe('different-request');
+    expect((await confirm(offered.body.heldActionId)).body.code).toBe('precondition_failed');
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
@@ -677,7 +677,7 @@ describe('remote extension confirmation', () => {
     const held = await yes(id);
     expect(held.status).toBe(428);
     await raised('flow', { why: 'Different work will happen.' });
-    expect((await confirm(held.body.heldActionId)).body.code).toBe('different-request');
+    expect((await confirm(held.body.heldActionId)).body.code).toBe('precondition_failed');
     expect(handler).not.toHaveBeenCalled();
   });
 

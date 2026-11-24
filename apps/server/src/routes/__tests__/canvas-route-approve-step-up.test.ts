@@ -37,9 +37,7 @@ describe('allowing a document route waits for the owner', () => {
         .send(body);
       expect(held.status).toBe(428);
       expect(controls.approve).not.toHaveBeenCalled();
-      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
-      );
+      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
       expect(controls.approve).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
         ok: true,

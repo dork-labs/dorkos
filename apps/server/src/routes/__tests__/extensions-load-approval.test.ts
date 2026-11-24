@@ -289,8 +289,8 @@ describe('POST /api/extensions/:id/approve', () => {
       .post(`/api/step-up/${held.body.heldActionId}/password`)
       .set('Origin', 'http://localhost:7777')
       .send({ password: 'made-up approval password' });
-    expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('different-request');
+    expect(refused.status).toBe(412);
+    expect(refused.body.code).toBe('precondition_failed');
     expect(manager.approveToRun).not.toHaveBeenCalled();
   });
 

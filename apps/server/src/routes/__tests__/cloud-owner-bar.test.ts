@@ -597,7 +597,7 @@ describe('DorkOS account confirmation', () => {
         expect(held.status).toBe(428);
         expect(write.effect).not.toHaveBeenCalled();
         browser = 'other-browser';
-        expect((await confirm(held.body.heldActionId)).body.code).toBe('not-your-action');
+        expect((await confirm(held.body.heldActionId)).body.code).toBe('forbidden');
         expect(write.effect).not.toHaveBeenCalled();
         browser = 'owner-browser';
         expect((await confirm(held.body.heldActionId)).body).toMatchObject({
@@ -639,7 +639,7 @@ describe('DorkOS account confirmation', () => {
         expect(hosted.startMove).not.toHaveBeenCalled();
         expect(moveUploads.uploads.begin).not.toHaveBeenCalled();
         browser = 'other-browser';
-        expect((await confirm(held.body.heldActionId)).body.code).toBe('not-your-action');
+        expect((await confirm(held.body.heldActionId)).body.code).toBe('forbidden');
         expect(hosted.startMove).not.toHaveBeenCalled();
         browser = 'owner-browser';
         expect((await confirm(held.body.heldActionId)).body).toMatchObject({

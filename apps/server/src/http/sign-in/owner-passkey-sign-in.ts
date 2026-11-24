@@ -14,7 +14,10 @@
  *
  * @module http/sign-in/owner-passkey-sign-in
  */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
+import { apiNotFound } from '../unclaimed.js';
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 
 import { isOwnOriginJsonWrite } from '../../lib/http/own-origin-write.js';
@@ -41,39 +44,41 @@ export const OWNER_PASSKEY_FINISH_PATH = '/api/owner-sign-in/passkey/finish';
  * @param auth - Better Auth, for the server-only sign-in.
  */
 export function mountOwnerPasskeySignIn(app: Hono<ApiEnv>, auth: Auth): void {
-  const refused = { error: 'That passkey didn’t sign you in. Try again.' };
+  // One sentence whatever the reason, so it says nothing about which addresses have a passkey.
+  const refused = (c: Context, code: ProblemCode): Response =>
+    problem(c, code, { detail: 'That passkey didn’t sign you in. Try again.' });
 
   app.post('/api/owner-sign-in/passkey/options', async (c) => {
-    if (ingressOf(c.env.incoming) === 'wifi') return c.json({ error: 'Not found' }, 404);
+    if (ingressOf(c.env.incoming) === 'wifi') return apiNotFound(c);
     const facts = honoRequestFacts(c);
     c.header('Cache-Control', 'no-store');
-    if (!isOwnOriginJsonWrite(facts.headers)) return c.json(refused, 403);
+    if (!isOwnOriginJsonWrite(facts.headers)) return refused(c, 'origin_not_allowed');
     const owner = readOwnerAccount();
-    if (!owner) return c.json(refused, 404);
+    if (!owner) return refused(c, 'not_found');
     const options = await startPasskeyCheck(
       { kind: 'sign-in', userId: owner.id },
       String(facts.headers.origin)
     );
     // One answer whatever the reason, so it says nothing about which addresses have a passkey.
-    if (typeof options === 'string') return c.json(refused, 403);
+    if (typeof options === 'string') return refused(c, 'forbidden');
     return c.json({ options });
   });
 
   app.post(OWNER_PASSKEY_FINISH_PATH, async (c) => {
-    if (ingressOf(c.env.incoming) === 'wifi') return c.json({ error: 'Not found' }, 404);
+    if (ingressOf(c.env.incoming) === 'wifi') return apiNotFound(c);
     const facts = honoRequestFacts(c);
     c.header('Cache-Control', 'no-store');
-    if (!isOwnOriginJsonWrite(facts.headers)) return c.json(refused, 403);
+    if (!isOwnOriginJsonWrite(facts.headers)) return refused(c, 'origin_not_allowed');
     const owner = readOwnerAccount();
     const body = (await c.req.json().catch(() => null)) as { response?: unknown } | null;
     if (!owner || !body?.response || typeof body.response !== 'object') {
-      return c.json(refused, 400);
+      return refused(c, 'invalid_request');
     }
     const checked = await finishPasskeyCheck(
       { kind: 'sign-in', userId: owner.id },
       body.response as AuthenticationResponseJSON
     );
-    if (typeof checked === 'string') return c.json(refused, 401);
+    if (typeof checked === 'string') return refused(c, 'passkey_refused');
     const requestClass = classifyRequest(facts, currentServerRole());
     const { headers } = await withRegistrationCaller(requestClass, () =>
       auth.api.signInCheckedAccount({

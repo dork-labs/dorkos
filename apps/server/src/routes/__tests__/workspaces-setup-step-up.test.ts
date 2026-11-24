@@ -49,7 +49,7 @@ describe('workspace setup confirmation', () => {
     expect(held.status).toBe(428);
     expect(manager.ensure).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(manager.ensure).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -75,7 +75,7 @@ describe('workspace setup confirmation', () => {
     expect(held.status).toBe(428);
     expect(manager.remove).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(manager.remove).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

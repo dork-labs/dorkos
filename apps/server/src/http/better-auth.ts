@@ -20,6 +20,7 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { StepUpActionKind } from '@dorkos/shared/step-up';
 import type { TLSSocket } from 'node:tls';
 import type { Context, Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { Auth } from '../services/core/auth/index.js';
 import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../middleware/auth-rate-limit.js';
 import { buildSecondFactorGate } from '../middleware/second-factor-gate.js';
@@ -50,10 +51,7 @@ import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
 import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
 import { annotateRemoteMcpKeyList } from '../services/core/auth/remote-mcp-audit.js';
 import { confirmAuthWrite } from './better-auth-step-up.js';
-import {
-  WIFI_SIGN_IN_NEEDS_CODE,
-  wifiAuthPathAllowed,
-} from '../services/core/auth/sessions/wifi-auth-paths.js';
+import { wifiAuthPathAllowed } from '../services/core/auth/sessions/wifi-auth-paths.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -83,7 +81,9 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
     // Decide on the address Better Auth will route, never on Hono's reading of
     // it: a header must not be able to make the two disagree.
     const probe = requestForBetterAuth(c);
-    if (!probe) return c.json({ error: 'Bad request' }, 400);
+    if (!probe) {
+      return problem(c, 'malformed_request', { detail: 'The request’s address can’t be read.' });
+    }
     const authPath = new URL(probe.url).pathname
       .toLowerCase()
       .replace(/\/{2,}/g, '/')
@@ -91,13 +91,9 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
     // Over the network a device signs in with a code from this computer, never a
     // password (`sessions/wifi-auth-paths.ts`, DOR-4744). The listener's own mark decides.
     if (ingressOf(c.env.incoming) === 'wifi' && !wifiAuthPathAllowed(authPath)) {
-      return c.json(
-        {
-          code: WIFI_SIGN_IN_NEEDS_CODE,
-          message: 'On your network, sign in with a code from the computer DorkOS runs on.',
-        },
-        403
-      );
+      return problem(c, 'not_from_wifi', {
+        detail: 'On your network, sign in with a code from the computer DorkOS runs on.',
+      });
     }
     const apiKeyWrite = c.req.method === 'POST' && writesApiKey(authPath);
     const signOutKinds: Readonly<Record<string, StepUpActionKind>> = {
@@ -107,7 +103,7 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
     };
     const signOutKind = c.req.method === 'POST' ? signOutKinds[authPath] : undefined;
     if (apiKeyWrite && !mayWriteApiKeys(requestClass) && !isOnEncryptedConnection(facts)) {
-      return c.json({ code: API_KEY_NEEDS_THIS_COMPUTER, message: API_KEY_REFUSAL }, 403);
+      return problem(c, 'operator_only', { detail: API_KEY_REFUSAL });
     }
     // A session made on another route is nobody here, at these endpoints too.
     // At an open gate a session also needs the app's person proof (DOR-3330).
@@ -152,10 +148,7 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
   });
 }
 
-/** Refusal code for making or changing an API key over an unencrypted remote route. */
-export const API_KEY_NEEDS_THIS_COMPUTER = 'API_KEY_NEEDS_THIS_COMPUTER';
-
-/** What a person reads when that is refused. */
+/** What a person reads when making or changing an API key over an unencrypted remote route. */
 const API_KEY_REFUSAL = 'Use this computer or encrypted Remote Access to change API keys.';
 
 /**
@@ -242,9 +235,6 @@ async function headersForRoute(
   return { ...headers, cookie: withoutSessionCookies(cookie) };
 }
 
-/** Refusal code when a sign-in worked but the browser will drop its cookie. */
-export const SIGN_IN_NEEDS_HTTPS = 'SIGN_IN_NEEDS_HTTPS';
-
 /**
  * Turn a sign-in the browser is about to throw away into a refusal that says
  * why (F5, DOR-2968).
@@ -287,14 +277,9 @@ function explainDroppedSignIn(
     .getSetCookie()
     .some((cookie) => /session_token=[^;]/.test(cookie));
   if (!setsSession) return undefined;
-  return c.json(
-    {
-      code: SIGN_IN_NEEDS_HTTPS,
-      message:
-        'Your browser won’t keep a sign-in over plain http at this address. Open DorkOS over https, or on the computer it runs on.',
-    },
-    409
-  );
+  return problem(c, 'sign_in_needs_https', {
+    detail: 'This browser won’t keep a sign-in over plain http here. Open DorkOS over https.',
+  });
 }
 
 /** Whether an `Origin` names an https page. */

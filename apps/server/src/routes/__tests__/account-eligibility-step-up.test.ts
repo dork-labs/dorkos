@@ -79,7 +79,7 @@ describe('widening an account rule waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(claudeCode().projectAccounts).toMatchObject({ [project]: { allow: ['northwind'] } });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(claudeCode().projectAccounts).toMatchObject({ [project]: { allow: ['northwind'] } });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -101,7 +101,7 @@ describe('widening an account rule waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(claudeCode().defaultAccountOnlyProjects).toEqual([project]);
     expect((await owner.confirm(held.body.heldActionId, 'managed', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect((await owner.confirm(held.body.heldActionId, 'managed')).body).toMatchObject({
       ok: true,
@@ -121,7 +121,7 @@ describe('widening an account rule waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(flag()).toBe(true);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(flag()).toBe(true);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

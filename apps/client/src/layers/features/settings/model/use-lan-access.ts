@@ -31,7 +31,7 @@ export interface LanAccessModel {
  * Network access (DOR-2930): read whether other devices on this network can open
  * DorkOS, and flip it.
  *
- * A refusal carrying `AUTH_REQUIRED_FOR_EXPOSURE` is the same one the tunnel
+ * A refusal carrying `auth_required_for_exposure` is the same one the tunnel
  * meets, so it takes the same path: owner-account setup, then the switch again.
  */
 export function useLanAccess(): LanAccessModel {
@@ -58,7 +58,7 @@ export function useLanAccess(): LanAccessModel {
           // The switch is a setting too; keep every reader of the config current.
           void queryClient.invalidateQueries({ queryKey: configKeys.current() });
         } catch (err) {
-          if ((err as { code?: string } | null)?.code === 'AUTH_REQUIRED_FOR_EXPOSURE') {
+          if ((err as { code?: string } | null)?.code === 'auth_required_for_exposure') {
             // Login first, then the same switch again once the owner exists.
             requestOwnerSetup({
               reason: 'exposure',

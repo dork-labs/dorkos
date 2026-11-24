@@ -209,8 +209,8 @@ describe('stored request bindings', () => {
       .post(`/api/step-up/${held.heldActionId}/change-password`)
       .set('Origin', OWN_ORIGIN)
       .send({ currentPassword: SHORT_PASSWORD, newPassword: PASSWORD });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('different-request');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(deps.setOwnerPassword).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
   });
@@ -234,8 +234,8 @@ describe('stored request bindings', () => {
       .post(`/api/step-up/${held.heldActionId}/password`)
       .set('Origin', OWN_ORIGIN)
       .send({ password: PASSWORD });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('different-request');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(run).not.toHaveBeenCalled();
   });
 });
@@ -274,7 +274,7 @@ describe('a guarded action', () => {
       .get(`/api/step-up/${id}`)
       .set('Sec-Fetch-Site', 'none');
     expect(bare.status).toBe(403);
-    expect(bare.body.code).toBe('not-a-person');
+    expect(bare.body.code).toBe('person_only');
   });
 });
 
@@ -367,9 +367,9 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
-      code: 'extension-risk',
+      code: 'extension_risk',
       blockedBy: [RISK],
-      error:
+      detail:
         '“dorkos-marketing” can edit “Social queue”. Move or remove it in Settings → Extensions.',
     });
     expect(commit).not.toHaveBeenCalled();
@@ -380,7 +380,7 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     deps.extensionRisks = () => [{ id: 'media', name: 'Media Library', reason: 'changed' }];
     const res = await confirm(await hold(), PASSWORD);
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe(
+    expect(res.body.detail).toBe(
       '“Media Library” changed. Review it in Settings → Extensions, or remove it.'
     );
   });
@@ -472,12 +472,25 @@ describe('POST /api/step-up/:id/password', () => {
     expect(commit).toHaveBeenCalledTimes(1);
   });
 
+  it('answers a held action that fails to run with a fixed sentence, never its error', async () => {
+    commit.mockRejectedValueOnce(new Error('ENOENT: /Users/someone/.dork/secret.json'));
+    const id = await hold();
+    const res = await confirm(id, PASSWORD);
+    expect(res.status).toBe(500);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'internal_error',
+      detail: 'That didn’t work. Try again.',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('ENOENT');
+  });
+
   it('writes nothing on a wrong password, and counts it', async () => {
     const id = await hold();
     const res = await confirm(id, 'wrong horse');
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({
-      code: 'wrong-password',
+      code: 'wrong_password',
       triesLeft: STEP_UP_MAX_PASSWORD_TRIES - 1,
     });
     expect(commit).not.toHaveBeenCalled();
@@ -486,10 +499,10 @@ describe('POST /api/step-up/:id/password', () => {
   it('drops the action on its last wrong password, so even the right one then runs nothing', async () => {
     const id = await hold();
     for (let i = 1; i < STEP_UP_MAX_PASSWORD_TRIES; i++) {
-      expect((await confirm(id, `guess ${i}`)).body.code).toBe('wrong-password');
+      expect((await confirm(id, `guess ${i}`)).body.code).toBe('wrong_password');
     }
     const last = await confirm(id, 'guess last');
-    expect(last.body.code).toBe('too-many-tries');
+    expect(last.body.code).toBe('too_many_tries');
     expect((await confirm(id, PASSWORD)).body.code).toBe('expired');
     expect(commit).not.toHaveBeenCalled();
   });
@@ -499,7 +512,10 @@ describe('POST /api/step-up/:id/password', () => {
     const id = await hold();
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(429);
-    expect(res.body.code).toBe('too-many-attempts');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('rate_limited');
+    expect(res.body.retryAfterMs).toEqual(expect.any(Number));
+    expect(res.body).not.toHaveProperty('retryAfterSeconds');
     expect(res.headers['retry-after']).toBeDefined();
     expect(commit).not.toHaveBeenCalled();
   });
@@ -512,7 +528,7 @@ describe('POST /api/step-up/:id/password', () => {
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({
       code: 'expired',
-      error: 'That took too long. Nothing changed.',
+      detail: 'That took too long. Nothing changed.',
     });
     expect(commit).not.toHaveBeenCalled();
   });
@@ -521,7 +537,7 @@ describe('POST /api/step-up/:id/password', () => {
     const id = await hold();
     const res = await confirm(id, SHORT_PASSWORD);
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'password-too-short', minLength: 8 });
+    expect(res.body).toMatchObject({ code: 'password_too_short', minLength: 8 });
     expect(commit).not.toHaveBeenCalled();
     expect((await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`)).status).toBe(200);
   });
@@ -530,7 +546,7 @@ describe('POST /api/step-up/:id/password', () => {
     const id = await hold();
     state.ownerId = null;
     const res = await confirm(id, PASSWORD);
-    expect(res.body.code).toBe('no-password');
+    expect(res.body.code).toBe('no_password');
     expect(commit).not.toHaveBeenCalled();
   });
 });
@@ -538,17 +554,17 @@ describe('POST /api/step-up/:id/password', () => {
 // Security Must 2: the password path needs this server's own page, port included.
 describe('who may confirm', () => {
   // Each case names who refuses it: CORS stops a foreign origin before the route runs
-  // (`ORIGIN_NOT_ALLOWED`); the route itself refuses everything else (`not-a-person`).
+  // (`origin_not_allowed`); the route itself refuses everything else (`person_only`).
   const REFUSED: Array<
     [
       string,
-      'origin_not_allowed' | 'not-a-person',
+      'origin_not_allowed' | 'person_only',
       (r: ReturnType<typeof request>, id: string) => ReturnType<ReturnType<typeof request>['post']>,
     ]
   > = [
     [
       'no Origin header',
-      'not-a-person',
+      'person_only',
       (r, id) => r.post(`/api/step-up/${id}/password`).send({ password: PASSWORD }),
     ],
     [
@@ -571,7 +587,7 @@ describe('who may confirm', () => {
     ],
     [
       'a cross-site fetch carrying our Origin',
-      'not-a-person',
+      'person_only',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -581,7 +597,7 @@ describe('who may confirm', () => {
     ],
     [
       'an agent',
-      'not-a-person',
+      'person_only',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -591,7 +607,7 @@ describe('who may confirm', () => {
     ],
     [
       'a program with a key',
-      'not-a-person',
+      'person_only',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -601,7 +617,7 @@ describe('who may confirm', () => {
     ],
     [
       'a program with an API key header',
-      'not-a-person',
+      'person_only',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -611,7 +627,7 @@ describe('who may confirm', () => {
     ],
     [
       'a program with a proxy credential',
-      'not-a-person',
+      'person_only',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -636,7 +652,7 @@ describe('who may confirm', () => {
     deps.trustedOrigins = () => ['http://localhost:4241'];
     const res = await confirm(id, PASSWORD);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('not-a-person');
+    expect(res.body.code).toBe('person_only');
     expect(deps.checkPassword).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
   });
@@ -645,9 +661,9 @@ describe('who may confirm', () => {
     const id = await hold({ user: SESSION_A });
     const res = await confirm(id, PASSWORD, { user: SESSION_B });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('not-your-action');
+    expect(res.body.code).toBe('forbidden');
     expect((await request(app({ user: SESSION_B })).get(`/api/step-up/${id}`)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(commit).not.toHaveBeenCalled();
   });
@@ -659,8 +675,8 @@ describe('who may confirm', () => {
     const res = await confirm(id, PASSWORD, { user: SESSION_A, ingress: 'wifi' });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({
-      code: 'insecure-connection',
-      error: 'Confirm this on the computer running DorkOS.',
+      code: 'insecure_connection',
+      detail: 'Confirm this on the computer running DorkOS.',
     });
     expect(deps.checkPassword).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
@@ -708,7 +724,7 @@ describe('POST /api/step-up/:id/change-password', () => {
       currentPassword: 'nope',
       newPassword: 'a much longer password',
     });
-    expect(res.body.code).toBe('wrong-password');
+    expect(res.body.code).toBe('wrong_password');
     expect(deps.setOwnerPassword).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
   });
@@ -717,7 +733,7 @@ describe('POST /api/step-up/:id/change-password', () => {
     const id = await hold();
     const res = await change(id, { currentPassword: SHORT_PASSWORD, newPassword: 'tiny' });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('new-password-invalid');
+    expect(res.body.code).toBe('invalid_request');
     expect(deps.setOwnerPassword).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
   });
@@ -828,7 +844,7 @@ describe('a page from before a mini app risk cleared (DOR-5026)', () => {
 
     const inPlace = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, oldPage);
     expect(inPlace.status).toBe(409);
-    expect(inPlace.body.code).toBe('stale-page');
+    expect(inPlace.body.code).toBe('stale_page');
 
     const reloaded = mintPageStamp(COOKIE_NEW, Date.now());
     const fresh = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, reloaded);
@@ -845,7 +861,7 @@ describe('a page from before a mini app risk cleared (DOR-5026)', () => {
       COOKIE_NEW,
       'v1.eyJ0Ijo5OTk5OTk5OTk5OTk5LCJzIjpudWxsfQ.made-up'
     );
-    expect(forged.body.code).toBe('stale-page');
+    expect(forged.body.code).toBe('stale_page');
     expect(commit).not.toHaveBeenCalled();
   });
 
@@ -853,7 +869,7 @@ describe('a page from before a mini app risk cleared (DOR-5026)', () => {
     riskCleared(deps.riskLedger as StepUpRiskLedger);
     const otherSignIn = mintPageStamp(COOKIE_A, Date.now());
     const res = await confirmFrom(await hold({ user: SESSION_NEW }), COOKIE_NEW, otherSignIn);
-    expect(res.body.code).toBe('stale-page');
+    expect(res.body.code).toBe('stale_page');
     expect(commit).not.toHaveBeenCalled();
   });
 
@@ -906,8 +922,8 @@ describe('a confirm on a ledger that opened with a clear, no mini app risk ever 
 
     const res = await confirmFrom(id, oldPage);
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'stale-page', stale: 'stale-page' });
-    expect(res.body.error).toBe('This page opened before a change. Reload it, then try again.');
+    expect(res.body).toMatchObject({ code: 'stale_page', stale: 'stale-page' });
+    expect(res.body.detail).toBe('This page opened before a change. Reload it, then try again.');
     expect(res.body).not.toHaveProperty('blockedBy');
     expect(commit).not.toHaveBeenCalled();
   });

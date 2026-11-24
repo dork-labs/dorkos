@@ -523,7 +523,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
         try {
           await bindingStore.update(existing.id, updates as BindingUpdate, stillNarrows);
         } catch (err) {
-          if (err instanceof BindingChangedError) return bindingChanged(c, err);
+          if (err instanceof BindingChangedError) return bindingChanged(c);
           throw err;
         }
       }
@@ -536,7 +536,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
           stillNarrows
         );
       } catch (err) {
-        if (err instanceof BindingChangedError) return bindingChanged(c, err);
+        if (err instanceof BindingChangedError) return bindingChanged(c);
         // "One chat, one agent": changing `chatId` onto a value another binding
         // already owns is the same 409 the create path gives (see above).
         if (err instanceof BindingConflictError) {

@@ -84,7 +84,7 @@ describe('notification confirmation', () => {
     expect(held.status).toBe(428);
     expect(grants.approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(grants.approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -113,7 +113,7 @@ describe('notification confirmation', () => {
     expect(JSON.stringify(held.body)).not.toContain(SIGNING_SECRET);
     expect(settings.configure).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'forbidden'
     );
     expect(settings.configure).not.toHaveBeenCalled();
     const confirmed = await owner.confirm(held.body.heldActionId, 'own-tunnel');

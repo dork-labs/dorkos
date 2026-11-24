@@ -61,7 +61,7 @@ describe('LanAccessSection', () => {
 
   it('walks into owner setup when login is off, and switches on once it is done', async () => {
     const refusal = Object.assign(new Error('Exposing DorkOS requires a login.'), {
-      code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      code: 'auth_required_for_exposure',
     });
     const setLanAccess = vi
       .fn()

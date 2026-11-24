@@ -41,9 +41,7 @@ describe('access change undo confirmation', () => {
       const held = await owner.call('post', UNDO, via).send({});
       expect(held.status).toBe(428);
       expect(narrowing.undo).not.toHaveBeenCalled();
-      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
-      );
+      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
       expect(narrowing.undo).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
         ok: true,

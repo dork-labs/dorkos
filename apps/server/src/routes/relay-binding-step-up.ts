@@ -19,8 +19,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { modeRaises } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../services/runtimes/claude-code/runtime-constants.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
-import type { BindingChangedError } from '../services/relay/binding-store.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { cardConnection, type CardConnection } from './relay-adapter-http.js';
 import { chatModeWord } from '@dorkos/shared/permissions';
@@ -200,14 +199,15 @@ type BindingWrite = (
 ) => Promise<Response>;
 
 /**
- * The 409 for a change judged on a route that has since changed (Security S5
- * on DOR-4355 M3).
+ * The `412 precondition_failed` for a change judged on a route that has since
+ * changed (Security S5 on DOR-4355 M3). A fixed sentence, never the error's.
  *
  * @param c - The request.
- * @param err - The store's refusal.
  */
-export function bindingChanged(c: Context<ApiEnv>, err: BindingChangedError): Response {
-  return c.json({ error: err.message, code: 'BINDING_CHANGED' }, 409);
+export function bindingChanged(c: Context<ApiEnv>): Response {
+  return problem(c, 'precondition_failed', {
+    detail: 'That chat route changed since you looked. Try again.',
+  });
 }
 
 /**
