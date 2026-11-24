@@ -117,8 +117,15 @@ export interface OpenCodeClientProvider {
   /** A turn ended; a switch that was waiting for it may now happen. */
   turnSettled?(): Promise<void>;
 
-  /** Bind server-owned chat metadata before dispatch; never used as authentication. */
-  bindSessionEnvironment?(sessionId: string, openCodeSessionId: string): Promise<void>;
+  /**
+   * Bind server-owned chat metadata before dispatch; never used as authentication.
+   * `agentId` is the chat's agent's Mesh ULID, or `undefined` when it has none.
+   */
+  bindSessionEnvironment?(
+    sessionId: string,
+    openCodeSessionId: string,
+    agentId?: string
+  ): Promise<void>;
 }
 
 /**

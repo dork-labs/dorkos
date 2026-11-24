@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { GlobalEvent, OpencodeClient } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
@@ -104,7 +105,7 @@ describe('what an OpenCode turn carries', () => {
    * what the SECOND turn of a resumed conversation carries, which a
    * single-turn capture cannot answer.
    */
-  async function capturePromptBodies(turns = 1): Promise<PromptBody[]> {
+  async function capturePromptBodies(turns = 1, mesh?: AgentRegistryPort): Promise<PromptBody[]> {
     const promptBodies: PromptBody[] = [];
     // The hub waits for the `/global/event` stream to be observably live before it
     // triggers the turn, so a real `server.connected` envelope for THIS directory
@@ -140,7 +141,9 @@ describe('what an OpenCode turn carries', () => {
         promptAsync: vi.fn(async (req: { body: PromptBody }) => {
           expect(bindSessionEnvironment).toHaveBeenLastCalledWith(
             '3f2b8c1e-9d4a-4b6f-8a1c-2e5d7f9b0a3c',
-            'ses_test'
+            'ses_test',
+            // The chat's Mesh agent for signatures (DOR-5138), absent with no mesh.
+            mesh ? '01JAGENT0000000000000000' : undefined
           );
           promptBodies.push(req.body);
           return {};
@@ -149,7 +152,9 @@ describe('what an OpenCode turn carries', () => {
       postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
       provider: { list: vi.fn(async () => ({ data: { all: [], default: {}, connected: [] } })) },
     };
-    const bindSessionEnvironment = vi.fn(async (_chat: string, _vendor: string) => {});
+    const bindSessionEnvironment = vi.fn(
+      async (_chat: string, _vendor: string, _agent?: string) => {}
+    );
     const runtime = new OpenCodeRuntime({
       provider: {
         bindSessionEnvironment,
@@ -157,6 +162,7 @@ describe('what an OpenCode turn carries', () => {
         peekClient: vi.fn(() => client as unknown as OpencodeClient),
       },
     });
+    if (mesh) runtime.setMeshCore(mesh);
     runtime.setSessionSettings({
       getSessionSettings: vi.fn(async () => null),
       saveSessionSettings: vi.fn(async () => undefined),
@@ -197,6 +203,23 @@ describe('what an OpenCode turn carries', () => {
   async function capturePromptParts(): Promise<PromptPart[]> {
     return (await capturePromptBodies())[0]?.parts ?? [];
   }
+
+  it('DOR-5138: binds the chat’s Mesh agent id for the shells, read from the registry', async () => {
+    const asked: string[] = [];
+    const mesh = {
+      getByPath: (dir: string) => {
+        asked.push(dir);
+        return dir === agentDir
+          ? { id: '01JAGENT0000000000000000', name: 'researcher' }
+          : undefined;
+      },
+      listWithPaths: () => [],
+      updateLastSeen: () => {},
+    } as unknown as AgentRegistryPort;
+    // The bind expectation inside `promptAsync` is the assertion.
+    expect(await capturePromptBodies(1, mesh)).toHaveLength(1);
+    expect(asked).toContain(agentDir);
+  });
 
   it('injects the runtime-neutral DorkOS context on the system channel', async () => {
     const system = (await capturePromptBodies())[0]?.system ?? '';
