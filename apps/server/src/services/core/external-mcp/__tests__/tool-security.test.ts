@@ -10,34 +10,12 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import request, { type Response } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-
-// Mock env for the server factory and core-tools handlers.
-vi.mock('../../../../env.js', () => ({
-  env: {
-    DORKOS_PORT: 4242,
-    MCP_API_KEY: undefined,
-  },
-}));
-
-vi.mock('../../../../lib/version.js', () => ({
-  SERVER_VERSION: 'test',
-  IS_DEV_BUILD: false,
-}));
-
-// Suppress log output during the test.
-vi.mock('../../../../lib/logger.js', () => ({
-  logger: {
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  },
-}));
 
 // Manifest reader used by the get_agent handler.
 vi.mock('@dorkos/shared/manifest', () => ({
@@ -45,6 +23,12 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 import { createExternalMcpServer } from '../../mcp-server.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { createMcpRoutes } from '../../../../routes/mcp.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
+import { initConfigManager } from '../../config-manager.js';
+import { rotateMcpLocalToken } from '../../auth/mcp-local-token.js';
 import { GUARDED_READ_ONLY_TOOL_NAMES, READ_ONLY_MCP_TOOL_NAMES } from '../tool-security.js';
 import { readOnlyCarveOutToolNames } from '../../capabilities/index.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
@@ -87,53 +71,49 @@ function createMarketplaceDeps(): MarketplaceMcpDeps {
   } as unknown as MarketplaceMcpDeps;
 }
 
-/** Stateless test app: a fresh server + transport per POST (the SDK pattern). */
-function createStatelessTestApp() {
-  const app = express();
-  app.use(express.json());
-
-  app.post('/mcp', async (req, res) => {
-    try {
-      // Compose the registry with all three domain bundles (stubs are enough:
-      // tools/list registers, never invokes), exactly as boot does — without
-      // `connectorDeps` the live server would omit the connector tools while
-      // the constant lists them.
-      const deps = createMinimalDeps();
-      const marketplaceDeps = createMarketplaceDeps();
-      const registry = composeDorkOsCapabilityRegistry({
-        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
-        operatorDeps: deps,
-        marketplaceDeps,
-        connectorDeps: {} as ConnectorCapabilityDeps,
-        mcpDeps: {} as McpCapabilityDeps,
-        // Composed in so the rooms tools are LIVE on the server this test reads
-        // `tools/list` from. They contribute nothing to the carve-out, which is
-        // exactly the claim worth guarding: without the domain here, a later
-        // `readOnlyCarveOut: true` on a room read would widen the tokenless
-        // surface and every assertion below would still pass.
-        roomDeps: {} as never,
-      });
-      const server = createExternalMcpServer(deps, marketplaceDeps, registry);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
-      });
-    } catch (_err) {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal error' },
-          id: null,
-        });
-      }
-    }
+/**
+ * The live server, composed with all three domain bundles (stubs are enough:
+ * tools/list registers, never invokes), exactly as boot does — without
+ * `connectorDeps` the live server would omit the connector tools while the
+ * constant lists them.
+ */
+function createLiveServer() {
+  const deps = createMinimalDeps();
+  const marketplaceDeps = createMarketplaceDeps();
+  const registry = composeDorkOsCapabilityRegistry({
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+    operatorDeps: deps,
+    marketplaceDeps,
+    connectorDeps: {} as ConnectorCapabilityDeps,
+    mcpDeps: {} as McpCapabilityDeps,
+    // Composed in so the rooms tools are LIVE on the server this test reads
+    // `tools/list` from. They contribute nothing to the carve-out, which is
+    // exactly the claim worth guarding: without the domain here, a later
+    // `readOnlyCarveOut: true` on a room read would widen the tokenless
+    // surface and every assertion below would still pass.
+    roomDeps: {} as never,
   });
-
-  return app;
+  return createExternalMcpServer(deps, marketplaceDeps, registry);
 }
+
+let dorkHome: string;
+let localToken: string;
+
+// The production `/mcp` mount: the `/api` chain, then the endpoint's own gates
+// (origin, on/off switch, credential, rate limit) in front of a fresh server
+// per POST.
+beforeAll(() => {
+  dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-tool-security-'));
+  initConfigManager(dorkHome);
+  localToken = rotateMcpLocalToken(dorkHome);
+  const app = createApiApp({ admission: new MainRequestAdmission() });
+  app.route('/mcp', createMcpRoutes(createLiveServer));
+  requestTarget.mount(frontDoorListener(app));
+});
+
+afterAll(() => {
+  fs.rmSync(dorkHome, { recursive: true, force: true });
+});
 
 /** A tool entry as returned by tools/list, with its annotations. */
 interface ToolListEntry {
@@ -143,10 +123,9 @@ interface ToolListEntry {
 
 /** Fetch every tool from the live server's tools/list, with annotations. */
 async function fetchLiveTools(): Promise<ToolListEntry[]> {
-  const app = createStatelessTestApp();
-  requestTarget.mount(app);
   const res = await request(requestTarget.server)
     .post('/mcp')
+    .set('Authorization', `Bearer ${localToken}`)
     .set('Content-Type', 'application/json')
     .set('Accept', 'application/json, text/event-stream')
     .send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });

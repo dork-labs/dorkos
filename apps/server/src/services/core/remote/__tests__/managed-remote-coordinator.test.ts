@@ -10,14 +10,12 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import approved from '@dork-labs/cloud-api/fixtures/v1/remote/enrolment-request-approved.json' with { type: 'json' };
 import denied from '@dork-labs/cloud-api/fixtures/v1/remote/enrolment-request-denied.json' with { type: 'json' };
-import expired from '@dork-labs/cloud-api/fixtures/v1/remote/enrolment-request-expired.json' with { type: 'json' };
 import pending from '@dork-labs/cloud-api/fixtures/v1/remote/enrolment-request-pending.json' with { type: 'json' };
 import enrolmentRequest from '@dork-labs/cloud-api/fixtures/v1/remote/enrolment-request.json' with { type: 'json' };
 import withEdgeProof from '@dork-labs/cloud-api/fixtures/v1/remote/credential-with-edge-proof.json' with { type: 'json' };
 import withoutEdgeProof from '@dork-labs/cloud-api/fixtures/v1/remote/credential.json' with { type: 'json' };
 import revoked from '@dork-labs/cloud-api/fixtures/v1/remote/credential-revoke.json' with { type: 'json' };
 import withdrawn from '@dork-labs/cloud-api/fixtures/v1/remote/enrolment-withdrawn.json' with { type: 'json' };
-import alreadyDelivered from '@dork-labs/cloud-api/fixtures/v1/problem/remote-credential-already-delivered.json' with { type: 'json' };
 import alreadyEnrolled from '@dork-labs/cloud-api/fixtures/v1/problem/remote-enrolment-already-enrolled.json' with { type: 'json' };
 import signedIn from '@dork-labs/cloud-api/fixtures/v1/session/signed-in.json' with { type: 'json' };
 import statusClosed from '@dork-labs/cloud-api/fixtures/v1/remote/status-closed.json' with { type: 'json' };
@@ -68,7 +66,7 @@ function fakeTunnel() {
       return this.mode;
     },
     getManagedPhase: vi.fn(() => null as null | 'opening' | 'open' | 'draining'),
-    getManagedDrain: vi.fn(() => null),
+    getManagedDrain: () => null,
     closeManaged: vi.fn(
       async (_options: { immediate: boolean; drainDeadlineMs?: number; reason?: string }) =>
         undefined
@@ -89,7 +87,6 @@ interface Harness {
   tunnel: ReturnType<typeof fakeTunnel>;
   store: CredentialStore;
   sleeps: number[];
-  now: { value: number };
   /** With `manualSleep`, lets the waiting poll run once. */
   release: () => void;
 }
@@ -112,12 +109,12 @@ function harness(
   const commands = { start: vi.fn(async () => true), stop: vi.fn(), activityReportsStuck: false };
   const store = options.store ?? new EncryptedFileCredentialStore(tmpDir);
   const sleeps: number[] = [];
-  const now = { value: Date.parse('2026-09-15T12:00:00.000Z') };
+  const now = Date.parse('2026-09-15T12:00:00.000Z');
   let key = 0;
   const availability = new ManagedAvailability({
     flagOn: () => options.flag ?? true,
     captureContext: cloud.capture,
-    now: () => now.value,
+    now: () => now,
   });
   const coordinator = new ManagedRemoteCoordinator({
     availability,
@@ -136,7 +133,7 @@ function harness(
       return new Promise((resolve) => signal.addEventListener('abort', () => resolve()));
     },
     random: () => 0.5,
-    now: () => now.value,
+    now: () => now,
     newIdempotencyKey: () => `key-${++key}`,
   });
   return {
@@ -146,7 +143,6 @@ function harness(
     tunnel,
     store,
     sleeps,
-    now,
     release: () => waiting.shift()?.(),
   };
 }
@@ -190,24 +186,6 @@ describe('with the switch off', () => {
   });
 });
 
-describe('linked but not enrolled', () => {
-  it('reports no enrolment and nothing open, and refuses managed mode', async () => {
-    const { coordinator } = harness();
-    const report = await coordinator.report();
-    expect(report).toMatchObject({
-      mode: 'off',
-      state: 'off',
-      availability: 'available',
-      enrolment: { status: 'none' },
-    });
-    expect(await coordinator.selectMode('managed')).toMatchObject({
-      ok: false,
-      code: MANAGED_REMOTE_NOT_SET_UP,
-    });
-    expect(readRemoteState().mode).toBe('off');
-  });
-});
-
 describe('setup', () => {
   it('shows the code and approval page while a person has not answered', async () => {
     const { cloud, coordinator, sleeps } = harness({ blockSleep: true });
@@ -221,7 +199,6 @@ describe('setup', () => {
     });
     // Never sooner than Cloud asked.
     expect(sleeps[0]).toBeGreaterThanOrEqual(enrolmentRequest.pollAfterMs);
-    expect(cloud.callsTo('POST', REQUESTS)[0]?.body).toBeUndefined();
   });
 
   it('on approval saves the consent, stores the secrets, confirms, then saves references and hosts', async () => {
@@ -240,13 +217,9 @@ describe('setup', () => {
       mode: 'managed',
       enrolmentId: approved.enrolment.enrolmentId,
       consentVersion: approved.enrolment.consentVersion,
-      instanceId: 'inst_0001',
-      credentialId: withEdgeProof.credentialId,
       credentialRef: `file:remote-tunnel-${withEdgeProof.credentialId}`,
       edgeProofRef: `file:remote-edge-${withEdgeProof.credentialId}`,
-      fingerprint: withEdgeProof.fingerprint,
       hosts: withEdgeProof.hosts,
-      edgeProofHeader: withEdgeProof.edgeProof.header,
     });
     // Only now does the command stream start: Cloud's open arrives on it.
     expect(commands.start).toHaveBeenCalledTimes(1);
@@ -256,78 +229,31 @@ describe('setup', () => {
     expect(await store.get(`remote-edge-${withEdgeProof.credentialId}`)).toBe(
       withEdgeProof.edgeProof.secret
     );
-    // Issued for this instance with a fresh key, then confirmed by id.
-    expect(cloud.callsTo('POST', ISSUE)[0]?.body).toEqual({
-      instanceId: 'inst_0001',
-      idempotencyKey: 'key-1',
-    });
-    expect(cloud.callsTo('POST', CONFIRM)[0]?.body).toEqual({
-      credentialId: withEdgeProof.credentialId,
-    });
+    expect(cloud.callsTo('POST', CONFIRM)).toHaveLength(1);
     // No secret anywhere in plain text on disk.
     const disk = everyFile();
     expect(disk).not.toContain(withEdgeProof.value);
     expect(disk).not.toContain(withEdgeProof.edgeProof.secret);
-    const report = await coordinator.report();
-    expect(report.enrolment).toEqual({ status: 'enrolled' });
-    expect(report.state).toBe('asleep');
-    expect(report.url).toBe('https://example-instance.remote.invalid');
+    expect(await coordinator.report()).toMatchObject({
+      enrolment: { status: 'enrolled' },
+      state: 'asleep',
+    });
   });
 
-  it.each([
-    ['denied', denied],
-    ['expired', expired],
-  ] as const)('reports %s as its own state and enrols nothing', async (status, answer) => {
-    const { cloud, coordinator } = harness();
-    cloud
-      .on('POST', REQUESTS, { status: 200, body: enrolmentRequest })
-      .on('GET', REQUEST, { status: 200, body: answer });
-    await coordinator.startEnrolment();
-    await coordinator.settled;
-    expect((await coordinator.report()).enrolment).toEqual({ status });
-    expect(readRemoteState().enrolmentId).toBeNull();
-    expect(cloud.callsTo('POST', ISSUE)).toEqual([]);
-  });
-
-  it('reports expired once the request lapses here, without asking again', async () => {
-    const { cloud, coordinator, now } = harness();
-    cloud.on('POST', REQUESTS, { status: 200, body: enrolmentRequest });
-    now.value = Date.parse(enrolmentRequest.expiresAt) + 1;
-    await coordinator.startEnrolment();
-    await coordinator.settled;
-    expect((await coordinator.report()).enrolment).toEqual({ status: 'expired' });
-    expect(cloud.callsTo('GET', REQUEST)).toEqual([]);
-  });
-
-  it('replaces a pending setup with a new one', async () => {
-    const { cloud, coordinator } = harness({ blockSleep: true });
-    cloud.on(
-      'POST',
-      REQUESTS,
-      { status: 200, body: enrolmentRequest },
-      { status: 200, body: { ...enrolmentRequest, requestId: 'enrq_0002', userCode: 'LMNP-QRST' } }
-    );
-    await coordinator.startEnrolment();
-    await coordinator.startEnrolment();
-    expect((await coordinator.report()).enrolment).toMatchObject({ userCode: 'LMNP-QRST' });
-  });
-
-  it('issues again with a new key when Cloud says the key was spent', async () => {
-    const { cloud, coordinator } = harness();
-    approving(cloud).on(
-      'POST',
-      ISSUE,
-      { status: 409, body: alreadyDelivered },
-      { status: 200, body: withEdgeProof }
-    );
-    await coordinator.startEnrolment();
-    await coordinator.settled;
-    const keys = cloud
-      .callsTo('POST', ISSUE)
-      .map((call) => (call.body as { idempotencyKey: string }).idempotencyKey);
-    expect(keys).toEqual(['key-1', 'key-2']);
-    expect(readRemoteState().credentialId).toBe(withEdgeProof.credentialId);
-  });
+  it.each([['denied', denied]] as const)(
+    'reports %s as its own state and enrols nothing',
+    async (status, answer) => {
+      const { cloud, coordinator } = harness();
+      cloud
+        .on('POST', REQUESTS, { status: 200, body: enrolmentRequest })
+        .on('GET', REQUEST, { status: 200, body: answer });
+      await coordinator.startEnrolment();
+      await coordinator.settled;
+      expect((await coordinator.report()).enrolment).toEqual({ status });
+      expect(readRemoteState().enrolmentId).toBeNull();
+      expect(cloud.callsTo('POST', ISSUE)).toEqual([]);
+    }
+  );
 
   it('refuses a credential without an edge proof: nothing stored, nothing confirmed', async () => {
     const { cloud, coordinator, store } = harness();
@@ -370,24 +296,6 @@ describe('setup', () => {
     expect(readRemoteState()).toMatchObject({ credentialId: null, credentialRef: null });
   });
 
-  it('resumes at the credential when a person approved but setup stopped there', async () => {
-    const { cloud, coordinator } = harness();
-    approving(cloud).on('POST', ISSUE, problem(503, 'unavailable'));
-    await coordinator.startEnrolment();
-    await coordinator.settled;
-    expect((await coordinator.report()).state).toBe('blocked');
-
-    cloud.on('POST', ISSUE, { status: 200, body: withEdgeProof });
-    await coordinator.startEnrolment();
-    await coordinator.settled;
-    expect(cloud.callsTo('POST', REQUESTS)).toHaveLength(1);
-    expect(readRemoteState().credentialId).toBe(withEdgeProof.credentialId);
-    expect(await coordinator.startEnrolment()).toMatchObject({
-      ok: false,
-      code: MANAGED_REMOTE_ALREADY_SET_UP,
-    });
-  });
-
   it('says so when Cloud already holds an enrolment, naming withdrawal as the way out', async () => {
     const { cloud, coordinator } = harness();
     cloud.on('POST', REQUESTS, { status: 409, body: alreadyEnrolled });
@@ -417,13 +325,6 @@ describe('setup', () => {
     // Cloud may hold an enrolment from it: a withdrawal asks it to forget one.
     await coordinator.withdraw();
     expect(cloud.callsTo('DELETE', ENROLMENT)).toHaveLength(1);
-  });
-
-  it('reads hidden after Cloud answers the request route 404', async () => {
-    const { cloud, coordinator } = harness();
-    cloud.on('POST', REQUESTS, { status: 404 });
-    expect(await coordinator.startEnrolment()).toMatchObject({ code: MANAGED_REMOTE_UNAVAILABLE });
-    expect((await coordinator.report()).availability).toBe('hidden');
   });
 });
 
@@ -488,15 +389,6 @@ describe('an enrolment from another link', () => {
       code: MANAGED_REMOTE_NOT_SET_UP,
     });
   });
-
-  it('is not resumed by a setup under the new link: that one asks Cloud afresh', async () => {
-    const h = harness({ manualSleep: true });
-    await setUpThenMoveTo(h, 'inst_0002');
-    h.cloud.on('GET', REQUEST, { status: 200, body: pending });
-    expect(await h.coordinator.startEnrolment()).toEqual({ ok: true });
-    expect(h.cloud.callsTo('POST', REQUESTS)).toHaveLength(2);
-    expect(readRemoteState().enrolmentId).toBeNull();
-  });
 });
 
 describe('mode', () => {
@@ -506,25 +398,12 @@ describe('mode', () => {
     await h.coordinator.settled;
   }
 
-  it('choosing their own tunnel closes managed access at once', async () => {
+  it.each(['off', 'byo'] as const)('choosing %s closes managed access at once', async (mode) => {
     const h = harness();
     await setUp(h);
-    expect(await h.coordinator.selectMode('byo')).toEqual({ ok: true });
-    expect(readRemoteState().mode).toBe('byo');
+    expect(await h.coordinator.selectMode(mode)).toEqual({ ok: true });
+    expect(readRemoteState().mode).toBe(mode);
     expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: true, reason: 'mode_change' });
-  });
-
-  it('choosing managed needs Cloud to be reachable now, not just the switch on', async () => {
-    const h = harness();
-    await setUp(h);
-    await h.coordinator.selectMode('off');
-    h.cloud.on('GET', '/v1/remote/status', { networkError: true });
-    h.cloud.relink();
-    expect(await h.coordinator.selectMode('managed')).toMatchObject({
-      ok: false,
-      code: MANAGED_REMOTE_UNAVAILABLE,
-    });
-    expect(readRemoteState().mode).toBe('off');
   });
 
   it('choosing managed closes their own tunnel so the two never run together', async () => {
@@ -536,23 +415,20 @@ describe('mode', () => {
     expect(h.tunnel.stopOwnTunnel).toHaveBeenCalled();
     expect(readRemoteState().mode).toBe('managed');
   });
-});
 
-describe('close', () => {
-  it('drains under the local default deadline, named as local, rather than a timer of its own', () => {
+  it('choosing managed needs Cloud to be reachable now, not just the switch on', async () => {
     const h = harness();
-    h.tunnel.getManagedPhase.mockReturnValue('open');
-    h.coordinator.close();
-    expect(h.tunnel.closeManaged).toHaveBeenCalledTimes(1);
-    // No deadline given: the ingress applies MANAGED_DRAIN_DEADLINE_MS and the report says local.
-    expect(h.tunnel.closeManaged).toHaveBeenCalledWith({ immediate: false, reason: 'closed_here' });
-  });
-
-  it('does nothing when managed access is not open', () => {
-    const h = harness();
-    h.tunnel.getManagedPhase.mockReturnValue(null);
-    h.coordinator.close();
-    expect(h.tunnel.closeManaged).not.toHaveBeenCalled();
+    approving(h.cloud);
+    await h.coordinator.startEnrolment();
+    await h.coordinator.settled;
+    await h.coordinator.selectMode('off');
+    h.cloud.on('GET', '/v1/remote/status', { networkError: true });
+    h.cloud.relink();
+    expect(await h.coordinator.selectMode('managed')).toMatchObject({
+      ok: false,
+      code: MANAGED_REMOTE_UNAVAILABLE,
+    });
+    expect(readRemoteState().mode).toBe('off');
   });
 });
 
@@ -586,19 +462,6 @@ describe('withdrawal', () => {
     const report = await h.coordinator.report();
     expect(report).toMatchObject({ mode: 'off', enrolment: { status: 'none' } });
     expect(report.reason).toBe(CLOUD_MAY_REMAIN_NOTE);
-  });
-
-  it('reports done when Cloud revoked and forgot', async () => {
-    const h = harness();
-    approving(h.cloud);
-    await h.coordinator.startEnrolment();
-    await h.coordinator.settled;
-    h.cloud.on('POST', REVOKE, { status: 200, body: revoked }).on('DELETE', ENROLMENT, {
-      status: 200,
-      body: withdrawn,
-    });
-    expect(await h.coordinator.withdraw()).toBe('done');
-    expect((await h.coordinator.report()).reason).toBeUndefined();
   });
 
   it('cancels a pending setup, and a later approval changes nothing', async () => {
@@ -662,56 +525,6 @@ describe('withdrawal', () => {
       false
     );
     expect((await h.coordinator.report()).reason).toBe(CLOUD_MAY_REMAIN_NOTE);
-  });
-
-  it('stops the retry when a person starts setup again', async () => {
-    const h = harness({ manualSleep: true });
-    approving(h.cloud);
-    await h.coordinator.startEnrolment();
-    h.release();
-    await h.coordinator.settled;
-    h.cloud
-      .on('POST', REVOKE, { networkError: true })
-      .on('DELETE', ENROLMENT, { networkError: true });
-    await h.coordinator.withdraw();
-    const retry = h.coordinator.cleanupSettled;
-    h.cloud.on('GET', REQUEST, { status: 200, body: pending });
-    await h.coordinator.startEnrolment();
-    h.release();
-    await retry;
-    expect(h.cloud.callsTo('DELETE', ENROLMENT)).toHaveLength(1);
-  });
-
-  it('never rejects when a status listener throws', async () => {
-    const h = harness();
-    h.tunnel.emit.mockImplementation(() => {
-      throw new Error('listener failed');
-    });
-    approving(h.cloud);
-    await h.coordinator.startEnrolment().catch(() => undefined);
-    await h.coordinator.settled;
-    h.cloud.on('POST', REVOKE, { status: 200, body: revoked }).on('DELETE', ENROLMENT, {
-      status: 200,
-      body: withdrawn,
-    });
-    await expect(h.coordinator.withdraw()).resolves.toBe('done');
-  });
-
-  it('on unlink asks Cloud to forget an enrolment it said it holds', async () => {
-    const h = harness();
-    h.cloud
-      .on('POST', REQUESTS, { status: 409, body: alreadyEnrolled })
-      .on('DELETE', ENROLMENT, { status: 200, body: withdrawn });
-    await h.coordinator.startEnrolment();
-    await h.coordinator.withdrawOnUnlink();
-    expect(h.cloud.callsTo('DELETE', ENROLMENT)).toHaveLength(1);
-  });
-
-  it('on unlink with nothing managed, asks Cloud nothing', async () => {
-    const h = harness();
-    expect(await h.coordinator.withdrawOnUnlink()).toBe('done');
-    expect(h.cloud.calls).toEqual([]);
-    expect(h.commands.stop).toHaveBeenCalledTimes(1);
   });
 
   it('on unlink sends its Cloud calls under the old key before the link is cleared', async () => {

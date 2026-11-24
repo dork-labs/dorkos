@@ -11,32 +11,26 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import request, { type Response } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-
-vi.mock('../../../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
-}));
-
-vi.mock('../../../../lib/version.js', () => ({
-  SERVER_VERSION: 'test',
-  IS_DEV_BUILD: false,
-}));
-
-vi.mock('../../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
-}));
 
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));
 
 import { createExternalMcpServer } from '../../mcp-server.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { createMcpRoutes } from '../../../../routes/mcp.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
+import { configManager, initConfigManager } from '../../config-manager.js';
+import { rotateMcpLocalToken } from '../../auth/mcp-local-token.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { Task } from '@dorkos/shared/schemas';
@@ -78,8 +72,24 @@ function parseResponse(res: Response): JsonRpcMessage {
 describe('tasks_* operator-only field guard (external /mcp server)', () => {
   let db: Db;
   let store: TaskStore;
-  let app: express.Express;
   let existing: Task;
+  let dorkHome: string;
+  let localToken: string;
+
+  beforeAll(() => {
+    dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-task-permission-mode-'));
+    initConfigManager(dorkHome);
+    // The operator-only refusal is what both fields get with the agent-mode
+    // switch off (`agentModeControlOn`); on, they are decided as permission
+    // actions instead, which `tasks/agent-mode` pins. This file pins the off
+    // answer, so it turns the switch off rather than inheriting the ON default.
+    configManager.set('tasks', { agentModeControl: false });
+    localToken = rotateMcpLocalToken(dorkHome);
+  });
+
+  afterAll(() => {
+    fs.rmSync(dorkHome, { recursive: true, force: true });
+  });
 
   beforeEach(() => {
     db = createTestDb();
@@ -101,22 +111,14 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       taskStore: store,
     } as unknown as McpToolDeps;
 
-    // Stateless: a fresh server + transport per POST, the SDK's own pattern and
-    // the shape `index.ts` mounts in production.
-    app = express();
-    app.use(express.json());
-    app.post('/mcp', async (req, res) => {
-      const server = createExternalMcpServer(deps);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        transport.close().catch(() => {});
-        server.close().catch(() => {});
-      });
-    });
-
-    fixtureTarget.mount(app);
+    // The production `/mcp` mount: the `/api` chain, then the endpoint's own
+    // gates, in front of a fresh server + transport per POST.
+    const app = createApiApp({ admission: new MainRequestAdmission() });
+    app.route(
+      '/mcp',
+      createMcpRoutes(() => createExternalMcpServer(deps))
+    );
+    fixtureTarget.mount(frontDoorListener(app));
   });
 
   afterEach(() => {
@@ -127,6 +129,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
   async function rpc(method: string, params?: Record<string, unknown>) {
     const res = await request(fixtureServer)
       .post('/mcp')
+      .set('Authorization', `Bearer ${localToken}`)
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
       .send({ jsonrpc: '2.0', method, id: 1, ...(params && { params }) });
@@ -164,6 +167,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
     const before = store.getTasks().length;
     const res = await request(fixtureServer)
       .post('/mcp')
+      .set('Authorization', `Bearer ${localToken}`)
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
       .send({
