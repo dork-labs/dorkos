@@ -508,29 +508,18 @@ The full walkthrough is the `ci-quarantine` skill. The rules worth knowing here:
 
 ### What exists now
 
-| Piece                                                                                                                                            | Phase | Status      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ----------- |
-| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                                                                        | 0     | on `main`   |
-| Merge guard, de-staled `creating-pull-requests` skill and watcher                                                                                | 0     | on `main`   |
-| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                                                                       | 0     | on `main`   |
-| Daily collector, data branch, verdicts, floors, triggers, the daily report, the Monday deep summary, `/ci-status`, `/ci-pulse`, `pnpm ci:report` | 1     | this change |
-| Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | this change |
-| `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built   |
-| Incident mode: sentinel, freeze, quarantine, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                 | 1b    | not built   |
-| Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built   |
-| `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built   |
-| Piece                                                                                                                                            | Phase | Status      |
-| ----------------------------------------------------------------------------------------                                                         | ----- | ----------- |
-| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                                                                        | 0     | on `main`   |
-| Merge guard, de-staled `creating-pull-requests` skill and watcher                                                                                | 0     | on `main`   |
-| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                                                                       | 0     | on `main`   |
-| Daily collector, data branch, verdicts, floors, weekly report, `/ci-status`, `/ci-pulse`                                                         | 1     | this change |
-| Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | this change |
-| `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built   |
-| Quarantine lane from data: `flaky`, `quarantine`, the queue gates, `/ci-quarantine`                                                              | 1b    | this change |
-| Incident mode: sentinel, freeze, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                             | 1b    | not built   |
-| Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built   |
-| `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built   |
+| Piece                                                                                                                                            | Phase | Status    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | --------- |
+| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                                                                        | 0     | on `main` |
+| Merge guard, de-staled `creating-pull-requests` skill and watcher                                                                                | 0     | on `main` |
+| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                                                                       | 0     | on `main` |
+| Daily collector, data branch, verdicts, floors, triggers, the daily report, the Monday deep summary, `/ci-status`, `/ci-pulse`, `pnpm ci:report` | 1     | on `main` |
+| Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                                                                         | 1     | on `main` |
+| `/ci-record` (writes an entry with its baseline read from `latest.json`)                                                                         | 1     | not built |
+| Quarantine lane from data: `flaky`, `quarantine`, the queue gates, `/ci-quarantine`                                                              | 1b    | on `main` |
+| Incident mode: sentinel, freeze, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                             | 1b    | not built |
+| Ratchet assertions, the blocking `review-gate`                                                                                                   | 2     | not built |
+| `/ci-improve`, `ci-improve-tick`, fence enforcement                                                                                              | 3     | not built |
 
 The `/ci-*` entry points are skills, not commands (`.claude/commands` is legacy): each is a skill in `.agents/skills/` with `disable-model-invocation: true` that wraps one `pnpm ci:<verb>` engine command. `ci-improve-tick` and `ci-local-export` are DorkOS scheduled skills (a `schedule:` block, see `docs/guides/task-scheduler.mdx`): each waits on the Schedules page as "Waiting for approval" until the operator approves it at Full autonomy, because it runs Bash. The daily collector is a GitHub Actions cron, because it must run while the operator's machine sleeps.
 
