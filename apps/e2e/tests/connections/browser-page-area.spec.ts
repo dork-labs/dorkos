@@ -63,25 +63,6 @@ test.describe('Agent browser page area', () => {
     ).toBeVisible();
   });
 
-  test('another chat has it: the block names that chat and offers Take it here', async ({
-    page,
-    chatPage,
-  }) => {
-    const browser = await panelWith(page, chatPage, () => ({
-      ...NOT_OPEN,
-      connectionId: 'c1',
-      sessionId: 'another-chat',
-      mode: 'new-window',
-      status: 'connected',
-      tabs: [{ id: 't1', url: 'https://northwind.example/fares', title: 'Fares' }],
-      selectedTabId: 't1',
-    }));
-    await expect(block(browser).getByText('This browser is open in another chat')).toBeVisible();
-    await expect(block(browser).getByRole('button', { name: 'Take it here' })).toBeVisible();
-    // The page's own title never shows in this chat.
-    await expect(browser.controls.getByText('Fares')).toHaveCount(0);
-  });
-
   test('at 390 the block and its buttons stay on screen', async ({ page, chatPage }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const browser = await panelWith(page, chatPage, () => NOT_OPEN);

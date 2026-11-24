@@ -7,11 +7,10 @@
  * file unchanged.
  *
  * The stream is the public integration contract
- * (`docs/integrations/sse-protocol.mdx`); the browser pins its head and its
- * first frame in `apps/e2e/tests/streams/sse-contract.spec.ts`. This file pins
- * the bytes: the head, the snapshot first on a cold connect, the `id:` line on
- * every live frame, and a resume that replays exactly the frames after its
- * cursor, in order and with no gap.
+ * (`docs/integrations/sse-protocol.mdx`), and no browser spec reads it, so
+ * this file is its only guard. It pins the bytes: the head, the snapshot first
+ * on a cold connect, the `id:` line on every live frame, and a resume that
+ * replays exactly the frames after its cursor, in order and with no gap.
  *
  * Three servers, all on the test-mode runtime:
  *
