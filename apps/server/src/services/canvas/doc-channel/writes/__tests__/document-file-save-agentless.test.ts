@@ -259,8 +259,11 @@ it('a document with no recorded folder answers 404, not a server fault, on both 
       documentSave: { documentId: doc.id, eventId: randomUUID(), incarnation },
     });
   expect(saved.status).toBe(404);
-  expect(saved.body.code).toBe('CANVAS_DOCUMENT_NOT_FOUND');
-  expect(saved.body.reason).toBe('no_recorded_folder');
+  expect(saved.body.code).toBe('not_found');
+  expect(saved.body).not.toHaveProperty('reason');
+  expect(saved.body.detail).toBe(
+    'This file’s folder wasn’t recorded when it was opened, so editing is off.'
+  );
   expect(JSON.stringify([discovery.body, saved.body])).not.toContain(h.dir);
   expect(await fs.readFile(path, 'utf8')).toBe('unchanged');
 });

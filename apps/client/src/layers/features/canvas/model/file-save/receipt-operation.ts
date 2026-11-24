@@ -37,7 +37,7 @@ function provenPreEffectFailure(error: unknown): boolean {
   // Generic HTTP refusals can arrive after rename during currentness/receipt checks.
   // Only this server status attests its durable original failed before replacement.
   const failure = error as { status?: unknown; code?: unknown } | null;
-  return failure?.status === 412 && failure.code === 'DOC_SAVE_FAILED';
+  return failure?.status === 412 && failure.code === 'save_not_applied';
 }
 /** The hook owns serialization; this object retains one exact uncertain original request. */
 export class FileReceiptOperation {

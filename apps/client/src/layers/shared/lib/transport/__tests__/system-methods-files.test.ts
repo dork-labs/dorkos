@@ -57,15 +57,22 @@ describe('revealEntry', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Path not found', code: 'NOT_FOUND' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        })
+        new Response(
+          JSON.stringify({
+            type: 'urn:dorkos:problem:not_found',
+            title: 'That doesn’t exist here.',
+            status: 404,
+            code: 'not_found',
+            detail: 'That isn’t there anymore.',
+          }),
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } }
+        )
       )
     );
 
     await expect(setup().revealEntry('/repo', 'gone.txt')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
+      code: 'not_found',
+      message: 'That isn’t there anymore.',
     });
   });
 });
@@ -90,19 +97,26 @@ describe('copyEntry', () => {
     expect(init.body).toBe(JSON.stringify({ cwd: '/repo', from: 'a.txt', to: 'b.txt' }));
   });
 
-  it('rejects with CONFLICT when the destination is taken', async () => {
+  it('rejects with already_exists when the destination is taken', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Target already exists', code: 'CONFLICT' }), {
-          status: 409,
-          headers: { 'Content-Type': 'application/json' },
-        })
+        new Response(
+          JSON.stringify({
+            type: 'urn:dorkos:problem:already_exists',
+            title: 'Something with that name is already there.',
+            status: 409,
+            code: 'already_exists',
+            detail: 'Something with that name is already there.',
+          }),
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } }
+        )
       )
     );
 
     await expect(setup().copyEntry('/repo', 'a.txt', 'b.txt')).rejects.toMatchObject({
-      code: 'CONFLICT',
+      code: 'already_exists',
+      message: 'Something with that name is already there.',
     });
   });
 });
@@ -163,13 +177,22 @@ describe('writeFile', () => {
     await expect(setup().writeFile('/repo', 'doc.md', 'body')).rejects.toThrow();
   });
 
-  it('retains current disk bytes and hash on a 409', async () => {
+  it('retains current disk bytes and hash on a 412 precondition_failed', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ currentHash: 'disk-hash', currentContent: 'disk' }), {
-          status: 409,
-        })
+        new Response(
+          JSON.stringify({
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'This file changed since you opened it.',
+            currentHash: 'disk-hash',
+            currentContent: 'disk',
+          }),
+          { status: 412, headers: { 'Content-Type': 'application/problem+json' } }
+        )
       )
     );
     await expect(setup().writeFile('/repo', 'doc.md', 'mine')).resolves.toEqual({
@@ -182,15 +205,44 @@ describe('writeFile', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Permission denied', code: 'EACCES' }), {
-          status: 403,
-        })
+        new Response(
+          JSON.stringify({
+            type: 'urn:dorkos:problem:forbidden',
+            title: 'This account isn’t allowed to do that.',
+            status: 403,
+            code: 'forbidden',
+            detail: 'DorkOS isn’t allowed to change that.',
+          }),
+          { status: 403, headers: { 'Content-Type': 'application/problem+json' } }
+        )
       )
     );
     await expect(setup().writeFile('/repo', 'doc.md', 'mine')).rejects.toMatchObject({
-      message: 'Permission denied',
-      code: 'EACCES',
+      message: 'DorkOS isn’t allowed to change that.',
+      code: 'forbidden',
       status: 403,
+    });
+  });
+
+  it('throws a 412 that carries no current bytes (the file was replaced mid-save)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'This file was replaced while saving. Reload it, then save again.',
+          }),
+          { status: 412, headers: { 'Content-Type': 'application/problem+json' } }
+        )
+      )
+    );
+    await expect(setup().writeFile('/repo', 'doc.md', 'mine')).rejects.toMatchObject({
+      code: 'precondition_failed',
+      status: 412,
     });
   });
 });

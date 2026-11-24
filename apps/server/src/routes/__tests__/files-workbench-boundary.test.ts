@@ -60,7 +60,10 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .post('/api/files')
       .send({ cwd, path: 'link/pwned.txt', type: 'file', content: 'x' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('outside_boundary');
+    // The answer never names a path, inside or out.
+    expect(res.body.detail).toBe('Pick a folder inside the ones DorkOS may use.');
     // The write did NOT land outside cwd.
     await expect(fs.access(path.join(outside, 'pwned.txt'))).rejects.toThrow();
   });
@@ -71,7 +74,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .post('/api/files/rename')
       .send({ cwd, from: 'src.txt', to: 'link/pwned.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     await expect(fs.access(path.join(outside, 'pwned.txt'))).rejects.toThrow();
     // Source is untouched.
     expect(await fs.readFile(path.join(cwd, 'src.txt'), 'utf8')).toBe('x\n');
@@ -83,7 +86,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .get('/api/files/content')
       .query({ cwd, path: 'link/secret.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('DELETE through a symlinked parent cannot remove outside cwd (403)', async () => {
@@ -92,7 +95,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .delete('/api/files')
       .query({ cwd, path: 'link/keep.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     // The outside file survives.
     expect(await fs.readFile(path.join(outside, 'keep.txt'), 'utf8')).toBe('keep\n');
   });
@@ -113,7 +116,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
   it('GET tree with a ../ path param is rejected (403)', async () => {
     const res = await request(testServer).get('/api/files/tree').query({ cwd, path: '../outside' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('rejects a null-byte path with 400', async () => {
@@ -122,7 +125,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
     const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.txt`;
     const res = await request(testServer).get(`/api/files/content?${qs}`);
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('NULL_BYTE');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('POST copy with a target through a symlinked parent cannot escape cwd (403)', async () => {
@@ -131,7 +134,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .post('/api/files/copy')
       .send({ cwd, from: 'src.txt', to: 'link/pwned.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     // Nothing was written outside cwd, and the source is untouched.
     await expect(fs.access(path.join(outside, 'pwned.txt'))).rejects.toThrow();
     expect(await fs.readFile(path.join(cwd, 'src.txt'), 'utf8')).toBe('x\n');
@@ -143,7 +146,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .post('/api/files/copy')
       .send({ cwd, from: '../outside/secret.txt', to: 'stolen.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     await expect(fs.access(path.join(cwd, 'stolen.txt'))).rejects.toThrow();
   });
 
@@ -153,7 +156,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .post('/api/files/reveal')
       .send({ cwd, path: 'link/secret.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     // The boundary is what stops it — the launcher is never handed a path.
     expect(revealInFileManager).not.toHaveBeenCalled();
   });
@@ -163,7 +166,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
       .post('/api/files/reveal')
       .send({ cwd, path: '../outside' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     expect(revealInFileManager).not.toHaveBeenCalled();
   });
 
@@ -203,7 +206,7 @@ describe('DOR-3522 proof: media and content reads through a symlinked folder', (
       .get('/api/files/raw')
       .query({ cwd, path: 'library-exports/clip.mp4' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
   it('GET /raw with the absolute target path is 403', async () => {
     const res = await request(testServer)
@@ -216,7 +219,7 @@ describe('DOR-3522 proof: media and content reads through a symlinked folder', (
       .get('/api/files/content')
       .query({ cwd, path: 'library-exports/notes.txt' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
   it('control: a real video inside the folder is served (200)', async () => {
     await fs.writeFile(path.join(cwd, 'own.mp4'), Buffer.from('mine'));

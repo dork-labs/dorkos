@@ -31,6 +31,13 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const close of cleanups.splice(0).reverse()) await close();
 });
+/** A save's answer when the file did not change underneath it. */
+function saved<T>(result: T): Exclude<T, { stale: unknown }> {
+  if (typeof result === 'object' && result !== null && 'stale' in result)
+    throw new Error('The file changed underneath this save');
+  return result as Exclude<T, { stale: unknown }>;
+}
+
 async function setup() {
   const h = await fixture();
   cleanups.push(h.cleanup);
@@ -57,8 +64,8 @@ async function setup() {
     expectedContent: before,
     documentSave: { documentId: h.documentId, eventId: randomUUID(), incarnation },
   });
-  const save = (input: ReturnType<typeof request>, headers: Record<string, string> = {}) =>
-    saveOriginalDocumentFile(h.http.fileWrites, input, { headers });
+  const save = async (input: ReturnType<typeof request>, headers: Record<string, string> = {}) =>
+    saved(await saveOriginalDocumentFile(h.http.fileWrites, input, { headers }));
   const intent = (eventId: string) =>
     h.db
       .select()
@@ -323,7 +330,8 @@ it('the real ordinary PUT route exposes receipt refusals as 404 and 412 rather t
     .put('/api/files/content')
     .send({ ...input, content: 'changed UUID request' });
   expect(conflict.status).toBe(412);
-  expect(conflict.body.code).toBe('DOC_SAVE_ID_CONFLICT');
+  expect(conflict.headers['content-type']).toContain('application/problem+json');
+  expect(conflict.body.code).toBe('precondition_failed');
   const missing = randomUUID();
   const refused = await request(target.server)
     .put('/api/files/content')
@@ -336,7 +344,7 @@ it('the real ordinary PUT route exposes receipt refusals as 404 and 412 rather t
       },
     });
   expect(refused.status).toBe(404);
-  expect(refused.body.code).toBe('CANVAS_DOCUMENT_NOT_FOUND');
+  expect(refused.body.code).toBe('not_found');
   expect(await fs.readFile(f.h.path, 'utf8')).toBe(input.content);
 });
 

@@ -13,7 +13,7 @@
  */
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { validateBoundary, BoundaryError } from './boundary.js';
+import { validateBoundary } from './boundary.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
 
 /**
@@ -167,33 +167,4 @@ export async function resolveWithinCwd(
   const target = path.isAbsolute(relPath) ? relPath : path.join(validatedCwd, relPath);
   const resolved = await validateBoundary(target, validatedCwd);
   return { validatedCwd, resolved };
-}
-
-/** The answer {@link pathErrorReply} gives a path the guards refused. */
-export interface PathErrorReply {
-  /** `400` for a NUL byte or an unusable path, `403` for one outside the boundary. */
-  status: 400 | 403;
-  /** The body. */
-  body: { error: string; code: string };
-}
-
-/**
- * Map a boundary/path-resolution error to an HTTP answer, or `null` for an
- * unexpected error the caller should treat as a 500. A route returns
- * `c.json(reply.body, reply.status)`.
- *
- * @param err - The thrown error to classify.
- */
-export function pathErrorReply(err: unknown): PathErrorReply | null {
-  if (err instanceof BoundaryError) {
-    return {
-      status: err.code === 'NULL_BYTE' ? 400 : 403,
-      body: { error: err.message, code: err.code },
-    };
-  }
-  const code = (err as NodeJS.ErrnoException).code;
-  if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
-    return { status: 400, body: { error: 'Invalid path', code } };
-  }
-  return null;
 }

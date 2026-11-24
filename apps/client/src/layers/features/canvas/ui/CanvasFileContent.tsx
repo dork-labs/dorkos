@@ -16,13 +16,13 @@ interface CanvasFileContentProps {
 function loadErrorMessage(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
   switch (code) {
-    case 'NOT_FOUND':
+    case 'not_found':
       return 'This file doesn’t exist.';
-    case 'NOT_A_FILE':
+    case 'not_a_file':
       return 'This path is a directory, not a file.';
-    case 'TOO_LARGE':
+    case 'too_large':
       return 'This file is too large to open here.';
-    case 'BINARY_FILE':
+    case 'binary_file':
       return 'This file isn’t text, so the editor can’t show it.';
     default:
       return 'This file couldn’t be loaded.';

@@ -24,6 +24,13 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const close of cleanup.splice(0).reverse()) await close();
 });
+/** A save's answer when the file did not change underneath it. */
+function saved<T>(result: T): Exclude<T, { stale: unknown }> {
+  if (typeof result === 'object' && result !== null && 'stale' in result)
+    throw new Error('The file changed underneath this save');
+  return result as Exclude<T, { stale: unknown }>;
+}
+
 async function setup() {
   const h = await authorityFixture(false, false, true);
   cleanup.push(h.cleanup);
@@ -55,7 +62,8 @@ async function setup() {
     content: 'Original saved replacement',
     documentSave: { documentId, eventId: randomUUID(), incarnation },
   };
-  const save = () => saveOriginalDocumentFile(h.http.fileWrites, input, { headers: {} });
+  const save = async () =>
+    saved(await saveOriginalDocumentFile(h.http.fileWrites, input, { headers: {} }));
   const row = () =>
     h.db
       .select()
@@ -145,7 +153,9 @@ it('two successful canonical moves retain the original physical birth and never 
     installationId: 'authority-install',
   });
   cleanup.push(() => restarted.fileWrites.stop());
-  const recovered = await saveOriginalDocumentFile(restarted.fileWrites, f.input, { headers: {} });
+  const recovered = saved(
+    await saveOriginalDocumentFile(restarted.fileWrites, f.input, { headers: {} })
+  );
   expect(f.receipt(recovered.body)).toMatchObject({
     status: 'duplicate',
     incarnation: f.input.documentSave.incarnation,

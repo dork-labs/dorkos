@@ -2,15 +2,16 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useConfigureForm } from '../model/use-configure-form';
 import type { WizardStep } from '../lib/wizard-types';
 
 // The hook reaches for a transport (the `.dork` conflict probe) and the config
 // query (the default agent directory). Neither has anything to say about the
 // seeding this file is about, so both answer with nothing.
+const { browseDirectory } = vi.hoisted(() => ({ browseDirectory: vi.fn() }));
 vi.mock('@/layers/shared/model', () => ({
-  useTransport: () => ({ browseDirectory: vi.fn().mockRejectedValue(new Error('ENOENT')) }),
+  useTransport: () => ({ browseDirectory }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -38,6 +39,31 @@ function drive(initial: Props) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  browseDirectory.mockRejectedValue(new Error('ENOENT'));
+});
+
+describe('useConfigureForm — the folder probe', () => {
+  it('blocks Create when the system refuses DorkOS the folder (forbidden)', async () => {
+    browseDirectory.mockRejectedValue(
+      Object.assign(new Error('DorkOS isn’t allowed to read that folder.'), {
+        status: 403,
+        code: 'forbidden',
+      })
+    );
+    const { result } = drive({ step: 'naming', templateName: '@dork-labs/reviewer' });
+    act(() => result.current.setDirectoryOverride('/work/reviewer'));
+    await waitFor(() => expect(result.current.conflictStatus).toBe('error'));
+    expect(result.current.canSubmit).toBe(false);
+  });
+
+  it('reads a missing folder as free to create (not_found)', async () => {
+    browseDirectory.mockRejectedValue(
+      Object.assign(new Error('That folder doesn’t exist.'), { status: 404, code: 'not_found' })
+    );
+    const { result } = drive({ step: 'naming', templateName: '@dork-labs/reviewer' });
+    act(() => result.current.setDirectoryOverride('/work/reviewer'));
+    await waitFor(() => expect(result.current.conflictStatus).toBe('no-path'));
+  });
 });
 
 describe('useConfigureForm — seeding survives a reset (DOR-1558)', () => {
