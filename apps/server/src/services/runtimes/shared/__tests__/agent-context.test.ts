@@ -55,6 +55,7 @@ import { readConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { configManager } from '../../../core/config-manager.js';
 import { MEMORY_MAX_CHARS } from '@dorkos/shared/convention-files';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
 import { getMemoryProvider } from '../../../memory/index.js';
 // The REAL registry, unmocked and imported separately from the module above —
@@ -297,6 +298,19 @@ describe('buildDorkosContextBlock documentation links', () => {
     expect(block).toContain('Documentation: https://x.dev/llms.txt');
     expect(block).toContain('Full docs: https://x.dev/docs');
     expect(block.split('\n')).not.toContain('/llms.txt');
+  });
+});
+
+describe('buildDorkosContextBlock chat links (DOR-5202)', () => {
+  it('teaches the /r/ chat link the tools hand back, and keeps the raw-id rule', async () => {
+    // Purpose: agents copy the shape this line shows, so it must be the shape
+    // `chatRefMarkdownLink` builds, the one that opens on any DorkOS origin.
+    const { _buildDorkosContextBlock } = await import('../agent-context.js');
+    const block = _buildDorkosContextBlock();
+    expect(block).toContain('Never show a raw id.');
+    expect(block).toContain('A chat link is [Chat title](/r/dork:chat:<full id>).');
+    expect(chatRefMarkdownLink('abc', 'Chat title')).toBe('[Chat title](/r/dork:chat:abc)');
+    expect(block).not.toContain('/session?session=');
   });
 });
 

@@ -132,7 +132,7 @@ describe('chat domain', () => {
       messageId: 'm1',
       chatId: 'b',
       chatTitle: 'Release notes',
-      link: '[Release notes](/session?session=b)',
+      link: '[Release notes](/r/dork:chat:b)',
       chatRef: 'dork:chat:b',
       status: 'queued',
     });
@@ -157,7 +157,7 @@ describe('chat domain', () => {
     expect(result).toMatchObject({
       ok: true,
       chatTitle: null,
-      link: '[New chat](/session?session=b)',
+      link: '[New chat](/r/dork:chat:b)',
     });
   });
 
@@ -174,7 +174,7 @@ describe('chat domain', () => {
     expect(result).toMatchObject({
       ok: true,
       chatTitle: null,
-      link: '[New chat](/session?session=b)',
+      link: '[New chat](/r/dork:chat:b)',
     });
     expect(describe).not.toHaveBeenCalled();
   });

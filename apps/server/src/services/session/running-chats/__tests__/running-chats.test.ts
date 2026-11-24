@@ -129,7 +129,7 @@ describe('listRunningChats', () => {
     expect(code.chats.map((c) => c.spinOff)).toEqual([true, true]);
     expect(code.chats[0]).toMatchObject({
       title: 'Title of spin-1',
-      link: '[Title of spin-1](/session?session=spin-1)',
+      link: '[Title of spin-1](/r/dork:chat:spin-1)',
       ref: 'dork:chat:spin-1',
       startedBy: { id: 'parent', title: 'Title of parent' },
     });
@@ -158,7 +158,7 @@ describe('listRunningChats', () => {
       expect.objectContaining({
         id: 'parent',
         title: null,
-        link: '[New chat](/session?session=parent)',
+        link: '[New chat](/r/dork:chat:parent)',
       }),
       expect.objectContaining({
         id: 'spin',

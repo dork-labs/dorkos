@@ -1,8 +1,9 @@
 /**
  * What a chip for a link to a chat, channel or DM says (DOR-2824).
  *
- * A link an agent writes, `[Fix the login bug](/session?session=…)`, draws as
- * a small chip: the page's icon, its name and its live status. The chip names
+ * A link an agent writes, `[Fix the login bug](/r/dork:chat:…)` or the older
+ * `/session?session=…`, draws as a small chip: the page's icon, its name and
+ * its live status. The chip names
  * the page exactly as its tab would, so it reads a {@link TabIdentity} from the
  * one builder in `tab-identity.ts` and only decides which half of it to show.
  * Pure functions only: `model/use-link-chip.ts` gathers, `ui/LinkChip.tsx` draws.
@@ -10,6 +11,8 @@
  * @module features/app-tabs/lib/link-chip
  */
 import { Hash, MessageSquare } from 'lucide-react';
+import { dorkUriFromLink, parseDorkReference } from '@dorkos/shared/dork-ref';
+import { sessionHref } from '@/layers/shared/lib';
 import {
   glyphName,
   tabAccessibleName,
@@ -27,6 +30,35 @@ export type LinkChipKind = 'chat' | 'room';
  * name, or `missing` because the page is gone or was never there.
  */
 export type LinkChipState = 'resolving' | 'ready' | 'missing';
+
+/**
+ * The page address a link chip reads, for a link written either way.
+ *
+ * A `/r/dork:chat:<id>` link (DOR-5046) names the same chat as
+ * `/session?session=<id>`, and `/r/dork:room:<id>` the same room as
+ * `/channels?id=<id>`, so the chip reads them as those and shows exactly the
+ * tab's name and status. The link itself is untouched: a click still opens it
+ * through the `/r/` route, which follows a chat's re-key.
+ *
+ * Any other `/r/` link comes back as written, which no chip names, so it stays
+ * a plain in-app link. A message (`dork:entry:`) has no chip of its own: its
+ * room is known only once the server resolves it, and naming the room would
+ * call a link to one message a link to the whole channel. An agent
+ * (`dork:agent:`) opens a profile, which no chip names either.
+ *
+ * @param address - The router-relative address the link points at.
+ * @returns The address of the chat or room it names, or `address` itself.
+ */
+export function linkChipAddress(address: string): string {
+  const uri = dorkUriFromLink(address);
+  if (uri === null) return address;
+  const parsed = parseDorkReference(uri);
+  if (!parsed.ok) return address;
+  const { kind, id } = parsed.value;
+  if (kind === 'chat') return sessionHref({ session: id });
+  if (kind === 'room') return `/channels?${new URLSearchParams({ id })}`;
+  return address;
+}
 
 /**
  * Which kind of page a link points at, or `null` for one no chip names.

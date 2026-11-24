@@ -10,7 +10,12 @@
 import { useMemo } from 'react';
 import { useSessionRouteContext, useSessionRow } from '@/layers/entities/session';
 import { useRoom } from '@/layers/entities/room';
-import { linkChipKind, type LinkChipKind, type LinkChipState } from '../lib/link-chip';
+import {
+  linkChipAddress,
+  linkChipKind,
+  type LinkChipKind,
+  type LinkChipState,
+} from '../lib/link-chip';
 import type { TabIdentity } from '../lib/tab-identity';
 import { parseTabHref } from '../lib/tab-target';
 import { useTabIdentity } from './use-tab-identity';
@@ -70,9 +75,10 @@ export interface LinkChipData {
  * @param address - The router-relative address the link points at.
  */
 export function useLinkChip(address: string): LinkChipData {
-  const target = useMemo(() => parseTabHref(address), [address]);
+  const pageAddress = useMemo(() => linkChipAddress(address), [address]);
+  const target = useMemo(() => parseTabHref(pageAddress), [pageAddress]);
   const kind = linkChipKind(target);
-  const identity = useTabIdentity(address);
+  const identity = useTabIdentity(pageAddress);
   const state = useLinkChipState(kind, target.sessionId, target.roomId);
   return { kind, identity, state };
 }

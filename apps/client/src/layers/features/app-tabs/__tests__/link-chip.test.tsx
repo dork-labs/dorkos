@@ -27,7 +27,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   useCurrentAgent: (cwd: string | null) => ({ data: agentByPath(cwd) }),
 }));
 
-import { linkChipFace, linkChipKind } from '../lib/link-chip';
+import { linkChipAddress, linkChipFace, linkChipKind } from '../lib/link-chip';
 import { chatTabIdentity, roomTabIdentity } from '../lib/tab-identity';
 import { parseTabHref } from '../lib/tab-target';
 import { linkChipSlot } from '../ui/LinkChip';
@@ -95,6 +95,29 @@ describe('linkChipKind', () => {
     ['/team', null],
   ])('%s is %s', (href, kind) => {
     expect(linkChipKind(parseTabHref(href))).toBe(kind);
+  });
+});
+
+describe('linkChipKind for a /r/ link (DOR-5202)', () => {
+  it.each([
+    ['/r/dork:chat:chat-1', 'chat'],
+    ['/r/dork%3Achat%3Achat-1', 'chat'],
+    ['/r/dork:room:room-1', 'room'],
+    // A message has no chip: its room is known only once the server resolves it.
+    ['/r/dork:entry:e-1', null],
+    // An agent opens a profile, which no chip names.
+    ['/r/dork:agent:01J9Z8X7Y6W5V4T3S2R1Q0P9N8', null],
+    ['/r/dork:bogus:x', null],
+    ['/r/dork:chat:', null],
+    ['/r/chat-1', null],
+  ])('%s is %s', (href, kind) => {
+    expect(linkChipKind(parseTabHref(linkChipAddress(href)))).toBe(kind);
+  });
+
+  it('reads a chat and a room as the addresses their tabs use', () => {
+    expect(linkChipAddress('/r/dork:chat:chat-1')).toBe('/session?session=chat-1');
+    expect(linkChipAddress('/r/dork:room:room-1')).toBe('/channels?id=room-1');
+    expect(linkChipAddress('/session?session=chat-1')).toBe('/session?session=chat-1');
   });
 });
 
@@ -275,6 +298,72 @@ describe('a chat link in markdown', () => {
   it('leaves a link outside DorkOS plain', () => {
     renderMarkdown('Read [the docs](https://dorkos.ai/docs)');
     expect(screen.getByRole('link', { name: 'the docs' })).not.toHaveAttribute('data-chip');
+  });
+});
+
+describe('a /r/ chat link in markdown (DOR-5202)', () => {
+  it('draws the same chip as a /session link, and keeps its own address', async () => {
+    renderMarkdown('See [the fix](/r/dork:chat:chat-1)');
+
+    const link = await screen.findByRole('link', { name: /^Fix the login bug, Scout/ });
+    expect(link).toHaveAttribute('data-chip', 'ready');
+    expect(link).toHaveAttribute('href', '/r/dork:chat:chat-1');
+    expect(link).toHaveTextContent('🔍');
+    expect(vi.mocked(transport.getSession).mock.calls[0]?.[0]).toBe('chat-1');
+  });
+
+  it('wears the live status dot', async () => {
+    useSessionListStore.setState({
+      statuses: { 'chat-1': { lifecycle: 'streaming', limit: null } as SessionStatus },
+    });
+    renderMarkdown('See [the fix](/r/dork:chat:chat-1)');
+
+    const link = await screen.findByRole('link', { name: /Fix the login bug, Scout, Working/ });
+    expect(link.querySelector('[data-status="working"]')).not.toBeNull();
+  });
+
+  it('says "Chat not found" for a chat that is gone', async () => {
+    vi.mocked(transport.getSession).mockRejectedValue(notFound());
+    renderMarkdown('See [the old chat](/r/dork:chat:chat-1)');
+
+    expect(await screen.findByRole('link', { name: 'Chat not found' })).toHaveAttribute(
+      'data-chip',
+      'missing'
+    );
+  });
+
+  it('opens through the /r/ route in place on one click', async () => {
+    renderMarkdown('See [the fix](/r/dork:chat:chat-1)');
+
+    fireEvent.click(await screen.findByRole('link', { name: /^Fix the login bug/ }));
+
+    expect(navigated).toEqual([{ href: '/r/dork:chat:chat-1', replace: undefined }]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('draws a /r/ room link as the channel’s chip', async () => {
+    vi.mocked(transport.getRoom).mockResolvedValue({
+      id: 'room-1',
+      kind: 'channel',
+      slug: 'general',
+      title: 'General',
+    } as never);
+    renderMarkdown('Posted in [the channel](/r/dork:room:room-1)');
+
+    const link = await screen.findByRole('link', { name: /^#general/ });
+    expect(link).toHaveAttribute('data-chip', 'ready');
+    expect(link).toHaveAttribute('href', '/r/dork:room:room-1');
+    expect(transport.getRoom).toHaveBeenCalledWith('room-1');
+  });
+
+  it('leaves a message link plain, and it still opens in place', () => {
+    renderMarkdown('Read [the reply](/r/dork:entry:e-1)');
+
+    const link = screen.getByRole('link', { name: 'the reply' });
+    expect(link).not.toHaveAttribute('data-chip');
+    fireEvent.click(link);
+    expect(navigated).toEqual([{ href: '/r/dork:entry:e-1', replace: undefined }]);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
 

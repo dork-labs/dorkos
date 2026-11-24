@@ -13,7 +13,7 @@ import type { ChatState, ChatMessageKind, ChatMessageSender } from '@dorkos/shar
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
-import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
 import type { ChatCaller } from './chat-message-service.js';
@@ -245,7 +245,7 @@ export async function readChat(
   const chat: ChatReadResult['chat'] = {
     id: input.chat,
     title: described.title,
-    link: chatMarkdownLink(input.chat, described.title),
+    link: chatRefMarkdownLink(input.chat, described.title),
     ref: dorkReferenceOrNull('chat', input.chat),
     agent: described.agent,
     state: startupFailure ? 'never-started' : chatStateOf(deps.status(input.chat)),

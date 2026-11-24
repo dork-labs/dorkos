@@ -50,7 +50,7 @@ describe('wireWorkClaims', () => {
     readable.add('lane-1');
     await expect(wiring.capabilityDeps.describeChat(caller, 'lane-1')).resolves.toEqual({
       title: 'Lane b lane-1 /b',
-      link: '[Lane b lane-1 /b](/session?session=lane-1)',
+      link: '[Lane b lane-1 /b](/r/dork:chat:lane-1)',
       private: false,
     });
   });
