@@ -162,7 +162,7 @@ Anything you post to a tracker or forge (a Linear comment or description, a GitH
 
 `<!-- agent:provenance {"v":2,"harness":"claude-code","surface":"dorkos","account":"claude3","agent":"dork:agent:…","chat":"dork:chat:1a2b3c4d","space":"dork:space:…"} -->`
 
-Build it, never by hand: `pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public|private` (in code, `@dorkos/shared/provenance`); the script's `read` reads one. It derives `surface`, where the work was driven from: `dorkos`, `ci` or `bare-cli`. It writes only the fields it knows: `v`, `harness`, `surface`, `account`, `agent`, `chat`, `space`, and optionally `address`. In a public repo it cuts `chat` to 8 characters and never writes `host`, `turn`, `resumeUrl`, `instanceId` or a hostname. `account` is a short handle (for Claude Code, the `CLAUDE_CONFIG_DIR` basename, default `claude`), never an email. Readers accept v1, v2 and the legacy `flow:provenance` name forever. Full spec: `docs/provenance.md` in `dork-labs/marketplace`. Commits keep their `Claude-Session:` trailer.
+Build it, never by hand: `pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public|private` (in code, `@dorkos/shared/provenance`); its `read` reads one. A public line cuts `chat` to 8 characters and carries no machine details. `account` is a short handle (for Claude Code, the `CLAUDE_CONFIG_DIR` basename), never an email. Readers accept v1, v2 and the legacy `flow:provenance` name forever. Full spec: `docs/provenance.md` in `dork-labs/marketplace`. Commits keep their `Claude-Session:` trailer.
 
 ## Artifacts
 

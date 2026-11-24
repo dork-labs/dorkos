@@ -284,7 +284,8 @@ check '--dry-run prints the hold comment' yes "$(has "$out" 'pr comment')"
 # the open.
 body() { cat "$GH_STATE.body" 2>/dev/null; }
 stub_tsx tsx-ok "echo '<!-- agent:provenance {\"v\":2,\"surface\":\"dorkos\",\"chat\":\"dork:chat:abcdef12\"} -->'"
-stub_tsx tsx-crash 'echo "Error: boom" >&2; exit 1'
+stub_tsx tsx-crash 'printf "node:internal/modules/run_main:123\n    triggerUncaughtException(\nError: boom\n    at main (provenance-line.ts:1:1)\n" >&2; exit 1'
+stub_tsx tsx-crash-plain 'printf "first words\nlast words\n\n" >&2; exit 3'
 stub_tsx tsx-no-node 'echo "env: node: No such file or directory" >&2; exit 127'
 stub_tsx tsx-garbage 'echo hello'
 stub_tsx tsx-two-lines "echo '$MINIMAL'; echo '$MINIMAL'"
@@ -306,12 +307,15 @@ check 'the labels are printed' yes "$(has "$out" 'labels: review:light')"
 OPEN_PR_TSX="$tmp/bin/no-such-tsx" open
 check 'tsx missing: the PR still opens' 0 "$rc"
 check 'tsx missing: the minimal line is appended' yes "$(has "$(body)" "$MINIMAL")"
-check 'tsx missing: it says why' yes "$(has "$out" 'provenance CLI could not sign (tsx is not installed at')"
+check 'tsx missing: it says why, naming where it looked' yes \
+  "$(has "$out" "provenance CLI could not sign (tsx is not installed (looked in $tmp/bin/no-such-tsx); run pnpm install)")"
 check 'tsx missing: it warns' yes "$(has "$out" 'open-pr: warning: appended the minimal line')"
 OPEN_PR_TSX="$tmp/bin/tsx-crash" open
 check 'the CLI crashing: the PR still opens' 0 "$rc"
 check 'the CLI crashing: the minimal line is appended' yes "$(has "$(body)" "$MINIMAL")"
-check 'the CLI crashing: it names the exit and the error' yes "$(has "$out" '(it exited 1: Error: boom)')"
+check 'the CLI crashing: it names the exit and the Error line, not the stack' yes "$(has "$out" '(it exited 1: Error: boom)')"
+OPEN_PR_TSX="$tmp/bin/tsx-crash-plain" open
+check 'a crash with no Error line: it names the last line' yes "$(has "$out" '(it exited 3: last words)')"
 OPEN_PR_TSX="$tmp/bin/tsx-no-node" open
 check 'node missing: the PR still opens' 0 "$rc"
 check 'node missing: it says so' yes "$(has "$out" '(it exited 127: env: node: No such file or directory)')"
@@ -337,6 +341,55 @@ for signed in 'v1|<!-- agent:provenance {"v":1,"surface":"github"} -->' \
   check "a body signed $name never runs the CLI" '' "$(cat "$tmp/tsx.log")"
   check "a body signed $name says so" yes "$(has "$out" 'provenance: already in the body')"
 done
+
+# Only the LAST non-blank line signs a body, as every reader decides.
+printf 'Body.\n\n  <!--  agent:provenance   {"v":2,"surface":"dorkos"}  -->  \r\n\n   \n' >"$tmp/signed.md"
+OPEN_PR_TSX="$tmp/bin/tsx-ok" run --title 't: x' --body-file "$tmp/signed.md"
+check 'an extra-spaced trailing signature (CRLF, blank lines after) is left alone' \
+  "yes,1" "$(has "$out" 'provenance: already in the body'),$(grep -c 'provenance' "$GH_STATE.body")"
+quoted='<!-- agent:provenance {"v":2,"surface":"dorkos"} -->'
+# shellcheck disable=SC2016 # literal Markdown backticks, not a command
+printf 'The line looks like `%s` inline.\n\nThat is all.\n' "$quoted" >"$tmp/quoted.md"
+# shellcheck disable=SC2016 # literal Markdown fence
+printf 'Example:\n\n```\n%s\n```\n\nThat is all.\n' "$quoted" >"$tmp/fenced.md"
+printf 'Old line:\n%s\nThen more text.\n' "$quoted" >"$tmp/midbody.md"
+for case in 'quoted inline|quoted.md' 'quoted in a fence|fenced.md' 'mid-body with text after|midbody.md'; do
+  OPEN_PR_TSX="$tmp/bin/tsx-ok" run --title 't: x' --body-file "$tmp/${case#*|}"
+  check "a signature ${case%%|*} does not sign the body: one is appended" \
+    "yes,yes" "$(has "$out" 'provenance: appended: '),$(tail -1 "$GH_STATE.body" | grep -q 'dork:chat:abcdef12' && echo yes || echo no)"
+done
+
+# A worktree with no install of its own borrows the main checkout's tsx, and
+# still runs its OWN copy of the CLI.
+fake=$tmp/fake-main
+mkdir -p "$fake/scripts/provenance"
+cp "$SCRIPT" "$fake/scripts/open-pr.sh"
+ln -s "$repo_root/.github" "$fake/.github"
+: >"$fake/scripts/provenance/provenance-line.ts"
+echo node_modules/ >"$fake/.gitignore"
+(cd "$fake" && git init -q -b main && git add -A && git commit -qm 'chore: fake repo' &&
+  git worktree add -q "$tmp/fake-wt" -b wt) || { echo "could not build the fake repo" >&2; exit 1; }
+mkdir -p "$fake/node_modules/.bin"
+stub_tsx tsx-ok-main "echo '<!-- agent:provenance {\"v\":2,\"surface\":\"bare-cli\"} -->'"
+cp "$tmp/bin/tsx-ok-main" "$fake/node_modules/.bin/tsx"
+fake_open() { # open-pr.sh from the fake worktree, no OPEN_PR_TSX
+  : >"$tmp/tsx.log"
+  out=$(cd "$work" && env -u OPEN_PR_TSX "$tmp/fake-wt/scripts/open-pr.sh" --title 't: x' --body-file "$tmp/body.md" --dry-run 2>&1)
+  rc=$?
+}
+fake_open
+check "no tsx in the worktree: the main checkout's runs" 0 "$rc"
+check "and it runs the worktree's own CLI" "$(cd "$tmp/fake-wt" && pwd)/scripts/provenance/provenance-line.ts --visibility public" "$(cat "$tmp/tsx.log")"
+check 'and its line is appended' yes "$(has "$out" 'provenance: appended: <!-- agent:provenance {"v":2,"surface":"bare-cli"} -->')"
+mkdir -p "$tmp/fake-wt/node_modules/.bin"
+stub_tsx tsx-ok-wt "echo '<!-- agent:provenance {\"v\":2,\"surface\":\"ci\"} -->'"
+cp "$tmp/bin/tsx-ok-wt" "$tmp/fake-wt/node_modules/.bin/tsx"
+fake_open
+check "the worktree's own tsx comes first" yes "$(has "$out" '{"v":2,"surface":"ci"}')"
+rm -f "$tmp/fake-wt/node_modules/.bin/tsx" "$fake/node_modules/.bin/tsx"
+fake_open
+check 'neither checkout has tsx: the minimal line, naming both places' "0,yes,yes" \
+  "$rc,$(has "$out" "$MINIMAL"),$(has "$out" "fake-wt/node_modules/.bin/tsx, ")"
 
 # The real CLI, from the environment Claude Code and DorkOS set. Fake ids only.
 CHAT=7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6

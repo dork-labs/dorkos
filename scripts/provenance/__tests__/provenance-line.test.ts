@@ -110,6 +110,28 @@ describe('provenance-line build', () => {
     );
   });
 
+  it('prints exactly the one line open-pr.sh accepts as a signature', () => {
+    // open-pr.sh appends the CLI's output only when it is ONE line matching
+    // `grep -qxE '<!-- agent:provenance \{.*\} -->'`; anything else gets its
+    // minimal line instead. Keep the two shapes in step.
+    const envs: NodeJS.ProcessEnv[] = [
+      {},
+      { CI: 'true' },
+      {
+        CLAUDECODE: '1',
+        DORKOS_SESSION_ID: CHAT,
+        DORKOS_AGENT_ID: AGENT_ID,
+        DORKOS_SPACE_ID: SPACE_ID,
+      },
+    ];
+    for (const vars of envs) {
+      const { code, stdout } = run(['--visibility', 'public'], vars, noStdin);
+      expect(code).toBe(0);
+      expect(stdout.endsWith('\n')).toBe(true);
+      expect(stdout.slice(0, -1)).toMatch(/^<!-- agent:provenance \{.*\} -->$/);
+    }
+  });
+
   it('lets --surface override the derived surface', () => {
     expect(fieldsFromEnv({ DORKOS_SESSION_ID: CHAT }, 'github').surface).toBe('github');
     expect(run(['--surface', 'github'], { CI: 'true' }, noStdin).stdout).toBe(

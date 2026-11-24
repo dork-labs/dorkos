@@ -37,8 +37,8 @@
 #      - `needs-design` when a user-visible UI path is touched outside tests
 #        (UI_RE and UI_SKIP_RE, the design gate's own lists).
 #   3. The provenance line (AGENTS.md "Signing outward writes"): a version 2
-#      line from scripts/provenance/provenance-line.ts, appended to the body
-#      when it has none. A field it cannot read is left out and named; a CLI
+#      line from scripts/provenance/provenance-line.ts, appended unless the
+#      body's last non-blank line is already one. A field it cannot read is left out and named; a CLI
 #      that cannot run leaves a minimal line and a warning, never a refusal.
 #   4. `gh pr create` with every label at creation, so the `opened` event and
 #      the review see them. With `--hold`, `hold` is one of them and the reason
@@ -268,27 +268,52 @@ fi
 # Signing never stops a PR from opening. When the CLI cannot run (no
 # node_modules, no node, a crash, or output that is not one signature line),
 # the body gets PROVENANCE_MINIMAL instead, and the note and a warning say why.
+#
+# A body counts as signed only when its LAST non-blank line is a signature,
+# the rule every reader uses (readProvenance): a line quoted mid-body or in a
+# fence signs nothing, so such a body still gets one.
 PROVENANCE_CLI=$REPO_ROOT/scripts/provenance/provenance-line.ts
 # Without the CLI nothing is known, not even the surface.
 PROVENANCE_MINIMAL='<!-- agent:provenance {"v":2} -->'
-TSX=${OPEN_PR_TSX:-$REPO_ROOT/node_modules/.bin/tsx}
+SIGNATURE_RE='^[[:space:]]*<!--[[:space:]]*(agent|flow):provenance[[:space:]]+\{.*\}[[:space:]]*-->[[:space:]]*$'
+# tsx: OPEN_PR_TSX when set; else this checkout's, then the main checkout's,
+# since a fresh worktree often has no install of its own.
+if [ -n "${OPEN_PR_TSX:-}" ]; then
+  tsx_tried=("$OPEN_PR_TSX")
+else
+  tsx_tried=("$REPO_ROOT/node_modules/.bin/tsx")
+  if common_dir=$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    main_tsx=$(dirname "$common_dir")/node_modules/.bin/tsx
+    [ "$main_tsx" = "${tsx_tried[0]}" ] || [ "$main_tsx" -ef "${tsx_tried[0]}" ] || tsx_tried+=("$main_tsx")
+  fi
+fi
+TSX=""
+for candidate in "${tsx_tried[@]}"; do
+  if [ -x "$candidate" ]; then
+    TSX=$candidate
+    break
+  fi
+done
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 body="$tmp/body.md"
 cat "$body_file" >"$body"
-if grep -qE '<!-- (agent|flow):provenance ' "$body"; then
+last_line=$(tr -d '\r' <"$body" | awk 'NF { l = $0 } END { print l }')
+if grep -qE "$SIGNATURE_RE" <<<"$last_line"; then
   provenance_note="already in the body"
 else
   cli_failed=""
   cli_rc=0
   line=""
-  if [ -x "$TSX" ]; then
+  if [ -n "$TSX" ]; then
     line=$("$TSX" "$PROVENANCE_CLI" --visibility public 2>"$tmp/provenance.err") || cli_rc=$?
   fi
-  if [ ! -x "$TSX" ]; then
-    cli_failed="tsx is not installed at $TSX; run pnpm install"
+  if [ -z "$TSX" ]; then
+    cli_failed="tsx is not installed (looked in $(printf '%s, ' "${tsx_tried[@]}" | sed 's/, $//')); run pnpm install"
   elif [ "$cli_rc" -ne 0 ]; then
-    cli_failed="it exited $cli_rc: $(head -1 "$tmp/provenance.err" | cut -c1-200 || true)"
+    # The error, not the stack: the first line naming one, else the last line.
+    reason=$(grep -m1 'Error' "$tmp/provenance.err" || awk 'NF { l = $0 } END { print l }' "$tmp/provenance.err")
+    cli_failed="it exited $cli_rc: $(cut -c1-200 <<<"$reason")"
   elif [[ $line == *$'\n'* ]] || ! grep -qxE '<!-- agent:provenance \{.*\} -->' <<<"$line"; then
     cli_failed="it printed no signature line"
   fi
