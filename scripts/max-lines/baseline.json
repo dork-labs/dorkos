@@ -104,7 +104,6 @@
     "packages/browser/src/runtime/installation/contracts.ts": 635,
     "packages/browser/src/runtime/installation/filesystem.ts": 1986,
     "packages/browser/src/runtime/installation/jobs.ts": 910,
-    "packages/ci-steward/src/daily-report.ts": 501,
     "packages/cli/scripts/test-community-deploy-live.ts": 631,
     "packages/cli/scripts/test-community-deploy-package.ts": 639,
     "packages/cli/src/cli.ts": 654,

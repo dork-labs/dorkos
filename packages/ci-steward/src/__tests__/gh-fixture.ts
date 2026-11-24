@@ -137,6 +137,7 @@ const PR7 = {
   createdAt: `${DAY}T09:00:00Z`,
   mergedAt: `${DAY}T12:45:00Z`,
   headRefName: 'feat/x',
+  mergeCommit: { oid: 'ccc' },
   timelineItems: {
     pageInfo: { hasNextPage: false },
     nodes: [

@@ -13,6 +13,8 @@
  *   and the next run resumes it where it stopped: late, never truncated;
  * - the timelines of every PR merged that day (queue entries and removals with
  *   their reasons, new commits, ready-for-review);
+ * - one compare range per release published that day, for what it shipped
+ *   (`tracked.merged-to-released`, release-lead.ts);
  * - a sample of queue builds' test reports, for flaky-test-runs.
  *
  * Once per run it also reads the releases, the Actions cache, and the three
@@ -44,6 +46,7 @@ import type { Config } from './schemas.ts';
 import { fetchMergedPrs, type PrFacts } from './prs.ts';
 import { failingGatesFor, priorQueueBuilds, repeatEjections } from './ejection-facts.ts';
 import { refreshOlderDays } from './refresh.ts';
+import { mergesOf, releaseContents } from './release-lead.ts';
 import {
   canaryRuns,
   desktopReleaseRuns,
@@ -484,7 +487,10 @@ function collectDay(
   }
   // Only once the PRs were actually read: a day that ran out of budget first
   // is late and comes back, and until then it has no measurement, not zero.
-  if (prsRead) snap.counts.repeat_ejections = repeatEjections(prs, builds);
+  if (prsRead) {
+    snap.counts.repeat_ejections = repeatEjections(prs, builds);
+    snap.merges = mergesOf(prs);
+  }
 
   // Flaky tests from a sample of queue builds' reports (artifacts expire after 7 days).
   if (!late) {
@@ -499,6 +505,22 @@ function collectDay(
   }
 
   snap.releases = global.releases.filter((r) => r.published_at.startsWith(day));
+  // What each of the day's releases shipped (tracked.merged-to-released): one
+  // compare request per release, usually one a day.
+  try {
+    const shipped = releaseContents(gh, repo, snap.releases, global.releases);
+    snap.release_contents = shipped.contents;
+    if (shipped.short.length)
+      warnings.push(
+        `Release contents: the compare range for ${shipped.short.join(', ')} came back shorter than its total_commits; tracked.merged-to-released misses the PRs it did not list.`
+      );
+  } catch (e) {
+    if (!(e instanceof BudgetExhausted)) throw e;
+    late = true;
+    warnings.push(
+      'Late: the request budget ran out before the releases were compared; the next run resumes this day.'
+    );
+  }
   snap.cache = global.cache;
   // Today's timeouts describe the runs of recent days only; a backfilled day's
   // runs ran under whatever the YAML said then, so headroom does not read them.
@@ -601,7 +623,7 @@ export function collect(opts: CollectOptions): CollectResult {
   // Last, on whatever the budget has left: collecting a day always outranks
   // re-deriving one. A pulse and an explicit `--day` never refresh, so neither
   // spends its requests on days nobody asked about.
-  const refreshed = !opts.days && !opts.includeToday ? refreshOlderDays(opts) : [];
+  const refreshed = !opts.days && !opts.includeToday ? refreshOlderDays(opts, global.releases) : [];
   const all = snapshotDays(dataDir);
   // latest.json never moves back: a run that wrote only backfill days still
   // points at the newest complete day on disk.
