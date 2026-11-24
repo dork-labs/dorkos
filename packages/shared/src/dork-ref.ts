@@ -24,9 +24,11 @@ export const DORK_SCHEME = 'dork:';
  * never a product word that may change: a chat stays `chat` even if the UI one
  * day calls it something else).
  *
- * The first eight are ADR 261122-124821's. `todo`, `run` and `project` are the
- * work graph's (DOR-4967): a to-do's ULID, a task run's ULID, and a known
- * project's stable short name. New kinds are added, never reinterpreted.
+ * The first eight are ADR 261122-124821's. `todo` (a to-do's ULID) and `run`
+ * (a task run's ULID) are the work graph's (DOR-4967), recorded as an
+ * amendment on that ADR. Every kind names an opaque id, never a name: a
+ * project gets a kind once it has an opaque id of its own. New kinds are
+ * added, never reinterpreted.
  */
 export const DORK_KINDS = [
   'space',
@@ -39,7 +41,6 @@ export const DORK_KINDS = [
   'turn',
   'todo',
   'run',
-  'project',
 ] as const;
 
 /** A kind DorkOS mints ids for. */
@@ -198,10 +199,17 @@ export function dorkLinkPath(ref: DorkReference<string>): string {
 
 /**
  * Read the `dork:` string out of a link path (`/r/dork:...`) or a desktop link
- * (`dorkos://r/dork:...`). A query string or fragment after it is ignored.
+ * (`dorkos://r/dork:...`). The one link reader: the `/r/` route, the desktop
+ * and `./entity-ref` all read links here, so they cannot disagree.
+ *
+ * A query string or fragment after the URI is ignored. The URI is
+ * percent-decoded exactly once, since some tools encode the `:`; a URI that
+ * still holds a `%` after that one decode (a double-encoded link) is refused,
+ * not decoded again, because a `dork:` string never contains a `%`.
  *
  * @param link - The path or desktop URL.
- * @returns The `dork:` string, or null when the link is not a `/r/` link.
+ * @returns The `dork:` string, or null when the link is not a `/r/` link to
+ *   one (including a malformed or double-encoded escape).
  */
 export function dorkUriFromLink(link: string): string | null {
   let rest: string;
@@ -210,6 +218,11 @@ export function dorkUriFromLink(link: string): string | null {
     rest = link.slice(DORK_DESKTOP_LINK_PREFIX.length);
   else return null;
   const end = rest.search(/[?#]/);
-  const uri = end === -1 ? rest : rest.slice(0, end);
-  return uri.startsWith(DORK_SCHEME) ? uri : null;
+  let uri: string;
+  try {
+    uri = decodeURIComponent(end === -1 ? rest : rest.slice(0, end));
+  } catch {
+    return null;
+  }
+  return uri.startsWith(DORK_SCHEME) && !uri.includes('%') ? uri : null;
 }

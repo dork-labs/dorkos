@@ -28,6 +28,7 @@ import {
   DORK_KINDS,
   DORK_LINK_PREFIX,
   DORK_SCHEME,
+  dorkUriFromLink,
   formatDorkReference,
   isDorkId,
   isDorkKind,
@@ -36,6 +37,7 @@ import {
   type DorkParseResult,
   type DorkReferenceRefusal,
 } from './dork-ref.js';
+import { CONTROL_CHARACTER, INVISIBLE_CHARACTER } from './untrusted-text.js';
 
 /** Things DorkOS refers to but does not mint ids for. */
 export const OUTSIDE_KINDS = ['pr', 'ticket', 'branch', 'worktree'] as const;
@@ -86,6 +88,7 @@ export type EntityRefRefusal =
   | 'no-id'
   | 'bad-repo'
   | 'bad-number'
+  | 'leading-zero'
   | 'bad-ticket'
   | 'bad-branch'
   | 'bad-worktree'
@@ -116,8 +119,11 @@ export function isEntityKind(kind: string): kind is EntityKind {
 
 // === Outside kinds: grammars ===
 
-/** A GitHub account or org name, folded to lower case: alnum and `-`, 1 to 39. */
-const GITHUB_OWNER_PATTERN = /^[a-z0-9][a-z0-9-]{0,38}$/;
+/**
+ * A GitHub account or org name, folded to lower case: 1 to 39 of alnum and
+ * `-`, starting and ending with alnum, with no `--`.
+ */
+const GITHUB_OWNER_PATTERN = /^(?!.*--)[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/;
 
 /** A GitHub repository name, folded to lower case: 1 to 100 of `[a-z0-9._-]`. */
 const GITHUB_REPO_PATTERN = /^[a-z0-9._-]{1,100}$/;
@@ -125,13 +131,23 @@ const GITHUB_REPO_PATTERN = /^[a-z0-9._-]{1,100}$/;
 /** A pull request number: no sign, no leading zero, so it has one spelling. */
 const PR_NUMBER_PATTERN = /^[1-9][0-9]{0,9}$/;
 
+/** A pull request number spelled with a leading zero (`042`). */
+const PR_NUMBER_LEADING_ZERO = /^0[0-9]{1,9}$/;
+
 /**
- * A tracker ticket: an upper-case team key of 2 to 10 and a number, the shape
- * `work-claim-infer.ts` reads (`DOR-1234`). This is a grammar, not a free-text
- * detector: it does not skip look-alikes such as `SHA-256` the way that
- * module does, because here the caller already says the value is a key.
+ * A tracker ticket, `DOR-1234`: the team-key shape `work-claim-infer.ts` reads
+ * (an upper-case key of 2 to 10 and a number of up to 7 digits), held to one
+ * spelling: the number has no leading zero, where that module accepts one.
+ * It is a grammar, not a free-text detector, so unlike that module it skips no
+ * look-alikes such as `SHA-256`: the caller already says the value is a key.
  */
 export const TICKET_PATTERN = /^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,6}$/;
+
+/** Any ticket-shaped key, leading zero included: what is worth reporting on. */
+const TICKET_SHAPE = /^[A-Z][A-Z0-9]{1,9}-[0-9]{1,7}$/;
+
+/** A ticket whose number has a leading zero (`DOR-0123`). */
+const TICKET_LEADING_ZERO = /^[A-Z][A-Z0-9]{1,9}-0[0-9]{1,6}$/;
 
 /** A worktree folder name: 1 to 255 of `[A-Za-z0-9._-]`. Never a path. */
 const WORKTREE_NAME_PATTERN = /^[A-Za-z0-9._-]{1,255}$/;
@@ -155,7 +171,8 @@ function checkRepo(owner: string, repo: string): EntityRefRefusal | null {
  * `OWNER/REPO#42` and a link to `github.com/owner/repo/pull/42` are one PR.
  */
 function prId(repoPath: string | null, number: string): Result<string> {
-  if (!PR_NUMBER_PATTERN.test(number)) return refuse('bad-number');
+  if (!PR_NUMBER_PATTERN.test(number))
+    return refuse(PR_NUMBER_LEADING_ZERO.test(number) ? 'leading-zero' : 'bad-number');
   if (repoPath === null) return { ok: true, value: `#${number}` };
   const [owner, repo, extra] = repoPath.toLowerCase().split('/');
   if (owner === undefined || repo === undefined || extra !== undefined) return refuse('bad-repo');
@@ -181,6 +198,12 @@ function isBranchName(name: string): boolean {
     .every((part) => part.length > 0 && !part.startsWith('.') && !part.endsWith('.lock'));
 }
 
+/** Why a ticket id is not canonical; a leading zero is refused as for a PR. */
+function checkTicket(id: string): EntityRefRefusal | null {
+  if (TICKET_PATTERN.test(id)) return null;
+  return TICKET_LEADING_ZERO.test(id) ? 'leading-zero' : 'bad-ticket';
+}
+
 function checkWorktree(name: string): EntityRefRefusal | null {
   if (PATH_LIKE.test(name)) return 'is-path';
   if (!WORKTREE_NAME_PATTERN.test(name) || name === '.') return 'bad-worktree';
@@ -190,24 +213,42 @@ function checkWorktree(name: string): EntityRefRefusal | null {
 // === Display hints ===
 
 const LABEL_MAX_LENGTH = 200;
-
-/** A label is one line of plain text: no control characters. */
-// eslint-disable-next-line no-control-regex -- the control range is the point.
-const LABEL_FORBIDDEN = /[\u0000-\u001f\u007f]/;
 const URL_MAX_LENGTH = 2048;
 
+/**
+ * A label is one line of visible text: no control character (C0, DEL, C1,
+ * NEL among them) and no invisible one (`\p{Cf}` such as a direction override
+ * or a zero-width space, U+2028, U+2029), the rule a relay display name
+ * follows. So a label of only zero-width characters is refused too.
+ */
 function checkLabel(label: string | undefined): EntityRefRefusal | null {
   if (label === undefined) return null;
   const fits = label.trim().length > 0 && label.length <= LABEL_MAX_LENGTH;
-  return fits && !LABEL_FORBIDDEN.test(label) ? null : 'bad-label';
+  const clean = !CONTROL_CHARACTER.test(label) && !INVISIBLE_CHARACTER.test(label);
+  return fits && clean ? null : 'bad-label';
 }
 
-/** An `http(s)` URL or an app path; never `javascript:` or any other scheme. */
+/**
+ * What a URL hint may never hold. WHATWG URL parsing reads `\` as `/` and
+ * drops tabs and newlines, so `/\evil.example` and `/<tab>/evil.example` both
+ * resolve to another site; none of these has a use in a link DorkOS keeps.
+ */
+const URL_UNSAFE = /[\\\s]/;
+
+/** The stand-in origin an app path is resolved against, to prove it stays on it. */
+const APP_PATH_ORIGIN = 'https://app.dorkos.invalid';
+
+/**
+ * An `http(s)` URL or an app path that stays on the app's own origin; never
+ * `javascript:`, any other scheme, or a path a browser would send off-site.
+ */
 function checkUrl(url: string | undefined): EntityRefRefusal | null {
   if (url === undefined) return null;
-  if (url.length > URL_MAX_LENGTH) return 'bad-url';
-  if (url.startsWith('/')) return url.startsWith('//') ? 'bad-url' : null;
+  if (url.length > URL_MAX_LENGTH || URL_UNSAFE.test(url)) return 'bad-url';
+  if (CONTROL_CHARACTER.test(url) || INVISIBLE_CHARACTER.test(url)) return 'bad-url';
   try {
+    if (url.startsWith('/'))
+      return new URL(url, APP_PATH_ORIGIN).origin === APP_PATH_ORIGIN ? null : 'bad-url';
     const { protocol } = new URL(url);
     return protocol === 'https:' || protocol === 'http:' ? null : 'bad-url';
   } catch {
@@ -253,7 +294,8 @@ export function entityRef<K extends EntityKind>(
     if (!parsed.ok) return parsed;
     canonical = parsed.value;
   } else if (kind === 'ticket') {
-    if (!TICKET_PATTERN.test(id)) return refuse('bad-ticket');
+    const problem = checkTicket(id);
+    if (problem) return refuse(problem);
   } else if (kind === 'branch') {
     if (!isBranchName(id)) return refuse('bad-branch');
   } else {
@@ -326,15 +368,13 @@ function fromChannelsLink(url: URL): Result<EntityRef<'room' | 'entry'>> {
   return thread.ok ? ok('entry', thread.value) : thread;
 }
 
-/** `/r/<dork-uri>` on any origin. The URI may arrive percent-encoded. */
-function fromLinkPath(path: string): Result<EntityRef<DorkKind>> {
-  let uri: string;
-  try {
-    uri = decodeURIComponent(path.slice(DORK_LINK_PREFIX.length));
-  } catch {
-    return refuse('bad-link');
-  }
-  return uri.startsWith(DORK_SCHEME) ? fromDorkUri(uri) : refuse('bad-link');
+/**
+ * A `/r/` path or a `dorkos://r/` link, read by `dorkUriFromLink` (one decode,
+ * the rule every link reader shares).
+ */
+function fromLink(link: string): Result<EntityRef<DorkKind>> {
+  const uri = dorkUriFromLink(link);
+  return uri === null ? refuse('bad-link') : fromDorkUri(uri);
 }
 
 /** `github.com/<owner>/<repo>/pull/<n>[/files...]`. */
@@ -353,7 +393,8 @@ function fromLinearUrl(url: URL): Result<EntityRef<'ticket'>> {
   const [workspace, issue, id] = url.pathname.split('/').slice(1);
   if (issue !== 'issue' || !workspace || !/^[a-z0-9-]{1,64}$/.test(workspace) || !id)
     return refuse('unrecognised');
-  if (!TICKET_PATTERN.test(id)) return refuse('bad-ticket');
+  const problem = checkTicket(id);
+  if (problem) return refuse(problem);
   return ok('ticket', id, `https://linear.app/${workspace}/issue/${id}`);
 }
 
@@ -370,20 +411,26 @@ function fromUrl(input: string): Result<EntityRef<TextEntityKind>> {
   const host = url.hostname.toLowerCase();
   if (host === 'github.com' || host === 'www.github.com') return fromGitHubUrl(url);
   if (host === 'linear.app') return fromLinearUrl(url);
-  if (url.pathname.startsWith(DORK_LINK_PREFIX)) return fromLinkPath(url.pathname);
+  if (url.pathname.startsWith(DORK_LINK_PREFIX)) return fromLink(url.pathname);
   if (url.pathname === '/session') return fromSessionLink(url);
   if (url.pathname === '/channels') return fromChannelsLink(url);
   return refuse('unrecognised');
 }
 
-/** `DOR-1234`, `PR #42` or `owner/repo#42`: the keys `work_claim` holds. */
-function fromWorkKey(input: string): Result<EntityRef<'pr' | 'ticket'>> | null {
-  if (TICKET_PATTERN.test(input)) return ok('ticket', input);
+/**
+ * `DOR-1234` and `PR #42`, and with `withRepo` also `owner/repo#42` (the PR
+ * body spelling). Null when the text has none of these shapes.
+ */
+function fromWorkKey(input: string, withRepo: boolean): Result<EntityRef<'pr' | 'ticket'>> | null {
+  if (TICKET_SHAPE.test(input)) {
+    const problem = checkTicket(input);
+    return problem ? refuse(problem) : ok('ticket', input);
+  }
   if (input.startsWith('PR #')) {
     const id = prId(null, input.slice('PR #'.length));
     return id.ok ? ok('pr', id.value) : id;
   }
-  if (/^[^\s/#]+\/[^\s/#]+#[^\s#]*$/.test(input)) {
+  if (withRepo && /^[^\s/#]+\/[^\s/#]+#[^\s#]*$/.test(input)) {
     const id = prIdFromText(input);
     return id.ok ? ok('pr', id.value) : id;
   }
@@ -401,7 +448,9 @@ function fromWorkKey(input: string): Result<EntityRef<'pr' | 'ticket'>> | null {
  *   origin is not checked, since a reference names what and never where;
  * - a GitHub pull request URL or a Linear issue URL, which keep their page in
  *   `url`;
- * - a work-claim key: `DOR-1234`, `PR #42` or `owner/repo#42`.
+ * - a ticket or pull request as written in text: `DOR-1234`, `PR #42` or
+ *   `owner/repo#42`. A branch with a `#` in it (`fix/bug#12`) has that same
+ *   shape and is read as a PR here; {@link parseClaimKey} does not read it.
  *
  * Nothing is trimmed and only URLs are decoded. A bare `#42` is refused: it
  * could be a channel, an issue or a heading.
@@ -413,21 +462,19 @@ export function parseEntityRef(input: unknown): Result<EntityRef<TextEntityKind>
   if (typeof input !== 'string') return refuse('not-a-string');
   if (input.length === 0) return refuse('empty');
   if (input.startsWith(DORK_SCHEME)) return fromDorkUri(input);
-  if (input.startsWith(DORK_DESKTOP_LINK_PREFIX)) {
-    const uri = input.slice(DORK_DESKTOP_LINK_PREFIX.length).split(/[?#]/)[0]!;
-    return uri.startsWith(DORK_SCHEME) ? fromDorkUri(uri) : refuse('bad-link');
-  }
+  if (input.startsWith(DORK_DESKTOP_LINK_PREFIX)) return fromLink(input);
   if (/^https?:\/\//i.test(input) || (input.startsWith('/') && !input.startsWith('//')))
     return fromUrl(input);
-  return fromWorkKey(input) ?? refuse('unrecognised');
+  return fromWorkKey(input, true) ?? refuse('unrecognised');
 }
 
 /**
  * Read a work-claim key (`normaliseClaimKey` in the server's
  * `work-claim-service.ts`, which upper-cases it) as the ticket or pull request
- * it names. Any other key, such as a branch or a free name, is `unrecognised`
- * and stays a plain key: a claim key is never read as a `dork:` reference or a
- * link, because upper-casing has already changed those.
+ * it names: `DOR-1234` or `PR #42` only. Any other key is `unrecognised` and
+ * stays a plain key. That includes an `owner/repo#42`-shaped one, because a
+ * free key such as `FIX/BUG#12` has the same shape and must not become a PR,
+ * and a `dork:` reference or link, which upper-casing has already changed.
  *
  * @param key - A normalised claim key.
  * @returns The ticket or PR, or the reason it names neither.
@@ -435,7 +482,7 @@ export function parseEntityRef(input: unknown): Result<EntityRef<TextEntityKind>
 export function parseClaimKey(key: unknown): Result<EntityRef<'pr' | 'ticket'>> {
   if (typeof key !== 'string') return refuse('not-a-string');
   if (key.length === 0) return refuse('empty');
-  return fromWorkKey(key) ?? refuse('unrecognised');
+  return fromWorkKey(key, false) ?? refuse('unrecognised');
 }
 
 // === Formatting ===

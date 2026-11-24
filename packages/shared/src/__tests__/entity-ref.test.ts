@@ -47,6 +47,17 @@ describe('every text kind round-trips through its canonical spelling', () => {
     expect(parseEntityRef(text)).toEqual({ ok: true, value: { kind, id } });
   });
 
+  it('reads an encoded web link and an encoded desktop link the same way', () => {
+    const chat = { ok: true, value: { kind: 'chat', id: CHAT } };
+    const encoded = `dork%3Achat%3A${CHAT}`;
+    expect(parseEntityRef(`/r/${encoded}`)).toEqual(chat);
+    expect(parseEntityRef(`https://dorkos.example/r/${encoded}`)).toEqual(chat);
+    expect(parseEntityRef(`dorkos://r/${encoded}`)).toEqual(chat);
+    for (const link of [`/r/dork%253Achat%253A${CHAT}`, `dorkos://r/dork%253Achat%253A${CHAT}`]) {
+      expect(parseEntityRef(link)).toEqual({ ok: false, reason: 'bad-link' });
+    }
+  });
+
   it.each(DORK_KINDS)('%s reads back from every link form', (kind) => {
     const ref = must(kind, ULID);
     const uri = `dork:${kind}:${ULID}`;
@@ -92,9 +103,23 @@ describe('the spellings in use today', () => {
       value: { kind: 'ticket', id: 'DOR-1234' },
     });
     expect(parseClaimKey('PR #42')).toEqual({ ok: true, value: { kind: 'pr', id: '#42' } });
-    expect(parseClaimKey('DORK-LABS/DORKOS#42')).toEqual({
+    expect(parseClaimKey('DOR-0123')).toEqual({ ok: false, reason: 'leading-zero' });
+    expect(parseClaimKey('PR #042')).toEqual({ ok: false, reason: 'leading-zero' });
+  });
+
+  it('never reads a repo-shaped claim key as a PR: a free key like FIX/BUG#12 has that shape', () => {
+    expect(parseClaimKey('FIX/BUG#12')).toEqual({ ok: false, reason: 'unrecognised' });
+    expect(parseClaimKey('DORK-LABS/DORKOS#42')).toEqual({ ok: false, reason: 'unrecognised' });
+  });
+
+  it('reads owner/repo#42 in text as a PR, a branch with a # in it included', () => {
+    expect(parseEntityRef('dork-labs/dorkos#42')).toEqual({
       ok: true,
       value: { kind: 'pr', id: 'dork-labs/dorkos#42' },
+    });
+    expect(parseEntityRef('fix/bug#12')).toEqual({
+      ok: true,
+      value: { kind: 'pr', id: 'fix/bug#12' },
     });
   });
 
@@ -192,6 +217,16 @@ describe('branch and worktree: built only from a value the caller holds', () => 
 });
 
 describe('display hints', () => {
+  it.each([
+    ['a label with accents and emoji', { label: 'Caf\u00e9 launch \u{1F680}' }],
+    ['an app path', { url: '/session?session=abc' }],
+    ['an escaped backslash, which stays in the path', { url: '/%5Cevil.example' }],
+    ['an escaped tab, which stays in the path', { url: '/%09/evil.example' }],
+    ['an https URL', { url: 'https://github.com/dork-labs/dorkos/pull/42' }],
+  ])('accepts %s', (_what, extras) => {
+    expect(entityRef('chat', CHAT, extras).ok).toBe(true);
+  });
+
   it('keeps a label and a safe url, outside the identity', () => {
     expect(entityRef('chat', CHAT, { label: 'Launch plan', url: `/r/dork:chat:${CHAT}` })).toEqual({
       ok: true,
@@ -204,10 +239,29 @@ describe('display hints', () => {
     ['bad-label', { label: '   ' }],
     ['bad-label', { label: 'two\nlines' }],
     ['bad-label', { label: 'l'.repeat(201) }],
+    ['bad-label', { label: '\u200b' }],
+    ['bad-label', { label: '\u200b\u200c\u2060' }],
+    ['bad-label', { label: 'paypal\u202egnp.exe' }],
+    ['bad-label', { label: 'zero\u200bwidth' }],
+    ['bad-label', { label: 'line\u2028break' }],
+    ['bad-label', { label: 'para\u2029break' }],
+    ['bad-label', { label: 'next\u0085line' }],
+    ['bad-label', { label: 'tab\there' }],
+    ['bad-label', { label: 'bom\ufeff' }],
     ['bad-url', { url: 'javascript:alert(1)' }],
     ['bad-url', { url: 'data:text/html,x' }],
     ['bad-url', { url: '//evil.example/x' }],
     ['bad-url', { url: 'not a url' }],
+    ['bad-url', { url: '/\\evil.example' }],
+    ['bad-url', { url: '/\\evil.example/path' }],
+    ['bad-url', { url: '/\t/evil.example' }],
+    ['bad-url', { url: '/\n/evil.example' }],
+    ['bad-url', { url: '/\r/evil.example' }],
+    ['bad-url', { url: '/ /evil.example' }],
+    ['bad-url', { url: '/\u0085/evil.example' }],
+    ['bad-url', { url: '/\u200b/evil.example' }],
+    ['bad-url', { url: 'https://ok.example\\@evil.example' }],
+    ['bad-url', { url: 'java\tscript:alert(1)' }],
     ['bad-url', { url: `https://x.example/${'u'.repeat(2048)}` }],
   ])('%s: %j', (reason, extras) => {
     expect(entityRef('chat', CHAT, extras)).toEqual({ ok: false, reason });
@@ -240,7 +294,13 @@ describe('refusals', () => {
     ['unknown-kind', 'dork:widget:abc'],
     ['no-kind', 'dork:chat'],
     ['bad-number', 'PR #0'],
-    ['bad-number', 'PR #042'],
+    ['leading-zero', 'PR #042'],
+    ['leading-zero', 'dork-labs/dorkos#07'],
+    ['leading-zero', 'https://github.com/dork-labs/dorkos/pull/042'],
+    ['leading-zero', 'DOR-0123'],
+    ['leading-zero', 'https://linear.app/dorkos/issue/DOR-012'],
+    ['bad-repo', 'dork--labs/dorkos#1'],
+    ['bad-repo', 'dork-labs-/dorkos#1'],
     ['bad-number', 'PR #'],
     ['bad-number', 'dork-labs/dorkos#'],
     ['bad-number', 'https://github.com/dork-labs/dorkos/pull/abc'],
@@ -259,7 +319,10 @@ describe('refusals', () => {
     ['bad-id', 'agent', 'a'.repeat(65)],
     ['bad-ticket', 'ticket', 'dor-1234'],
     ['bad-ticket', 'ticket', 'D-1'],
-    ['bad-ticket', 'ticket', 'DOR-01'],
+    ['leading-zero', 'ticket', 'DOR-01'],
+    ['bad-ticket', 'ticket', 'DOR-0'],
+    ['leading-zero', 'pr', '#07'],
+    ['bad-repo', 'pr', 'a--b/x#1'],
     ['bad-repo', 'pr', 'a/b/c#1'],
     ['bad-number', 'pr', '42'],
   ] as const)('entityRef %s: %s %j', (reason, kind, id) => {

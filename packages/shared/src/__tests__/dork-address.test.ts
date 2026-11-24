@@ -97,6 +97,14 @@ describe('address refusals', () => {
     ['reserved', 'dork:chat/owl'],
     ['reserved', 'dork:acme/admin'],
     ['reserved', 'dork:acme/everyone'],
+    ['reserved', 'dork:acme/no_reply'],
+    ['reserved', 'dork:acme/no-reply'],
+    ['reserved', 'dork:acme/noreply'],
+    ['reserved', 'dork:acme/mailer_daemon'],
+    ['reserved', 'dork:acme/ch-at'],
+    ['reserved', 'dork:mailer-daemon/owl'],
+    ['reserved', 'dork:acme/dorkos'],
+    ['reserved', 'dork:acme/here'],
   ])('%s: %j', (reason, input) => {
     expect(parseDorkAddress(input)).toEqual({ ok: false, reason });
   });
@@ -121,6 +129,9 @@ describe('address refusals', () => {
     ['bad-name', `owl+${'n'.repeat(24)}`],
     ['bad-space', 'owl@a'],
     ['reserved', 'support@acme'],
+    ['reserved', 'no_reply@acme'],
+    ['reserved', 'owl@chat'],
+    ['reserved', 'owl@no-reply'],
   ])('display %s: %j', (reason, input) => {
     expect(parseDorkDisplay(input)).toEqual({ ok: false, reason });
   });
@@ -131,6 +142,8 @@ describe('address refusals', () => {
     ['bad-shape', '@owl+launch@acme'],
     ['bad-handle', '@144x.co'],
     ['reserved', '@everyone'],
+    ['reserved', '@every_one'],
+    ['reserved', '@owl@chat'],
   ])('mention %s: %j', (reason, input) => {
     expect(parseDorkMention(input)).toEqual({ ok: false, reason });
   });
@@ -152,6 +165,8 @@ describe('address refusals', () => {
     ['bad-shape', 'owl.acme+a+b'],
     ['bad-handle', '_owl.acme'],
     ['reserved', 'postmaster.acme'],
+    ['reserved', 'mailer_daemon.acme'],
+    ['reserved', 'owl.chat'],
   ])('email %s: %j', (reason, input) => {
     expect(parseEmailLocalPart(input)).toEqual({ ok: false, reason });
   });

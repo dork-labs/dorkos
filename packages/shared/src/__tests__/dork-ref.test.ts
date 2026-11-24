@@ -26,7 +26,6 @@ const SAMPLE_IDS: Record<DorkKind, string> = {
   turn: '01JD3F2Z7P1Q4R8S9T0U2V3W4X',
   todo: '01JD3H0A1B2C3D4E5F6G7H8J9K',
   run: '01JD3H1A1B2C3D4E5F6G7H8J9K',
-  project: 'dorkos',
 };
 
 describe('dork: references round-trip', () => {
@@ -94,6 +93,25 @@ describe('dork: reference refusals', () => {
     expect(isDorkKind('widget')).toBe(false);
   });
 
+  it('has no project kind: a project name is not an opaque id', () => {
+    expect(DORK_KINDS).toEqual([
+      'space',
+      'person',
+      'agent',
+      'host',
+      'room',
+      'entry',
+      'chat',
+      'turn',
+      'todo',
+      'run',
+    ]);
+    expect(parseDorkReference('dork:project:dorkos')).toEqual({
+      ok: false,
+      reason: 'unknown-kind',
+    });
+  });
+
   it('refuses a known kind that is not the expected one', () => {
     expect(parseDorkReference('dork:room:abc', 'chat')).toEqual({
       ok: false,
@@ -121,6 +139,16 @@ describe('dorkUriFromLink', () => {
     expect(dorkUriFromLink('/r/chat:abc')).toBeNull();
     expect(dorkUriFromLink('dorkos://session?session=abc')).toBeNull();
     expect(dorkUriFromLink('r/dork:chat:abc')).toBeNull();
+  });
+
+  it('decodes a web and a desktop link the same way, exactly once', () => {
+    for (const prefix of ['/r/', 'dorkos://r/']) {
+      expect(dorkUriFromLink(`${prefix}dork%3Achat%3Aabc`)).toBe('dork:chat:abc');
+      expect(dorkUriFromLink(`${prefix}dork%3achat%3aabc?x=1`)).toBe('dork:chat:abc');
+      expect(dorkUriFromLink(`${prefix}dork%253Achat%253Aabc`)).toBeNull();
+      expect(dorkUriFromLink(`${prefix}dork:chat:a%2525b`)).toBeNull();
+      expect(dorkUriFromLink(`${prefix}dork:chat:%E0%A4%A`)).toBeNull();
+    }
   });
 });
 

@@ -19,6 +19,7 @@
  * @module shared/dork-address
  */
 import { DORK_KINDS, DORK_SCHEME, type DorkParseResult } from './dork-ref.js';
+import { BROADCAST_RESERVATIONS, SYSTEM_HANDLE } from './handle.js';
 
 /**
  * An address handle: the Cloud contract's `HandleSchema`, 2 to 32 characters,
@@ -34,7 +35,13 @@ export const SPACE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$/;
 /** A named conversation: 1 to 23, `[a-z0-9-]`, alnum ends, no dot or underscore. */
 export const CONVERSATION_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,21}[a-z0-9])?$/;
 
-/** A channel slug as `#slug` renders it: the room slug grammar (`ROOM_SLUG_REGEX`). */
+/**
+ * A channel slug as `#slug` renders it: the room slug grammar
+ * (`ROOM_SLUG_REGEX` in `./room-schemas`, 1 to 80, may end with `-`), not the
+ * research report's 2-to-32 `slug` ABNF. `#slug` names a live room whose slug
+ * that grammar minted, so a stricter rule would refuse real channels. Copied,
+ * not imported, to keep this module free of Zod; a test holds the two equal.
+ */
 const CHANNEL_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/;
 
 /**
@@ -46,8 +53,12 @@ export const EMAIL_PAIR_MAX_LENGTH = 40;
 /**
  * Words no address may use as its space or its handle: RFC 2142's role
  * mailboxes, the usual mail and admin words, DorkOS's own names, the local
- * broadcast reservations, and every reference kind (so `dork:chat/...` can
- * never be read as an org called "chat").
+ * handle reservations (`./handle`), and every reference kind (so
+ * `dork:chat/...` can never be read as an org called "chat").
+ *
+ * Matched on a skeleton with `-` and `_` removed ({@link isReservedAddressWord}),
+ * so `no-reply`, `no_reply` and `noreply` are one word and the list names each
+ * word once.
  */
 export const RESERVED_ADDRESS_WORDS: readonly string[] = [
   'postmaster',
@@ -58,17 +69,31 @@ export const RESERVED_ADDRESS_WORDS: readonly string[] = [
   'support',
   'security',
   'noreply',
-  'no-reply',
   'mailer-daemon',
   'dmarc',
-  'dorkos',
   'dork',
-  'everyone',
-  'here',
-  'channel',
-  'room',
+  SYSTEM_HANDLE,
+  ...BROADCAST_RESERVATIONS,
   ...DORK_KINDS,
 ];
+
+/** A word with its separators dropped, so `no_reply` and `noreply` compare equal. */
+function skeleton(word: string): string {
+  return word.replace(/[-_]/g, '');
+}
+
+const RESERVED_SKELETONS: ReadonlySet<string> = new Set(RESERVED_ADDRESS_WORDS.map(skeleton));
+
+/**
+ * Whether a space or handle is reserved, ignoring `-` and `_`: `mailer_daemon`
+ * and `ch-at` are as reserved as `mailer-daemon` and `chat`.
+ *
+ * @param word - A lowercase space slug or handle.
+ * @returns True when no address may use it.
+ */
+export function isReservedAddressWord(word: string): boolean {
+  return RESERVED_SKELETONS.has(skeleton(word));
+}
 
 /** An address: a member of a space, or one of a member's named conversations. */
 export interface DorkAddress {
@@ -117,10 +142,6 @@ function refuse<T>(reason: DorkAddressRefusal): Result<T> {
   return { ok: false, reason };
 }
 
-function isReserved(word: string): boolean {
-  return RESERVED_ADDRESS_WORDS.includes(word);
-}
-
 /**
  * Case handling shared by every parser: fold on request, refuse otherwise.
  *
@@ -135,12 +156,12 @@ function caseChecked(input: string, options: FoldOptions | undefined): string | 
 
 function checkSpace(space: string): DorkAddressRefusal | null {
   if (!SPACE_SLUG_PATTERN.test(space)) return 'bad-space';
-  return isReserved(space) ? 'reserved' : null;
+  return isReservedAddressWord(space) ? 'reserved' : null;
 }
 
 function checkHandle(handle: string): DorkAddressRefusal | null {
   if (!ADDRESS_HANDLE_PATTERN.test(handle)) return 'bad-handle';
-  return isReserved(handle) ? 'reserved' : null;
+  return isReservedAddressWord(handle) ? 'reserved' : null;
 }
 
 function checkName(name: string | undefined): DorkAddressRefusal | null {

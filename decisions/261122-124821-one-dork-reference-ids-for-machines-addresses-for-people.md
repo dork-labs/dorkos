@@ -12,6 +12,8 @@ amends: [261017-211859]
 
 ## Status
 
+Amended 2026-11-24 (DOR-4967): two kinds added under the ADR's own rule that kinds are added, never reinterpreted: `todo` (a to-do's ULID) and `run` (a task run's ULID).
+
 Accepted (2026-11-23: PR #4143 merged the decision with the spec's §6 delta as the text of record, DOR-5045 closed).
 
 Proposed (operator ask 2026-11-22, #proj-dork-architecture; design in `research/20261122_dorkos-address-format.md`). The six open calls in that report's §12 were decided on 2026-11-22: Dorian delegated them to DorkOS Code (09:40 CT), which took every pick: (1) the scheme word is `dork:`, and the desktop keeps `dorkos://` with `dorkos://r/` opening a reference; (2) a named conversation is `+name` in display and email; (3) a handle is write-once once an address is issued, and a rename retires the old address, forwards it for 90 days and never reissues it; (4) a public PR body carries `agent`, `chat` (8 characters), `space` and `address`; (5) provenance v2 ships unsigned now, and `sig` comes when the directory publishes keys; (6) a local install mints a space id at first run, beside the install id. Stays Proposed until the PR that carries it merges and the spec's §6 delta becomes the text of record; then `/adr:review` flips it to Accepted (tracked on DOR-5045, under DOR-4966).
