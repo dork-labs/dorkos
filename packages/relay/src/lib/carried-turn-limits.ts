@@ -12,7 +12,9 @@
  * that forwards a caller's payload removes the caller's copy. Every bound in
  * it can only hold a turn lower, never raise it. It is never part of the
  * message's words: {@link withoutCarriedTurnLimits} drops it wherever a
- * payload is read as text or shown.
+ * payload is read as the message's words (the prompt and the conversation
+ * preview). Raw envelope reads, such as dead letters and an inbox, still show
+ * it as stored.
  */
 export const CARRIED_TURN_LIMITS_FIELD = '__carriedTurnLimits';
 
