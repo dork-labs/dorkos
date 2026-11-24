@@ -145,6 +145,19 @@ export const ClaudeCodeAccountSchema = z.object({
    * config. The `'0.124.1'` migration sets it on one account.
    */
   noAutoMove: z.boolean().optional().catch(undefined),
+  /**
+   * `true` when a person let agents start chats on this account by naming it,
+   * which core's own account rule asks while no mini app such as Flow decides
+   * (DOR-5033). Absent or `false` means an agent naming it is refused: an
+   * account is closed to agents' own picks until a person opens it. Written
+   * only by a person, through `PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick`.
+   *
+   * Optional rather than defaulted, for the reason `noAutoMove` is: rows are
+   * shared with flow and written by hand. The `'0.142.0'` migration writes
+   * `false` on every stored row that lacks it. A value that is not a boolean
+   * reads as absent.
+   */
+  agentsMayPick: z.boolean().optional().catch(undefined),
 });
 
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
@@ -554,6 +567,8 @@ export function readClaudeAccountSettings(
       // Only a stored `true` keeps an account out of automatic moves; a row
       // without the field stays without it.
       ...('noAutoMove' in row ? { noAutoMove: row.noAutoMove === true } : {}),
+      // Only a stored `true` lets agents pick an account by name.
+      ...('agentsMayPick' in row ? { agentsMayPick: row.agentsMayPick === true } : {}),
     });
   }
   return { defaultAccount, accounts, warnings };

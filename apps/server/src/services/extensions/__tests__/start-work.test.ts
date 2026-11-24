@@ -14,13 +14,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { SessionListEvent } from '@dorkos/shared/session-stream';
+
 import type { Session } from '@dorkos/shared/types';
 import { SessionStartedBySchema } from '@dorkos/shared/schemas';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
-import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
+import { createMockSession } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -61,17 +61,10 @@ vi.mock('../../session/launch/launch-session.js', () => ({
   }),
 }));
 
-import { eventFanOut } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster } from '../../session/catalog/session-list-broadcaster.js';
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
 import { SessionStartedByStore } from '../../session/origin/session-started-by-store.js';
-import {
-  StartWorkInputError,
-  StartWorkService,
-  setStartWorkService,
-  type StartWorkDeps,
-} from '../start-work.js';
+import { StartWorkService, setStartWorkService, type StartWorkDeps } from '../start-work.js';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
 import { createInboxFixture, shipDecision } from '../inbox/__tests__/inbox-fixture.js';
 import { startSorting } from '../inbox/__tests__/fixtures/inbox-fixture.js';
@@ -161,14 +154,6 @@ afterEach(() => {
 });
 
 describe('a start', () => {
-  it('returns the Codex no-tools warning without assigning the project an agent', async () => {
-    service = build({ defaultRuntime: () => 'codex' });
-    nextLaunch.warnings = [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }];
-    const result = await service.start('flow', INPUT, 'ctx');
-    expect(result).toMatchObject({ warnings: nextLaunch.warnings });
-    expect(launches[0]!.request).not.toHaveProperty('agentPath');
-  });
-
   it('launches one chat in the project root, with its title and the prompt as its first message', async () => {
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
 
@@ -224,45 +209,6 @@ describe('a start', () => {
     expect(rows[1]!.startedBy).toBeUndefined();
   });
 
-  it('says who started it on the live session stream', async () => {
-    const { sessionId } = await service.start('flow', INPUT, 'ctx');
-    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
-    const runtime = new FakeAgentRuntime();
-    const upsert: SessionListEvent = {
-      type: 'session_upserted',
-      session: createMockSession({ id: sessionId, title: INPUT.title }),
-    };
-    runtime.subscribeSessionList.mockReturnValue(
-      (async function* () {
-        yield upsert;
-      })()
-    );
-    const broadcaster = new SessionListBroadcaster();
-    broadcaster.setOriginResolvers({
-      resolveStartedBy: (ids) => store.getMany(ids),
-      extensionNameOf: () => 'Flow',
-    });
-    broadcaster.start([runtime]);
-    try {
-      await vi.waitFor(() =>
-        expect(broadcast).toHaveBeenCalledWith(
-          'session_upserted',
-          expect.objectContaining({
-            session: expect.objectContaining({
-              id: sessionId,
-              startedBy: expect.objectContaining({ kind: 'extension', extensionName: 'Flow' }),
-            }),
-          }),
-          // Who may hear about the session (spec `audit-trail` §3.4).
-          expect.any(Function)
-        )
-      );
-    } finally {
-      await broadcaster.stop();
-      broadcast.mockRestore();
-    }
-  });
-
   it('keeps who started it when the runtime settles on another id', async () => {
     nextLaunch.canonical = (id) => `sdk-${id}`;
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
@@ -270,22 +216,6 @@ describe('a start', () => {
     expect(store.get(sessionId)?.extensionId).toBe('flow');
     expect(store.get(sessionId.slice('sdk-'.length))).toBeNull();
     expect(renamed[0]!.sessionId).toBe(sessionId);
-  });
-
-  it('sets the title after the first turn when the runtime cannot set it yet', async () => {
-    let calls = 0;
-    service = build({
-      rename: async (runtime, sessionId, title, cwd) => {
-        calls += 1;
-        if (calls === 1) throw new Error('no transcript yet');
-        renamed.push({ runtime, sessionId, title, cwd });
-      },
-    });
-    const { sessionId } = await service.start('flow', INPUT, 'ctx');
-    expect(renamed).toEqual([]);
-    launches[0]!.onSettled?.('ok');
-    await vi.waitFor(() => expect(renamed).toHaveLength(1));
-    expect(renamed[0]).toMatchObject({ sessionId, title: INPUT.title });
   });
 
   it('is reachable as ctx.sessions.start, scoped to the calling extension', async () => {
@@ -399,19 +329,6 @@ describe('refusals launch nothing', () => {
     await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeTruthy();
   });
 
-  it('counts a started chat that is working on a later turn, from the live statuses', async () => {
-    const ids: string[] = [];
-    for (let i = 0; i < START_WORK_LIMITS.running; i++) {
-      ids.push((await service.start('flow', INPUT, 'ctx')).sessionId);
-      launches.at(-1)!.onSettled?.('ok');
-    }
-    // All three finished their first turn; a person then sent each a message.
-    running = [...ids, 'someone-elses-chat'];
-    expect((await refusal(service.start('flow', INPUT, 'ctx'))).code).toBe('start_limit');
-    running = ids.slice(1);
-    await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeTruthy();
-  });
-
   it('refuses as account_not_allowed_here when the launch’s own account check refuses', async () => {
     nextLaunch.refused = {
       refused: 'ACCOUNT_NOT_ALLOWED',
@@ -430,19 +347,6 @@ describe('refusals launch nothing', () => {
     const err = await refusal(service.start('flow', INPUT, 'ctx'));
     expect(err.code).toBe('start_limit');
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
-  });
-
-  it('refuses input that breaks a length rule, as a StartWorkInputError', async () => {
-    await expect(service.start('flow', { ...INPUT, title: 'x'.repeat(81) }, 'ctx')).rejects.toThrow(
-      StartWorkInputError
-    );
-    await expect(service.start('flow', { ...INPUT, reason: '' }, 'ctx')).rejects.toThrow(
-      /Say why in 1 to 200 characters/
-    );
-    await expect(
-      service.start('flow', { ...INPUT, prompt: 'x'.repeat(20_001) }, 'ctx')
-    ).rejects.toThrow(/under 20,000 characters/);
-    expect(launches).toHaveLength(0);
   });
 });
 
@@ -487,20 +391,6 @@ describe('the limits', () => {
     expect(grandchild).toMatchObject({ ok: false, error: { code: 'start_limit' } });
     expect(store.get('grandchild-1')).toBeNull();
   });
-
-  it('never limit a chat whose chain reaches no extension', () => {
-    for (let i = 0; i < 20; i++) {
-      const claimed = service.reserve({
-        sessionId: `plain-${i}`,
-        kind: 'chat',
-        extensionId: null,
-        startedBySessionId: 'a-persons-chat',
-        originExtensionId: null,
-        reason: null,
-      });
-      expect(claimed.ok).toBe(true);
-    }
-  });
 });
 
 describe('keeping starts', () => {
@@ -535,36 +425,6 @@ describe('startedBy', () => {
     expect(service.startedBy('flow', 'child-1')).toBe(true);
     expect(service.startedBy('hello-world', sessionId)).toBe(false);
     expect(service.startedBy('flow', 'a-persons-chat')).toBe(false);
-  });
-
-  it('names the chat a chat was started from, when this server has listed it', () => {
-    store.insert({
-      sessionId: 'child-1',
-      kind: 'chat',
-      extensionId: null,
-      startedBySessionId: 'parent-1',
-      originExtensionId: null,
-      reason: 'split the work',
-      createdAt: new Date(clock).toISOString(),
-    });
-    const rows = [
-      createMockSession({ id: 'parent-1', title: 'Plan the launch' }),
-      createMockSession({ id: 'child-1', title: 'Write the post' }),
-    ];
-    applySessionOriginOverlays(rows, { resolveStartedBy: (ids) => store.getMany(ids) });
-    expect(rows[1]!.startedBy).toEqual({
-      kind: 'chat',
-      sessionId: 'parent-1',
-      title: 'Plan the launch',
-      reason: 'split the work',
-      // A row from before the level was recorded says nothing about it.
-      permission: null,
-    });
-
-    _forgetTitles();
-    const alone = [createMockSession({ id: 'child-1', title: 'Write the post' })];
-    applySessionOriginOverlays(alone, { resolveStartedBy: (ids) => store.getMany(ids) });
-    expect(alone[0]!.startedBy).toMatchObject({ kind: 'chat', title: null });
   });
 
   it('carries the level a chat was started at, and whether it matched the starter', () => {

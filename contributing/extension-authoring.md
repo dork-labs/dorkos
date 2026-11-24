@@ -19,6 +19,18 @@ Two name collisions worth flagging:
 - **"marketplace"** names three things — the **`@dorkos/marketplace`** library (schemas / validator / scaffolder), the **`marketplace` core extension** (display name **"Marketplace"**, the browse UI), and the **install runtime** at `apps/server/src/services/marketplace/`. This guide's "marketplace" is the extension; the package and the install runtime are separate layers it sits on top of.
 - **"Linear Loop"** is the _display name_ of the **`linear-issues`** core extension — not to be confused with the `linear-loop` _skill_ bundle retired in spec #257. Both the display name and the `linear-issues` id are provisional and may be renamed.
 
+## Is this a mini app or a core feature?
+
+Before you add a feature to the DorkOS server, ask three questions (ADR `261124-150519`):
+
+1. Does the core itself act on it?
+2. Can only the core see what it needs?
+3. Would a mini app get it wrong, even with care?
+
+If one answer is yes, it may go in the core. If all three are no, build it as a mini app (this guide), or as a schedule with a skill. Some repeated code between mini apps is an accepted price.
+
+**A watcher is a mini app.** Something that watches a pull request, a pipeline or an outside app and tells an agent when it changes belongs here, built on the same author API as everyone else's. Today a watcher can poll with `ctx.schedule()` and message an agent with [`ctx.agent`](#ctxagent), but it cannot yet wake the chat that asked it to watch. The core will own one way to wake a chat or an agent when something happens, stored and safe across a restart. It is not built yet, so do not build your own version of it in the server.
+
 ## Quick Start
 
 **See a live example.** Hello World ships with DorkOS as a core extension (source at `apps/server/src/core-extensions/hello-world/`). It is staged automatically at server startup but ships disabled:
@@ -61,7 +73,7 @@ my-extension/
 
 **A copy that runs by origin runs from a snapshot** (`extension-snapshots.ts`, third security review of DOR-2527). A project copy that runs because of its trusted origin — the person approved another copy from the same source, or trusts that source — was never approved in its own folder, and its server half may run plugin files at runtime (flow runs `<extensionDir>/../../../scripts/*.ts` with node) long after the load was checked. So it never runs from the project: DorkOS copies its whole plugin folder (what the digest covers) into `{dorkHome}/extension-snapshots/<digest>/`, re-hashes the copy, and moves it into place atomically only if it matches. The record's `runPath` points into the snapshot, and compiling, the server half and `ctx.extensionDir` all use it, so everything the extension reaches relative to itself (`scripts/`, `node_modules/`) is the snapshot's; later edits in the project never run, and the next scan sees them and takes the origin away. Snapshots are content-addressed (shared by identical copies, and re-hashed before each reuse and each build since DOR-3068, so one edited after it was made is rebuilt or refused), read-only by convention (an extension's data, settings and secrets live elsewhere under `{dorkHome}`, keyed by its id), and removed once no discovered copy runs from them. Every yes pinned to a digest runs from a snapshot in the same way, at any scope, a direct copy's own folder included (DOR-3068), and the snapshot of an approved digest is kept so a changed copy's row can name what changed. A copy that keeps path trust runs from a snapshot too, of its files as they are at each scan and load (`pin/extension-snapshot-placement.ts`): its edits still need no click, but a build only ever reads bytes that were copied and verified first. A dev link and a global plugin running by its origin run where they are. **An extension that writes into its own folder (`ctx.extensionDir`) changes the files it was approved for, so it stops itself and waits for a person: keep data in `ctx.storage` (`loadData`/`saveData`) or `ctx.filesDir`, never beside your code.**
 
-**What it costs.** Whole-folder digests are cached per file by `(inode, size, mtime, ctime)` and per folder by the whole walk (every stamp plus every directory listing): a file's bytes are read again only when one of those changes, so a warm scan walks and `lstat`s and reads nothing. Each plugin folder is inspected once per scan however many extensions it carries, and a global plugin is only walked for links, never digested. On a laptop, a warm scan of five flow-sized copies (about 1,200 files each) takes about 150ms (`extension-discovery-perf.test.ts`).
+**What it costs.** Whole-folder digests are cached per file by `(inode, size, mtime, ctime)` and per folder by the whole walk (every stamp plus every directory listing): a file's bytes are read again only when one of those changes, so a warm scan walks and `lstat`s and reads nothing. Each plugin folder is inspected once per scan however many extensions it carries, and a global plugin is only walked for links, never digested. On a laptop, a warm scan of five flow-sized copies (about 1,200 files each) takes about 150ms.
 
 **A server half that never finishes starting is let go completely.** On the `register()` timeout its context is disposed: what it scheduled is cancelled, what it registered is released, and any later `ctx.schedule` or listener registration from the still-running `register()` is a no-op, logged once. A retry starts a fresh instance; nothing of the abandoned one keeps running beside it.
 
@@ -779,7 +791,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 
 ## Limitations (v1)
 
-- No sandboxing: client-side extensions run in the browser with full DOM access; server-side extensions run in the Node.js host process.
+- No full sandbox. A server half runs inside DorkOS by default (ADR 0213), with DorkOS's own access, or in its own limited process with `"runtime": "subprocess"` (see [Running separately](#running-separately)). Screens run in a sandboxed frame (`"clientApiVersion": 2`; a bundle built for an older API does not run until it is rebuilt), but they still act with the person's access. Neither is a full sandbox.
 - The `hello-world` core extension (`apps/server/src/core-extensions/hello-world/`) is the worked example of a page, a status-bar item and a tab marker. It ships turned off.
 - No extension marketplace or auto-update mechanism.
 - Storage is local-only (no sync across machines).
@@ -788,7 +800,7 @@ The generalized `ensureCoreExtensions()` scanner picks the new directory up auto
 
 ## Server-Side Data Providers
 
-Extensions can run code on the DorkOS server. A **data provider** extension adds a `server.ts` file alongside `index.ts`, giving it Express routes, encrypted secrets, persistent storage, background scheduling, and SSE event emission — all scoped and isolated per extension.
+Extensions can run code on the DorkOS server. A **data provider** extension adds a `server.ts` file alongside `index.ts`, giving it HTTP routes (an Express router or a fetch handler), encrypted secrets, persistent storage, background scheduling, and SSE event emission — all scoped and isolated per extension.
 
 The three tiers of server-side capability, from simplest to most powerful:
 
@@ -948,7 +960,7 @@ await ctx.accounts.markContinued(sourceSessionId, { sessionId, runtime, accountI
 - **After shutdown or reload the old `ctx.accounts` is closed.** `onUsage` and `registerAdvisor` throw and register nothing, and `markContinued` rejects, so a late `.then(() => ctx.accounts.registerAdvisor(…))` from a previous instance cannot replace the new instance's advisor. `list` and `usage` keep answering.
 - **`markContinued`** tells DorkOS that your extension moved a session it claimed (see `claims` below) to a new session, so the source session points at where its work went. It rejects a malformed call, and rejects while this server tracks no session limits.
 
-**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads any routing policy itself; it asks the advisor.
+**The account advisor.** `ctx.accounts.registerAdvisor(advisor)` lets an extension decide which accounts work may go to. Core never reads your routing policy; it asks the advisor. With no advisor registered, core falls back to its own defaults, including one opt-in rule for an agent's named account (DOR-5033, below).
 
 ```typescript
 const unregister = ctx.accounts.registerAdvisor({
@@ -968,7 +980,7 @@ The rules an advisor lives by:
 - **One advisor at a time.** A second registration replaces the first, and the server log warns naming both extensions. The function `registerAdvisor` returns removes only your own advisor, and shutdown or reload removes it for you.
 - **Every call is bounded at 2 seconds, and every answer is checked.** A ranking keeps only ids DorkOS knows (and never the excluded account); an id you leave out is hidden; a `reason` over 200 characters is cut to fit; `recommendedId` counts only when it names an eligible account of the context's runtime. An `auto` plan's `delaySeconds` is clamped to 0..3600, and its target must be a registered account other than the one that ran out. A `carryOver` seed longer than the seed-context limit is refused. A throw, a timeout or an invalid answer means core's default for that call.
 - **A person's own pick is never refused by the advisor.** Its ranking is advice for anything a person does.
-- **Agents and relay messages need it.** When an agent (`session_start`) or a relay message names an account, core allows it only when the advisor's `launch` ranking marks that account eligible. With no advisor registered, such a pick is refused ("Agents can pick an account only after Flow is set up to say which accounts they may use."), and an advisor that fails refuses it too ("The account policy could not be checked."). Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
+- **It decides what agents and relay messages may pick.** When an agent (`session_start`) or a relay message names an account and an advisor is registered, core allows it only when the advisor's `launch` ranking marks that account eligible; an advisor that fails refuses it ("The account policy could not be checked."). With no advisor registered, a relay message's pick is refused, and an agent's pick follows core's own opt-in rule (DOR-5033): only an account a person turned on **Agents may pick this account** for in Settings, and never the main sign-in, DorkOS credits, an account kept out of automatic moves, or one DorkOS could not pick on its own right now. Core never reads your policy, so an account your advisor allows is not opened in core's rule. Without an advisor everything else uses core's defaults: accounts ranked by weekly headroom, and a person asked what to do when an account runs out.
 
 #### `ctx.projects`
 

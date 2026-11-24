@@ -2,6 +2,9 @@
 
 **Recorded:** 2026-09-25. **Public source baseline:** `dbff5a6f6b3005d4e9815d1b3d485446528f2900`.
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this roadmap are retired. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+> ADRs `261124-150516` to `261124-150519` set the architecture's direction from 2026-11-24 (two sides with one contract, turns that survive restarts, one way to message an agent, mini apps and one wake). Read them beside the ranks below.
+
 This preserves the September recommendations and subsequent assessments as dated history. The [November 21 rebaseline](../research/20261121_architecture-rebaseline.md) owns the current architectural direction below; the October 9 vision-reset assessment is now historical. The original assessment was 7.5/10: strong boundaries and direction, with contracts and lifecycle wiring that had grown too broad. That was a judgment at the time, not a measured score or a new audit result.
 
 The [system architecture atlas](../contributing/system-architecture.md) describes the system. This roadmap records improvement rationale, scope and handoffs. Linear owns live status, assignments, dependencies and execution order. The evidence below is a dated snapshot, not a second status database.

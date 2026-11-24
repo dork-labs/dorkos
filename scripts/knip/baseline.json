@@ -2400,7 +2400,6 @@
     "[\"exports\",\"apps/server/src/services/runtimes/codex/app-server/thread-loader.ts\",[\"THREAD_READ_TIMEOUT_MS\",\"\",\"\",\"\"]]": 1,
     "[\"exports\",\"apps/server/src/services/runtimes/codex/app-server/thread-loader.ts\",[\"THREAD_STARTS_FRESH_NOTICE\",\"\",\"\",\"\"]]": 1,
     "[\"exports\",\"apps/server/src/services/runtimes/codex/app-server/thread-loader.ts\",[\"trustLevelFor\",\"\",\"\",\"\"]]": 1,
-    "[\"exports\",\"apps/server/src/services/runtimes/codex/credits-launch.ts\",[\"CODEX_CREDITS_PROVIDER_ID\",\"\",\"\",\"\"]]": 1,
     "[\"exports\",\"apps/server/src/services/runtimes/codex/credits-launch.ts\",[\"codexRoutesOrPays\",\"\",\"\",\"\"]]": 1,
     "[\"exports\",\"apps/server/src/services/runtimes/codex/event-mapper.ts\",[\"mapCodexEvent\",\"\",\"\",\"\"]]": 1,
     "[\"exports\",\"apps/server/src/services/runtimes/codex/event-mapper.ts\",[\"mapCodexThread\",\"\",\"\",\"\"]]": 1,

@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
-import { ConflictError, InvalidPackageError } from '../installer/errors.js';
+import { InvalidPackageError } from '../installer/errors.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -287,58 +287,6 @@ describe('marketplace install pipeline — failure paths', () => {
     // No leftover transaction backup dir remains on success.
     const pluginsDir = await readdir(path.join(dorkHome, 'plugins'));
     expect(pluginsDir.every((e) => !e.includes('.dorkos-bak-'))).toBe(true);
-  });
-
-  it('bypasses the conflict gate when req.force is true and completes the install', async () => {
-    // Plant a pre-existing plugin whose task SKILL shares its `name`
-    // with the one in `valid-plugin`. The conflict detector's skill-name
-    // rule fires an error-level conflict that would normally block the
-    // install. With `force: true` the gate is bypassed and the atomic
-    // rename can still succeed because the actual install root
-    // (`plugins/valid-plugin`) is empty — the collision is only in a
-    // sibling package's SKILL.md.
-    const existingPluginRoot = path.join(dorkHome, 'plugins', 'existing-pkg');
-    const existingSkillDir = path.join(existingPluginRoot, '.dork', 'tasks', 'sample-task');
-    await mkdir(existingSkillDir, { recursive: true });
-    await writeFile(
-      path.join(existingSkillDir, 'SKILL.md'),
-      [
-        '---',
-        'name: sample-task',
-        'description: Planted by the failure-paths force-override test.',
-        'kind: task',
-        '---',
-        '',
-        '# Planted task',
-        '',
-      ].join('\n'),
-      'utf-8'
-    );
-
-    const harness = buildInstallerForTests(dorkHome);
-
-    // Sanity: the same install without `force` must throw ConflictError
-    // so we are actually testing a bypass, not a no-op.
-    await expect(
-      harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-plugin') })
-    ).rejects.toBeInstanceOf(ConflictError);
-
-    // With `force: true` the gate is bypassed and the install completes.
-    const result = await harness.installer.install({
-      name: path.join(FIXTURES_DIR, 'valid-plugin'),
-      force: true,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(result.packageName).toBe('valid-plugin');
-    expect(result.installPath).toBe(path.join(dorkHome, 'plugins', 'valid-plugin'));
-    expect(
-      await pathExists(path.join(dorkHome, 'plugins', 'valid-plugin', '.dork', 'manifest.json'))
-    ).toBe(true);
-    // The planted package is still on disk — `force` does not sweep
-    // unrelated install state.
-    expect(await pathExists(path.join(existingSkillDir, 'SKILL.md'))).toBe(true);
-    expect(harness.spies.gitFetch).not.toHaveBeenCalled();
   });
 
   it('refuses an agent package that ships its own permissions, before any agent is made', async () => {

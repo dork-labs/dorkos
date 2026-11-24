@@ -101,6 +101,7 @@ export const HELD_WRITES = new Set([
   'put /api/runtimes/claude-code/project-accounts',
   'put /api/runtimes/claude-code/accounts/{id}/only-projects',
   'put /api/runtimes/claude-code/accounts/{id}/no-auto-move',
+  'put /api/runtimes/claude-code/accounts/{id}/agents-may-pick',
   'post /api/community-connections',
   'put /api/community-connections/{ref}/wake-agents-from',
   'put /api/community-connections/{ref}/answer-in',

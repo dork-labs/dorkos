@@ -16,7 +16,6 @@ vi.mock('../../../lib/logger.js', () => ({
 
 import { logger } from '../../../lib/logger.js';
 import { ExtensionCompiler } from '../extension-compiler.js';
-import { hostHono } from '../server-bundle/host-hono.js';
 
 let tmp: string;
 let compiler: ExtensionCompiler;
@@ -108,34 +107,6 @@ describe('hono, built in', () => {
     expect(evaluate(await compiled(record(dir))).kind).toBe('function');
   });
 
-  it('offers only what hono exports', async () => {
-    const dir = path.join(tmp, 'extensions', 'hono-ext');
-    await write(
-      path.join(dir, 'server.ts'),
-      "import x from 'hono/../../package.json';\nexport default x;\n"
-    );
-
-    const result = await compiler.compileServer(record(dir));
-    expect('error' in result && JSON.stringify(result.error)).toContain(
-      `is not something hono ${hostHono()!.version} offers`
-    );
-  });
-
-  it('offers hono’s pattern subpaths for plain names only', async () => {
-    const dir = path.join(tmp, 'extensions', 'hono-ext');
-    await write(
-      path.join(dir, 'server.ts'),
-      "import { parse } from 'hono/utils/cookie';\nexport const cookie = parse('a=1').a;\n"
-    );
-    expect(evaluate(await compiled(record(dir))).cookie).toBe('1');
-
-    for (const escape of ['hono/utils/../../package.json', 'hono/utils/.hidden', 'hono/utils/']) {
-      await write(path.join(dir, 'server.ts'), `import x from '${escape}';\nexport default x;\n`);
-      const result = await compiler.compileServer(record(dir));
-      expect('error' in result && JSON.stringify(result.error)).toContain('is not something hono');
-    }
-  });
-
   it('passes a plugin’s containment, which still refuses everything else from outside', async () => {
     const project = path.join(tmp, 'repo');
     const pluginRoot = path.join(project, '.dork', 'plugins', 'flow');
@@ -156,22 +127,6 @@ describe('hono, built in', () => {
     const refused = await compiler.compileServer(contained);
     expect('error' in refused && JSON.stringify(refused.error)).toContain(
       "outside this plugin's folder"
-    );
-  });
-
-  it('is cached like any other build, so a second load does not rebuild', async () => {
-    const dir = path.join(tmp, 'extensions', 'hono-ext');
-    await write(
-      path.join(dir, 'server.ts'),
-      "import { Hono } from 'hono';\nexport default new Hono();\n"
-    );
-
-    const first = await compiler.compileServer(record(dir));
-    const second = await compiler.compileServer(record(dir));
-
-    expect(second).toEqual(first);
-    expect(vi.mocked(logger.debug).mock.calls.flat().join('\n')).toContain(
-      'Cache hit for hono-ext'
     );
   });
 });

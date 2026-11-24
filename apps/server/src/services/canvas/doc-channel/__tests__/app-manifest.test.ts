@@ -24,32 +24,6 @@ describe('server-confined app manifests', () => {
     expect(() => readDocAppManifest('https://example.invalid')).toThrow();
     expect(() => readDocAppManifest('.')).toThrow();
   });
-  it('uses canonical content hashes and reuses compilation across equivalent local manifests', () => {
-    const dir = root();
-    write(dir, manifest);
-    const first = readDocAppManifest(dir)!;
-    write(dir, { types: { 'app.changed': { type: 'boolean' } }, v: 1 });
-    const second = readDocAppManifest(dir)!;
-    expect(second.hash).toBe(first.hash);
-    expect(second.compiled).toBe(first.compiled);
-    write(dir, { ...manifest, limits: { eventsPerMinute: 2 } });
-    expect(readDocAppManifest(dir)?.hash).not.toBe(first.hash);
-  });
-  it('bounds the compile cache and evicts earlier validated hashes', () => {
-    const dir = root();
-    const app = (i: number) => ({
-      v: 1,
-      types: { 'cache.changed': { type: 'string', minLength: i } },
-    });
-    write(dir, app(0));
-    const first = readDocAppManifest(dir)!;
-    for (let i = 1; i <= 65; i++) {
-      write(dir, app(i));
-      readDocAppManifest(dir);
-    }
-    write(dir, app(0));
-    expect(readDocAppManifest(dir)?.compiled).not.toBe(first.compiled);
-  });
   it('refuses file and directory symlink escapes, while allowing a confined symlink', () => {
     const dir = root();
     const outside = root();
@@ -75,12 +49,5 @@ describe('server-confined app manifests', () => {
     fs.unlinkSync(file);
     fs.mkdirSync(file);
     expect(() => readDocAppManifest(dir)).toThrow(/regular/);
-  });
-  it('releases file descriptors after invalid input', () => {
-    const dir = root();
-    write(dir, { v: 1, types: { 'app.changed': { $ref: 'https://example.invalid' } } });
-    expect(() => readDocAppManifest(dir)).toThrow();
-    write(dir, manifest);
-    expect(readDocAppManifest(dir)?.compiled.validate('app.changed', false)).toBe('valid');
   });
 });

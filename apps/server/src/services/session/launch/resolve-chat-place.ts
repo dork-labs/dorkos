@@ -10,10 +10,12 @@ import type {
   PersonChatBinding,
   PersonDraftWitness,
 } from '../../core/runtime-seam/person-draft-settings.js';
-import type {
-  RoomSeatBirthWriteContext,
-  SessionBirthWriteContext,
+import {
+  SessionBirthWriteError,
+  type RoomSeatBirthWriteContext,
+  type SessionBirthWriteContext,
 } from '../../core/runtime-seam/session-birth-write.js';
+import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
 import {
   resolveSessionCwdWithRoom,
   type ResolvedSessionPlace,
@@ -171,7 +173,7 @@ export type ChatBirthSource = PersonChatBinding | { roomSeat: RoomSeatBirthWrite
 /** Match a saved folder to its directory and an agent source to its verified owner.
  * A registered agent can use a different directory through ordinary workspace placement.
  */
-export function matchesChatBirthPlace(
+function matchesChatBirthPlace(
   source: ChatBirthSource,
   place: ResolvedChatPlace,
   verifiedAgentPath: string | undefined
@@ -191,11 +193,21 @@ export function matchesChatBirthPlace(
     : place.cwd === (birth?.kind === 'person-location' ? birth.cwd : draft?.sourcePath);
 }
 
-/** Pass the exact source through the existing runtime registry write. */
-export function chatBirthWriteArgs(
-  source: ChatBirthSource | undefined
+/** Select the exact server-owned source for a first bind without changing ordinary calls. */
+export function launchBindingSourceArgs(
+  place: ResolvedChatPlace,
+  verifiedAgentPath: string | undefined,
+  source: ChatBirthSource | undefined,
+  freshDm: FreshDmBirth | undefined
 ): [SessionBirthWriteContext?, PersonDraftWitness?] {
-  if (!source) return [];
-  if ('roomSeat' in source) return [source.roomSeat];
-  return 'birth' in source ? [source.birth] : [undefined, source.draft];
+  if (source) {
+    if (freshDm || place.session.bound || !matchesChatBirthPlace(source, place, verifiedAgentPath))
+      throw new SessionBirthWriteError('source');
+    if ('roomSeat' in source) return [source.roomSeat];
+    return 'birth' in source ? [source.birth] : [undefined, source.draft];
+  }
+  if (!freshDm) return [];
+  if (place.session.bound || freshDm.targetAgent.path !== verifiedAgentPath)
+    throw new SessionBirthWriteError('source');
+  return [freshDm];
 }

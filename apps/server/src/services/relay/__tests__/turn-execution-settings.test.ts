@@ -243,7 +243,9 @@ describe('a relay message naming an account (DOR-2384)', () => {
     });
   });
 
-  it('runs without the account when the advisor refuses it or none is registered', async () => {
+  it('runs without the account when no advisor is registered, and says why', async () => {
+    // With no advisor, a relay message's pick is refused: anyone outside can
+    // write one, so nothing is spent on another account until the operator opts in.
     checkAccountLaunch.mockResolvedValue({ allowed: false, reason: 'no advisor' });
     expect(await resolveFor('claude-code', { requestedAccount: 'work' })).not.toHaveProperty(
       'accountHint'

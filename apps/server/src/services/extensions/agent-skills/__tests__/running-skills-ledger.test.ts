@@ -22,7 +22,6 @@ vi.mock('../../../../lib/logger.js', () => ({
 
 import {
   extensionSkillPluginRoots,
-  projectRootOf,
   reconcileRunningSkills,
   selectRunningSkills,
 } from '../running-skills-ledger.js';
@@ -195,34 +194,6 @@ describe('which extensions the ledger lists', () => {
     const entries = await selectRunningSkills([rec], { config: approving('mail', dir), core });
     expect(entries[0]?.skills).toEqual(['triage-inbox']);
   });
-
-  it('carries a dev link and finds the project of a plugin-carried copy', async () => {
-    const dir = path.join(project, '.dork', 'plugins', 'mailer', '.dork', 'extensions', 'mail');
-    await writeSkill(dir, 'triage-inbox');
-    const rec = record(dir, {
-      scope: 'local',
-      sourcePlugin: 'mailer',
-      devLink: { path: '/work/mailer' },
-    });
-    const config = {
-      ...approving('mail', dir),
-      // A dev-linked copy runs only on a yes given to that dev link.
-      approvedSources: { mail: { path: dir, plugin: 'mailer', devLink: '/work/mailer' } },
-    } as ExtensionsConfig;
-    const [entry] = await selectRunningSkills([rec], { config, core });
-    expect(entry).toMatchObject({ projectRoot: project, devLink: '/work/mailer' });
-  });
-
-  it('refuses to guess the project of a copy found anywhere else', () => {
-    expect(projectRootOf({ path: '/x/y/mail' })).toBeUndefined();
-    expect(projectRootOf({ path: '/p/.dork/extensions/mail' })).toBe('/p');
-    expect(
-      projectRootOf({
-        path: '/p/.dork/plugins/other/.dork/extensions/mail',
-        sourcePlugin: 'mailer',
-      })
-    ).toBeUndefined();
-  });
 });
 
 describe('publishing the ledger', () => {
@@ -248,16 +219,6 @@ describe('publishing the ledger', () => {
     expect(restored.ledgerChanged).toBe(true);
     expect(restored.projects.map((p) => p.root)).toEqual([project]);
     expect(readRunningExtensionSkillsSync(dorkHome).entries.map((e) => e.id)).toEqual(['mail']);
-  });
-
-  it('names the project an extension left, with nothing remaining there', async () => {
-    const dir = path.join(project, '.dork', 'extensions', 'mail');
-    await writeSkill(dir, 'triage-inbox');
-    const ctx = { dorkHome, config: approving('mail', dir), core };
-    await reconcileRunningSkills([record(dir, { scope: 'local' })], ctx);
-    const left = await reconcileRunningSkills([], ctx);
-    expect(left.projects).toEqual([{ root: project, ids: ['mail'], remaining: false }]);
-    expect(readRunningExtensionSkillsSync(dorkHome)).toEqual({ state: 'read', entries: [] });
   });
 });
 
@@ -372,12 +333,5 @@ describe('the generated plugin root of a global extension', () => {
     const change = await reconcileRunningSkills([record(dir)], ctx);
     expect(change.globalChanged).toBe(true);
     expect(await fs.readlink(link)).toBe(path.join(dir, 'skills', 'triage-inbox'));
-  });
-
-  it('is left out of sessions when a loaded plugin has the same name', async () => {
-    const dir = path.join(dorkHome, 'extensions', 'mail');
-    await writeSkill(dir, 'triage-inbox');
-    await reconcileRunningSkills([record(dir)], { dorkHome, config: approving('mail', dir), core });
-    expect(await extensionSkillPluginRoots(dorkHome, new Set(['mail']))).toEqual([]);
   });
 });

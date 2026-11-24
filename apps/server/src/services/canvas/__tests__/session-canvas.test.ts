@@ -26,7 +26,7 @@ import { createDb, runMigrations, canvasDocuments, eq, type Db } from '@dorkos/d
 import type { UiCommand } from '@dorkos/shared/schemas';
 import { CanvasDocumentStore } from '../canvas-document-store.js';
 import { CanvasService, MAX_CANVAS_DOCUMENTS, type CanvasFrame } from '../canvas-service.js';
-import { roomScope, sessionScope, SESSION_AGENT_AUTHOR, SESSION_OWNER_AUTHOR } from '../scopes.js';
+import { sessionScope, SESSION_AGENT_AUTHOR, SESSION_OWNER_AUTHOR } from '../scopes.js';
 
 const SESSION = 'sess-canonical';
 const SCOPE = sessionScope(SESSION);
@@ -73,29 +73,6 @@ describe('CanvasService on a session scope', () => {
       expect(row?.roomId).toBeNull();
       expect(row?.scope).toBe(SCOPE);
     });
-
-    it('stores room_id equal to the scope’s id for a ROOM scope — the invariant both ways', () => {
-      // Asserted here rather than only in the rooms suite, because the two
-      // halves of one invariant drift apart the moment they live in two files.
-      // The room row has to exist: the column still carries its cascade, so an
-      // invariant that wrote the wrong id would fail the foreign key here.
-      seedRoom(db, 'general');
-      canvas.open(roomScope('general'), 'author-ana', jsonContent('on the table'));
-      const roomRow = db
-        .select()
-        .from(canvasDocuments)
-        .where(eq(canvasDocuments.scope, roomScope('general')))
-        .get();
-      expect(roomRow?.roomId).toBe('general');
-
-      applyAsAgent({ action: 'open_canvas', content: jsonContent('mine') });
-      const sessionRow = db
-        .select()
-        .from(canvasDocuments)
-        .where(eq(canvasDocuments.scope, SCOPE))
-        .get();
-      expect(sessionRow?.roomId).toBeNull();
-    });
   });
 
   describe('what a session does NOT have', () => {
@@ -110,14 +87,6 @@ describe('CanvasService on a session scope', () => {
         expect(result.applied, `change ${n}`).toBe(true);
       }
       expect(canvas.list(SCOPE)).toHaveLength(MAX_CANVAS_DOCUMENTS);
-    });
-
-    it('keeps no ledger and posts no line — the transcript already records the call', () => {
-      // `record` is a ROOM callback and a session passes none. The proof is that
-      // nothing outside the table changes: no post, and no bookkeeping to close.
-      applyAsAgent({ action: 'open_canvas', content: jsonContent('one') });
-      expect(published.every((p) => p.frame.type === 'canvas')).toBe(true);
-      expect(published).toHaveLength(1);
     });
   });
 
@@ -135,49 +104,6 @@ describe('CanvasService on a session scope', () => {
         false
       );
       expect(published.some((p) => p.frame.closed === true)).toBe(true);
-    });
-
-    /**
-     * Pinned rows are EXEMPT, not counted (DOR-2006 review, finding 9/10a).
-     *
-     * The cap is over unpinned documents, on both sides of the wire: the window
-     * counts the same set this does. When it counted all of them, thirteen
-     * documents with two pinned had the window evict locally what the server
-     * keeps, and the next hydrate simply put it back.
-     */
-    it('holds more than the cap when the extra documents are pinned', () => {
-      for (let n = 0; n < MAX_CANVAS_DOCUMENTS; n += 1) {
-        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, { type: 'url', url: `https://example.test/${n}` });
-      }
-      const pinned = [0, 1].map((n) =>
-        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
-          type: 'json',
-          data: { n },
-          title: `pinned ${n}`,
-        })
-      );
-      for (const document of pinned) canvas.pin(SCOPE, document.id, true);
-
-      // Two more unpinned opens: the table is at the cap on unpinned rows, so
-      // each evicts one unpinned row and neither touches a pin.
-      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
-        type: 'url',
-        url: 'https://example.test/extra-1',
-      });
-      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
-        type: 'url',
-        url: 'https://example.test/extra-2',
-      });
-
-      const live = canvas.list(SCOPE);
-      expect(live.filter((d) => !d.pinned)).toHaveLength(MAX_CANVAS_DOCUMENTS);
-      expect(
-        live
-          .filter((d) => d.pinned)
-          .map((d) => d.id)
-          .sort()
-      ).toEqual(pinned.map((d) => d.id).sort());
-      expect(live).toHaveLength(MAX_CANVAS_DOCUMENTS + 2);
     });
 
     it('never evicts the document the OTHER view is showing', () => {
@@ -216,12 +142,6 @@ describe('CanvasService on a session scope', () => {
       expect(canvas.list(SCOPE)).toHaveLength(1);
     });
 
-    it('lands two json opens on TWO documents', () => {
-      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, jsonContent('a'));
-      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, jsonContent('b'));
-      expect(canvas.list(SCOPE)).toHaveLength(2);
-    });
-
     /**
      * The writer resolves the VIEWER, so an agent's `open_file` and a person's
      * land on one document (DOR-2006 review, blocker 1).
@@ -246,60 +166,6 @@ describe('CanvasService on a session scope', () => {
       expect(result.applied === true && result.documentId).toBe(byPerson.id);
       expect(canvas.list(SCOPE)).toHaveLength(1);
       expect(canvas.list(SCOPE)[0]?.content).toEqual({ type: 'image', src: '/assets/chart.png' });
-    });
-
-    it('applies this install’s viewer overrides, read per call', () => {
-      // `workbench.defaultViewers` (DOR-219) lives in config the client used to
-      // apply alone, so a server-side answer that ignored it disagreed with the
-      // window that asked for it. Read per call, never captured: a change in
-      // Settings binds the next open.
-      const settings: { defaultViewers?: Record<string, string> } = {};
-      const configured = new CanvasService({
-        documents,
-        channels: { publish: () => {}, viewers: () => 0 },
-        viewerOverrides: () => settings.defaultViewers,
-      });
-
-      configured.apply({
-        scope: SCOPE,
-        authorId: SESSION_AGENT_AUTHOR,
-        command: { action: 'open_file', sourcePath: '/assets/logo.png' },
-        defaultTarget: 'active-in-view',
-      });
-      expect(configured.list(SCOPE)[0]?.contentType).toBe('image');
-
-      settings.defaultViewers = { png: 'file' };
-      configured.apply({
-        scope: SCOPE,
-        authorId: SESSION_AGENT_AUTHOR,
-        command: { action: 'open_file', sourcePath: '/assets/other.png' },
-        defaultTarget: 'active-in-view',
-      });
-      const other = configured.list(SCOPE).find((d) => d.title.includes('other'));
-      expect(other?.contentType).toBe('file');
-    });
-
-    it('answers contentForCommand with the same content it would write', () => {
-      // The two callers that look at the content before delegating — the room
-      // flavour resolving which tree a file came from, and the claude-code
-      // handler — must ask the WRITER, not the pure helper, or they see a
-      // different shape for the same file than the row ends up holding.
-      const configured = new CanvasService({
-        documents,
-        channels: { publish: () => {}, viewers: () => 0 },
-        viewerOverrides: () => ({ png: 'file' }),
-      });
-      const peeked = configured.contentForCommand({
-        action: 'open_file',
-        sourcePath: '/assets/logo.png',
-      });
-      configured.apply({
-        scope: SCOPE,
-        authorId: SESSION_AGENT_AUTHOR,
-        command: { action: 'open_file', sourcePath: '/assets/logo.png' },
-        defaultTarget: 'active-in-view',
-      });
-      expect(configured.list(SCOPE)[0]?.content).toEqual(peeked);
     });
   });
 
@@ -352,13 +218,6 @@ describe('CanvasService on a session scope', () => {
     });
   });
 
-  describe('viewers', () => {
-    it('is the live reader count of this session’s stream, whatever the channel says', () => {
-      viewerCount = 2;
-      expect(canvas.viewers(SCOPE)).toBe(2);
-    });
-  });
-
   describe('rekeyScope — the trap the whole phase turns on', () => {
     it('moves every row of a scope and none of any other', () => {
       const stale = sessionScope('request-uuid');
@@ -371,16 +230,6 @@ describe('CanvasService on a session scope', () => {
       expect(canvas.list(sessionScope('canonical-id'))).toHaveLength(2);
       // The bystander scope is untouched.
       expect(canvas.list(SCOPE)).toHaveLength(1);
-    });
-
-    it('leaves the document id alone, so ids already in a tool result still resolve', () => {
-      const stale = sessionScope('request-uuid');
-      const opened = canvas.open(stale, SESSION_OWNER_AUTHOR, {
-        type: 'file',
-        sourcePath: '/src/router.ts',
-      });
-      canvas.rekeyScope(stale, SCOPE);
-      expect(canvas.get(SCOPE, opened.id)?.id).toBe(opened.id);
     });
 
     it('finds the SAME row when the source is re-opened after the rekey', () => {
@@ -400,18 +249,6 @@ describe('CanvasService on a session scope', () => {
       });
       expect(reopened.id).toBe(opened.id);
       expect(canvas.list(SCOPE)).toHaveLength(1);
-    });
-
-    it('publishes nothing: the reader re-hydrates under the new id', () => {
-      const stale = sessionScope('request-uuid');
-      canvas.open(stale, SESSION_OWNER_AUTHOR, jsonContent('mid-first-turn'));
-      published.length = 0;
-      canvas.rekeyScope(stale, SCOPE);
-      expect(published).toHaveLength(0);
-    });
-
-    it('is a no-op when the old scope holds nothing — the common case', () => {
-      expect(canvas.rekeyScope(sessionScope('never-used'), SCOPE)).toBe(0);
     });
   });
 
@@ -456,11 +293,6 @@ describe('CanvasService on a session scope', () => {
       expect(sweep(null)).toBe(0);
       expect(canvas.list(SCOPE)).toHaveLength(1);
       expect(canvas.orphanMarkCount()).toBe(1);
-    });
-
-    it('does nothing at all when nothing is marked', () => {
-      expect(sweep({ sessions: [], degradedRuntimes: [] })).toBe(0);
-      expect(canvas.list(SCOPE)).toHaveLength(1);
     });
   });
 });

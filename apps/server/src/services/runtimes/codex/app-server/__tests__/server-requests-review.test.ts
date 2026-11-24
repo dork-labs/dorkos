@@ -5,7 +5,7 @@
  * question is never drawn, answers are keyed by index only, and a replaced
  * request is declined rather than cancelled.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeAppServerHarness, PERSON_HOME } from '../../__tests__/app-server-harness.js';
 import {
   CodexServerRequestBroker,
@@ -151,6 +151,44 @@ describe('questions', () => {
 });
 
 describe('the broker', () => {
+  it('keeps a default approval available after the countdown and declines it at four hours', async () => {
+    const mapped = mapServerRequest(
+      { id: 1, method: 'item/fileChange/requestApproval', params: { itemId: 'p1' } },
+      noTurn
+    );
+    if (!('kind' in mapped)) throw new Error('Expected a file change approval');
+
+    vi.useFakeTimers();
+    const broker = new CodexServerRequestBroker();
+    try {
+      const emit = vi.fn();
+      const reply = broker.open({ sessionId: 's', processKey: 'k', jsonRpcId: 1, mapped, emit });
+      const countdownMs = 10 * 60_000;
+      const ceilingMs = 4 * 60 * 60_000;
+      expect(emit).toHaveBeenCalledWith([
+        expect.objectContaining({
+          type: 'approval_required',
+          data: expect.objectContaining({ toolCallId: 'p1', timeoutMs: countdownMs }),
+        }),
+      ]);
+      vi.advanceTimersByTime(countdownMs);
+      expect(emit).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(ceilingMs - countdownMs - 1);
+      expect(emit).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(1);
+      await expect(reply).resolves.toEqual({ decision: 'decline' });
+      expect(emit).toHaveBeenCalledTimes(2);
+      expect(emit).toHaveBeenNthCalledWith(2, [
+        { type: 'interaction_cancelled', data: { interactionId: 'p1', reason: 'timeout' } },
+      ]);
+      expect(broker.answerApproval('s', 'p1', true)).toBe(false);
+    } finally {
+      broker.dropSession('s');
+      vi.useRealTimers();
+    }
+  });
+
   it('declines, never cancels, a held request a re-sent id replaces (a cancel stops the turn)', async () => {
     const broker = new CodexServerRequestBroker();
     const mapped = mapServerRequest(

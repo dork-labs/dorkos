@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# scripts-suite-lane: harness (needs node_modules; see scripts/run-scripts-suites.sh)
 # Executable fixtures for the server test Supertest import boundary.
 #
 # The real flat config is exercised through stdin filenames so this suite pins

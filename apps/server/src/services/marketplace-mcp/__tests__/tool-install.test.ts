@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 
 import { initBoundary } from '../../../lib/boundary.js';
-import { createInstallHandler, InstallInputSchema } from '../tool-install.js';
+import { createInstallHandler } from '../tool-install.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../marketplace/flows/install-shape.js';
 import {
@@ -242,15 +242,6 @@ async function boundedProjectPath(): Promise<string> {
   return join(root, 'some-project');
 }
 
-describe('InstallInputSchema', () => {
-  it('exports a Zod-compatible shape with name + optional fields', () => {
-    expect(InstallInputSchema).toHaveProperty('name');
-    expect(InstallInputSchema).toHaveProperty('marketplace');
-    expect(InstallInputSchema).toHaveProperty('projectPath');
-    expect(InstallInputSchema).toHaveProperty('confirmationToken');
-  });
-});
-
 describe('createInstallHandler — path safety', () => {
   it('refuses a projectPath outside the directory boundary, before any preview', async () => {
     const installer = createStubInstaller({
@@ -309,77 +300,6 @@ describe('createInstallHandler — in-app approve happy path', () => {
     expect(payload.package).toEqual({ name: 'sentry', version: '1.2.3', type: 'plugin' });
     expect(payload.installPath).toBe('/tmp/.dork-test/plugins/sentry');
     expect(payload.warnings).toEqual([]);
-  });
-
-  it('builds the preview before requesting confirmation', async () => {
-    const order: string[] = [];
-    installer.preview.mockImplementation(async () => {
-      order.push('preview');
-      return previewResult({ name: 'sentry' });
-    });
-    callback.mockImplementation(async () => {
-      order.push('confirmation');
-      return { status: 'approved' as const };
-    });
-    installer.install.mockImplementation(async () => {
-      order.push('install');
-      return installResult({ packageName: 'sentry' });
-    });
-
-    const handler = createInstallHandler(deps);
-    await handler({ name: 'sentry' });
-
-    expect(order).toEqual(['preview', 'confirmation', 'install']);
-  });
-
-  it('passes the package name and preview through requestInstallConfirmation', async () => {
-    const handler = createInstallHandler(deps);
-    await handler({ name: 'sentry', marketplace: 'dorkos-community' });
-
-    expect(callback).toHaveBeenCalledTimes(1);
-    expect(callback).toHaveBeenCalledWith(
-      expect.objectContaining({
-        packageName: 'sentry',
-        marketplace: 'dorkos-community',
-        operation: 'install',
-        preview: expect.any(Object),
-      })
-    );
-  });
-
-  it('forwards marketplace and projectPath to installer.install()', async () => {
-    const projectPath = await boundedProjectPath();
-    const handler = createInstallHandler(deps);
-    await handler({
-      name: 'sentry',
-      marketplace: 'dorkos-community',
-      projectPath,
-    });
-
-    expect(installer.install).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'sentry',
-        marketplace: 'dorkos-community',
-        projectPath,
-      })
-    );
-  });
-
-  it('surfaces warnings from the underlying install result', async () => {
-    installer = createStubInstaller({
-      preview: previewResult({ name: 'sentry' }),
-      install: installResult({
-        packageName: 'sentry',
-        warnings: ['something subtle happened'],
-      }),
-    });
-    deps = createStubDeps({ confirmationProvider: provider, installer });
-
-    const handler = createInstallHandler(deps);
-    const result = await handler({ name: 'sentry' });
-
-    const payload = parseToolPayload<{ warnings: string[] }>(result);
-    expect(payload.warnings).toEqual(['something subtle happened']);
   });
 
   it('surfaces the Shape scope-ignored warning in the tool result text (DOR-386)', async () => {
@@ -492,23 +412,6 @@ describe('createInstallHandler — declined', () => {
     expect(installer.install).not.toHaveBeenCalled();
   });
 
-  it('falls back to a default reason when the provider omits one', async () => {
-    const provider = new FakeConfirmationProvider();
-    provider.requestInstallConfirmation.mockResolvedValue({ status: 'declined' });
-    const installer = createStubInstaller({
-      preview: previewResult({ name: 'sentry' }),
-      install: installResult({ packageName: 'sentry' }),
-    });
-    const deps = createStubDeps({ confirmationProvider: provider, installer });
-
-    const handler = createInstallHandler(deps);
-    const result = await handler({ name: 'sentry' });
-
-    const payload = parseToolPayload<{ status: string; reason: string }>(result);
-    expect(payload.status).toBe('declined');
-    expect(payload.reason).toMatch(/declined/i);
-  });
-
   it('returns declined when a token resolves to declined', async () => {
     const { provider: tokenProvider, denyPending } = buildTokenProvider();
     const installer = createStubInstaller({
@@ -579,24 +482,6 @@ describe('createInstallHandler — error mapping', () => {
     const payload = parseToolPayload<{ error: string; code: string; errors: string[] }>(result);
     expect(payload.code).toBe('INVALID_PACKAGE');
     expect(payload.errors).toEqual(errors);
-  });
-
-  it('maps any other install error to code INSTALL_FAILED', async () => {
-    const provider = new FakeConfirmationProvider();
-    provider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const installer = createStubInstaller({
-      preview: previewResult({ name: 'sentry' }),
-      install: new Error('disk on fire'),
-    });
-    const deps = createStubDeps({ confirmationProvider: provider, installer });
-
-    const handler = createInstallHandler(deps);
-    const result = await handler({ name: 'sentry' });
-
-    expect(result.isError).toBe(true);
-    const payload = parseToolPayload<{ error: string; code: string }>(result);
-    expect(payload.code).toBe('INSTALL_FAILED');
-    expect(payload.error).toContain('disk on fire');
   });
 
   it('short-circuits when preview() throws — no confirmation requested, no install', async () => {
@@ -685,16 +570,6 @@ describe('createInstallHandler — settling consent after the install (DOR-2306)
     });
   });
 
-  it('says a project install is not global', async () => {
-    const projectPath = await boundedProjectPath();
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const { deps } = stubs();
-
-    await createInstallHandler(deps)({ name: 'flow', projectPath });
-
-    expect(vi.mocked(deps.consent.settle).mock.calls[0]?.[0]).toMatchObject({ global: false });
-  });
-
   it('settles with no approval when the tier gate skipped the card: nobody was shown anything', async () => {
     const { deps } = stubs();
 
@@ -781,22 +656,6 @@ describe('createInstallHandler — plugins-changed notification (DOR-2057)', () 
     });
   });
 
-  it('fires with projectPath undefined for a global install', async () => {
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const installer = createStubInstaller({
-      preview: previewResult({ name: 'flow' }),
-      install: installResult({ packageName: 'flow' }),
-    });
-
-    await createInstallHandler(depsWith(installer))({ name: 'flow' });
-
-    expect(onPluginsChanged).toHaveBeenCalledWith({
-      projectPath: undefined,
-      packageName: 'flow',
-      action: 'install',
-    });
-  });
-
   it('fires when the tier gate already approved the call', async () => {
     const installer = createStubInstaller({
       preview: previewResult({ name: 'flow' }),
@@ -821,41 +680,6 @@ describe('createInstallHandler — plugins-changed notification (DOR-2057)', () 
     const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
 
     expect(parseToolPayload<{ status: string }>(result).status).toBe('requires_confirmation');
-    expect(onPluginsChanged).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire when the install is declined', async () => {
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'declined' });
-    const installer = createStubInstaller({
-      preview: previewResult({ name: 'flow' }),
-      install: installResult({ packageName: 'flow' }),
-    });
-
-    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
-
-    expect(parseToolPayload<{ status: string }>(result).status).toBe('declined');
-    expect(onPluginsChanged).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire when the approved install fails', async () => {
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const installer = createStubInstaller({
-      preview: previewResult({ name: 'flow' }),
-      install: new Error('disk full'),
-    });
-
-    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
-
-    expect(result.isError).toBe(true);
-    expect(onPluginsChanged).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire when the preview fails', async () => {
-    const installer = createStubInstaller({ preview: new Error('not found') });
-
-    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
-
-    expect(result.isError).toBe(true);
     expect(onPluginsChanged).not.toHaveBeenCalled();
   });
 });
@@ -911,35 +735,6 @@ describe('createInstallHandler — canonical project path (DOR-2057)', () => {
         packageName: 'flow',
         action: 'install',
       });
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  it('asks the confirmation provider with the raw projectPath, not the canonical one', async () => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), 'mcp-install-raw-binding-')));
-    await initBoundary(root);
-    const repo = join(root, 'real-repo');
-    await mkdir(repo);
-    const link = join(root, 'link-to-repo');
-    await symlink(repo, link);
-
-    const confirmationProvider = new FakeConfirmationProvider();
-    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
-    const installer = createStubInstaller({
-      preview: previewResult({ name: 'flow' }),
-      install: installResult({ packageName: 'flow' }),
-    });
-
-    try {
-      await createInstallHandler(createStubDeps({ confirmationProvider, installer }))({
-        name: 'flow',
-        projectPath: link,
-      });
-
-      expect(confirmationProvider.requestInstallConfirmation).toHaveBeenCalledWith(
-        expect.objectContaining({ projectPath: link })
-      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }

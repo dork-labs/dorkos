@@ -32,6 +32,11 @@ import {
 import type { RunnerExitMode } from './fixtures/runner-parent-exit.setup.js';
 
 const armed = process.env.DORKOS_OPENCODE_PINNED_SERVE_PROOF === '1';
+const hostedLinuxX64 =
+  process.env.GITHUB_ACTIONS === 'true' &&
+  process.env.RUNNER_ENVIRONMENT === 'github-hosted' &&
+  process.platform === 'linux' &&
+  process.arch === 'x64';
 const LOG_CAP = 32768;
 async function until<T>(work: Promise<T>, deadline: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -438,7 +443,7 @@ async function releaseWorker(root: string, result: 'proof-observed' | 'proof-abo
   await rename(release + '.part', release);
 }
 
-it.skipIf(!armed)(
+it.skipIf(!armed && !hostedLinuxX64)(
   'joins the pinned cohort after its nested runner exits itself',
   nestedFixture('self-exit'),
   30_000

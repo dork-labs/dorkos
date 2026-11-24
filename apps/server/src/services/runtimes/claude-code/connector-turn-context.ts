@@ -7,10 +7,8 @@ import type {
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import { logger } from '../../../lib/logger.js';
 import { aliasTurnLevel } from '../../core/turn-power/turn-levels.js';
-import {
-  ConnectorTurnLeaseSupervisor,
-  type ConnectorTurnLeaseSupervisorHandle,
-} from '../connectors/connector-turn-lease-supervisor.js';
+import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
+import { openTurnOrSkip, startConnectorLease } from '../connectors/open-connector-turn.js';
 
 /** Inputs whose live values identify one Claude turn. */
 export interface ClaudeConnectorTurnContextOptions {
@@ -38,7 +36,7 @@ export interface ClaudeConnectorTurnContextOptions {
  */
 export class ClaudeConnectorTurnContext {
   private readonly controller = new AbortController();
-  private opening: Promise<ServerPrincipalProof> | undefined;
+  private opening: Promise<void> | undefined;
   private binding: OpenConnectorTurnResult | undefined;
   private revocation: Promise<void> | undefined;
   private supervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
@@ -103,7 +101,7 @@ export class ClaudeConnectorTurnContext {
     await this.revokeBinding(reason);
   }
 
-  private async openAndResolve(): Promise<ServerPrincipalProof> {
+  private async openAndResolve(): Promise<void> {
     this.assertCurrent();
     const canonicalSessionId = this.options.canonicalSessionId();
     // The send gate reads this turn under the id the binding is fixed to (DOR-4587). The turn's
@@ -112,7 +110,8 @@ export class ClaudeConnectorTurnContext {
     // this id. Carry them here, so the gate reads THIS turn and never an older one.
     const sent = this.options.sentSessionId;
     if (sent !== undefined && sent !== canonicalSessionId) aliasTurnLevel(sent, canonicalSessionId);
-    const binding = await this.options.tools.principals.openTurn(
+    const binding = await openTurnOrSkip(
+      this.options.tools.principals,
       {
         runtime: 'claude-code',
         canonicalSessionId,
@@ -122,6 +121,7 @@ export class ClaudeConnectorTurnContext {
       },
       { isCurrent: () => this.active }
     );
+    if (!binding) return;
     this.binding = binding;
     if (this.controller.signal.aborted) {
       await this.revokeBinding('turn_cancelled');
@@ -139,19 +139,11 @@ export class ClaudeConnectorTurnContext {
       throw new Error('Connector tools are unavailable for this Claude turn.');
     }
     this.assertCurrent();
-    const createSupervisor =
-      this.options.tools.createLeaseSupervisor ??
-      ((options) => new ConnectorTurnLeaseSupervisor(options));
-    this.supervisor = createSupervisor({
-      principals: this.options.tools.principals,
-      bindingId: binding.bindingId,
-      permit: binding.renewalPermit,
+    this.supervisor = startConnectorLease(this.options.tools, binding, {
       runtime: 'claude-code',
-      expiresAt: binding.expiresAt,
       signal: this.controller.signal,
       onLost: (loss) => logger.warn('[ClaudeCodeRuntime] Connections lease lost', loss),
     });
-    return resolved.principal;
   }
 
   private async revokeBinding(reason: RevokeConnectorTurnReason): Promise<void> {

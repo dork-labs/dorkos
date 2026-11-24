@@ -61,6 +61,7 @@ export * from './session/session-draft-sources.js';
 
 export * from './session/session-native-bindings.js';
 export * from './session/session-touches.js';
+export * from './session/session-outside-words.js';
 export * from './session/turn-context.js';
 export * from './session/chat-messages.js';
 export * from './session/work-claims.js';

@@ -26,7 +26,7 @@ import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { SessionBirthWriteError } from '../../core/runtime-seam/session-birth-write.js';
+import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
 import { configManager } from '../../core/config-manager.js';
 import {
   homeOf,
@@ -59,8 +59,7 @@ import {
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
 import {
-  chatBirthWriteArgs,
-  matchesChatBirthPlace,
+  launchBindingSourceArgs,
   resolveChatPlace,
   type ChatBirthSource,
 } from './resolve-chat-place.js';
@@ -87,6 +86,8 @@ export interface DispatchSessionMessageOpts {
   origin: TurnOrigin;
   /** Exact first-write source prepared by the authenticated message route. */
   chatBirthSource?: ChatBirthSource;
+  /** The original receipt for a direct chat newly reserved by its sender. */
+  freshDmBirth?: FreshDmBirth;
   /**
    * Fires once, when the detached turn this message started (or joined the
    * queue for) ends. Called after the dispatch buffer records the end.
@@ -517,11 +518,12 @@ async function launchSessionMessage(
   }
   let effectiveCwd = resolvedChatPlace.cwd;
   const existing = resolvedChatPlace.session;
-  if (
-    source &&
-    (existing.bound || !matchesChatBirthPlace(source, resolvedChatPlace, verifiedAgentPath))
-  )
-    throw new SessionBirthWriteError('source');
+  const sourceArgs = launchBindingSourceArgs(
+    resolvedChatPlace,
+    verifiedAgentPath,
+    source,
+    opts.freshDmBirth
+  );
   // A room-bound session's agent and grants, when the room answered for it
   // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
   // `forAgent` and the same folder grants a room turn carries.
@@ -675,7 +677,7 @@ async function launchSessionMessage(
     runtimeType,
     origin,
     roomSeat?.agentPath ?? verifiedAgentPath,
-    ...chatBirthWriteArgs(source)
+    ...sourceArgs
   );
   if (isNewSession && launchedBy !== undefined) {
     auditLaunched(sessionId, effectiveCwd ?? DEFAULT_CWD, launchedBy);

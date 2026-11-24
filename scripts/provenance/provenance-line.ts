@@ -6,7 +6,7 @@
  * ```bash
  * # Print a version 2 line from the environment. Visibility defaults to
  * # unknown, which is treated as public.
- * pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public --surface github
+ * pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public
  *
  * # Print the normalized JSON of a body's signature, or `null` when it has none.
  * gh pr view 123 --json body -q .body | pnpm exec tsx scripts/provenance/provenance-line.ts read | jq -r '.chat // empty'
@@ -25,6 +25,9 @@
  *   id or a whole `dork:` reference. DorkOS sets both in every runtime's turn
  *   environment (DOR-5138); outside a DorkOS turn they are absent and so are
  *   the fields.
+ * - `DORKOS_SESSION_ID` and `CI`, for the surface when `--surface` is not
+ *   given: `dorkos` inside a DorkOS turn, `ci` when `CI` is `true`, else
+ *   `bare-cli`.
  *
  * A value that would not read back is left out of the line, never repaired.
  *
@@ -62,11 +65,25 @@ function asReference(kind: 'agent' | 'space', value: string | undefined): string
 }
 
 /**
+ * Where the work was driven from, when `--surface` does not say: `dorkos`
+ * inside a DorkOS turn (it sets `DORKOS_SESSION_ID`), `ci` when `CI` is
+ * `true`, and otherwise `bare-cli`.
+ *
+ * @param vars - The environment to read.
+ * @returns The surface word.
+ */
+export function surfaceFromEnv(vars: NodeJS.ProcessEnv): string {
+  if (env(vars, 'DORKOS_SESSION_ID') !== undefined) return 'dorkos';
+  if (vars.CI === 'true') return 'ci';
+  return 'bare-cli';
+}
+
+/**
  * The fields the environment names, before any is checked: the builder drops
  * whatever would not read back.
  *
  * @param vars - The environment to read.
- * @param surface - The `--surface` value, when given.
+ * @param surface - The `--surface` value, when given; otherwise {@link surfaceFromEnv}.
  * @returns The writer's fields.
  */
 export function fieldsFromEnv(vars: NodeJS.ProcessEnv, surface?: string): ProvenanceFields {
@@ -81,7 +98,7 @@ export function fieldsFromEnv(vars: NodeJS.ProcessEnv, surface?: string): Proven
   }
   const fields: Partial<Record<keyof ProvenanceFields, string | undefined>> = {
     harness,
-    surface,
+    surface: surface ?? surfaceFromEnv(vars),
     account,
     agent: asReference('agent', env(vars, 'DORKOS_AGENT_ID')),
     chat:

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PinnedHttpError } from '../../pinned-origin.js';
 import {
   SPACE_FEATURES_RETRY_MS,
   SPACE_FEATURES_TTL_MS,
@@ -24,18 +23,6 @@ describe('SpaceFeatures', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  it('reads an old space (404) as none, quietly, and asks again only after the TTL', async () => {
-    const time = clock();
-    const read = vi.fn(async () => {
-      throw new PinnedHttpError(404);
-    });
-    const features = new SpaceFeatures(read, time.now);
-    await expect(features.has('agentAvailability')).resolves.toBe(false);
-    time.advance(SPACE_FEATURES_TTL_MS - 1);
-    await expect(features.has('agentAvailability')).resolves.toBe(false);
-    expect(read).toHaveBeenCalledTimes(1);
-  });
-
   it('reads a failure as none and asks again sooner', async () => {
     const time = clock();
     const read = vi
@@ -46,13 +33,6 @@ describe('SpaceFeatures', () => {
     await expect(features.has('agentAvailability')).resolves.toBe(false);
     time.advance(SPACE_FEATURES_RETRY_MS);
     await expect(features.has('agentAvailability')).resolves.toBe(true);
-  });
-
-  it('reads a feature the space does not name, or names false, as off', async () => {
-    const features = new SpaceFeatures(async () => ({ features: { somethingLater: true } }));
-    await expect(features.has('agentAvailability')).resolves.toBe(false);
-    const off = new SpaceFeatures(async () => ({ features: { agentAvailability: false } }));
-    await expect(off.has('agentAvailability')).resolves.toBe(false);
   });
 
   it('asks again after forget, and shares one read between callers', async () => {

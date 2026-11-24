@@ -35,7 +35,7 @@ World-class UI/UX **and** world-class DX. Every surface works on phone, tablet a
 
 - **Follow existing patterns.** Consistency is a feature; diverging needs a reason.
 - **Finish things.** No lingering TODOs, half-done migrations, dead code or tolerated legacy. When something is superseded, remove it. If something weird must stay, comment _why_.
-- **Upgrades:** DorkOS supports upgrades from the 20 minor versions before the current `VERSION`. Every JSDoc `@deprecated` tag starts with `since 0.x, remove in 0.y`; lint enforces the schedule.
+- **Upgrades:** DorkOS supports upgrades from the 20 minor versions before the current `VERSION`. Every JSDoc `@deprecated` tag starts with `since 0.x, remove in 0.y`; lint enforces the schedule. That is for TypeScript exports. An HTTP endpoint has no such period: it changes or goes in one change that fixes every caller (ADR `261123-170832`).
 - **Decision filters:** describe what happens for the user, not how the system works. Every element justifies its existence. No dark patterns, no hype. The product feels like a control panel, not a consumer app.
 - **Writing:** user-facing prose follows the `writing-for-humans` skill (plain enough for a smart 9th grader who doesn't code). Copy the app renders adds `writing-app-copy` (dry, calm, no "we", at most 15 words per block; `pnpm check:copy-length`).
 - **Agent behavior** in a room, DM or shared channel follows [meta/agent-etiquette.md](meta/agent-etiquette.md): useful and mostly quiet. Over-participation is what users complain about.
@@ -50,7 +50,7 @@ DorkOS Cloud is the hosted, paid layer. Its control plane is closed-source and l
 ```bash
 pnpm dev               # API server + Vite dev server (loads .env)
 pnpm dev:dogfood       # Dev preview (:6241) + the built CLI app (:4242), the default workflow
-pnpm verify            # Affected-only typecheck + lint + test, the full gate
+pnpm verify            # Affected-only typecheck + lint + test, the full local check (optional; CI is the gate)
 pnpm verify:preopen    # Optional lighter check, for debugging (no package tests)
 pnpm vitest run <path> # One test file (~1-2s); works for every package
 pnpm test -- --run     # Full suite via turbo
@@ -73,7 +73,7 @@ The map is `contributing/architecture.md` and `contributing/system-architecture.
 
 - **Swappable seams:** `AgentRuntime` (agent backends: claude-code, codex, opencode, doe), `Transport` (client to backend), `ConnectorProvider`, and `CommunityAdapter` (rooms in more than one place). Every runtime passes `runtimeConformance` and every community backend passes `communityConformance`. Adding a runtime: `contributing/adding-a-runtime.md`.
 - **The server is Hono.** Express runs only behind the extension bridge, and an ESLint rule bans it elsewhere (ADR `261009-192542`).
-- **One space model** (ADR `261122-173853`). There are two kinds of state. Space data (members, agents, conversations, rules, memory, schedules, connections, settings, documents, mini apps) belongs to a space. Execution state (workspaces and worktrees, the runtimes' own transcripts and sign-ins, running processes) stays on the computer that runs turns. Nothing is Mac-only by design. A shared host never holds a member's credentials or a key to a member's computer. Today `services/rooms` is this computer's store and `services/spaces` (Postgres) is the space store; a new feature built only on `services/rooms` needs a ticket naming its move. The import wall between them (`apps/server/eslint-rules/space-boundary.js`) stays.
+- **One space model** (ADR `261122-173853`). There are two kinds of state. Space data (members, agents, conversations, rules, memory, schedules, connections, settings, documents, mini apps) belongs to a space. Execution state (workspaces and worktrees, the runtimes' own transcripts and sign-ins, running processes) stays on the computer that runs turns. Nothing is Mac-only by design. Treat new data about an agent, a conversation or a setting as space data. A shared host never holds a member's credentials or a key to a member's computer. Today `services/rooms` is this computer's store and `services/spaces` (Postgres) is the space store; a new feature built only on `services/rooms` needs a ticket naming its move. The import wall between them (`apps/server/eslint-rules/space-boundary.js`) stays.
 - **Telegram and Slack rooms are projections into local rooms**, not community backends (ADR `260814-024525`).
 - **Sessions are runtime-owned** (ADR-0310). There is no unified DorkOS transcript store. Turns are delivered over the per-session SSE stream; `POST /api/sessions/:id/messages` only triggers.
 - **Agents:** `.dork/agent.json` on disk is the source of truth, and SQLite is a derived cache (ADR-0043). DorkBot is the system agent; system agents can't be renamed, deleted or unregistered.
@@ -85,7 +85,7 @@ The map is `contributing/architecture.md` and `contributing/system-architecture.
 
 ## Where the system is going
 
-Decided. Target shape: `contributing/architecture-target.md`. Order: `meta/ROADMAP.md`.
+Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape: `contributing/architecture-target.md`, which also defines the words used here (space side, computer side, turn port, run record, outbox, wake, playbook). Order: `meta/ROADMAP.md`.
 
 - **Two sides, one contract** (ADR `261124-150516`). One program, one release. The space side holds space data; the computer side runs turns. One contract joins them: start, stream and stop a turn, answer an ask, call a DorkOS tool, sync an agent, report status. A Mac runs both; an agent computer runs only the computer side.
 - **Turns survive restarts** (ADR `261124-150517`): a run record, follow-up work saved with the turn, capped recovery.
@@ -94,9 +94,10 @@ Decided. Target shape: `contributing/architecture-target.md`. Order: `meta/ROADM
 
 Rules today:
 
-1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app, or a schedule with a skill (ADR `261124-150519`).
+1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`).
 2. No new service or process unless its lifetime or trust level differs.
 3. Never plan, rank or write work by a date or a launch (ADR `261124-150515`).
+4. Architecture work leaves the space server's code alone (`services/spaces`, `apps/space`, the community wire, `spaces/migrate.ts`) until the Community Space has opened and its opening checks are green. Fixes the opening needs are fine.
 
 ## The `/flow` Workflow
 
@@ -159,9 +160,9 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 
 Anything you post to a tracker or forge (a Linear comment or description, a GitHub PR body or comment) ends with one hidden line, so a later session can route a follow-up back to yours:
 
-`<!-- agent:provenance {"v":1,"harness":"claude-code","sessionId":"…","account":"…","host":"…","surface":"…"} -->`
+`<!-- agent:provenance {"v":2,"harness":"claude-code","surface":"dorkos","account":"claude3","agent":"dork:agent:…","chat":"dork:chat:1a2b3c4d","space":"dork:space:…"} -->`
 
-Emit only fields you actually know, as valid JSON. In a public repo, truncate `sessionId` to 8 characters. `account` is a short handle (for Claude Code, the `CLAUDE_CONFIG_DIR` basename, default `claude`), never an email. Full spec: `docs/provenance.md` in `dork-labs/marketplace`. Commits keep their `Claude-Session:` trailer.
+Build it, never by hand: `pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public|private` (in code, `@dorkos/shared/provenance`); its `read` reads one. A public line cuts `chat` to 8 characters and carries no machine details. `account` is a short handle (for Claude Code, the `CLAUDE_CONFIG_DIR` basename), never an email. Readers accept v1, v2 and the legacy `flow:provenance` name forever. Full spec: `docs/provenance.md` in `dork-labs/marketplace`. Commits keep their `Claude-Session:` trailer.
 
 ## Artifacts
 

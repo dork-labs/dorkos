@@ -19,7 +19,7 @@
  * The gates themselves are covered in their own suites
  * (`harness/__tests__/project-with-consent.test.ts`,
  * `marketplace/consent/__tests__/global-plugin-consent.test.ts`,
- * `extensions/__tests__/extension-load-policy.test.ts`,
+ * `extensions/__tests__/extension-load-policy/`,
  * `tasks/__tests__/task-store-permission-clamp.test.ts`), several over a
  * stand-in config. What only this file asks is the reset's question: with the
  * REAL config store set to the most permissive posture this install can hold —

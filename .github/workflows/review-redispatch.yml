@@ -16,11 +16,25 @@ name: review-redispatch
 # starts no workflow, so the review would never run. The app has no
 # Administration permission. Nothing from a PR is checked out or run here.
 
+# WHEN IT RUNS (ledger 261124-161126). The cron alone fired once in
+# its first 16 hours, so the scan also follows the event it reacts to: a
+# claude-code-review run that fails. The `wait` job then sleeps until the
+# ladder's next rung for that head has passed (scripts/review-redispatch-wait.sh
+# reads the rungs from should-redispatch-review.sh), so the scan lands just
+# after it instead of answering `SKIP backoff`. A review that passes, is
+# skipped or is cancelled starts nothing (the run shows as skipped). The cron
+# stays as the backstop for what no event announces: a quota window
+# reopening, a stranded label on a conflicting PR. `workflow_run` runs main's
+# copy of this file, and nothing from a PR is checked out or run on any trigger.
+
 on:
   schedule:
     # GitHub throttles scheduled workflows (merge-tail measured a median gap of
     # 162 minutes against a 10-minute ask); the ladder's rungs allow for it.
     - cron: '*/10 * * * *'
+  workflow_run:
+    workflows: [claude-code-review]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,15 +42,60 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: review-redispatch
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
+  wait:
+    # Only after a review run that failed; any other conclusion needs no scan.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-latest
+    # The longest wait is 45 minutes (review-redispatch-wait.sh's cap).
+    timeout-minutes: 50
+    # No concurrency group: waits for different reviews run side by side, and
+    # each scan below still runs alone.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/review-redispatch-wait.sh
+            scripts/should-redispatch-review.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Wait out the ladder's rung for this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -uo pipefail
+          runs="$RUNNER_TEMP/runs.json"
+          if [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            gh api "repos/$REPO/actions/workflows/claude-code-review.yml/runs?head_sha=$HEAD_SHA&per_page=50" \
+              --jq '[.workflow_runs[]? | {id, status, conclusion, run_attempt, updated_at}]' >"$runs" 2>/dev/null || : >"$runs"
+          else
+            : >"$runs"
+          fi
+          secs=$(bash scripts/review-redispatch-wait.sh "$runs")
+          echo "Waiting ${secs}s before the scan."
+          sleep "$secs"
+
   redispatch:
+    needs: wait
+    # The cron and a dispatch scan at once; a failed review scans after `wait`.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'workflow_run' || needs.wait.result == 'success')
+    # One scan at a time; a burst of triggers collapses to the newest waiting.
+    concurrency:
+      group: review-redispatch
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

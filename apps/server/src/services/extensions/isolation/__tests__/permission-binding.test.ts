@@ -6,7 +6,7 @@
  * an extension in its own process, one that asks for that never runs at all,
  * in-process or otherwise.
  *
- * The rig is `extension-load-policy.test.ts`'s: a config store whose `set`
+ * The rig is the `extension-load-policy/` tests': a config store whose `set`
  * writes through to what `get` reads, a stand-in `require()` that evaluates
  * whatever bundle the lifecycle wrote, so a mounted router means the real
  * load path ran.
