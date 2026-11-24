@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# daily-sweep.sh — the day's merges, for QA's and the designer's batch review.
+# daily-sweep.sh — the day's merges, for QA's, the designer's and Security's
+# batch review.
 #
 #   scripts/daily-sweep.sh collect <since-iso> <out-dir>
 #   scripts/daily-sweep.sh render <out-dir> <since-label> [previous-body-file]
@@ -12,16 +13,26 @@
 # reviewer's list. Their labels are no longer merge gates (pr-gates prints them
 # as notes); this list is where the review happens now.
 #
+# Security reviews the merges that touched a security path, by the gate's own
+# list: main's SECURITY_PATH_PATTERN in .github/workflows/security-gate.yml,
+# matched by touchesSecurity() in .github/scripts/security-gate.mjs (either side
+# of a rename), as security-paths-check.mjs and open-pr.sh call it. A PR on the
+# deep-review list (SECURITY_DEEP_PATH_PATTERN, or a workflow or gate file, as
+# security-verdict.mjs decides) is marked P0. This list does not replace the
+# security-review gate; it is Security's after-merge read.
+#
 # collect: reads every PR merged into main since <since-iso> and writes, per PR,
 #          <out-dir>/<n>/{meta.json,labels.txt,files.txt,patches.txt}. Reads only
 #          (GH overrides the gh binary; REPO defaults to $GITHUB_REPOSITORY, then
 #          dork-labs/dorkos).
-# render:  pure. Prints the markdown list: a design section, a QA section, and
-#          a count of the rest. A PR whose inputs cannot be read is listed under
-#          both, so nothing silently leaves the review. With the issue's
+# render:  pure (reads only <out-dir> and the repo's own rule files). Prints the
+#          markdown list: a design section, a QA section, a Security section,
+#          and a count of the rest. A PR whose inputs cannot be read is listed
+#          under all three, so nothing silently leaves the review. With the issue's
 #          previous body, a PR already ticked there stays ticked.
 #
-# Public text only: PR numbers, titles, authors and the rule's own reason. No
+# Public text only: PR numbers, titles, authors and the rule's own reason
+# (paths). Never a finding: Security files those privately. No
 # @-mentions: they would notify whatever GitHub account has that name.
 # Exit codes: 0 done; 2 usage or a failed read.
 # Fixtures: scripts/test-daily-sweep.sh.
@@ -30,6 +41,7 @@ set -uo pipefail
 GH=${GH:-gh}
 REPO=${REPO:-${GITHUB_REPOSITORY:-dork-labs/dorkos}}
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+gate_dir=$here/../.github/scripts
 
 usage() {
   sed -n '4,5p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
@@ -77,8 +89,37 @@ summarize() {
   fi
 }
 
+# security_needs <pr-dir>: the security gate's verdict on one collected PR.
+# Prints nothing when no path matches; otherwise a tier line ("P0" for the
+# deep-review list, else "security") and each matching path, indented, like
+# the other rules' reasons. Reads files.jsonl (with renames) or, failing that,
+# files.txt. Non-zero when it cannot decide.
+security_needs() {
+  # shellcheck disable=SC2016 # the JavaScript is literal; its arguments follow
+  node --input-type=module -e '
+    import { existsSync, readFileSync } from "node:fs";
+    const [dir, gate, verdict] = process.argv.slice(1);
+    const { securityPathPattern, securityDeepPathPattern, touchesSecurity } = await import(gate);
+    const { workflowFiles, judgeFiles } = await import(verdict);
+    const lines = (f) => readFileSync(f, "utf8").split("\n").filter(Boolean);
+    const files = existsSync(`${dir}/files.jsonl`)
+      ? lines(`${dir}/files.jsonl`).map((l) => JSON.parse(l))
+      : lines(`${dir}/files.txt`).map((filename) => ({ filename }));
+    if (files.some((f) => typeof f.filename !== "string")) throw new Error("bad file list");
+    const hits = files.filter((f) => touchesSecurity([f], securityPathPattern()));
+    if (!hits.length) process.exit(0);
+    const deep =
+      touchesSecurity(files, securityDeepPathPattern()) ||
+      workflowFiles(files).length > 0 ||
+      judgeFiles(files).length > 0;
+    console.log(deep ? "P0" : "security");
+    for (const f of hits)
+      console.log(`  ${f.previous_filename && f.previous_filename !== f.filename ? `${f.previous_filename} -> ` : ""}${f.filename}`);
+  ' "$1" "file://$gate_dir/security-gate.mjs" "file://$gate_dir/security-verdict.mjs"
+}
+
 render() {
-  local out=$1 since=$2 prev=${3:-} d n title author line reason design="" qa="" rest=0 total=0 ticked=""
+  local out=$1 since=$2 prev=${3:-} d n title author line reason design="" qa="" security="" rest=0 total=0 ticked=""
   if [ -n "$prev" ] && [ -f "$prev" ]; then
     ticked=$(grep -oE '^- \[[xX]\] #[0-9]+ ' "$prev" | grep -oE '[0-9]+' | sort -u)
   fi
@@ -94,6 +135,7 @@ render() {
     if [ -e "$d/unreadable" ]; then
       design+="$line: could not read this PR, check it by hand"$'\n'
       qa+="$line: could not read this PR, check it by hand"$'\n'
+      security+="$line: could not read this PR, check it by hand"$'\n'
       continue
     fi
     local hit=0
@@ -103,6 +145,17 @@ render() {
     fi
     if reason=$(bash "$here/qa-real-data.sh" needs "$d/labels.txt" "$d/files.txt" "$d/patches.txt" 2>/dev/null); then
       qa+="$line: $(summarize "$reason")"$'\n'
+      hit=1
+    fi
+    if ! reason=$(security_needs "$d" 2>/dev/null); then
+      security+="$line: could not classify its paths, check it by hand"$'\n'
+      hit=1
+    elif [ -n "$reason" ]; then
+      if [ "$(head -n 1 <<<"$reason")" = P0 ]; then
+        security+="$line: $(summarize "$reason") (P0, deep-review list)"$'\n'
+      else
+        security+="$line: $(summarize "$reason")"$'\n'
+      fi
       hit=1
     fi
     [ "$hit" = 1 ] || rest=$((rest + 1))
@@ -120,7 +173,11 @@ render() {
   echo
   [ -n "$qa" ] && printf '%s' "$qa" || echo "No config, migration or upgrade-floor change."
   echo
-  echo "$rest other PR(s) need neither review."
+  echo "### Security (the Security agent): $(grep -c . <<<"$security" || true)"
+  echo
+  [ -n "$security" ] && printf '%s' "$security" || echo "No security path changed."
+  echo
+  echo "$rest other PR(s) need none of these reviews."
 }
 
 case "${1:-}" in

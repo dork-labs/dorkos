@@ -24,7 +24,7 @@ function AddressRow({ url, label }: { url: string; label: string }) {
 function LanAddresses({ status }: { status: LanAccessStatus }) {
   const primary = primaryAddress(status);
   if (!primary) {
-    return <p className="text-muted-foreground text-xs">Join a Wi-Fi network to get an address.</p>;
+    return <p className="text-muted-foreground text-xs">Join a network to get an address.</p>;
   }
   // The IPs back up the `.local` name; with no name, the first IP is the primary.
   const backups = status.localName
@@ -34,7 +34,7 @@ function LanAddresses({ status }: { status: LanAccessStatus }) {
     <div className="space-y-3">
       <TunnelQrCode url={primary} size={160} />
       <p className="text-muted-foreground text-center text-xs">
-        Scan with a phone or tablet on the same Wi-Fi.
+        Scan with a phone or tablet on the same network.
       </p>
       <AddressRow url={primary} label="Copy address" />
       {backups.length > 0 && (
@@ -50,8 +50,8 @@ function LanAddresses({ status }: { status: LanAccessStatus }) {
 }
 
 /**
- * Wi-Fi access (DOR-2930): the one switch that lets other devices on the same
- * network open DorkOS, its addresses, and a QR code to scan. Sits under remote
+ * Network access (DOR-2930, worded by DOR-5135): the one switch that lets other
+ * devices on the same network (Wi-Fi, a wired cable, or a VPN such as Tailscale) open DorkOS, its addresses, and a QR code to scan. Sits under remote
  * access in Settings; it needs no tunnel and no restart.
  */
 export function LanAccessSection({ className }: { className?: string }) {
@@ -72,11 +72,12 @@ export function LanAccessSection({ className }: { className?: string }) {
       <div className="flex items-center justify-between gap-4">
         <div>
           <p id="lan-access-title" className="text-sm font-medium">
-            Let devices on my Wi-Fi in
+            Let devices on my network in
           </p>
           <p className="text-muted-foreground text-xs">
-            For home or office Wi-Fi. It isn’t encrypted yet.
+            Includes wired computers and VPNs like Tailscale, so devices can be far away.
           </p>
+          <p className="text-muted-foreground text-xs">It isn’t encrypted yet.</p>
         </div>
         <Switch
           aria-labelledby="lan-access-title"

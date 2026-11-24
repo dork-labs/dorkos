@@ -610,13 +610,18 @@ describe('the phase-2 requirement this change leaves behind', () => {
     'utf8'
   );
 
+  // The second requirement rides the same check: the floors catch tests that
+  // silently stop running, and must never charge for deleting one on purpose.
   it.each(['vitest-passed', 'playwright-passed'])(
-    'the %s ratchet still says quarantined tests are excluded from both sides',
+    'the %s ratchet still excludes quarantined tests and frees deliberate deletions',
     (id) => {
       const block = ratchets.slice(ratchets.indexOf(`- id: ${id}`));
       const description = block.slice(0, block.indexOf('measured_from:'));
       expect(description).toContain(
         'Quarantined tests are excluded from both the mark and the reading'
+      );
+      expect(description).toContain(
+        'Tests deleted from source lower the mark by the number deleted, with no release'
       );
     }
   );

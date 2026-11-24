@@ -6158,7 +6158,7 @@ registry.registerPath({
     ),
     401: roomAgentUnverified,
     403: problemResponse(
-      "An agent caller tried to change a handle (`operator_only`), or a person on plain-http Wi-Fi tried to change an agent's (`not_from_wifi`)"
+      "An agent caller tried to change a handle (`operator_only`), or a person on a plain-http network sign-in tried to change an agent's (`not_from_wifi`)"
     ),
     404: problemResponse('No author carries that id (`not_found`)'),
     409: problemResponse(

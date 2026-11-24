@@ -35,7 +35,7 @@ This is the right default for a tool on your own laptop, and it is also the reas
 
 Reaching DorkOS from your phone or another machine means exposing it, either by starting a tunnel or by binding to a public network interface. That flips DorkOS from "single-user local tool" to "networked service," so DorkOS requires a real login before it will do it.
 
-DorkOS decides each request by where it came from. A request from this computer is you, already signed in. A request from any other device always needs a sign-in, whatever "Ask for a password on this computer too" says: through your tunnel, over Wi-Fi, through a reverse proxy, or to a public address. A proxy's forwarding headers, or a page on another site named in `Origin` or `Referer`, make a request count as another device.
+DorkOS decides each request by where it came from. A request from this computer is you, already signed in. A request from any other device always needs a sign-in, whatever "Ask for a password on this computer too" says: through your tunnel, over your network, through a reverse proxy, or to a public address. A proxy's forwarding headers, or a page on another site named in `Origin` or `Referer`, make a request count as another device.
 
 <Callout type="warn">
   Exposing DorkOS **requires an owner account**: someone for those other devices to sign in as.
