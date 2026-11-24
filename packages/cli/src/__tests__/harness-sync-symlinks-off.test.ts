@@ -9,6 +9,8 @@
  * that suite does not carry.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+// Compiles the server's harness consent module now, not inside the first test (DOR-4518).
+import './preload-harness-server.js';
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'node:child_process';
