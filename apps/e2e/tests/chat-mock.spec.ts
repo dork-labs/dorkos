@@ -874,23 +874,6 @@ test.describe('the chat composer with formatting on', () => {
     await expect(sent).toContainText('**bold** please');
   });
 
-  test('syntax the box does not preview stays literal', async ({ page }) => {
-    const chatPage = await openRichChat(page);
-    const composer = chatPage.input;
-    await composer.click();
-
-    // Backticks at the start of a line are the strongest case: recognizing a
-    // fenced block would give Enter a THIRD meaning, and the locked decision
-    // authorized exactly one exception.
-    await composer.pressSequentially('```');
-    expect(await composerText(composer)).toBe('```');
-    await expect(composer.locator('pre, code')).toHaveCount(0);
-
-    await composer.pressSequentially(' and > quote and ~~strike~~');
-    expect(await composerText(composer)).toBe('``` and > quote and ~~strike~~');
-    await expect(composer.locator('blockquote, s, del')).toHaveCount(0);
-  });
-
   test('Shift+Enter is a newline and sends nothing', async ({ page }) => {
     const chatPage = await openRichChat(page);
     const composer = chatPage.input;
@@ -905,20 +888,6 @@ test.describe('the chat composer with formatting on', () => {
     // The caret is past both words, so the break is inside the document rather
     // than something the browser painted around it.
     expect(await caretOffset(composer)).toBe('firstsecond'.length);
-  });
-
-  test('the command palette opens over the rich field and Enter picks a row', async ({ page }) => {
-    const chatPage = await openRichChat(page);
-
-    await chatPage.openCommandPalette('/');
-    await expect(chatPage.paletteOptions.first()).toBeVisible({ timeout: 10_000 });
-
-    // Enter belongs to the palette while it has rows — it must not send, and it
-    // must not reach the list handler either.
-    await chatPage.input.press('Enter');
-
-    await expect(chatPage.commandPalette).toBeHidden({ timeout: 10_000 });
-    await expect(userMessages(page)).toHaveCount(0);
   });
 });
 

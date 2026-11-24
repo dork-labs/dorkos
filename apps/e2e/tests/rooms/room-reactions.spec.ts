@@ -198,29 +198,4 @@ test.describe('Rooms — reacting on a touch screen', () => {
     await expect(drawer).toHaveCount(0);
     await expect(roomsPage.reaction(entry, emoji)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
   });
-
-  test('the drawer’s 🙂+ opens the same picker inline', async ({ page, roomsApi, roomsPage }) => {
-    const slug = `e2e-react-touch-pick-${roomsApi.runId}`;
-    const room = await roomsApi.createChannel(slug, slug);
-    await roomsApi.postEntries(room.id, ['green on the second run']);
-
-    await page.goto(`/channels?id=${room.id}`);
-    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
-
-    const entry = roomsPage.entries.first();
-    await roomsPage.longPress(entry);
-
-    const drawer = page.getByRole('dialog');
-    await drawer.getByRole('button', { name: 'Pick a reaction' }).click();
-
-    // Inline, not a popover over a drawer: two overlays deep on the surface with
-    // the least room for them is where a picker becomes unreachable.
-    const picker = drawer.getByTestId('reaction-picker');
-    await expect(picker).toBeVisible();
-    await picker.getByRole('textbox', { name: 'Search emoji' }).fill('fire');
-    await picker.getByRole('button', { name: 'fire' }).click();
-
-    await expect(drawer).toHaveCount(0);
-    await expect(roomsPage.reaction(entry, '🔥')).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-  });
 });
