@@ -13,6 +13,9 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
 import { logger } from '../../lib/logger.js';
 import { auditCapabilityDeps } from '../../services/audit/index.js';
+import { createDorkLinkLookups } from '../../services/core/links/link-lookups.js';
+import { callerAuthor } from '../../services/rooms/service/room-caller-author.js';
+import { sessionExists } from '../../services/session/launch/session-exists.js';
 import { AgentCompactionService } from '../../services/session/agent-compaction/agent-compaction-service.js';
 import * as heartbeats from '../../services/heartbeats/index.js';
 import {
@@ -255,6 +258,17 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       agentPauseDeps: { pauses: agentPauses },
       // `approvals.withdraw`: an agent takes back its own waiting request (DOR-4586).
       approvalWithdrawDeps: { db },
+      // `link.resolve`: what a `/r/<dork-uri>` link opens, for the caller (DOR-5046).
+      linkDeps: {
+        lookups: createDorkLinkLookups({
+          db,
+          rooms: roomService,
+          roomCaller: (context) => callerAuthor(roomService, context),
+          accounts: auditAccounts,
+          chatExists: (sessionId) => sessionExists(sessionId),
+          agents: { get: (agentId) => refs.meshCore?.get(agentId) },
+        }),
+      },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its

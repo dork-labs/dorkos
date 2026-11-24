@@ -113,6 +113,7 @@
   "GET /api/hub/computers/{computerId}/agents/{agentId}/chats": "hub.getComputersAgentsChats",
   "GET /api/hub/computers/{computerId}/sessions/{sessionId}/stream": "hub.streamComputersSessions",
   "GET /api/keep-awake": "keepAwake.get",
+  "GET /api/links/target": "link.resolve",
   "GET /api/local-browser/capabilities": "localBrowser.getCapabilities",
   "GET /api/local-browser/handoff/state": "localBrowser.getHandoffState",
   "GET /api/local-browser/profiles": "localBrowser.listProfiles",

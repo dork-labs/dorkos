@@ -22,6 +22,7 @@ import { Route as ShellSessionRouteImport } from './routes/_shell.session'
 import { Route as ShellTeamRouteImport } from './routes/_shell.team'
 import { Route as ShellThreadsRouteImport } from './routes/_shell.threads'
 import { Route as ShellTodosRouteImport } from './routes/_shell.todos'
+import { Route as RSplatRouteImport } from './routes/r.$'
 import { Route as ShellHomeIndexRouteImport } from './routes/_shell._home.index'
 import { Route as ShellHomeActivityRouteImport } from './routes/_shell._home.activity'
 import { Route as ShellHomeTasksRouteImport } from './routes/_shell._home.tasks'
@@ -93,6 +94,11 @@ const ShellTodosRoute = ShellTodosRouteImport.update({
   path: '/todos',
   getParentRoute: () => ShellRoute,
 } as any)
+const RSplatRoute = RSplatRouteImport.update({
+  id: '/r/$',
+  path: '/r/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShellHomeIndexRoute = ShellHomeIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/team': typeof ShellTeamRoute
   '/threads': typeof ShellThreadsRoute
   '/todos': typeof ShellTodosRoute
+  '/r/$': typeof RSplatRoute
   '/activity': typeof ShellHomeActivityRoute
   '/tasks': typeof ShellHomeTasksRoute
   '/workspaces': typeof ShellHomeWorkspacesRoute
@@ -162,6 +169,7 @@ export interface FileRoutesByTo {
   '/team': typeof ShellTeamRoute
   '/threads': typeof ShellThreadsRoute
   '/todos': typeof ShellTodosRoute
+  '/r/$': typeof RSplatRoute
   '/activity': typeof ShellHomeActivityRoute
   '/tasks': typeof ShellHomeTasksRoute
   '/workspaces': typeof ShellHomeWorkspacesRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/_shell/team': typeof ShellTeamRoute
   '/_shell/threads': typeof ShellThreadsRoute
   '/_shell/todos': typeof ShellTodosRoute
+  '/r/$': typeof RSplatRoute
   '/_shell/_home/activity': typeof ShellHomeActivityRoute
   '/_shell/_home/tasks': typeof ShellHomeTasksRoute
   '/_shell/_home/workspaces': typeof ShellHomeWorkspacesRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/threads'
     | '/todos'
+    | '/r/$'
     | '/activity'
     | '/tasks'
     | '/workspaces'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/team'
     | '/threads'
     | '/todos'
+    | '/r/$'
     | '/activity'
     | '/tasks'
     | '/workspaces'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/_shell/team'
     | '/_shell/threads'
     | '/_shell/todos'
+    | '/r/$'
     | '/_shell/_home/activity'
     | '/_shell/_home/tasks'
     | '/_shell/_home/workspaces'
@@ -260,6 +272,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
   SignedInRoute: typeof SignedInRoute
+  RSplatRoute: typeof RSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -354,6 +367,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/todos'
       preLoaderRoute: typeof ShellTodosRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/r/$': {
+      id: '/r/$'
+      path: '/r/$'
+      fullPath: '/r/$'
+      preLoaderRoute: typeof RSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_shell/_home/': {
       id: '/_shell/_home/'
@@ -464,6 +484,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
   SignedInRoute: SignedInRoute,
+  RSplatRoute: RSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

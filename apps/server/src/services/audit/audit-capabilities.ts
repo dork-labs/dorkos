@@ -113,7 +113,7 @@ function requireAuditDeps(deps: CapabilityDeps): AuditDeps {
  * @param context - The invocation context.
  */
 export function readerFor(
-  audit: AuditDeps,
+  audit: Pick<AuditDeps, 'accounts'>,
   context: CapabilityInvocationContext | undefined
 ): AuditReader {
   if (context?.identity) {
