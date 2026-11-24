@@ -47,6 +47,7 @@ import {
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { chatFolderById } from '../../services/core/agent-identity/session-agent.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from '../../services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -212,6 +213,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   runtimeRegistry.setDb(db);
   // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 

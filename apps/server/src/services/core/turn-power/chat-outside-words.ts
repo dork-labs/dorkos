@@ -6,7 +6,8 @@
  * narrowing gate read that one note.
  *
  * Read from what the server keeps, never from the model: the turn's own mark (a Wi-Fi hold), the
- * outside-words note on its latest turn, and a launch origin whose every turn is a stranger's.
+ * outside-words note on its latest turn (saved with the chat, DOR-4148), and a launch origin whose
+ * every turn is a stranger's. A saved record that cannot be read counts as outside words.
  *
  * A bridged Telegram or Slack chat is the one origin that can be the owner's own (DOR-4593). With
  * stranger marking on, a bridged turn is marked unless its sender is on the connection's approver
@@ -30,7 +31,7 @@ import {
 } from './continuation-hold.js';
 import { chatEverReadOutsideText } from './live-outsider-turns.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { roomTurnReadOutsideWords } from './outside-words.js';
+import { outsideWordsDbReady, roomTurnReadOutsideWords } from './outside-words.js';
 import { marksOf } from './turn-levels.js';
 
 /** Launch origins whose every turn is a stranger's: an outside agent, a connected app's event. */
@@ -60,8 +61,9 @@ export function chatReadOutsideWords(
       return !markStrangerTurns || !bridgedSenderVouched(sessionId);
     return OUTSIDE_LAUNCH_ORIGINS.has(origin);
   } catch {
-    // No database (early boot): nothing stored to read, as memory and the browser read it.
-    return false;
+    // No database (early boot, tests): nothing stored to read, as memory and the browser read it.
+    // Once the store is wired, a launch origin that cannot be read may be a stranger's (DOR-4148).
+    return outsideWordsDbReady();
   }
 }
 

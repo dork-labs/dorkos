@@ -35,6 +35,7 @@ import { initAgentIdentityService } from './services/core/agent-identity/index.j
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { setContinuationHoldDb } from './services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from './services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -106,6 +107,8 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 
