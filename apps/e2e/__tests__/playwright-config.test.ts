@@ -71,8 +71,8 @@ describe('playwright.config.ts webServer legs', () => {
   });
 
   it('gives every leg a distinct readiness timeout', () => {
-    // Six legs expected: Express API, Vite Client, Express API (test-mode),
-    // Vite Client (test-mode), Marketing Site, Express API (production) — the
+    // Six legs expected: API server, Vite Client, API server (test-mode),
+    // Vite Client (test-mode), Marketing Site, API server (production) — the
     // last two only present because their flags were set before the import.
     expect(timeouts.length).toBe(6);
     expect(new Set(timeouts).size).toBe(timeouts.length);

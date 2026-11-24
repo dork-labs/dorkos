@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent, TodoWrite, AskUserQue
 
 # Browser Debug
 
-Debug and resolve an issue observed in the browser — visual (design-system violations, layout), interaction (broken buttons/forms), data (wrong/stale content), or responsive. Parse `$ARGUMENTS`: an optional `--url <url>` flag plus the issue description. If the URL is missing, default to the Vite dev client at `http://localhost:6241` (the Express API is on 6242; `/api` is proxied). If the description is too vague to act on, ask one clarifying question — otherwise just start.
+Debug and resolve an issue observed in the browser — visual (design-system violations, layout), interaction (broken buttons/forms), data (wrong/stale content), or responsive. Parse `$ARGUMENTS`: an optional `--url <url>` flag plus the issue description. If the URL is missing, default to the Vite dev client at `http://localhost:6241` (the API server is on 6242; `/api` is proxied). If the description is too vague to act on, ask one clarifying question — otherwise just start.
 
 ## The loop
 
