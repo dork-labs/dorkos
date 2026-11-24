@@ -176,6 +176,8 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { observePumpToolTurnState, publishPumpToolTurn } from '../tool-turn/pump-tool-turn.js';
+import { reconcileQueryMode } from '../tool-turn/query-mode.js';
 import { createPumpLaunchOptions, pumpLaunchPlanOf, waitingOnFor } from './pump-launch.js';
 import type { PumpLaunchPlan } from './pump-launch.js';
 import { recordPumpTurnContext } from '../messaging/turn-context/turn-context-record.js';
@@ -214,7 +216,7 @@ import { endSessionTimers } from './dispatch/session-timers.js';
  * @param session - The session about to run a turn
  */
 function resetPerTurnState(session: AgentSession): void {
-  session.eventQueue = [];
+  Object.assign(session, { eventQueue: [], eventQueueNotify: undefined });
   // Clear last turn's breakdown so a failed fetch this turn never shows stale
   // data, and a stop stamped in a PREVIOUS turn must not blind this turn's
   // phantom detector (DOR-1087).
@@ -649,7 +651,7 @@ export class PersistentDispatch {
       yield refusal;
       return;
     }
-    const plan = pumpLaunchPlanOf(resolved, effectiveCwd);
+    const plan = pumpLaunchPlanOf(resolved, effectiveCwd, opts.toolTurnOwner);
 
     let bundle = this.acquire(key, session, opts);
     // Nothing pinned to the live process may be stale by the time the turn
@@ -668,6 +670,7 @@ export class PersistentDispatch {
     // owed (DOR-2685; the DOR-2705 class). It waits, and the stored fingerprint
     // keeps the old list, so the next dispatch asks again. Any other pin that
     // moved still relaunches as it always did.
+    const modeConfirmed = reconcileQueryMode(bundle);
     const live = bundle.fingerprint;
     // The same for a running extension's skills going away (DOR-2685): its
     // generated plugin root holds skills only, so a working process keeps it
@@ -731,6 +734,7 @@ export class PersistentDispatch {
       }
     }
     const reuse = decideCeilingedReuse(session, bundle.pump, bundle.fingerprint, compared, {
+      toolModeUncertain: opts.toolTurnOwner !== undefined && !modeConfirmed,
       holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),
@@ -879,6 +883,7 @@ export class PersistentDispatch {
       bundle.booting = false;
       bundle.slotWait = undefined;
     }
+    bundle.retireToolTurn ??= publishPumpToolTurn(session, bundle.live, bundle.fingerprint, plan);
     // The prompt is in the process now: record what this turn was handed.
     recordPumpTurnContext(session, sessionId, messageId, plan, messageOpts);
     // Told once the window is open, so a turn the process refused never ends
@@ -1335,27 +1340,7 @@ export class PersistentDispatch {
         this.clearBackgroundWork(key, bundle);
       },
       onStateChange: (change) => {
-        // `session.activeQuery` means "a turn is in flight", and on the resume
-        // path it is cleared in every turn's `finally`. A pump has no such
-        // frame, so the pump's own `running` edge is what arms and disarms it —
-        // one rule, driven by the state machine, so every exit is covered: the
-        // turn ending, the idle reap, a warm-ceiling reclaim, an eviction, a
-        // crash and shutdown, including the three the registry takes without
-        // telling this class.
-        //
-        // Leaving it armed between turns is not a cosmetic lie. `interruptQuery`
-        // escalates to `close()` when `interrupt()` rejects, so a Stop pressed
-        // on a warm IDLE session would answer "interrupted", destroy a perfectly
-        // healthy subprocess, and leave the session reporting `crashed`.
-        if (change.to === 'running') {
-          session.activeQuery = bundle.live;
-        } else if (session.activeQuery !== undefined) {
-          // Preserved as `lastQuery` exactly as the resume path preserves it, so
-          // post-turn control calls (`reloadPlugins`, the model probe) still
-          // have something to talk to.
-          session.lastQuery = session.activeQuery;
-          session.activeQuery = undefined;
-        }
+        observePumpToolTurnState(session, bundle, change);
         // A process DorkOS ends on purpose never reaches `onCrash`, so a turn
         // still open on it is closed here, at the edge, rather than left dark
         // for the stall watchdog (DOR-2681). Read through the bundle, not

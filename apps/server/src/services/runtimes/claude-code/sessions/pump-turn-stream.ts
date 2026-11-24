@@ -117,6 +117,8 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
   // The absolute turn limit is measured from here, in awake time (DOR-2705).
   session.turnStartedAwake = performance.now();
   const toolState = createToolState();
+  const eventQueue = session.eventQueue;
+  let queueNotify: (() => void) | undefined;
   const messages = window.messages[Symbol.asyncIterator]();
   let emittedDone = false;
   let emittedError = false;
@@ -149,8 +151,8 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
   try {
     let pending: Promise<IteratorResult<SDKMessage>> | null = null;
     for (;;) {
-      while (session.eventQueue.length > 0) {
-        const queued = session.eventQueue.shift()!;
+      while (eventQueue.length > 0) {
+        const queued = eventQueue.shift()!;
         if (queued.type === 'done') emittedDone = true;
         if (isInteractiveEvent(queued)) wasInteractive = true;
         eventCount++;
@@ -158,7 +160,8 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
       }
 
       const queueWoke = new Promise<'queue'>((resolve) => {
-        session.eventQueueNotify = () => resolve('queue');
+        queueNotify = () => resolve('queue');
+        if (session.eventQueue === eventQueue) session.eventQueueNotify = queueNotify;
       });
       pending ??= messages.next();
       const winner = await Promise.race([queueWoke, pending]);
@@ -291,9 +294,9 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
     // This turn's resume anchor for the next one, or undefined when the turn
     // produced none (empty/error) so the next resume stays plain and keeps this
     // turn's user message in context.
-    session.lastAssistantUuid = lastMainAssistantUuid;
-    // Never leave a resolver behind that a later turn's push would call.
-    session.eventQueueNotify = undefined;
+    if (session.eventQueue === eventQueue) session.lastAssistantUuid = lastMainAssistantUuid;
+    // Clear only this consumer's callback; a successor may already be waiting.
+    if (session.eventQueueNotify === queueNotify) session.eventQueueNotify = undefined;
   }
 
   // No `wasStopped()` conjunct here, unlike the in-loop arm above and unlike
