@@ -60,7 +60,7 @@ const CROSS_SITE = { Origin: 'https://evil.example' };
 /** CORS refuses a page from another site before any route's own bar runs. */
 const CORS_REFUSED = problemBody('origin_not_allowed', {
   detail:
-    'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+    'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
 });
 /** A DELETE's JSON body, framed: Node sends a DELETE body only with a length. */
 const deleteBody = (body: object) => ({

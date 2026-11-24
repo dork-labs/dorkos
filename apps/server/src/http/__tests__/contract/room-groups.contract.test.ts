@@ -887,14 +887,18 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       415,
-      { error: 'File type not allowed: text/html', code: 'ATTACHMENT_TYPE_NOT_ALLOWED' }
+      problemBody('unsupported_media_type', {
+        detail: 'That type of file isn’t allowed in uploads.',
+      })
     );
     expectAnswer(
       await call(server, 'POST', rooms('/attachments'), 'nothing', {
         'content-type': 'multipart/form-data',
       }),
-      415,
-      { error: 'Multipart: Boundary not found', code: 'ATTACHMENT_TYPE_NOT_ALLOWED' }
+      400,
+      problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      })
     );
     await setup(server, 'PATCH', '/api/config', {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },

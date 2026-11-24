@@ -681,7 +681,7 @@ describe('POST /api/extensions/:id/approve', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.detail).toBe(
-        'This instance does not answer to pages from "null". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
+        'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
       );
       expect(manager.approveToRun).not.toHaveBeenCalled();
       expect(state.extensions.approvedToRun).toEqual([]);

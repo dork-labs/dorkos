@@ -119,7 +119,7 @@ contractSuite(
         status: 403,
         headers: { 'set-cookie': null, 'ratelimit-limit': null },
         body: problemBody('origin_not_allowed', {
-          detail: `This instance does not answer to pages from "https://${PROXIED_HOST}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
+          detail: `This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
         }),
       },
     },
@@ -187,7 +187,7 @@ contractSuite(
         status: 403,
         body: problemBody('origin_not_allowed', {
           detail:
-            'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+            'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
         }),
       },
     },

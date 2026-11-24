@@ -28,11 +28,12 @@ import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-s
 import { configManager } from '../services/core/config-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
+import { parseUploads, type UploadedFile } from '../http/uploads.js';
 import { discardStream, errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { roomRoute } from './room-route.js';
 import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
+import { UploadTypeRefusedError } from '../services/core/upload-handler.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -91,17 +92,15 @@ router.post('/:id/attachments', (c) =>
           uploadConfig.allowedTypes.includes('*/*') ||
           uploadConfig.allowedTypes.includes(file.mimetype)
             ? undefined
-            : new Error(`File type not allowed: ${file.mimetype}`),
+            : new UploadTypeRefusedError(file.mimetype),
       });
     } catch (err) {
-      if (err instanceof UploadLimitError) {
-        const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
-        return uploadRefusalProblem(c, err, {
-          tooLargeDetail: `File too large (max ${megabytes}MB)`,
-        });
-      }
-      // Every other refusal: the type filter's, or a body the parser could not read.
-      return c.json(errorBody((err as Error).message, 'ATTACHMENT_TYPE_NOT_ALLOWED'), 415);
+      // A refused type is 415; anything the parser or storage threw gets a fixed
+      // sentence, never its own words (they can carry a path).
+      const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
+      return uploadRefusalProblem(c, err, {
+        tooLargeDetail: `File too large (max ${megabytes}MB)`,
+      });
     }
 
     if (files.length === 0) {

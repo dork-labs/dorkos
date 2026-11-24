@@ -97,10 +97,11 @@ const REMOTE_AUTH_REQUIRED = {
     'In DorkOS, open Settings → Login & security, turn on "Ask for a password on this computer too", ' +
     'then create a key under API keys. Send it as "Authorization: Bearer <key>".',
 };
-const NOT_ALLOWED_BY_CORS = (origin: string) =>
-  problemBody('origin_not_allowed', {
-    detail: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
-  });
+/** The CORS refusal: one fixed sentence, whatever origin the page sent. */
+const NOT_ALLOWED_BY_CORS = problemBody('origin_not_allowed', {
+  detail:
+    'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+});
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const TOO_LARGE = problemBody('request_too_large', {
   detail: 'That is too large to send in one request.',
@@ -412,7 +413,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     expect: {
       status: 403,
       headers: { ...NOT_COUNTED, 'access-control-allow-origin': null },
-      body: NOT_ALLOWED_BY_CORS('https://evil.example'),
+      body: NOT_ALLOWED_BY_CORS,
     },
   },
   {
@@ -421,7 +422,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     path: '/mcp',
     headers: { ...MCP_CLIENT, origin: 'null' },
     body: rpc('ping'),
-    expect: { status: 403, body: NOT_ALLOWED_BY_CORS('null') },
+    expect: { status: 403, body: NOT_ALLOWED_BY_CORS },
   },
   {
     // A rebound page names a host that is not this computer, so it is another

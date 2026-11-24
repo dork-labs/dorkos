@@ -3,6 +3,7 @@ covers:
   - 'feat(api): the shared error answers are problem documents, and every client reads them (DOR-4979)'
   - 'fix(api): problem copy says something useful, and schema failures get their own code (DOR-4979)'
   - "fix(api): the chain never puts an exception's words on the wire (DOR-4979)"
+  - 'fix(api): room uploads and refused origins answer in fixed words (DOR-4979)'
 ---
 
 ### Changed
@@ -13,6 +14,7 @@ covers:
   - A body in an encoding or character set DorkOS can't read is 415, not 500.
   - A file over the upload limit on `/api/uploads` is 413, not 400.
   - A file type the upload settings don't allow on `/api/uploads` is 415, not 400.
+  - A room attachment upload DorkOS can't read is 400, not 415.
   - A path with a null character in it is 400, not 403.
 
 ### Note for people upgrading

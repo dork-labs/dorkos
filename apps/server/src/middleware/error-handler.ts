@@ -1,7 +1,7 @@
 import { BoundaryError } from '../lib/boundary.js';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
-import { OriginRefusedError, originRefusedSentence } from '../http/cors-policy.js';
+import { ORIGIN_REFUSED_SENTENCE, OriginRefusedError } from '../http/cors-policy.js';
 import {
   AmbiguousSessionError,
   SessionDiscoveryUnavailableError,
@@ -91,7 +91,7 @@ export function errorReply(err: Error): ErrorReply {
   }
 
   if (err instanceof OriginRefusedError) {
-    return reply('origin_not_allowed', { detail: originRefusedSentence(err.origin) });
+    return reply('origin_not_allowed', { detail: ORIGIN_REFUSED_SENTENCE });
   }
 
   if (err instanceof SessionDiscoveryUnavailableError) {
