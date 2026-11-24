@@ -15,6 +15,7 @@ vi.mock('@/env', () => ({
 vi.mock('posthog-js', () => ({
   default: {
     capture: vi.fn(),
+    captureException: vi.fn(),
     alias: vi.fn(),
     get_property: vi.fn(() => undefined),
     identify: vi.fn(),
@@ -34,10 +35,14 @@ import {
   optOutCapturing,
   prepareInstallCopy,
   resetIdentity,
+  resultCountBucket,
+  trackClientError,
+  trackMarketplaceBrowse,
 } from '../analytics';
 
 const mockPosthog = posthog as unknown as {
   capture: ReturnType<typeof vi.fn>;
+  captureException: ReturnType<typeof vi.fn>;
   alias: ReturnType<typeof vi.fn>;
   get_property: ReturnType<typeof vi.fn>;
   identify: ReturnType<typeof vi.fn>;
@@ -182,5 +187,73 @@ describe('prepareInstallCopy (DOR-2862)', () => {
     expect(copy.text).toBe('npm install -g dorkos');
     copy.onCopied();
     expect(mockPosthog.capture).toHaveBeenCalledWith('hero_install_copy', { method: 'npm' });
+  });
+});
+
+describe('trackMarketplaceBrowse (DOR-4992)', () => {
+  it('sends the checked filters, whether there was a search, and a result bucket', () => {
+    trackMarketplaceBrowse({ type: 'agent', category: 'security', hasQuery: true, resultCount: 3 });
+
+    expect(mockPosthog.capture).toHaveBeenCalledWith('marketplace_browse', {
+      type: 'agent',
+      category: 'security',
+      has_query: true,
+      result_count: '1-5',
+    });
+  });
+
+  it('sends unavailable when the catalog could not load', () => {
+    trackMarketplaceBrowse({ hasQuery: false, resultCount: null });
+
+    expect(mockPosthog.capture).toHaveBeenCalledWith('marketplace_browse', {
+      type: undefined,
+      category: undefined,
+      has_query: false,
+      result_count: 'unavailable',
+    });
+  });
+
+  it.each([
+    [0, '0'],
+    [1, '1-5'],
+    [5, '1-5'],
+    [6, '6-20'],
+    [20, '6-20'],
+    [21, '21+'],
+    [500, '21+'],
+    [null, 'unavailable'],
+  ] as const)('buckets %s results as %s', (count, bucket) => {
+    expect(resultCountBucket(count)).toBe(bucket);
+  });
+});
+
+describe('trackClientError (DOR-4992)', () => {
+  const SECRET = 'invoice for acme corp';
+
+  function boundaryError(): Error & { digest?: string } {
+    const error: Error & { digest?: string } = new TypeError(SECRET);
+    error.stack = `TypeError: ${SECRET}\n    at Grid (https://dorkos.ai/_next/static/chunks/g.js:9:1)`;
+    error.digest = '12345';
+    return error;
+  }
+
+  it.each([
+    ['route', 'client_error'],
+    ['global', 'global_error'],
+  ] as const)('a %s error sends its signature and digest, not its message', (scope, event) => {
+    trackClientError(boundaryError(), scope);
+
+    expect(mockPosthog.capture).toHaveBeenCalledWith(event, {
+      error_signature: 'TypeError at Grid (https://dorkos.ai/_next/static/chunks/g.js:9:1)',
+      error_digest: '12345',
+    });
+    expect(JSON.stringify(mockPosthog.capture.mock.calls)).not.toContain(SECRET);
+  });
+
+  it('still hands the error itself to PostHog Error Tracking', () => {
+    const error = boundaryError();
+    trackClientError(error, 'route');
+
+    expect(mockPosthog.captureException).toHaveBeenCalledWith(error);
   });
 });

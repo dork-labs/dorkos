@@ -131,9 +131,9 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 - **`main` merges through a merge queue, with no human approval.** Don't update a branch to satisfy a gate; being behind blocks nothing.
 - **Required checks** come from `ci/required-checks.json`. Each must report on both `pull_request` and `merge_group`, with no path filter that can skip it.
 - **Before opening a PR,** run `pnpm verify:preopen` on your final head with a clean tree. A PR touching `.github/` needs a full `pnpm verify`.
-- **Arm only through `arm.sh`,** not `gh pr merge` or an admin merge (`.claude/hooks/merge-guard.mjs` refuses that). It runs every gate and stamps the head. Use the `hold` label to keep a green PR from arming.
-- **Only Security's `label-pr.sh` adds or removes `security-*` labels.** `arm.sh` refuses a hand-added one. Ask Security if you think a PR needs one.
-- **A red is not a reason to add load.** After a first queue ejection, read the failing job; once it's plainly not yours, re-arm once. The same check failing again at the same head is real: read the log and push a fix. Don't push empty commits.
+- **Open PRs only with `scripts/open-pr.sh`.** It turns on auto-merge, so a PR merges once every required check is green, including `pr-gates` (Security's sign-off: the cloud review's Security lens or Security's label). Never merge directly or with admin rights (`.claude/hooks/merge-guard.mjs` refuses that). Use the `hold` label, with a `hold:` comment, to keep a green PR from merging.
+- **Only Security's `label-pr.sh` adds or removes `security-*` labels.** Ask Security if you think a PR needs one.
+- **A red is not a reason to add load.** After a first queue ejection, read the failing job; once it's plainly not yours, re-queue it once with `gh pr merge --auto <n>`. The same check failing again at the same head is real: read the log and push a fix. Don't push empty commits.
 - **Heavy local runs** (full verify, full suites, builds, installs, Playwright, Docker) wait in the load gate: `pnpm heavy <command>` or `bash scripts/heavy-run-lock.sh`. Exit 75 means try again later. Start nothing heavy while free disk is under the floor in `contributing/ci.md`.
 - **Don't print full process command lines** (`ps -ww`, `ps aux`, `pgrep -a`); they can show tokens.
 - **A throwaway test server gets a throwaway home:** a temp `DORK_HOME`, `DORKOS_TEST_RUNTIME=true`, and `HOME` and `CLAUDE_CONFIG_DIR` pointed inside the temp folder.

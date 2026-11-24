@@ -2,7 +2,7 @@
 id: 261102-154420
 title: merge-tail arms only a PR into main whose security gate passed at its head
 kind: hygiene
-status: proposed
+status: reverted
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -16,3 +16,5 @@ field-changes: []
 It also requires the `security-gate` check to pass at the head, by name. That job is the one place Security's label rule lives (`security-reviewed` added after the last push, on a security path), and its ruleset is not enforced yet, so nothing else stopped the queue merging a PR whose label predates its head. No row arms nothing.
 
 No new call, step or check. Every new refusal is pinned in both directions by `scripts/test-should-arm-automerge.sh`, and the old gate fails 10 of them. Revert if merge-tail stops arming green PRs into main.
+
+Retired 2026-11-24 with the workflow it changed (DOR-5124, ledger 261124-010000): PRs auto-merge at open, so nothing arms.

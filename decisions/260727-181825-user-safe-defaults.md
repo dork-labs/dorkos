@@ -18,6 +18,8 @@ _Relationship to the Tier 1 opt-out model_ below.
 
 Amended by [261006-225605](261006-225605-agents-are-trusted-by-default-outsiders-and-third-party-code-are-not.md) (agents are trusted by default): Rule 1's "whether capability is granted" no longer covers capability granted to our own agents. Rules 1-4 still bind data leaving the machine, the exposure perimeter, third-party code and outsider-origin turns; rule 2 binds everywhere.
 
+**Amendment proposed by** [261122-133041](261122-133041-telemetry-defaults-follow-the-build-channel.md) (proposed, awaiting Security review). Once accepted, rule 1 no longer decides whether `install`, `heartbeat`, `usage` and the account link send on a stamped official release build outside the gated regions (EU, EEA, UK, Switzerland, or an unknown region): a shown notice or card stands in for an answer there. Rule 1 still binds every other value, and rules 2-4 still bind.
+
 ## Context
 
 A config wipe was observed reverting an explicit telemetry opt-out:

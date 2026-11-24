@@ -10,7 +10,6 @@ gates:
   - wf.changelog-fragment-check.no-fragment-under-skip-label
   - wf.operating-skills-version-check.version-outranks-base
   - wf.docs-openapi-check.openapi-fresh
-  - wf.merge-tail.arm
   - wf.dependabot-lockfile-repair.repair-lockfile
   - wf.scripts-test.fixtures
   - wf.scripts-test.harness
@@ -106,3 +105,5 @@ Revert the steps if the census proves slower than a few seconds or reds PRs on c
 revert the merge guard if it refuses `gh pr merge --auto`.
 
 Later edit (DOR-2728, 2026-10-05): `wf.desktop-release.verify-macos`, `verify-windows` and `publish-release` were dropped from `gates:` above because those jobs became steps of `build-macos` and `build-windows`; the timeouts this entry set for them retired with them. `ci/ledger/*-desktop-release-one-runner-per-platform.md` records that change.
+
+`wf.merge-tail.arm` left this list on 2026-11-24, when merge-tail.yml was deleted (DOR-5124, ledger 261124-010000).

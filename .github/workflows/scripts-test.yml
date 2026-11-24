@@ -12,12 +12,6 @@ name: scripts-test
 # review-gh.sh is the reviewer's only GitHub access (DOR-464), where a wrong path
 # or a loosened argument check is a silent hole rather than a red check.
 #
-# should-arm-automerge.sh joins them for the same reason at higher stakes: it is
-# the gate merge-tail.yml consults before arming auto-merge, so a refusal that
-# quietly stops matching does not crash, it lands unreviewed code on main. Its
-# fixtures bend one field of a known-good PR at a time, so a failure names the
-# field rather than just going red.
-#
 # claude-code-review.yml is in the path filter because the suite asserts against
 # it: the allow-list entry, the materialized helper path and the reviewer prompt
 # all name one absolute path, and drift between them denies every tool call while
@@ -432,15 +426,13 @@ jobs:
       - name: Migration-currency assertion fixtures
         run: bash scripts/test-assert-migrations-current.sh
 
-      - name: Auto-merge arming-gate fixtures
+      # The decision queue-repeat-guard.yml runs (`--repeat-failure`), and the
+      # payload builder that refuses a GraphQL error body before the gate sees it
+      # (DOR-2271). merge-tail, their first caller, retired (DOR-5124).
+      - name: Queue-gate decision fixtures
         run: bash scripts/test-should-arm-automerge.sh
 
-      # The gate is only as honest as its payload, and the payload is built
-      # from GitHub's answers. A GraphQL error comes back as a body, not as
-      # silence, and read loosely it says "not queued, no open threads"
-      # (DOR-2271). These fixtures pin every answer that must be refused
-      # before the gate ever sees it.
-      - name: Auto-merge arming-gate input fixtures
+      - name: Queue-gate input fixtures
         run: bash scripts/test-should-arm-automerge-input.sh
 
       # The same rule at the queue's door (queue-repeat-guard.yml), where it

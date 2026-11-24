@@ -4,7 +4,8 @@
 # WHAT THIS COVERS: weekly patch+minor bumps for the whole pnpm workspace,
 # grouped into ONE pull request, and a monthly grouped bump of GitHub Actions
 # versions. Each PR rides the normal pipeline (cheap PR checks -> merge queue
-# runs the full suites) and merge-tail arms it once green like any other PR.
+# runs the full suites). It needs Security's sign-off for pr-gates (Dependabot
+# PRs get no automatic review), then a maintainer turns on auto-merge.
 #
 # WHAT THIS DELIBERATELY DOES NOT COVER:
 #
