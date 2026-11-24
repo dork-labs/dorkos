@@ -207,6 +207,7 @@ describe('error-shape', () => {
       op({ responses: { '428': { content: { 'application/json': { schema } } } } });
     const d = doc({
       '/api/shared': { post: held({ $ref: '#/components/schemas/StepUpRequired' }) },
+      '/api/passkey': { post: held({ $ref: '#/components/schemas/PasskeyCheckRequired' }) },
       '/api/inline': { post: held(stepUp) },
     });
     expect(errorShapeItems(d)).toEqual({ inline: ['POST /api/inline 428'] });
