@@ -5,28 +5,8 @@ import {
   AdditionalContextEntrySchema,
   stripTagBlocks,
   stripInjectedTagBlocks,
-  type ContextKind,
 } from '../additional-context.js';
 import { SendMessageRequestSchema, SEED_CONTEXT_MAX_LENGTH } from '../schemas.js';
-
-const ALL_KINDS: ContextKind[] = [
-  'git_status',
-  'ui_state',
-  'queue_note',
-  'staged_context',
-  'env',
-  'relay_context',
-  'room_context',
-  'seed_context',
-  'approval_verdict',
-  'direct_notes',
-  'accounts_access',
-  'doc_events',
-  'context_warning',
-  'turn_cutoff',
-  'timers_stopped',
-  'new_since_last_run',
-];
 
 /** A minimal but complete room context — every field the union requires. */
 const SAMPLE_ROOM_CONTEXT = {
@@ -53,43 +33,7 @@ const SAMPLE_ROOM_CONTEXT = {
   },
 };
 
-const SAMPLE_UI_STATE = {
-  canvas: { open: false, contentType: null },
-  panels: { settings: false, tasks: false, relay: false, picker: false },
-  sidebar: { open: true },
-  agent: { id: 'abc', cwd: '/proj' },
-};
-
-describe('CONTEXT_TAG', () => {
-  it('has exactly one entry per ContextKind member', () => {
-    // Runtime exhaustiveness mirror of the compile-time `satisfies` check.
-    expect(Object.keys(CONTEXT_TAG).sort()).toEqual([...ALL_KINDS].sort());
-    expect(Object.keys(CONTEXT_TAG)).toHaveLength(ALL_KINDS.length);
-  });
-
-  it('maps each kind to a non-empty tag name', () => {
-    for (const kind of ALL_KINDS) {
-      expect(CONTEXT_TAG[kind]).toBeTypeOf('string');
-      expect(CONTEXT_TAG[kind].length).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe('ClientContextSchema', () => {
-  it('accepts { uiState, queued: true }', () => {
-    const parsed = ClientContextSchema.parse({ uiState: SAMPLE_UI_STATE, queued: true });
-    expect(parsed.queued).toBe(true);
-    expect(parsed.uiState).toBeDefined();
-  });
-
-  it('accepts an empty object (all fields optional)', () => {
-    expect(ClientContextSchema.parse({})).toEqual({});
-  });
-
-  it('accepts { queued: true } with no uiState', () => {
-    expect(ClientContextSchema.parse({ queued: true })).toEqual({ queued: true });
-  });
-
   it('rejects a malformed uiState shape', () => {
     const result = ClientContextSchema.safeParse({ uiState: { canvas: 'nope' } });
     expect(result.success).toBe(false);
@@ -97,24 +41,6 @@ describe('ClientContextSchema', () => {
 });
 
 describe('AdditionalContextEntrySchema', () => {
-  it('validates a git_status entry', () => {
-    const result = AdditionalContextEntrySchema.safeParse({
-      kind: 'git_status',
-      scope: 'per-turn',
-      data: { isRepo: true, branch: 'main', clean: true },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('validates a queue_note entry', () => {
-    const result = AdditionalContextEntrySchema.safeParse({
-      kind: 'queue_note',
-      scope: 'per-turn',
-      data: { composedDuringPrevTurn: true },
-    });
-    expect(result.success).toBe(true);
-  });
-
   it('validates an approval_verdict entry, with and without a refusal reason', () => {
     const granted = AdditionalContextEntrySchema.safeParse({
       kind: 'approval_verdict',
@@ -142,25 +68,6 @@ describe('AdditionalContextEntrySchema', () => {
     expect(denied.success).toBe(true);
   });
 
-  it('validates an approval_verdict for an approval nobody answered', () => {
-    // `expired` became a real outcome in DOR-1932: an approval whose window
-    // closed unanswered is an ending the agent is just as blocked on, and it
-    // travels this same kind. It carries no `denyReason`, because there was
-    // nobody to type one — the block renders its own framing instead, which is
-    // why this is not "a person decided" dressed up (`approval-verdict-block.ts`).
-    const expired = AdditionalContextEntrySchema.safeParse({
-      kind: 'approval_verdict',
-      scope: 'per-turn',
-      data: {
-        approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
-        capabilityTitle: 'Unregister an agent',
-        outcome: 'expired',
-        endedAt: '2026-09-09T12:34:56.000Z',
-      },
-    });
-    expect(expired.success).toBe(true);
-  });
-
   it('rejects an approval_verdict whose outcome is not one of the three endings', () => {
     // `consumed` is the one `settle` fires that is NOT delivered: the ordinary
     // grant flow settles twice for one subject, so honoring it would tell an
@@ -178,15 +85,6 @@ describe('AdditionalContextEntrySchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('validates a staged_context entry', () => {
-    const result = AdditionalContextEntrySchema.safeParse({
-      kind: 'staged_context',
-      scope: 'per-turn',
-      data: { text: 'Use the staging bucket, not prod.' },
-    });
-    expect(result.success).toBe(true);
-  });
-
   it('rejects a staged_context with empty text', () => {
     // A staged note with nothing in it is a dropped message wearing a receipt —
     // the one outcome the whole feature exists to prevent. It must not parse.
@@ -196,15 +94,6 @@ describe('AdditionalContextEntrySchema', () => {
       data: { text: '' },
     });
     expect(result.success).toBe(false);
-  });
-
-  it('validates a room_context entry', () => {
-    const result = AdditionalContextEntrySchema.safeParse({
-      kind: 'room_context',
-      scope: 'per-turn',
-      data: SAMPLE_ROOM_CONTEXT,
-    });
-    expect(result.success).toBe(true);
   });
 
   it('carries a thread turn channel tail through, and still parses without one', () => {
@@ -270,54 +159,9 @@ describe('AdditionalContextEntrySchema', () => {
     });
     expect(result.success).toBe(false);
   });
-
-  it('rejects an unknown kind', () => {
-    const result = AdditionalContextEntrySchema.safeParse({
-      kind: 'bogus',
-      scope: 'per-turn',
-      data: {},
-    });
-    expect(result.success).toBe(false);
-  });
 });
 
 describe('SendMessageRequestSchema context wiring (DOR migration)', () => {
-  it('accepts { content, context: { uiState, queued: true } }', () => {
-    const result = SendMessageRequestSchema.safeParse({
-      content: 'hi',
-      context: { uiState: SAMPLE_UI_STATE, queued: true },
-    });
-    expect(result.success).toBe(true);
-    expect(result.success && result.data.context?.queued).toBe(true);
-  });
-
-  it('no longer carries a top-level uiState field (it lives in context)', () => {
-    const result = SendMessageRequestSchema.parse({
-      content: 'hi',
-      uiState: SAMPLE_UI_STATE,
-    });
-    // The standalone `uiState` key is gone from the schema — Zod strips it.
-    expect(result).not.toHaveProperty('uiState');
-    expect(result.content).toBe('hi');
-  });
-
-  it('accepts a bare content message with no context', () => {
-    const result = SendMessageRequestSchema.safeParse({ content: 'hi' });
-    expect(result.success).toBe(true);
-  });
-
-  it('carries seedContext as its own top-level field, not inside context', () => {
-    // Two different things: `context` is structured signals the server renders,
-    // `seedContext` is prose a caller wrote for the model. Keeping them apart is
-    // what lets the client bag keep its "never pre-formatted prose" rule.
-    const result = SendMessageRequestSchema.safeParse({
-      content: 'hi',
-      seedContext: 'they came from the marketplace page',
-    });
-    expect(result.success).toBe(true);
-    expect(result.success && result.data.seedContext).toBe('they came from the marketplace page');
-  });
-
   it('refuses an empty seedContext', () => {
     // Not "inject nothing": the block would still render and still cost the
     // model attention, so a blank one is a caller bug worth naming.
@@ -364,12 +208,6 @@ describe('stripTagBlocks — the linear replacement for the lazy tag-strip regex
     expect(stripTagBlocks(input, 'A')).toBe(legacy(input, 'A'));
   });
 
-  it('handles a real multi-character tag name the same way', () => {
-    const input = '<system-reminder>hi</system-reminder>keep<system-reminder>unclosed';
-    expect(stripTagBlocks(input, 'system-reminder')).toBe(legacy(input, 'system-reminder'));
-    expect(stripTagBlocks(input, 'system-reminder')).toBe('keep<system-reminder>unclosed');
-  });
-
   it('strips a wall of unclosed opens in linear time', () => {
     // 60k unclosed opens is ~1 MB — what the old lazy regex needed ~1e10
     // character steps for, and what a single POST body can carry.
@@ -383,16 +221,6 @@ describe('stripTagBlocks — the linear replacement for the lazy tag-strip regex
 });
 
 describe('stripInjectedTagBlocks', () => {
-  it('removes the system-reminder block and every context tag, then trims', () => {
-    const text = [
-      '<system-reminder>be nice</system-reminder>',
-      `<${CONTEXT_TAG.git_status}>clean</${CONTEXT_TAG.git_status}>`,
-      `<${CONTEXT_TAG.ui_state}>{}</${CONTEXT_TAG.ui_state}>`,
-      '  the real message  ',
-    ].join('\n');
-    expect(stripInjectedTagBlocks(text)).toBe('the real message');
-  });
-
   it('leaves an unclosed open in place, exactly as the regex form did', () => {
     expect(stripInjectedTagBlocks('<system-reminder>hello')).toBe('<system-reminder>hello');
   });

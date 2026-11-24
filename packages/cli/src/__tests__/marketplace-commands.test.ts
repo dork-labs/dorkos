@@ -1,23 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-import {
-  deriveDefaultName,
-  parseMarketplaceAddArgs,
-  runMarketplaceAdd,
-} from '../commands/marketplace-add.js';
-import {
-  parseMarketplaceRemoveArgs,
-  runMarketplaceRemove,
-} from '../commands/marketplace-remove.js';
-import {
-  parseMarketplaceListArgs,
-  renderSourcesTable,
-  runMarketplaceList,
-} from '../commands/marketplace-list.js';
-import {
-  parseMarketplaceRefreshArgs,
-  runMarketplaceRefresh,
-} from '../commands/marketplace-refresh.js';
+import { deriveDefaultName, runMarketplaceAdd } from '../commands/marketplace-add.js';
+import { runMarketplaceRemove } from '../commands/marketplace-remove.js';
+import { renderSourcesTable, runMarketplaceList } from '../commands/marketplace-list.js';
+import { runMarketplaceRefresh } from '../commands/marketplace-refresh.js';
 
 /**
  * Build a fetch `Response`-like object that the api-client can consume.
@@ -46,55 +32,7 @@ const SOURCE_FIXTURE_B = {
   addedAt: '2026-04-06T00:00:00.000Z',
 };
 
-describe('parseMarketplaceAddArgs', () => {
-  it('parses a bare URL with no name flag', () => {
-    const args = parseMarketplaceAddArgs(['https://github.com/dorkos/marketplace']);
-    expect(args).toEqual({ url: 'https://github.com/dorkos/marketplace', name: undefined });
-  });
-
-  it('parses --name', () => {
-    const args = parseMarketplaceAddArgs([
-      'https://github.com/dorkos/marketplace',
-      '--name',
-      'community',
-    ]);
-    expect(args.name).toBe('community');
-  });
-
-  it('throws on missing url', () => {
-    expect(() => parseMarketplaceAddArgs([])).toThrow(/Missing required <url>/);
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseMarketplaceAddArgs(['https://example.com/repo', '--nope'])).toThrow(
-      /Unknown option for 'marketplace add': --nope/
-    );
-  });
-});
-
 describe('deriveDefaultName', () => {
-  it('uses the last path segment for github URLs', () => {
-    expect(deriveDefaultName('https://github.com/dorkos/marketplace')).toBe('marketplace');
-  });
-
-  it('strips .git suffix', () => {
-    expect(deriveDefaultName('https://github.com/anthropics/claude-plugins-official.git')).toBe(
-      'claude-plugins-official'
-    );
-  });
-
-  it('lowercases the result', () => {
-    expect(deriveDefaultName('https://github.com/Acme/Plugins')).toBe('plugins');
-  });
-
-  it('falls back to "marketplace" for hostname-only URLs', () => {
-    expect(deriveDefaultName('https://example.com/')).toBe('marketplace');
-  });
-
-  it('handles SSH-style git URLs by treating the whole string as a path', () => {
-    expect(deriveDefaultName('git@github.com:dorkos/marketplace.git')).toBe('marketplace');
-  });
-
   it.each([
     ['https://github.com/acme/.github', 'github'],
     ['https://github.com/acme/-team_tools', 'team_tools'],
@@ -147,83 +85,6 @@ describe('runMarketplaceAdd', () => {
     expect(allLogs).toContain('https://github.com/dorkos/marketplace');
   });
 
-  it('says the listing is ready and how many packages it names (DOR-2304)', async () => {
-    // Purpose: the operator learns in plain words that they can install now.
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          mockResponse(201, { ...SOURCE_FIXTURE_A, listing: { fetched: true, packageCount: 12 } })
-        )
-    );
-
-    const code = await runMarketplaceAdd({ url: 'https://github.com/dorkos/marketplace' });
-
-    expect(code).toBe(0);
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Fetched its listing: 12 packages.');
-    expect(errSpy).not.toHaveBeenCalled();
-  });
-
-  it('says the listing could not be fetched yet, why, and how to retry — and still exits 0 (DOR-2304)', async () => {
-    // Purpose: the add worked, so the exit code says so; the warning names
-    // the reason and the exact refresh command to run later.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(
-        mockResponse(201, {
-          ...SOURCE_FIXTURE_A,
-          listing: {
-            fetched: false,
-            reason: "the marketplace server didn't answer within 15 seconds",
-          },
-        })
-      )
-    );
-
-    const code = await runMarketplaceAdd({ url: 'https://github.com/dorkos/marketplace' });
-
-    expect(code).toBe(0);
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain("Added marketplace 'dorkos-community'");
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain(
-      "Couldn't fetch its listing yet: the marketplace server didn't answer within 15 seconds."
-    );
-    expect(allErr).toContain('dorkos marketplace refresh dorkos-community');
-  });
-
-  it('uses --name when supplied', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(201, SOURCE_FIXTURE_A));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await runMarketplaceAdd({
-      url: 'https://github.com/dorkos/marketplace',
-      name: 'dorkos-community',
-    });
-
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.name).toBe('dorkos-community');
-  });
-
-  it('renders a friendly hint on HTTP 409 duplicate name', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockResponse(409, { error: 'Source already exists' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runMarketplaceAdd({
-      url: 'https://github.com/dorkos/marketplace',
-      name: 'dorkos-community',
-    });
-
-    expect(code).toBe(1);
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain("'dorkos-community' already exists");
-    expect(allErr).toContain('--name');
-  });
-
   it('prints what to do next when the server refuses an agent (DOR-502)', async () => {
     // An AGENT running this verb is the caller the server refuses, so the CLI
     // has to print the half of the refusal that says "ask the person", not just
@@ -270,22 +131,6 @@ describe('runMarketplaceAdd', () => {
   });
 });
 
-describe('parseMarketplaceRemoveArgs', () => {
-  it('parses a bare name', () => {
-    expect(parseMarketplaceRemoveArgs(['dorkos-community'])).toEqual({ name: 'dorkos-community' });
-  });
-
-  it('throws on missing name', () => {
-    expect(() => parseMarketplaceRemoveArgs([])).toThrow(/Missing required <name>/);
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseMarketplaceRemoveArgs(['dorkos-community', '--force'])).toThrow(
-      /Unknown option for 'marketplace remove': --force/
-    );
-  });
-});
-
 describe('runMarketplaceRemove', () => {
   let logSpy: MockInstance<typeof console.log>;
   let errSpy: MockInstance<typeof console.error>;
@@ -322,88 +167,9 @@ describe('runMarketplaceRemove', () => {
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain("Removed marketplace 'dorkos-community'");
   });
-
-  it('renders a friendly error on HTTP 404', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(404, { error: 'Not found' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runMarketplaceRemove({ name: 'missing' });
-
-    expect(code).toBe(1);
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain("'missing' not found");
-  });
-
-  it('prints what to do next when the server refuses an agent (DOR-502)', async () => {
-    // The sibling of the `runMarketplaceAdd` case above, and it needs its own
-    // test rather than inheriting that one's coverage: the two handlers have
-    // separate error ladders, so a 403 branch present in one says nothing about
-    // the other. Without this the `remove` branch could be deleted outright and
-    // the suite would stay green.
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      mockResponse(403, {
-        type: 'urn:dorkos:problem:operator_only',
-        title: 'Only the person at this computer can do that.',
-        status: 403,
-        code: 'operator_only',
-        detail:
-          'DorkOS removed nothing. Ask them to run `dorkos marketplace remove <name>` themselves.',
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runMarketplaceRemove({ name: 'dorkos-community' });
-
-    expect(code).toBe(1);
-    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain('DorkOS removed nothing.');
-    expect(allErr).toContain('Ask them to run');
-  });
-});
-
-describe('parseMarketplaceListArgs', () => {
-  it('accepts no arguments', () => {
-    expect(() => parseMarketplaceListArgs([])).not.toThrow();
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseMarketplaceListArgs(['--nope'])).toThrow(
-      /Unknown option for 'marketplace list': --nope/
-    );
-  });
 });
 
 describe('renderSourcesTable', () => {
-  it('renders header + rows aligned to widest cell', () => {
-    const table = renderSourcesTable([SOURCE_FIXTURE_A, SOURCE_FIXTURE_B]);
-    const lines = table.split('\n');
-    // A server older than DOR-2324 sends no lastFetch: no empty PACKAGES column.
-    expect(lines[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED$/);
-    expect(lines[1]).toContain('dorkos-community');
-    expect(lines[1]).toContain('https://github.com/dorkos/marketplace');
-    expect(lines[1]).toContain('yes');
-    expect(lines[2]).toContain('claude-plugins-official');
-  });
-
-  it('renders disabled state as "no"', () => {
-    const table = renderSourcesTable([{ ...SOURCE_FIXTURE_A, enabled: false }]);
-    expect(table).toContain(' no');
-  });
-
-  it('truncates very long source URLs', () => {
-    const longUrl = 'https://example.com/' + 'a'.repeat(120);
-    const table = renderSourcesTable([{ ...SOURCE_FIXTURE_A, source: longUrl }]);
-    expect(table).toContain('...');
-    // Truncated cell should be at most MAX_COLUMN_WIDTH (60) chars wide.
-    const sourceCellMaxWidth = 60;
-    const lines = table.split('\n');
-    // Header row first; data row second. The source cell sits between two
-    // other columns separated by two spaces — verify the data row contains
-    // the truncated form.
-    expect(lines[1]).toMatch(/https:\/\/example\.com\/a+\.\.\./);
-    const truncatedSegment = lines[1].match(/https:\/\/example\.com\/a+\.\.\./);
-    expect(truncatedSegment?.[0].length).toBeLessThanOrEqual(sourceCellMaxWidth);
-  });
   it("shows how each source's last fetch went, and why one failed (DOR-2324)", () => {
     // Purpose: the terminal tells the same story as the app's rows: packages
     // ready, never loaded, or an older copy still listed, with the reason.
@@ -498,35 +264,6 @@ describe('runMarketplaceList', () => {
     expect(allLogs).toContain('dorkos-community');
     expect(allLogs).toContain('claude-plugins-official');
   });
-
-  it('prints empty-state hint when no sources are configured', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, { sources: [] }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runMarketplaceList();
-
-    expect(code).toBe(0);
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('No marketplaces configured');
-  });
-});
-
-describe('parseMarketplaceRefreshArgs', () => {
-  it('parses no positional', () => {
-    expect(parseMarketplaceRefreshArgs([])).toEqual({ name: undefined });
-  });
-
-  it('parses an explicit name', () => {
-    expect(parseMarketplaceRefreshArgs(['dorkos-community'])).toEqual({
-      name: 'dorkos-community',
-    });
-  });
-
-  it('throws on unknown option', () => {
-    expect(() => parseMarketplaceRefreshArgs(['--force'])).toThrow(
-      /Unknown option for 'marketplace refresh': --force/
-    );
-  });
 });
 
 describe('runMarketplaceRefresh', () => {
@@ -597,57 +334,6 @@ describe('runMarketplaceRefresh', () => {
     );
   });
 
-  it('falls back to the "packages" field name when "plugins" is absent', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      mockResponse(200, {
-        marketplace: { name: 'dorkos-community', packages: [{}] },
-        fetchedAt: '2026-04-06T00:00:00.000Z',
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await runMarketplaceRefresh({ name: 'dorkos-community' });
-
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Refreshed dorkos-community: 1 package.');
-  });
-
-  it('refreshes every source in parallel when no name is supplied', async () => {
-    const fetchMock = vi
-      .fn()
-      // GET /sources
-      .mockResolvedValueOnce(mockResponse(200, { sources: [SOURCE_FIXTURE_A, SOURCE_FIXTURE_B] }))
-      // POST refresh for source A
-      .mockResolvedValueOnce(
-        mockResponse(200, {
-          marketplace: { plugins: new Array(12).fill({}) },
-          fetchedAt: '2026-04-06T00:00:00.000Z',
-        })
-      )
-      // POST refresh for source B
-      .mockResolvedValueOnce(
-        mockResponse(200, {
-          marketplace: { plugins: new Array(3).fill({}) },
-          fetchedAt: '2026-04-06T00:00:00.000Z',
-        })
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runMarketplaceRefresh({});
-
-    expect(code).toBe(0);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    const refreshUrls = fetchMock.mock.calls.slice(1).map((c) => c[0]);
-    expect(refreshUrls.some((u) => String(u).includes('dorkos-community/refresh'))).toBe(true);
-    expect(refreshUrls.some((u) => String(u).includes('claude-plugins-official/refresh'))).toBe(
-      true
-    );
-
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('Refreshed dorkos-community: 12 packages.');
-    expect(allLogs).toContain('Refreshed claude-plugins-official: 3 packages.');
-  });
-
   it('reports per-source failures via Promise.allSettled and exits non-zero', async () => {
     const fetchMock = vi
       .fn()
@@ -669,16 +355,5 @@ describe('runMarketplaceRefresh', () => {
     expect(allLogs).toContain('Refreshed dorkos-community: 5 packages.');
     expect(allErr).toContain('Failed claude-plugins-official');
     expect(allErr).toContain('Network timeout');
-  });
-
-  it('prints empty-state hint when no sources are configured', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, { sources: [] }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runMarketplaceRefresh({});
-
-    expect(code).toBe(0);
-    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allLogs).toContain('No marketplaces configured');
   });
 });

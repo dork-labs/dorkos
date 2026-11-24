@@ -452,6 +452,51 @@ describe('the relaunch pins', () => {
     expect(decision.action).toBe('reuse');
   });
 
+  describe('the chat, agent and space references (DOR-4380, DOR-5138)', () => {
+    // As the launcher builds it: the agent's Mesh id rides the env AND the
+    // identity pin, so the env copy is left out of the digest.
+    const withRefs = (chat: string, agent: string, space: string) =>
+      capture({
+        agentIdentity: {
+          agentPath: '/repo',
+          displayName: 'Scout',
+          attributed: true,
+          agentId: agent,
+        },
+        options: options({
+          env: {
+            PATH: '/usr/bin',
+            CLAUDE_CONFIG_DIR: CLIENT_ROOT,
+            DORKOS_SESSION_ID: chat,
+            DORKOS_AGENT_ID: agent,
+            DORKOS_SPACE_ID: space,
+          },
+        }),
+      });
+    const before = withRefs('chat-1', 'agent-1', 'space-1');
+
+    it('rides the warm process when only the chat or space reference moved', () => {
+      // A rekeyed chat is the same chat; the space id is what boot loaded.
+      for (const after of [
+        withRefs('chat-2', 'agent-1', 'space-1'),
+        withRefs('chat-1', 'agent-1', 'space-2'),
+      ]) {
+        expect(after.pins.env).toBe(before.pins.env);
+        expect(compareLaunchFingerprints(before, after).action).toBe('reuse');
+      }
+    });
+
+    it('relaunches when the agent’s Mesh id moved, so no warm process signs as the old one', () => {
+      const after = withRefs('chat-1', 'agent-2', 'space-1');
+      // Not through the env digest, which ignores the env copy...
+      expect(after.pins.env).toBe(before.pins.env);
+      // ...but through the identity pin, which carries the same id.
+      const decision = compareLaunchFingerprints(before, after);
+      expect(decision.action).toBe('relaunch');
+      expect(decision.action === 'relaunch' && [...decision.changed]).toEqual(['agentIdentity']);
+    });
+  });
+
   it('relaunches when a launch that could not attribute itself is asked to attribute', () => {
     const decision = compareLaunchFingerprints(
       capture({ agentIdentity: { agentPath: '/repo', displayName: 'Scout', attributed: false } }),

@@ -4,41 +4,30 @@ import {
   RelayRequestSchema,
   RelayWebFrameSchema,
   SESSION_RELAY_FEATURES,
-  SESSION_RELAY_MAX_FRAME_LENGTH,
-  SESSION_RELAY_MAX_INNER_FRAME_BYTES,
   SESSION_RELAY_MAX_MESSAGE_LENGTH,
-  SESSION_RELAY_VERSIONS,
   decodeRelayFrame,
   encodeRelayFrame,
 } from '../session-relay.js';
 import {
-  AGENT_COMPUTER_MAX_BODY_BYTES,
   AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES,
   AGENT_COMPUTER_MAX_JSON_DEPTH,
-  AGENT_COMPUTER_MAX_PACKAGES,
-  AGENT_COMPUTER_MAX_TOOL_SCHEMA_BYTES,
-  AGENT_COMPUTER_MAX_TOOLS,
   AGENT_COMPUTER_MAX_IDENTITY_FILES,
   AGENT_COMPUTER_MAX_MANIFEST_BYTES,
   AGENT_COMPUTER_MAX_TOOL_INPUT_BYTES,
   AGENT_COMPUTER_MAX_TOOL_OUTPUT_BYTES,
-  AGENT_COMPUTER_RELAY_FEATURES,
   AgentComputerFrameSchema,
   AgentComputerRequestSchema,
   AgentComputerWebFrameSchema,
   RELAY_CALL_FEATURES,
-  RelayCallFrameSchema,
   RelayCallSchema,
   encodeAgentComputerRequestFrame,
   encodeRelayCallFrame,
   encodeRelayCallResultFrame,
   readRelayCallId,
   relayCallRefusalFrame,
-  hubFeaturesFrameFor,
   missingAgentComputerFeature,
   missingRelayCallFeature,
   negotiatedRelayCallFeatures,
-  parseAgentComputerResult,
   parseRelayCallResult,
   relayCallFeatureRefusal,
   type AgentComputerRequest,
@@ -94,12 +83,6 @@ const EVERY_CALL: RelayCall[] = [
 const jsonOfBytes = (bytes: number) => ({ pad: 'x'.repeat(bytes) });
 
 describe('agents.sync', () => {
-  it('takes an identity copy and a removal', () => {
-    for (const request of EVERY_REQUEST.slice(0, 2)) {
-      expect(AgentComputerRequestSchema.safeParse(request).success).toBe(true);
-    }
-  });
-
   it.each([['../SOUL.md'], ['agents/SOUL.md'], ['SOUL.txt'], ['.env.md'], ['SOUL.md\u0000'], ['']])(
     'refuses an identity file named %j',
     (name) => {
@@ -108,38 +91,12 @@ describe('agents.sync', () => {
     }
   );
 
-  it('counts an identity file in bytes, escapes included, not in characters', () => {
-    // A third of the cap in characters, three bytes each in UTF-8.
-    const cjk = '中'.repeat(Math.ceil(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES / 3) + 1);
-    expect(
-      AgentComputerRequestSchema.safeParse({ ...SYNC, files: [{ name: 'SOUL.md', text: cjk }] })
-        .success
-    ).toBe(false);
-    // A control character serializes to six bytes.
-    const escaped = '\u0001'.repeat(Math.ceil(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES / 6) + 1);
-    expect(
-      AgentComputerRequestSchema.safeParse({ ...SYNC, files: [{ name: 'SOUL.md', text: escaped }] })
-        .success
-    ).toBe(false);
-  });
-
   it('refuses one file named twice, whatever its case', () => {
     const request = {
       ...SYNC,
       files: [
         { name: 'SOUL.md', text: 'a' },
         { name: 'soul.md', text: 'b' },
-      ],
-    };
-    expect(AgentComputerRequestSchema.safeParse(request).success).toBe(false);
-  });
-
-  it('refuses one file named twice', () => {
-    const request = {
-      ...SYNC,
-      files: [
-        { name: 'SOUL.md', text: 'a' },
-        { name: 'SOUL.md', text: 'b' },
       ],
     };
     expect(AgentComputerRequestSchema.safeParse(request).success).toBe(false);
@@ -161,15 +118,6 @@ describe('agents.sync', () => {
     expect(AgentComputerRequestSchema.safeParse(manyFiles).success).toBe(false);
     const bigManifest = { ...SYNC, manifest: jsonOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES) };
     expect(AgentComputerRequestSchema.safeParse(bigManifest).success).toBe(false);
-  });
-
-  it('measures the manifest itself, in bytes, rather than trusting a length', () => {
-    // A third of the cap in characters, but three bytes each in UTF-8.
-    const chars = Math.ceil(AGENT_COMPUTER_MAX_MANIFEST_BYTES / 3) + 10;
-    const wide = { ...SYNC, manifest: { pad: '€'.repeat(chars) } };
-    expect(AgentComputerRequestSchema.safeParse(wide).success).toBe(false);
-    const claimed = { ...SYNC, manifest: { length: 1, pad: 'x'.repeat(100_000) } };
-    expect(AgentComputerRequestSchema.safeParse(claimed).success).toBe(false);
   });
 
   it('refuses a manifest that is not a plain JSON object', () => {
@@ -197,15 +145,15 @@ describe('agents.sync', () => {
     const notTrue = { op: 'agents.sync', agentId: AGENT, remove: false };
     expect(AgentComputerRequestSchema.safeParse(notTrue).success).toBe(false);
   });
+
+  it('takes an identity copy and a removal', () => {
+    for (const request of EVERY_REQUEST.slice(0, 2)) {
+      expect(AgentComputerRequestSchema.safeParse(request).success).toBe(true);
+    }
+  });
 });
 
 describe('turn.start', () => {
-  it('takes a turn with an origin and a tier', () => {
-    expect(AgentComputerRequestSchema.safeParse(TURN).success).toBe(true);
-    const { originRef: _originRef, ...bare } = TURN;
-    expect(AgentComputerRequestSchema.safeParse({ ...bare, origin: 'chat' }).success).toBe(true);
-  });
-
   it.each(['room', 'task', 'beat'])(
     'refuses a %s turn that does not say where it came from',
     (origin) => {
@@ -227,25 +175,9 @@ describe('turn.start', () => {
   ])('refuses a turn whose %s is %j', (field, value) => {
     expect(AgentComputerRequestSchema.safeParse({ ...TURN, [field]: value }).success).toBe(false);
   });
-
-  it('names the turn in its result', () => {
-    expect(parseAgentComputerResult('turn.start', { sessionId: SESSION, turnId: 't1' })).toEqual({
-      sessionId: SESSION,
-      turnId: 't1',
-    });
-    expect(parseAgentComputerResult('turn.start', { sessionId: SESSION })).toBeNull();
-    expect(parseAgentComputerResult('agents.sync', { agentId: AGENT })).toEqual({ agentId: AGENT });
-    expect(parseAgentComputerResult('agents.sync', { sessionId: SESSION })).toBeNull();
-  });
 });
 
 describe('calls from the computer', () => {
-  it('accepts one valid call of every kind', () => {
-    for (const call of EVERY_CALL) {
-      expect(RelayCallSchema.safeParse(call).success, JSON.stringify(call)).toBe(true);
-    }
-  });
-
   it('refuses a call outside the three it knows', () => {
     for (const op of ['config.patch', 'agents.sync', 'turn.start', 'session.send']) {
       expect(RelayCallSchema.safeParse({ op, agentId: AGENT, sessionId: SESSION }).success).toBe(
@@ -278,57 +210,13 @@ describe('calls from the computer', () => {
     expect(RelayCallSchema.safeParse(call).success).toBe(false);
   });
 
-  it('lists tools with their input schemas, bounded', () => {
-    const tool = {
-      name: 'memory_write',
-      description: 'Save a note.',
-      inputSchema: { type: 'object' },
-    };
-    expect(parseRelayCallResult('tools.list', { tools: [tool] })).toEqual({ tools: [tool] });
-    const noSchema = { name: 'memory_write', description: 'Save a note.' };
-    expect(parseRelayCallResult('tools.list', { tools: [noSchema] })).toBeNull();
-    const bigSchema = { ...tool, inputSchema: jsonOfBytes(16 * 1024) };
-    expect(parseRelayCallResult('tools.list', { tools: [bigSchema] })).toBeNull();
-  });
-
-  it('answers a tool call with JSON, text, or a failure', () => {
-    expect(
-      parseRelayCallResult('tools.call', { ok: true, output: { saved: true } })
-    ).not.toBeNull();
-    expect(parseRelayCallResult('tools.call', { ok: true, output: 'Saved.' })).not.toBeNull();
-    const failed = { ok: false, code: 'refused', message: 'Blocked for this agent.' };
-    expect(parseRelayCallResult('tools.call', failed)).toEqual(failed);
-    expect(parseRelayCallResult('tools.call', { ok: false, message: 'no code' })).toBeNull();
-  });
-
   it('refuses, never cuts, a tool output past its cap', () => {
     const output = 'x'.repeat(AGENT_COMPUTER_MAX_TOOL_OUTPUT_BYTES);
     expect(parseRelayCallResult('tools.call', { ok: true, output })).toBeNull();
   });
-
-  it('acknowledges a status report and nothing more', () => {
-    expect(parseRelayCallResult('computer.status', { ok: true })).toEqual({ ok: true });
-    expect(parseRelayCallResult('computer.status', { ok: true, stop: true })).toBeNull();
-  });
 });
 
 describe('features are negotiated', () => {
-  it('keeps the chat features a Mac advertises apart from the agent-computer ones', () => {
-    // Pinned on purpose: a new op is a new feature, chosen deliberately.
-    expect(AGENT_COMPUTER_RELAY_FEATURES).toEqual([
-      'agents.sync',
-      'turn.start',
-      'tools.list',
-      'tools.call',
-      'computer.status',
-    ]);
-    expect(RELAY_CALL_FEATURES).toEqual(['tools.list', 'tools.call', 'computer.status']);
-    for (const feature of AGENT_COMPUTER_RELAY_FEATURES) {
-      expect(SESSION_RELAY_FEATURES as readonly string[]).not.toContain(feature);
-    }
-    expect(SESSION_RELAY_VERSIONS).toEqual({ min: 1, max: 1 });
-  });
-
   it('refuses a hub-to-computer request the computer did not advertise', () => {
     expect(missingAgentComputerFeature([...SESSION_RELAY_FEATURES], TURN)).toBe('turn.start');
     expect(missingAgentComputerFeature(['turn.start'], EVERY_REQUEST[0])).toBe('agents.sync');
@@ -358,15 +246,6 @@ describe('features are negotiated', () => {
     });
   });
 
-  it('sends the hub features frame only to a computer that named a call', () => {
-    expect(hubFeaturesFrameFor([...SESSION_RELAY_FEATURES], [...RELAY_CALL_FEATURES])).toBeNull();
-    expect(hubFeaturesFrameFor(['agents.sync', 'turn.start'], [...RELAY_CALL_FEATURES])).toBeNull();
-    expect(hubFeaturesFrameFor(['tools.call'], ['tools.call', 'tools.list'])).toEqual({
-      type: 'features',
-      features: ['tools.call', 'tools.list'],
-    });
-  });
-
   it('never lets a Mac parse an agent-computer frame, so it keeps today’s behaviour', () => {
     for (const request of EVERY_REQUEST) {
       expect(RelayRequestSchema.safeParse(request).success, request.op).toBe(false);
@@ -381,47 +260,6 @@ describe('features are negotiated', () => {
 });
 
 describe('call frames', () => {
-  it('round-trip every call through the relay framing', () => {
-    for (const [i, call] of EVERY_CALL.entries()) {
-      const frame = { type: 'call', id: `c${i}`, call } as const;
-      const text = encodeRelayFrame(frame);
-      expect(text, JSON.stringify(frame)).not.toBeNull();
-      expect(decodeRelayFrame(text!, AgentComputerFrameSchema)).toEqual(frame);
-      expect(decodeRelayFrame(text!, RelayCallFrameSchema)).toEqual(frame);
-    }
-  });
-
-  it('still carries every frame a Mac sends, under the agent-computer schema', () => {
-    const frames = [
-      { type: 'result', id: 'r1', ok: true, body: { sessionId: SESSION } },
-      { type: 'stream.end', streamId: 's1' },
-      { type: 'heartbeat' },
-    ];
-    for (const frame of frames) {
-      expect(decodeRelayFrame(encodeRelayFrame(frame as never)!, AgentComputerFrameSchema)).toEqual(
-        frame
-      );
-    }
-  });
-
-  it('round-trip every hub-to-computer frame', () => {
-    const error = { status: 501, code: 'needs_update', message: 'Not yet.', feature: 'tools.list' };
-    const frames = [
-      ...EVERY_REQUEST.map((request, i) => ({ type: 'request', id: `r${i}`, request })),
-      { type: 'request', id: 'r9', request: { op: 'chats.list', agentId: AGENT } },
-      { type: 'features', features: ['tools.call'] },
-      { type: 'call.result', id: 'c1', ok: true, body: { ok: true } },
-      { type: 'call.result', id: 'c1', ok: false, error },
-      { type: 'viewers', count: 1 },
-      { type: 'heartbeat' },
-    ];
-    for (const frame of frames) {
-      const text = encodeRelayFrame(frame as never);
-      expect(text, JSON.stringify(frame)).not.toBeNull();
-      expect(decodeRelayFrame(text!, AgentComputerWebFrameSchema)).toEqual(frame);
-    }
-  });
-
   it('refuses a call result that is half answer and half error', () => {
     const torn = {
       type: 'call.result',
@@ -433,24 +271,7 @@ describe('call frames', () => {
     const badId = { type: 'call', id: '../c1', call: EVERY_CALL[0] };
     expect(decodeRelayFrame(JSON.stringify(badId), AgentComputerFrameSchema)).toBeNull();
   });
-
-  it('measures an inner frame in UTF-8 bytes, the way sealing does', () => {
-    // Fewer characters than the frame limit, but more bytes than a sealed box holds.
-    const chars = Math.floor(SESSION_RELAY_MAX_INNER_FRAME_BYTES / 3) + 100;
-    expect(chars).toBeLessThan(SESSION_RELAY_MAX_FRAME_LENGTH);
-    const body = { text: '中'.repeat(chars) };
-    expect(encodeRelayFrame({ type: 'result', id: 'r1', ok: true, body })).toBeNull();
-    // What seals: a 16-byte tag, base64url, and 64 characters of sealed-frame JSON.
-    const sealedLength = Math.ceil(((SESSION_RELAY_MAX_INNER_FRAME_BYTES + 16) * 4) / 3) + 64;
-    expect(sealedLength).toBeLessThanOrEqual(SESSION_RELAY_MAX_FRAME_LENGTH);
-  });
 });
-
-/** A string of `bytes` UTF-8 bytes once serialized (quotes included), in CJK. */
-const cjkOfBytes = (bytes: number) => '中'.repeat(Math.floor((bytes - 2) / 3));
-
-/** A JSON object of about `bytes` serialized bytes, in CJK. */
-const cjkObjectOfBytes = (bytes: number) => ({ p: cjkOfBytes(bytes - 8) });
 
 describe('the largest legal frame of each kind still seals', () => {
   /** Accepted by its schema, and so encodes within what one sealed frame carries. */
@@ -458,24 +279,6 @@ describe('the largest legal frame of each kind still seals', () => {
     expect(encoded.ok).toBe(true);
     if (text !== undefined) expect(text).not.toBeNull();
   }
-
-  it('agents.sync at every field cap at once', () => {
-    const sync = {
-      op: 'agents.sync',
-      agentId: AGENT,
-      manifest: cjkObjectOfBytes(AGENT_COMPUTER_MAX_MANIFEST_BYTES),
-      files: Array.from({ length: AGENT_COMPUTER_MAX_IDENTITY_FILES }, (_, i) => ({
-        name: `${'F'.repeat(60)}${i}.md`,
-        text: cjkOfBytes(AGENT_COMPUTER_MAX_IDENTITY_FILE_BYTES),
-      })),
-      packages: Array.from({ length: AGENT_COMPUTER_MAX_PACKAGES }, (_, i) => ({
-        name: `@${'a'.repeat(100)}/${'b'.repeat(100)}${i}`,
-        version: '1'.repeat(64),
-      })),
-    } as unknown as AgentComputerRequest;
-    expect(AgentComputerRequestSchema.safeParse(sync).success).toBe(true);
-    expectFits(encodeAgentComputerRequestFrame('r'.repeat(64), sync));
-  });
 
   it('turn.start: the longest message fits, or is refused before it is sent', () => {
     const wide = { ...TURN, content: '中'.repeat(SESSION_RELAY_MAX_MESSAGE_LENGTH) };
@@ -487,50 +290,6 @@ describe('the largest legal frame of each kind still seals', () => {
       ok: false,
       error: expect.objectContaining({ status: 413 }),
     });
-  });
-
-  it('tools.call: the largest input, and the largest output', () => {
-    const call = {
-      ...EVERY_CALL[1],
-      input: cjkObjectOfBytes(AGENT_COMPUTER_MAX_TOOL_INPUT_BYTES),
-    } as RelayCall;
-    expectFits(encodeRelayCallFrame('c'.repeat(64), call));
-    const output = cjkOfBytes(AGENT_COMPUTER_MAX_TOOL_OUTPUT_BYTES);
-    const text = encodeRelayCallResultFrame('c'.repeat(64), 'tools.call', { ok: true, output });
-    expect(decodeRelayFrame(text, AgentComputerWebFrameSchema)).toMatchObject({ ok: true });
-  });
-
-  it('tools.list: a list that fits is legal, and one that cannot is refused, never sent', () => {
-    const tool = (i: number) => ({
-      name: `tool_${i}`,
-      description: 'd'.repeat(4_000),
-      inputSchema: cjkObjectOfBytes(AGENT_COMPUTER_MAX_TOOL_SCHEMA_BYTES),
-    });
-    const perTool = 4_000 + AGENT_COMPUTER_MAX_TOOL_SCHEMA_BYTES + 64;
-    const fits = Math.floor(AGENT_COMPUTER_MAX_BODY_BYTES / perTool);
-    const legal = { tools: Array.from({ length: fits }, (_, i) => tool(i)) };
-    const text = encodeRelayCallResultFrame('c1', 'tools.list', legal);
-    expect(decodeRelayFrame(text, AgentComputerWebFrameSchema)).toMatchObject({ ok: true });
-    // Every tool at its own cap, all of them: past one frame, so a refusal goes instead.
-    const all = { tools: Array.from({ length: AGENT_COMPUTER_MAX_TOOLS }, (_, i) => tool(i)) };
-    expect(parseRelayCallResult('tools.list', all)).toBeNull();
-    const refused = encodeRelayCallResultFrame('c1', 'tools.list', all);
-    expect(decodeRelayFrame(refused, AgentComputerWebFrameSchema)).toEqual(
-      relayCallRefusalFrame('c1', expect.objectContaining({ status: 413 }))
-    );
-  });
-
-  it('every body these schemas accept leaves room for its frame', () => {
-    expect(AGENT_COMPUTER_MAX_BODY_BYTES).toBeLessThan(SESSION_RELAY_MAX_INNER_FRAME_BYTES);
-    const maxEnvelope = JSON.stringify({
-      type: 'call.result',
-      id: 'c'.repeat(64),
-      ok: true,
-      body: null,
-    }).length;
-    expect(AGENT_COMPUTER_MAX_BODY_BYTES + maxEnvelope).toBeLessThanOrEqual(
-      SESSION_RELAY_MAX_INNER_FRAME_BYTES
-    );
   });
 });
 

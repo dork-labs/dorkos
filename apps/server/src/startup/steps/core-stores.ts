@@ -8,6 +8,7 @@
  * @module startup/steps/core-stores
  */
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
+import { loadLocalSpaceId } from '../../lib/identity/space-id.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorCatalogCache } from '../../services/connectors/resources/catalog-cache.js';
 import path from 'path';
@@ -99,6 +100,9 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // as MeshCore exists below, before its first startup pass. Provider bootstrap
   // and connector routes remain later in startup, after their other dependencies.
   const connectorInstallationId = await getOrCreateInstanceId(dorkHome);
+  // Beside the install id, the local space's id: read, or minted on the first
+  // boot, then held for every turn's signature references (ADR 261122-124821).
+  await loadLocalSpaceId(dorkHome);
   const connectorOwner = {
     kind: 'local_install',
     installationId: connectorInstallationId,

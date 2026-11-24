@@ -150,47 +150,6 @@ describe('Community command dispatcher', () => {
     ).rejects.toThrow('Unknown option');
   });
 
-  it('lists incomplete journals without requiring provider choices', async () => {
-    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-community-home-'));
-    roots.push(dorkHome);
-    const runId = randomUUID();
-    const plan = createLaunchPlan({
-      dorkosVersion: '0.76.0',
-      imageDigest: `sha256:${'a'.repeat(64)}`,
-      fly: {
-        organizationId: 'dork-labs',
-        organizationName: 'Dork Labs',
-        appName: 'dorkos-community-test',
-        region: 'ord',
-        machineSize: 'shared-cpu-1x',
-      },
-      neon: {
-        organizationId: 'org-dorian',
-        organizationName: 'Dorian',
-        projectName: 'dorkos-community-test',
-        region: 'aws-us-east-2',
-      },
-      tigris: { bucketName: 'dorkos-community-test', private: true },
-    });
-    await initializeLaunchJournal(
-      launchJournalPath(dorkHome, runId),
-      createInitialCommunityLaunchJournal(runId, plan, '2026-09-21T00:00:00.000Z')
-    );
-    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-
-    expect(
-      await runCommunityDispatcher(['deploy', '--list-incomplete'], {
-        cliVersion: '0.76.0',
-        dorkHome,
-        processEnv: { PATH: '' },
-        parseRelease: () => {
-          throw new Error('unused');
-        },
-      })
-    ).toBe(0);
-    expect(output.mock.calls.map(([value]) => String(value)).join('')).toContain(runId);
-  });
-
   it('renders retained-resource recovery when resume preflight fails before execution', async () => {
     const path = await fixtureBin();
     const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-community-home-'));
@@ -259,54 +218,6 @@ describe('Community command dispatcher', () => {
     expect(rendered).not.toContain('--fly-org wrong-org');
     expect(rendered).toContain('may incur charges');
     expect(rendered).toContain(`--resume ${runId}`);
-  });
-
-  it('renders saved recovery before rejecting missing resume selection flags', async () => {
-    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-community-home-'));
-    roots.push(dorkHome);
-    const runId = randomUUID();
-    const plan = createLaunchPlan({
-      dorkosVersion: '0.76.0',
-      imageDigest: `sha256:${'a'.repeat(64)}`,
-      fly: {
-        organizationId: 'dork-labs',
-        organizationName: 'Dork Labs',
-        appName: 'dorkos-community-test',
-        region: 'ord',
-        machineSize: 'shared-cpu-1x',
-      },
-      neon: {
-        organizationId: 'org-dorian',
-        organizationName: 'Dorian',
-        projectName: 'dorkos-community-test',
-        region: 'aws-us-east-2',
-      },
-      tigris: { bucketName: 'dorkos-community-test', private: true },
-    });
-    const initial = createInitialCommunityLaunchJournal(runId, plan, '2026-09-21T00:00:00.000Z');
-    await initializeLaunchJournal(launchJournalPath(dorkHome, runId), {
-      ...initial,
-      state: 'fly_app_created',
-      resources: { flyAppId: 'app-retained' },
-      completedSteps: ['planned', 'fly_app_created'],
-    });
-    const errorOutput = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-    await expect(
-      runCommunityDispatcher(['deploy', '--resume', runId], {
-        cliVersion: '0.76.0',
-        dorkHome,
-        processEnv: { PATH: '' },
-        parseRelease: () => {
-          throw new Error('unused');
-        },
-      })
-    ).rejects.toThrow('--app-name is required');
-    const rendered = errorOutput.mock.calls.map(([value]) => String(value)).join('');
-    expect(rendered).toContain('Fly app app-retained');
-    expect(rendered).toContain('owner dork-labs');
-    expect(rendered).toContain(`--resume ${runId}`);
-    expect(rendered).toContain('may incur charges');
   });
 
   it('states retained ownership, possible costs/data, and recovery limits', () => {

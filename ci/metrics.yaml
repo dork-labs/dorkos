@@ -87,7 +87,17 @@ tracked:
       still running.
   - id: tracked.merged-to-released
     unit: hours
-    definition: Time from a PR's merge to the first release tag that contains it; p50.
+    definition: >-
+      Per merged PR, hours from its merge (the PR's mergedAt) to the publication
+      of the first GitHub release that contains its merge commit; reported as
+      p50 and p90 over a window (the daily report shows the 7 days to its day),
+      the verdict reads p50. Containment is commit ancestry: a release holds the
+      commits of compare/<previous release>...<tag>, plus the source of each
+      cherry-pick -x among them, and the earliest published release wins. A
+      sample sits at its release's publication, so a window counts what shipped
+      in it, however long ago it merged; merges are looked up 28 days back. The
+      release commit itself is not a sample. The headline number since releases
+      went daily (DOR-5127); reported, never scored.
   - id: tracked.job-minutes-per-merged-pr
     unit: minutes
     definition: >-

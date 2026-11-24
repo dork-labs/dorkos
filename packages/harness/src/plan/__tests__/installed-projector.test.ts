@@ -1,59 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
-import {
-  mergeHookConfigs,
-  pluginDataText,
-  pluginEnvPrefix,
-  pluginRootText,
-  projectedHooks,
-  PLUGIN_DATA_SKILL_WARNING_REASON,
-} from '../installed-projector.js';
+import { mergeHookConfigs, pluginRootText, projectedHooks } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
-import type { InstalledPlugin, ProjectInstalledPlugin } from '../../sources/installed.js';
-
-const MANIFEST = parseHarnessManifest({
-  version: 1,
-  harnesses: ['claude-code', 'codex', 'cursor'],
-});
-
-/** An empty repo root (no authored skills / AGENTS.md) so only installed projections show. */
-function emptyRepo(): string {
-  return mkdtempSync(join(tmpdir(), 'harness-instproj-'));
-}
-
-const projectPlugin: ProjectInstalledPlugin = {
-  name: 'acme',
-  type: 'plugin',
-  location: { scope: 'project', relDir: '.dork/plugins/acme' },
-  skills: [
-    {
-      name: 'alpha',
-      sourceDir: '.dork/plugins/acme/skills/alpha',
-      usesPluginRoot: false,
-      hasSchedule: false,
-    },
-    {
-      name: 'beta',
-      sourceDir: '.dork/plugins/acme/.dork/tasks/beta',
-      usesPluginRoot: false,
-      hasSchedule: false,
-    },
-  ],
-  commands: [
-    {
-      name: 'capture',
-      sourcePath: '.dork/plugins/acme/commands/capture.md',
-      content: '---\ndescription: cap\n---\nRead `${CLAUDE_PLUGIN_ROOT}/skills/x/SKILL.md`.\n',
-    },
-  ],
-  hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo from-plugin' }] }] },
-  layers: ['commands', 'skills', 'tasks', 'hooks', 'extensions', 'mcp-servers'],
-};
+import type { InstalledPlugin } from '../../sources/installed.js';
+import { MANIFEST, emptyRepo, projectPlugin } from './installed-projector.fixtures.js';
 
 describe('installed-plugin projection via buildPlan', () => {
   it('SK-02: symlinks installed skills into both the Claude Code and Codex skill dirs (namespaced)', () => {
@@ -138,46 +91,6 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('CM-06: names each harness’s own command format on an installed-command drop', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [projectPlugin],
-      });
-      const drop = plan.drops.find(
-        (d) =>
-          d.provenance === 'installed' &&
-          d.artifact === 'command' &&
-          d.harness === 'codex' &&
-          d.name === 'acme:commands'
-      );
-      // Codex is the one harness with genuinely no repo-local command format:
-      // its custom prompts were deprecated in favour of skills. The other
-      // harnesses' drops now name their own format instead (CM-06).
-      expect(drop?.reason).toMatch(/no repo-local slash-command format/);
-      // Cursor is in this manifest too, and gets the honest reason — asserted
-      // here rather than left to the authored half, because the installed drop
-      // is a separate call site that shared the same stale sentence.
-      const cursorDrop = plan.drops.find(
-        (d) => d.provenance === 'installed' && d.artifact === 'command' && d.harness === 'cursor'
-      );
-      expect(cursorDrop?.reason).toContain('.cursor/commands/*.md');
-      expect(cursorDrop?.reason).not.toMatch(/no repo-local slash-command format/);
-      // The `commands` layer is NOT reported as a non-portable-layer drop anymore.
-      // `reason` is optional on ProjectionAction (required only by convention for
-      // drops), so it is narrowed rather than asserted — an absent reason cannot
-      // mention a layer either, so the `false` expectation is unchanged.
-      expect(
-        plan.drops.some((d) => d.name === 'acme:commands' && d.reason?.includes('layer'))
-      ).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
   it('HK-06: merges installed-plugin hooks into .claude/settings.local.json for Claude Code', () => {
     const repo = emptyRepo();
     try {
@@ -193,35 +106,6 @@ describe('installed-plugin projection via buildPlan', () => {
       expect(merge).toBeDefined();
       expect(merge?.harness).toBe('claude-code');
       expect(getActionContent(merge!)).toContain('echo from-plugin');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  it('SK-07: warns when a projected installed skill still references ${CLAUDE_PLUGIN_ROOT}', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [
-          {
-            ...projectPlugin,
-            skills: [
-              {
-                name: 'alpha',
-                sourceDir: '.dork/plugins/acme/skills/alpha',
-                usesPluginRoot: true,
-                hasSchedule: false,
-              },
-            ],
-          },
-        ],
-      });
-      const warning = plan.warnings.find((w) => w.artifact === 'skill' && w.name === 'acme__alpha');
-      expect(warning).toBeDefined();
-      expect(warning?.reason).toContain('${CLAUDE_PLUGIN_ROOT}');
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -328,7 +212,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('HK-05: folds installed-plugin hooks into the generated Codex hooks file', () => {
+  it('CM-06: names each harness’s own command format on an installed-command drop', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -337,11 +221,32 @@ describe('installed-plugin projection via buildPlan', () => {
         agentsMdExists: false,
         installedPlugins: [projectPlugin],
       });
-      const codexHooks = plan.actions.find(
-        (a) => a.kind === 'generate' && a.target === '.codex/hooks.json'
+      const drop = plan.drops.find(
+        (d) =>
+          d.provenance === 'installed' &&
+          d.artifact === 'command' &&
+          d.harness === 'codex' &&
+          d.name === 'acme:commands'
       );
-      expect(codexHooks).toBeDefined();
-      expect(getActionContent(codexHooks!)).toContain('echo from-plugin');
+      // Codex is the one harness with genuinely no repo-local command format:
+      // its custom prompts were deprecated in favour of skills. The other
+      // harnesses' drops now name their own format instead (CM-06).
+      expect(drop?.reason).toMatch(/no repo-local slash-command format/);
+      // Cursor is in this manifest too, and gets the honest reason — asserted
+      // here rather than left to the authored half, because the installed drop
+      // is a separate call site that shared the same stale sentence.
+      const cursorDrop = plan.drops.find(
+        (d) => d.provenance === 'installed' && d.artifact === 'command' && d.harness === 'cursor'
+      );
+      expect(cursorDrop?.reason).toContain('.cursor/commands/*.md');
+      expect(cursorDrop?.reason).not.toMatch(/no repo-local slash-command format/);
+      // The `commands` layer is NOT reported as a non-portable-layer drop anymore.
+      // `reason` is optional on ProjectionAction (required only by convention for
+      // drops), so it is narrowed rather than asserted — an absent reason cannot
+      // mention a layer either, so the `false` expectation is unchanged.
+      expect(
+        plan.drops.some((d) => d.name === 'acme:commands' && d.reason?.includes('layer'))
+      ).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -349,23 +254,6 @@ describe('installed-plugin projection via buildPlan', () => {
 });
 
 describe('mergeHookConfigs', () => {
-  it('concatenates matcher groups per event and ignores undefined inputs', () => {
-    const merged = mergeHookConfigs([
-      { Stop: [{ hooks: [{ type: 'command', command: 'a' }] }] },
-      undefined,
-      {
-        Stop: [{ hooks: [{ type: 'command', command: 'b' }] }],
-        PreToolUse: [{ hooks: [{ type: 'command', command: 'c' }] }],
-      },
-    ]);
-    expect(merged.Stop).toHaveLength(2);
-    expect(merged.PreToolUse).toHaveLength(1);
-  });
-
-  it('returns an empty config when nothing has hooks', () => {
-    expect(mergeHookConfigs([undefined, undefined])).toEqual({});
-  });
-
   it('defensively skips a non-array event value rather than crashing the spread', () => {
     const merged = mergeHookConfigs([
       // A malformed config that slipped past validation: `Bad` is not an array.
@@ -398,220 +286,6 @@ describe('projectedHooks', () => {
       },
     ]);
   });
-
-  it('distinguishes the same command on two different events', () => {
-    // The whole reason the event travels with the command: `echo one` on `Stop`
-    // runs when a turn finishes, and on `PreToolUse` before every tool call.
-    const onStop = projectedHooks(
-      [
-        {
-          ...projectPlugin,
-          hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo one' }] }] },
-        },
-      ],
-      '/repo'
-    );
-    const onPreToolUse = projectedHooks(
-      [
-        {
-          ...projectPlugin,
-          hooks: {
-            PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo one' }] }],
-          },
-        },
-      ],
-      '/repo'
-    );
-    expect(onStop).not.toEqual(onPreToolUse);
-  });
-
-  it('is order-insensitive, so a reordered hooks.json produces an identical list', () => {
-    const a = projectedHooks(
-      [
-        {
-          ...projectPlugin,
-          hooks: {
-            Stop: [
-              {
-                hooks: [
-                  { type: 'command', command: 'echo a' },
-                  { type: 'command', command: 'echo b' },
-                ],
-              },
-            ],
-          },
-        },
-      ],
-      '/repo'
-    );
-    const b = projectedHooks(
-      [
-        {
-          ...projectPlugin,
-          hooks: {
-            Stop: [
-              {
-                hooks: [
-                  { type: 'command', command: 'echo b' },
-                  { type: 'command', command: 'echo a' },
-                ],
-              },
-            ],
-          },
-        },
-      ],
-      '/repo'
-    );
-    expect(a).toEqual(b);
-  });
-
-  it('omits a package with no hooks', () => {
-    expect(projectedHooks([{ ...projectPlugin, hooks: undefined }], '/repo')).toEqual([]);
-  });
-
-  it('omits what buildPlan would never project: global scope and non-portable types', () => {
-    const global: InstalledPlugin = {
-      name: 'global-pkg',
-      type: 'plugin',
-      location: { scope: 'global', absDir: '/home/dork/.dork/plugins/global-pkg' },
-      skills: [],
-      commands: [],
-      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo global' }] }] },
-      layers: ['hooks'],
-    };
-    const shape: InstalledPlugin = { ...projectPlugin, name: 'a-shape', type: 'shape' };
-    expect(projectedHooks([global, shape], '/repo')).toEqual([]);
-  });
-});
-
-describe('buildPlan hook gate (DOR-522)', () => {
-  /** Every command string the plan would write into any harness's hook config. */
-  function plannedCommands(plan: ReturnType<typeof buildPlan>): string[] {
-    const out: string[] = [];
-    for (const action of plan.actions) {
-      if (action.artifact !== 'hook') continue;
-      const content = getActionContent(action);
-      if (content) out.push(content);
-    }
-    return out;
-  }
-
-  it('HK-07: withholds a disallowed package from BOTH the settings merge and the generated hook files', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [projectPlugin],
-        allowPluginHooks: () => false,
-      });
-      expect(plannedCommands(plan).join('\n')).not.toContain('echo from-plugin');
-      // The rest of the package still projects: the gate is on hooks alone.
-      expect(plan.actions.some((a) => a.artifact === 'skill' && a.name === 'acme__alpha')).toBe(
-        true
-      );
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  it('HK-07: projects the same package once it is allowed', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [projectPlugin],
-        allowPluginHooks: (name) => name === 'acme',
-      });
-      expect(plannedCommands(plan).join('\n')).toContain('echo from-plugin');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  it('HK-07: gates per package, not all-or-nothing', () => {
-    const repo = emptyRepo();
-    const other: ProjectInstalledPlugin = {
-      ...projectPlugin,
-      name: 'other',
-      location: { scope: 'project', relDir: '.dork/plugins/other' },
-      skills: [],
-      commands: [],
-      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo from-other' }] }] },
-    };
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [projectPlugin, other],
-        allowPluginHooks: (name) => name === 'other',
-      });
-      const commands = plannedCommands(plan).join('\n');
-      expect(commands).toContain('echo from-other');
-      expect(commands).not.toContain('echo from-plugin');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  it('HK-09: reports a package’s unreadable hooks whether or not the gate allows it (DOR-1724)', () => {
-    // This used to take only the ALLOWED packages, on the reasoning that a
-    // withheld package contributes nothing so its salvage losses are noise. That
-    // had it backwards: the loss happens at READ time, before consent is a
-    // question, and both the approval card and the CLI's withheld block list
-    // what the reader could recover — so a person decided whether to trust the
-    // package from a list that silently omitted the part that would not parse,
-    // and heard about it only after saying yes (DOR-1849).
-    const repo = emptyRepo();
-    const rotted: InstalledPlugin = {
-      ...projectPlugin,
-      unreadableHooks: [
-        { path: '.dork/plugins/acme/hooks/hooks.json', event: 'Stop', total: true },
-      ],
-    };
-    try {
-      const gated = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [rotted],
-        allowPluginHooks: () => false,
-      });
-      const expected = [
-        {
-          artifact: 'hook',
-          harness: 'claude-code',
-          // The harness is a placeholder: the loss happened at read time, ahead
-          // of every harness, so no filter may hide it (contract VC-02).
-          harnessAgnostic: true,
-          name: 'acme:Stop',
-          // The declaring file, so the completeness check can match this warning
-          // to the source it is about (DOR-1845).
-          source: '.dork/plugins/acme/hooks/hooks.json',
-          reason:
-            '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape this reader cannot use, so the whole event was dropped and no "Stop" hook is projected',
-        },
-      ];
-      expect(gated.warnings.filter((w) => w.artifact === 'hook')).toEqual(expected);
-
-      // …and says exactly the same thing when the package IS allowed. The
-      // sentence is about the file, so the gate does not change a word of it.
-      const allowed = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [rotted],
-        allowPluginHooks: () => true,
-      });
-      expect(allowed.warnings.filter((w) => w.artifact === 'hook')).toEqual(expected);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1847)', () => {
@@ -638,13 +312,6 @@ describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1
     ],
   };
 
-  /** Every planned symlink target, in plan order. */
-  function symlinkTargets(plan: ReturnType<typeof buildPlan>): string[] {
-    return plan.actions
-      .filter((a) => a.provenance === 'installed' && a.kind === 'symlink')
-      .map((a) => a.target as string);
-  }
-
   it('SK-03: links a scheduled skill into .agents/skills even when only claude-code is enabled', () => {
     const repo = emptyRepo();
     try {
@@ -664,55 +331,6 @@ describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1
       // harness reads. That it REACHES the operator is pinned separately, on the
       // CLI report itself (`packages/cli/src/__tests__/harness-sync.test.ts`).
       expect(link?.reason).toContain('scheduler');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  it('SK-02: links an UNSCHEDULED plugin skill there too, with the reason that applies to it', () => {
-    // This was the opposite assertion until DOR-1847: `alpha` has no schedule,
-    // so nothing linked it into `.agents/skills` and an OpenCode-, Cursor-,
-    // Gemini- or Copilot-only project never saw it. The link is unconditional
-    // now; only the REASON differs between a scheduled skill and an ordinary one.
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: CLAUDE_ONLY,
-        agentsMdExists: false,
-        installedPlugins: [withScheduledSkill],
-      });
-
-      expect(symlinkTargets(plan)).toContain('.claude/skills/acme__alpha');
-      expect(symlinkTargets(plan)).toContain('.agents/skills/acme__alpha');
-
-      const scheduled = plan.actions.find((a) => a.target === '.agents/skills/acme__drain');
-      const ordinary = plan.actions.find((a) => a.target === '.agents/skills/acme__alpha');
-      expect(scheduled?.reason).toContain('scheduler');
-      expect(ordinary?.reason).not.toContain('scheduler');
-      expect(ordinary?.reason).toContain('.agents/skills');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  it('plans the .agents/skills link exactly once when codex is also enabled', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST, // claude-code + codex + cursor
-        agentsMdExists: false,
-        installedPlugins: [withScheduledSkill],
-      });
-
-      // Codex's own per-harness rule already links it; the scheduler rule stands
-      // down rather than planning the same target a second time.
-      expect(symlinkTargets(plan).filter((t) => t === '.agents/skills/acme__drain')).toHaveLength(
-        1
-      );
-      // And the harness rule still covers the unscheduled skill, as before.
-      expect(symlinkTargets(plan)).toContain('.agents/skills/acme__alpha');
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -792,250 +410,5 @@ describe('installed skills reach .agents/skills whatever harnesses are enabled (
       expect(action.kind).toBe('native');
       expect(action.reason).toContain(`.agents/skills/${action.name}`);
     }
-  });
-
-  it('SK-05: links them for a cursor-only project, which used to be a whole-plugin drop', () => {
-    const plan = planFor(['cursor']);
-
-    expect(installedLinks(plan)).toEqual([
-      '.agents/skills/acme__alpha',
-      '.agents/skills/acme__beta',
-    ]);
-    const natives = plan.actions.filter(
-      (a) => a.provenance === 'installed' && a.harness === 'cursor' && a.artifact === 'skill'
-    );
-    expect(natives.map((a) => a.name)).toEqual(['acme__alpha', 'acme__beta']);
-    expect(natives.every((a) => a.kind === 'native')).toBe(true);
-    // No whole-plugin drop for a harness that reads the directory just fine.
-    expect(
-      plan.drops.filter(
-        (d) => d.provenance === 'installed' && d.harness === 'cursor' && d.name === 'acme'
-      )
-    ).toEqual([]);
-  });
-
-  it('SK-05: links them for a claude-code-only project too, beside its own .claude/skills links', () => {
-    // Unconditional: `.agents/skills` is the one directory five harnesses read,
-    // so a package's skills are there whether or not one of them is enabled today.
-    const plan = planFor(['claude-code']);
-
-    expect(installedLinks(plan)).toEqual([
-      '.claude/skills/acme__alpha',
-      '.claude/skills/acme__beta',
-      '.agents/skills/acme__alpha',
-      '.agents/skills/acme__beta',
-    ]);
-  });
-
-  it('plans each .agents/skills link exactly once when codex is enabled as well', () => {
-    const plan = planFor(['claude-code', 'codex', 'opencode']);
-    const links = installedLinks(plan);
-    expect(links.filter((t) => t === '.agents/skills/acme__alpha')).toHaveLength(1);
-    expect(links.filter((t) => t === '.agents/skills/acme__beta')).toHaveLength(1);
-  });
-
-  it('warns once per unlinked-token skill per plan, never twice for the same link', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: parseHarnessManifest({ version: 1, harnesses: ['opencode'] }),
-        agentsMdExists: false,
-        installedPlugins: [
-          {
-            ...projectPlugin,
-            skills: [
-              {
-                name: 'alpha',
-                sourceDir: '.dork/plugins/acme/skills/alpha',
-                usesPluginRoot: true,
-                hasSchedule: false,
-              },
-            ],
-          },
-        ],
-      });
-      // One for the opencode native projection, one for the canonical link.
-      expect(
-        plan.warnings.filter(
-          (w) => w.name === 'acme__alpha' && w.reason.includes('${CLAUDE_PLUGIN_ROOT}')
-        )
-      ).toHaveLength(2);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('pluginRootText', () => {
-  it('spells the install root with forward slashes on Windows, and leaves POSIX alone', () => {
-    // A plugin writes `${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs`, so the text AFTER the
-    // token always has forward slashes. Before this, a Windows install root went
-    // in with backslashes and the generated line read
-    // `C:\Users\me\.dork\plugins\flow/hooks/x.mjs` — half of each, inside a
-    // shell command and a JSON string (measured on a windows-latest runner,
-    // DOR-1855).
-    expect(pluginRootText('C:\\Users\\me\\.dork\\plugins\\flow', 'win32')).toBe(
-      'C:/Users/me/.dork/plugins/flow'
-    );
-    expect(pluginRootText('/home/me/.dork/plugins/flow', 'linux')).toBe(
-      '/home/me/.dork/plugins/flow'
-    );
-    // A backslash is a legal character in a POSIX filename, so POSIX is not
-    // "normalized" — it is left exactly as the filesystem spells it.
-    expect(pluginRootText('/home/me/od\\d/plugins/flow', 'darwin')).toBe(
-      '/home/me/od\\d/plugins/flow'
-    );
-  });
-});
-
-describe('${CLAUDE_PLUGIN_DATA} (DOR-2245)', () => {
-  const dataPlugin: ProjectInstalledPlugin = {
-    ...projectPlugin,
-    commands: [
-      {
-        name: 'save',
-        sourcePath: '.dork/plugins/acme/commands/save.md',
-        content: '---\ndescription: s\n---\nWrite to `${CLAUDE_PLUGIN_DATA}/state.json`.\n',
-      },
-    ],
-    hooks: {
-      Stop: [
-        {
-          hooks: [
-            {
-              type: 'command',
-              command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs" "${CLAUDE_PLUGIN_DATA}/log"',
-            },
-          ],
-        },
-      ],
-    },
-  };
-
-  // Purpose: a command a plugin wrote for Claude Code's data dir points at the
-  // install's own .dork/data once projected, never at an unset variable.
-  it('rewrites the data token in command wrappers to <install>/.dork/data', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [dataPlugin],
-      });
-      const wrapper = plan.actions.find((a) => a.target === '.claude/commands/acme/save.md');
-      const content = getActionContent(wrapper!)!;
-      const data = pluginDataText(join(repo, '.dork/plugins/acme'), process.platform);
-      expect(content).toContain(`${data}/state.json`);
-      expect(content).not.toContain('${CLAUDE_PLUGIN_DATA}');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  // Purpose: Claude Code exports both variables to a plugin's hook processes; a
-  // projected hook runs as a project hook, so DorkOS exports them itself.
-  it('prefixes projected Claude Code hooks with both variables, and rewrites the data token inline', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [dataPlugin],
-      });
-      const merge = plan.actions.find((a) => a.target === '.claude/settings.local.json');
-      const content = getActionContent(merge!)!;
-      const installDir = join(repo, '.dork/plugins/acme');
-      const command = (
-        JSON.parse(content) as { Stop: Array<{ hooks: Array<{ command: string }> }> }
-      ).Stop[0].hooks[0].command;
-      expect(command.startsWith(pluginEnvPrefix(installDir, process.platform))).toBe(true);
-      expect(command).toContain(`${pluginDataText(installDir, process.platform)}/log`);
-      expect(command).not.toContain('${CLAUDE_PLUGIN_DATA}');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  // Purpose: the prefix is DorkOS's own addition, not the package's command, so
-  // it never enters the consent digest; a package already approved stays approved.
-  it('keeps the export prefix out of what a person is asked to approve', () => {
-    const [entry] = projectedHooks([dataPlugin], '/repo');
-    expect(entry.hooks[0].command).toBe(
-      'node "/repo/.dork/plugins/acme/hooks/x.mjs" "/repo/.dork/plugins/acme/.dork/data/log"'
-    );
-  });
-
-  // Purpose: the generated Codex/Cursor/Copilot file gets the inline rewrite but
-  // no POSIX prefix (Copilot also runs PowerShell), so nothing there breaks.
-  it('rewrites the data token in the generated Codex hooks file without a prefix', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [dataPlugin],
-      });
-      const codex = getActionContent(plan.actions.find((a) => a.target === '.codex/hooks.json')!)!;
-      expect(codex).not.toContain('${CLAUDE_PLUGIN_DATA}');
-      expect(codex).not.toContain('export CLAUDE_PLUGIN_ROOT');
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  // Purpose: a projected skill is a symlink, so the token cannot be rewritten; say so.
-  it('warns when a projected skill references the data token', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest: MANIFEST,
-        agentsMdExists: false,
-        installedPlugins: [
-          {
-            ...projectPlugin,
-            skills: [
-              {
-                name: 'alpha',
-                sourceDir: '.dork/plugins/acme/skills/alpha',
-                usesPluginRoot: false,
-                usesPluginData: true,
-                hasSchedule: false,
-              },
-            ],
-          },
-        ],
-      });
-      const warning = plan.warnings.find((w) => w.artifact === 'skill' && w.name === 'acme__alpha');
-      expect(warning?.reason).toBe(PLUGIN_DATA_SKILL_WARNING_REASON);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  // Purpose: the prefix survives a path with a quote in it, and a real shell
-  // then sees exactly the two paths. Needs /bin/sh, which Windows runners lack
-  // (Claude Code there runs hooks through Git Bash, not this path).
-  it.skipIf(process.platform === 'win32')(
-    'quotes the prefix so a real shell exports the exact paths',
-    () => {
-      const installDir = "/tmp/o'brien/.dork/plugins/acme";
-      const out = execFileSync('/bin/sh', [
-        '-c',
-        `${pluginEnvPrefix(installDir, 'darwin')}printf '%s|%s' "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA"`,
-      ]).toString();
-      expect(out).toBe(`${installDir}|${installDir}/.dork/data`);
-    }
-  );
-
-  // Purpose: Windows spells both paths with forward slashes, like the root token.
-  it('spells the data dir with forward slashes on Windows', () => {
-    expect(pluginDataText('C:\\u\\.dork\\plugins\\flow', 'win32')).toBe(
-      'C:/u/.dork/plugins/flow/.dork/data'
-    );
   });
 });

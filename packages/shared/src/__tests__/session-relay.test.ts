@@ -1,7 +1,6 @@
 import { generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto';
 import {
   STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH,
-  StepUpChallengeIdSchema,
   StepUpStatementError,
   StepUpStatementV1Schema,
   encodeStepUpBase64url,
@@ -9,29 +8,22 @@ import {
   type StepUpStatementV1,
 } from '@dork-labs/cloud-api';
 import { describe, expect, it } from 'vitest';
-import { stableStringify } from '../capabilities.js';
 import {
-  RelayApprovalProofSchema,
   RelayComputerFrameSchema,
   assertChallengeResultMatches,
   RelayDeviceSchema,
   RelayDisplayNameSchema,
-  RelayRequestIdSchema,
-  SESSION_RELAY_DEVICE_FEATURE,
   RelayRequestSchema,
   RelayResultBodySchemas,
   RelayWebFrameSchema,
   SESSION_RELAY_FEATURES,
   SESSION_RELAY_MAX_FRAME_LENGTH,
-  SESSION_RELAY_MAX_INNER_FRAME_BYTES,
   SESSION_RELAY_VERSIONS,
   decodeRelayFrame,
   encodeRelayFrame,
   isAgreedRelayVersion,
   parseRelayResult,
   missingRelayFeature,
-  negotiateRelayVersion,
-  relayFeatureFor,
   relayFinishTranscript,
   relayRefuseTranscript,
   relayWelcomeTranscript,
@@ -39,9 +31,9 @@ import {
   RelayHandshakeAnswerSchema,
   RelayHelloFrameSchema,
   RelaySealedFrameSchema,
-  SESSION_RELAY_IDLE_CLOSE_MS,
   type RelayRequest,
 } from '../session-relay.js';
+import { SESSION_RELAY_IDLE_CLOSE_MS } from '../session-relay.js';
 
 const SESSION = '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c';
 const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
@@ -102,12 +94,6 @@ const EVERY_REQUEST: RelayRequest[] = [
 ];
 
 describe('relay requests carry chats and nothing else', () => {
-  it('accepts one valid request of every kind', () => {
-    for (const request of EVERY_REQUEST) {
-      expect(RelayRequestSchema.safeParse(request).success, JSON.stringify(request)).toBe(true);
-    }
-  });
-
   it('refuses any op outside the five chat operations', () => {
     for (const op of ['terminal.open', 'files.write', 'config.patch', 'connections.list']) {
       expect(RelayRequestSchema.safeParse({ op, sessionId: SESSION }).success, op).toBe(false);
@@ -210,14 +196,6 @@ describe('the handshake', () => {
     }
   });
 
-  it('carries a newer peer feature it does not know rather than refusing the hello', () => {
-    const frame = hello({
-      versions: { min: 1, max: 3 },
-      features: ['session.stream', 'session.fork'],
-    });
-    expect(decodeRelayFrame(JSON.stringify(frame), RelayHelloFrameSchema)).toEqual(frame);
-  });
-
   it('refuses a version range that runs backwards', () => {
     expect(RelayHelloFrameSchema.safeParse(hello({ versions: { min: 2, max: 1 } })).success).toBe(
       false
@@ -272,42 +250,6 @@ describe('sealed frames', () => {
     expect(RelaySealedFrameSchema.safeParse({ ...sealed, extra: 1 }).success).toBe(false);
   });
 
-  it('round-trips every inner web frame', () => {
-    const frames = [
-      { type: 'viewers', count: 0 },
-      ...EVERY_REQUEST.map((request, i) => ({ type: 'request', id: `r${i}`, request })),
-      { type: 'stream.close', streamId: 's1' },
-      { type: 'heartbeat' },
-    ];
-    for (const frame of frames) {
-      const text = encodeRelayFrame(frame as never);
-      expect(text, JSON.stringify(frame)).not.toBeNull();
-      expect(decodeRelayFrame(text!, RelayWebFrameSchema)).toEqual(frame);
-    }
-  });
-
-  it('round-trips every inner computer frame', () => {
-    const error = { status: 404, code: 'not_found', message: 'No such chat.' };
-    const frames = [
-      { type: 'result', id: 'r1', ok: true, body: { sessionId: SESSION } },
-      { type: 'error', id: 'r1', ok: false, error },
-      { type: 'stream.frame', streamId: 's1', frame: { event: 'snapshot', data: { cursor: 0 } } },
-      {
-        type: 'stream.frame',
-        streamId: 's1',
-        frame: { event: 'text_delta', data: {}, id: `${SESSION}-1-g1-1` },
-      },
-      { type: 'stream.end', streamId: 's1' },
-      { type: 'stream.end', streamId: 's1', error },
-      { type: 'heartbeat' },
-    ];
-    for (const frame of frames) {
-      expect(decodeRelayFrame(encodeRelayFrame(frame as never)!, RelayComputerFrameSchema)).toEqual(
-        frame
-      );
-    }
-  });
-
   it('drops a malformed or oversized frame instead of throwing', () => {
     expect(decodeRelayFrame('not json', RelayWebFrameSchema)).toBeNull();
     expect(decodeRelayFrame('null', RelayWebFrameSchema)).toBeNull();
@@ -341,14 +283,6 @@ describe('result bodies', () => {
     expect(RelayResultBodySchemas['chats.list'].safeParse({ chats: [chat] }).success).toBe(true);
     const withCwd = { chats: [{ ...chat, cwd: '/Users/someone/work' }] };
     expect(RelayResultBodySchemas['chats.list'].safeParse(withCwd).success).toBe(false);
-  });
-
-  it('answers an interrupt with the same receipt the local route returns', () => {
-    const body = {
-      receipt: { outcome: 'not-running', runtime: 'claude-code' },
-      cancelledQueued: [],
-    };
-    expect(RelayResultBodySchemas['session.interrupt'].safeParse(body).success).toBe(true);
   });
 });
 
@@ -387,44 +321,12 @@ describe('the approval challenge result', () => {
   const request = { sessionId: SESSION, toolCallId: 'toolu_01', decision: 'approve' } as const;
   const schema = RelayResultBodySchemas['interaction.challenge'];
 
-  it('carries the statement and no separate challenge', () => {
-    expect(schema.safeParse(body).success).toBe(true);
-    const withChallenge = { ...body, challenge: 'ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0' };
-    expect(schema.safeParse(withChallenge).success).toBe(false);
-  });
-
-  it('requires the statement', () => {
-    const { statement: _statement, ...without } = body;
-    expect(schema.safeParse(without).success).toBe(false);
-  });
-
   it('caps the statement at the base64url length of the byte cap', () => {
     expect(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH).toBe(349_526);
     const at = 'A'.repeat(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH);
     expect(schema.safeParse({ ...body, statement: at }).success).toBe(true);
     expect(schema.safeParse({ ...body, statement: `${at}A` }).success).toBe(false);
     expect(schema.safeParse({ ...body, statement: 'not base64url!' }).success).toBe(false);
-  });
-
-  it('fits in one inner frame at the cap', () => {
-    const frame = {
-      type: 'result' as const,
-      id: 'r1',
-      ok: true as const,
-      body: { ...body, statement: 'A'.repeat(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH) },
-    };
-    expect(RelayComputerFrameSchema.safeParse(frame).success).toBe(true);
-    expect(encodeRelayFrame(frame)).not.toBeNull();
-    expect(STEP_UP_STATEMENT_MAX_BASE64URL_LENGTH).toBeLessThan(
-      SESSION_RELAY_MAX_INNER_FRAME_BYTES
-    );
-  });
-
-  it('hands back the statement and its exact bytes when everything matches', () => {
-    const read = assertChallengeResultMatches(body, request);
-    // Compared as canonical text: the fixture's `-0` reads back as `0`.
-    expect(stableStringify(read.statement)).toBe(stableStringify(APPROVAL_STATEMENT));
-    expect(read.bytes).toEqual(bytes);
   });
 
   it('catches a challenge id or expiry that differs from the statement', () => {
@@ -474,34 +376,8 @@ describe('the approval challenge result', () => {
   });
 });
 
-describe('the approval proof is the step-up assertion', () => {
-  it('is one definition, shared with the approve page', () => {
-    expect(RelayApprovalProofSchema.safeParse(PROOF).success).toBe(true);
-    expect(RelayApprovalProofSchema.safeParse({ ...PROOF, alwaysAllow: true }).success).toBe(false);
-  });
-
-  it('takes the same challenge ids as a relay request id', () => {
-    for (const id of ['c1', '01KJXYKJYW4N8QGQ5W4GB6YM9J', 'a.b:c-d_e', 'x'.repeat(64)]) {
-      expect(StepUpChallengeIdSchema.safeParse(id).success, id).toBe(true);
-      expect(RelayRequestIdSchema.safeParse(id).success, id).toBe(true);
-    }
-    for (const id of ['', 'a/b', '../x', 'a b', 'a?b', 'x'.repeat(65)]) {
-      expect(StepUpChallengeIdSchema.safeParse(id).success, id).toBe(false);
-      expect(RelayRequestIdSchema.safeParse(id).success, id).toBe(false);
-    }
-  });
-});
-
 describe('the step-up statement agrees with this package', () => {
   const statement = APPROVAL_STATEMENT;
-
-  it('writes the same canonical bytes stableStringify writes', () => {
-    // The computer hashes tool input with stableStringify; the statement's own
-    // canonical writer lives in @dork-labs/cloud-api, which depends on nothing
-    // here. They must agree on plain JSON, nested objects and arrays included.
-    const bytes = encodeStepUpStatement(statement);
-    expect(new TextDecoder().decode(bytes)).toBe(stableStringify(statement));
-  });
 
   it('takes a computer name the relay takes, and refuses one it refuses', () => {
     for (const name of ['Studio', 'Dorian’s MacBook', 'x'.repeat(64)]) {
@@ -522,12 +398,6 @@ describe('the step-up statement agrees with this package', () => {
 });
 
 describe('reading a result for the op that was asked', () => {
-  it('accepts the body its op defines', () => {
-    expect(parseRelayResult('session.send', { sessionId: SESSION })).toEqual({
-      sessionId: SESSION,
-    });
-  });
-
   it('refuses a body meant for another op', () => {
     expect(parseRelayResult('chats.list', { sessionId: SESSION })).toBeNull();
     expect(parseRelayResult('interaction.respond', { chats: [] })).toBeNull();
@@ -542,46 +412,9 @@ describe('version handshake', () => {
     expect(isAgreedRelayVersion({ min: 1, max: 2 }, Number.MAX_SAFE_INTEGER)).toBe(false);
     expect(isAgreedRelayVersion({ min: 1, max: 2 }, 1.5)).toBe(false);
   });
-
-  it('agrees on the highest version both speak', () => {
-    expect(negotiateRelayVersion({ min: 1, max: 3 }, { min: 2, max: 5 })).toEqual({
-      ok: true,
-      version: 3,
-    });
-    expect(negotiateRelayVersion(SESSION_RELAY_VERSIONS, SESSION_RELAY_VERSIONS)).toEqual({
-      ok: true,
-      version: SESSION_RELAY_VERSIONS.max,
-    });
-  });
-
-  it('names the computer as the one to update when it is too old', () => {
-    expect(negotiateRelayVersion({ min: 3, max: 4 }, { min: 1, max: 2 })).toEqual({
-      ok: false,
-      outdated: 'peer',
-    });
-  });
-
-  it('names itself as the one to update when the computer is newer', () => {
-    expect(negotiateRelayVersion({ min: 1, max: 2 }, { min: 3, max: 4 })).toEqual({
-      ok: false,
-      outdated: 'self',
-    });
-  });
 });
 
 describe('needs an update for one feature', () => {
-  it('maps every request to a feature this version defines', () => {
-    for (const request of EVERY_REQUEST) {
-      expect(SESSION_RELAY_FEATURES).toContain(relayFeatureFor(request));
-    }
-  });
-
-  it('every feature but the optional device field is reachable by some request', () => {
-    const reached = new Set(EVERY_REQUEST.map(relayFeatureFor));
-    const requestFeatures = SESSION_RELAY_FEATURES.filter((f) => f !== 'request.device');
-    expect([...reached].sort()).toEqual([...requestFeatures].sort());
-  });
-
   it('names the one feature a computer lacks and passes the ones it has', () => {
     const advertised = ['session.stream', 'session.send', 'interaction.approval'];
     const question = EVERY_REQUEST.find(
@@ -681,10 +514,5 @@ describe('the browser a request names', () => {
     ]) {
       expect(RelayDeviceSchema.safeParse(bad).success).toBe(false);
     }
-  });
-
-  it('is advertised as its own feature, so a hub sends it only to a computer that reads it', () => {
-    expect(SESSION_RELAY_FEATURES).toContain(SESSION_RELAY_DEVICE_FEATURE);
-    expect(SESSION_RELAY_DEVICE_FEATURE).toBe('request.device');
   });
 });

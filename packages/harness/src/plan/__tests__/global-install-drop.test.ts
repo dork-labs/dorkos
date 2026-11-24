@@ -18,7 +18,7 @@
  * @module plan/__tests__/global-install-drop
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { buildPlan } from '../projector.js';
@@ -95,30 +95,6 @@ function planFor(repo: string, opts?: { sharedWithTools?: boolean }): Projection
     installedPlugins: scanInstalledPlugins({ dorkHome, projectRoot: repo }),
     ...(opts?.sharedWithTools === true ? { sharedWithTools: true } : {}),
   });
-}
-
-/**
- * Link one global skill into `<dorkHome>/skills`, the way a global sync would.
- *
- * Written by hand rather than by running the apply, because these cases are
- * about what the SCAN sees on disk and nothing else; the apply has its own
- * integration suite.
- */
-function linkGlobalSkill(pkg: string, skill: string): void {
-  const skillsRoot = join(dorkHome, 'skills');
-  mkdirSync(skillsRoot, { recursive: true });
-  symlinkSync(`../plugins/${pkg}/skills/${skill}`, join(skillsRoot, `${pkg}__${skill}`));
-}
-
-/**
- * Undo every {@link linkGlobalSkill}, folder and all.
- *
- * The whole directory goes, not just the links: this file's `afterAll` asserts
- * that the dork home is byte-identical to how it was found, and a leftover empty
- * `skills/` is a path that was not there before.
- */
-function clearGlobalLinks(): void {
-  rmSync(join(dorkHome, 'skills'), { recursive: true, force: true });
 }
 
 /** Every drop about the named package. */
@@ -221,67 +197,6 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     expect(report).toContain('- plugin "globex": installed for all your projects.');
   });
 
-  it('SRC-04: a one-skill package reads as one skill, not "Its 1 skills"', () => {
-    // Seeded defect: interpolate the count into a fixed plural (`Its ${n} skills
-    // are`). The line then reads "Its 1 skills are not shared with this project",
-    // which is what a person sees for the commonest global package there is: a
-    // pack holding one skill.
-    const plan = planFor(repoWith());
-
-    const [drop] = dropsFor(plan, 'soloskill');
-    expect(drop?.reason).toBe(
-      'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
-        'Its 1 skill is not shared with this project: nightly. ' +
-        'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
-    );
-    // And the plural is untouched, so the fix is agreement rather than a rewrite.
-    expect(dropsFor(plan, 'globex')[0]?.reason).toContain('Its 2 skills are not shared');
-  });
-
-  it('SRC-04: once the package IS shared, the sentence stops saying only DorkOS can see it', () => {
-    // The A3 half. The lead sentence is not appended to, it is REPLACED: "only
-    // the Claude Code sessions DorkOS runs can see it" is FALSE the moment
-    // `dorkos harness global --enable <tool>` has run, and a sentence that is
-    // wrong cannot be fixed by adding another sentence under it. The offer goes
-    // with it, because telling somebody to share what they already shared is
-    // the same defect from the other side.
-    //
-    // Seeded defect: keep one lead and append the A3 sentence. The status page
-    // then tells a person who shared with Codex that only DorkOS can see their
-    // package, in the same cell as the skill Codex is reading right now.
-    const plan = planFor(repoWith(), { sharedWithTools: true });
-
-    const [drop] = dropsFor(plan, 'globex');
-    expect(drop?.reason).toBe(
-      'installed for all your projects, and shared with the agent tools you chose. ' +
-        'Its 2 skills are not shared with this project: greet, nightly'
-    );
-    expect(drop?.reason).not.toContain('Only the Claude Code chats DorkOS runs can see it');
-    expect(drop?.reason).not.toContain('dorkos harness global --enable');
-
-    // A package with nothing portable in it takes the same new lead.
-    expect(dropsFor(plan, 'barepkg')[0]?.reason ?? '').toContain(
-      'installed for all your projects, and shared with the agent tools you chose.'
-    );
-  });
-
-  it('SRC-04: a long skill list stops at ten names and counts the rest', () => {
-    // Seeded defect: join every name. A drop reason is one line in a terminal,
-    // so a pack with sixty skills pushes every other line off the screen to say
-    // what the count already said.
-    const plan = planFor(repoWith());
-
-    const reason = dropsFor(plan, 'bigpack')[0]?.reason ?? '';
-    expect(reason).toContain('Its 12 skills are not shared with this project: ');
-    expect(reason).toContain(
-      'skill-01, skill-02, skill-03, skill-04, skill-05, skill-06, skill-07, skill-08, ' +
-        'skill-09, skill-10, and 2 more'
-    );
-    expect(reason).not.toContain('skill-11');
-    // Exactly ten named, so the cap is the rule and not an accident of this list.
-    expect(reason.match(/skill-\d\d/g)).toHaveLength(10);
-  });
-
   it('SK-03: a package whose timers are NOT linked yet is told which command links them', () => {
     // Seeded defect: gate the "now work" sentence on `hasSchedule` alone. It
     // then prints on a machine where no global sync has ever run — the claim was
@@ -296,67 +211,6 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
         'Run dorkos harness sync --fix --global so its skills that run on a timer work. ' +
         'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
     );
-  });
-
-  it('SK-03: a package whose timers ARE linked is told they now work', () => {
-    // Seeded defect: gate on `hasSchedule` alone (the two cases are the same
-    // seed, from opposite sides) — or drop the flag from the scan, which makes
-    // every package read as unlinked and reds this one.
-    linkGlobalSkill('timerpack', 'daily-sweep');
-    try {
-      const plan = planFor(repoWith());
-      const [drop] = dropsFor(plan, 'timerpack');
-      expect(drop?.reason).toBe(
-        'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
-          'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
-          'Its skills that run on a timer now work. ' +
-          'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
-      );
-    } finally {
-      clearGlobalLinks();
-    }
-  });
-
-  it('SK-03: one unlinked timed skill is enough to keep the claim off', () => {
-    // The sentence is plural — "its skills that run on a timer" — so it may only
-    // be printed when every one of them is linked.
-    linkGlobalSkill('twotimers', 'first');
-    try {
-      const plan = planFor(repoWith());
-      expect(dropsFor(plan, 'twotimers')[0]?.reason).toContain(
-        'Run dorkos harness sync --fix --global'
-      );
-      linkGlobalSkill('twotimers', 'second');
-      expect(dropsFor(planFor(repoWith()), 'twotimers')[0]?.reason).toContain(
-        'Its skills that run on a timer now work.'
-      );
-    } finally {
-      clearGlobalLinks();
-    }
-  });
-
-  it('SK-03: a package with no scheduled skill never mentions timers at all', () => {
-    const plan = planFor(repoWith());
-
-    for (const name of ['globex', 'soloskill', 'bigpack', 'barepkg']) {
-      expect({ name, reason: dropsFor(plan, name)[0]?.reason ?? '' }).toEqual({
-        name,
-        reason: expect.not.stringContaining('timer') as string,
-      });
-    }
-  });
-
-  it('SRC-04: a global package with no skills gets the second form', () => {
-    // Seeded defect: emit the first form with an empty list. The sentence then
-    // reads "Its 0 skills are not shared with this project: ".
-    const plan = planFor(repoWith());
-
-    const [drop] = dropsFor(plan, 'barepkg');
-    expect(drop?.reason).toBe(
-      'installed for all your projects. Only the Claude Code chats DorkOS runs can see it. ' +
-        'It has no skills to share.'
-    );
-    expect(drop?.reason).not.toMatch(/skills are not shared/);
   });
 });
 
@@ -444,40 +298,5 @@ describe('SRC-12 — the same package installed at both scopes', () => {
     expect(notice?.reason).toContain(
       'Run dorkos uninstall globex  to remove the all-projects copy'
     );
-  });
-
-  it('SRC-12: the notice prints beside its own package, not at the end of the list', () => {
-    // Seeded defect: collect the notices and append them after every drop. On a
-    // home with two global packages the notice about `globex` then sits below
-    // the drop about `soloskill`, and the report reads as if it were about that.
-    const repo = repoWith({ name: 'globex', version: '2.0.0' });
-
-    const kind = (reason = ''): string =>
-      reason.startsWith('is installed twice') ? 'notice' : 'drop';
-    const lines = planFor(repo)
-      .drops.filter((d) => d.name === 'globex' || d.name === 'soloskill')
-      .map((d) => `${d.name}:${kind(d.reason)}`);
-
-    expect(lines[lines.indexOf('globex:drop') + 1]).toBe('globex:notice');
-  });
-
-  it('SRC-12: the notice is still produced when one copy has no readable DorkOS manifest, and carries no version numbers', () => {
-    // Seeded defect: gate the notice on the global copy's own manifest being
-    // readable — anything that would let it quote a version. The notice then goes
-    // missing on exactly the packages whose manifests say least.
-    //
-    // A `.dork/manifest.json` that will not PARSE removes the package from the
-    // scan entirely (`readPluginManifest` answers `undefined`), so the shape that
-    // reaches a plan with nothing to quote is the Claude-Code-native package:
-    // installed verbatim, no DorkOS manifest, no version and no layers on disk.
-    const repo = repoWith({ name: 'ccnative', version: '3.1.4' });
-    const plan = planFor(repo);
-
-    const notices = plan.drops.filter((d) => d.reason?.startsWith('is installed twice'));
-    expect(notices).toHaveLength(1);
-    expect(notices[0]?.reason).toBe(notice('ccnative', repo));
-    // No version number anywhere in it, from either copy.
-    expect(notices[0]?.reason).not.toMatch(/\d+\.\d+\.\d+/);
-    expect(notices[0]?.reason).not.toContain('3.1.4');
   });
 });

@@ -16,6 +16,11 @@ name: auto-revert
 # GITHUB_TOKEN push starts no workflows and the revert's required checks would
 # never run. Until AUTO_REVERT is on, the decision still runs and is logged.
 #
+# A rolling run (browser-test's push run, one run for several merges) almost
+# never has a green run on its parent, so its failures go to rolling-bisect.yml,
+# which finds the first bad merge and reverts it through the same
+# `scripts/auto-revert.sh revert` path, under the same AUTO_REVERT switch.
+#
 # A `workflow_run` workflow runs the default branch's copy, and both jobs check
 # out main, so a PR cannot change it. Nothing from the reverted commit runs.
 
@@ -101,24 +106,4 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           read -r _ sha pr <<<"$DECISION"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::bad decision '$DECISION'"; exit 1; }
-          [ "$(git rev-parse HEAD)" = "$sha" ] || { echo "::notice::main moved on; not reverting."; exit 0; }
-          branch="auto-revert/${sha:0:12}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git revert --no-edit "$sha"
-          git push origin "$branch"
-          author=$(gh api "repos/$REPO/pulls/$pr" --jq .user.login)
-          title="Revert #$pr: $WORKFLOW failed on main (auto-revert)"
-          body="Auto-revert (DOR-5122): \`$WORKFLOW\` failed twice on main after #$pr merged, and was green on the commit before it.
-
-          Run: $RUN_URL
-
-          @$author please fix forward: reopen the change in a new PR with the fix."
-          url=$(gh pr create --repo "$REPO" --base main --head "$branch" --title "$title" \
-            --body "$body" --label skip-changelog --label auto-revert)
-          echo "Opened $url"
-          gh pr merge "$url" --repo "$REPO" --auto || echo "::warning::could not turn on auto-merge for $url"
-          gh api --method POST "repos/$REPO/issues/$pr/comments" \
-            -f body="@$author this PR turned main red (\`$WORKFLOW\`, $RUN_URL) and is being reverted in $url. Please fix forward in a new PR." >/dev/null
+          bash scripts/auto-revert.sh revert "$sha" "$pr" "$WORKFLOW" "$RUN_URL"
