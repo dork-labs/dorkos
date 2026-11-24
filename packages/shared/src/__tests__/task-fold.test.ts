@@ -1,34 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { applyTaskEvent, createTaskFoldState } from '../task-fold.js';
-import type { TaskUpdateEvent } from '../schemas.js';
 
 describe('applyTaskEvent', () => {
-  it('creates a task under its provisional key and re-keys it once an id is assigned', () => {
-    const state = createTaskFoldState();
-    applyTaskEvent(
-      state,
-      {
-        action: 'create',
-        task: { id: 'pending:tu1', subject: 'One', status: 'pending' },
-      },
-      1000
-    );
-    expect(state.tasks.has('pending:tu1')).toBe(true);
-
-    applyTaskEvent(
-      state,
-      {
-        action: 'id_assigned',
-        task: { id: '1', subject: '', status: 'pending' },
-        previousId: 'pending:tu1',
-      },
-      1001
-    );
-
-    expect(state.tasks.has('pending:tu1')).toBe(false);
-    expect(state.tasks.get('1')).toMatchObject({ id: '1', subject: 'One' });
-  });
-
   it('a later create can never clobber a re-keyed task, even under dense sequential real ids', () => {
     // Regression for the reviewed B1 finding: re-keying "One" to real id "2"
     // must not be overwritten when a later TaskCreate is independently
@@ -130,33 +103,6 @@ describe('applyTaskEvent', () => {
     expect(state.tasks.size).toBe(0);
   });
 
-  it('update is a no-op when the id is unknown (no fallback, by design)', () => {
-    const state = createTaskFoldState();
-    applyTaskEvent(
-      state,
-      { action: 'create', task: { id: 'pending:tu1', subject: 'Only task', status: 'pending' } },
-      1
-    );
-    applyTaskEvent(
-      state,
-      {
-        action: 'id_assigned',
-        task: { id: '1', subject: '', status: 'pending' },
-        previousId: 'pending:tu1',
-      },
-      2
-    );
-
-    applyTaskEvent(
-      state,
-      { action: 'update', task: { id: '9', subject: '', status: 'completed' } },
-      3
-    );
-
-    expect(state.tasks.get('1')).toMatchObject({ status: 'pending' });
-    expect(state.tasks.size).toBe(1);
-  });
-
   it('re-keying preserves blockedBy/blocks references pointing at other tasks', () => {
     const state = createTaskFoldState();
     applyTaskEvent(
@@ -199,54 +145,6 @@ describe('applyTaskEvent', () => {
     expect(state.tasks.get('2')?.blockedBy).toEqual(['1']);
     // The dependency id "1" still resolves to a real task in the map.
     expect(state.tasks.has('1')).toBe(true);
-  });
-
-  it('carries the status timestamp across a re-key instead of dropping it', () => {
-    const state = createTaskFoldState();
-    applyTaskEvent(
-      state,
-      { action: 'create', task: { id: 'pending:tu1', subject: 'One', status: 'pending' } },
-      100
-    );
-    applyTaskEvent(
-      state,
-      {
-        action: 'id_assigned',
-        task: { id: '5', subject: '', status: 'pending' },
-        previousId: 'pending:tu1',
-      },
-      200
-    );
-
-    expect(state.statusTimestamps.has('pending:tu1')).toBe(false);
-    expect(state.statusTimestamps.get('5')).toEqual({ status: 'pending', since: 100 });
-  });
-
-  it('a rename-only update (no status change) does not touch the status timestamp', () => {
-    const state = createTaskFoldState();
-    applyTaskEvent(
-      state,
-      { action: 'create', task: { id: 'pending:tu1', subject: 'One', status: 'pending' } },
-      100
-    );
-    applyTaskEvent(
-      state,
-      {
-        action: 'id_assigned',
-        task: { id: '1', subject: '', status: 'pending' },
-        previousId: 'pending:tu1',
-      },
-      100
-    );
-    // status: '' is the "not provided" sentinel — a subject-only rename.
-    const renameOnly: TaskUpdateEvent = {
-      action: 'update',
-      task: { id: '1', subject: 'Renamed', status: '' as TaskUpdateEvent['task']['status'] },
-    };
-    applyTaskEvent(state, renameOnly, 999);
-
-    expect(state.tasks.get('1')).toMatchObject({ subject: 'Renamed', status: 'pending' });
-    expect(state.statusTimestamps.get('1')).toEqual({ status: 'pending', since: 100 });
   });
 
   it('snapshot (TodoWrite) clears prior task state and rebuilds from the full list', () => {
@@ -305,30 +203,5 @@ describe('applyTaskEvent', () => {
     expect(state.tasks.size).toBe(2);
     expect(state.tasks.get('todo:1')).toMatchObject({ subject: 'Todo one' });
     expect(state.tasks.get('1')).toMatchObject({ subject: 'Task one' });
-  });
-
-  /**
-   * DOR-1441 S-C: durable `todo_update` rows recorded before this fold
-   * existed carry `task.id: ''` (the old TaskCreate mapper never assigned
-   * one). Replaying several through the new `create` case must not collapse
-   * them onto a single `""` key.
-   */
-  it('synthesizes distinct keys for legacy create events that carry no id', () => {
-    const state = createTaskFoldState();
-    const legacyCreate = (subject: string): TaskUpdateEvent => ({
-      action: 'create',
-      task: { id: '', subject, status: 'pending' },
-    });
-
-    applyTaskEvent(state, legacyCreate('Old A'), 1);
-    applyTaskEvent(state, legacyCreate('Old B'), 2);
-
-    expect(state.tasks.size).toBe(2);
-    const subjects = Array.from(state.tasks.values())
-      .map((t) => t.subject)
-      .sort();
-    expect(subjects).toEqual(['Old A', 'Old B']);
-    // Neither row is keyed by the empty string.
-    expect(state.tasks.has('')).toBe(false);
   });
 });

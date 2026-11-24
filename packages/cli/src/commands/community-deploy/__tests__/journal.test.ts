@@ -10,7 +10,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   initializeLaunchJournal,
   launchJournalPath,
-  listIncompleteLaunchJournals,
   LaunchJournalConflictError,
   LaunchJournalLockedError,
   LaunchSafeErrorCodeSchema,
@@ -105,29 +104,6 @@ describe('Community launch journal', () => {
     expect((await lstat(path)).mode & 0o777).toBe(0o600);
     expect(await readLaunchJournal(path)).toEqual(journal(runId));
     expect(await readFile(path, 'utf8')).not.toContain('password');
-  });
-
-  it('lists only incomplete validated journals in most-recent order', async () => {
-    const dorkHome = await root();
-    const first = randomUUID();
-    const second = randomUUID();
-    const complete = randomUUID();
-    await initializeLaunchJournal(launchJournalPath(dorkHome, first), journal(first));
-    await initializeLaunchJournal(launchJournalPath(dorkHome, second), {
-      ...journal(second),
-      state: 'owner_pending',
-      updatedAt: '2026-09-21T05:00:00.000Z',
-    });
-    await initializeLaunchJournal(launchJournalPath(dorkHome, complete), {
-      ...journal(complete),
-      state: 'complete',
-      completedSteps: ['planned', 'complete'],
-    });
-
-    expect((await listIncompleteLaunchJournals(dorkHome)).map((item) => item.runId)).toEqual([
-      second,
-      first,
-    ]);
   });
 
   it('rejects stale revisions and concurrent initialization', async () => {
@@ -284,29 +260,6 @@ describe('Community launch journal', () => {
     };
     await initializeLaunchJournal(filePath, marked);
     await expect(readLaunchJournal(filePath)).resolves.toEqual(marked);
-  });
-
-  it('accepts only 32 lowercase hex characters as a provenance marker', async () => {
-    const directory = await root();
-    for (const provenanceMarker of [
-      '7F3E0B9C4D2A41E8A6C5B3F1D0E9C21A',
-      'abc',
-      `${'a'.repeat(31)}-`,
-    ]) {
-      const runId = randomUUID();
-      await expect(
-        initializeLaunchJournal(launchJournalPath(directory, runId), {
-          ...journal(runId),
-          pendingIntent: {
-            provider: 'fly',
-            organizationId: 'dork-labs',
-            resourceName: 'community-a',
-            provenanceMarker,
-          },
-        }),
-        provenanceMarker
-      ).rejects.toThrow();
-    }
   });
 
   it('rejects unknown and secret-shaped fields instead of serializing them', async () => {

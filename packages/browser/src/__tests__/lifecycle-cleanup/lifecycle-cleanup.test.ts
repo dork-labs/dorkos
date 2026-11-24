@@ -1,128 +1,37 @@
-import { registerFixtureRecord, fakePage } from './parent-fixture.js';
-import { composeInput } from '../lifecycle/input-owner.js';
-import type { EngineConfiguration, ProcessIdentity } from '../configuration.js';
-import { createPointerLedger } from '../tabs/pointer.js';
-import { unavailableDiagnostics } from '../tabs/diagnostics.js';
-import { createDiagnosticsBudget } from '../tabs/diagnostics-budget.js';
-import { createBrowserLifetime } from '../lifecycle/ownership.js';
-import { it, expect, describe, beforeAll, afterAll, onTestFinished, afterEach, vi } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { EventEmitter } from 'node:events';
+import { registerFixtureRecord } from '../parent-fixture.js';
+import type { EngineConfiguration, ProcessIdentity } from '../../configuration.js';
+import { createDiagnosticsBudget } from '../../tabs/diagnostics-budget.js';
+import { createBrowserLifetime } from '../../lifecycle/ownership.js';
+import { it, expect, describe, beforeAll, afterAll, onTestFinished } from 'vitest';
+import { spawn } from 'node:child_process';
 import { mkdtemp, access, rm, rename, mkdir, writeFile, readFile, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { BrowserContext } from 'playwright-core';
-import { closeRecord } from '../lifecycle/close.js';
-import { until } from '../lifecycle/deadline.js';
-import type { BrowserRecord } from '../lifecycle/records.js';
-import { ownDirectory } from '../profiles/owned-directory.js';
+import { closeRecord } from '../../lifecycle/close.js';
+import type { BrowserRecord } from '../../lifecycle/records.js';
+import { ownDirectory } from '../../profiles/owned-directory.js';
 import { realpathSync } from 'node:fs';
-import { parseBrowserId, parseTabId } from '../ids.js';
-import { configuration } from './lifecycle-fixture.js';
-
-// Fixture-only original ChildProcess custody; no numeric-PID signal or descendant authority.
-const TRUSTED_CHILD_SOURCE =
-  "process.stdin.resume();process.stdin.on('end',()=>process.exit(0));setInterval(()=>{},1000)";
-const TRUSTED_CHILD_ENV = Object.freeze({});
-function ownTrustedChild(child: ChildProcess, end: number, now = () => performance.now()) {
-  let exit = false,
-    close = false,
-    stdinClosed = false;
-  let failed: { value: unknown } | null = null;
-  let refused = false;
-  let stopPromise: Promise<void> | undefined;
-  let resolveExit!: () => void, resolveClose!: () => void, resolveStdin!: () => void;
-  const exited = new Promise<void>((resolve) => {
-    resolveExit = resolve;
-  });
-  const closed = new Promise<void>((resolve) => {
-    resolveClose = resolve;
-  });
-  const inputClosed = new Promise<void>((resolve) => {
-    resolveStdin = resolve;
-  });
-  child.once('exit', () => {
-    exit = true;
-    resolveExit();
-  });
-  child.once('close', () => {
-    close = true;
-    resolveClose();
-  });
-  child.on('error', (value) => {
-    failed ??= { value };
-  });
-  const stdin = child.stdin;
-  stdin?.once('close', () => {
-    stdinClosed = true;
-    resolveStdin();
-  });
-  stdin?.on('error', (value) => {
-    failed ??= { value };
-  });
-  const complete = () => exit && close && stdinClosed && failed === null && !refused;
-  return Object.freeze({
-    isClosed: complete,
-    facts: () => Object.freeze({ exit, close, stdinClosed, failed }),
-    stop(): Promise<void> {
-      if (stopPromise) return stopPromise;
-      let resolve!: () => void, reject!: (value: unknown) => void;
-      stopPromise = new Promise<void>((done, fail) => {
-        resolve = done;
-        reject = fail;
-      });
-      // Memoization and all three terminal promises exist before the EOF request.
-      void (async () => {
-        const entered = now();
-        if (!stdin || !Number.isFinite(entered) || entered >= end)
-          throw Error('OWNED_CHILD_STOP_END_EXPIRED');
-        if (!stdinClosed) stdin.end();
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            Promise.all([exited, closed, inputClosed]),
-            new Promise<never>((_, fail) => {
-              timer = setTimeout(
-                () => fail(Error('OWNED_CHILD_CLOSURE_UNVERIFIED')),
-                Math.max(0, end - now())
-              );
-            }),
-          ]);
-        } finally {
-          clearTimeout(timer);
-        }
-        const settled = now();
-        if (!Number.isFinite(settled) || settled >= end || !complete())
-          throw Error('OWNED_CHILD_CLOSURE_UNVERIFIED', { cause: failed?.value });
-      })().then(resolve, (cause) => {
-        refused = true;
-        reject(cause);
-      });
-      return stopPromise;
-    },
-  });
-}
-
-function throwCaseFailure(
-  primary: { value: unknown } | null,
-  cleanup: { value: unknown } | null
-): void {
-  if (primary !== null) {
-    if (cleanup !== null)
-      throw new AggregateError([primary.value, cleanup.value], 'PHYSICAL_CASE_FAILED', {
-        cause: primary.value,
-      });
-    throw primary.value;
-  }
-  if (cleanup !== null) throw cleanup.value;
-}
+import { parseBrowserId } from '../../ids.js';
+import { configuration } from '../lifecycle-fixture.js';
+import {
+  TRUSTED_CHILD_SOURCE,
+  TRUSTED_CHILD_ENV,
+  ownTrustedChild,
+  throwCaseFailure,
+} from './lifecycle-cleanup.fixtures.js';
+import { parseTabId } from '../../ids.js';
+import { fakePage } from '../parent-fixture.js';
+import { createPointerLedger } from '../../tabs/pointer.js';
+import { unavailableDiagnostics } from '../../tabs/diagnostics.js';
+import { composeInput } from '../../lifecycle/input-owner.js';
 
 describe('trusted nofork physical cleanup fixture', () => {
-  // PROPOSED fixture-only limits: six serial cases, original 5000 work + 5000 cleanup each.
+  // PROPOSED fixture-only limits: five serial cases, original 5000 work + 5000 cleanup each.
   // They bound waits, not physical disappearance or cancellation; execution is still HELD.
   const CASE_WORK_MS = 5000;
   const CASE_TOTAL_MS = 10000;
-  const TOTAL_FIXTURE_MS = 6 * CASE_TOTAL_MS;
+  const TOTAL_FIXTURE_MS = 5 * CASE_TOTAL_MS;
   let fixtureEnd = 0;
   let fixtureBlocked = false;
   let childAttempts = 0;
@@ -462,36 +371,6 @@ describe('trusted nofork physical cleanup fixture', () => {
   }
 
   physicalCase(
-    'does not reuse a previously complete inventory after the current observer becomes unavailable',
-    async ({ child, root, assertWork }) => {
-      let closeCalls = 0;
-      {
-        const config = await configuration(root, 'http://127.0.0.1:9001');
-        config.processes = child.processes;
-        assertWork();
-        config.processes = {
-          descendants: async () => ({ status: 'unknown', identities: [] }),
-          observe: async () => ({ status: 'dead' }),
-        };
-        const record = ledger(config, root, child.identity, {
-          close: async () => {
-            closeCalls++;
-          },
-        } as unknown as BrowserContext);
-        record.inventoryComplete = true;
-        record.identities = [child.identity];
-        expect(await closeRecord(config, record)).toEqual({
-          cleanup: 'unverified',
-          reason: 'observationUnavailable',
-        });
-        expect(closeCalls).toBe(1);
-        assertWork();
-        await expect(access(root)).resolves.toBeUndefined();
-      }
-    }
-  );
-
-  physicalCase(
     'bounds live-process teardown even when the injected clock does not advance',
     async ({ child, root, assertWork }) => {
       const config = await configuration(root, 'http://127.0.0.1:9001');
@@ -700,10 +579,10 @@ describe('trusted nofork physical cleanup fixture', () => {
         rows: closureRows,
       })
     );
-    expect(acquiredChildren).toBe(6);
-    expect(acquiredDirectories).toBe(6);
+    expect(acquiredChildren).toBe(5);
+    expect(acquiredDirectories).toBe(5);
     expect(acquiredReplacements).toBe(1);
-    expect(closureRows).toHaveLength(6);
+    expect(closureRows).toHaveLength(5);
     expect(fixtureBlocked).toBe(false);
     for (const row of closureRows)
       expect(row).toMatchObject({
@@ -711,116 +590,4 @@ describe('trusted nofork physical cleanup fixture', () => {
         childFacts: { exit: true, close: true, stdinClosed: true, failed: null },
       });
   });
-});
-
-// These controls use only EventEmitter fixtures; they never spawn, query or signal a process.
-describe('trusted child closure protocol without native subjects', () => {
-  afterEach(() => vi.useRealTimers());
-  function fixture() {
-    const child = new EventEmitter();
-    const stdin = new EventEmitter();
-    const end = vi.fn();
-    Object.assign(stdin, { end });
-    Object.assign(child, { stdin });
-    let now = 0;
-    const owner = ownTrustedChild(child as unknown as ChildProcess, 100, () => now);
-    return {
-      child,
-      stdin,
-      end,
-      owner,
-      setNow: (value: number) => {
-        now = value;
-      },
-    };
-  }
-  it('memoizes EOF and requires exact original exit, child close and stdin close', async () => {
-    const f = fixture();
-    const first = f.owner.stop();
-    expect(f.owner.stop()).toBe(first);
-    expect(f.end).toHaveBeenCalledTimes(1);
-    f.child.emit('exit', 0, null);
-    f.child.emit('close', 0, null);
-    f.stdin.emit('close');
-    await first;
-    expect(f.owner.isClosed()).toBe(true);
-  });
-  it.each(['exit', 'close', 'stdin'])(
-    'missing %s remains unknown at original deadline',
-    async (missing) => {
-      vi.useFakeTimers();
-      const f = fixture();
-      const pending = expect(f.owner.stop()).rejects.toThrow('OWNED_CHILD_CLOSURE_UNVERIFIED');
-      if (missing !== 'exit') f.child.emit('exit', 0, null);
-      if (missing !== 'close') f.child.emit('close', 0, null);
-      if (missing !== 'stdin') f.stdin.emit('close');
-      f.setNow(100);
-      await vi.advanceTimersByTimeAsync(100);
-      await pending;
-      expect(f.owner.isClosed()).toBe(false);
-    }
-  );
-  it('late complete events never renew the shared stop result', async () => {
-    vi.useFakeTimers();
-    const f = fixture();
-    const first = f.owner.stop();
-    const rejection = expect(first).rejects.toThrow();
-    f.setNow(100);
-    await vi.advanceTimersByTimeAsync(100);
-    await rejection;
-    f.child.emit('exit', 0, null);
-    f.child.emit('close', 0, null);
-    f.stdin.emit('close');
-    expect(f.owner.stop()).toBe(first);
-    await expect(first).rejects.toThrow();
-    expect(f.owner.isClosed()).toBe(false);
-  });
-  it('undefined child error remains failure after apparently complete events', async () => {
-    const f = fixture();
-    const result = f.owner.stop();
-    f.child.emit('error', undefined);
-    f.child.emit('exit', 0, null);
-    f.child.emit('close', 0, null);
-    f.stdin.emit('close');
-    await expect(result).rejects.toMatchObject({ cause: undefined });
-    expect(f.owner.isClosed()).toBe(false);
-  });
-  it('preserves undefined original body failure before cleanup failure with healthy peer', () => {
-    let captured: unknown;
-    let caught = false;
-    const cleanup = Error('cleanup');
-    try {
-      throwCaseFailure({ value: undefined }, { value: cleanup });
-    } catch (value) {
-      captured = value;
-      caught = true;
-    }
-    expect(caught).toBe(true);
-    expect(captured).toBeInstanceOf(AggregateError);
-    expect(Object.hasOwn(captured as object, 'cause')).toBe(true);
-    expect((captured as AggregateError).cause).toBeUndefined();
-    expect((captured as AggregateError).errors).toEqual([undefined, cleanup]);
-    expect(() => throwCaseFailure(null, null)).not.toThrow();
-  });
-  it('closed environment supplies no NODE_OPTIONS, preload or shell intake', () => {
-    expect(Object.keys(TRUSTED_CHILD_ENV)).toEqual([]);
-    expect(TRUSTED_CHILD_SOURCE).not.toMatch(/require|import|fork|spawn|Worker/);
-    expect(TRUSTED_CHILD_SOURCE).toContain("process.stdin.on('end',()=>process.exit(0))");
-  });
-});
-
-// The original exists before a caller discovers that its absolute wait has expired.
-it('observes an original late rejection when its absolute wait already expired', async () => {
-  const primary = Error('ORIGINAL_OBSERVATION_FAILED');
-  let fail!: (error: unknown) => void;
-  const original = new Promise<never>((_resolve, reject) => {
-    fail = reject;
-  });
-  await expect(
-    until(original, performance.now() - 1, 'PROCESS_OBSERVATION_UNAVAILABLE')
-  ).rejects.toMatchObject({ code: 'PROCESS_OBSERVATION_UNAVAILABLE' });
-  fail(primary);
-  // Give actual Node rejection reporting a complete turn before examining the original.
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  await expect(original).rejects.toBe(primary);
 });

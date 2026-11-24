@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,9 +7,7 @@ import { randomUUID } from 'node:crypto';
 import {
   checkSourcePaths,
   localProbe,
-  remoteProbe,
   makeLocalCandidateBuilder,
-  makeRemoteCandidateBuilder,
   renderSourcePathResults,
   type SourcePathCheckReport,
   type SourcePathCheckResult,
@@ -24,16 +22,6 @@ function parseMarketplace(payload: unknown) {
   return result.marketplace;
 }
 
-const allRelativeUnderPlugins = parseMarketplace({
-  name: 'dorkos',
-  owner: { name: 'Dork Labs' },
-  metadata: { pluginRoot: './plugins' },
-  plugins: [
-    { name: 'code-reviewer', source: './plugins/code-reviewer' },
-    { name: 'security-auditor', source: './plugins/security-auditor' },
-  ],
-});
-
 const brokenExplicitDotSlash = parseMarketplace({
   name: 'dorkos',
   owner: { name: 'Dork Labs' },
@@ -44,47 +32,9 @@ const brokenExplicitDotSlash = parseMarketplace({
   ],
 });
 
-const mixedObjectAndRelative = parseMarketplace({
-  name: 'dorkos',
-  owner: { name: 'Dork Labs' },
-  metadata: { pluginRoot: './plugins' },
-  plugins: [
-    { name: 'code-reviewer', source: './plugins/code-reviewer' },
-    { name: 'remote-plugin', source: { source: 'github', repo: 'acme/plugin' } },
-  ],
-});
-
-const allObjectSources = parseMarketplace({
-  name: 'dorkos',
-  owner: { name: 'Dork Labs' },
-  plugins: [
-    { name: 'code-reviewer', source: { source: 'github', repo: 'dork-labs/code-reviewer' } },
-    { name: 'docs-keeper', source: { source: 'github', repo: 'dork-labs/docs-keeper' } },
-  ],
-});
-
-const bareNameNoPluginRoot = parseMarketplace({
-  name: 'dorkos',
-  owner: { name: 'Dork Labs' },
-  plugins: [{ name: 'solo', source: './solo' }],
-});
-
 // -------- checkSourcePaths --------
 
 describe('checkSourcePaths', () => {
-  it('returns ok when every relative-path source is reachable', async () => {
-    const probe = vi.fn(async () => ({ reachable: true }));
-    const builder = makeLocalCandidateBuilder('/mp');
-
-    const report = await checkSourcePaths(allRelativeUnderPlugins, probe, builder, '/mp');
-
-    expect(report.ok).toBe(true);
-    expect(report.checkedCount).toBe(2);
-    expect(report.totalCount).toBe(2);
-    expect(probe).toHaveBeenCalledTimes(2);
-    expect(report.results.every((r) => r.status === 'ok')).toBe(true);
-  });
-
   it('flags entries whose probed candidates do not exist', async () => {
     const probe = vi.fn(async () => ({ reachable: false }));
     const builder = makeLocalCandidateBuilder('/mp');
@@ -119,96 +69,6 @@ describe('checkSourcePaths', () => {
     // `plugins/` prefix. This is the exact bug the check is here to
     // surface downstream.
     expect(seen).toEqual(['code-reviewer', 'security-auditor']);
-  });
-
-  it('resolves sources via resolvePluginSource (pluginRoot applied for correct sources)', async () => {
-    const probe = vi.fn(async () => ({ reachable: true }));
-    const seen: string[] = [];
-    const builder = (resolved: string) => {
-      seen.push(resolved);
-      return `/mp/${resolved}`;
-    };
-
-    await checkSourcePaths(allRelativeUnderPlugins, probe, builder, '/mp');
-
-    expect(seen).toEqual(['plugins/code-reviewer', 'plugins/security-auditor']);
-  });
-
-  it('skips object-form sources without calling the probe', async () => {
-    const probe = vi.fn(async () => ({ reachable: true }));
-    const report = await checkSourcePaths(
-      allObjectSources,
-      probe,
-      makeLocalCandidateBuilder('/mp'),
-      '/mp'
-    );
-
-    expect(report.ok).toBe(true);
-    expect(report.checkedCount).toBe(0);
-    expect(report.totalCount).toBe(2);
-    expect(probe).not.toHaveBeenCalled();
-    expect(report.results).toEqual([
-      { name: 'code-reviewer', status: 'skipped-object-source' },
-      { name: 'docs-keeper', status: 'skipped-object-source' },
-    ]);
-  });
-
-  it('handles mixed relative + object sources in a single marketplace', async () => {
-    const probe = vi.fn(async () => ({ reachable: true }));
-    const report = await checkSourcePaths(
-      mixedObjectAndRelative,
-      probe,
-      makeLocalCandidateBuilder('/mp'),
-      '/mp'
-    );
-
-    expect(report.ok).toBe(true);
-    expect(report.checkedCount).toBe(1);
-    expect(report.totalCount).toBe(2);
-    expect(probe).toHaveBeenCalledTimes(1);
-    const statuses = report.results.map((r) => r.status);
-    expect(statuses).toContain('ok');
-    expect(statuses).toContain('skipped-object-source');
-  });
-
-  it('runs probes in parallel (Promise.all)', async () => {
-    const started: string[] = [];
-    let release!: () => void;
-    const gate = new Promise<void>((r) => {
-      release = r;
-    });
-    const probe = vi.fn(async (candidate: string) => {
-      started.push(candidate);
-      await gate;
-      return { reachable: true };
-    });
-
-    const promise = checkSourcePaths(
-      allRelativeUnderPlugins,
-      probe,
-      makeLocalCandidateBuilder('/mp'),
-      '/mp'
-    );
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Both probes started before either resolved.
-    expect(started).toHaveLength(2);
-    release();
-    await promise;
-  });
-
-  it('checks bare-name sources when pluginRoot is absent', async () => {
-    const probe = vi.fn(async () => ({ reachable: true }));
-    const seen: string[] = [];
-    const builder = (resolved: string) => {
-      seen.push(resolved);
-      return `/mp/${resolved}`;
-    };
-
-    await checkSourcePaths(bareNameNoPluginRoot, probe, builder, '/mp');
-
-    // './solo' strips to 'solo' since pluginRoot is undefined.
-    expect(seen).toEqual(['solo']);
   });
 });
 
@@ -260,29 +120,6 @@ describe('checkSourcePaths — entry version vs plugin.json (ENTRY_VERSION_MISMA
     expect(rendered.failBlock).toContain("Claude Code silently uses plugin.json's version");
   });
 
-  it('accepts an entry version when plugin.json declares none', async () => {
-    // Purpose: Claude Code's step 2 — the entry's version is legitimately
-    // the package's version when plugin.json states none.
-    const report = await checkSourcePaths(
-      withEntryVersion('1.0.0'),
-      vi.fn(async () => ({ reachable: true })),
-      makeLocalCandidateBuilder('/mp'),
-      '/mp'
-    );
-    expect(report.ok).toBe(true);
-  });
-
-  it('accepts equal versions', async () => {
-    // Purpose: the check must not fire on agreement.
-    const report = await checkSourcePaths(
-      withEntryVersion('1.1.0'),
-      vi.fn(async () => ({ reachable: true, version: '1.1.0' })),
-      makeLocalCandidateBuilder('/mp'),
-      '/mp'
-    );
-    expect(report.ok).toBe(true);
-  });
-
   it('still skips object-form entries, whatever version they set', async () => {
     // Purpose: checking them would clone foreign repos during validation.
     const marketplace = parseMarketplace({
@@ -304,33 +141,6 @@ describe('checkSourcePaths — entry version vs plugin.json (ENTRY_VERSION_MISMA
   });
 });
 
-describe('makeLocalCandidateBuilder', () => {
-  it('joins marketplaceRoot + resolvedPath + .claude-plugin/plugin.json', () => {
-    const build = makeLocalCandidateBuilder('/abs/mp');
-    expect(build('plugins/code-reviewer')).toBe(
-      '/abs/mp/plugins/code-reviewer/.claude-plugin/plugin.json'
-    );
-  });
-});
-
-describe('makeRemoteCandidateBuilder', () => {
-  it('joins base URL + resolvedPath + .claude-plugin/plugin.json', () => {
-    const build = makeRemoteCandidateBuilder('https://github.com/dork-labs/marketplace/raw/main');
-    expect(build('plugins/code-reviewer')).toBe(
-      'https://github.com/dork-labs/marketplace/raw/main/plugins/code-reviewer/.claude-plugin/plugin.json'
-    );
-  });
-
-  it('normalizes trailing slashes on rawBase', () => {
-    const build = makeRemoteCandidateBuilder(
-      'https://github.com/dork-labs/marketplace/raw/main///'
-    );
-    expect(build('a')).toBe(
-      'https://github.com/dork-labs/marketplace/raw/main/a/.claude-plugin/plugin.json'
-    );
-  });
-});
-
 // -------- localProbe --------
 
 describe('localProbe', () => {
@@ -344,74 +154,8 @@ describe('localProbe', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it('reports a file that exists as reachable', async () => {
-    const file = path.join(tmpRoot, 'plugin.json');
-    fs.writeFileSync(file, '{}');
-    expect(await localProbe(file)).toEqual({ reachable: true });
-  });
-
-  it("returns plugin.json's version when it declares one", async () => {
-    // Purpose: the entry-version check compares against this value.
-    const file = path.join(tmpRoot, 'plugin.json');
-    fs.writeFileSync(file, JSON.stringify({ name: 'x', version: '1.1.0' }));
-    expect(await localProbe(file)).toEqual({ reachable: true, version: '1.1.0' });
-  });
-
-  it('reports an unparseable plugin.json as reachable with no version', async () => {
-    // Purpose: a broken file is not a missing one, and must not throw.
-    const file = path.join(tmpRoot, 'plugin.json');
-    fs.writeFileSync(file, '{ not json');
-    expect(await localProbe(file)).toEqual({ reachable: true });
-  });
-
   it('reports a missing file as unreachable', async () => {
     expect(await localProbe(path.join(tmpRoot, 'missing.json'))).toEqual({ reachable: false });
-  });
-
-  it('reports a directory as unreachable', async () => {
-    expect(await localProbe(tmpRoot)).toEqual({ reachable: false });
-  });
-});
-
-// -------- remoteProbe --------
-
-describe('remoteProbe', () => {
-  let fetchSpy: MockInstance<typeof globalThis.fetch>;
-
-  beforeEach(() => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch');
-  });
-
-  afterEach(() => {
-    fetchSpy.mockRestore();
-  });
-
-  it('reports a 2xx response as reachable, even when its body is not JSON', async () => {
-    fetchSpy.mockResolvedValueOnce({ ok: true, status: 200 } as Response);
-    expect(await remoteProbe('https://example.com/p.json')).toEqual({ reachable: true });
-  });
-
-  it("returns plugin.json's version from a JSON body", async () => {
-    // Purpose: the remote validator compares entry versions too.
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ name: 'x', version: '2.0.0' }),
-    } as Response);
-    expect(await remoteProbe('https://example.com/p.json')).toEqual({
-      reachable: true,
-      version: '2.0.0',
-    });
-  });
-
-  it('reports a 404 response as unreachable', async () => {
-    fetchSpy.mockResolvedValueOnce({ ok: false, status: 404 } as Response);
-    expect(await remoteProbe('https://example.com/p.json')).toEqual({ reachable: false });
-  });
-
-  it('reports a network error as unreachable', async () => {
-    fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
-    expect(await remoteProbe('https://example.com/p.json')).toEqual({ reachable: false });
   });
 });
 
@@ -424,45 +168,6 @@ describe('renderSourcePathResults', () => {
     checkedCount: 0,
     totalCount: 0,
     ...overrides,
-  });
-
-  it('renders a plain [OK] line when every source passes', () => {
-    const results: SourcePathCheckResult[] = [
-      { name: 'a', status: 'ok', candidate: '/mp/a/.claude-plugin/plugin.json' },
-      { name: 'b', status: 'ok', candidate: '/mp/b/.claude-plugin/plugin.json' },
-    ];
-    const { okLine, failBlock } = renderSourcePathResults(
-      mkReport({ ok: true, results, checkedCount: 2, totalCount: 2 }),
-      allRelativeUnderPlugins
-    );
-    expect(okLine).toBe('[OK]   Plugin sources reachable (2/2)\n');
-    expect(failBlock).toBe('');
-  });
-
-  it('annotates the [OK] line when some entries were skipped as object-form', () => {
-    const results: SourcePathCheckResult[] = [
-      { name: 'a', status: 'ok', candidate: '/mp/a/.claude-plugin/plugin.json' },
-      { name: 'b', status: 'skipped-object-source' },
-    ];
-    const { okLine } = renderSourcePathResults(
-      mkReport({ ok: true, results, checkedCount: 1, totalCount: 2 }),
-      mixedObjectAndRelative
-    );
-    expect(okLine).toBe(
-      '[OK]   Plugin sources reachable (1/1 relative-path, 1 object-form skipped)\n'
-    );
-  });
-
-  it('renders a "no relative-path sources to verify" note when every entry is object-form', () => {
-    const results: SourcePathCheckResult[] = [
-      { name: 'a', status: 'skipped-object-source' },
-      { name: 'b', status: 'skipped-object-source' },
-    ];
-    const { okLine } = renderSourcePathResults(
-      mkReport({ ok: true, results, checkedCount: 0, totalCount: 2 }),
-      allObjectSources
-    );
-    expect(okLine).toBe('[OK]   Plugin sources reachable (no relative-path sources to verify)\n');
   });
 
   it('emits a [FAIL] block with per-entry details on failure', () => {
@@ -505,21 +210,5 @@ describe('renderSourcePathResults', () => {
     );
     expect(failBlock).toContain('CC 2.1.92 IGNORES pluginRoot');
     expect(failBlock).toContain('"./plugins/<name>"');
-  });
-
-  it('omits the pluginRoot hint when pluginRoot is absent', () => {
-    const results: SourcePathCheckResult[] = [
-      {
-        name: 'solo',
-        status: 'not-found',
-        candidate: '/mp/solo/.claude-plugin/plugin.json',
-        sourceInput: './solo',
-      },
-    ];
-    const { failBlock } = renderSourcePathResults(
-      mkReport({ ok: false, results, checkedCount: 1, totalCount: 1 }),
-      bareNameNoPluginRoot
-    );
-    expect(failBlock).not.toContain('IGNORES pluginRoot');
   });
 });

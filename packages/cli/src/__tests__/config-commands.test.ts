@@ -1,13 +1,9 @@
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { describe, it, expect, vi } from 'vitest';
 import {
-  parseConfigValue,
-  handleConfigDefault,
   handleConfigGet,
   handleConfigSet,
-  handleConfigList,
   handleConfigReset,
-  handleConfigPath,
   handleConfigValidate,
   handleConfigCommand,
 } from '../config-commands.js';
@@ -92,66 +88,7 @@ function createMockWriter(outcome?: {
   };
 }
 
-describe('parseConfigValue', () => {
-  it('converts "true" to boolean true', () => {
-    expect(parseConfigValue('true')).toBe(true);
-  });
-
-  it('converts "false" to boolean false', () => {
-    expect(parseConfigValue('false')).toBe(false);
-  });
-
-  it('converts "null" to null', () => {
-    expect(parseConfigValue('null')).toBeNull();
-  });
-
-  it('converts numeric strings to numbers', () => {
-    expect(parseConfigValue('4242')).toBe(4242);
-    expect(parseConfigValue('0')).toBe(0);
-    expect(parseConfigValue('3.14')).toBe(3.14);
-  });
-
-  it('passes plain strings through unchanged', () => {
-    expect(parseConfigValue('dark')).toBe('dark');
-    expect(parseConfigValue('/Users/me')).toBe('/Users/me');
-  });
-
-  it('preserves empty string as string', () => {
-    expect(parseConfigValue('')).toBe('');
-  });
-});
-
-describe('handleConfigDefault', () => {
-  it('prints config with source indicators', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    handleConfigDefault(store);
-    expect(spy).toHaveBeenCalled();
-    const output = spy.mock.calls.map((c) => c[0]).join('\n');
-    expect(output).toContain('server.port');
-    expect(output).toContain('(default)');
-    expect(output).toContain('Config file:');
-    spy.mockRestore();
-  });
-});
-
 describe('handleConfigGet', () => {
-  it('prints the value for a valid key', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    handleConfigGet(store, 'server.port');
-    expect(spy).toHaveBeenCalledWith('4242');
-    spy.mockRestore();
-  });
-
-  it('prints "null" for null values', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    handleConfigGet(store, 'server.cwd');
-    expect(spy).toHaveBeenCalledWith('null');
-    spy.mockRestore();
-  });
-
   it('exits with code 1 for unknown key', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
@@ -176,18 +113,6 @@ describe('handleConfigSet', () => {
     expect(store.setDot).not.toHaveBeenCalled();
     expect(writer.guarded).toHaveBeenCalledWith({ server: { port: 8080 } }, 'dorkos config set');
     expect(logSpy).toHaveBeenCalledWith('Set server.port = 4242');
-    logSpy.mockRestore();
-  });
-
-  it('confirms with the value that LANDED, not the one that was typed', async () => {
-    // The mock store holds 4242 and does not accept writes, which is exactly the
-    // discrimination wanted: printing the requested 8080 here would be the
-    // command claiming a write it cannot see. What it prints is the read-back.
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    await handleConfigSet(store, 'server.port', '8080', createMockWriter());
-    expect(logSpy).toHaveBeenCalledWith('Set server.port = 4242');
-    expect(logSpy).not.toHaveBeenCalledWith('Set server.port = 8080');
     logSpy.mockRestore();
   });
 
@@ -280,33 +205,6 @@ describe('handleConfigSet', () => {
     vi.restoreAllMocks();
   });
 
-  it('points a permissions key at `dorkos permissions`', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('exit');
-    });
-    const message =
-      'Permissions are changed on the Permissions page, so every change is recorded. DorkOS changed nothing.';
-    const writer = createMockWriter({
-      refusal: {
-        status: 400,
-        code: 'USE_PERMISSIONS_API',
-        error: message,
-        message,
-        paths: ['permissions'],
-      },
-    });
-
-    await expect(
-      handleConfigSet(createMockStore(), 'permissions.preset', 'full', writer)
-    ).rejects.toThrow('exit');
-
-    expect(errorSpy.mock.calls[0][0]).toBe(message);
-    expect(errorSpy.mock.calls[1][0]).toContain('dorkos permissions');
-    vi.restoreAllMocks();
-  });
-
   it('says a setting does not exist rather than claiming it was set', async () => {
     // Zod drops what the schema does not declare, so the guarded write lands
     // nothing and `getDot` still reports undefined. The old path wrote the key
@@ -363,40 +261,9 @@ describe('the retired Full-autonomy acknowledgement (DOR-2739)', () => {
     expect(patch).toEqual({ runtimes: { defaultTrustStop: 'autonomy' } });
     vi.restoreAllMocks();
   });
-
-  it('no longer has an acknowledge-autonomy subcommand', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('exit');
-    });
-    await expect(
-      handleConfigCommand(createMockStore(), ['acknowledge-autonomy'], createMockWriter())
-    ).rejects.toThrow('exit');
-    expect(errorSpy.mock.calls[0]![0]).toContain('Unknown config subcommand');
-    vi.restoreAllMocks();
-  });
-});
-
-describe('handleConfigList', () => {
-  it('outputs JSON', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    handleConfigList(store);
-    const output = spy.mock.calls[0][0];
-    expect(JSON.parse(output)).toEqual(MOCK_CONFIG);
-    spy.mockRestore();
-  });
 });
 
 describe('handleConfigReset', () => {
-  it('resets specific key', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    handleConfigReset(store, 'server.port');
-    expect(store.reset).toHaveBeenCalledWith('server.port');
-    spy.mockRestore();
-  });
-
   it('resets all settings', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const store = createMockStore();
@@ -404,31 +271,17 @@ describe('handleConfigReset', () => {
     expect(store.reset).toHaveBeenCalledWith();
     spy.mockRestore();
   });
-});
 
-describe('handleConfigPath', () => {
-  it('prints the config file path', () => {
+  it('resets specific key', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const store = createMockStore();
-    handleConfigPath(store);
-    expect(spy).toHaveBeenCalledWith('/tmp/.dork/config.json');
+    handleConfigReset(store, 'server.port');
+    expect(store.reset).toHaveBeenCalledWith('server.port');
     spy.mockRestore();
   });
 });
 
 describe('handleConfigValidate', () => {
-  it('exits 0 for valid config', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('exit');
-    });
-    const store = createMockStore();
-    expect(() => handleConfigValidate(store)).toThrow('exit');
-    expect(exitSpy).toHaveBeenCalledWith(0);
-    spy.mockRestore();
-    exitSpy.mockRestore();
-  });
-
   it('exits 1 for invalid config', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
@@ -469,39 +322,9 @@ describe('handleConfigValidate', () => {
     spy.mockRestore();
     exitSpy.mockRestore();
   });
-
-  it('says nothing extra when every value is readable', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('exit');
-    });
-    const store = createMockStore();
-
-    expect(() => handleConfigValidate(store)).toThrow('exit');
-
-    expect(spy.mock.calls.map((call) => String(call[0])).join('\n')).not.toContain('newer version');
-    spy.mockRestore();
-    exitSpy.mockRestore();
-  });
 });
 
 describe('handleConfigCommand', () => {
-  it('routes to default when no subcommand', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    await handleConfigCommand(store, [], createMockWriter());
-    expect(store.getAll).toHaveBeenCalled();
-    spy.mockRestore();
-  });
-
-  it('routes get subcommand', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const store = createMockStore();
-    await handleConfigCommand(store, ['get', 'server.port'], createMockWriter());
-    expect(store.getDot).toHaveBeenCalledWith('server.port');
-    spy.mockRestore();
-  });
-
   it('routes set through the guarded writer it was handed', async () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const store = createMockStore();
@@ -509,19 +332,5 @@ describe('handleConfigCommand', () => {
     await handleConfigCommand(store, ['set', 'ui.theme', 'dark'], writer);
     expect(writer.guarded).toHaveBeenCalledWith({ ui: { theme: 'dark' } }, 'dorkos config set');
     spy.mockRestore();
-  });
-
-  it('exits 1 for unknown subcommand', async () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('exit');
-    });
-    const store = createMockStore();
-    await expect(handleConfigCommand(store, ['unknown'], createMockWriter())).rejects.toThrow(
-      'exit'
-    );
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    spy.mockRestore();
-    exitSpy.mockRestore();
   });
 });

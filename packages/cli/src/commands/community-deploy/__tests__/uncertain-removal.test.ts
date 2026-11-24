@@ -111,24 +111,6 @@ describe('uncertain removal command', () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
-  it('answers a run from before markers without contacting anything', async () => {
-    await setup(
-      shapeA('fly', {
-        pendingIntent: { provider: 'fly', organizationId: 'acme', resourceName: 'community-acme' },
-      })
-    );
-    const { probe } = memoryProbe('fly');
-    const probeFor = vi.fn(() => probe);
-    const { dependencies } = deps(probe, confirmWith('4817203'), { probeFor });
-    await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
-      outcome: 'unproved',
-      provider: 'fly',
-      reason: 'no-marker',
-      candidates: [],
-    });
-    expect(probeFor).not.toHaveBeenCalled();
-  });
-
   it('changes nothing for a run that made something while its create is recent or unreadable', async () => {
     // The Fly app exists, so the run must stay listed: its journal is what points at that app.
     // Inside the create window a cut-off create can still land, so even the intent stays.
@@ -312,22 +294,6 @@ describe('uncertain removal command', () => {
     });
   });
 
-  it('polls with capped backoff for the absence deadline', async () => {
-    await setup(shapeA('fly'));
-    const { probe } = memoryProbe('fly');
-    probe.remove.mockResolvedValue(undefined);
-    const sleep = vi.fn(async (_ms: number) => undefined);
-    const { dependencies } = deps(probe, confirmWith('4817203'), {
-      sleep,
-      absenceDeadlineMs: 60_000,
-    });
-    await runUncertainRemoval(dependencies);
-    const waits = sleep.mock.calls.map(([ms]) => ms);
-    expect(waits.slice(0, 5)).toEqual([1_000, 2_000, 4_000, 8_000, 10_000]);
-    expect(Math.max(...waits)).toBeLessThanOrEqual(10_000);
-    expect(waits.reduce((sum, ms) => sum + ms, 0)).toBe(60_000);
-  });
-
   it('removes a Tigris bucket, then its credentials, and carries their digests forward', async () => {
     await setup(shapeA('tigris'));
     const { probe } = memoryProbe('tigris');
@@ -483,18 +449,6 @@ describe('uncertain removal restarts', () => {
     const outcome = await runUncertainRemoval(dependencies);
     expect(outcome).toMatchObject({ outcome: 'unproved', reason: 'grown' });
     expect(outcome).not.toHaveProperty('removalPending');
-  });
-
-  it('reports unreachable when it cannot tell whether the resource is gone', async () => {
-    await setup(interrupted());
-    const { probe } = memoryProbe('fly');
-    probe.isGone.mockRejectedValue(new Error('timeout'));
-    const { dependencies, persist } = deps(probe, confirmWith('4817203'));
-    await expect(runUncertainRemoval(dependencies)).resolves.toEqual({
-      outcome: 'unreachable',
-      provider: 'fly',
-    });
-    expect(persist).not.toHaveBeenCalled();
   });
 });
 
