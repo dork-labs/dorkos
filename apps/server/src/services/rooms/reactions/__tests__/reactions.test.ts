@@ -646,6 +646,39 @@ describe('reactions', () => {
     });
   });
 
+  describe('a reaction that is not a real emoji', () => {
+    /** A thumbs-up with flag letters after it: refused today, stored by older installs. */
+    const NOT_AN_EMOJI = '\u{1F44D}\u{E0068}\u{E0069}\u{E007F}';
+
+    it('is refused from any caller, an agent included', async () => {
+      const entry = service.post(room.id, { authorId: human, text: 'shipping today' });
+      await service.triggersIdle();
+
+      expect(() => service.toggleReaction(room.id, entry.id, ana, NOT_AN_EMOJI)).toThrow(
+        expect.objectContaining({ code: 'INVALID_REACTION' })
+      );
+      expect(service.reactionsFor(room.id, entry.id)).toEqual([]);
+    });
+
+    it('is left out when an older one is read back from the database', () => {
+      const entry = anaSaid();
+      const at = new Date().toISOString();
+      reactions.set({ roomId: room.id, entryId: entry.id, authorId: human, emoji: '👍' }, at, true);
+      reactions.set(
+        { roomId: room.id, entryId: entry.id, authorId: human, emoji: NOT_AN_EMOJI },
+        at,
+        true
+      );
+
+      expect(reactions.listForEntry(room.id, entry.id).map((pill) => pill.emoji)).toEqual(['👍']);
+      const page = service.listEntries(room.id, human, { limit: 50 });
+      expect(page.find((listed) => listed.id === entry.id)?.reactions).toEqual([
+        { emoji: '👍', authorIds: [human], firstAt: at },
+      ]);
+      expect(reactions.frequents(human)).toEqual(['👍', '❤️', '🎉']);
+    });
+  });
+
   it('exposes the typed refusal every route maps to a status code', () => {
     anaSaid();
     try {

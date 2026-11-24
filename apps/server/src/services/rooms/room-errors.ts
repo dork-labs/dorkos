@@ -444,6 +444,8 @@ export type RoomErrorCode =
   | 'INVALID_LEAD'
   /** An agent tried to put the room's own 👀 receipt on a message (DOR-2823). */
   | 'RECEIPT_EMOJI_RESERVED'
+  /** A reaction that is not a single real emoji, from a caller the HTTP schema did not check. */
+  | 'INVALID_REACTION'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that
    * has no surviving bridge row (chats-as-channels spec §3.5). Re-bridging is
