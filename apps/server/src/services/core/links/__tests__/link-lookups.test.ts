@@ -1,8 +1,8 @@
 /**
  * The live lookups behind `link.resolve` (DOR-5046), over the real rooms
- * service and database, the real session read rule and the real projector
- * re-key: each kind is visible exactly where its own read route lets the
- * caller see it.
+ * service and database, the real session read rule, the real projector
+ * re-key and the real work-graph edges that outlive a restart: each kind is
+ * visible exactly where its own read route lets the caller see it.
  *
  * @vitest-environment node
  */
@@ -25,8 +25,10 @@ import {
 import {
   disposeProjector,
   getOrCreateProjector,
+  peekProjector,
   rekeyProjector,
 } from '../../../session/session-state-projector.js';
+import { installWorkLinkStore, uninstallWorkLinkStore } from '../../../work-graph/index.js';
 import { linkDomain } from '../link-capabilities.js';
 import { createDorkLinkLookups } from '../link-lookups.js';
 
@@ -51,6 +53,8 @@ const AGENT_WORK = '0e5b3c1a-1111-4aaa-8bbb-000000000001';
 const PERSONS_CHAT = '0e5b3c1a-2222-4aaa-8bbb-000000000002';
 const NEW_CHAT_FIRST_ID = '0e5b3c1a-3333-4aaa-8bbb-000000000003';
 const NEW_CHAT_RUNTIME_ID = '0e5b3c1a-4444-4aaa-8bbb-000000000004';
+const PERSONS_NEW_CHAT_FIRST_ID = '0e5b3c1a-5555-4aaa-8bbb-000000000005';
+const PERSONS_NEW_CHAT_RUNTIME_ID = '0e5b3c1a-6666-4aaa-8bbb-000000000006';
 const SCOUT = '01KJ0000000000000000SC7T9Z';
 
 /** Who may read which chat: agent work is every member's, the person's chat is theirs. */
@@ -58,6 +62,7 @@ const CHAT_VISIBILITY = new Map<string, SessionVisibility>([
   [AGENT_WORK, 'space'],
   [PERSONS_CHAT, 'participants'],
   [NEW_CHAT_RUNTIME_ID, 'space'],
+  [PERSONS_NEW_CHAT_RUNTIME_ID, 'participants'],
 ]);
 const CHATS_HERE = new Set(CHAT_VISIBILITY.keys());
 
@@ -86,11 +91,27 @@ describe('the live link lookups', () => {
 
   afterEach(() => {
     resetSessionVisibility();
+    uninstallWorkLinkStore();
     disposeProjector(NEW_CHAT_RUNTIME_ID);
+    disposeProjector(PERSONS_NEW_CHAT_RUNTIME_ID);
   });
 
+  /**
+   * A new chat's re-key, recorded where startup records it, then a restart:
+   * the projector and its redirect are gone, and a fresh store reads the same
+   * database.
+   */
+  function rekeyThenRestart(firstId: string, runtimeId: string): void {
+    installWorkLinkStore(harness.db);
+    getOrCreateProjector(firstId);
+    rekeyProjector(firstId, runtimeId);
+    disposeProjector(runtimeId);
+    expect(peekProjector(firstId)).toBeUndefined();
+    installWorkLinkStore(harness.db);
+  }
+
   /** `link.resolve` over the real lookups, as boot wires it. */
-  function resolve(uri: string, context: CapabilityHandlerContext) {
+  function invoke(uri: string, context: CapabilityHandlerContext) {
     const lookups = createDorkLinkLookups({
       db: harness.db,
       rooms: harness.service,
@@ -109,9 +130,22 @@ describe('the live link lookups', () => {
       logger: noopLogger,
       linkDeps: { lookups },
     });
-    return registry.invoke('link.resolve', { uri }, context).then(
+    return registry.invoke('link.resolve', { uri }, context);
+  }
+
+  /** What the link opens, or the code it was refused with. */
+  function resolve(uri: string, context: CapabilityHandlerContext) {
+    return invoke(uri, context).then(
       (value) => value,
       (err: unknown) => ({ refused: (err as { payload?: { code?: string } }).payload?.code })
+    );
+  }
+
+  /** The whole refusal a link was answered with: code, message and all. */
+  function refusal(uri: string, context: CapabilityHandlerContext) {
+    return invoke(uri, context).then(
+      () => undefined,
+      (err: unknown) => (err as { payload?: unknown }).payload
     );
   }
 
@@ -156,6 +190,28 @@ describe('the live link lookups', () => {
         kind: 'chat',
         sessionId: NEW_CHAT_RUNTIME_ID,
       });
+    });
+
+    it('still follows a new chat’s first id after a restart, through the recorded re-key', async () => {
+      rekeyThenRestart(NEW_CHAT_FIRST_ID, NEW_CHAT_RUNTIME_ID);
+      expect(await resolve(`dork:chat:${NEW_CHAT_FIRST_ID}`, AS_ANA)).toEqual({
+        kind: 'chat',
+        sessionId: NEW_CHAT_RUNTIME_ID,
+      });
+    });
+
+    it('keeps a person’s re-keyed chat from an agent after a restart, as no chat at all', async () => {
+      rekeyThenRestart(PERSONS_NEW_CHAT_FIRST_ID, PERSONS_NEW_CHAT_RUNTIME_ID);
+      expect(await resolve(`dork:chat:${PERSONS_NEW_CHAT_FIRST_ID}`, PERSON)).toEqual({
+        kind: 'chat',
+        sessionId: PERSONS_NEW_CHAT_RUNTIME_ID,
+      });
+      expect(await resolve(`dork:chat:${PERSONS_NEW_CHAT_FIRST_ID}`, AS_ANA)).toEqual(NOT_FOUND);
+      const forbidden = await refusal(`dork:chat:${PERSONS_NEW_CHAT_FIRST_ID}`, AS_ANA);
+      expect(forbidden).toBeDefined();
+      expect(forbidden).toEqual(
+        await refusal('dork:chat:0e5b3c1a-9999-4aaa-8bbb-000000000009', AS_ANA)
+      );
     });
   });
 

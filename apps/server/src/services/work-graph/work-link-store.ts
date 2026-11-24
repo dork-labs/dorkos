@@ -251,8 +251,9 @@ export class WorkLinkStore {
    * The id a chat is known by now, following `rekeyed_from` edges from an
    * older id to the newest one (ADR-0267: a new chat's first id gives way to
    * its runtime's). The edges outlive a restart, so an old id can be resolved
-   * after one, which the in-memory redirect cannot do. Nothing reads this in
-   * production yet; the `/r/` link resolver (DOR-5046) is its first reader.
+   * after one, which the in-memory redirect cannot do. Its reader is
+   * `followChatRekey`, through the resolver `installWorkLinkStore` registers,
+   * so a `/r/` link (DOR-5046) holding an old id still opens the chat.
    *
    * Bounded and cycle-safe: it follows at most {@link REKEY_MAX_DEPTH} steps
    * and stops at the last id before any id would repeat. Where one id was
