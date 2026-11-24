@@ -132,7 +132,7 @@ export function AddMcpServerForm({
   const [headersText, setHeadersText] = useState('');
   const [pending, setPending] = useState<CapabilityApprovalRequired | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // A refusal because of where this device is (Wi-Fi) is by design, so it reads calmly.
+  // A refusal because of where this device is (network) is by design, so it reads calmly.
   const [errorIsCalm, setErrorIsCalm] = useState(false);
   const fail = useCallback((err: unknown) => {
     const away = awayFromTheComputerSentence(err);
@@ -150,7 +150,7 @@ export function AddMcpServerForm({
   const nameValid = NAME_PATTERN.test(name) && name.length <= 64;
   const connectionValid = kind === 'stdio' ? command.trim().length > 0 : url.trim().length > 0;
   // Adding a server runs a command or reaches an address from this computer,
-  // which a Wi-Fi sign-in may not do: say so up front instead of after a try.
+  // which a network sign-in may not do: say so up front instead of after a try.
   const onWifi = useOnWifi();
   const canSubmit = nameValid && connectionValid && !addServer.isPending && !onWifi;
 
@@ -322,7 +322,7 @@ export function AddMcpServerForm({
           <Notice tone="info" role="status" className="text-xs">
             <span className="flex items-center gap-1.5">
               <Lock className="size-3.5 shrink-0" aria-hidden />
-              Adding a server only works at this computer. You’re on Wi-Fi.
+              Adding a server only works at this computer. This device is on your network.
             </span>
           </Notice>
         )}

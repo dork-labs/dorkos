@@ -289,7 +289,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
   const floor = approval.area !== null && isFloorArea(approval.area);
-  // From Wi-Fi an answer is Allow once or Deny (DOR-2969): Always allow is
+  // From the network an answer is Allow once or Deny (DOR-2969): Always allow is
   // neither offered nor suggested, and one line says where it lives.
   const onWifi = useOnWifi();
   const offersAlways = approval.alwaysOffered && !onWifi && !approval.cannotAllow && !spend;
@@ -563,7 +563,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
               )}
               <ApprovalStepUpNote approval={approval} />
               <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
-                {/* Wi-Fi may only deny: the detail above stays, so the person sees what they refuse. */}
+                {/* A device on the network may only deny: the detail above stays, so the person sees what they refuse. */}
                 {!approval.cannotAllow && !onWifi && (
                   <Button
                     size="sm"

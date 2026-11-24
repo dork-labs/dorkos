@@ -49,7 +49,7 @@ export function capabilityStandardResponses(): RouteConfig['responses'] {
     },
     400: error('The input failed the capability’s schema, or the capability refused it'),
     403: error(
-      'Refused: the caller may not run it, a Wi-Fi sign-in asked for an action, or the ' +
+      'Refused: the caller may not run it, a network sign-in asked for an action, or the ' +
         'capability refused this caller'
     ),
     404: error('Not available on this computer, or the thing it names was not found'),

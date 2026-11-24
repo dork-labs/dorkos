@@ -139,7 +139,9 @@ describe('AddMcpServerForm', () => {
     renderForm(transport, TRANSPORTS);
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
     expect(
-      await screen.findByText('Adding a server only works at this computer. You’re on Wi-Fi.')
+      await screen.findByText(
+        'Adding a server only works at this computer. This device is on your network.'
+      )
     ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
