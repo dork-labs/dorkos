@@ -388,6 +388,19 @@ export const PROBLEM_CODE_LIST = [
     status: 409,
     title: 'Remote access isn’t available here right now.',
   },
+  /** DorkOS Cloud already holds this computer: withdraw it, then set it up again. */
+  {
+    code: 'remote_access_already_set_up',
+    status: 409,
+    title: 'DorkOS Cloud already has this computer.',
+  },
+  { code: 'remote_access_not_set_up', status: 409, title: 'Set up remote access first.' },
+  /** A held action belongs to the browser window that asked for it: confirm it there. */
+  {
+    code: 'held_by_another_browser',
+    status: 403,
+    title: 'Confirm this in the window that asked.',
+  },
   { code: 'signin_no_retry', status: 409, title: 'This sign-in can’t start again here.' },
   /** The browser won't keep a sign-in cookie over plain http at this address. */
   { code: 'sign_in_needs_https', status: 409, title: 'Open DorkOS over https to stay signed in.' },

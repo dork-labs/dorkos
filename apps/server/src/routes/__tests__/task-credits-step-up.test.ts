@@ -67,7 +67,9 @@ describe('scheduled task credits confirmation', () => {
       });
       expect(held.status).toBe(428);
       expect(creation.createScheduledTask).not.toHaveBeenCalled();
-      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
+      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
+        'held_by_another_browser'
+      );
       expect(creation.createScheduledTask).not.toHaveBeenCalled();
       const confirmed = await owner.confirm(held.body.heldActionId, via);
       expect(confirmed.body).toMatchObject({

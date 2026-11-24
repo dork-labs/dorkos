@@ -385,7 +385,7 @@ export const STEP_UP_REFUSAL_CODES = [
   /** Not the app's own page, or a program rather than a person. */
   'person_only',
   /** Another browser held this action. */
-  'forbidden',
+  'held_by_another_browser',
   /** The stored request changed after this confirmation was held. */
   'precondition_failed',
 ] as const satisfies readonly ProblemCode[];

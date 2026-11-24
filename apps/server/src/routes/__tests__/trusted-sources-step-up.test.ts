@@ -24,7 +24,9 @@ describe('trusted source confirmation', () => {
       .send({ source: 'northwind/tools' });
     expect(held.status).toBe(428);
     expect(trustSource).not.toHaveBeenCalled();
-    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
+    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
+      'held_by_another_browser'
+    );
     expect(trustSource).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
       ok: true,

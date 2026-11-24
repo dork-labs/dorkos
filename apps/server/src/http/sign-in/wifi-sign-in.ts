@@ -45,7 +45,8 @@ const MAX_FIELD = 128;
  * @param auth - Better Auth, for the server-only sign-in.
  */
 export function mountWifiSignIn(app: Hono<ApiEnv>, auth: Auth): void {
-  // One sentence whatever the reason, so a refusal says nothing about the code.
+  // The same sentence whatever the reason; only the code differs, and it names the request's
+  // fault, never whether a sign-in code exists or was right.
   const refused = (c: Context, code: ProblemCode): Response =>
     problem(c, code, {
       detail: 'That didn’t work. Ask for a new code on the computer DorkOS runs on.',

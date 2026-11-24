@@ -140,7 +140,9 @@ describe('marketplace install and update confirmation', () => {
       .send({ approvedDisclosure: RUNS, approvedContentHash: 'sha256:v1' });
     expect(held.status).toBe(428);
     expect(installer.install).not.toHaveBeenCalled();
-    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
+    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
+      'held_by_another_browser'
+    );
     expect(installer.install).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
       ok: true,
@@ -183,7 +185,7 @@ describe('marketplace install and update confirmation', () => {
     expect(held.status).toBe(428);
     expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'forbidden'
+      'held_by_another_browser'
     );
     expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

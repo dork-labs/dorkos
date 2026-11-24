@@ -14,7 +14,9 @@ describe('API key confirmation', () => {
       const before = await owner.call('get', '/api/auth/api-key/list', via);
       const list = Array.isArray(before.body) ? before.body : before.body.apiKeys;
       expect(list.every((key: { name: string }) => key.name !== 'Northwind')).toBe(true);
-      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
+      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
+        'held_by_another_browser'
+      );
       const confirmed = await owner.confirm(held.body.heldActionId, via);
       expect(confirmed.body).toMatchObject({
         ok: true,

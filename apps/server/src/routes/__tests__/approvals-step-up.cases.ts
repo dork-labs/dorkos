@@ -436,7 +436,7 @@ export function registerApprovalStepUpCases(): void {
       const held = await grant(ask().approvalId, 'own-tunnel');
       expect(held.status).toBe(428);
       expect((await confirm(held.body.heldActionId, 'own-tunnel', 'browser-b')).body.code).toBe(
-        'forbidden'
+        'held_by_another_browser'
       );
     });
 

@@ -232,10 +232,11 @@ const OlderPageRefusalSchema = z.object({
 
 /**
  * The gap-filled routes whose refusals are problem documents (DOR-4979). The
- * rest still answer their own shape until their route group moves.
+ * rest still answer their own shape until their route group moves. Better
+ * Auth's own `/api/auth/*` endpoints answer `{ message, code }`, so none is
+ * declared there.
  */
 const PROBLEM_PREFIXES = [
-  '/api/auth/',
   '/api/cloud/',
   '/api/tunnel/',
   '/api/community-connections',
@@ -252,7 +253,8 @@ function answersProblems(path: string): boolean {
 
 /** A held action this caller may not see or answer. */
 const NOT_THIS_BROWSER = problemResponse(
-  'Not the app’s own page or a program (`person_only`), or another browser held it (`forbidden`)'
+  'Not the app’s own page or a program (`person_only`), or another browser held it ' +
+    '(`held_by_another_browser`)'
 );
 
 /** A held action that is gone. */
@@ -313,7 +315,8 @@ function documentCeremonyRoutes(registry: OpenAPIRegistry, registered: ReadonlyS
           403: problemResponse(
             'Refused: a wrong password with `triesLeft` (`wrong_password`), the last one ' +
               '(`too_many_tries`), a connection a password may not cross ' +
-              '(`insecure_connection`), or not this browser (`person_only`, `forbidden`)'
+              '(`insecure_connection`), or not this browser (`person_only`, ' +
+              '`held_by_another_browser`)'
           ),
           404: EXPIRED,
           409: problemResponse(

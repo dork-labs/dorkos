@@ -176,7 +176,7 @@ const REFUSALS: Record<StepUpRefusalCode, { detail: string; status?: ProblemStat
   },
   stale_page: { detail: 'This page opened before a change. Reload it, then try again.' },
   person_only: { detail: 'Only you can confirm this, in the DorkOS app.' },
-  forbidden: { detail: 'Confirm this in the window that asked.' },
+  held_by_another_browser: { detail: 'Confirm this in the window that asked.' },
   precondition_failed: {
     detail: 'That confirmation was for a different request. Confirm this one.',
   },
@@ -306,7 +306,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const entry = peekHeldStepUp(c.req.param('heldActionId') ?? '');
     if (!entry) return refuse(c, 'expired');
     const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
-    if (entry.sessionId !== sessionId) return refuse(c, 'forbidden');
+    if (entry.sessionId !== sessionId) return refuse(c, 'held_by_another_browser');
     return entry;
   }
 
@@ -462,6 +462,9 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
         return refuse(c, 'precondition_failed');
       }
       const { status, body } = await taken.commit(honoRequestFacts(c));
+      // The approvals, tool-approval and extension-decision commits still say
+      // a changed request in their own old body (`409 different-request`);
+      // it is answered here as every other changed request is (DOR-4979).
       if (status === 409 && (body as { code?: string } | null)?.code === 'different-request') {
         await audit(c, taken, 'refused', 'different-request');
         return refuse(c, 'precondition_failed');

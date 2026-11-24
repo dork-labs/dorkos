@@ -86,7 +86,7 @@ describe('letting a scheduled task do more waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(store.getTask(task.id)?.permissionMode).toBe('default');
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'forbidden'
+      'held_by_another_browser'
     );
     expect(store.getTask(task.id)?.permissionMode).toBe('default');
     const confirmed = await owner.confirm(held.body.heldActionId, 'own-tunnel');
@@ -155,7 +155,7 @@ describe('letting a scheduled task do more waits for the owner', () => {
       expect(held.status).toBe(428);
       expect(creation.createScheduledTask).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, 'managed', true)).body.code).toBe(
-        'forbidden'
+        'held_by_another_browser'
       );
       expect(creation.createScheduledTask).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, 'managed')).body).toMatchObject({
@@ -186,7 +186,7 @@ describe('letting a scheduled task do more waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'forbidden'
+      'held_by_another_browser'
     );
     expect(approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -237,7 +237,7 @@ describe('letting a scheduled task do more waits for the owner', () => {
       expect(held.status).toBe(428);
       expect(restore).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-        'forbidden'
+        'held_by_another_browser'
       );
       expect(restore).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

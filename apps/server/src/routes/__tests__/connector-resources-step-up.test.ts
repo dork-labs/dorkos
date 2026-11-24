@@ -73,7 +73,7 @@ describe('connection confirmation', () => {
     expect(held.status).toBe(428);
     expect(write).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'forbidden'
+      'held_by_another_browser'
     );
     expect(write).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

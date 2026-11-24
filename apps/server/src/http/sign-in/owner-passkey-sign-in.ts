@@ -44,7 +44,8 @@ export const OWNER_PASSKEY_FINISH_PATH = '/api/owner-sign-in/passkey/finish';
  * @param auth - Better Auth, for the server-only sign-in.
  */
 export function mountOwnerPasskeySignIn(app: Hono<ApiEnv>, auth: Auth): void {
-  // One sentence whatever the reason, so it says nothing about which addresses have a passkey.
+  // The same sentence whatever the reason, so it says nothing about which addresses have a
+  // passkey; only the code differs, and it names the request's fault, never the passkeys.
   const refused = (c: Context, code: ProblemCode): Response =>
     problem(c, code, { detail: 'That passkey didn’t sign you in. Try again.' });
 

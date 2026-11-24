@@ -58,7 +58,9 @@ describe('agent credits confirmation', () => {
     expect(update).not.toHaveBeenCalled();
     expect(readFileSync(file).equals(before)).toBe(true);
     expect(creditsAllowedForAgent(agent.id)).toBe(false);
-    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
+    expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
+      'held_by_another_browser'
+    );
     expect(update).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
       status: 200,

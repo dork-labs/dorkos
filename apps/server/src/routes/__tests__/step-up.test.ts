@@ -215,6 +215,27 @@ describe('stored request bindings', () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
+  it('answers a commit’s own old 409 different-request as 412 precondition_failed', async () => {
+    // The approvals, tool-approval and extension-decision commits still say it this way.
+    const held = holdStepUp(
+      {
+        kind: 'approval.grant',
+        target: 'made-up-request',
+        input: { note: 'notes' },
+        reason: 'Allow the note.',
+        commit: async () => ({
+          status: 409,
+          body: { error: 'That request changed.', code: 'different-request' },
+        }),
+      },
+      SESSION_A.sessionId!
+    );
+    const res = await confirm(held.heldActionId, PASSWORD);
+    expect(res.status).toBe(412);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('precondition_failed');
+  });
+
   it('refuses a changed request before its commit runs', async () => {
     let hash = 'a'.repeat(64);
     const run = vi.fn(async () => ({ status: 200, body: { ok: true } }));
@@ -661,9 +682,9 @@ describe('who may confirm', () => {
     const id = await hold({ user: SESSION_A });
     const res = await confirm(id, PASSWORD, { user: SESSION_B });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('forbidden');
+    expect(res.body.code).toBe('held_by_another_browser');
     expect((await request(app({ user: SESSION_B })).get(`/api/step-up/${id}`)).body.code).toBe(
-      'forbidden'
+      'held_by_another_browser'
     );
     expect(commit).not.toHaveBeenCalled();
   });

@@ -27,7 +27,7 @@ describe('device confirmation through the auth endpoints', () => {
           })
         ).not.toBeNull();
         expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-          'forbidden'
+          'held_by_another_browser'
         );
         expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
           ok: true,

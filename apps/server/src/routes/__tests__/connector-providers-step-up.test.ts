@@ -45,7 +45,9 @@ describe('provider key confirmation', () => {
       expect(held.status).toBe(428);
       expect(JSON.stringify(held.body)).not.toContain(SECRET);
       expect(store.put).not.toHaveBeenCalled();
-      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe('forbidden');
+      expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
+        'held_by_another_browser'
+      );
       expect(store.put).not.toHaveBeenCalled();
       const confirmed = await owner.confirm(held.body.heldActionId, via);
       expect(confirmed.body).toMatchObject({

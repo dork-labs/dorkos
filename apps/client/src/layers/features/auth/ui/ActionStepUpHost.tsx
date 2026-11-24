@@ -482,7 +482,7 @@ function endedBy(
         kind: 'ended',
         message: 'Confirm this on the computer running DorkOS.',
       };
-    case 'forbidden':
+    case 'held_by_another_browser':
     case 'person_only':
     case 'extension_risk':
     case 'stale_sign_in':

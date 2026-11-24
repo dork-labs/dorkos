@@ -67,6 +67,7 @@ import {
   MANAGED_REMOTE_UNAVAILABLE,
   managedRemoteCoordinator,
   type CoordinatorResult,
+  type ManagedRemoteRefusalCode,
   type ManagedRemoteCoordinator,
 } from '../services/core/remote/managed-remote-coordinator.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
@@ -76,10 +77,10 @@ import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth
  * The problem code for each way the managed remote coordinator refuses. Its
  * own codes stay its own; this is where they meet the API's one list.
  */
-const COORDINATOR_PROBLEM: Record<string, ProblemCode> = {
+const COORDINATOR_PROBLEM: Record<ManagedRemoteRefusalCode, ProblemCode> = {
   [MANAGED_REMOTE_UNAVAILABLE]: 'remote_access_unavailable',
-  [MANAGED_REMOTE_ALREADY_SET_UP]: 'conflict',
-  [MANAGED_REMOTE_NOT_SET_UP]: 'conflict',
+  [MANAGED_REMOTE_ALREADY_SET_UP]: 'remote_access_already_set_up',
+  [MANAGED_REMOTE_NOT_SET_UP]: 'remote_access_not_set_up',
   [MANAGED_REMOTE_SETUP_FAILED]: 'upstream_unavailable',
 };
 
@@ -147,10 +148,7 @@ export function createRemoteAccessRoutes(
   /** Answer an action: its refusal, or the full report. */
   async function answer(c: Context<ApiEnv>, result: CoordinatorResult | void): Promise<Response> {
     if (result && !result.ok) {
-      return problem(c, COORDINATOR_PROBLEM[result.code] ?? 'conflict', {
-        detail: result.error,
-        status: result.status as ProblemStatus,
-      });
+      return problem(c, COORDINATOR_PROBLEM[result.code], { detail: result.error });
     }
     const report: RemoteAccessReport = await deps.coordinator.report();
     return c.json(report);
