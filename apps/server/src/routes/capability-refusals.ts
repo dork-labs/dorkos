@@ -16,7 +16,7 @@
  */
 import type { Context } from 'hono';
 import { problemBody, sendProblem } from '@dorkos/http-kit';
-import type { Problem, ProblemCode } from '@dorkos/shared/problem';
+import { PROBLEM_CODES, type Problem, type ProblemCode } from '@dorkos/shared/problem';
 
 import type {
   TierDeniedPayload,
@@ -39,6 +39,16 @@ const FAMILY_DETAIL = {
   needs_approval: 'This waits for a person to approve it.',
   already_resolved: 'This was already settled. Nothing more to do.',
   invalid_request: 'This action refused that request. Check its input and try again.',
+  internal_error: 'DorkOS hit an error running that action. Try again.',
+  rate_limited: 'Too many requests. Wait a moment, then try again.',
+  agent_identity_unverified: 'DorkOS couldn’t confirm who is asking, so nothing ran.',
+  person_only: 'Only a person can do that, not an agent.',
+  operator_only: 'Only the person at this computer can do that.',
+  owner_only: 'Only the owner of this DorkOS can do that.',
+  conflict: 'That clashes with something already here. Look again, then retry.',
+  request_too_large: 'That is over the size limit.',
+  not_supported: 'This can’t be done here.',
+  expired: 'That took too long. Start again.',
 } as const satisfies Partial<Record<ProblemCode, string>>;
 
 /** A family's refusal: its code and its sentence. */
@@ -82,15 +92,29 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'person_session_required',
     detail: 'Enter your password to confirm it’s you, then try again.',
   },
-  OPERATOR_ONLY: {
-    code: 'operator_only',
-    detail: 'Only the person at this computer can do that.',
+  OPERATOR_ONLY: family('operator_only'),
+  OWNER_MUST_BE_PRESENT: family('operator_only'),
+  RESERVED_NAME: {
+    code: 'invalid_request',
+    detail: 'That is one of DorkOS’s own names. Pick another.',
   },
   CANNOT_RESUME_SELF: {
     code: 'forbidden',
     detail: 'An agent can’t lift its own pause. A person has to.',
   },
   NOT_YOURS: { code: 'forbidden', detail: 'That belongs to someone else.' },
+  OUTSIDER_HELD: {
+    code: 'forbidden',
+    detail: 'This turn read outside content, so it can’t change that. Ask a person.',
+  },
+  NOT_ON_THIS_SURFACE: { code: 'not_supported', detail: FAMILY_DETAIL.not_supported },
+  UNKNOWN_CALLER: family('agent_identity_unverified'),
+  OUTSIDE_FOLDER: {
+    code: 'outside_boundary',
+    detail: 'That path is outside the folders DorkOS may use.',
+  },
+  // Not the shared `no_agent`, which is about a mini app's forward.
+  NO_AGENT: { code: 'invalid_request', detail: 'This chat needs an active agent.' },
   HOLD_REQUESTER: {
     code: 'forbidden',
     detail: 'The agent that asked for this action can’t cancel it. Anyone else can.',
@@ -145,29 +169,60 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   },
 };
 
+/** How a tool code ends or starts, and the family that spelling means. */
+const FAMILY_RULES: ReadonlyArray<readonly [RegExp, keyof typeof FAMILY_DETAIL]> = [
+  [/(^|_)NOT_FOUND$|^UNKNOWN_|_GONE$/, 'not_found'],
+  [/_CHANGED$|_CHANGED_SINCE$|_MISMATCH$|^STALE_|_STALE$/, 'precondition_failed'],
+  [/(^|_)RATE_LIMIT(ED)?$/, 'rate_limited'],
+  [/(^|_)EXPIRED$/, 'expired'],
+  [/_FAILED$|_FAILURE$|_ERROR$|^EXCEPTION$|_UNREADABLE$|_OUTCOME_UNKNOWN$/, 'internal_error'],
+  [/^E(ACCES|BADF|CONNRESET|IO|MFILE|NOENT|NOSPC|PERM)$/, 'internal_error'],
+  [
+    /^NOT_READY$|(^|_)UNAVAILABLE$|(^|_)TIMEOUT$|(^|_)BUSY$|_WORKING$|_DISABLED$|^NOT_STARTED$/,
+    'temporarily_unavailable',
+  ],
+  [/^UNIDENTIFIED(_|$)|_UNVERIFIED$/, 'agent_identity_unverified'],
+  [/PERSON|PEOPLE_ONLY/, 'person_only'],
+  [/^OWNER_ONLY$/, 'owner_only'],
+  [/(^|_)APPROVAL_REQUIRED$|_PREFLIGHT_REQUIRED$|_NEEDS_YES$/, 'needs_approval'],
+  [/(^|_)NOT_OWNED$|^NOT_YOUR|_DENIED$|(^|_)NOT_ALLOWED$|_REFUSED$|_INACTIVE$/, 'forbidden'],
+  [
+    /(^|_)CANNOT_|_CANT_|^NOT_THE_CALLER$|^SELF(_APPROVAL)?$|^OTHER_AGENTS_|(^|_)PROTECTED_|^SYSTEM_AGENT$|(^|_)MARKED_TURN$/,
+    'forbidden',
+  ],
+  [/_TAKEN$|^DUPLICATE_|_EXISTS$|(^|_)CONFLICT$|_ALREADY_(BOUND|BRIDGED|POSTED)$/, 'conflict'],
+  [/^TOO_MANY_|(^|_)LIMIT$|(^|_)CAP(ACITY)?(_REACHED)?$|^AT_CAPACITY$|_FULL$|_LOCKED$/, 'conflict'],
+  [/^CANCELLED|(^|_)ALREADY_RESOLVED$|^CLOSED$|^CLOSING$|_ENDED$|^NOTHING_TO_/, 'already_resolved'],
+  [/_TOO_LARGE$/, 'request_too_large'],
+  [/(^|_)UNSUPPORTED(_|$)|^NOT_SUPPORTED$/, 'not_supported'],
+];
+
 /**
- * The family a tool code without a {@link TOOL_REFUSALS} entry belongs to, from
- * how it is spelled: `…_NOT_FOUND` and `UNKNOWN_…` are not found, `…_CHANGED`,
- * `…_MISMATCH` and `STALE_…` changed meanwhile, `…_UNAVAILABLE` and `NOT_READY`
- * are not available yet, `…_NOT_OWNED` is not this caller's, `…_REQUIRED`
- * waits on a person's yes, and everything else is the caller's to fix.
+ * The family a tool code with no {@link TOOL_REFUSALS} entry and no shared
+ * code of its own belongs to, from how it is spelled: the first matching
+ * {@link FAMILY_RULES} entry. In short: not found, changed meanwhile, too many,
+ * expired, DorkOS's own fault (`…_FAILED`, `…_ERROR`, an errno), not available
+ * yet (`…_UNAVAILABLE`, `…_DISABLED`, `…_TIMEOUT`), an unconfirmed caller
+ * (`UNIDENTIFIED…`), a person wanted (any code naming `PERSON`), a person's
+ * yes wanted, not this caller's (`…_NOT_OWNED`, `…_DENIED`, `CANNOT_…`), a
+ * clash or a full limit, already settled, too large, or not possible here.
+ * Everything else is the caller's to fix, `invalid_request`.
  */
 function familyOf(code: string): Refusal {
-  if (code === 'NOT_FOUND' || code.endsWith('_NOT_FOUND') || code.startsWith('UNKNOWN_')) {
-    return family('not_found');
-  }
-  if (code.endsWith('_CHANGED') || code.endsWith('_MISMATCH') || code.startsWith('STALE_')) {
-    return family('precondition_failed');
-  }
-  if (code === 'NOT_READY' || code === 'UNAVAILABLE' || code.endsWith('_UNAVAILABLE')) {
-    return family('temporarily_unavailable');
-  }
-  if (code.endsWith('_NOT_OWNED')) return family('forbidden');
-  if (code === 'APPROVAL_REQUIRED' || code.endsWith('_APPROVAL_REQUIRED')) {
-    return family('needs_approval');
-  }
-  if (code.endsWith('_PREFLIGHT_REQUIRED')) return family('needs_approval');
-  return family('invalid_request');
+  const rule = FAMILY_RULES.find(([pattern]) => pattern.test(code));
+  return family(rule ? rule[1] : 'invalid_request');
+}
+
+/**
+ * A tool code that IS a code on the shared list, spelled in upper case
+ * (`AGENT_PAUSED`, `ROOM_ARCHIVED`): the same meaning, so the same code, with
+ * the code's own title as the sentence.
+ */
+function sharedCode(code: string): Refusal | undefined {
+  const lower = code.toLowerCase();
+  if (!Object.hasOwn(PROBLEM_CODES, lower)) return undefined;
+  const definition = PROBLEM_CODES[lower as ProblemCode];
+  return { code: lower as ProblemCode, detail: definition.title };
 }
 
 /**
@@ -181,9 +236,11 @@ export function toolRefusalProblem(payload: unknown): Problem {
     typeof payload === 'object' && payload !== null
       ? (payload as { code?: unknown }).code
       : undefined;
-  const code = typeof raw === 'string' ? raw.toUpperCase() : undefined;
+  const code = typeof raw === 'string' ? raw.toUpperCase().replace(/-/g, '_') : undefined;
   const refusal =
-    code === undefined ? family('invalid_request') : (TOOL_REFUSALS[code] ?? familyOf(code));
+    code === undefined
+      ? family('invalid_request')
+      : (TOOL_REFUSALS[code] ?? sharedCode(code) ?? familyOf(code));
   return problemBody(refusal.code, { detail: refusal.detail });
 }
 

@@ -466,9 +466,12 @@ export interface StartMcpSigninResult {
 }
 
 /**
- * Why a managed-MCP sign-in could not even be STARTED (DOR-982) — the `code` on
- * the error payload `mcp.signin` rejects with, so every surface can say the same
- * plain sentence instead of relaying an OAuth stack trace.
+ * Why a managed-MCP sign-in could not even be STARTED (DOR-982): the `code` on
+ * the payload `mcp.signin` rejects with over MCP, so every surface can say the
+ * same plain sentence instead of relaying an OAuth stack trace. Over HTTP the
+ * capability dispatcher answers the same family as its lower-case problem code
+ * (`signin_no_app_registration`, `signin_no_signin_support`,
+ * `signin_unreachable`), which is what the web client reads.
  *
  * - `SIGNIN_NO_APP_REGISTRATION` — the provider will not let DorkOS register
  *   itself automatically. This is the one a person can fix: they can paste app
@@ -479,8 +482,8 @@ export interface StartMcpSigninResult {
  * - `SIGNIN_UNREACHABLE` — everything else: the server could not be reached, or
  *   it answered in a way DorkOS could not use.
  *
- * The raw error is carried alongside as `detail`, for the Details disclosure —
- * it is never the headline.
+ * Only the MCP result carries the raw error alongside, as `detail`; it never
+ * reaches an HTTP caller and is never the headline.
  */
 export const MCP_SIGNIN_FAILURE_CODES = [
   'SIGNIN_NO_APP_REGISTRATION',
