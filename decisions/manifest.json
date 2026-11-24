@@ -8193,6 +8193,21 @@
         "apps/server/src/services/core/session-relay/**",
         "packages/cloud-api/**"
       ]
+    },
+    {
+      "id": "261124-131941",
+      "slug": "one-append-only-work-link-store",
+      "title": "One append-only edge store for the work graph, keyed by entity references and written at the moment of action",
+      "status": "proposed",
+      "created": "2026-11-24",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": null,
+      "affects": [
+        "packages/db/src/schema/work-graph/work-links.ts",
+        "apps/server/src/services/work-graph/**"
+      ]
     }
   ]
 }

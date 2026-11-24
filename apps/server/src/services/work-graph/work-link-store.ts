@@ -1,0 +1,291 @@
+/**
+ * The work graph's edge store (DOR-4968, W2; ADR 261124-131941): one
+ * append-only record of what a chat started, claims, opened, works on or
+ * produced, and of the ids a chat has had.
+ *
+ * What it holds, and what it never does:
+ *
+ * - **Append-only.** It inserts and reads; there is no update or delete. An
+ *   exact repeat of an edge is the same fact and records nothing new.
+ * - **Ids and names only.** Both ends are entity references
+ *   (`@dorkos/shared/entity-ref`), stored by `./work-link-ref`. No path, no
+ *   hostname and no message text ever reaches it: a worktree is its folder
+ *   name, and an edge carries no free text at all.
+ * - **Not the audit trail and not the lock.** The audit trail records actions;
+ *   this records their results. `work_claims` stays the exclusivity lock.
+ *
+ * It lives in this computer's SQLite store for now. Its move to the space store
+ * is DOR-5139 (ADR 261122-173853).
+ *
+ * @module services/work-graph/work-link-store
+ */
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  WORK_LINK_RELATIONS,
+  WORK_LINK_SOURCE_MAX_LENGTH,
+  workLinks,
+  type Db,
+  type SQL,
+  type WorkLinkRelation,
+  type WorkLinkRow,
+} from '@dorkos/db';
+import { isDorkId } from '@dorkos/shared/dork-ref';
+import type { EntityKind, EntityRef } from '@dorkos/shared/entity-ref';
+import { monotonicFactory } from 'ulidx';
+import { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
+
+export { WORK_LINK_RELATIONS, type WorkLinkRelation } from '@dorkos/db';
+
+/** How many `rekeyed_from` steps {@link WorkLinkStore.resolveRekey} follows at most. */
+export const REKEY_MAX_DEPTH = 32;
+
+/** What a `source` may be spelled with: a short lower-case word, `-` allowed. */
+const SOURCE_PATTERN = new RegExp(`^[a-z][a-z0-9-]{0,${WORK_LINK_SOURCE_MAX_LENGTH - 1}}$`);
+
+/**
+ * The kinds each end must have, for the relations that fix them. Both
+ * relations from the address design (ADR 261122-124821) join a chat to a chat;
+ * the rest are left open until their write sites land.
+ */
+const RELATION_KINDS: Partial<
+  Record<WorkLinkRelation, { from: readonly EntityKind[]; to: readonly EntityKind[] }>
+> = {
+  forked_from: { from: ['chat'], to: ['chat'] },
+  rekeyed_from: { from: ['chat'], to: ['chat'] },
+};
+
+/** One edge to record. */
+export interface WorkLinkInput {
+  /** The subject: the chat (or thing) the fact is about. */
+  from: EntityRef;
+  /** What `from` did or is to `to`. */
+  relation: WorkLinkRelation;
+  /** The object. */
+  to: EntityRef;
+  /** What wrote it, as one short word (`server`, `open-pr`, `flow`, ...). */
+  source: string;
+  /** The chat whose action recorded it, when a chat's action did. */
+  recordingChatId?: string | null;
+}
+
+/** One recorded edge. */
+export interface WorkLink {
+  /** The edge's ULID. */
+  id: string;
+  /** The subject (`kind` and `id` only). */
+  from: EntityRef;
+  /** The relation. */
+  relation: WorkLinkRelation;
+  /** The object (`kind` and `id` only). */
+  to: EntityRef;
+  /** When it was first recorded (ISO 8601). */
+  recordedAt: string;
+  /** The chat whose action recorded it, or `null`. */
+  recordingChatId: string | null;
+  /** What wrote it. */
+  source: string;
+}
+
+/** Why an edge was not recorded. Stable codes, for tests and logs. */
+export type WorkLinkRefusal =
+  | 'bad-from'
+  | 'bad-to'
+  | 'bad-relation'
+  | 'bad-kinds'
+  | 'self-link'
+  | 'bad-source'
+  | 'bad-recording-chat';
+
+/** What {@link WorkLinkStore.record} came to. */
+export type WorkLinkRecordResult =
+  | {
+      ok: true;
+      /** The stored edge: the new one, or the earlier one an exact repeat matched. */
+      link: WorkLink;
+      /** `false` when the edge was already recorded and nothing new landed. */
+      created: boolean;
+    }
+  | { ok: false; reason: WorkLinkRefusal };
+
+/** What the store needs. */
+export interface WorkLinkStoreDeps {
+  /** The DorkOS database. */
+  db: Db;
+  /** The clock, in epoch milliseconds. Tests pin it. */
+  now?: () => number;
+}
+
+function isRelation(value: string): value is WorkLinkRelation {
+  return (WORK_LINK_RELATIONS as readonly string[]).includes(value);
+}
+
+function toLink(row: WorkLinkRow): WorkLink | null {
+  const from = decodeWorkLinkRef(row.fromRef);
+  const to = decodeWorkLinkRef(row.toRef);
+  if (from === null || to === null || !isRelation(row.relation)) return null;
+  return {
+    id: row.id,
+    from,
+    relation: row.relation,
+    to,
+    recordedAt: row.recordedAt,
+    recordingChatId: row.recordingChatId,
+    source: row.source,
+  };
+}
+
+function toLinks(rows: WorkLinkRow[]): WorkLink[] {
+  return rows.map(toLink).filter((link): link is WorkLink => link !== null);
+}
+
+/** Records and reads the work graph's edges. */
+export class WorkLinkStore {
+  private readonly db: Db;
+  private readonly now: () => number;
+  /** Monotonic, so edges recorded in one millisecond still list in the order they landed. */
+  private readonly newId = monotonicFactory();
+
+  /**
+   * Build the store over the database.
+   *
+   * @param deps - The database and, in tests, a clock.
+   */
+  constructor(deps: WorkLinkStoreDeps) {
+    this.db = deps.db;
+    this.now = deps.now ?? (() => Date.now());
+  }
+
+  /**
+   * Record one edge. Both ends are checked against their kinds' grammars and
+   * stored in their canonical spelling. An exact repeat (same `from`,
+   * `relation` and `to`) records nothing and hands back the earlier edge, so a
+   * write site may call this as often as its action repeats.
+   *
+   * @param input - The edge.
+   * @returns The stored edge, or why it was refused. Throws only when the
+   *   database itself fails.
+   */
+  record(input: WorkLinkInput): WorkLinkRecordResult {
+    const fromRef = encodeWorkLinkRef(input.from);
+    if (fromRef === null) return { ok: false, reason: 'bad-from' };
+    const toRef = encodeWorkLinkRef(input.to);
+    if (toRef === null) return { ok: false, reason: 'bad-to' };
+    if (!isRelation(input.relation)) return { ok: false, reason: 'bad-relation' };
+    const kinds = RELATION_KINDS[input.relation];
+    if (kinds && !(kinds.from.includes(input.from.kind) && kinds.to.includes(input.to.kind)))
+      return { ok: false, reason: 'bad-kinds' };
+    if (fromRef === toRef) return { ok: false, reason: 'self-link' };
+    if (!SOURCE_PATTERN.test(input.source)) return { ok: false, reason: 'bad-source' };
+    const recordingChatId = input.recordingChatId ?? null;
+    if (recordingChatId !== null && !isDorkId(recordingChatId))
+      return { ok: false, reason: 'bad-recording-chat' };
+
+    const inserted = this.db
+      .insert(workLinks)
+      .values({
+        id: this.newId(this.now()),
+        fromRef,
+        toRef,
+        relation: input.relation,
+        recordedAt: new Date(this.now()).toISOString(),
+        recordingChatId,
+        source: input.source,
+      })
+      .onConflictDoNothing({ target: [workLinks.fromRef, workLinks.relation, workLinks.toRef] })
+      .returning()
+      .all();
+    const row =
+      inserted[0] ??
+      this.db
+        .select()
+        .from(workLinks)
+        .where(
+          and(
+            eq(workLinks.fromRef, fromRef),
+            eq(workLinks.relation, input.relation),
+            eq(workLinks.toRef, toRef)
+          )
+        )
+        .get();
+    const link = row ? toLink(row) : null;
+    // The row was just written or matched from this call's own checked values.
+    if (link === null) throw new Error('A recorded work link could not be read back');
+    return { ok: true, link, created: inserted.length > 0 };
+  }
+
+  /**
+   * Every edge whose subject is `ref`, oldest first.
+   *
+   * @param ref - The subject.
+   * @param relation - Only edges of this relation, when given.
+   * @returns The edges; none for a reference that is not valid.
+   */
+  from(ref: EntityRef, relation?: WorkLinkRelation): WorkLink[] {
+    const stored = encodeWorkLinkRef(ref);
+    if (stored === null) return [];
+    const match = eq(workLinks.fromRef, stored);
+    return this.list(relation === undefined ? match : and(match, eq(workLinks.relation, relation)));
+  }
+
+  /**
+   * Every edge whose object is `ref`, oldest first.
+   *
+   * @param ref - The object.
+   * @param relation - Only edges of this relation, when given.
+   * @returns The edges; none for a reference that is not valid.
+   */
+  to(ref: EntityRef, relation?: WorkLinkRelation): WorkLink[] {
+    const stored = encodeWorkLinkRef(ref);
+    if (stored === null) return [];
+    const match = eq(workLinks.toRef, stored);
+    return this.list(relation === undefined ? match : and(match, eq(workLinks.relation, relation)));
+  }
+
+  /**
+   * The id a chat is known by now, following `rekeyed_from` edges from an
+   * older id to the newest one (ADR-0267: a new chat's first id gives way to
+   * its runtime's). Survives a restart, which the in-memory redirect does not.
+   *
+   * Bounded and cycle-safe: it follows at most {@link REKEY_MAX_DEPTH} steps
+   * and stops at the last id before any id would repeat. Where one id was
+   * re-keyed twice, the newest edge wins.
+   *
+   * @param chatId - A chat id, current or retired.
+   * @returns The current id; `chatId` itself when it was never re-keyed or is
+   *   not a chat id.
+   */
+  resolveRekey(chatId: string): string {
+    if (!isDorkId(chatId)) return chatId;
+    const seen = new Set([chatId]);
+    let current = chatId;
+    for (let step = 0; step < REKEY_MAX_DEPTH; step += 1) {
+      const row = this.db
+        .select({ fromRef: workLinks.fromRef })
+        .from(workLinks)
+        .where(
+          and(eq(workLinks.toRef, `dork:chat:${current}`), eq(workLinks.relation, 'rekeyed_from'))
+        )
+        .orderBy(desc(workLinks.recordedAt), desc(workLinks.id))
+        .get();
+      const next = row ? decodeWorkLinkRef(row.fromRef) : null;
+      if (next === null || next.kind !== 'chat' || seen.has(next.id)) return current;
+      seen.add(next.id);
+      current = next.id;
+    }
+    return current;
+  }
+
+  private list(where: SQL | undefined): WorkLink[] {
+    return toLinks(
+      this.db
+        .select()
+        .from(workLinks)
+        .where(where)
+        .orderBy(asc(workLinks.recordedAt), asc(workLinks.id))
+        .all()
+    );
+  }
+}

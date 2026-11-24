@@ -30,6 +30,7 @@ import {
   setSessionLimitStore,
 } from '../../services/session/index.js';
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
+import { installWorkLinkStore } from '../../services/work-graph/index.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
 import { accountRuleRoots } from '../../services/core/usage/account-eligibility.js';
@@ -163,6 +164,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // registers, so the first turn is recorded; text past 30 days is swept here
   // and on the hourly tick.
   installTurnContextStore(db);
+
+  // The work graph's edges (DOR-4968), on the same beat: a first turn's re-key
+  // is recorded as it happens, so the first turn must find the store in place.
+  installWorkLinkStore(db);
 
   // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
   // here, before extensions start, because a name handed out earlier could
