@@ -4,8 +4,9 @@ name: claude-code-review
 # lines where it finds issues. Runs on-demand, not on every push: a full review
 # fires when a PR is opened or marked ready-for-review, and re-reviews fire when
 # the author applies the `re-review` label (auto-cleared after, so it is a reusable
-# "re-request review" button). Since Nov 23 every push reviews too (see `on:`),
-# because the Security lens's verdict has to name the exact head. Controls (labels): `skip-review`
+# "re-request review" button). Since Nov 23 every push runs too (see `on:`),
+# because the Security lens's verdict has to name the exact head; since Nov 24 a
+# push to an already-reviewed PR runs the Security lens only. Controls (labels): `skip-review`
 # (no review at all), `review:light` / `review:deep` (intensity). See the
 # `creating-pull-requests` skill for the author-facing flow. This is the "auto"
 # half of the Claude review setup; claude.yml is the interactive "@claude" half.
@@ -188,10 +189,27 @@ name: claude-code-review
 on:
   # Every push reviews too (`synchronize`, DOR-5099, Nov 23): the Security lens's
   # verdict must name the exact head, and `pr-gates` accepts that verdict as
-  # Security's sign-off, so a head with no review would wait forever. On a push
-  # the reviewer is in re-review mode (only new or still-open Important
-  # findings). The concurrency group below is per head SHA, so a review of an
-  # older head still finishes. Re-reviews also fire on `re-review`.
+  # Security's sign-off, so a head with no review would wait forever. The
+  # concurrency group below is per head SHA, so a review of an older head still
+  # finishes. Re-reviews also fire on `re-review`.
+  #
+  # PUSH MODE (Nov 24, ledger review-spend). A push to a PR the reviewer has
+  # already reviewed runs the Security lens only, plus a one-line summary so the
+  # verdict gate below still sees a verdict: no REVIEW.md, no AGENTS.md, no
+  # general re-review. Measured Nov 23-24, a push review cost 86% of a first
+  # review ($0.131 against $0.153 API-equivalent, Sonnet, ~10 turns), so "only
+  # new findings" saved almost nothing, and pushes had added 0.4 general reviews
+  # per PR. Before Nov 23 pushes were not reviewed at all, so this restores that
+  # for the general review and keeps the per-head Security verdict, which judges
+  # the whole diff with the same lens, model and turn budget as before. The
+  # mode is the reviewer's call from its own prior summary, so a PR whose first
+  # review was lost (a conflicted open, a spent quota) still gets a full one on
+  # its next push. A full re-review on demand is still the `re-review` label.
+  #
+  # NOT DONE, measured: debounce (per-PR `cancel-in-progress`). Only 1 of 18
+  # consecutive push pairs arrived while the earlier review was running (a
+  # review takes ~40 s), so it would save ~1% and give up the per-head-SHA
+  # guarantee the concurrency note below explains.
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened, labeled]
 
@@ -893,6 +911,7 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.target.outputs.number }}
             INLINE COMMENTS: ${{ github.event_name == 'workflow_dispatch' && 'review-gh.sh inline' || 'inline-comment tool' }}
+            TRIGGER: ${{ github.event.action == 'synchronize' && 'push' || 'review request' }}
 
             You are reviewing this pull request as a senior DorkOS engineer.
 
@@ -924,6 +943,20 @@ jobs:
             `grep`, no `rg`, no `git`, no `ls`. Do not spend turns rediscovering
             that — Grep and Glob cover every search this review needs, dot-
             directories included, in a single pass.
+
+            PUSH MODE. If TRIGGER at the top of this prompt is `push`, first look
+            for your own prior summary comment on this PR (`review-gh.sh view
+            comments`): a top-level comment with a severity tally such as
+            "1 important, 3 nits" or "No blocking issues found". If there is one,
+            this run is a Security re-check of the new head only:
+            - Do not read REVIEW.md or AGENTS.md, do not review the code again,
+              and post no inline comments.
+            - Post exactly this summary with `review-gh.sh summary`:
+              'Push re-check: the Security lens only. The code review is not repeated on a push (add the re-review label for one), so 0 important, 0 nits here.'
+            - Then do the SECURITY LENS section at the end of this prompt in
+              full, over the whole diff, exactly as on any other run.
+            If there is no prior summary of yours, this PR has never had a full
+            review: ignore this paragraph and do the full review below.
 
             First, read REVIEW.md and AGENTS.md at the repository root and apply
             them in full, including REVIEW.md's "How to review" process, the
