@@ -775,6 +775,14 @@ jobs:
       - name: Release-branch contents fixtures
         run: bash scripts/test-release-branch-contents.sh
 
+      # release-gate.sh is the daily release's last decision before npm with no
+      # person approving (DOR-5123): P still on main and not reverted, P's own
+      # full run green, and every required check green in P's merge-queue
+      # build. A rule that quietly loosens ships an unproven commit. Stub gh, jq
+      # only.
+      - name: Release gate fixtures
+        run: bash scripts/test-release-gate.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work
