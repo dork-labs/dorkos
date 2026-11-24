@@ -1,6 +1,6 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { setTimeout as wait } from 'node:timers/promises';
-import type {} from './runner-parent-exit.setup.js';
+import type { RunnerExitFixture } from './runner-parent-exit.setup.js';
 import { mkdir, mkdtemp, realpath, rm, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, inject, it, vi } from 'vitest';
@@ -21,6 +21,25 @@ const fixtureFlags = new Set<string>([
   'OPENCODE_DISABLE_AUTOUPDATE',
 ]);
 const refusedProfileNames = RUNTIME_ENV_PROFILES.OpenCode.filter((name) => !fixtureFlags.has(name));
+
+/** Hold the worker's event loop until the outer observer has completed or its deadline passes. */
+function waitForSilentWorkerRelease(control: RunnerExitFixture): boolean {
+  const release = join(control.root, 'worker-release');
+  const cell = new Int32Array(new SharedArrayBuffer(4));
+  const blocking = join(control.root, 'worker-blocking');
+  const stopAt = control.deadline - 1000;
+  writeFileSync(blocking + '.part', JSON.stringify({ pid: process.pid, stopAt }), {
+    flag: 'wx',
+    mode: 0o600,
+  });
+  renameSync(blocking + '.part', blocking + '.json');
+  while (Date.now() < stopAt) {
+    if (existsSync(release)) return readFileSync(release, 'utf8') === 'proof-observed\n';
+    // Synchronous on purpose. IPC and scope events do not reach JS in this window.
+    Atomics.wait(cell, 0, 0, Math.min(25, Math.max(0, stopAt - Date.now())));
+  }
+  return false;
+}
 
 it.skipIf(!armed)(
   'readies the pinned sidecar before its fixture runner exits itself',
@@ -163,8 +182,14 @@ it.skipIf(!armed)(
         join(control.root, 'pinned-ready.part'),
         join(control.root, 'pinned-ready.json')
       );
-      // The nested main observes this receipt and exits itself. No shutdown here.
-      await wait(Math.max(0, control.deadline - Date.now()));
+      if (control.mode === 'silent-worker') {
+        // A successful release follows observed native closure. Returning lets the
+        // real worker handle its now-closed runner channel and retire.
+        if (waitForSilentWorkerRelease(control)) return;
+      } else {
+        // The nested main observes the first readiness receipt and exits itself.
+        await wait(Math.max(0, control.deadline - Date.now()));
+      }
       writeFileSync(join(control.root, 'worker-fallback-started'), '', { flag: 'wx', mode: 0o600 });
       throw new Error('Fixture runner remained beyond its existing deadline');
     } catch (error) {

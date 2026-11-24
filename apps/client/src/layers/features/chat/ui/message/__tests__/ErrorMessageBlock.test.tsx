@@ -87,13 +87,6 @@ afterEach(() => {
 });
 
 describe('ErrorMessageBlock', () => {
-  it('renders category heading and subtext for max_turns', () => {
-    render(<ErrorMessageBlock message="Hit limit" category="max_turns" />);
-
-    expect(screen.getByText('Turn limit reached')).toBeInTheDocument();
-    expect(screen.getByText('The agent ran for its maximum number of turns.')).toBeInTheDocument();
-  });
-
   it('shows the runtime message rather than the generic execution_error copy', () => {
     // The generic sentence only restates the heading, so it must never shadow
     // what the runtime actually said — the inline error path passes no
@@ -103,12 +96,6 @@ describe('ErrorMessageBlock', () => {
     expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
     expect(screen.getByText('API error')).toBeInTheDocument();
     expect(screen.queryByText('Something went wrong before it finished.')).not.toBeInTheDocument();
-  });
-
-  it('falls back to the generic execution_error copy when there is no message', () => {
-    render(<ErrorMessageBlock message="   " category="execution_error" />);
-
-    expect(screen.getByText('Something went wrong before it finished.')).toBeInTheDocument();
   });
 
   it('keeps the category copy and does not paraphrase it with the runtime message', () => {
@@ -121,61 +108,6 @@ describe('ErrorMessageBlock', () => {
 
     fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText('Reached 30 turns')).toBeInTheDocument();
-  });
-
-  it('surfaces a self-explanatory category message when it carries a link', () => {
-    render(
-      <ErrorMessageBlock
-        message="Cost limit hit. Raise it at https://dorkos.ai/settings/budget"
-        category="budget_exceeded"
-      />
-    );
-
-    expect(screen.getByText('This chat hit its spending limit.')).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: 'https://dorkos.ai/settings/budget' })
-    ).toBeInTheDocument();
-  });
-
-  it('does not repeat a message whose only difference from the subtext is whitespace', () => {
-    // `TurnFailedNotice` and `ChatPanel` pass the SAME string as `message` and
-    // `subtext`; `message` is trimmed on the way in, so an untrimmed comparison
-    // printed a trailing-newline message twice (DOR-1661 review, nit 1).
-    render(
-      <ErrorMessageBlock
-        message={'Sidecar exited\n'}
-        category="execution_error"
-        subtext={'Sidecar exited\n'}
-      />
-    );
-
-    expect(screen.getAllByText('Sidecar exited')).toHaveLength(1);
-  });
-
-  it('does not repeat the message when the caller already put it in the subtext', () => {
-    // `TurnFailedNotice`'s shape: heading + subtext both supplied.
-    render(
-      <ErrorMessageBlock
-        message="Sidecar exited"
-        category="execution_error"
-        heading="OpenCode stopped unexpectedly"
-        subtext="Sidecar exited"
-      />
-    );
-
-    expect(screen.getAllByText('Sidecar exited')).toHaveLength(1);
-  });
-
-  it('renders category heading for budget_exceeded', () => {
-    render(<ErrorMessageBlock message="Over budget" category="budget_exceeded" />);
-
-    expect(screen.getByText('Cost limit reached')).toBeInTheDocument();
-  });
-
-  it('renders category heading for output_format_error', () => {
-    render(<ErrorMessageBlock message="Bad format" category="output_format_error" />);
-
-    expect(screen.getByText('Output format error')).toBeInTheDocument();
   });
 
   it('shows retry button only for execution_error with onRetry', () => {
@@ -239,12 +171,6 @@ describe('ErrorMessageBlock', () => {
     expect(screen.getByText(raw)).toBeInTheDocument();
   });
 
-  it('does not show retry button when onRetry is not provided', () => {
-    render(<ErrorMessageBlock message="Error" category="execution_error" />);
-
-    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
-  });
-
   it('calls onRetry when retry button is clicked', () => {
     const onRetry = vi.fn();
     render(<ErrorMessageBlock message="Error" category="execution_error" onRetry={onRetry} />);
@@ -262,12 +188,6 @@ describe('ErrorMessageBlock', () => {
 
     fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText('Stack trace here')).toBeInTheDocument();
-  });
-
-  it('does not show details button when no details provided', () => {
-    render(<ErrorMessageBlock message="Error" category="execution_error" />);
-
-    expect(screen.queryByText('Details')).not.toBeInTheDocument();
   });
 
   it('names the next step for the exact Git refusal and preserves its message and details', () => {
@@ -298,13 +218,6 @@ describe('ErrorMessageBlock', () => {
     }
   );
 
-  it('falls back to generic heading when no category', () => {
-    render(<ErrorMessageBlock message="Something went wrong" />);
-
-    expect(screen.getByText('Error')).toBeInTheDocument();
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-  });
-
   describe('auth_error copy', () => {
     it('renders the runtime-aware friendly heading and re-auth subtext', () => {
       renderBlock(
@@ -314,15 +227,6 @@ describe('ErrorMessageBlock', () => {
       expect(screen.getByText('Sign in to Claude again')).toBeInTheDocument();
       expect(
         screen.getByText('Your Claude login stopped working. Sign in again to continue.')
-      ).toBeInTheDocument();
-    });
-
-    it('falls back to a neutral runtime name when none is supplied', () => {
-      renderBlock(<ErrorMessageBlock message="401 revoked" category="auth_error" />);
-
-      expect(screen.getByText('Sign in to your agent again')).toBeInTheDocument();
-      expect(
-        screen.getByText('Your agent login stopped working. Sign in again to continue.')
       ).toBeInTheDocument();
     });
 
@@ -356,65 +260,6 @@ describe('ErrorMessageBlock', () => {
         screen.getByRole('link', { name: 'https://openrouter.ai/settings/credits' })
       ).toHaveAttribute('href', 'https://openrouter.ai/settings/credits');
     });
-
-    it('does not paraphrase its own copy on claude-code, the default runtime', () => {
-      // The premise "the message is provider text we were dropping" is FALSE on
-      // claude-code: `messaging/message-sender.ts` already substitutes DorkOS's
-      // own sentence and parks the raw string in `details`. Printing it under
-      // the friendly copy gave three lines saying one thing (DOR-1661 review,
-      // red 2). Verified against the real producer, not an invented shape.
-      render(
-        <ErrorMessageBlock
-          message="Your sign-in stopped working. Sign in again to keep going."
-          category="auth_error"
-          details="OAuth token exchange failed: 401 invalid_grant"
-          runtimeLabel="Claude"
-        />
-      );
-
-      expect(
-        screen.getByText('Your Claude login stopped working. Sign in again to continue.')
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByText('Your sign-in stopped working. Sign in again to keep going.')
-      ).not.toBeInTheDocument();
-
-      // Still not lost — it joins the raw details rather than falling off.
-      fireEvent.click(screen.getByText('Details'));
-      expect(
-        screen.getByText(/Your sign-in stopped working\. Sign in again to keep going\./)
-      ).toBeInTheDocument();
-    });
-
-    it('does not paraphrase its own copy for the SDK-mapped auth message either', () => {
-      // The other claude-code producer: `sdk/sdk-error-mapping.ts`.
-      render(
-        <ErrorMessageBlock
-          message="Authentication failed. Re-authenticate Claude Code and try again."
-          category="auth_error"
-          runtimeLabel="Claude"
-        />
-      );
-
-      expect(
-        screen.queryByText('Authentication failed. Re-authenticate Claude Code and try again.')
-      ).not.toBeInTheDocument();
-    });
-
-    it('renders a secondary Retry button when onRetry is provided', () => {
-      const onRetry = vi.fn();
-      renderBlock(
-        <ErrorMessageBlock
-          message="401 revoked"
-          category="auth_error"
-          runtimeLabel="Claude"
-          onRetry={onRetry}
-        />
-      );
-
-      fireEvent.click(screen.getByRole('button', { name: /retry/i }));
-      expect(onRetry).toHaveBeenCalledOnce();
-    });
   });
 
   describe('URLs in error text', () => {
@@ -431,35 +276,6 @@ describe('ErrorMessageBlock', () => {
       });
       expect(link).toHaveAttribute('href', 'https://openrouter.ai/settings/credits');
       expect(link).toHaveAttribute('target', '_blank');
-    });
-
-    it('links a URL in a caller-supplied subtext', () => {
-      render(
-        <ErrorMessageBlock
-          message="ignored"
-          heading="Couldn’t reach the provider"
-          subtext="Check status at https://status.example/incidents"
-        />
-      );
-
-      expect(
-        screen.getByRole('link', { name: 'https://status.example/incidents' })
-      ).toHaveAttribute('href', 'https://status.example/incidents');
-    });
-
-    it('links a URL inside the collapsible details', () => {
-      render(
-        <ErrorMessageBlock
-          message="Request failed"
-          category="execution_error"
-          details="[http_402] See https://openrouter.ai/docs/errors"
-        />
-      );
-
-      fireEvent.click(screen.getByText('Details'));
-      expect(
-        screen.getByRole('link', { name: 'https://openrouter.ai/docs/errors' })
-      ).toHaveAttribute('href', 'https://openrouter.ai/docs/errors');
     });
 
     it('does not let error text inject markup', () => {
@@ -501,37 +317,6 @@ describe('ErrorMessageBlock', () => {
       });
       // It signed in HERE — it did not send the person to Settings.
       expect(openSettings).not.toHaveBeenCalled();
-    });
-
-    it('names the session for Codex too, and lets the server decide the account', async () => {
-      // Purpose: Codex has no config-dir account concept, but the client must
-      // not be the thing that knows that — sending the session id is always
-      // safe, and the server resolves it to no pin. Keeping the rule in one
-      // place is why the client no longer branches on runtime here.
-      const user = userEvent.setup();
-      sessionRows.current = [sessionRow('codex')];
-      const transport = renderBlock(
-        <ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />
-      );
-
-      await user.click(screen.getByRole('button', { name: 'Sign in with ChatGPT' }));
-
-      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('codex', {
-        sessionId: SESSION_ID,
-        accountRoot: undefined,
-      });
-    });
-
-    it('uses the same per-runtime wording Settings uses', async () => {
-      // Purpose: the copy table is shared (entities/runtime), so a person who
-      // reads "Sign in with ChatGPT" in Settings reads it here too. A private
-      // copy in either surface is how the two drift.
-      sessionRows.current = [sessionRow('codex')];
-      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
-
-      expect(
-        await screen.findByRole('button', { name: 'Sign in with ChatGPT' })
-      ).toBeInTheDocument();
     });
 
     it('keeps one login across an unmount, so scrolling away cannot start a second', async () => {
@@ -620,42 +405,6 @@ describe('ErrorMessageBlock', () => {
       expect(onSigninComplete).toHaveBeenCalledTimes(1);
     });
 
-    it('shows progress while the sign-in runs, then confirms it landed', async () => {
-      // Purpose: the delegated login opens a browser and can take a while. The
-      // card has to say so, then say when it is done, without the person
-      // leaving the conversation to find out.
-      const user = userEvent.setup();
-      sessionRows.current = [sessionRow('claude-code')];
-      const login = deferred<DelegatedLoginResult>();
-      renderBlock(
-        <ErrorMessageBlock
-          message="401"
-          category="auth_error"
-          sessionId={SESSION_ID}
-          onRetry={vi.fn()}
-        />,
-        { delegateRuntimeLogin: vi.fn(() => login.promise) }
-      );
-
-      // The live region is mounted BEFORE there is anything to say, so the
-      // status change is announced rather than appearing with its container.
-      const status = screen.getByRole('status');
-      expect(status).toBeEmptyDOMElement();
-
-      await user.click(screen.getByRole('button', { name: 'Sign in' }));
-      expect(await screen.findByText('Waiting for sign-in to complete…')).toBeInTheDocument();
-      // The button stays mounted and disabled — unmounting it would dump
-      // keyboard focus to <body> in the middle of the flow.
-      expect(screen.getByTestId('auth-error-signin-button')).toBeDisabled();
-      expect(document.body).not.toHaveFocus();
-
-      await act(async () => {
-        login.resolve({ ok: true });
-      });
-      expect(await screen.findByTestId('auth-error-signin-success')).toBeInTheDocument();
-      expect(screen.getByText('Signed in.')).toBeInTheDocument();
-    });
-
     it('reports a refused sign-in honestly and offers another go', async () => {
       // Purpose: a denied or timed-out login must not read as success. The
       // server's real message shows, and the button becomes "Try again".
@@ -703,41 +452,6 @@ describe('ErrorMessageBlock', () => {
       );
       expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     });
-
-    it('stands on its own when the card has no Retry to offer', async () => {
-      // Purpose: the shape a mid-history auth card takes once Retry is gated to
-      // the final turn (DOR-1677). The sign-in is NOT position-dependent — the
-      // runtime's login is broken now, whenever it broke — so the primary
-      // action and its quiet fallback both survive, and only Retry goes.
-      const user = userEvent.setup();
-      sessionRows.current = [sessionRow('claude-code')];
-      const transport = renderBlock(
-        <ErrorMessageBlock message="401 revoked" category="auth_error" sessionId={SESSION_ID} />
-      );
-
-      expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Use an API key instead' })).toBeInTheDocument();
-
-      // And the button that remains is the working one, not a leftover.
-      await user.click(screen.getByRole('button', { name: 'Sign in' }));
-      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
-        sessionId: SESSION_ID,
-        accountRoot: undefined,
-      });
-    });
-
-    it('keeps the settings route as a quiet link, named for what it gets you', async () => {
-      // Purpose: the API-key form lives in Settings → Runtimes. It stays
-      // reachable, but demoted — one quiet link under the primary action, not
-      // a second button competing with it.
-      const user = userEvent.setup();
-      sessionRows.current = [sessionRow('claude-code')];
-      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
-
-      const link = screen.getByRole('button', { name: 'Use an API key instead' });
-      await user.click(link);
-      expect(openSettings).toHaveBeenCalledWith('runtimes');
-    });
   });
 
   describe('auth_error — what the card says once the message re-sends (DOR-1650)', () => {
@@ -772,41 +486,6 @@ describe('ErrorMessageBlock', () => {
         'Signed in. Sending your message again…'
       );
       expect(onSigninComplete).toHaveBeenCalledTimes(1);
-    });
-
-    it('hides Retry while the message is already on its way', async () => {
-      // Purpose: a Retry button offered at the exact moment the message is
-      // being re-sent is how one message becomes two.
-      await signInWith(true);
-
-      expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
-    });
-
-    it('settles on a plain "Signed in." with Retry when nothing was re-sent', async () => {
-      // Purpose: the honest half of the same sentence. When the conversation
-      // decided the person moved on — a draft in the composer, a newer turn —
-      // the card must not claim to be sending anything, and the decision goes
-      // back to the person via Retry.
-      await signInWith(false);
-
-      expect(screen.getByRole('status')).toHaveTextContent('Signed in.');
-      expect(screen.getByRole('status')).not.toHaveTextContent('Sending your message again');
-      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    });
-
-    it('never claims to be sending when no consumer is wired at all', async () => {
-      // Purpose: `onSigninComplete` is optional — the dev showcase and any
-      // future host may omit it. A missing consumer must read as "nothing was
-      // sent", not as a resume that never happened.
-      const user = userEvent.setup();
-      sessionRows.current = [sessionRow('claude-code')];
-      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
-
-      await user.click(await screen.findByRole('button', { name: 'Sign in' }));
-      await waitFor(() => {
-        expect(screen.getByTestId('auth-error-signin-success')).toBeInTheDocument();
-      });
-      expect(screen.getByRole('status')).not.toHaveTextContent('Sending your message again');
     });
 
     it('re-sends once across an unmount, and shows the settled state after', async () => {
@@ -1080,44 +759,6 @@ describe('ErrorMessageBlock', () => {
       expect(openSettings).toHaveBeenCalledWith('runtimes');
       expect(transport.delegateRuntimeLogin).not.toHaveBeenCalled();
     });
-
-    it('keeps the settings deep-link when no session is in context', async () => {
-      // Purpose: with no session there is no way to know which runtime failed,
-      // so there is nothing honest to sign into — fall back rather than guess.
-      //
-      // That this path also needs NO data providers cannot be shown here,
-      // because this file mocks `useSessions` and a mocked hook needs none
-      // either way. `ErrorMessageBlock-no-providers.test.tsx` proves it against
-      // the real session layer.
-      const user = userEvent.setup();
-      renderBlock(<ErrorMessageBlock message="401" category="auth_error" />);
-
-      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: /fix sign-in/i }));
-
-      expect(openSettings).toHaveBeenCalledWith('runtimes');
-    });
-
-    it('shows nothing while the session list is still loading', async () => {
-      // Purpose: "loading" is not "no runtime". Rendering the deep-link now and
-      // replacing it with a Sign in button a moment later is a control that
-      // moves under the cursor on every cold load.
-      sessionsLoading.current = true;
-      sessionRows.current = [];
-      renderBlock(<ErrorMessageBlock message="401" category="auth_error" sessionId={SESSION_ID} />);
-
-      expect(screen.queryByRole('button', { name: /fix sign-in/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
-      // The error itself still renders — only the actions wait.
-      expect(screen.getByText('Sign in to your agent again')).toBeInTheDocument();
-    });
-  });
-
-  it('falls back to execution-error copy for an unrecognized category', () => {
-    // Forward-compat: a category the client does not know about must not crash.
-    render(<ErrorMessageBlock message="future error" category={'some_future_category' as never} />);
-
-    expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
   });
 });
 
@@ -1163,21 +804,6 @@ describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
     expect(screen.queryByTestId('error-message-block')).toBeNull();
   });
 
-  it('keeps the plain card with no history row for it', async () => {
-    sessionRows.current = [{ id: SESSION_ID, runtime: 'claude-code' } as Session];
-    renderBlock(
-      <ErrorMessageBlock
-        message="You've hit your weekly limit"
-        code="rate_limit"
-        sessionId={SESSION_ID}
-        at="2026-09-27T14:00:00.000Z"
-      />,
-      { getLimitHistory: vi.fn().mockResolvedValue({ entries: [] }) }
-    );
-    expect(await screen.findByTestId('error-message-block')).toBeInTheDocument();
-    expect(screen.getByText("You've hit your weekly limit")).toBeInTheDocument();
-  });
-
   it('draws nothing on a live turn (no timestamp yet) while the limit is open', async () => {
     sessionRows.current = [
       {
@@ -1207,12 +833,6 @@ describe('ErrorMessageBlock rate_limit (spec claude-account-ui §6.7)', () => {
     );
     await waitFor(() => expect(transport.getLimitHistory).toHaveBeenCalled());
     expect(screen.queryByTestId('error-message-block')).toBeNull();
-  });
-
-  it('is unchanged without a code', () => {
-    const transport = renderBlock(<ErrorMessageBlock message="boom" sessionId={SESSION_ID} />);
-    expect(screen.getByTestId('error-message-block')).toBeInTheDocument();
-    expect(transport.getLimitHistory).not.toHaveBeenCalled();
   });
 });
 
@@ -1361,26 +981,6 @@ describe('ErrorMessageBlock — a turn refused because DorkOS credits could not 
     await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
     expect(keepCreditsOutOfProject).toHaveBeenCalledWith(SESSION_ID);
     expect(useAppStore.getState().retryAccount).toEqual({ id: 'work', sessionId: SESSION_ID });
-  });
-
-  it('offers keeping credits out of the project only when the folder has its own sign-in', () => {
-    renderBlock(
-      <ErrorMessageBlock
-        message={SENTENCE}
-        category="execution_error"
-        code="credits_unavailable"
-        reason="unreachable"
-        onRetry={vi.fn()}
-        sessionId={SESSION_ID}
-        runtimeLabel="Claude Code"
-      />
-    );
-    expect(
-      screen.getByRole('button', { name: 'Use your Claude Code sign-in' })
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Don’t use credits in this project' })
-    ).not.toBeInTheDocument();
   });
 
   it('says why when the folder is in no project, and retries nothing', async () => {

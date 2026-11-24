@@ -6,7 +6,7 @@
  * chain gives a route the same position.
  *
  * Everything else the chain does is held to the Express chain cell for cell
- * by `api-chain-parity.test.ts`.
+ * by `api-chain-matrix.test.ts`.
  *
  * @vitest-environment node
  */

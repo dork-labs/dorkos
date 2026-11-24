@@ -113,10 +113,8 @@
     "src/services/runtimes/claude-code/__tests__/claude-code-runtime-session-contract.test.ts", // 5
     "src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts", // 6
     "src/services/runtimes/claude-code/__tests__/elicitation.test.ts", // 1
-    "src/services/runtimes/claude-code/__tests__/runtime-cache.test.ts", // 4
     "src/services/runtimes/claude-code/__tests__/sdk-event-mapper-streaming.test.ts", // 33
     "src/services/runtimes/claude-code/__tests__/sdk-event-mapper-thinking.test.ts", // 1
-    "src/services/runtimes/claude-code/__tests__/sdk-event-mapper.test.ts", // 1
     "src/services/runtimes/claude-code/__tests__/session-list-watcher.test.ts", // 4
     "src/services/runtimes/claude-code/__tests__/session-store-settings.test.ts", // 1
     "src/services/runtimes/claude-code/sdk/event-mappers/__tests__/message-event-mapper-mcp-app.test.ts", // 1

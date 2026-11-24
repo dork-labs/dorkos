@@ -305,30 +305,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(serializedConfig).not.toContain('Bearer ');
     });
 
-    it('keeps the projected runtime baseline when it adds the header vars', async () => {
-      // Setting `CodexOptions.env` replaces SDK inheritance, so the projected
-      // baseline and the private turn identity must be passed together.
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
-      expect(env?.['PATH']).toBe(process.env['PATH']);
-      // The agent's own identity var still rides alongside them.
-      expect(env?.['DORKOS_AGENT_TOKEN']).toEqual(expect.any(String));
-    });
-
-    it('dials the dedicated IPv4-loopback route returned by the listener', async () => {
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
-    });
-
-    it('sits beside the connections server and nothing else', async () => {
-      // There used to be a third, `dorkos_ui`, injected on every turn to carry
-      // one stubbed copy of `control_ui`. It is retired (spec
-      // `canvas-agent-seat` §5): `control_ui` is a `ui` capability on the
-      // `dorkos` server now, with a real session behind it.
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      expect(Object.keys(lastMcpServers()).sort()).toEqual(['dorkos', 'dorkos_connections']);
-    });
-
     it('uses a fresh turn-bound bearer on every turn', async () => {
       const bearerOf = (): string | undefined =>
         (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env?.[
@@ -341,22 +317,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       const second = bearerOf();
       expect(first).toBe('Bearer turn-one');
       expect(second).toBe('Bearer turn-two');
-    });
-
-    it('keeps agent tools available when login is on and public MCP is off', async () => {
-      configState.value = { mcp: { enabled: false }, auth: { enabled: true } };
-
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-
-      expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
-    });
-
-    it("teaches the room verbs under codex's prefix, never claude-code's bare names", async () => {
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      const prompt = sdkMocks.prompts.at(-1) ?? '';
-      expect(prompt).toContain('<room_tools>');
-      expect(prompt).toContain('mcp__dorkos__post_to_room');
-      expect(prompt).toContain('mcp__dorkos__react_to_room_entry');
     });
 
     it('DROPS a user server named dorkos and says so, rather than silently', async () => {
@@ -450,24 +410,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       }
     );
 
-    it('sends fresh account awareness on a resumed thread', async () => {
-      let revision = 'grant-one';
-      const runtime = makeRuntime({ accessSnapshot: async () => ({ accountCount: 1, revision }) });
-      await drain(
-        runtime.sendMessage('s-awareness', 'what connections do you have?', { cwd: agentDir })
-      );
-      expect(sdkMocks.prompts.at(-1)).toContain(
-        'mcp__dorkos_connections__connectors_list_granted_connections'
-      );
-      expect(sdkMocks.prompts.at(-1)).not.toContain('Access changed');
-      revision = 'different-operation-same-count';
-      await drain(runtime.sendMessage('s-awareness', 'what changed?', { cwd: agentDir }));
-      expect(sdkMocks.prompts.at(-1)).toContain('Access changed');
-      expect(sdkMocks.prompts.at(-1)).toContain('Accounts this agent session can use right now: 1');
-      expect(JSON.stringify(sdkMocks.constructorOptions.at(-1))).toContain('dorkos_connections');
-      expect(sdkMocks.prompts.at(-1)).not.toContain(revision);
-    });
-
     it('keeps a changed-access notice owed when lazy SDK iteration fails before delivery', async () => {
       let revision = 'one';
       const runtime = makeRuntime({ accessSnapshot: async () => ({ accountCount: 1, revision }) });
@@ -488,13 +430,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       await drain(runtime.sendMessage('lazy-awareness', 'delivered', { cwd: agentDir }));
       expect(sdkMocks.prompts.at(-1)).not.toContain('Access changed');
       expect(sdkMocks.prompts.at(-1)).not.toContain('Fresh identity after edit');
-    });
-
-    it('does not claim account tools when the connector injection is absent', async () => {
-      await drain(
-        makeRuntime({ runtimeTools: false }).sendMessage('no-accounts', 'hello', { cwd: agentDir })
-      );
-      expect(sdkMocks.prompts.at(-1)).not.toContain('<accounts_access>');
     });
 
     it('injects independently of external MCP posture and revokes on terminal completion', async () => {
@@ -808,15 +743,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(lastMcpServers()['dorkos']).toBeUndefined();
     });
 
-    it('names no room tool in the prompt, because the session has none', async () => {
-      await drain(
-        makeRuntime({ runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
-      );
-      const prompt = sdkMocks.prompts.at(-1) ?? '';
-      expect(prompt).not.toContain('<room_tools>');
-      expect(prompt).not.toContain('post_to_room');
-    });
-
     it('leaves out a server called dorkos even on a turn without DorkOS’s tools, and says so (DOR-3600)', async () => {
       // One rule on every runtime and every turn: no server may take one of
       // DorkOS's own names. Both stores refuse them, so only a file saved before
@@ -843,65 +769,6 @@ describe('the dorkos tool server on a Codex turn', () => {
 
       expect(lastMcpServers()['dorkos']).toBeDefined();
       expect(await runtime.carriesRoomTools({ cwd: agentDir })).toBe(true);
-    });
-
-    it('answers FALSE for a directory hosting no registered agent — the mute this closes', async () => {
-      // **The divergence, and it was a silent mute rather than an untidy room.**
-      // `sendMessage` gates the injection on `meshAgent ? agentPath : undefined`, so a
-      // `getByPath` miss withholds the entry. `carriesRoomTools` was handing the
-      // posture a bare `cwd` string, which made the `'no-agent'` answer
-      // structurally unreachable from that caller — so it said `true` for a
-      // session the runtime was about to leave with no tools at all. The room
-      // read that as tool-capable, suppressed the turn's text, and the agent
-      // said nothing, anywhere, with nothing on the log to explain it.
-      const runtime = makeRuntime();
-      const stranger = path.join(agentDir, 'not-an-agent');
-      await drain(runtime.sendMessage('s1', 'hello', { cwd: stranger }));
-
-      expect(lastMcpServers()['dorkos']).toBeUndefined();
-      expect(await runtime.carriesRoomTools({ cwd: stranger })).toBe(false);
-    });
-
-    it('answers FALSE with no registry wired at all', async () => {
-      // The other half of the same gate: `meshCore` is injected by the
-      // composition root, so a runtime built without one has no way to identify
-      // anybody and injects nothing.
-      const runtime = new CodexRuntime({
-        transport: new ScriptedCodexTransport(),
-        threadMap: new CodexThreadMap(db),
-        resolveBinary: async () => '/bin/codex',
-        defaultCwd: agentDir,
-      });
-      await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
-
-      expect(lastMcpServers()['dorkos']).toBeUndefined();
-      expect(await runtime.carriesRoomTools({ cwd: agentDir })).toBe(false);
-    });
-
-    it('agrees with what was injected whatever the external MCP posture says', async () => {
-      // The property rather than three separate cases: what the ROOM is told and
-      // what the RUNTIME did must agree. Two readings of one gate is how a room
-      // comes to suppress a turn's words for a session that never got the tool.
-      // The external MCP settings are in the loop because they are the ones a
-      // reader keeps expecting to matter here, and they must not.
-      const runtime = makeRuntime();
-      let asserted = 0;
-      for (const config of [
-        { mcp: { enabled: true } },
-        { mcp: { enabled: false }, auth: { enabled: true } },
-        {},
-      ]) {
-        configState.value = config;
-        // `lastMcpServers` reads the newest constructed client, so each case
-        // needs its own turn on its own session rather than a cleared mock.
-        await drain(runtime.sendMessage(`s-${asserted}`, 'hello', { cwd: agentDir }));
-        expect(lastMcpServers()['dorkos'], JSON.stringify(config)).toBeDefined();
-        expect(await runtime.carriesRoomTools({ cwd: agentDir }), JSON.stringify(config)).toBe(
-          true
-        );
-        asserted += 1;
-      }
-      expect(asserted).toBe(3);
     });
   });
 

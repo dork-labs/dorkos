@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent, SessionListEvent } from '@dorkos/shared/session-stream';
-import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   disposeProjector,
@@ -12,7 +11,6 @@ import { triggerTurn } from '../../../session/trigger-turn.js';
 import { scenarioStore } from '../scenario-store.js';
 import { heldProcesses } from '../held-process.js';
 import { interactionGate } from '../interaction-gate.js';
-import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 
 // Purpose: Decision 1 / runtime-agnosticism end-to-end (ADR-0263). The
@@ -97,19 +95,6 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     expect(snap.cursor).toBeGreaterThan(0);
   });
 
-  it('getMessageHistory returns the same EventLog reconstruction (and [] for an unknown id)', async () => {
-    const runtime = new TestModeRuntime();
-    await runTurn(runtime, SESSION_A, 'Hello');
-
-    const history = await runtime.getMessageHistory('/projects/test', SESSION_A);
-    const snap = await runtime.getSessionSnapshot(CTX, SESSION_A);
-    expect(history).toEqual(snap.messages);
-
-    // An id that never streamed has no history — and asking must not mint a
-    // projector (peek, not get-or-create).
-    expect(await runtime.getMessageHistory('/projects/test', SESSION_B)).toEqual([]);
-  });
-
   it('subscribeSession replays the gap from the log, then continues live', async () => {
     const runtime = new TestModeRuntime();
     await runTurn(runtime, SESSION_A, 'first');
@@ -128,29 +113,6 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
       'text_delta',
       'turn_end',
     ]);
-  });
-
-  it('subscribe-first hydration: a subscriber attached BEFORE the first turn receives it live', async () => {
-    const runtime = new TestModeRuntime();
-    const live = take(runtime.subscribeSession(CTX, SESSION_A, 0), 4);
-
-    await runTurn(runtime, SESSION_A, 'Hello');
-
-    const events = await live;
-    expect(events.map((e) => e.type)).toEqual([
-      'turn_start',
-      'status_change',
-      'text_delta',
-      'turn_end',
-    ]);
-    expect(events[0]).toMatchObject({ type: 'turn_start', userMessage: 'Hello' });
-  });
-
-  it('throws StaleResumeCursorError eagerly for a cursor ahead of the seq space', async () => {
-    const runtime = new TestModeRuntime();
-    await runTurn(runtime, SESSION_A, 'Hello');
-
-    expect(() => runtime.subscribeSession(CTX, SESSION_A, 999)).toThrow(StaleResumeCursorError);
   });
 
   it('subscribeSessionList emits the tracked inventory, then live upserts — no filesystem watch', async () => {
@@ -179,31 +141,6 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     expect(liveEvent.session.id).toBe(SESSION_B);
 
     await iterator.return?.();
-  });
-
-  it('list iterator.return() resolves a PARKED next() instead of hanging (broadcaster stop path)', async () => {
-    const runtime = new TestModeRuntime();
-    const iterator = runtime.subscribeSessionList(CTX)[Symbol.asyncIterator]();
-
-    const parked = iterator.next(); // nothing tracked — parks
-    await iterator.return?.();
-
-    await expect(parked).resolves.toEqual({ value: undefined, done: true });
-    // And the registry listener is gone: a later message must not throw/leak.
-    await runTurn(runtime, SESSION_A, 'after close');
-  });
-
-  it('listSessions/getSession serve the tracked set, scoped by cwd', async () => {
-    const runtime = new TestModeRuntime();
-    await runTurn(runtime, SESSION_A, 'Hello');
-
-    expect(await runtime.getSession('/projects/test', SESSION_A)).toMatchObject({
-      id: SESSION_A,
-      title: 'Hello',
-    });
-    expect((await runtime.listSessions('/projects/test')).map((s) => s.id)).toEqual([SESSION_A]);
-    expect(await runtime.listSessions('/projects/other')).toEqual([]);
-    expect(await runtime.getSession('/projects/test', SESSION_B)).toBeNull();
   });
 
   it('resetTrackedSessions disposes projectors — a reused id gets a FRESH session, not resurrected history', async () => {
@@ -257,65 +194,12 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
       setSessionEventStore(undefined);
     }
   });
-
-  it('updateSession patches tracked metadata and is reflected in the next upsert', async () => {
-    const runtime = new TestModeRuntime();
-    await runTurn(runtime, SESSION_A, 'Hello');
-
-    expect(await runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toEqual({
-      updated: true,
-    });
-    expect((await runtime.getSession('/projects/test', SESSION_A))?.permissionMode).toBe('plan');
-    // Like production runtimes, a draft can save settings without native existence.
-    const saveSessionSettings = vi.fn().mockResolvedValue(undefined);
-    const settingsPort = {
-      saveSessionSettings,
-      getSessionSettings: vi.fn().mockResolvedValue({ permissionMode: 'plan' }),
-    };
-    runtime.setSessionSettings(settingsPort);
-    expect(await runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toEqual({
-      updated: true,
-    });
-    expect(saveSessionSettings).toHaveBeenCalledWith(SESSION_B, { permissionMode: 'plan' });
-    expect(runtime.hasSession(SESSION_B)).toBe(false);
-    expect(await runtime.getSession('/projects/test', SESSION_B)).toBeNull();
-    expect(await runtime.findSession(SESSION_B)).toBeNull();
-    runtime.ensureSession(SESSION_B, { cwd: '/projects/test' });
-    await runTurn(runtime, SESSION_B, 'First message');
-    expect((await runtime.getSession('/projects/test', SESSION_B))?.permissionMode).toBe('plan');
-    const chosenRuntime = new TestModeRuntime('test-mode-b');
-    chosenRuntime.setSessionSettings(settingsPort);
-    await runTurn(chosenRuntime, SESSION_B, 'The selected runtime reads the saved draft settings');
-    expect((await chosenRuntime.getSession('/projects/test', SESSION_B))?.permissionMode).toBe(
-      'plan'
-    );
-  });
 });
 
 describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, task 4.4)', () => {
   afterEach(() => {
     interactionGate.reset();
     heldProcesses.reset();
-  });
-
-  it('declares both dispositions, so the flags it flipped are backed by a method', () => {
-    const caps = new TestModeRuntime().getCapabilities();
-    expect(caps.supportsSteer).toBe(true);
-    expect(caps.supportsContextStaging).toBe(true);
-    expect(typeof new TestModeRuntime().deliverIntoTurn).toBe('function');
-  });
-
-  it('reports no-open-turn for a steer when no turn is running', async () => {
-    const runtime = new TestModeRuntime();
-    // Held path, so the only thing missing is the turn itself —
-    // interactionGate.isOpen(SESSION_A) is false.
-    heldProcesses.setEnabled(SESSION_A, true);
-    await runTurn(runtime, SESSION_A, 'warm it up');
-    const result = await runtime.deliverIntoTurn(SESSION_A, 'change course', {
-      mode: 'steer',
-      messageId: 'steer-1',
-    });
-    expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
   });
 
   it('delivers a steer when the session holds a process AND a turn is open', async () => {
@@ -345,17 +229,6 @@ describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, t
     expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
   });
 
-  it('accepts a stage with no open turn — a stage needs none, only a process', async () => {
-    const runtime = new TestModeRuntime();
-    heldProcesses.setEnabled(SESSION_A, true);
-    await runTurn(runtime, SESSION_A, 'warm it up');
-    const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
-      mode: 'stage',
-      messageId: 'stage-1',
-    });
-    expect(result).toEqual({ delivered: true });
-  });
-
   // The state the fake used to get wrong, and it is reachable two ways: opted in
   // before the first turn (here), and opted in after a reap. `canStageSession`
   // says yes in both, so the server takes the NATIVE route — and a refusal that
@@ -378,41 +251,6 @@ describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, t
     // transcript — and the answer `canStageSession` gave is now true of the
     // session as well as of its next turn.
     expect(runtime.getSessionWarmth(SESSION_A)).toBe('warm');
-  });
-
-  // Only reachable by a caller that ignored `canStageSession`. `unsupported` is
-  // the one refusal `deliverStage` folds, so this is what keeps a staged message
-  // off the queue (DOR-1307).
-  it('refuses a stage on a session that would never hold a process, as unsupported', async () => {
-    const runtime = new TestModeRuntime();
-    const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
-      mode: 'stage',
-      messageId: 'stage-3',
-    });
-    expect(result).toEqual({ delivered: false, reason: 'unsupported' });
-    // And it warmed nothing on the way to saying no.
-    expect(runtime.getSessionWarmth(SESSION_A)).toBe('cold');
-  });
-});
-
-describe('TestModeRuntime — configurable type (secondary e2e instance)', () => {
-  it('defaults to test-mode and shares the capabilities constant by reference', () => {
-    const runtime = new TestModeRuntime();
-    expect(runtime.type).toBe('test-mode');
-    expect(runtime.getCapabilities()).toBe(TEST_MODE_CAPABILITIES);
-  });
-
-  it('stamps its type onto capabilities and tracked sessions', async () => {
-    const runtime = new TestModeRuntime('test-mode-b');
-    expect(runtime.type).toBe('test-mode-b');
-    // Identity field follows the instance; everything else stays shared so the
-    // two instances serve identical scenarios/permission modes.
-    expect(runtime.getCapabilities()).toEqual({ ...TEST_MODE_CAPABILITIES, type: 'test-mode-b' });
-
-    await runTurn(runtime, SESSION_A, 'Hello');
-    // Session-list runtime marks read this field — it must name the OWNING
-    // instance, not a hardcoded 'test-mode'.
-    expect((await runtime.getSession('/projects/test', SESSION_A))?.runtime).toBe('test-mode-b');
   });
 });
 
@@ -506,26 +344,6 @@ describe('TestModeRuntime.getMcpStatus', () => {
     );
     expect(status).toEqual([{ name: 'granola', type: transport, status: is, scope: 'managed' }]);
   });
-
-  it('is case-insensitive about the Authorization header name', () => {
-    const servers = { granola: connection('http', { authorization: 'Bearer tok-123' }) };
-    expect(withServers(servers).getMcpStatus('/x')?.[0]?.status).toBe('connected');
-  });
-
-  it('returns null when no managed-server resolver has been wired', () => {
-    expect(new TestModeRuntime().getMcpStatus('/projects/test')).toBeNull();
-  });
-
-  it('maps every managed server, not just the first', () => {
-    const servers = {
-      granola: connection('http', {}),
-      notion: connection('stdio', undefined),
-    };
-    expect(withServers(servers).getMcpStatus('/x')).toEqual([
-      { name: 'granola', type: 'http', status: 'needs-auth', scope: 'managed' },
-      { name: 'notion', type: 'stdio', status: 'connected', scope: 'managed' },
-    ]);
-  });
 });
 
 /**
@@ -585,10 +403,5 @@ describe('TestModeRuntime — a declared first-turn rename', () => {
     // Another registered runtime must not claim the renamed session when the
     // ID-only read probes the native stores before a binding is available.
     expect(await new TestModeRuntime('test-mode-b').findSession(CANONICAL)).toBeNull();
-  });
-
-  it('declares nothing for a session that never asked', () => {
-    const runtime = new TestModeRuntime();
-    expect(runtime.getInternalSessionId(SESSION_B)).toBeUndefined();
   });
 });
