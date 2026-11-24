@@ -121,7 +121,7 @@ All enforced, so a break fails a check. Rules 1-5 ride `lint`, 6-7 are hooks, 9 
 
 ## Testing
 
-Vitest, with tests in `__tests__/` beside the source. Patterns: `.claude/rules/testing.md`. Mock only at the edges (network, clock, filesystem, a model, a runtime SDK). The count of `vi.mock` calls on our own modules is a ratchet that may only fall (`pnpm check:own-mocks`). Fewer, better tests: write the fewest that would catch real failures and delete those that fail the keep-questions in `.claude/rules/testing.md`; there is no coverage target, and each package's test budget only tightens (`pnpm check:test-ratio`).
+Vitest, with tests in `__tests__/` beside the source. Patterns: `.claude/rules/testing.md`. Mock only at the edges (network, clock, filesystem, a model, a runtime SDK). The count of `vi.mock` calls on our own modules is a ratchet that may only fall (`pnpm check:own-mocks`). Fewer, better tests: write the fewest that would catch real failures and delete those that fail the keep-questions in `.claude/rules/testing.md`; coverage is an aim of about 60% (never a gate), and each package's test budget only tightens (`pnpm check:test-ratio`).
 
 ## CI
 
