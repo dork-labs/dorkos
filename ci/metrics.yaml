@@ -262,6 +262,16 @@ tracked:
   - id: tracked.review-findings-unfixed-share
     unit: ratio
     definition: Share of real Important review findings whose PR merged without a fix or a written rebuttal (baseline 0.58, plan §5.1).
+  - id: tracked.timed-slot-misses
+    unit: count
+    definition: >-
+      Timed runs that did not happen in time, over the window: each day's
+      daily-release slot (15:07 UTC) and daily-sweep slot (17:13 UTC) with no
+      run of its plan or sweep job starting within 30 minutes, plus each failed
+      claude-code-review run on an open PR's head with no review-redispatch
+      scan starting within 15 minutes after its retry rung passed. Read from
+      the Actions runs API by hand (ledger 261124-161126); not computed by the
+      daily collector.
 
 slo_metrics:
   - headroom

@@ -489,6 +489,12 @@ jobs:
       - name: Review re-dispatch gate fixtures
         run: bash scripts/test-should-redispatch-review.sh
 
+      # review-redispatch-wait.sh times the scan after a failed review to the
+      # ladder's next rung (ledger 261124-161126). Too short and the scan
+      # skips the retry; it reads the rungs from the ladder. jq only.
+      - name: Review redispatch wait fixtures
+        run: bash scripts/test-review-redispatch-wait.sh
+
       # should-reap-worktree.sh is the other side of the same coin: the arming
       # gate decides what LANDS without a human, this one decides what gets
       # DELETED without a human. A refusal that quietly stops matching does not
@@ -798,6 +804,13 @@ jobs:
       # npm and gate, a throwaway repo; git and jq only.
       - name: Daily release fixtures
         run: bash scripts/test-daily-release.sh
+
+      # timed-slot.sh lets the daily release and the daily sweep run once a
+      # day on their cron or the after-push backstop (ledger
+      # 261124-161126). A wrong rule runs a slot twice, or never. Stub
+      # gh, jq only; it also pins each cron to its slot.
+      - name: Timed slot fixtures
+        run: bash scripts/test-timed-slot.sh
 
       # release-branch-contents.sh is the rule for what a pull request into a
       # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main

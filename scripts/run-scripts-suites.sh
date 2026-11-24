@@ -47,6 +47,7 @@ bash scripts/test-pr-gates-check.sh
 bash scripts/test-qa-real-data.sh
 bash scripts/test-design-ok.sh
 bash scripts/test-should-redispatch-review.sh
+bash scripts/test-review-redispatch-wait.sh
 bash scripts/test-should-reap-worktree.sh
 bash scripts/test-worktree-janitor-volumes.sh
 bash scripts/test-seeded-pack-changed.sh
@@ -77,6 +78,7 @@ bash scripts/test-auto-revert.sh
 bash scripts/test-rolling-bisect.sh
 bash scripts/test-daily-sweep.sh
 bash scripts/test-daily-release.sh
+bash scripts/test-timed-slot.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh
 bash scripts/test-release-branch-contents.sh
