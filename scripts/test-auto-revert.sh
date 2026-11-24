@@ -153,7 +153,8 @@ check 'and nothing opened' 0 "$(grep -c 'pr create' "$GH_LOG")"
 rv "$CUL" 1
 check 'ANYWHERE: a merge main moved past is reverted' 0 "$rc"
 check 'the revert branch is pushed' yes "$(git -C "$tmp/origin.git" rev-parse -q --verify "refs/heads/auto-revert/${CUL:0:12}" >/dev/null && echo yes || echo no)"
-check 'the branch holds a revert of it' yes "$(git -C "$tmp/origin.git" log -1 --format=%s "auto-revert/${CUL:0:12}" | grep -q '^Revert "feat: the culprit' && echo yes || echo no)"
+subj=$(git -C "$tmp/origin.git" log -1 --format=%s "auto-revert/${CUL:0:12}")
+check 'the branch holds a revert of it' yes "$(grep -q '^Revert "feat: the culprit' <<<"$subj" && echo yes || echo no)"
 check 'a PR is opened with auto-merge' 1 "$(grep -c 'pr merge https://example.invalid/pull/900 --repo made-up/repo --auto' "$GH_LOG")"
 check 'the bisect wording' yes "$(grep -q 'a bisect found #12' "$GH_LOG" && echo yes || echo no)"
 check 'the author is told' 1 "$(grep -c 'issues/12/comments' "$GH_LOG")"
