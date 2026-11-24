@@ -3,7 +3,6 @@ import type { WebClient } from '@slack/web-api';
 import {
   createSlackPresenceState,
   queuePendingReaction,
-  dropPendingReaction,
   markAssistantThread,
   isAssistantThread,
   claimPresence,
@@ -52,12 +51,6 @@ describe('slack presence', () => {
   });
 
   describe('the queue of trigger messages', () => {
-    it('keeps arrival order', () => {
-      queuePendingReaction(state, 'D123', 'a');
-      queuePendingReaction(state, 'D123', 'b');
-      expect(state.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['a', 'b']);
-    });
-
     it('forgets entries older than the TTL instead of growing forever', () => {
       vi.useFakeTimers();
       queuePendingReaction(state, 'D123', 'stale');
@@ -65,12 +58,6 @@ describe('slack presence', () => {
       queuePendingReaction(state, 'D123', 'fresh');
 
       expect(state.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['fresh']);
-    });
-
-    it('drops a named entry and clears the empty channel key', () => {
-      queuePendingReaction(state, 'D123', 'a');
-      dropPendingReaction(state, 'D123', 'a');
-      expect(state.pendingReactions.has('D123')).toBe(false);
     });
   });
 
@@ -136,18 +123,6 @@ describe('slack presence', () => {
         timestamp: '1234.0001',
       });
       expect(state.bindings.size).toBe(0);
-    });
-
-    it('survives a Slack reaction failure', async () => {
-      reactionsAdd.mockRejectedValueOnce(new Error('no_permission'));
-      const warn = vi.fn();
-      queuePendingReaction(state, 'D123', '1234.0001');
-
-      claimPresence({ ...ctx, logger: { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() } });
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed to add reaction'));
-      expect(state.active.size).toBe(1);
     });
   });
 

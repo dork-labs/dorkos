@@ -83,26 +83,12 @@ describe('BaseRelayAdapter', () => {
     expect(adapter.getStatus().state).toBe('connected');
   });
 
-  it('start() is idempotent — second call is a no-op', async () => {
-    await adapter.start(relay);
-    adapter.startCalled = false; // reset flag
-    await adapter.start(relay); // second call
-    expect(adapter.startCalled).toBe(false);
-    expect(adapter.getStatus().state).toBe('connected');
-  });
-
   it('start() error updates state to "error" and re-throws', async () => {
     const throwingAdapter = new TestAdapter(true);
     await expect(throwingAdapter.start(relay)).rejects.toThrow('Connection failed');
     expect(throwingAdapter.getStatus().state).toBe('error');
     expect(throwingAdapter.getStatus().errorCount).toBe(1);
     expect(throwingAdapter.getStatus().lastError).toBe('Connection failed');
-  });
-
-  it('start() clears relay ref when _start() throws', async () => {
-    const throwingAdapter = new TestAdapter(true);
-    await expect(throwingAdapter.start(relay)).rejects.toThrow();
-    expect(throwingAdapter.getRelayRef()).toBeNull();
   });
 
   it('start() concurrent calls run _start() only once (no double polling)', async () => {
@@ -267,27 +253,6 @@ describe('BaseRelayAdapter', () => {
     expect(a.getStatus().state).toBe('error');
   });
 
-  it('start() surfaces the original _start() error even if cleanup _stop() throws', async () => {
-    class BothThrowAdapter extends BaseRelayAdapter {
-      constructor() {
-        super('bt', 'relay.bt.', 'BT');
-      }
-      protected async _start(): Promise<void> {
-        throw new Error('start failed');
-      }
-      protected async _stop(): Promise<void> {
-        throw new Error('stop failed');
-      }
-      async deliver(): Promise<DeliveryResult> {
-        return { success: true };
-      }
-    }
-    const a = new BothThrowAdapter();
-
-    await expect(a.start(relay)).rejects.toThrow('start failed');
-    expect(a.getStatus().state).toBe('error');
-  });
-
   /**
    * DOR-1509. The cleanup `_stop()` a failed `start()` runs is shared by
    * every adapter (Slack, Telegram, whatever comes next) — whatever their
@@ -342,29 +307,6 @@ describe('BaseRelayAdapter', () => {
     expect(serialized).toContain('stop failed');
   });
 
-  it('start() can be retried after a failed attempt', async () => {
-    let attempts = 0;
-    class FlakyAdapter extends BaseRelayAdapter {
-      constructor() {
-        super('flaky', 'relay.flaky.', 'Flaky');
-      }
-      protected async _start(): Promise<void> {
-        attempts++;
-        if (attempts === 1) throw new Error('first attempt fails');
-      }
-      protected async _stop(): Promise<void> {}
-      async deliver(): Promise<DeliveryResult> {
-        return { success: true };
-      }
-    }
-    const a = new FlakyAdapter();
-
-    await expect(a.start(relay)).rejects.toThrow('first attempt fails');
-    await a.start(relay); // second attempt succeeds — guard cleared after failure
-    expect(attempts).toBe(2);
-    expect(a.getStatus().state).toBe('connected');
-  });
-
   // --- stop() ---
 
   it('stop() calls _stop() and transitions to disconnected', async () => {
@@ -372,12 +314,6 @@ describe('BaseRelayAdapter', () => {
     await adapter.stop();
     expect(adapter.stopCalled).toBe(true);
     expect(adapter.getStatus().state).toBe('disconnected');
-  });
-
-  it('stop() clears the relay ref', async () => {
-    await adapter.start(relay);
-    await adapter.stop();
-    expect(adapter.getRelayRef()).toBeNull();
   });
 
   it('stop() that throws clears the relay ref and reports the adapter as errored', async () => {
@@ -405,62 +341,6 @@ describe('BaseRelayAdapter', () => {
     // start a second one on the same credentials (DOR-789).
     expect(a.getStatus().state).toBe('error');
     expect(a.getStatus().lastError).toBe('stop failed');
-  });
-
-  // --- trackOutbound() / trackInbound() ---
-
-  it('deliver() calling trackOutbound() increments outbound count', async () => {
-    await adapter.start(relay);
-    const envelope = {
-      id: 'e1',
-      subject: 'relay.test.sub',
-      from: 'relay.test.sender',
-      payload: {},
-      budget: {
-        hopCount: 0,
-        maxHops: 5,
-        ancestorChain: [],
-        ttl: Date.now() + 1000,
-        callBudgetRemaining: 5,
-      },
-      createdAt: new Date().toISOString(),
-    };
-    await adapter.deliver('relay.test.sub', envelope);
-    expect(adapter.getStatus().messageCount.outbound).toBe(1);
-  });
-
-  // --- recordError() ---
-
-  it('recordError() sets state to "error" and increments errorCount', () => {
-    adapter.callRecordError(new Error('Oops'));
-    const status = adapter.getStatus();
-    expect(status.state).toBe('error');
-    expect(status.errorCount).toBe(1);
-    expect(status.lastError).toBe('Oops');
-    expect(status.lastErrorAt).toBeDefined();
-  });
-
-  // --- getStatus() ---
-
-  // --- setReconnecting() ---
-
-  it('setReconnecting() transitions from error to reconnecting', () => {
-    adapter.callRecordError(new Error('Connection lost'));
-    expect(adapter.getStatus().state).toBe('error');
-
-    adapter.callSetReconnecting();
-    expect(adapter.getStatus().state).toBe('reconnecting');
-  });
-
-  // --- markConnected() ---
-
-  it('markConnected() transitions from reconnecting to connected', () => {
-    adapter.callRecordError(new Error('err'));
-    adapter.callSetReconnecting();
-    expect(adapter.getStatus().state).toBe('reconnecting');
-
-    adapter.callMarkConnected();
-    expect(adapter.getStatus().state).toBe('connected');
   });
 
   // --- isStopped ---

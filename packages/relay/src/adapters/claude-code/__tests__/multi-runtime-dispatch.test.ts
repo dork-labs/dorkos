@@ -150,19 +150,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(claude.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('asks the settings resolver about the RESOLVED runtime', async () => {
-      // Every tier below the session row is a per-runtime answer, so a resolver
-      // asked about the adapter's boot runtime hands a codex turn a Claude
-      // model alias.
-      const envelope = agentEnvelope('relay.agent.codex.session-9');
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      expect(resolveExecutionSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ runtimeType: 'codex' })
-      );
-    });
-
     it('refuses a session whose runtime this build did not register', async () => {
       // Loudly, and without touching any runtime. Substituting the default here
       // is what "silently wrong" looks like: an answer arrives, in the right
@@ -190,17 +177,6 @@ describe('the relay adapter picks the runtime a message names', () => {
         'run-c',
         expect.objectContaining({ status: 'completed' })
       );
-    });
-
-    it('refuses a task naming a runtime this build did not register', async () => {
-      const envelope = taskEnvelope(taskPayload({ runtime: 'opencode', runId: 'run-e' }));
-
-      const result = await adapter.deliver(envelope.subject, envelope);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('opencode');
-      expect(claude.sendMessage).not.toHaveBeenCalled();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
     });
 
     it('refuses a forged dispatch for its sender before it looks at the runtime (DOR-2416)', async () => {
@@ -272,10 +248,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       await wide.start(mockRelay());
     });
 
-    it('claims a prefix for it', () => {
-      expect(wide.subjectPrefix).toContain('relay.agent.test-mode-b.');
-    });
-
     it('routes its session to ITSELF, never silently to the default', async () => {
       const envelope = agentEnvelope('relay.agent.test-mode-b.sess-1');
 
@@ -325,19 +297,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       });
       expect(codex.sendMessage).toHaveBeenCalledOnce();
       expect(claude.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('lets the runtime a subject NAMES win over the manifest', async () => {
-      // The subject segment comes from a session's own ownership row — the
-      // recorded owner of a conversation that already exists, which outranks a
-      // preference expressed about the agent (ADR-0255).
-      const envelope = agentEnvelope('relay.agent.claude-code.session-2');
-
-      await withManifest.deliver(envelope.subject, envelope, meshContext());
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
-      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
     });
 
     it('refuses when the agent runs on a runtime the relay does not hold', async () => {

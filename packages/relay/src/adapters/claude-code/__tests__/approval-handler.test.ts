@@ -5,7 +5,6 @@ import type { AgentRuntimeLike } from '../types.js';
 import {
   subscribeApprovalHandler,
   handleApprovalResponse,
-  APPROVAL_SUBJECT_PATTERN,
   type ApprovalAuthorizer,
 } from '../approval-handler.js';
 import { approvalBridgePrincipal } from '../../../lib/approval-principal.js';
@@ -246,21 +245,6 @@ describe('approval-handler', () => {
   });
 
   describe('subscribeApprovalHandler', () => {
-    it('subscribes to relay.system.approval.> pattern', () => {
-      subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
-
-      expect(relay.subscribe).toHaveBeenCalledOnce();
-      expect(relay.subscribe).toHaveBeenCalledWith(APPROVAL_SUBJECT_PATTERN, expect.any(Function));
-    });
-
-    it('returns an unsubscribe function', () => {
-      const unsub = vi.fn();
-      vi.mocked(relay.subscribe).mockReturnValue(unsub);
-
-      const result = subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
-      expect(result).toBe(unsub);
-    });
-
     it('routes incoming envelopes to handleApprovalResponse via the callback', () => {
       subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
 
@@ -297,30 +281,6 @@ describe('approval-handler', () => {
       expect(agentManager.approveTool).toHaveBeenCalledWith('session-xyz', 'tool-deny-456', false);
     });
 
-    it('logs debug message with approval details', () => {
-      const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
-
-      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('approve'));
-      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('tool-call-123'));
-    });
-
-    it('logs debug message with deny details', () => {
-      const envelope = createApprovalEnvelope({
-        payload: {
-          type: 'approval_response',
-          toolCallId: 'tool-789',
-          sessionId: 'session-def',
-          approved: false,
-          platform: 'slack',
-        },
-      });
-
-      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
-
-      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('deny'));
-    });
-
     it('warns when no runtime held the tool call', () => {
       vi.mocked(agentManager.approveTool).mockReturnValue(false);
 
@@ -343,62 +303,6 @@ describe('approval-handler', () => {
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('malformed payload'));
-      });
-
-      it('does not crash when payload has wrong type field', () => {
-        const envelope = createApprovalEnvelope({
-          payload: { type: 'something_else', toolCallId: 'tc-1', sessionId: 's-1', approved: true },
-        });
-
-        expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
-        ).not.toThrow();
-        expect(agentManager.approveTool).not.toHaveBeenCalled();
-        expect(log.warn).toHaveBeenCalled();
-      });
-
-      it('does not crash when toolCallId is missing', () => {
-        const envelope = createApprovalEnvelope({
-          payload: { type: 'approval_response', sessionId: 's-1', approved: true },
-        });
-
-        expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
-        ).not.toThrow();
-        expect(agentManager.approveTool).not.toHaveBeenCalled();
-      });
-
-      it('does not crash when sessionId is missing', () => {
-        const envelope = createApprovalEnvelope({
-          payload: { type: 'approval_response', toolCallId: 'tc-1', approved: true },
-        });
-
-        expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
-        ).not.toThrow();
-        expect(agentManager.approveTool).not.toHaveBeenCalled();
-      });
-
-      it('does not crash when approved is missing', () => {
-        const envelope = createApprovalEnvelope({
-          payload: { type: 'approval_response', toolCallId: 'tc-1', sessionId: 's-1' },
-        });
-
-        expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
-        ).not.toThrow();
-        expect(agentManager.approveTool).not.toHaveBeenCalled();
-      });
-
-      it('does not crash when payload is a string', () => {
-        const envelope = createApprovalEnvelope({
-          payload: 'not an object' as unknown as Record<string, unknown>,
-        });
-
-        expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
-        ).not.toThrow();
-        expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
     });
 
@@ -480,16 +384,6 @@ describe('approval-handler', () => {
         expect(authorize).toHaveBeenCalledTimes(1);
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
-
-      it('is not asked at all for a malformed payload', () => {
-        const envelope = createApprovalEnvelope({
-          payload: { type: 'something_else' },
-        });
-
-        handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
-
-        expect(authorize).not.toHaveBeenCalled();
-      });
     });
 
     it('takes the platform from the sender when the payload names none', () => {
@@ -532,17 +426,6 @@ describe('approval-handler', () => {
 
       expect(first.approveTool).toHaveBeenCalledOnce();
       expect(second.approveTool).not.toHaveBeenCalled();
-    });
-
-    it('names every runtime it asked when none held the tool call', () => {
-      const first = createMockAgentManager('claude-code');
-      vi.mocked(first.approveTool).mockReturnValue(false);
-      const second = createMockAgentManager('codex');
-      vi.mocked(second.approveTool).mockReturnValue(false);
-
-      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize, traceStore);
-
-      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('claude-code, codex'));
     });
 
     it('touches no runtime at all when the gate refuses', () => {

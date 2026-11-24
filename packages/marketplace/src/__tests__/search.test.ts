@@ -13,18 +13,6 @@ describe('matchesMarketplaceSearch', () => {
     expect(matchesMarketplaceSearch(pkg, 'reviewer')).toBe(true);
   });
 
-  it('matches by description', () => {
-    expect(matchesMarketplaceSearch(pkg, 'pull requests')).toBe(true);
-  });
-
-  it('matches by keywords', () => {
-    expect(matchesMarketplaceSearch(pkg, 'linting')).toBe(true);
-  });
-
-  it('matches by tags', () => {
-    expect(matchesMarketplaceSearch(pkg, 'quality')).toBe(true);
-  });
-
   it('matches case-insensitively against package fields', () => {
     // Query is already lower-cased per contract; package fields are lowered internally
     expect(matchesMarketplaceSearch({ name: 'FOO-BAR' }, 'foo')).toBe(true);

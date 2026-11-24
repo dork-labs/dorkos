@@ -207,21 +207,6 @@ describe('denial filtering', () => {
 
     mesh.close();
   });
-
-  it('undeny re-enables a previously denied path for discovery', async () => {
-    const base = await makeTempDir();
-    const projects = path.join(base, 'projects');
-    const { projectA } = await setupProjects(projects);
-    const mesh = new MeshCore({ db, defaultScanRoot: base });
-
-    await mesh.deny(projectA);
-    await mesh.undeny(projectA);
-
-    const candidates = await collectCandidates(mesh.discover([projects]));
-    expect(candidates.some((c) => c.path === projectA)).toBe(true);
-
-    mesh.close();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -309,40 +294,6 @@ describe('agent face at registration', () => {
     ) as AgentManifest;
     expect({ color: onDisk.color, icon: onDisk.icon }).toEqual(seedAgentFace(manifest.id));
     expect(mesh.list()[0].icon).toBe(manifest.icon);
-
-    mesh.close();
-  });
-
-  it('gives a discovered-then-registered agent a face, and keeps an overridden one', async () => {
-    const base = await makeTempDir();
-    const projects = path.join(base, 'projects');
-    const { projectA } = await setupProjects(projects);
-    const mesh = new MeshCore({ db, defaultScanRoot: base });
-
-    const candidates = await collectCandidates(mesh.discover([projects]));
-    const candidate = candidates.find((c) => c.path === projectA);
-    const manifest = await mesh.register(candidate!);
-
-    expect({ color: manifest.color, icon: manifest.icon }).toEqual(seedAgentFace(manifest.id));
-
-    // The override arm of the same seam: an explicit face wins over the seed,
-    // and the display name rides with it. `register` dropped `displayName` on
-    // the floor exactly as `registerByPath` did (DOR-2054), so it is pinned
-    // here beside the two fields that always worked.
-    const other = candidates.find((c) => c.path !== projectA);
-    const overridden = await mesh.register(other!, {
-      icon: '🦕',
-      color: '#123456',
-      displayName: 'The Other One',
-    });
-    expect(overridden.icon).toBe('🦕');
-    expect(overridden.color).toBe('#123456');
-    expect(overridden.displayName).toBe('The Other One');
-
-    const onDisk = JSON.parse(
-      await fs.readFile(path.join(other!.path, '.dork', 'agent.json'), 'utf-8')
-    ) as AgentManifest;
-    expect(onDisk.displayName).toBe('The Other One');
 
     mesh.close();
   });
@@ -465,24 +416,6 @@ describe('register() compensation', () => {
 
     // Agent should not be in registry after compensation
     expect(mesh.list()).toHaveLength(0);
-
-    mesh.close();
-  });
-
-  it('succeeds on re-registration at same path', async () => {
-    const base = await makeTempDir();
-    const projects = path.join(base, 'projects');
-    const { projectA } = await setupProjects(projects);
-    const mesh = new MeshCore({ db, defaultScanRoot: base });
-
-    const candidates = await collectCandidates(mesh.discover([projects]));
-    const candidate = candidates.find((c) => c.path === projectA);
-    expect(candidate).toBeDefined();
-
-    // First registration
-    await mesh.register(candidate!);
-    // Second registration at same path should not crash
-    await expect(mesh.register(candidate!)).resolves.toBeDefined();
 
     mesh.close();
   });

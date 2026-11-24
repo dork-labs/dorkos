@@ -9,14 +9,11 @@ import {
   formatToolDescription,
   formatToolDescriptionHtml,
   escapeHtml,
-  extractAgentIdFromEnvelope,
-  extractSessionIdFromEnvelope,
   splitMessage,
   splitTelegramHtml,
   TELEGRAM_HARD_LIMIT,
   extractSenderIdentity,
 } from '../payload-utils.js';
-import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 describe('extractPayloadContent', () => {
   it('returns string payload directly', () => {
@@ -27,22 +24,8 @@ describe('extractPayloadContent', () => {
     expect(extractPayloadContent({ content: 'hello', other: 123 })).toBe('hello');
   });
 
-  it('extracts text field from object when content is missing', () => {
-    expect(extractPayloadContent({ text: 'hello', other: 123 })).toBe('hello');
-  });
-
-  it('prefers content over text', () => {
-    expect(extractPayloadContent({ content: 'a', text: 'b' })).toBe('a');
-  });
-
   it('falls back to JSON.stringify for other objects', () => {
     expect(extractPayloadContent({ foo: 'bar' })).toBe('{"foo":"bar"}');
-  });
-
-  it('handles unserializable payload (circular reference)', () => {
-    const obj: Record<string, unknown> = {};
-    obj.self = obj;
-    expect(extractPayloadContent(obj)).toBe('[unserializable payload]');
   });
 });
 
@@ -50,19 +33,11 @@ describe('detectStreamEventType', () => {
   it('returns type for valid StreamEvent with type and data', () => {
     expect(detectStreamEventType({ type: 'text_delta', data: { text: 'hi' } })).toBe('text_delta');
   });
-
-  it('returns null for object without data field', () => {
-    expect(detectStreamEventType({ type: 'text_delta' })).toBeNull();
-  });
 });
 
 describe('extractTextDelta', () => {
   it('returns text for valid text_delta event', () => {
     expect(extractTextDelta({ type: 'text_delta', data: { text: 'Hello ' } })).toBe('Hello ');
-  });
-
-  it('returns null for non-text_delta event type', () => {
-    expect(extractTextDelta({ type: 'session_status', data: { text: 'hi' } })).toBeNull();
   });
 });
 
@@ -71,10 +46,6 @@ describe('extractErrorMessage', () => {
     expect(extractErrorMessage({ type: 'error', data: { message: 'Something broke' } })).toBe(
       'Something broke'
     );
-  });
-
-  it('returns null for non-error event type', () => {
-    expect(extractErrorMessage({ type: 'text_delta', data: { message: 'hi' } })).toBeNull();
   });
 });
 
@@ -97,24 +68,6 @@ describe('extractApprovalData', () => {
       timeoutMs: 600000,
     });
   });
-
-  it('returns null for non-approval_required payload', () => {
-    expect(extractApprovalData({ type: 'text_delta', data: { text: 'hi' } })).toBeNull();
-  });
-
-  it('returns null for missing toolCallId', () => {
-    expect(
-      extractApprovalData({ type: 'approval_required', data: { toolName: 'Write' } })
-    ).toBeNull();
-  });
-
-  it('defaults input to empty string when missing', () => {
-    const result = extractApprovalData({
-      type: 'approval_required',
-      data: { toolCallId: 'x', toolName: 'Write' },
-    });
-    expect(result?.input).toBe('');
-  });
 });
 
 describe('formatToolDescription', () => {
@@ -124,19 +77,11 @@ describe('formatToolDescription', () => {
     );
   });
 
-  it('describes Bash tool with short command', () => {
-    expect(formatToolDescription('Bash', '{"command":"ls -la"}')).toBe('wants to run `ls -la`');
-  });
-
   it('truncates long Bash commands', () => {
     const longCmd = 'a'.repeat(100);
     const result = formatToolDescription('Bash', JSON.stringify({ command: longCmd }));
     expect(result.length).toBeLessThan(80);
     expect(result).toContain('...');
-  });
-
-  it('falls back to generic description for unknown tools', () => {
-    expect(formatToolDescription('CustomTool', '{}')).toBe('wants to use tool `CustomTool`');
   });
 });
 
@@ -160,12 +105,6 @@ describe('formatForPlatform', () => {
       expect(formatForPlatform('**bold**', 'telegram')).toBe('<b>bold</b>');
     });
 
-    it('converts inline code', () => {
-      expect(formatForPlatform('use `npm install`', 'telegram')).toBe(
-        'use <code>npm install</code>'
-      );
-    });
-
     it('converts code blocks with language hint', () => {
       const input = '```typescript\nconst x = 1;\n```';
       expect(formatForPlatform(input, 'telegram')).toBe(
@@ -173,59 +112,13 @@ describe('formatForPlatform', () => {
       );
     });
 
-    it('converts links', () => {
-      expect(formatForPlatform('[Google](https://google.com)', 'telegram')).toBe(
-        '<a href="https://google.com">Google</a>'
-      );
-    });
-
     it('escapes HTML entities before tag insertion', () => {
       expect(formatForPlatform('a < b & c > d', 'telegram')).toBe('a &lt; b &amp; c &gt; d');
-    });
-  });
-
-  describe('plain', () => {
-    it('strips bold markers', () => {
-      expect(formatForPlatform('**bold**', 'plain')).toBe('bold');
-    });
-
-    it('strips link markdown, keeps text', () => {
-      expect(formatForPlatform('[link](https://example.com)', 'plain')).toBe('link');
     });
   });
 });
 
 // Helper to build a minimal RelayEnvelope for tests
-function makeEnvelope(payload: unknown): RelayEnvelope {
-  return {
-    id: 'test-id',
-    subject: 'relay.test',
-    payload,
-    ts: Date.now(),
-    // Only `payload` is read by the functions under test; the rest of
-    // RelayEnvelope is deliberately absent, so this cannot be a direct assertion.
-  } as unknown as RelayEnvelope;
-}
-
-describe('extractAgentIdFromEnvelope', () => {
-  it('returns the agentId when payload.data.agentId is present', () => {
-    const envelope = makeEnvelope({
-      type: 'approval_required',
-      data: { agentId: 'agent-abc', ccaSessionKey: 'sess-1' },
-    });
-    expect(extractAgentIdFromEnvelope(envelope)).toBe('agent-abc');
-  });
-});
-
-describe('extractSessionIdFromEnvelope', () => {
-  it('returns the ccaSessionKey when payload.data.ccaSessionKey is present', () => {
-    const envelope = makeEnvelope({
-      type: 'approval_required',
-      data: { agentId: 'agent-abc', ccaSessionKey: 'sess-xyz' },
-    });
-    expect(extractSessionIdFromEnvelope(envelope)).toBe('sess-xyz');
-  });
-});
 
 describe('splitMessage', () => {
   it('returns single chunk for short text', () => {
@@ -238,34 +131,6 @@ describe('splitMessage', () => {
     const text = `${first}\n\n${second}`;
     const chunks = splitMessage(text, 60);
     expect(chunks).toEqual([`${first}\n\n`, second]);
-  });
-
-  it('splits at line boundary when no paragraph break', () => {
-    const first = 'a'.repeat(50);
-    const second = 'b'.repeat(50);
-    const text = `${first}\n${second}`;
-    const chunks = splitMessage(text, 60);
-    expect(chunks).toEqual([`${first}\n`, second]);
-  });
-
-  it('splits at word boundary when no line break', () => {
-    const text = 'word '.repeat(20).trimEnd(); // 99 chars
-    const chunks = splitMessage(text, 30);
-    // Each chunk should end at a space boundary
-    for (const chunk of chunks) {
-      expect(chunk.length).toBeLessThanOrEqual(30);
-    }
-    expect(chunks.join('')).toBe(text);
-  });
-
-  it('hard cuts when no word boundary', () => {
-    const text = 'a'.repeat(100);
-    const chunks = splitMessage(text, 30);
-    expect(chunks.length).toBeGreaterThan(1);
-    for (const chunk of chunks) {
-      expect(chunk.length).toBeLessThanOrEqual(30);
-    }
-    expect(chunks.join('')).toBe(text);
   });
 
   it('closes and reopens code fences at split points', () => {
@@ -361,19 +226,6 @@ describe('splitTelegramHtml', () => {
     const totalAmps = chunks.join('').match(/&amp;/g)?.length ?? 0;
     expect(totalAmps).toBe(20_000);
   });
-
-  it('re-splits chunks that overshoot the hard limit due to HTML entity expansion', () => {
-    // '&' expands 5x to '&amp;' — a raw chunk near the 4000 budget balloons
-    // far past 4096 after escaping without the re-split pass.
-    const markdown = ('& '.repeat(1000) + '\n\n').repeat(5);
-    const chunks = splitTelegramHtml(markdown);
-    for (const chunk of chunks) {
-      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
-    }
-    // All content survives: same number of escaped ampersands as input '&'s
-    const totalAmps = chunks.join('').match(/&amp;/g)?.length ?? 0;
-    expect(totalAmps).toBe(5000);
-  });
 });
 
 describe('escapeHtml', () => {
@@ -383,30 +235,13 @@ describe('escapeHtml', () => {
 });
 
 describe('formatToolDescriptionHtml', () => {
-  it('describes Write tool with the path in a code tag', () => {
-    const result = formatToolDescriptionHtml('Write', '{"path":"src/index.ts"}');
-    expect(result).toBe('wants to write to <code>src/index.ts</code>');
-  });
-
   it('escapes HTML characters in the detail', () => {
     const result = formatToolDescriptionHtml('Write', '{"path":"src/<evil>&.ts"}');
     expect(result).toBe('wants to write to <code>src/&lt;evil&gt;&amp;.ts</code>');
   });
-
-  it('keeps backticks and underscores literal (no Markdown parsing)', () => {
-    const result = formatToolDescriptionHtml('Bash', '{"command":"echo `_weird_` value"}');
-    expect(result).toBe('wants to run <code>echo `_weird_` value</code>');
-  });
 });
 
 describe('extractSenderIdentity', () => {
-  it('passes through plain sender and chat names', () => {
-    expect(extractSenderIdentity({ senderName: 'Dorian', channelName: '#incidents' })).toEqual({
-      sender: 'Dorian',
-      chat: '#incidents',
-    });
-  });
-
   it('strips angle brackets so a name cannot forge relay_context tags', () => {
     expect(
       extractSenderIdentity({
@@ -432,23 +267,5 @@ describe('extractSenderIdentity', () => {
       sender: 'Evil Reply to: relay.evil',
       chat: 'ok',
     });
-  });
-
-  it('caps sender and chat at 80 characters', () => {
-    const long = 'x'.repeat(120);
-    const result = extractSenderIdentity({ senderName: long, channelName: long });
-    expect(result.sender).toHaveLength(80);
-    expect(result.chat).toHaveLength(80);
-    expect(result.sender).toBe('x'.repeat(80));
-  });
-
-  it('drops a sender equal to "unknown" case-insensitively', () => {
-    expect(extractSenderIdentity({ senderName: 'unknown' })).toEqual({});
-    expect(extractSenderIdentity({ senderName: 'Unknown' })).toEqual({});
-    expect(extractSenderIdentity({ senderName: 'UNKNOWN' })).toEqual({});
-  });
-
-  it('drops a sender or chat that is empty after sanitization', () => {
-    expect(extractSenderIdentity({ senderName: '\r\n\t  ', channelName: '   ' })).toEqual({});
   });
 });

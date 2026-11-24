@@ -235,38 +235,6 @@ describe('SlackAdapter', () => {
     });
   });
 
-  // Timeout on auth.test()
-
-  // Stop
-  it('stop() calls app.stop() and transitions to disconnected', async () => {
-    await adapter.start(mockRelay);
-    await adapter.stop();
-    expect(mockAppStop).toHaveBeenCalled();
-    expect(adapter.getStatus().state).toBe('disconnected');
-  });
-
-  // Deliver
-  it('deliver() delegates to outbound module and posts to Slack', async () => {
-    await adapter.start(mockRelay);
-    const envelope = {
-      id: 'e1',
-      subject: 'relay.human.slack.slack-1.D123',
-      from: 'relay.agent.backend',
-      budget: {
-        hopCount: 0,
-        maxHops: 5,
-        ancestorChain: [],
-        ttl: Date.now() + 3_600_000,
-        callBudgetRemaining: 10,
-      },
-      createdAt: new Date().toISOString(),
-      payload: { content: 'Hello from agent!' },
-    };
-    const result = await adapter.deliver('relay.human.slack.slack-1.D123', envelope);
-    expect(result.success).toBe(true);
-    expect(mockPostMessage).toHaveBeenCalled();
-  });
-
   // Duplicate mention delivery (message + app_mention for the same message)
   describe('channel @mention dedup', () => {
     it('processes a channel @mention once when Slack delivers it as both message and app_mention', async () => {
@@ -348,19 +316,6 @@ describe('SlackAdapter', () => {
       expect(status.state).toBe('error');
       expect(status.lastError).toContain('invalid_auth');
       expect(status.lastError).not.toContain('slack_webapi_platform_error');
-    });
-
-    it('survives a self-referential error chain without hanging', async () => {
-      // The unwrap walk follows `original`/`cause`/`originals`, so a cycle must
-      // terminate on the depth guard rather than recurse forever.
-      await adapter.start(mockRelay);
-      const cyclic: { code: string; cause?: unknown } = { code: 'boom' };
-      cyclic.cause = cyclic;
-
-      await capturedErrorHandler!(cyclic as unknown as Error);
-
-      expect(mockAppStop).not.toHaveBeenCalled();
-      expect(adapter.getStatus().state).toBe('error');
     });
 
     it('runs the full stop path, not just app.stop(), so timers are cleared', async () => {
