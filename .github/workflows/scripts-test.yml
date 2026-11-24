@@ -559,12 +559,6 @@ jobs:
       - name: Review re-dispatch gate fixtures
         run: bash scripts/test-should-redispatch-review.sh
 
-      # review-redispatch-wait.sh times the scan after a failed review to the
-      # ladder's next rung (ledger 261124-161126). Too short and the scan
-      # skips the retry; it reads the rungs from the ladder. jq only.
-      - name: Review redispatch wait fixtures
-        run: bash scripts/test-review-redispatch-wait.sh
-
       # review-mode.sh decides whether a push gets a full review or the Security
       # lens only. The expensive mistake is a push re-check on a PR that never
       # had a full review, so every comment that must not count is pinned.

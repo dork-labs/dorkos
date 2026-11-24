@@ -10,7 +10,6 @@ gates:
   - wf.daily-release.slot-done
   - wf.daily-sweep.due
   - wf.daily-sweep.sweep
-  - wf.review-redispatch.wait
   - wf.review-redispatch.redispatch
   - wf.release-window-refresh.refresh
 prs: []
@@ -34,13 +33,14 @@ Top-of-hour minutes are the busiest; the daily canary crons at odd minutes fire 
   uploaded today's `timed-slot-<workflow>-<date>` artifact, and until 3 runs have failed that day.
   The existing workflow-level concurrency group serializes every run, so the check and the act are
   one step. Dispatch, `DAILY_RELEASE_LIVE` and `DAILY_RELEASE_HOLD` are unchanged.
-- `review-redispatch.yml`: also on `workflow_run` of claude-code-review; after a failed run a `wait`
-  job sleeps to the ladder's next rung for that head (`scripts/review-redispatch-wait.sh`, at most
-  45 min), then the scan runs in its own concurrency group. The cron stays as the backstop.
+- `review-redispatch.yml`: also ticks on `workflow_run` of CLI Smoke Test on main (after every
+  push), so the scan runs about every 16 minutes on a working day and the existing ladder decides
+  SKIP or retry; no runner sleeps. The scan keeps its job-level concurrency group, so ticks collapse.
+  The cron stays as the backstop.
 - `release-window-refresh.yml`: also wakes on a PR's failed first `release-window` attempt (a
   re-run is attempt 2 and starts nothing, so no loop), and after Release Publish waits up to five
   minutes for npm.
 
 Target: at most 1 miss in 7 days (every daily slot runs within 30 min, every failed review gets a
-scan within 15 min of its rung). Revert a trigger if its runs cost more than they save, if a slot
+scan within 15 min of its rung passing (on a day with pushes)). Revert a trigger if its runs cost more than they save, if a slot
 ever runs twice in a day, or if the refresh ever re-runs one check in a loop.
