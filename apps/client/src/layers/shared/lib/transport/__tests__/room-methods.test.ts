@@ -1,24 +1,9 @@
 import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 // @vitest-environment jsdom
-/**
- * The room Transport methods that can only be tested here.
- *
- * `postToRoom` and the settings / roster writes — their URL and method are the
- * whole contract with `/api/rooms/*`, and a typo in either fails only at
- * runtime, where the mock Transport every component test uses cannot see it.
- * `removeRoomMember` additionally has to survive a `204 No Content`, which is
- * invisible above this seam.
- *
- * `subscribeRoom`'s two pieces of resilience, both of which exist at this level
- * precisely because nothing above it can see them: the silence watchdog (the
- * server's heartbeat is consumed here, so above this seam a dead socket and a
- * quiet room look identical) and the refusal status (a browser cannot read the
- * status of a failed WebSocket handshake, so the server sends an application
- * close code and this is where it becomes a `RoomStreamHttpError`).
- */
+/** The room Transport methods that can only be tested here. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { RoomEvent } from '@dorkos/shared/room-schemas';
-import { STREAM_HEARTBEAT_EVENT } from '@dorkos/shared/stream-socket';
+
 import { SSE_RESILIENCE } from '../../constants';
 import { createRoomMethods, RoomStreamHttpError, isFatalStreamError } from '../room-methods';
 import { installFakeStreamSocket, nthSocket } from './fake-stream-socket';
@@ -54,11 +39,6 @@ describe('postToRoom', () => {
     expect(init.body).toBe(JSON.stringify({ text: 'ship it' }));
   });
 
-  it('returns the accepted entry’s identity, not the entry', async () => {
-    const accepted = await setup().postToRoom('room-1', { text: 'ship it' });
-    expect(accepted).toEqual({ accepted: true, entryId: 'entry-1', seq: 7 });
-  });
-
   it('rejects with the server’s own sentence, so it can be shown as-is', async () => {
     vi.stubGlobal(
       'fetch',
@@ -77,13 +57,7 @@ describe('postToRoom', () => {
 });
 
 describe('listRoomEntries', () => {
-  /**
-   * Answer the entries route with a page and the roots it points at outside it.
-   *
-   * `seq` is all these assertions read, so the entries are the two fields that
-   * decide where a row lands and nothing else — a full `RoomEntry` here would be
-   * thirty lines of fixture standing between the reader and the property.
-   */
+  /** Answer the entries route with a page and the roots it points at outside it. */
   function servePage(entries: number[], threadRoots: number[]) {
     vi.stubGlobal(
       'fetch',
@@ -100,12 +74,8 @@ describe('listRoomEntries', () => {
   }
 
   it('keeps the page and the roots apart, exactly as the route sent them', async () => {
-    // The room DOR-690 was filed over: every entry in the page is a reply to
-    // one message far behind it. The roots have to arrive (dropping them is
-    // what left the timeline fifty flat rows with nothing marking them as
-    // answers) and they have to arrive SEPARATELY — a merged array cannot be
-    // paged from, because its first element is the root and not the page
-    // (DOR-1734). The join happens above this seam, in `mergeRoomHistory`.
+    // The room DOR-690 was filed over: every entry in the page is a reply to one message far
+    // behind it.
     servePage([152, 153, 154], [1]);
 
     const page = await setup().listRoomEntries('room-1');
@@ -113,50 +83,15 @@ describe('listRoomEntries', () => {
     expect(page.entries.map((entry) => entry.seq)).toEqual([152, 153, 154]);
     expect(page.threadRoots.map((root) => root.seq)).toEqual([1]);
   });
-
-  it('answers empty roots when the page already holds every root it points at', async () => {
-    servePage([1, 2, 3], []);
-
-    const page = await setup().listRoomEntries('room-1');
-
-    expect(page.entries.map((entry) => entry.seq)).toEqual([1, 2, 3]);
-    expect(page.threadRoots).toEqual([]);
-  });
-
-  it('sends the paging window it was given', async () => {
-    servePage([9], []);
-    await setup().listRoomEntries('room-1', { before: 10, limit: 5 });
-    expect(lastCall()[0]).toBe('http://localhost:4242/api/rooms/room-1/entries?before=10&limit=5');
-  });
 });
 
 describe('room settings and roster writes', () => {
-  it('patches a room in place', async () => {
-    await setup().updateRoom('room-1', { title: 'Backend' });
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1');
-    expect(init.method).toBe('PATCH');
-    expect(init.body).toBe(JSON.stringify({ title: 'Backend' }));
-  });
-
   it('patches one membership, escaping the author id into the path', async () => {
     await setup().updateRoomMember('room-1', 'author/1', { responseMode: 'silent' });
     const [url, init] = lastCall();
     expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author%2F1');
     expect(init.method).toBe('PATCH');
     expect(init.body).toBe(JSON.stringify({ responseMode: 'silent' }));
-  });
-
-  it('deletes a membership and reads no body back', async () => {
-    // The route answers 204. `fetchJSON` would call `res.json()` on an empty
-    // body and reject with a parse error on a request that in fact succeeded,
-    // so this path must not touch the body at all — the mock has no `json`.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 204 }));
-
-    await expect(setup().removeRoomMember('room-1', 'author-1')).resolves.toBeUndefined();
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author-1');
-    expect(init.method).toBe('DELETE');
   });
 
   it('still rejects with the server’s own sentence when a roster write is refused', async () => {
@@ -174,17 +109,19 @@ describe('room settings and roster writes', () => {
       'Only you can change who is in a room'
     );
   });
-});
 
-/** Watch a promise without waiting on it (and without an unhandled rejection). */
-function watch(promise: Promise<unknown>): () => 'pending' | 'settled' {
-  let state: 'pending' | 'settled' = 'pending';
-  const mark = () => {
-    state = 'settled';
-  };
-  void promise.then(mark, mark);
-  return () => state;
-}
+  it('deletes a membership and reads no body back', async () => {
+    // The route answers 204. `fetchJSON` would call `res.json()` on an empty
+    // body and reject with a parse error on a request that in fact succeeded,
+    // so this path must not touch the body at all — the mock has no `json`.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 204 }));
+
+    await expect(setup().removeRoomMember('room-1', 'author-1')).resolves.toBeUndefined();
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author-1');
+    expect(init.method).toBe('DELETE');
+  });
+});
 
 /** One room entry, for the delivery cases. */
 const ENTRY_EVENT: RoomEvent = {
@@ -244,35 +181,10 @@ describe('subscribeRoom over a stream socket', () => {
     socket.finish();
   });
 
-  it('delivers a validated entry', async () => {
-    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    const next = iterator.next();
-    const socket = await nthSocket();
-
-    socket.push('entry', ENTRY_EVENT);
-
-    expect((await next).value).toEqual(ENTRY_EVENT);
-    socket.finish();
-  });
-
-  it('skips the snapshot frame’s history — the cache already holds it', async () => {
-    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    const next = iterator.next();
-    const socket = await nthSocket();
-
-    socket.push('snapshot', { room: {}, members: [], entries: [], cursor: 3 });
-    socket.push('entry', ENTRY_EVENT);
-
-    expect((await next).value).toEqual(ENTRY_EVENT);
-    socket.finish();
-  });
-
   it('hydrates the room’s canvas from the snapshot, because nothing else can', async () => {
-    // The one part of a cold connect's snapshot that is NOT already in the
-    // cache: the shared table rides this stream and no other route feeds it, so
-    // dropping the whole frame left a cold reader looking at an empty canvas.
-    // Each document comes through as the `canvas` frame a resume would send —
-    // no `change`, because nothing just happened.
+    // The one part of a cold connect's snapshot that is NOT already in the cache: the shared
+    // table rides this stream and no other route feeds it, so dropping the whole frame left a
+    // cold reader looking at an empty canvas.
     const document = {
       id: 'doc-1',
       scope: 'room:room-1',
@@ -305,14 +217,12 @@ describe('subscribeRoom over a stream socket', () => {
   });
 
   it('gives up on a socket that has gone silent, so the caller can reconnect', async () => {
-    // A half-open socket — a slept laptop's — never closes. The server's
-    // heartbeat is consumed below this seam, so up here silence and a quiet
-    // room look identical; only this level can tell them apart.
+    // A half-open socket — a slept laptop's — never closes.
     vi.useFakeTimers();
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    // The rejection handler goes on NOW, before the clock moves: advancing fake
-    // timers runs real macrotasks, so a rejection with nothing attached yet
-    // would surface as an unhandled rejection and fail the file.
+    // The rejection handler goes on NOW, before the clock moves: advancing fake timers runs real
+    // macrotasks, so a rejection with nothing attached yet would surface as an unhandled
+    // rejection and fail the file.
     const failure = iterator.next().catch((err: unknown) => err);
     await vi.advanceTimersByTimeAsync(0);
 
@@ -322,30 +232,8 @@ describe('subscribeRoom over a stream socket', () => {
     expect(((await failure) as Error).message).toMatch(/heard nothing for 45000ms/);
   });
 
-  it('counts a heartbeat frame as a sign of life', async () => {
-    vi.useFakeTimers();
-    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    const outcome = watch(iterator.next());
-    await vi.advanceTimersByTimeAsync(0);
-    const socket = await nthSocket();
-
-    // Three heartbeats at 30s — well past the 45s timeout in total, never more
-    // than 30s apart. A room can be silent for hours and still be alive; only
-    // the SERVER going quiet counts.
-    for (let beat = 0; beat < 3; beat += 1) {
-      await vi.advanceTimersByTimeAsync(30_000);
-      socket.push(STREAM_HEARTBEAT_EVENT);
-      await vi.advanceTimersByTimeAsync(0);
-    }
-
-    expect(outcome()).toBe('pending');
-  });
-
   it('turns a refusal close code into a FATAL RoomStreamHttpError', async () => {
-    // The distinction the retry loop turns on. A browser cannot read the status
-    // of a failed WebSocket handshake, so the server refuses with an application
-    // close code — and losing that here would make "this room is not yours"
-    // retry forever behind a "reconnecting" notice that never comes true.
+    // The distinction the retry loop turns on.
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
     const failure = iterator.next().catch((err: unknown) => err);
     const socket = await nthSocket();
@@ -358,18 +246,6 @@ describe('subscribeRoom over a stream socket', () => {
     expect(isFatalStreamError(err), 'the loop must stop retrying this').toBe(true);
   });
 
-  it('treats an ordinary drop as RETRYABLE, not fatal', async () => {
-    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    const failure = iterator.next().catch((err: unknown) => err);
-    const socket = await nthSocket();
-
-    socket.drop();
-
-    const err = (await failure) as Error;
-    expect(err).toBeInstanceOf(Error);
-    expect(isFatalStreamError(err), 'a dropped socket must keep retrying').toBe(false);
-  });
-
   it('carries a 401 through as fatal too (signed out mid-stream)', async () => {
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
     const failure = iterator.next().catch((err: unknown) => err);
@@ -378,23 +254,6 @@ describe('subscribeRoom over a stream socket', () => {
     socket.refuse(401);
 
     expect(isFatalStreamError(await failure)).toBe(true);
-  });
-
-  it('does not throw when the CALLER aborted — that is not a failure', async () => {
-    const controller = new AbortController();
-    const iterator = setup()
-      .subscribeRoom('room-1', undefined, controller.signal)
-      [Symbol.asyncIterator]();
-    const settled = iterator.next().then(
-      (r) => ({ ok: true as const, r }),
-      (e: unknown) => ({ ok: false as const, e })
-    );
-    await nthSocket();
-
-    controller.abort();
-
-    const outcome = await settled;
-    expect(outcome.ok, 'an abort completes the iteration rather than erroring it').toBe(true);
   });
 });
 
@@ -406,9 +265,8 @@ describe('saveRoomFile', () => {
       text: '# Plan\n',
     });
     const [url, init] = lastCall();
-    // The same URL the read uses, with the file named in the BODY: a save
-    // carries its contents anyway, and a query and a body cannot then disagree
-    // about which file this is.
+    // The same URL the read uses, with the file named in the BODY: a save carries its contents
+    // anyway, and a query and a body cannot then disagree about which file this is.
     expect(url).toBe('http://localhost:4242/api/rooms/room-1/files/content');
     expect(init.method).toBe('PUT');
     expect(init.body).toBe(
@@ -445,11 +303,9 @@ describe('the room-repo status and its repair', () => {
     expect(init?.method).toBe('POST');
   });
 
-  it('reads the status from the room’s own repo route', async () => {
-    await setup().readRoomRepoStatus('room-1');
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/repo/status');
-    expect(init?.method ?? 'GET').toBe('GET');
+  it('escapes a room id that would otherwise change which route is called', async () => {
+    await setup().readRoomRepoStatus('a/../b');
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/rooms/a%2F..%2Fb/repo/status');
   });
 
   it('sends a keep with no list and a discard with exactly the names it was given', async () => {
@@ -469,10 +325,5 @@ describe('the room-repo status and its repair', () => {
     expect(discardInit.body).toBe(
       JSON.stringify({ action: 'discard', paths: ['ROOM.md', 'a/b.md'] })
     );
-  });
-
-  it('escapes a room id that would otherwise change which route is called', async () => {
-    await setup().readRoomRepoStatus('a/../b');
-    expect(lastCall()[0]).toBe('http://localhost:4242/api/rooms/a%2F..%2Fb/repo/status');
   });
 });

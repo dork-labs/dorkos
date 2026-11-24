@@ -16,26 +16,12 @@ import { clearInboxRequest, requestInbox, useInboxRequest } from '@/layers/entit
 
 let mockPathname = '/';
 // The shell reads `?id=` both to name the open room in the document title
-// (`useRoomDocumentTitle`) and, since DOR-587, in the channels header
-// (`ChannelsHeader`). Defaults to no room open; individual tests set it.
+// (`useRoomDocumentTitle`) and, since DOR-587, in the channels header (`ChannelsHeader`).
 let mockSearch: Record<string, unknown> = {};
 
-// ── Stub route headers, one per pathname this suite drives ──
-//
-// `resolveRouteHeader` (the REAL implementation, mocked in below via
-// `@/layers/widgets/one-bar`) walks a match chain leaf-first looking for the
-// first non-null `staticData.header`. These stubs stand in for the real
-// per-route header components so this suite can assert on the resolver's
-// OUTPUT — which testid ends up on screen — without depending on the real
-// headers' internals (those are unit-tested at
-// `layers/widgets/one-bar/__tests__/*Header.test.tsx`).
-//
-// The stubs render the route's half of the bar and NOTHING ELSE. The fixed
-// cluster is not theirs: the shell mounts `BarFixedCluster` once, as a sibling
-// after the cross-fade, so the bell and the panel toggle stay put while the bar
-// under them changes. The mock below supplies that cluster with the REAL
-// `InboxBell` inside it, which is what lets the "approvals marker placement"
-// suite prove the marker reaches every route.
+// ── Stub route headers, one per pathname this suite drives ── `resolveRouteHeader` (the REAL
+// implementation, mocked in below via `@/layers/widgets/one-bar`) walks a match chain leaf-first
+// looking for the first non-null `staticData.header`.
 function makeHeaderStub(testId: string, label: string) {
   return function HeaderStub() {
     return <div data-testid={testId}>{label}</div>;
@@ -68,13 +54,7 @@ const ROUTE_HEADER_STUBS: Record<string, React.ComponentType> = {
   '/feedback-requests': FeedbackRequestsHeaderStub,
 };
 
-/**
- * The page the router has COMMITTED, when it differs from the address.
- *
- * TanStack Router writes the new location as a navigation starts and commits
- * its matches later, so for a beat the address says one page while the outlet
- * still draws the last one. `null` — the usual case — means the two agree.
- */
+/** The page the router has COMMITTED, when it differs from the address. */
 let mockCommittedPathname: string | null = null;
 
 /** The page the matches, and so the outlet, are on. */
@@ -90,10 +70,8 @@ interface MockRouteMatch {
 }
 
 /**
- * A two-level match chain — the pathless shell layout (no header of its own)
- * under the leaf route for the committed page. Enough for `resolveRouteHeader`
- * to exercise its leaf-first walk: routes this suite doesn't stub resolve to
- * `null`, exactly like a real route with no `staticData.header` would.
+ * A two-level match chain — the pathless shell layout (no header of its own) under the leaf route
+ * for the committed page.
  */
 function mockRouteMatches(): MockRouteMatch[] {
   const page = committedPathname();
@@ -138,18 +116,17 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
       location: { pathname: mockPathname, href: mockPathname, searchStr: mockSearchStr() },
       matches: mockRouteMatches(),
     }),
-  // The tab strip reads the router directly: `useAppTabsSync` subscribes to
-  // history for the action type (only Back/Forward may move focus between
-  // tabs), and the tab actions re-read the location once a navigation settles.
+  // The tab strip reads the router directly: `useAppTabsSync` subscribes to history for the
+  // action type (only Back/Forward may move focus between tabs), and the tab actions re-read the
+  // location once a navigation settles.
   useRouter: () => ({
     navigate: (_options: { href: string }) => Promise.resolve(),
     get state() {
       return { location: { pathname: mockPathname, href: mockPathname } };
     },
     history: { subscribe: () => () => {} },
-    // Kept because the router type carries it and other shell hooks may reach
-    // for it; nothing in the shell subscribes any more, since the mobile
-    // auto-close retired with the drawer (P4).
+    // Kept because the router type carries it and other shell hooks may reach for it; nothing in
+    // the shell subscribes any more, since the mobile auto-close retired with the drawer (P4).
     subscribe: () => () => {},
   }),
   // Draws the committed page, as the real outlet does — never the address.
@@ -163,21 +140,17 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useSearch: () => mockSearch,
 }));
 
-// The shell renders every route's bar through this resolver — the real
-// implementation, so this suite exercises the actual leaf-first walk over the
-// `matches` chain `useRouterState` above serves it. `OneBarProvider` is a bare
-// passthrough here: the fixed cluster and per-route reads it feeds
-// (`useOneBarState`) are covered where the real headers are unit-tested
-// (`layers/widgets/one-bar/__tests__/*Header.test.tsx`), not in this
-// shell-level suite.
+// The shell renders every route's bar through this resolver — the real implementation, so this
+// suite exercises the actual leaf-first walk over the `matches` chain `useRouterState` above
+// serves it.
 vi.mock('@/layers/widgets/one-bar', async () => {
   const { resolveRouteHeader } = await import('@/layers/widgets/one-bar/model/route-header');
   return {
     resolveRouteHeader,
     OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
-    // The real bell, in the shell's own cluster — the one thing this suite needs
-    // from the bar module beyond the resolver, because the approvals marker
-    // rides it and must be reachable from every route.
+    // The real bell, in the shell's own cluster — the one thing this suite needs from the bar
+    // module beyond the resolver, because the approvals marker rides it and must be reachable
+    // from every route.
     BarFixedCluster: () => (
       <div data-testid="bar-fixed-cluster">
         <InboxBell />
@@ -198,10 +171,9 @@ vi.mock('@/layers/features/dashboard-sidebar', () => {
         {mockSectionsPresent && <section data-sidebar-section="channels">Channels</section>}
       </nav>
     ),
-    // Both are persistent chrome: AppShell mounts them OUTSIDE the
-    // `sidebar.body` swap region, so a contributed takeover replaces the body and
-    // leaves the panel's identity and its navigation standing (spec R2, BC-43,
-    // BC-47).
+    // Both are persistent chrome: AppShell mounts them OUTSIDE the `sidebar.body` swap region, so
+    // a contributed takeover replaces the body and leaves the panel's identity and its navigation
+    // standing (spec R2, BC-43, BC-47).
     SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
     SidebarLandmark: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     MobileCommunityContextSwitcher: () => (
@@ -209,14 +181,9 @@ vi.mock('@/layers/features/dashboard-sidebar', () => {
     ),
     SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
     YouRows: () => <div data-testid="you-rows">You rows</div>,
-    // The panel's one bottom card. Stubbed at the same seam as the strip: this
-    // suite is about WHICH cockpit the shell mounts, and the slot's own
-    // arbitration is `shared/ui/__tests__/bottom-slot.test.tsx`.
+    // The panel's one bottom card.
     SidebarBottomSlot: () => <div data-slot="sidebar-bottom-slot">Bottom slot</div>,
-    // What the mobile tabs compose. Stubbed at the feature seam so this suite
-    // stays about the SHELL — which cockpit it mounts and where a takeover
-    // lands — while `MobileTabsLayout.test.tsx` drives the real model through
-    // the real sections.
+    // What the mobile tabs compose.
     SidebarChrome: ({ children }: React.PropsWithChildren) => <>{children}</>,
     SidebarSections: () => <div data-testid="sidebar-sections" />,
     useSidebarState: () => ({ activeTarget: null }),
@@ -235,36 +202,20 @@ vi.mock('@/layers/features/tours', () => ({
   TourHost: () => null,
 }));
 
-// The moments rail draws nothing in this suite's world (onboarding is settled
-// but no moment is eligible). The REAL `MomentHost` is left unmocked on purpose:
-// the one thing only this suite can prove is that the shell hands it the overlay
-// flag at all. `onboardingOverlayVisible={showOnboarding}` has exactly one
-// production site and the moments suite drives that prop by hand, so deleting
-// the line reddens nothing there. Every other test here leaves the rail with a
-// config that carries no `onboarding` block, so it stays quiet regardless.
+// The moments rail draws nothing in this suite's world (onboarding is settled but no moment is
+// eligible).
 
-// Keep the real AppBannerSlot so this suite can prove *where* the global banner
-// lands in the shell (DOR-389): inside SidebarInset, below the header — never
-// above the shell where the fixed sidebar would paint over it. `useAppBanners` is
-// driven by a mutable list so a single test can make a banner eligible; it
-// defaults to empty, so every other test renders no banner and is unaffected.
+// Keep the real AppBannerSlot so this suite can prove *where* the global banner lands in the
+// shell (DOR-389): inside SidebarInset, below the header — never above the shell where the fixed
+// sidebar would paint over it.
 let mockBanners: BannerDescriptor[] = [];
 vi.mock('@/layers/widgets/app-banner', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/widgets/app-banner')>();
   return { ...actual, useAppBanners: () => mockBanners };
 });
 
-// Keep the real InboxBell so this suite can prove the marker
-// reaches EVERY route — the defect it fixes was a pending approval that only
-// appeared on the dashboard. Only the feature slice is faked (the real hook needs
-// an EventStreamProvider this shell-level suite does not mount), so the widget,
-// its placement, and its render-nothing-at-zero rule are all under test.
-// The marker also reads the global stream's connection state, and this suite
-// mounts no EventStreamProvider. Stub that one hook; the rest of the barrel
-// (TransportProvider, the already-stubbed favicon/title submodules) stays real.
-// Which cockpit the shell mounts is one question — `useIsMobile()` — asked at
-// one call site in AppShell, so this flag is the whole of what the mobile cases
-// below change.
+// Keep the real InboxBell so this suite can prove the marker reaches EVERY route — the defect it
+// fixes was a pending approval that only appeared on the dashboard.
 let mockIsMobile = false;
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -275,9 +226,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       connectionState: 'connected' as const,
       failedAttempts: 0,
     }),
-    // The Inbox half of the bell subscribes to the same stream for its live
-    // rows. Same reason, same stub: this suite is about where the marker is
-    // mounted, not about what arrives over the wire.
+    // The Inbox half of the bell subscribes to the same stream for its live rows.
     useEventSubscription: () => {},
     // Reads the stream through its own module, which this stub does not reach.
     useAccountUsageSync: () => {},
@@ -310,9 +259,8 @@ vi.mock('@/layers/entities/attention', async () => ({
     retry: vi.fn(),
   }),
   usePendingScheduleApprovals: () => ({ schedules: [], isLoading: false }),
-  // The Inbox popover's own derivation (spec `schedule-approval-experience`
-  // §C4) — mirrors the three stubs above rather than composing them, the same
-  // way the real hook does.
+  // The Inbox popover's own derivation (spec `schedule-approval-experience` §C4) — mirrors the
+  // three stubs above rather than composing them, the same way the real hook does.
   useWaitingQueue: () => ({
     approvals: mockPendingApprovals,
     asks: [],
@@ -341,12 +289,10 @@ vi.mock('@/layers/features/approvals', () => ({
   StandingPermissionList: () => <div data-testid="standing-permission-list" />,
   DeclinedHookReviews: () => null,
   // This suite is about WHERE the marker sits, not about standing permissions.
-  // An empty list keeps the marker's appearance driven solely by the pending
-  // queue, which is what every assertion below is written against.
   useStandingPermissions: () => ({ permissions: [], isLoading: false, isError: false }),
-  // Identity, because the receipt hold is not what this suite is about — and
-  // identity IS what the real hook returns while nothing has just been
-  // answered, so the marker stays driven solely by the pending queue.
+  // Identity, because the receipt hold is not what this suite is about — and identity IS what the
+  // real hook returns while nothing has just been answered, so the marker stays driven solely by
+  // the pending queue.
   useApprovalCards: (approvals: Array<{ approvalId: string }>) => approvals,
 }));
 
@@ -389,9 +335,8 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useDefaultCwd: () => {},
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
   useGlobalSessionStream: () => {},
-  // AppShell reads the active session's origin for the header chip
-  // (session-origin-legibility): no active session in this shell-level
-  // isolation test, so it always resolves to "no origin".
+  // AppShell reads the active session's origin for the header chip (session-origin-legibility):
+  // no active session in this shell-level isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
   // The session bar's title, read from the shared session cache. No active
   // session here, so the query is disabled and there is nothing to report.
@@ -413,12 +358,8 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
   };
 });
 
-// AppShell mounts useCommandsSync (UX-12), useBindingsSync, useRelayAdaptersSync,
-// and usePulseFreshness — each subscribes via the
-// event stream and so needs an EventStreamProvider. This slot test isolates AppShell and provides no such
-// provider, so no-op the subscriptions here.
-// The live extension-tools subscriber (DOR-2685) reads the event stream this
-// suite does not provide; nothing here is about permissions.
+// AppShell mounts useCommandsSync (UX-12), useBindingsSync, useRelayAdaptersSync, and
+// usePulseFreshness — each subscribes via the event stream and so needs an EventStreamProvider.
 vi.mock('@/layers/entities/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/permissions')>()),
   useCapabilitiesSync: () => {},
@@ -448,13 +389,8 @@ vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
 });
 
 // The shell also keeps the room list live for the browser tab's unread badge
-// (`useRoomDocumentTitle` -> `useRoomListStream`) — another event-stream
-// subscription, no-op'd here for the same reason.
-//
-// `useRoom` is overridden too, so the "names the open room" header test below
-// can hand the shell a resolved room without a real transport round trip.
-// Every other test leaves `mockOpenRoom` `null`, so `useRoom` degrades to "no
-// room selected" — the same shape the real hook answers with a disabled query.
+// (`useRoomDocumentTitle` -> `useRoomListStream`) — another event-stream subscription, no-op'd
+// here for the same reason.
 let mockOpenRoom: { kind: 'channel' | 'dm'; slug: string | null; title: string } | null = null;
 vi.mock('@/layers/entities/room', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/room')>();
@@ -500,20 +436,16 @@ vi.mock('@/layers/entities/tasks', async (importOriginal) => {
   };
 });
 
-// Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the
-// config read on a `tunnel_status` event, and `useRemoteAccessAnnouncer` reads
-// that config. No-op'd here for the same reason as the *Sync hooks above.
+// Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the config read on a
+// `tunnel_status` event, and `useRemoteAccessAnnouncer` reads that config.
 vi.mock('@/layers/entities/tunnel', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/tunnel')>()),
   useTunnelSync: () => {},
   useRemoteAccessAnnouncer: () => {},
 }));
 
-// Agents and settings ride the same stream (DOR-2052): `useAgentsSync` refreshes
-// the agent caches on `agents_changed` and `useConfigSync` re-reads settings on
-// `config_changed`. No-op'd here for the same reason as the *Sync hooks above —
-// this suite mounts the shell with no `EventStreamProvider`, and
-// `useEventSubscription` throws without one.
+// Agents and settings ride the same stream (DOR-2052): `useAgentsSync` refreshes the agent caches
+// on `agents_changed` and `useConfigSync` re-reads settings on `config_changed`.
 vi.mock('@/layers/entities/mesh', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/mesh')>()),
   useAgentsSync: () => {},
@@ -592,12 +524,9 @@ vi.mock('sonner', () => ({
 // ── Import AppShell after all mocks are set up ──
 
 import { AppShell } from '../AppShell';
-// The extension registry is a real (unmocked) singleton — the app-store mock
-// above only replaces `@/layers/shared/model/app-store`, so `useSlotContributions`
-// still reads this store. Tests register a `sidebar.body` contribution to
-// exercise the takeover path.
+// The extension registry is a real (unmocked) singleton — the app-store mock above only replaces
+// `@/layers/shared/model/app-store`, so `useSlotContributions` still reads this store.
 import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
-import type { SidebarBodyContribution } from '@/layers/shared/model/extension-registry';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 import { useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
 
@@ -665,28 +594,14 @@ describe('AppShell slot integration', () => {
       expect(document.querySelector('[data-slot="sidebar"]')).toBeNull();
       expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
 
-      // **Asked the only way that can answer.** A Radix Sheet renders NOTHING
-      // while it is closed, so "there is no `[data-mobile="true"]` in the DOM"
-      // is equally true of a mounted-but-shut drawer — it passed with `<Sidebar>`
-      // rendered unconditionally, which is a check that cannot fail. So the
-      // drawer is asked to OPEN first: `SidebarProvider` still owns ⌘B, and on a
-      // phone that gesture is exactly `setOpenMobile(true)`. Nothing opens
-      // because there is nothing mounted to open.
+      // **Asked the only way that can answer.** A Radix Sheet renders NOTHING while it is closed,
+      // so "there is no `[data-mobile="true"]` in the DOM" is equally true of a mounted-but-shut
+      // drawer — it passed with `<Sidebar>` rendered unconditionally, which is a check that
+      // cannot fail.
       await userEvent.keyboard('{Meta>}b{/Meta}');
       expect(document.querySelector('[data-mobile="true"]')).toBeNull();
       expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
       expect(document.querySelector('[data-slot="sidebar"]')).toBeNull();
-    });
-
-    it('drops the toggle with the panel — no hamburger that opens nothing', () => {
-      renderAppShell();
-      expect(screen.queryByRole('button', { name: 'Toggle sidebar' })).not.toBeInTheDocument();
-    });
-
-    it('keeps the Community context trigger in persistent top chrome', () => {
-      renderAppShell();
-      expect(screen.getByTestId('mobile-community-switcher')).toBeInTheDocument();
-      expect(screen.getByTestId('mobile-community-switcher').closest('header')).not.toBeNull();
     });
 
     it('mounts the four destinations along the bottom instead', () => {
@@ -695,26 +610,10 @@ describe('AppShell slot integration', () => {
       expect(screen.getByTestId('mobile-tab-home')).toBeInTheDocument();
     });
 
-    it('keeps the routed content alongside the tabs, never inside them', () => {
-      renderAppShell();
-      const outlet = screen.getByTestId('outlet');
-      expect(document.querySelector('[data-slot="sidebar-inset"]')).toContainElement(outlet);
-      expect(screen.getByTestId('mobile-tab-panels')).not.toContainElement(outlet);
-    });
-
     // ── review B2 ──
     describe('the page a panel covers is unreachable, not merely hidden', () => {
-      // Paired, because either half alone is satisfiable by an accident. "The
-      // page is inert" passes on a shell that inerts it always; "the page is
-      // reachable" passes on one that never inerts it. Only the transition
-      // between the two states says the shell is reading the right bit.
+      // Paired, because either half alone is satisfiable by an accident.
       const inset = () => document.querySelector('[data-slot="sidebar-inset"]');
-
-      it('is reachable while the panels are down — the cold-load state', () => {
-        renderAppShell();
-        expect(useMobilePanelStore.getState().panelUp).toBe(false);
-        expect(inset()).not.toHaveAttribute('inert');
-      });
 
       it('goes inert the moment a destination is opened, and comes back', () => {
         renderAppShell();
@@ -727,30 +626,6 @@ describe('AppShell slot integration', () => {
         act(() => useMobilePanelStore.getState().lower());
         expect(inset()).not.toHaveAttribute('inert');
       });
-
-      it('never inerts the page at desktop width, whatever the store says', () => {
-        // The store outlives the layout, so a stale raised bit must not reach
-        // through to a width that has no panels at all.
-        mockIsMobile = false;
-        act(() => useMobilePanelStore.getState().raise());
-        renderAppShell();
-        expect(inset()).not.toHaveAttribute('inert');
-      });
-    });
-
-    it('puts the whole list in Home, and has no second list tab', () => {
-      renderAppShell();
-      expect(
-        within(screen.getByTestId('mobile-tab-panel-home')).getByTestId('sidebar-sections')
-      ).toBeInTheDocument();
-      expect(screen.queryByTestId('mobile-tab-panel-library')).not.toBeInTheDocument();
-    });
-
-    it('carries the four places DorkOS goes into You, so nothing is stranded', () => {
-      renderAppShell();
-      expect(
-        within(screen.getByTestId('mobile-tab-panel-you')).getByTestId('sidebar-footer-strip')
-      ).toBeInTheDocument();
     });
 
     describe('a sidebar.body takeover', () => {
@@ -795,12 +670,6 @@ describe('AppShell slot integration', () => {
   });
 
   describe('sidebar slots', () => {
-    it('renders DashboardSidebar at /', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-    });
-
     it('renders the DashboardSidebar roster at /session — no session drill-in', () => {
       // The web shell keeps the roster on /session; the session drill-in was
       // retired in favor of the right-panel inspector.
@@ -831,12 +700,9 @@ describe('AppShell slot integration', () => {
     it.each([true, false])(
       'keeps the header block OUTSIDE the swap region, so a takeover cannot take it (sections present: %s)',
       (sections) => {
-        // **Structural, not presence.** Chrome rendered inside the animated
-        // body would still be on screen on the roster route and would still be
-        // "mounted" after a takeover swapped a different body in — because the
-        // shell mounts it either way. What distinguishes the two arrangements is
-        // whether the swap region CONTAINS it. An earlier version of this test
-        // asserted presence and passed with the chrome moved inside.
+        // **Structural, not presence.** Chrome rendered inside the animated body would still be
+        // on screen on the roster route and would still be "mounted" after a takeover swapped a
+        // different body in — because the shell mounts it either way.
         mockSectionsPresent = sections;
         mockPathname = '/';
         renderAppShell();
@@ -865,28 +731,6 @@ describe('AppShell slot integration', () => {
       expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
     });
 
-    it('takes over on a nested marketplace route too', () => {
-      mockPathname = '/marketplace/sources';
-      renderAppShell();
-      expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
-    });
-
-    it('restores the dashboard roster when navigating away from marketplace', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('marketplace-sidebar-fake')).not.toBeInTheDocument();
-    });
-
-    it('does not hijack the session route roster', () => {
-      // The marketplace body only matches /marketplace*, so /session keeps its
-      // built-in roster (DashboardSidebar).
-      mockPathname = '/session';
-      renderAppShell();
-      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('marketplace-sidebar-fake')).not.toBeInTheDocument();
-    });
-
     it('a throwing contributed body degrades to an inline fallback, not a dead shell', () => {
       // React + the boundary both log the caught error — silence the noise.
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -906,9 +750,9 @@ describe('AppShell slot integration', () => {
         mockPathname = '/marketplace';
         renderAppShell();
 
-        // The shell survives: chrome, header, and the footer strip all still render, and
-        // the sidebar body area shows the boundary's inline fallback instead of
-        // the whole app being replaced by the router's error component.
+        // The shell survives: chrome, header, and the footer strip all still render, and the
+        // sidebar body area shows the boundary's inline fallback instead of the whole app being
+        // replaced by the router's error component.
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('marketplace-header')).toBeInTheDocument();
         expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
@@ -917,59 +761,17 @@ describe('AppShell slot integration', () => {
         consoleError.mockRestore();
       }
     });
-
-    it('a malformed contribution without visibleWhen never takes over (runtime guard)', () => {
-      // Simulates a rogue generic registration that omitted the required
-      // predicate — the shell must treat it as never matching, not crash.
-      unregister();
-      unregister = useExtensionRegistry.getState().register('sidebar.body', {
-        id: 'marketplace-facets',
-        component: () => <div data-testid="rogue-body">rogue</div>,
-      } as unknown as SidebarBodyContribution);
-
-      mockPathname = '/marketplace';
-      renderAppShell();
-
-      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
-      expect(screen.queryByTestId('rogue-body')).not.toBeInTheDocument();
-    });
   });
 
   describe('sidebar body clip (shell seam)', () => {
     it('wraps the sliding body in an overflow-hidden clip ancestor', () => {
-      // The body swap slides the motion.div horizontally (x: ±100%). The
-      // transform lives on the motion.div itself, so its own `overflow-hidden`
-      // can only clip its children — never its own translated box. The clip must
-      // therefore live on the ancestor wrapper, or mid-flight content spills past
-      // the sidebar's edge. AnimatePresence renders no DOM node, so the swap
-      // element's DOM parent is that wrapper.
+      // The body swap slides the motion.div horizontally (x: ±100%).
       mockPathname = '/';
       renderAppShell();
       const body = screen.getByTestId('sidebar-body-swap');
       const clipWrapper = body.parentElement;
       expect(clipWrapper).not.toBeNull();
       expect(clipWrapper).toHaveClass('overflow-hidden');
-    });
-
-    it('keeps the clip on every body swap, including contributed takeovers', () => {
-      // Register a marketplace-style takeover so the swapped-in body is a
-      // contributed one, not the built-in roster — the clip is a shell property,
-      // so it must hold for current and future bodies alike.
-      const unregister = useExtensionRegistry.getState().register('sidebar.body', {
-        id: 'clip-check-takeover',
-        component: () => <div data-testid="clip-check-body">takeover</div>,
-        visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
-        priority: 10,
-      });
-      try {
-        mockPathname = '/marketplace';
-        renderAppShell();
-        const body = screen.getByTestId('sidebar-body-swap');
-        expect(body).toContainElement(screen.getByTestId('clip-check-body'));
-        expect(body.parentElement).toHaveClass('overflow-hidden');
-      } finally {
-        unregister();
-      }
     });
   });
 
@@ -988,62 +790,21 @@ describe('AppShell slot integration', () => {
       expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
     });
 
-    // DOR-587: /channels had no case in the route switch, so it fell through
-    // to `default` and rendered DashboardHeader — every channel and every DM
-    // read "Dashboard" in the chrome above it.
+    // DOR-587: /channels had no case in the route switch, so it fell through to `default` and
+    // rendered DashboardHeader — every channel and every DM read "Dashboard" in the chrome above
+    // it.
     it('renders ChannelsHeader at /channels, not the dashboard header', () => {
       mockPathname = '/channels';
       renderAppShell();
       expect(screen.getByTestId('channels-header')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
     });
-
-    // Naming the open room in the channels header ("#general" vs the route's
-    // generic name, and the null-room fallback) used to be asserted here
-    // through a `roomTitle` prop on a stubbed `ChannelsHeader`. The stub above
-    // is zero-prop now — real headers read `useOneBarState()`, and this
-    // suite's `OneBarProvider` mock is a bare passthrough — so that resolution
-    // can no longer be observed from here. It moved to
-    // `layers/widgets/one-bar/__tests__/ChannelsHeader.test.tsx`, which drives
-    // the real component against a real `OneBarProvider`. This suite keeps only
-    // the shell-level claim: `/channels` resolves to the channels header at all.
-    it('resolves the channels header at /channels', () => {
-      mockPathname = '/channels';
-      renderAppShell();
-      expect(screen.getByTestId('channels-header')).toBeInTheDocument();
-    });
-
-    // DOR-919 (sibling of DOR-587): /workspaces, /connections, and
-    // /feedback-requests had no case in the route switch either, so all three
-    // fell through to `default` and rendered DashboardHeader — "Dashboard"
-    // over a page whose body said something else.
-    it('renders WorkspacesHeader at /workspaces, not the dashboard header', () => {
-      mockPathname = '/workspaces';
-      renderAppShell();
-      expect(screen.getByTestId('workspaces-header')).toBeInTheDocument();
-      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
-    });
-
-    it('renders ConnectionsHeader at /connections, not the dashboard header', () => {
-      mockPathname = '/connections';
-      renderAppShell();
-      expect(screen.getByTestId('connections-header')).toBeInTheDocument();
-      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
-    });
-
-    it('renders FeedbackRequestsHeader at /feedback-requests, not the dashboard header', () => {
-      mockPathname = '/feedback-requests';
-      renderAppShell();
-      expect(screen.getByTestId('feedback-requests-header')).toBeInTheDocument();
-      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
-    });
   });
 
-  // The "every route gets a non-dashboard header" drift guard that used to
-  // live here is a type error at the route declaration now (`staticData.header`
-  // is a required `StaticDataRouteOption`, router.tsx) plus a router-level
-  // assertion against the REAL route tree — see 'route headers' in
-  // apps/client/src/__tests__/app-route-paths.test.ts.
+  // The "every route gets a non-dashboard header" drift guard that used to live here is a type
+  // error at the route declaration now (`staticData.header` is a required
+  // `StaticDataRouteOption`, router.tsx) plus a router-level assertion against the REAL route
+  // tree — see 'route headers' in apps/client/src/__tests__/app-route-paths.test.ts.
 
   describe('moments rail wiring (DOR-1431)', () => {
     /** A config the rail will act on: onboarding over, telemetry unanswered. */
@@ -1081,22 +842,6 @@ describe('AppShell slot integration', () => {
 
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
     });
-
-    it('tells the rail when the onboarding overlay is up, so no moment opens over it', async () => {
-      // The prop under test. `MomentHost` defaults `onboardingOverlayVisible` to
-      // false, so a shell that stopped passing it would open a modal on top of
-      // the first-run flow — and every test in the moments suite would stay
-      // green, because they hand the prop in themselves.
-      seedEligibleMoment();
-      mockOnboardingOverlayVisible = true;
-
-      renderAppShell();
-
-      // Give the config query the same window the passing case needs.
-      await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
   });
 
   describe('Inbox links during first-run onboarding (DOR-2577)', () => {
@@ -1122,12 +867,7 @@ describe('AppShell slot integration', () => {
     });
 
     it('mounts the standing banner inside the content inset and below the header — never behind the fixed sidebar', () => {
-      // Regression guard for DOR-389. The first-run telemetry notice once mounted
-      // above the shell, where the fixed (z-10) sidebar painted over its opening
-      // line and it shoved the header down. The global slot now lives inside
-      // SidebarInset, below the header. Lock the structural invariant that keeps
-      // the notice readable from its first word: the rendered banner sits within
-      // the content inset, after the header, and outside the fixed sidebar.
+      // Regression guard for DOR-389.
       mockBanners = [
         {
           id: 'placement-probe',
@@ -1167,9 +907,9 @@ describe('AppShell slot integration', () => {
     beforeEach(enterDesktopShell);
 
     it('mounts the tab strip at the top of the content inset, above the header', () => {
-      // The strip is the inset's top band on macOS: it carries the drag region
-      // and the traffic-light clearance the header used to need, so it has to
-      // come FIRST inside the inset, not after the header.
+      // The strip is the inset's top band on macOS: it carries the drag region and the
+      // traffic-light clearance the header used to need, so it has to come FIRST inside the
+      // inset, not after the header.
       mockPathname = '/';
       renderAppShell();
 
@@ -1184,24 +924,6 @@ describe('AppShell slot integration', () => {
         header && header.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_PRECEDING
       ).toBeTruthy();
     });
-
-    it('names the active tab after the route the router is on', () => {
-      // Proves the shell feeds the strip the real location, not a placeholder.
-      mockPathname = '/team';
-      renderAppShell();
-
-      expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(/Team/);
-    });
-
-    it('points the active tab at the routed content region', () => {
-      mockPathname = '/';
-      renderAppShell();
-
-      const active = screen.getByRole('tab', { selected: true });
-      const panelId = active.getAttribute('aria-controls');
-      expect(panelId).toBeTruthy();
-      expect(document.getElementById(panelId!)).not.toBeNull();
-    });
   });
 
   describe('no window tabs in a browser (DOR-568)', () => {
@@ -1211,22 +933,6 @@ describe('AppShell slot integration', () => {
 
       expect(screen.queryByRole('tablist', { name: 'Open tabs' })).not.toBeInTheDocument();
       expect(screen.queryByRole('tab')).not.toBeInTheDocument();
-    });
-
-    it('keeps the header, its drag region and its chrome — the inset just starts higher', () => {
-      // The strip carried the drag region and the macOS traffic-light
-      // clearance. Removing it must not take the header's own chrome with it.
-      mockPathname = '/';
-      renderAppShell();
-
-      const inset = document.querySelector('[data-slot="sidebar-inset"]');
-      const header = inset?.querySelector('header');
-      expect(header).not.toBeNull();
-      expect(header).toHaveClass('app-drag-region');
-      // The header is now the inset's first child, with nothing above it.
-      expect(inset?.firstElementChild).toBe(header);
-      // …and the routed content region the tabs pointed at is still there.
-      expect(inset?.querySelector('main')).not.toBeNull();
     });
 
     it('writes nothing to the tab store — no sessionStorage either', () => {
@@ -1255,21 +961,6 @@ describe('AppShell slot integration', () => {
       const header = document.querySelector('[data-slot="sidebar-inset"] header');
       expect(header).not.toBeNull();
       expect(header).toContainElement(marker);
-    });
-
-    it('shows the marker on the dashboard route too', () => {
-      mockPendingApprovals = [{ approvalId: '01JZ1' }];
-      mockPathname = '/';
-      renderAppShell();
-
-      expect(screen.getByTestId('inbox-bell')).toBeInTheDocument();
-    });
-
-    it('renders no marker when nothing is waiting', () => {
-      mockPathname = '/session';
-      renderAppShell();
-
-      expect(screen.queryByTestId('inbox-bell')).not.toBeInTheDocument();
     });
   });
 
@@ -1316,31 +1007,5 @@ describe('AppShell slot integration', () => {
         expect(pageMounts).toEqual(['/channels', '/']);
       }
     );
-  });
-
-  describe('static chrome', () => {
-    it('renders the footer strip regardless of route', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
-
-      cleanup();
-
-      mockPathname = '/session';
-      renderAppShell();
-      expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
-    });
-
-    it('renders the app-shell container on both routes', () => {
-      mockPathname = '/';
-      renderAppShell();
-      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
-
-      cleanup();
-
-      mockPathname = '/session';
-      renderAppShell();
-      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
-    });
   });
 });

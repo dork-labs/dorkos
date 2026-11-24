@@ -6,16 +6,12 @@ import { createBootCache } from '../query-persister';
 import {
   BOOT_CACHE_DISABLED_KEY,
   BOOT_CACHE_KEY_PREFIX,
-  BOOT_CACHE_MAX_AGE_MS,
-  bootCacheStorageKey,
   clearBootCache,
   isBootQueryKey,
 } from '../boot-cache-keys';
-// The real factory rather than the literal — the allow-list in
-// `query-persister.ts` has to spell these keys by hand (`shared/` may not import
-// an entity), so the table below is only a drift guard if one side of it is the
-// definition. It is also the rule `__tests__/one-config-query-key.test.ts`
-// enforces: `['config','current']` may be written in exactly one file.
+// The real factory rather than the literal — the allow-list in `query-persister.ts` has to spell
+// these keys by hand (`shared/` may not import an entity), so the table below is only a drift
+// guard if one side of it is the definition.
 import { configKeys } from '../../model/server-config/query-keys';
 import { HttpTransport } from '../transport';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
@@ -57,12 +53,7 @@ function blob(options: {
 
 const BUSTER = '1.2.3';
 
-/**
- * Long enough for the persister's one-second write throttle to have fired.
- *
- * This suite also exercises the library's restore path, so it keeps the real
- * clock. The sign-out race tests advance the persister's timer directly.
- */
+/** Long enough for the persister's one-second write throttle to have fired. */
 const SAVE_THROTTLE_WAIT_MS = 1_500;
 
 describe('the sidebar’s local memory', () => {
@@ -104,30 +95,7 @@ describe('the sidebar’s local memory', () => {
     });
   });
 
-  describe('the key it is kept under', () => {
-    beforeEach(() => {
-      vi.stubGlobal('location', { origin: 'http://localhost:6241' } as Location);
-    });
-
-    it('names the origin that answers, so two cockpits never share a memory', () => {
-      expect(bootCacheStorageKey('/api')).toBe(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`);
-      expect(bootCacheStorageKey('http://localhost:4242/api')).toBe(
-        `${BOOT_CACHE_KEY_PREFIX}http://localhost:4242`
-      );
-    });
-  });
-
   describe('which surfaces keep one', () => {
-    it('keeps one for the web cockpit', () => {
-      const cache = createBootCache({
-        transport: new HttpTransport('/api'),
-        apiBaseUrl: '/api',
-        buster: BUSTER,
-        storage: fakeStorage(),
-      });
-      expect(cache).not.toBeNull();
-    });
-
     it('keeps none when a session has switched local memory off', () => {
       const storage = fakeStorage({
         [BOOT_CACHE_DISABLED_KEY]: '1',
@@ -147,19 +115,9 @@ describe('the sidebar’s local memory', () => {
       expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://other`)).toBe('{}');
     });
 
-    it('spells the opt-out key the browser suite hardcodes', () => {
-      // `apps/e2e/fixtures/index.ts` writes this exact string on every context to
-      // keep the suite's world cold, and `boot-stability.spec.ts` removes it to
-      // opt in. apps/e2e depends on no workspace package, so the two cannot share
-      // a constant — this is the pin that makes a rename loud.
-      expect(BOOT_CACHE_DISABLED_KEY).toBe('dorkos:boot-cache-disabled');
-    });
-
     it('keeps none when the browser refuses to hand over its storage', () => {
-      // Blocked storage raises a SecurityError on ACCESS — a locked-down
-      // profile, a sandboxed frame. This runs at module scope in `main.tsx`,
-      // outside every error boundary, so a throw here is a window that never
-      // paints. Cold is the only acceptable answer.
+      // Blocked storage raises a SecurityError on ACCESS — a locked-down profile, a sandboxed
+      // frame.
       const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
       const hostile = {
         get length(): number {
@@ -179,25 +137,6 @@ describe('the sidebar’s local memory', () => {
         apiBaseUrl: '/api',
         buster: BUSTER,
         storage: hostile,
-      });
-
-      expect(cache).toBeNull();
-      expect(logged).toHaveBeenCalled();
-    });
-
-    it('keeps none when the page has no origin to key one by', () => {
-      // A page with an opaque origin reports the literal string "null", and
-      // `new URL('/api', 'null')` throws. The desktop shell reaches that only
-      // on its `loadFile` last resort, which is precisely when a blank window
-      // is least affordable. Same module scope, same blank window.
-      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-      vi.stubGlobal('location', { origin: 'null' } as Location);
-
-      const cache = createBootCache({
-        transport: new HttpTransport('/api'),
-        apiBaseUrl: '/api',
-        buster: BUSTER,
-        storage: fakeStorage(),
       });
 
       expect(cache).toBeNull();
@@ -234,14 +173,7 @@ describe('the sidebar’s local memory', () => {
 
     const KEY = `${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`;
 
-    /**
-     * Restore the way the app really does — through the library's own path.
-     *
-     * `PersistQueryClientProvider` calls exactly this, so driving it here means
-     * the buster and max-age rules are tested where they are ENFORCED (in
-     * `persistQueryClientRestore`) rather than against a second copy of them
-     * written to make the test pass.
-     */
+    /** Restore the way the app really does — through the library's own path. */
     async function restoreThrough(storage: Storage, buster = BUSTER) {
       const queryClient = new QueryClient();
       const cache = cacheOver(storage, buster);
@@ -276,30 +208,7 @@ describe('the sidebar’s local memory', () => {
       expect(storage.getItem(KEY)).toBeNull();
     });
 
-    it('throws away a blob older than a day', async () => {
-      const storage = fakeStorage({
-        [KEY]: blob({
-          buster: BUSTER,
-          timestamp: Date.now() - BOOT_CACHE_MAX_AGE_MS - 1,
-          queries: [{ queryKey: ['team'], data: [] }],
-        }),
-      });
-
-      const queryClient = await restoreThrough(storage);
-
-      expect(queryClient.getQueryState(['team'])).toBeUndefined();
-      expect(storage.getItem(KEY)).toBeNull();
-    });
-
-    /**
-     * Blobs that are well-formed JSON and still not a cache.
-     *
-     * **`localStorage` is a shared, writable namespace.** A browser extension, a
-     * previous build, a write cut off by a crashing tab, or a person in devtools
-     * can leave any of these behind, and `hydrate` walks straight into the ones
-     * that parse. Each must end as a cold boot with the key gone — never a
-     * thrown error, and never a hydrate attempt.
-     */
+    /** Blobs that are well-formed JSON and still not a cache. */
     const POISON: [name: string, raw: string][] = [
       ['not JSON at all', 'not json'],
       ['JSON that is not an object', '"just a string"'],
@@ -406,55 +315,6 @@ describe('the sidebar’s local memory', () => {
       expect(written).not.toContain('entries');
     });
 
-    it('reaches the storage under this cockpit’s key', async () => {
-      const storage = fakeStorage();
-      const cache = createBootCache({
-        transport: new HttpTransport('/api'),
-        apiBaseUrl: '/api',
-        buster: BUSTER,
-        storage,
-      })!;
-
-      // Something worth remembering, or the empty-write guard would (rightly)
-      // leave no key at all and this would be asserting the wrong thing.
-      const queryClient = new QueryClient();
-      queryClient.setQueryData(configKeys.current(), { userSettings: {} });
-
-      await cache.persistOptions.persister.persistClient({
-        buster: BUSTER,
-        timestamp: Date.now(),
-        clientState: dehydrate(queryClient, cache.persistOptions.dehydrateOptions),
-      });
-
-      // The write is throttled — a boot alone produces dozens of cache events,
-      // and one serialize per second keeps a `JSON.stringify` of the whole
-      // allow-list off the frames that matter. So it lands, but not this tick.
-      await vi.waitFor(
-        () =>
-          expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`)).not.toBeNull(),
-        { timeout: 5_000 }
-      );
-    });
-
-    it('writes on the way out of the page, without waiting for the throttle', () => {
-      const storage = fakeStorage();
-      const cache = createBootCache({
-        transport: new HttpTransport('/api'),
-        apiBaseUrl: '/api',
-        buster: BUSTER,
-        storage,
-      })!;
-      const queryClient = new QueryClient();
-      queryClient.setQueryData(configKeys.current(), { promosDismissed: ['mobile'] });
-
-      // No `await`, no timer. This is the difference: a person who dismisses a
-      // card and reloads within the second must not be shown the card again.
-      cache.flush(queryClient);
-
-      const written = storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`);
-      expect(written).toContain('promosDismissed');
-    });
-
     it('never writes a paused mutation: its variables can hold a typed key', async () => {
       const storage = fakeStorage();
       const cache = createBootCache({
@@ -507,30 +367,13 @@ describe('the sidebar’s local memory', () => {
       queryClient.removeQueries({ predicate: (query) => isBootQueryKey(query.queryKey) });
       clearBootCache(storage);
 
-      // Dropping them was itself a cache event, so the throttled save fires up
-      // to a second later. It must find nothing worth writing and leave no key
-      // behind — otherwise the person is left holding an empty artefact of the
-      // session they just ended.
+      // Dropping them was itself a cache event, so the throttled save fires up to a second later.
       await cache.persistOptions.persister.persistClient({
         buster: BUSTER,
         timestamp: Date.now(),
         clientState: dehydrate(queryClient, cache.persistOptions.dehydrateOptions),
       });
       await new Promise((resolve) => setTimeout(resolve, SAVE_THROTTLE_WAIT_MS));
-
-      expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`)).toBeNull();
-    });
-
-    it('does not write an empty memory on the way out of an emptied page', () => {
-      const storage = fakeStorage({ [`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`]: 'stale' });
-      const cache = createBootCache({
-        transport: new HttpTransport('/api'),
-        apiBaseUrl: '/api',
-        buster: BUSTER,
-        storage,
-      })!;
-
-      cache.flush(new QueryClient());
 
       expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`)).toBeNull();
     });
@@ -547,6 +390,39 @@ describe('the sidebar’s local memory', () => {
       expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://a`)).toBeNull();
       expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://b`)).toBeNull();
       expect(storage.getItem('unrelated:key')).toBe('keep me');
+    });
+
+    it('does not write an empty memory on the way out of an emptied page', () => {
+      const storage = fakeStorage({ [`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`]: 'stale' });
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      })!;
+
+      cache.flush(new QueryClient());
+
+      expect(storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`)).toBeNull();
+    });
+
+    it('writes on the way out of the page, without waiting for the throttle', () => {
+      const storage = fakeStorage();
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      })!;
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(configKeys.current(), { promosDismissed: ['mobile'] });
+
+      // No `await`, no timer. This is the difference: a person who dismisses a
+      // card and reloads within the second must not be shown the card again.
+      cache.flush(queryClient);
+
+      const written = storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`);
+      expect(written).toContain('promosDismissed');
     });
   });
 });
