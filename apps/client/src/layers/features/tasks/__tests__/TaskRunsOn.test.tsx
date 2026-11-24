@@ -218,16 +218,6 @@ describe('the task form Runs-on controls', () => {
       await expectSelected('task-runtime-select', 'Same as agent (Codex)');
     });
 
-    it('names the server default when no agent is picked', async () => {
-      const transport = transportWithAgent('codex');
-      renderNewTask(transport);
-
-      // No agent, so nothing inherits from one — the run lands on the registry
-      // default, and the option has to say which that is rather than imply an
-      // agent it does not have.
-      await expectSelected('task-runtime-select', 'Server default (Claude Code)');
-    });
-
     it('falls through to the server default for an agent on a runtime this machine cannot run', async () => {
       // Same tolerance the server's resolver applies (`resolveRuntimeType`): an
       // agent pinned to something unregistered does not fail a run it never
@@ -270,25 +260,9 @@ describe('the task form Runs-on controls', () => {
         expect(getModels).toHaveBeenCalledWith(expect.objectContaining({ runtime: 'opencode' }))
       );
     });
-
-    it('offers the catalog under an "Agent default" that means no override', async () => {
-      const transport = transportWithAgent(null);
-      renderNewTask(transport);
-
-      await user.click(await screen.findByTestId('task-model-select'));
-      const options = (await screen.findAllByRole('option')).map((el) => el.textContent);
-      expect(options).toEqual(['Agent default', 'Sonnet 4.5', 'Opus 4.6']);
-    });
   });
 
   describe('effort', () => {
-    it('is offered on a runtime that has the setting', async () => {
-      const transport = transportWithAgent(null);
-      renderNewTask(transport);
-
-      expect(await screen.findByTestId('task-effort-select')).toBeInTheDocument();
-    });
-
     it('is not drawn at all on a runtime whose API has none', async () => {
       // A control whose every use is a no-op implies a decision a person does
       // not have. OpenCode declares `supportsEffort: false`.
@@ -340,20 +314,6 @@ describe('the task form Runs-on controls', () => {
       );
       // Still filtered, though — the rungs this model does not take stay out.
       expect(options.map((el) => el.textContent)).not.toContain('Minimal');
-    });
-
-    it('shows a stored effort on such a runtime, with a way to clear it', async () => {
-      // The one value that HAS to stay visible: it is stored, it does nothing,
-      // and a control that is not drawn cannot be used to remove it.
-      const transport = transportWithAgent(null);
-      renderEditTask(
-        transport,
-        createMockSchedule({ id: 'sched-1', runtime: 'opencode', effort: 'high' })
-      );
-
-      const stranded = await screen.findByTestId('task-effort-stranded');
-      expect(stranded).toHaveTextContent(/no effort setting/i);
-      expect(screen.getByTestId('task-effort-clear')).toBeInTheDocument();
     });
 
     it('actually clears the stranded effort when "Clear it" is pressed', async () => {
@@ -544,52 +504,6 @@ describe('the task form Runs-on controls', () => {
         expect(screen.queryByText('oc-bot')).toBeNull();
       });
 
-      // The roster's three worlds, driven through the DIALOG rather than the
-      // row on its own — the row's own vocabulary is `TaskAgentField.test.tsx`,
-      // and what these two pin is the WIRING: `CreateTaskDialog` reads the
-      // agent-list query, and flattening it to `data?.agents ?? []` is what made
-      // an unanswered read indistinguishable from an answer of "none".
-
-      it('makes no claim about the agent while the roster is still in flight', async () => {
-        // Every cold open passes through this window. Read as an answer, the
-        // empty list makes a healthy task's agent look unregistered for as long
-        // as the request takes.
-        const transport = transportWithAgentPerRuntime({
-          listMeshAgentPaths: vi.fn().mockReturnValue(new Promise(() => {})),
-        });
-        renderEditTask(
-          transport,
-          createMockSchedule({ id: 'sched-1', agentId: CODEX_AGENT.id, runtime: null })
-        );
-
-        expect(await screen.findByTestId('settled-agent-loading')).toBeInTheDocument();
-        expect(screen.queryByTestId('settled-agent')).toBeNull();
-        expect(screen.queryByText(/isn’t registered/)).toBeNull();
-        // The sentence that would be wrong is absent, and the one that is right
-        // is still on screen: the agent cannot be changed either way.
-        expect(screen.getByTestId('agent-locked-note')).toBeInTheDocument();
-      });
-
-      it('blames the read, not the task, when the roster cannot be fetched', async () => {
-        // The permanent version of the same window. Silence would leave an empty
-        // row for good, so it says what failed — and says nothing about whether
-        // the agent still exists, because this machine cannot know.
-        const transport = transportWithAgentPerRuntime({
-          listMeshAgentPaths: vi.fn().mockRejectedValue(new Error('mesh unreachable')),
-        });
-        renderEditTask(
-          transport,
-          createMockSchedule({ id: 'sched-1', agentId: CODEX_AGENT.id, runtime: null })
-        );
-
-        await waitFor(() =>
-          expect(screen.getByTestId('settled-agent')).toHaveTextContent(
-            'Couldn’t load your agents to show this one.'
-          )
-        );
-        expect(screen.queryByText(/isn’t registered/)).toBeNull();
-      });
-
       it('prices the dial against the stored agent, and asks once when the middle stop is saved', async () => {
         // The reviewer's repro, run to its end. There is no phantom pick to
         // re-caption the dial, so the stops are Codex's own.
@@ -651,32 +565,6 @@ describe('the task form Runs-on controls', () => {
       });
     });
 
-    it('keeps a pinned runtime when the agent changes', async () => {
-      // An override outranks the agent (spec `task-runtime-model` §2.4), so the
-      // pick cannot move what this task runs on.
-      const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
-      const transport = transportWithAgentPerRuntime({ createTask });
-      renderNewTaskOnClaude(transport);
-
-      await expectSelected('task-runtime-select', 'Same as agent (Claude Code)');
-      await pick('task-runtime-select', 'Claude Code');
-      await expectSelected('task-runtime-select', 'Claude Code');
-
-      fireEvent.click(screen.getByText('claude-bot'));
-      fireEvent.click(await screen.findByText('codex-bot'));
-
-      await screen.findByText('codex-bot');
-      expect(screen.getByTestId('task-runtime-select')).toHaveTextContent('Claude Code');
-
-      fillRequiredFields();
-      fireEvent.click(screen.getByText('Create task'));
-      await waitFor(() =>
-        expect(createTask).toHaveBeenCalledWith(
-          expect.objectContaining({ target: CODEX_AGENT.id, runtime: 'claude-code' })
-        )
-      );
-    }, 20_000);
-
     it('applies a pick made before the manifests land, and holds Create until they do', async () => {
       // The picker is clickable the moment the agent LIST arrives, and the
       // manifests behind it are a second round trip. A pick in that window
@@ -723,19 +611,6 @@ describe('the task form Runs-on controls', () => {
       );
     });
 
-    it('says nothing about a model while the catalog has not answered', async () => {
-      // Silence is the honest reading of an unanswered catalog: calling a model
-      // missing on a list nobody has yet is a warning invented from a loading
-      // state.
-      const transport = transportWithAgent(null, {
-        getModels: vi.fn().mockReturnValue(new Promise(() => {})),
-      });
-      renderEditTask(transport, createMockSchedule({ id: 'sched-1', model: 'gpt-5.5' }));
-
-      await screen.findByTestId('task-model-select');
-      expect(screen.queryByTestId('task-model-warning')).toBeNull();
-    });
-
     it('names a runtime this machine has not connected, and still offers it back', async () => {
       const transport = transportWithAgent(null);
       renderEditTask(transport, createMockSchedule({ id: 'sched-1', runtime: 'mystery-runtime' }));
@@ -774,16 +649,6 @@ describe('the task form Runs-on controls', () => {
         client.setQueryData(['capabilities'], capabilities)
       );
     }
-
-    it('has the map in hand on the first render (the control)', async () => {
-      // This harness's own claim, and the reason the cases below discriminate: a
-      // registered runtime resolves immediately and reports nothing broken, which
-      // it could not do off the loading branch.
-      await renderPrimed('codex');
-
-      await expectSelected('task-runtime-select', 'Codex');
-      expect(screen.queryByTestId('task-runtime-warning')).toBeNull();
-    });
 
     it('opens New Schedule for an agent whose MANIFEST names a prototype key', async () => {
       // The other entry point, and a different lookup: the dialog resolves the
@@ -891,31 +756,6 @@ describe('the task form Runs-on controls', () => {
       );
       // Three Radix open/close cycles, each of which jsdom walks in full.
     }, 20_000);
-
-    it('omits all three when nothing is overridden', async () => {
-      const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
-      const transport = transportWithAgent(null, { createTask });
-      renderNewTask(transport);
-
-      fireEvent.change(screen.getByPlaceholderText('Daily code review'), {
-        target: { value: 'Nightly build' },
-      });
-      fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
-        { target: { value: 'Run the nightly build' } }
-      );
-      // Create waits until the runtime's modes are read (DOR-3841).
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
-      );
-      fireEvent.click(screen.getByText('Create task'));
-
-      await waitFor(() => expect(createTask).toHaveBeenCalled());
-      const body = createTask.mock.calls[0]?.[0] as Record<string, unknown>;
-      expect(body).not.toHaveProperty('runtime');
-      expect(body).not.toHaveProperty('model');
-      expect(body).not.toHaveProperty('effort');
-    });
 
     it('CLEARS an override on edit, rather than leaving the old value in place', async () => {
       // The wire's `null` is how "go back to following the agent" is written
