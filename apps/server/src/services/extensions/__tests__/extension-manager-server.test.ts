@@ -190,7 +190,7 @@ describe('ExtensionManager — server lifecycle', () => {
     // these tests are about what happens AFTER a person said yes: compiling,
     // requiring the entry, mounting the router, tearing it down. The gate that
     // decides whether they get that far (DOR-516) is covered in
-    // `extension-load-policy.test.ts` and `extension-load-gate.test.ts`; leaving it
+    // the `extension-load-policy/` tests and `extension-load-gate.test.ts`; leaving it
     // unapproved here would silently turn every assertion below into a re-test of
     // the gate.
     mockConfigGet.mockReturnValue({

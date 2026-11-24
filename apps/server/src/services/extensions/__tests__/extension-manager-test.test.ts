@@ -123,7 +123,7 @@ describe('ExtensionManager.testExtension', () => {
     vi.clearAllMocks();
     // Every extension this block uses is pre-approved to run, because these tests
     // are about the compile-and-activate mechanics AFTER a person said yes. The
-    // gate itself (DOR-516) is covered separately in `extension-load-policy.test.ts`
+    // gate itself (DOR-516) is covered separately in the `extension-load-policy/` tests
     // and by the refusal test at the bottom of this block — approving here would
     // otherwise make the gate the only thing any of these assert.
     mockConfigGet.mockReturnValue({
