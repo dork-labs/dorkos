@@ -12,12 +12,21 @@
  * gh pr view 123 --json body -q .body | pnpm exec tsx scripts/provenance/provenance-line.ts read | jq -r '.chat // empty'
  * ```
  *
- * The environment it reads: `DORKOS_HARNESS` (or `CLAUDECODE` for
- * `claude-code`), `CLAUDE_CONFIG_DIR` (the account, for Claude Code only, as
- * `open-pr.sh` derives it), `DORKOS_SESSION_ID`, `CLAUDE_CODE_SESSION_ID` or
- * `CLAUDE_SESSION_ID` (the chat, first one set wins), `DORKOS_AGENT_ID` and
- * `DORKOS_SPACE_ID` (a bare id or a whole `dork:` reference). A value that
- * would not read back is left out of the line, never repaired.
+ * The environment it reads:
+ *
+ * - `DORKOS_HARNESS`, or `CLAUDECODE` for `claude-code`: the harness.
+ * - `DORKOS_SESSION_ID`, under any harness: the chat. Under Claude Code only,
+ *   `CLAUDE_CODE_SESSION_ID` and then `CLAUDE_SESSION_ID` stand in when it is
+ *   unset, so a Claude variable left in a Codex or OpenCode shell never
+ *   names another harness's chat.
+ * - `CLAUDE_CONFIG_DIR`, under Claude Code only: the account, as
+ *   `open-pr.sh` derives it.
+ * - `DORKOS_AGENT_ID` and `DORKOS_SPACE_ID`: the agent and its space, a bare
+ *   id or a whole `dork:` reference. DorkOS sets both in every runtime's turn
+ *   environment (DOR-5138); outside a DorkOS turn they are absent and so are
+ *   the fields.
+ *
+ * A value that would not read back is left out of the line, never repaired.
  *
  * A signature is routing advice: it never grants a right to deliver.
  *
@@ -63,8 +72,9 @@ function asReference(kind: 'agent' | 'space', value: string | undefined): string
 export function fieldsFromEnv(vars: NodeJS.ProcessEnv, surface?: string): ProvenanceFields {
   let harness = env(vars, 'DORKOS_HARNESS');
   if (harness === undefined && env(vars, 'CLAUDECODE') !== undefined) harness = 'claude-code';
+  const isClaudeCode = harness === 'claude-code';
   let account: string | undefined;
-  if (harness === 'claude-code') {
+  if (isClaudeCode) {
     // The config dir's basename, one leading dot dropped: `~/.claude3` is `claude3`.
     account = basename(env(vars, 'CLAUDE_CONFIG_DIR') ?? 'claude').replace(/^\./, '');
     if (account.includes('@')) account = undefined;
@@ -76,8 +86,9 @@ export function fieldsFromEnv(vars: NodeJS.ProcessEnv, surface?: string): Proven
     agent: asReference('agent', env(vars, 'DORKOS_AGENT_ID')),
     chat:
       env(vars, 'DORKOS_SESSION_ID') ??
-      env(vars, 'CLAUDE_CODE_SESSION_ID') ??
-      env(vars, 'CLAUDE_SESSION_ID'),
+      (isClaudeCode
+        ? (env(vars, 'CLAUDE_CODE_SESSION_ID') ?? env(vars, 'CLAUDE_SESSION_ID'))
+        : undefined),
     space: asReference('space', env(vars, 'DORKOS_SPACE_ID')),
   };
   return Object.fromEntries(

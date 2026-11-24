@@ -37,6 +37,7 @@
  */
 import {
   ADDRESS_HANDLE_PATTERN,
+  ADDRESS_SPACE_KIND_WORDS,
   CONVERSATION_NAME_PATTERN,
   SPACE_SLUG_PATTERN,
   parseDorkAddress,
@@ -45,20 +46,22 @@ import {
   DORK_SCHEME,
   formatDorkReference,
   isDorkId,
-  isDorkKind,
   parseDorkReference,
   publicChatReference,
   type DorkKind,
 } from './dork-ref.js';
 
-/** The two names a signature is read under: the emitted one, then the legacy one. */
-export const PROVENANCE_NAMES = ['agent:provenance', 'flow:provenance'] as const;
+/** The name a signature is written under. */
+const EMITTED_NAME = 'agent:provenance';
 
-/** One of {@link PROVENANCE_NAMES}; `flow:provenance` is the legacy one. */
-export type ProvenanceName = (typeof PROVENANCE_NAMES)[number];
+/** The names a signature is read under: the emitted one, then the legacy one. */
+type ProvenanceName = typeof EMITTED_NAME | 'flow:provenance';
 
 /** The version {@link buildProvenanceV2} writes. */
-export const PROVENANCE_VERSION = 2;
+const PROVENANCE_VERSION = 2;
+
+/** The words an address's space may not be (`./dork-address`). */
+const SPACE_KIND_WORDS: ReadonlySet<string> = new Set(ADDRESS_SPACE_KIND_WORDS);
 
 /** A whole signature line under either name, its name and JSON captured. */
 const PROVENANCE_LINE = /^<!--\s*(agent:provenance|flow:provenance)\s+(\{.*\})\s*-->$/;
@@ -131,19 +134,21 @@ function readHost(raw: unknown): string | undefined {
 }
 
 /**
- * An address in the `dork:` grammar whose space is not a kind word, so
+ * An address in the `dork:` grammar whose space is not one of
+ * `ADDRESS_SPACE_KIND_WORDS` (every kind word and `project`), so
  * `dork:chat/owl` is never read as an org called "chat".
  *
- * Deliberately looser than {@link parseDorkAddress}: a reserved word other than
- * a kind (`admin`, or a kind word as the handle) still reads, as it does in the
- * flow reader. Only the builder refuses to write one.
+ * Deliberately looser than {@link parseDorkAddress}, exactly as the flow
+ * reader is: any other reserved word (`dork:admin/owl`), and a kind word as the
+ * handle (`dork:acme/chat`), still reads, and the check is on the whole word,
+ * not its skeleton. Only the builder refuses to write such an address.
  */
 function readAddress(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || !raw.startsWith(DORK_SCHEME)) return undefined;
   const parts = raw.slice(DORK_SCHEME.length).split('/');
   if (parts.length < 2 || parts.length > 3) return undefined;
   const [space = '', handle = '', name] = parts;
-  if (!SPACE_SLUG_PATTERN.test(space) || isDorkKind(space)) return undefined;
+  if (!SPACE_SLUG_PATTERN.test(space) || SPACE_KIND_WORDS.has(space)) return undefined;
   if (!ADDRESS_HANDLE_PATTERN.test(handle)) return undefined;
   if (name !== undefined && !CONVERSATION_NAME_PATTERN.test(name)) return undefined;
   return raw;
@@ -291,5 +296,5 @@ export function buildProvenanceV2(
     if (key === 'address' && !parseDorkAddress(value).ok) continue;
     if (V2_READERS[key](value) === value) out[key] = value;
   }
-  return `<!-- ${PROVENANCE_NAMES[0]} ${JSON.stringify(out)} -->`;
+  return `<!-- ${EMITTED_NAME} ${JSON.stringify(out)} -->`;
 }

@@ -5,7 +5,7 @@
  *
  * The first table is the flow reader's own test vectors
  * (`dork-labs/marketplace`, `plugins/flow/engine-tests/signature-line.test.ts`
- * at e31773e, Flow 0.100.0), copied with their expected results. A rule change
+ * at 08da691, Flow 0.104.0), copied with their expected results. A rule change
  * on either side fails here until both agree again.
  */
 import { describe, expect, it } from 'vitest';
@@ -158,6 +158,13 @@ const FLOW_VECTORS: ReadonlyArray<readonly [string, string, Provenance | null]> 
       ['an other: harness with no name', { harness: 'other:' }, 'harness'],
       ['an address whose space is a kind word', { address: 'dork:chat/owl' }, 'address'],
       ['an address whose space is another kind word', { address: 'dork:agent/owl' }, 'address'],
+      ['an address whose space is the todo kind', { address: 'dork:todo/owl' }, 'address'],
+      ['an address whose space is the run kind', { address: 'dork:run/owl' }, 'address'],
+      [
+        'an address whose space is the reserved project word',
+        { address: 'dork:project/owl' },
+        'address',
+      ],
     ] as const
   ).map(
     ([label, override, dropped]) =>
@@ -206,15 +213,6 @@ describe('readProvenance beyond the shared vectors', () => {
     expect(readProvenance('<!-- agent:provenance {"v":1e400} -->')).toBeNull();
   });
 
-  it.each(['dork:todo/owl', 'dork:run/owl'])(
-    'refuses %s: every DorkOS kind word, the work graph ones included, is refused as the space',
-    (address) => {
-      // Known divergence: the flow reader at e31773e lists only the first eight
-      // kinds, so it still reads these. DORK_KINDS is the one list.
-      expect(readProvenance(body({ ...V2, address }))).toEqual(without(V2_READ, 'address'));
-    }
-  );
-
   it('reads an address whose words are reserved but not kinds, as flow does', () => {
     expect(readProvenance(body({ ...V2, address: 'dork:admin/owl' }))?.address).toBe(
       'dork:admin/owl'
@@ -227,14 +225,26 @@ describe('readProvenance beyond the shared vectors', () => {
     }
   });
 
-  it('only an own `v` counts, so a prototype key cannot set the version', () => {
-    expect(
-      readProvenance('<!-- agent:provenance {"__proto__":{"v":2},"sessionId":"s-1"} -->')
-    ).toEqual({
-      name: 'agent:provenance',
-      v: 1,
-      chat: 's-1',
-    });
+  it("reads only the JSON object's own keys, so a polluted Object.prototype adds nothing", () => {
+    // Purpose: a field the writer left out stays absent even when another
+    // module has set the same key on Object.prototype.
+    const polluted = { v: 2, sessionId: 's-evil', harness: 'codex', chat: 'dork:chat:evil' };
+    const proto = Object.prototype as Record<string, unknown>;
+    for (const [key, value] of Object.entries(polluted)) {
+      Object.defineProperty(proto, key, { value, configurable: true, writable: true });
+    }
+    try {
+      expect(readProvenance('<!-- agent:provenance {} -->')).toEqual({
+        name: 'agent:provenance',
+        v: 1,
+      });
+      expect(readProvenance('<!-- agent:provenance {"v":2} -->')).toEqual({
+        name: 'agent:provenance',
+        v: 2,
+      });
+    } finally {
+      for (const key of Object.keys(polluted)) delete proto[key];
+    }
   });
 });
 

@@ -4,7 +4,8 @@ title: The provenance CLI and its repo-wide suite
 kind: hygiene
 status: proposed
 actor: agent
-gates: []
+gates:
+  - wf.typecheck.typecheck
 prs: []
 ratchet-release: []
 field-changes: []

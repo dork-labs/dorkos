@@ -55,13 +55,26 @@ describe('provenance-line build', () => {
   });
 
   it('prefers the DorkOS session id, then Claude Code, then the legacy name', () => {
-    expect(fieldsFromEnv({ DORKOS_SESSION_ID: 'a1', CLAUDE_CODE_SESSION_ID: 'b2' }).chat).toBe(
+    const claude = { CLAUDECODE: '1' };
+    expect(
+      fieldsFromEnv({ ...claude, DORKOS_SESSION_ID: 'a1', CLAUDE_CODE_SESSION_ID: 'b2' }).chat
+    ).toBe('a1');
+    expect(
+      fieldsFromEnv({ ...claude, CLAUDE_CODE_SESSION_ID: 'b2', CLAUDE_SESSION_ID: 'c3' }).chat
+    ).toBe('b2');
+    expect(fieldsFromEnv({ ...claude, DORKOS_SESSION_ID: '', CLAUDE_SESSION_ID: 'c3' }).chat).toBe(
+      'c3'
+    );
+  });
+
+  it('reads the Claude session variables only under Claude Code', () => {
+    // Purpose: a Claude variable left in a Codex shell must not name a Claude chat.
+    const stray = { CLAUDE_CODE_SESSION_ID: 'b2', CLAUDE_SESSION_ID: 'c3' };
+    expect(fieldsFromEnv({ DORKOS_HARNESS: 'codex', ...stray })).not.toHaveProperty('chat');
+    expect(fieldsFromEnv(stray)).not.toHaveProperty('chat');
+    expect(fieldsFromEnv({ DORKOS_HARNESS: 'codex', DORKOS_SESSION_ID: 'a1', ...stray }).chat).toBe(
       'a1'
     );
-    expect(fieldsFromEnv({ CLAUDE_CODE_SESSION_ID: 'b2', CLAUDE_SESSION_ID: 'c3' }).chat).toBe(
-      'b2'
-    );
-    expect(fieldsFromEnv({ DORKOS_SESSION_ID: '', CLAUDE_SESSION_ID: 'c3' }).chat).toBe('c3');
   });
 
   it('derives the account as open-pr.sh does, for Claude Code only', () => {
