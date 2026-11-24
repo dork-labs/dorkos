@@ -51,14 +51,14 @@ rc=$?
 check 'render exits 0' 0 "$rc"
 check 'it names the release it counts from' yes "$(has "$out" 'merged since v1.2.3')"
 check 'it counts every merged PR' yes "$(has "$out" '4 PR(s) merged')"
-check 'a UI change is on the design list' yes "$(sed -n '/### Design/,/### QA/p' <<<"$out" | grep -qF '#11 feat(ui)' && echo yes || echo no)"
+check 'a UI change is on the design list' yes "$(has "$(sed -n '/### Design/,/### QA/p' <<<"$out")" '#11 feat(ui)')"
 # shellcheck disable=SC2016 # the backticks are literal markdown
 check 'with its path' yes "$(has "$out" '`apps/client/src/layers/features/chat/ui/Thing.tsx`')"
-check 'a migration is on the QA list' yes "$(sed -n '/### QA/,$p' <<<"$out" | grep -qF '#13 feat(db)' && echo yes || echo no)"
+check 'a migration is on the QA list' yes "$(has "$(sed -n '/### QA/,$p' <<<"$out")" '#13 feat(db)')"
 check 'a CI-only change is on neither list' no "$(has "$out" '#12 ')"
 check 'and is counted as needing neither' yes "$(has "$out" '1 other PR(s) need neither review.')"
-check 'an unreadable PR is on the design list' yes "$(sed -n '/### Design/,/### QA/p' <<<"$out" | grep -qF '#14' && echo yes || echo no)"
-check 'and on the QA list' yes "$(sed -n '/### QA/,$p' <<<"$out" | grep -qF '#14' && echo yes || echo no)"
+check 'an unreadable PR is on the design list' yes "$(has "$(sed -n '/### Design/,/### QA/p' <<<"$out")" '#14')"
+check 'and on the QA list' yes "$(has "$(sed -n '/### QA/,$p' <<<"$out")" '#14')"
 check 'items start unticked' yes "$(has "$out" '- [ ] #11 ')"
 check 'no @-mention reaches GitHub' no "$(grep -qE '(^|[^a-zA-Z0-9`])@[a-zA-Z]' <<<"$out" && echo yes || echo no)"
 
