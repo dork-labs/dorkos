@@ -16,7 +16,14 @@ name: after-merge-alert
 
 on:
   workflow_run:
-    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check, site-build, harness-windows]
+    workflows:
+      - scripts-test
+      - CLI Smoke Test
+      - Desktop Smoke
+      - db-check
+      - site-build
+      - harness-windows
+      - browser-test
     types: [completed]
 
 permissions:
@@ -57,6 +64,9 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW: ${{ github.event.workflow_run.name }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
+          # browser-test's push run is ROLLING (one run for several merges,
+          # DOR-5130), so its failure names every merge since the previous run.
+          ROLLING: ${{ github.event.workflow_run.name == 'browser-test' && '1' || '' }}
         run: |
           if [ "$CONCLUSION" = success ]; then
             bash scripts/after-merge-alert.sh passed "$WORKFLOW" "$RUN_URL"

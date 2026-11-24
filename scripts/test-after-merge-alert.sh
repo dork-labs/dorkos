@@ -28,7 +28,13 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 case "$*" in
   *"--method"*) echo '{"number":900}' | jq -r "$filter"; exit 0 ;;
-  *"/commits/"*"/pulls"*) f=pulls ;;
+  *"/actions/runs/77 "*|*"/actions/runs/77") f=run ;;
+  *"/actions/workflows/"*) f=wfruns ;;
+  *"/compare/"*) f=compare ;;
+  *"/commits/"*"/pulls"*)
+    c=$(sed -n 's#.*/commits/\([0-9a-f]*\)/pulls.*#\1#p' <<<"$*")
+    if [ -f "$FX/pulls-$c" ]; then f=pulls-$c; else f=pulls; fi
+    ;;
   *"/actions/runs/"*"/jobs"*) f=jobs ;;
   *"/issues/"*"/comments"*) f=comments ;;
   *"/issues?"*) f=issues ;;
@@ -147,6 +153,43 @@ reset
 run passed scripts-test $URL
 check 'green with nothing open is quiet' 0 "$rc"
 check 'and writes nothing' 0 "$(count '--method')"
+
+
+# --- ROLLING=1: a run that covers several merges (DOR-5130) ---
+P1=1111111111111111111111111111111111111111
+P2=2222222222222222222222222222222222222222
+rolling() {
+  reset
+  echo '{"workflow_id":9,"created_at":"2026-11-24T05:00:00Z"}' >"$fx/run"
+  echo "{\"workflow_runs\":[{\"id\":70,\"head_sha\":\"$P1\",\"created_at\":\"2026-11-24T04:00:00Z\"},{\"id\":77,\"head_sha\":\"$S\",\"created_at\":\"2026-11-24T05:00:00Z\"}]}" >"$fx/wfruns"
+}
+rolling
+echo "{\"commits\":[{\"sha\":\"$P2\"},{\"sha\":\"$S\"}]}" >"$fx/compare"
+echo '[{"number":30,"merged_at":"2026-11-24T04:30:00Z","user":{"login":"dev2"}}]' >"$fx/pulls-$P2"
+ROLLING=1 run failed 77 $S browser-test $URL
+check 'a rolling run over two merges exits 0' 0 "$rc"
+check 'it comments on neither PR' 0 "$(count 'comments -f body=<!--')"
+check 'the issue names both merges' yes "$(has "$(log)" '#12 (dev1), #30 (dev2)')"
+check 'and the range' yes "$(has "$(log)" "${P1:0:7}..${S:0:7}")"
+check 'it assigns nobody' no "$(has "$(log)" 'assignees')"
+check 'it diffs from the previous push run' yes "$(has "$(log)" "compare/$P1...$S")"
+
+rolling
+echo "{\"commits\":[{\"sha\":\"$S\"}]}" >"$fx/compare"
+ROLLING=1 run failed 77 $S browser-test $URL
+check 'a rolling run over one merge comments on that PR' yes "$(has "$(log)" 'issues/12/comments -f body=<!--')"
+check 'and assigns its author' yes "$(has "$(log)" 'assignees[]=dev1')"
+
+rolling
+echo '{"workflow_runs":[]}' >"$fx/wfruns"
+ROLLING=1 run failed 77 $S browser-test $URL
+check 'no previous run: exits 0' 0 "$rc"
+check 'no previous run: blames nobody' 0 "$(count 'comments -f body=<!--')"
+check 'and says so in the issue' yes "$(has "$(log)" 'Could not list the merges')"
+
+reset
+run failed 77 $S scripts-test $URL
+check 'without ROLLING nothing reads the range' no "$(has "$(log)" '/compare/')"
 
 echo "after-merge-alert fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

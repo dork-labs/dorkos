@@ -202,15 +202,17 @@ step_body=$(awk '
 if [ -n "$step_body" ]; then ok; else bad "browser-test.yml has no 'Decide whether a browser can load this change' step"; fi
 printf '%s\n' "$step_body" >"$work/step.sh"
 
-# run_step <event> <lane> <pr-file> <base-script> [depth]: build main with
-# <base-script> as its scripts/browser-smoke-scope.sh (`stub`, which records
-# being reached and answers `false` without looking; `real`, this checkout's
-# copy; or `none`), a feature branch changing <pr-file>, and the test-merge
-# commit. Then clone that at <depth> (default 2, what the job's checkout
-# fetches) and run the step in the clone, as a runner would. Sets step_out
-# (GITHUB_OUTPUT) and step_reached.
+# run_step <event> <lane> <pr-file> <base-script> [depth] [shape]: build main
+# with <base-script> as its scripts/browser-smoke-scope.sh (`stub`, which
+# records being reached and answers `false` without looking; `real`, this
+# checkout's copy; or `none`), a feature branch changing <pr-file>, and on top
+# of main either the test-merge commit (<shape> `merge`, the default, what a
+# pull request checks out) or one squash commit (`squash`, what a merge-queue
+# entry checks out). Then clone that at <depth> (default 2, what the job's
+# checkout fetches) and run the step in the clone, as a runner would. Sets
+# step_out (GITHUB_OUTPUT) and step_reached.
 run_step() {
-  local event=$1 lane=$2 file=$3 base_script=$4 depth=${5:-2} r t c
+  local event=$1 lane=$2 file=$3 base_script=$4 depth=${5:-2} shape=${6:-merge} r t c
   r=$(mktemp -d "$work/merge.XXXXXX")
   t=$(mktemp -d "$work/runner.XXXXXX")
   c=$(mktemp -d "$work/clone.XXXXXX")
@@ -231,7 +233,12 @@ run_step() {
     git -C "$r" add -A
     git -C "$r" commit -q -m change
     git -C "$r" checkout -q main
-    git -C "$r" merge -q --no-ff -m 'test merge' feature
+    if [ "$shape" = squash ]; then
+      git -C "$r" merge -q --squash feature
+      git -C "$r" commit -q -m 'queue entry'
+    else
+      git -C "$r" merge -q --no-ff -m 'test merge' feature
+    fi
     git clone -q --depth "$depth" "file://$r" "$c"
   } >/dev/null 2>&1
   : >"$t/output"
@@ -264,7 +271,22 @@ if [ -z "$step_out" ]; then ok; else bad "the real script on a client change: ex
 run_step pull_request full docs/x.mdx real 1
 if [ -z "$step_out" ]; then ok; else bad "a depth-1 checkout: expected no output, got '$step_out'"; fi
 
-for event in merge_group release_pull_request schedule workflow_dispatch ''; do
+# A merge-queue entry (DOR-5130) is one squash commit on its parent: the step
+# diffs HEAD^1..HEAD with the base's script, as for a pull request.
+run_step merge_group full docs/x.mdx stub 2 squash
+if [ "$step_out" = 'browser=none' ] && [ "$step_reached" = yes ]; then ok; else
+  bad "merge_group on the full lane: expected browser=none from the base script, got '$step_out' (reached: $step_reached)"
+fi
+run_step merge_group full docs/x.mdx real 2 squash
+if [ "$step_out" = 'browser=none' ]; then ok; else bad "the real script on a queued docs change: expected browser=none, got '$step_out'"; fi
+run_step merge_group full apps/client/src/index.ts real 2 squash
+if [ -z "$step_out" ]; then ok; else bad "the real script on a queued client change: expected no output, got '$step_out'"; fi
+run_step merge_group full docs/x.mdx real 1 squash
+if [ -z "$step_out" ]; then ok; else bad "a depth-1 queue checkout: expected no output, got '$step_out'"; fi
+run_step merge_group full scripts/browser-smoke-scope.sh none 2 squash
+if [ -z "$step_out" ]; then ok; else bad "a queue entry whose base has no scope script: expected no output, got '$step_out'"; fi
+
+for event in release_pull_request schedule workflow_dispatch push ''; do
   run_step "$event" full docs/x.mdx stub
   if [ -z "$step_out" ] && [ "$step_reached" = no ]; then ok; else
     bad "event '$event': expected no output and no script run, got '$step_out' (reached: $step_reached)"
