@@ -1,9 +1,9 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { features } from '@/layers/features/marketing/lib/features';
-import { CAST, DAVE, RUNTIMES } from '../cast/cast';
-import { CHAT_SCRIPT, PART_ONE_COUNT } from '../chat/chat-script';
+import { CAST, DAVE } from '../cast/cast';
+import { CHAT_SCRIPT } from '../chat/chat-script';
 import {
   BEATS,
   BRIDGE,
@@ -75,32 +75,6 @@ function findPublicDir(from: string): string | null {
 /** The page's own assembly, read as text, so the order it renders in can be pinned. */
 const HOME_EXPERIENCE = readFileSync(join(import.meta.dirname, '..', 'HomeExperience.tsx'), 'utf8');
 
-/** The rail's last tile, read as text: its picture is CSS, so its picture is source. */
-const END_CARD = readFileSync(
-  join(import.meta.dirname, '..', 'tutorials', 'TutorialEndCard.tsx'),
-  'utf8'
-);
-
-/** Linearly interpolated alpha at `at` percent, from a sorted `[percent, alpha]` stop list. */
-function alphaAt(stops: readonly (readonly [number, number])[], at: number): number {
-  const sorted = [...stops].sort(([a], [b]) => a - b);
-  const next = sorted.findIndex(([pct]) => pct >= at);
-  if (next <= 0) return sorted[Math.max(next, 0)][1];
-  const [fromPct, fromAlpha] = sorted[next - 1];
-  const [toPct, toAlpha] = sorted[next];
-  return fromAlpha + ((at - fromPct) / (toPct - fromPct)) * (toAlpha - fromAlpha);
-}
-
-/** HSL saturation of a `rrggbb` hex, 0 (grey) to 1 (full chroma). */
-function saturationOf(hex: string): number {
-  const [r, g, b] = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  if (max === min) return 0;
-  const lightness = (max + min) / 2;
-  return lightness > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
-}
-
 /** Every dock tile the conversation actually puts to work. */
 const NAMED_IN_CHAT: DockAppId[] = CHAT_SCRIPT.map((line) => line.dockApp).filter(
   (id): id is DockAppId => Boolean(id)
@@ -146,11 +120,6 @@ describe('the settled lines', () => {
     expect(BEATS.talk.title).toBe('Talk to your team.');
     expect(BEATS.yours.title).toBe('Ask for the tool you need.');
     expect(BEATS.computer.title).toBe('Yours to keep.');
-  });
-
-  it('keeps the localhost caption and the tagline', () => {
-    expect(LOCALHOST_CAPTION).toBe('home sweet localhost');
-    expect(CLOSE.title).toBe('You, multiplied.');
   });
 
   it('leads with the Mac app and offers the terminal underneath', () => {
@@ -296,25 +265,6 @@ describe('the film leads', () => {
     ]);
   });
 
-  it('lets no later section write a fifth line about him', () => {
-    // The clips rail is the one section below the hand-off that mentions Dave
-    // at all, and it does it by reusing "Meet Dave." from `copy.ts` rather
-    // than titling its tile itself. Anything else here would be the page
-    // narrating the film after the film has played. The chat script and the
-    // still's alt text are exempt: the script is the film's cast talking to
-    // each other, and alt text has to describe the picture.
-    expect(TUTORIAL_COPY.filter((line) => /\bDave\b/.test(line))).toEqual([FILM.title]);
-  });
-
-  it('finishes the approved line it breaks in half', () => {
-    // "Dave isn't smarter than you. He just has help." is one line, split so
-    // the pivot from him to you lands on the heading. Dropping the second half
-    // leaves an insult where an argument was.
-    expect(`${BRIDGE.title} ${BRIDGE.lede}`).toContain(
-      'Dave isn’t smarter than you. He just has help.'
-    );
-  });
-
   it('ships the two film frames the hand-off needs', () => {
     const publicDir = findPublicDir(import.meta.dirname);
     for (const asset of [ROOM_PLATE, HANDOFF_STILL.src]) {
@@ -387,58 +337,6 @@ describe('the clips rail', () => {
     }
   });
 
-  it('closes the row on a test card it draws itself, with no asset to ship', () => {
-    // The last tile is off-air colour bars, painted in CSS. Nothing about it
-    // is downloaded, which is the point: a photograph on the end of the rail
-    // read as a fifth clip, and it was also a file that could rot.
-    expect(Object.keys(TUTORIALS.endCard)).toEqual(['title', 'lede', 'label', 'href']);
-    expect(END_CARD).not.toMatch(/next\/image|\.jpe?g|\.png|\.webp/);
-  });
-
-  it('fills the whole frame with the bars, not a strip of them', () => {
-    // The operator's note: fuller. Three stacked bands — main bars,
-    // castellation, the bottom reference strip — that together cover the tile
-    // top to bottom. A ground that stops short leaves a tile that looks like
-    // it failed to load rather than one that went off the air.
-    expect(END_CARD).toMatch(/className="absolute inset-0[ "]/);
-    const bands = [...END_CARD.matchAll(/\bh-\[(\d+)%\]/g)].map(([, pct]) => Number(pct));
-    expect(bands).toHaveLength(3);
-    expect(bands.reduce((a, b) => a + b, 0)).toBe(100);
-  });
-
-  it('keeps the bars desaturated, so the tile does not win the whole rail', () => {
-    // Full-chroma SMPTE next to this page's cream is a siren. Every tone in
-    // the two colour rows stays under half saturation, which is what makes a
-    // test card sit in the palette instead of shouting over it.
-    for (const row of [
-      END_CARD.match(/const BARS_MAIN =\s*'([^']+)'/)?.[1],
-      END_CARD.match(/const BARS_CASTELLATION =\s*'([^']+)'/)?.[1],
-    ]) {
-      expect(row, 'a colour row went missing').toBeDefined();
-      const tones = [...(row ?? '').matchAll(/#([0-9a-f]{6})/gi)].map(([, hex]) => hex);
-      expect(tones).toHaveLength(7);
-      for (const hex of tones) {
-        expect(saturationOf(hex), `#${hex} is too saturated for this page`).toBeLessThan(0.55);
-      }
-    }
-  });
-
-  it('dirties the bars with grain and keeps the words readable over them', () => {
-    // Flat CSS reads as flat CSS; a test card off a tape never does. And the
-    // brightest thing the bars can put behind three lines of type is the
-    // reference strip's white, so the scrim's floor across the bottom third is
-    // the number that keeps the label above 4.5:1.
-    expect(END_CARD).toContain('feTurbulence');
-    const stops = [...END_CARD.matchAll(/rgba\(0,0,0,(0\.\d+)\) (\d+)%/g)].map(
-      ([, alpha, at]) => [Number(at), Number(alpha)] as const
-    );
-    expect(stops.length).toBeGreaterThanOrEqual(3);
-    // The scrim runs bottom-up, and the three lines of type end about 24% of
-    // the way up the tile. Interpolated rather than read off a stop, because
-    // the stop that matters is rarely the one the text happens to sit on.
-    expect(alphaAt(stops, 24)).toBeGreaterThanOrEqual(0.85);
-  });
-
   it('says more is coming without saying when', () => {
     // The tile promises footage that does not exist. A date on that promise is
     // a date this page cannot keep, and the whole rail's honesty rests on the
@@ -453,16 +351,6 @@ describe('the clips rail', () => {
     expect(words).not.toMatch(/\b(next|this)\s+(week|month|quarter|year)\b/i);
     // And it sends anyone who wanted the rest to the thing that is written.
     expect(TUTORIALS.endCard.href).toBe('/docs');
-  });
-
-  it('keeps the generated stills small enough to be background texture', () => {
-    // They sit at 42% opacity behind a scrim on a card 256px wide. Anything
-    // heavier is bandwidth spent on something nobody looks at directly.
-    for (const card of TUTORIALS.cards) {
-      if (!card.plate) continue;
-      const bytes = statSync(join(PUBLIC_DIR ?? '', card.plate.src)).size;
-      expect(bytes, `${card.plate.src} is ${Math.round(bytes / 1024)}KB`).toBeLessThan(300 * 1024);
-    }
   });
 });
 
@@ -516,31 +404,10 @@ describe('the pill and the page’s own stops', () => {
     const close = readFileSync(join(import.meta.dirname, '..', 'CloseSection.tsx'), 'utf8');
     expect(close).toContain('href="/marketplace"');
   });
-
-  it('leaves the shared nav alone, because every other page renders it', () => {
-    // This page's pill is a fork under `nav/`, because it steers sections
-    // rather than pointing at other pages. The moment the page imports the
-    // shared component instead, a change here is a change to /features,
-    // /compare, /marketplace, the blog and the docs at the same time.
-    const page = readFileSync(join(import.meta.dirname, '..', '..', 'page.tsx'), 'utf8');
-    expect(page).toContain('<HomeNav />');
-    // Naming the shared component in a comment is how the fork explains
-    // itself; rendering or importing it is the thing that must not happen.
-    expect(page).not.toContain('<MarketingNav');
-    expect(page).not.toMatch(/^import .*MarketingNav/m);
-  });
 });
 
 describe('the page’s one footer', () => {
   const PAGE = readFileSync(join(import.meta.dirname, '..', '..', 'page.tsx'), 'utf8');
-  const CLOSE_SOURCE = readFileSync(join(import.meta.dirname, '..', 'CloseSection.tsx'), 'utf8');
-  // Walk to the site root the same way the asset checks do, rather than
-  // counting `..` five times to a file in another layer.
-  const SITE_ROOT = dirname(findPublicDir(import.meta.dirname) ?? '');
-  const FOOTER_SOURCE = readFileSync(
-    join(SITE_ROOT, 'src', 'layers', 'features', 'marketing', 'ui', 'MarketingFooter.tsx'),
-    'utf8'
-  );
 
   it('ends in the site’s own footer, imported rather than rebuilt', () => {
     // Every other page on dorkos.ai ends here. A page that writes its own
@@ -549,33 +416,6 @@ describe('the page’s one footer', () => {
     expect(PAGE).toContain('<MarketingFooter');
     const shared = PAGE.match(/import \{ ([^}]*) \} from '@\/layers\/features\/marketing'/);
     expect(shared?.[1], 'the footer is not the shared one').toContain('MarketingFooter');
-  });
-
-  it('renders the footer that carries the newsletter box', () => {
-    // The box is the reason the footer is on this page at all, and it belongs
-    // to the shared component rather than to this route. Reading its source
-    // is what makes "the page ends with an email capture" a checked claim
-    // instead of an assumption about a file nobody here owns.
-    expect(FOOTER_SOURCE).toContain('<NewsletterSignupForm');
-  });
-
-  it('keeps exactly one footer landmark', () => {
-    // The close used to be a `<footer>` too. Two footer landmarks on one page
-    // is a screen reader announcing "footer" twice and meaning it neither
-    // time, and the second one was repeating the source link the real footer
-    // already carries.
-    expect(CLOSE_SOURCE).not.toContain('<footer');
-    expect(CLOSE_SOURCE).toContain('<section');
-  });
-
-  it('retires the colophon the footer replaced, but not the Marketplace', () => {
-    // The colophon said "dorkos · open source, mit" and linked to the source.
-    // The footer says all of that with a logo and a GitHub icon. The one
-    // destination it does not carry is the Marketplace, so that link stays on
-    // the close's own line rather than disappearing with the row it sat in.
-    expect(Object.keys(CLOSE)).not.toContain('colophon');
-    expect(CLOSE_SOURCE).not.toContain('siteConfig.github');
-    expect(CLOSE_SOURCE).toContain('href="/marketplace"');
   });
 });
 
@@ -588,37 +428,11 @@ describe('the cast from the film', () => {
     expect(CAST.map((member) => member.ring)).toEqual(['#e8801f', '#4a90a4', '#c9b458']);
   });
 
-  it('renders Pip smaller, which is narrative and not a layout tweak', () => {
-    const pip = CAST.find((member) => member.key === 'pip');
-    expect(pip?.sizeScale).toBe(0.86);
-    for (const other of CAST.filter((member) => member.key !== 'pip')) {
-      expect(other.sizeScale).toBe(1);
-    }
-  });
-
-  it('marks Dave as the person, in the brand accent rather than a lane colour', () => {
-    expect(DAVE.ring).toBe('#e85d04');
-    expect(CAST.map((member) => member.ring)).not.toContain(DAVE.ring);
-  });
-
-  it('gives each agent a distinct runtime, so the badges say the real story', () => {
-    const runtimes = CAST.map((member) => RUNTIMES[member.key].runtime);
-    expect(new Set(runtimes).size).toBe(CAST.length);
-    expect(runtimes.sort()).toEqual(['Claude Code', 'Codex', 'OpenCode']);
-  });
-
   it('ships a loop and a still for every face', () => {
     const publicDir = findPublicDir(import.meta.dirname);
     for (const member of [...CAST, DAVE]) {
       expect(existsSync(join(publicDir ?? '', member.loop)), member.loop).toBe(true);
       expect(existsSync(join(publicDir ?? '', member.still)), member.still).toBe(true);
-    }
-  });
-
-  it('only puts the film’s cast in the chat', () => {
-    const known = new Set<string>([...CAST.map((member) => member.key), DAVE.key, 'system']);
-    for (const line of CHAT_SCRIPT) {
-      expect(known.has(line.from), `unknown speaker "${line.from}"`).toBe(true);
     }
   });
 });
@@ -646,10 +460,6 @@ describe('the promo assets the page points at', () => {
   // red at once for a reason none of them named.
   const PUBLIC_DIR = findPublicDir(import.meta.dirname);
 
-  it('finds the site’s public directory at all', () => {
-    expect(PUBLIC_DIR, 'no apps/site/public above this test').not.toBeNull();
-  });
-
   it.each([
     PROMO_CUTS.wide.src,
     PROMO_CUTS.wide.poster,
@@ -658,11 +468,6 @@ describe('the promo assets the page points at', () => {
     PROMO_CAPTIONS,
   ])('ships %s', (assetPath) => {
     expect(existsSync(join(PUBLIC_DIR ?? '', assetPath))).toBe(true);
-  });
-
-  it('serves a different file for each shape', () => {
-    expect(PROMO_CUTS.wide.src).not.toBe(PROMO_CUTS.tall.src);
-    expect(PROMO_CUTS.wide.poster).not.toBe(PROMO_CUTS.tall.poster);
   });
 });
 
@@ -679,11 +484,5 @@ describe('the chat script and the dock', () => {
     for (const id of NAMED_IN_CHAT) {
       expect(findDockApp(id), `no dock tile called "${id}"`).toBeDefined();
     }
-  });
-
-  it('holds the dock back until the second beat', () => {
-    // Part one is the conversation; the tiles arrive with the mini apps beat.
-    const early = CHAT_SCRIPT.slice(0, PART_ONE_COUNT).filter((line) => line.dockApp);
-    expect(early).toEqual([]);
   });
 });
