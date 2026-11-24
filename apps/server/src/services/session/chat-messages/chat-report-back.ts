@@ -150,6 +150,8 @@ export interface RoomSeatReport {
   text: string;
   /** The marks of the turn it speaks for, read when that turn ended. */
   marks?: TurnMarks;
+  /** Server-only: the seat the outbox checked when it saved this. No other seat may take it. */
+  seat?: { roomId: string; authorId: string };
 }
 
 /** What report-back needs. */

@@ -6,7 +6,11 @@
  * @module services/session/chat-messages/report-back/report-words
  */
 
-/** The longest last message a report carries; the parent reads more with `chat_read`. */
+/**
+ * The longest last message a report carries; the parent reads more with `chat_read`. A cut
+ * that lands inside a code block closes it, which can add a few characters past this; the
+ * whole report stays far under the send limit.
+ */
 export const REPORT_TEXT_MAX = 6_000;
 
 /**
@@ -55,10 +59,55 @@ export const SUMMARY: Record<ReportNotice, string> = {
 /** What a cut detail ends with, inside {@link REPORT_DETAIL_MAX}. */
 const DETAIL_CUT = '… (Details cut short.)';
 
-/** At most `max` code units of `s`, never splitting a character made of two. */
+/** Splits text into the characters a person sees, however many code points each one is. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/**
+ * At most `max` code units of `s`, never splitting a character a person sees
+ * as one: an emoji made of two code units, emoji joined into one, or a letter
+ * and its accent. Reads only as far as the cut. One character longer than
+ * all of `max` (a letter under thousands of marks) is cut by code point
+ * instead, so the cut keeps something.
+ */
 function cutAt(s: string, max: number): string {
-  const end = max > 0 && /[\uD800-\uDBFF]/.test(s.charAt(max - 1)) ? max - 1 : max;
+  if (s.length <= max) return s;
+  let end = 0;
+  for (const { index, segment } of GRAPHEMES.segment(s)) {
+    if (index + segment.length <= max) {
+      end = index + segment.length;
+      continue;
+    }
+    if (segment.length > max) {
+      for (const point of segment) {
+        if (end + point.length > max) break;
+        end += point.length;
+      }
+    }
+    break;
+  }
   return s.slice(0, end);
+}
+
+/** A code block's opening or closing line: up to three spaces, then three or more ` or ~. */
+const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * `s` with the code block it leaves open closed, so the words after a cut are
+ * not read as code. A block closes on a line of only its own marker, at least
+ * as long; anything else inside it is code. A ``` line with another backtick
+ * after the marker is inline code and opens nothing.
+ */
+function closeOpenBlock(s: string): string {
+  let open: string | null = null;
+  for (const line of s.split('\n')) {
+    const match = FENCE_LINE.exec(line);
+    if (match === null) continue;
+    const run = match[1]!;
+    if (open === null) {
+      if (run[0] !== '`' || !line.slice(match[0].length).includes('`')) open = run;
+    } else if (run[0] === open[0] && run.length >= open.length && line.trim() === run) open = null;
+  }
+  return open === null ? s : `${s}${s.endsWith('\n') ? '' : '\n'}${open}\n`;
 }
 
 /**
@@ -70,7 +119,12 @@ function cutAt(s: string, max: number): string {
  */
 export function cutReportDetail(detail: string): string {
   if (detail.length <= REPORT_DETAIL_MAX) return detail;
-  return `${cutAt(detail, REPORT_DETAIL_MAX - DETAIL_CUT.length)}${DETAIL_CUT}`;
+  // Closing a code block costs a few characters; cut further until the whole fits.
+  for (let room = REPORT_DETAIL_MAX - DETAIL_CUT.length; ;) {
+    const cut = `${closeOpenBlock(cutAt(detail, room))}${DETAIL_CUT}`;
+    if (cut.length <= REPORT_DETAIL_MAX) return cut;
+    room -= cut.length - REPORT_DETAIL_MAX;
+  }
 }
 
 /**
@@ -85,7 +139,7 @@ export function composeReport(reason: ReportNotice, text: string, detail?: strin
   if (detail) parts.push(cutReportDetail(detail));
   if (text) {
     const cut = text.length > REPORT_TEXT_MAX;
-    parts.push(cut ? `${cutAt(text, REPORT_TEXT_MAX)}…` : text);
+    parts.push(cut ? `${closeOpenBlock(cutAt(text, REPORT_TEXT_MAX))}…` : text);
     if (cut) parts.push('(Cut short. Read the rest with chat_read.)');
   }
   return parts.join('\n\n');

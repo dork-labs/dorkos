@@ -336,6 +336,8 @@ it.each(['private', 'seat'] as const)(
     const toRoomSeat = vi.fn<NonNullable<ChatReportBackDeps['toRoomSeat']>>(
       async (_parent, report) => {
         expect(report.outsideWords).toBe(true);
+        // The seat the outbox checked, so no other seat can take it.
+        expect(report.seat).toEqual({ roomId: 'team', authorId: 'river-author' });
         expect(report.beforeRun?.()).toBe(true);
         return true;
       }
