@@ -34616,6 +34616,9 @@
                     "watchStream": {
                       "type": "boolean"
                     },
+                    "watchInput": {
+                      "type": "boolean"
+                    },
                     "platform": {
                       "type": "string",
                       "minLength": 1
@@ -34887,6 +34890,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -35296,6 +35317,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -36000,6 +36039,24 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -36408,6 +36465,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -36818,6 +36893,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -37489,6 +37582,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -38313,6 +38424,24 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -38685,6 +38814,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -39113,6 +39260,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
@@ -39681,6 +39846,24 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
+                    },
                     "handoff": {
                       "type": [
                         "object",
@@ -40095,6 +40278,24 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "viewerAddress": {
+                      "type": "object",
+                      "properties": {
+                        "receipt": {
+                          "type": "string",
+                          "pattern": "^[\\w-]{43}$"
+                        },
+                        "navigationGeneration": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "receipt",
+                        "navigationGeneration"
+                      ],
+                      "additionalProperties": false
                     },
                     "handoff": {
                       "type": [
