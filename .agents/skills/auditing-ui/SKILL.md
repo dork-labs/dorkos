@@ -33,8 +33,9 @@ Three things outlive any single run and live at the domain root, `audits/runs/ui
 Read `audits/runs/ui/profile.md` at the start of every `run`, `pulse`, and `execute`. It answers
 questions this procedure deliberately does not hard-code, and each answer changes behavior:
 
-- **Landing style** — a repo with no merge queue must not inherit arm-then-verify or a bare
-  `gh pr merge --auto`; `execute` follows the profile's answer, not this repo's habits.
+- **Landing style** — in this repo, `scripts/open-pr.sh` opens each PR with auto-merge
+  on and nobody arms it; a repo with no merge queue must not inherit that; `execute` follows the
+  profile's answer, not this repo's habits.
 - **Changelog** — whether a batch owes a fragment, and in what shape.
 - **Isolation** — worktree per batch, or something else.
 - **Formatting gate** — the exact command that satisfies CI, run last before every push.

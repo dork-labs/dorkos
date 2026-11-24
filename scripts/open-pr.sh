@@ -51,7 +51,8 @@
 #        - main's ci/required-checks.json (read from $OPEN_PR_BASE, never the
 #          branch's copy) already requires `not-held`, `release-window` and
 #          `pr-gates`. Those make a hold, a freeze or release, and a missing
-#          Security, QA or design sign-off block the merge by themselves. Until
+#          Security sign-off block the merge by themselves (QA and design are
+#          notes, not gates). Until
 #          the ruleset requires them, the PR opens without auto-merge, exactly
 #          as before, so this switches itself on when they become required.
 #      The strategy flag is left off: the merge queue owns it.
@@ -290,9 +291,9 @@ for label in "${labels[@]}"; do create+=(--label "$label"); done
 AUTO_MERGE_GATES=(not-held release-window pr-gates)
 auto_merge=0
 if [ "$draft" = 1 ]; then
-  auto_why="off: a draft (mark it ready, then gh pr merge --auto <n>)"
+  auto_why="off: a draft (whoever marks it ready turns it on: gh pr merge --auto <n>)"
 elif [ "$hold_given" = 1 ]; then
-  auto_why="off: opened with --hold; whoever lifts the hold turns it on"
+  auto_why="off: opened with --hold (whoever lifts the hold turns it on: gh pr merge --auto <n>)"
 elif ! required_json=$(git show "$BASE:ci/required-checks.json" 2>/dev/null); then
   auto_why="off: $BASE has no ci/required-checks.json"
 else
@@ -352,6 +353,6 @@ done
 
 if [ "$auto_merge" = 1 ]; then
   "$GH" pr merge "$url" --auto >/dev/null ||
-    die 3 "opened $url, but could not turn on auto-merge. Turn it on now: gh pr merge --auto $url"
+    die 3 "opened $url, but could not turn on auto-merge. Ask a maintainer to turn it on; never merge it directly"
 fi
 echo "auto-merge: $auto_why"
