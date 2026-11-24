@@ -497,6 +497,12 @@ jobs:
       - name: Review re-dispatch gate fixtures
         run: bash scripts/test-should-redispatch-review.sh
 
+      # review-mode.sh decides whether a push gets a full review or the Security
+      # lens only. The expensive mistake is a push re-check on a PR that never
+      # had a full review, so every comment that must not count is pinned.
+      - name: Review mode fixtures
+        run: bash scripts/test-review-mode.sh
+
       # should-reap-worktree.sh is the other side of the same coin: the arming
       # gate decides what LANDS without a human, this one decides what gets
       # DELETED without a human. A refusal that quietly stops matching does not
