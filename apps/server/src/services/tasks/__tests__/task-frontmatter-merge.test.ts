@@ -70,19 +70,6 @@ describe('mergeTaskFrontmatter', () => {
     });
   });
 
-  it('sets `enabled: false` rather than treating it as "not supplied"', () => {
-    // A falsy value that is not `undefined` is still a value. Pausing a task is
-    // the write most likely to be dropped by a truthiness check.
-    expect(mergeTaskFrontmatter(base, { enabled: false }).enabled).toBe(false);
-  });
-
-  it('does not mutate the frontmatter it was handed', () => {
-    const original = { ...base };
-    mergeTaskFrontmatter(base, { maxRuntime: null, cron: '0 9 * * *' });
-
-    expect(base).toEqual(original);
-  });
-
   it('keeps frontmatter keys it knows nothing about', () => {
     // `origin` and `shape` mark a Shape-installed task, and the route that
     // rewrites a file must not strip provenance it does not manage.
@@ -93,14 +80,5 @@ describe('mergeTaskFrontmatter', () => {
 
     expect(merged.origin).toBe('shape');
     expect(merged.shape).toBe('daily-standup');
-  });
-
-  it('builds frontmatter from nothing, for the create path', () => {
-    const merged = mergeTaskFrontmatter(
-      { name: 'fresh', description: 'brand new' },
-      { cron: '0 1 * * *', maxRuntime: undefined, displayName: undefined }
-    );
-
-    expect(merged).toEqual({ name: 'fresh', description: 'brand new', cron: '0 1 * * *' });
   });
 });

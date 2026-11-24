@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AdapterRegistry, WebhookAdapter, type RelayAdapter } from '@dorkos/relay';
 import { AdapterManager } from '../adapter-manager.js';
+import { logger } from '../../../lib/logger.js';
 
 const saveGate = vi.hoisted(() => ({
   wait: undefined as Promise<void> | undefined,
@@ -23,10 +24,11 @@ vi.mock('../adapter-config.js', async (original) => {
 vi.mock('chokidar', () => ({
   default: { watch: () => ({ on: vi.fn().mockReturnThis(), close: vi.fn(async () => {}) }) },
 }));
-vi.mock('../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-  createTaggedLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
+beforeEach(() => {
+  for (const level of ['info', 'warn', 'error', 'debug'] as const) {
+    vi.spyOn(logger, level).mockImplementation(() => undefined);
+  }
+});
 const secret = 'ownership-fixture-secret16';
 const config = (subject: string) => ({
   inbound: { subject, secret },

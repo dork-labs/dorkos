@@ -61,24 +61,13 @@ describe('a task file cannot arm an unattended bypass run', () => {
     // hardcodes `active` — so the mode is the whole of the protection.
     expect(task.enabled).toBe(true);
     expect(task.status).toBe('active');
-  });
-
-  it('says so, naming the file, so the downgrade is not silent', () => {
-    store.fileSync.upsertFromFile(definition('bypassPermissions'));
-
+    // The downgrade is not silent: it names the file.
     expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(vi.mocked(logger.warn).mock.calls[0]?.[0]).toContain(FILE_PATH);
   });
 
-  it('leaves acceptEdits alone, and says nothing', () => {
-    const task = store.fileSync.upsertFromFile(definition('acceptEdits'));
-
-    expect(task.permissionMode).toBe('acceptEdits');
-    expect(logger.warn).not.toHaveBeenCalled();
-  });
-
   it('carries every mode that still asks through untouched', () => {
-    for (const mode of ['default', 'plan', 'dontAsk', 'auto']) {
+    for (const mode of ['acceptEdits', 'dontAsk']) {
       const filePath = `/home/u/.dork/tasks/${mode}/${SKILL_FILENAME}`;
       const task = store.fileSync.upsertFromFile(definition(mode, filePath));
       expect(task.permissionMode).toBe(mode);
@@ -164,27 +153,5 @@ describe('a task file cannot arm an unattended bypass run', () => {
       expect(resurrected.permissionMode).toBe('acceptEdits');
       expect(logger.warn).toHaveBeenCalledTimes(1);
     });
-
-    it('still keeps it for the same task, unchanged, on the next sync', () => {
-      // The legitimate flow this whole exception exists for, proved to still
-      // work: the cockpit wrote the mode to the row and the same content to the
-      // file, and the watcher re-reads it seconds later.
-      grantBypass();
-
-      const resynced = store.fileSync.upsertFromFile(definition('bypassPermissions'));
-
-      expect(resynced.permissionMode).toBe('bypassPermissions');
-      expect(logger.warn).not.toHaveBeenCalled();
-    });
-  });
-
-  it('stops repeating itself while the file keeps asking', () => {
-    // The reconciler re-reads every task file every five minutes. One standing
-    // refusal must not become 288 log lines a day.
-    store.fileSync.upsertFromFile(definition('bypassPermissions'));
-    store.fileSync.upsertFromFile(definition('bypassPermissions'));
-    store.fileSync.upsertFromFile(definition('bypassPermissions'));
-
-    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });

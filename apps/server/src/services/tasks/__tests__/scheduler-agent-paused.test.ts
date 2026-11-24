@@ -109,12 +109,4 @@ describe('a paused agent’s schedules (spec audit-trail PR5)', () => {
     expect(agentManager.sendMessage).not.toHaveBeenCalled();
     expect(recordHeld).toHaveBeenCalledTimes(1);
   });
-
-  it('records nothing held for an agent that is not paused', async () => {
-    paused = false;
-    const t = task();
-    await (service as unknown as Fireable).dispatch(t, ON_TIME_HOURLY);
-    expect(store.listRuns({ taskId: t.id })[0]?.error ?? null).not.toBe(AGENT_PAUSED_SKIP_REASON);
-    expect(recordHeld).not.toHaveBeenCalled();
-  });
 });

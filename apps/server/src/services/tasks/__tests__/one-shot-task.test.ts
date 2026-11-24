@@ -129,13 +129,6 @@ describe('a one-shot task', () => {
     expect(agent.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('claims nothing in a process that may not fire', async () => {
-    const task = oneShot();
-    await scheduler({ ...CONFIG, mayFire: false }).start();
-    expect(store.getTask(task.id)?.ranOnceAt ?? null).toBeNull();
-    expect(store.listRuns()).toHaveLength(0);
-  });
-
   describe('with its own pinned list', () => {
     let rule: string;
     let program: string;
@@ -191,20 +184,17 @@ describe('a one-shot task', () => {
       expect(opts.taskApprovedAllow).toEqual([rule]);
     });
 
-    it.each(['act', 'ask'] as const)(
-      'fails its run, running nothing, when its agent dropped to %s before it fired',
-      async (stop) => {
-        const task = await listed();
-        await ownAgentAt(task.id, stop);
-        await scheduler().start();
-        await settled();
-        expect(store.listRuns()[0]).toMatchObject({
-          status: 'failed',
-          error: LEVEL_DROPPED_MESSAGE,
-        });
-        expect(agent.sendMessage).not.toHaveBeenCalled();
-      }
-    );
+    it('fails its run, running nothing, when its agent dropped below Full before it fired', async () => {
+      const task = await listed();
+      await ownAgentAt(task.id, 'act');
+      await scheduler().start();
+      await settled();
+      expect(store.listRuns()[0]).toMatchObject({
+        status: 'failed',
+        error: LEVEL_DROPPED_MESSAGE,
+      });
+      expect(agent.sendMessage).not.toHaveBeenCalled();
+    });
 
     it('fails its run, running nothing, when DorkOS can’t name its agent', async () => {
       await listed();

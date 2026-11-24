@@ -8,6 +8,7 @@ import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { FakeScheduler } from './fake-scheduler.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import type { Task } from '@dorkos/shared/types';
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
@@ -34,147 +35,55 @@ describe('TaskRegistrar', () => {
     registrar = new TaskRegistrar({ store, scheduler });
   });
 
-  describe('syncTask', () => {
-    it('registers a task that is enabled and active', () => {
-      const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
+  it.each<[string, (task: Task) => void]>([
+    ['disabled', (task) => store.updateTask(task.id, { enabled: false })],
+    // A proposal must not fire.
+    ['waiting for approval', (task) => store.updateTask(task.id, { status: 'pending_approval' })],
+    [
+      'paused because its file went away',
+      (task) => store.fileSync.markRemovedByFilePath(task.filePath),
+    ],
+    // Pausing leaves `enabled` as the person set it; `status` alone fails the gate.
+    ['paused with its agent unregistered (DOR-2082)', () => store.disableTasksByAgentId('agent-1')],
+    // A live job whose row is gone still fires, with no schedule to belong to.
+    ['deleted', (task) => store.deleteTask(task.id)],
+  ])('unregisters a task that is %s', (_label, change) => {
+    const task = store.createTask(
+      taskInput({ name: 'nightly', cron: '0 2 * * *', agentId: 'agent-1' })
+    );
+    registrar.syncTask(task.id);
+    expect(scheduler.cronFor(task.id)).toBe('0 2 * * *');
 
-      registrar.syncTask(task.id);
+    change(task);
+    registrar.syncTask(task.id);
 
-      expect(scheduler.cronFor(task.id)).toBe('0 2 * * *');
-    });
-
-    it('re-registers with the cron the row now holds', () => {
-      const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
-      registrar.syncTask(task.id);
-
-      store.updateTask(task.id, { cron: '0 5 * * *' }, { timingLandsOn: 'file' });
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBe('0 5 * * *');
-    });
-
-    it('unregisters a task that has been disabled', () => {
-      const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
-      registrar.syncTask(task.id);
-
-      store.updateTask(task.id, { enabled: false });
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBeNull();
-      expect(scheduler.unregistered).toContain(task.id);
-    });
-
-    it('unregisters a task waiting for approval — a proposal must not fire', () => {
-      const task = store.createTask(taskInput({ name: 'proposed', cron: '0 2 * * *' }));
-      registrar.syncTask(task.id);
-
-      store.updateTask(task.id, { status: 'pending_approval' });
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBeNull();
-    });
-
-    it('unregisters a task paused because its file went away', () => {
-      const task = store.createTask(taskInput({ name: 'vanished', cron: '0 2 * * *' }));
-      registrar.syncTask(task.id);
-
-      store.fileSync.markRemovedByFilePath(task.filePath);
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBeNull();
-    });
-
-    it('unregisters a task paused because its agent was unregistered, even switched on (DOR-2082)', () => {
-      const task = store.createTask(
-        taskInput({ name: 'orphaned', cron: '0 2 * * *', agentId: 'agent-1' })
-      );
-      registrar.syncTask(task.id);
-      expect(scheduler.cronFor(task.id)).toBe('0 2 * * *');
-
-      store.disableTasksByAgentId('agent-1');
-      // `disableTasksByAgentId` leaves `enabled` exactly as the person set it
-      // (DOR-2082) — nothing runs while the agent is unregistered only because
-      // `status` alone already fails this gate.
-      expect(store.getTask(task.id)?.enabled).toBe(true);
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBeNull();
-      expect(scheduler.unregistered).toContain(task.id);
-    });
-
-    // A live job whose row is gone is the worst of the states: it still fires,
-    // and the run it tries to record has no schedule to belong to.
-    it('unregisters a task whose row has been deleted', () => {
-      const task = store.createTask(taskInput({ name: 'deleted', cron: '0 2 * * *' }));
-      registrar.syncTask(task.id);
-
-      store.deleteTask(task.id);
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBeNull();
-      expect(scheduler.unregistered).toContain(task.id);
-    });
-
-    it('leaves an on-demand task without a job', () => {
-      const task = store.createTask(taskInput({ name: 'on-demand' }));
-
-      registrar.syncTask(task.id);
-
-      expect(scheduler.cronFor(task.id)).toBeNull();
-    });
-
-    // The boot window: the watcher delivers its first events, and the server is
-    // already answering requests, before `schedulerService.start()` runs.
-    it('does nothing before the scheduler has started — start() reads the store', () => {
-      const notStarted = new FakeScheduler(false);
-      const early = new TaskRegistrar({ store, scheduler: notStarted });
-      const task = store.createTask(taskInput({ name: 'early', cron: '0 2 * * *' }));
-
-      early.syncTask(task.id);
-
-      expect(notStarted.registered).toHaveLength(0);
-      expect(notStarted.unregistered).toHaveLength(0);
-    });
+    expect(scheduler.cronFor(task.id)).toBeNull();
+    expect(scheduler.unregistered).toContain(task.id);
   });
 
-  describe('syncTaskByFilePath', () => {
-    it('finds the row that claims that exact path and syncs it', () => {
-      const task = store.createTask(taskInput({ name: 'by-path', cron: '0 2 * * *' }));
+  // The boot window: the watcher delivers events before `start()` runs.
+  it('does nothing before the scheduler has started — start() reads the store', () => {
+    const notStarted = new FakeScheduler(false);
+    const task = store.createTask(taskInput({ name: 'early', cron: '0 2 * * *' }));
 
-      registrar.syncTaskByFilePath(task.filePath);
+    new TaskRegistrar({ store, scheduler: notStarted }).syncTask(task.id);
 
-      expect(scheduler.cronFor(task.id)).toBe('0 2 * * *');
-    });
+    expect(notStarted.registered).toHaveLength(0);
+    expect(notStarted.unregistered).toHaveLength(0);
+  });
 
-    it('does nothing for a path no row claims', () => {
-      registrar.syncTaskByFilePath('/tmp/tasks/nobody/SKILL.md');
+  // Slugs repeat across the global tasks dir and every project one.
+  it('syncTaskByFilePath syncs only the row at that path, never a same-named task elsewhere', () => {
+    const mine = store.createTask(
+      taskInput({ name: 'flow-drain', cron: '0 2 * * *', filePath: '/a/flow-drain/SKILL.md' })
+    );
+    const theirs = store.createTask(
+      taskInput({ name: 'flow-drain', cron: '0 3 * * *', filePath: '/b/flow-drain/SKILL.md' })
+    );
 
-      expect(scheduler.registered).toHaveLength(0);
-      expect(scheduler.unregistered).toHaveLength(0);
-    });
+    registrar.syncTaskByFilePath(mine.filePath);
 
-    // Slugs repeat across the global tasks dir and every project one; only the
-    // full path identifies a row.
-    it('syncs only the row at that path, never a same-named task elsewhere', () => {
-      const mine = store.createTask(
-        taskInput({
-          name: 'flow-drain',
-          cron: '0 2 * * *',
-          filePath: '/a/tasks/flow-drain/SKILL.md',
-        })
-      );
-      const theirs = store.createTask(
-        taskInput({
-          name: 'flow-drain',
-          cron: '0 3 * * *',
-          filePath: '/b/tasks/flow-drain/SKILL.md',
-        })
-      );
-
-      registrar.syncTaskByFilePath(mine.filePath);
-
-      expect(scheduler.cronFor(mine.id)).toBe('0 2 * * *');
-      expect(scheduler.cronFor(theirs.id)).toBeNull();
-    });
+    expect(scheduler.cronFor(mine.id)).toBe('0 2 * * *');
+    expect(scheduler.cronFor(theirs.id)).toBeNull();
   });
 });

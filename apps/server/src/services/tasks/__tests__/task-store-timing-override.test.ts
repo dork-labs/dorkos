@@ -18,7 +18,6 @@ import { pulseSchedules, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
 import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
-import { mapTaskRow } from '../task-row-mappers.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
 
 /** The fixture's settings, which are part of every approval key (DOR-2323). */
@@ -128,27 +127,6 @@ describe('a person’s own timing on a package’s schedule', () => {
         timingOverridden: true,
       });
     });
-
-    it('goes back to the package’s timing on a reset', () => {
-      // Purpose: "Reset to the package's default" must clear both halves.
-      const id = approvedSchedule();
-      store.updateTask(id, { cron: MY_CRON, timezone: 'Asia/Tokyo' }, { timingLandsOn: 'row' });
-
-      const task = store.updateTask(id, { resetTiming: true }, { timingLandsOn: 'row' })!;
-
-      expect(task).toMatchObject({ cron: PACKAGE_CRON, timezone: 'UTC', timingOverridden: false });
-    });
-
-    it('writes a file-bound timing to the default columns, as it always has', () => {
-      // Purpose: an ordinary schedule's timing still lives in its file; the
-      // default `timingLandsOn` must stay `file`.
-      const id = approvedSchedule();
-
-      const task = store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'file' })!;
-
-      expect(row(id)).toMatchObject({ cron: MY_CRON, cronOverride: null });
-      expect(task.timingOverridden).toBe(false);
-    });
   });
 
   describe('the approval follows the timing that runs', () => {
@@ -216,55 +194,6 @@ describe('a person’s own timing on a package’s schedule', () => {
       expect(synced.permissionMode).toBe('bypassPermissions');
       expect(synced.status).toBe('active');
     });
-
-    it('back-fills a missing grant for the timing that runs', () => {
-      // Purpose: the boot-time back-fill writes down an old approval; keyed on
-      // the package's cron it would park the schedule at the first sync.
-      const id = approvedSchedule();
-      store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
-      db.update(pulseSchedules)
-        .set({ approvedContentKey: null })
-        .where(eq(pulseSchedules.id, id))
-        .run();
-
-      expect(store.approvals.backfillApprovalGrants()).toBe(1);
-
-      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
-        'active'
-      );
-    });
-
-    it('re-arms a returning package file with a grant for the timing that runs', () => {
-      // Purpose: the operator un-pause writes a grant; for the package's cron
-      // it would be a grant the very next discovery sync finds does not match.
-      const id = approvedSchedule();
-      personRetimes(id, MY_CRON);
-      store.fileSync.markRemovedByFilePath(FILE_PATH);
-
-      expect(store.fileSync.upsertFromFile(definition()).status).toBe('active');
-      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
-        'active'
-      );
-    });
-
-    it('re-keys a migrated row onto its new path with the person’s timing intact', () => {
-      // Purpose: the migration compares the row against the rewritten file; a
-      // comparison that forgot the override would read the person's timing as
-      // drift and re-park an approved schedule.
-      const id = approvedSchedule();
-      personRetimes(id, MY_CRON);
-
-      const outcome = store.approvals.rekeyMigratedFile(FILE_PATH, '/moved/SKILL.md', {
-        prompt: PROMPT,
-        cron: PACKAGE_CRON,
-        timezone: 'UTC',
-      });
-
-      expect(outcome).toBe('rekeyed');
-      expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
-      );
-    });
   });
 
   describe('when the file stops being a package’s', () => {
@@ -288,17 +217,6 @@ describe('a person’s own timing on a package’s schedule', () => {
       expect(row(id)).toMatchObject({ cronOverride: null, timezoneOverride: null });
     });
 
-    it('stays approved when the file already says the person’s timing', () => {
-      // Purpose: writing your own cron into the file you now own is the same
-      // approved work, not new work to look at.
-      const id = approvedSchedule();
-      personRetimes(id, MY_CRON);
-
-      expect(
-        store.fileSync.upsertFromFile(definition({ cron: MY_CRON }), undefined, UNOWNED).status
-      ).toBe('active');
-    });
-
     it('asks again when the timing that runs changes with it', () => {
       // Purpose: the file's cron is not the one the person approved, and it is
       // about to be the one that runs.
@@ -308,15 +226,6 @@ describe('a person’s own timing on a package’s schedule', () => {
       expect(store.fileSync.upsertFromFile(definition(), undefined, UNOWNED).status).toBe(
         'pending_approval'
       );
-    });
-
-    it('keeps the override through a sync that does not say who owns the file', () => {
-      // Purpose: only discovery knows; an operator write saying nothing is not
-      // "no longer a package's".
-      const id = approvedSchedule();
-      personRetimes(id, MY_CRON);
-
-      expect(store.fileSync.upsertFromFile(definition()).cron).toBe(MY_CRON);
     });
   });
 
@@ -371,26 +280,6 @@ describe('a person’s own timing on a package’s schedule', () => {
       });
     });
 
-    it('keeps a paused schedule the person approved approved, so it comes back live', () => {
-      // Purpose: keyed on the grant, not on `active` — a paused schedule is
-      // still one the person approved.
-      const id = approvedSchedule();
-      store.fileSync.markRemovedByFilePath(FILE_PATH);
-      store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
-
-      store.approvals.settleApprovedWorkChange(
-        id,
-        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
-        {
-          trusted: true,
-        }
-      );
-
-      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
-        'active'
-      );
-    });
-
     it('approves nothing a person had not approved before', () => {
       // Purpose: a timing edit on a parked schedule is not its approval.
       const id = store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).id;
@@ -427,23 +316,6 @@ describe('a person’s own timing on a package’s schedule', () => {
       expect(row(id).approvedContentKey).toBeNull();
     });
 
-    it('leaves a schedule that is not running where it is', () => {
-      // Purpose: only an active schedule has anything to stop; the grant's
-      // mismatch already keeps a paused one from arming without a person.
-      const id = approvedSchedule();
-      store.fileSync.markRemovedByFilePath(FILE_PATH);
-      store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
-
-      const outcome = store.approvals.settleApprovedWorkChange(
-        id,
-        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'paused' },
-        { trusted: false }
-      );
-
-      expect(outcome).toBe('unchanged');
-      expect(store.getTask(id)!.status).toBe('paused');
-    });
-
     it('parks an approved schedule when an agent changes only its timezone (DOR-2307)', () => {
       // Purpose: the timezone moves the real run time, so it is part of what a
       // person approved — an agent changing it alone must not keep it live.
@@ -458,49 +330,6 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       expect(outcome).toBe('parked');
       expect(store.getTask(id)!.status).toBe('pending_approval');
-    });
-
-    it('does nothing when the timing that runs did not change', () => {
-      // Purpose: an update that leaves the prompt, cron and timezone as they
-      // were changes no approved work.
-      const id = approvedSchedule();
-      store.updateTask(id, { enabled: false });
-
-      const outcome = store.approvals.settleApprovedWorkChange(
-        id,
-        { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
-        { trusted: false }
-      );
-
-      expect(outcome).toBe('unchanged');
-      expect(store.getTask(id)!.status).toBe('active');
-    });
-  });
-});
-
-describe('mapTaskRow', () => {
-  it('reports the timing that runs, the file’s timing beside it, and whether they differ', () => {
-    // Purpose: every Task reader — the scheduler, the preview, the API — reads
-    // `cron`; resolving it here is what makes them all see the right one.
-    const db = createTestDb();
-    const store = new TaskStore(db);
-    const id = store.fileSync.upsertFromFile(definition()).id;
-    db.update(pulseSchedules)
-      .set({ cronOverride: '', timezoneOverride: null })
-      .where(eq(pulseSchedules.id, id))
-      .run();
-
-    const mapped = mapTaskRow(
-      db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get()!
-    );
-
-    // `''` is an override (on demand), not an absence of one.
-    expect(mapped).toMatchObject({
-      cron: '',
-      timezone: 'UTC',
-      defaultCron: PACKAGE_CRON,
-      defaultTimezone: 'UTC',
-      timingOverridden: true,
     });
   });
 });

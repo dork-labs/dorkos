@@ -111,9 +111,7 @@
     "src/services/mesh/__tests__/ensure-dorkbot.test.ts", // 2
     "src/services/observability/__tests__/file-span-processor.test.ts", // 1
     "src/services/observability/__tests__/trace-proxies.test.ts", // 1
-    "src/services/relay/__tests__/adapter-manager.test.ts", // 3
     "src/services/relay/__tests__/binding-router.integration.test.ts", // 1
-    "src/services/relay/__tests__/binding-router.test.ts", // 43
     "src/services/runtimes/claude-code/__tests__/claude-code-runtime-models.test.ts", // 1
     "src/services/runtimes/claude-code/__tests__/claude-code-runtime-session-contract.test.ts", // 5
     "src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts", // 6

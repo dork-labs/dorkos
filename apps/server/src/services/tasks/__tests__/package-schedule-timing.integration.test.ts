@@ -26,7 +26,7 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
-import { scheduleContentKey, taskWorkOf } from '../schedule-permission-clamp.js';
+import { taskWorkOf } from '../schedule-permission-clamp.js';
 
 const AGENT_ID = 'agent-1';
 
@@ -121,42 +121,21 @@ async function approved(): Promise<Task> {
 }
 
 describe('changing when a package’s schedule runs', () => {
-  it('lands on the schedule, keeps it approved, and never writes the package’s file', async () => {
-    // Purpose: the ticket itself — this answered 409 `schedule_package_owned`.
-    const task = await approved();
+  it('lands on the schedule, never writes the file, and holds across sweeps and a timing-only update', async () => {
+    // The ticket answered 409 `schedule_package_owned`; and every sync copies
+    // the file's cron onto the row, so the timing has to live beside it.
+    const result = await patch(await approved(), { cron: '*/15 * * * *' });
 
-    const result = await patch(task, { cron: '*/15 * * * *', timezone: 'Europe/Berlin' });
-
-    expect(result.ok).toBe(true);
     expect(result.task).toMatchObject({
       cron: '*/15 * * * *',
-      timezone: 'Europe/Berlin',
       defaultCron: '0 * * * *',
       timingOverridden: true,
       status: 'active',
     });
     expect(await fs.readFile(packagedFile, 'utf-8')).toBe(packagedSkill());
-  });
 
-  it('holds across the next sweep of the unchanged file', async () => {
-    // Purpose: every sync copies the file's cron onto the row; if the person's
-    // timing lived in that column it would be gone within five minutes.
-    await patch(await approved(), { cron: '*/15 * * * *' });
-
-    const after = await sweep();
-
-    expect(after).toMatchObject({ cron: '*/15 * * * *', status: 'active' });
-  });
-
-  it('holds, still approved, across a package update that changes only the package’s timing', async () => {
-    // Purpose: the default moving under a person's own timing is not new work
-    // for them to approve.
-    await patch(await approved(), { cron: '*/15 * * * *' });
     await fs.writeFile(packagedFile, packagedSkill('0 */6 * * *'), 'utf-8');
-
-    const after = await sweep();
-
-    expect(after).toMatchObject({
+    expect(await sweep()).toMatchObject({
       cron: '*/15 * * * *',
       defaultCron: '0 */6 * * *',
       status: 'active',
@@ -173,18 +152,6 @@ describe('changing when a package’s schedule runs', () => {
 
     expect(after.status).toBe('pending_approval');
     expect(after.cron).toBe('*/15 * * * *');
-  });
-
-  it('goes back to the package’s timing on a reset, still approved', async () => {
-    // Purpose: "Reset to the package's default" is a person's timing change
-    // too, so it re-approves in the same act and the next sweep agrees.
-    const retimed = (await patch(await approved(), { cron: '*/15 * * * *' })).task!;
-
-    const reset = await patch(retimed, { resetTiming: true });
-    const after = await sweep();
-
-    expect(reset.task).toMatchObject({ cron: '0 * * * *', timingOverridden: false });
-    expect(after).toMatchObject({ cron: '0 * * * *', status: 'active' });
   });
 
   it('stops at once, and stays stopped, when an agent changes the timing', async () => {

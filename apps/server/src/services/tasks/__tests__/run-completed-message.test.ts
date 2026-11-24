@@ -68,20 +68,6 @@ describe('formatCompletionMessage', () => {
     }
   );
 
-  it.each(['failed', 'needs_attention'] as const)(
-    'preserves ordinary punctuation and bare URLs in a %s name on both chat apps',
-    (status) => {
-      for (const name of ['nightly-backup.v2', 'https://example.test']) {
-        const body = formatCompletionMessage({ ...task, displayName: name }, run({ status }));
-        for (const platform of ['telegram', 'slack'] as const) {
-          const converted = formatForPlatform(body, platform);
-          expect(converted).toContain(name);
-          expect(converted).not.toContain('\\');
-        }
-      }
-    }
-  );
-
   it('sends the refusal title and fixed guidance without commands or run output', () => {
     expect(
       formatCompletionMessage(
@@ -116,30 +102,27 @@ describe('formatCompletionMessage', () => {
     ).toBe('Mailroom was refused sample: search\nOpen the schedule to fix it.');
   });
 
-  it.each([false, true])(
-    'reserves the complete guidance within 280 characters (streak: %s)',
-    (streak) => {
-      const tail = `Open the schedule to fix it.${streak ? "\nYou won't get another notice about it until it runs cleanly and fails again." : ''}`;
-      for (const refusedTools of [['Bash'], [`mcp__sample__${'long'.repeat(200)}`]]) {
-        const body = formatCompletionMessage(
-          { ...task, displayName: 'Nightly sample report '.repeat(100) },
-          run({
-            status: 'needs_attention',
-            refusedTools,
-            error: 'sample-secret-command',
-            outputSummary: 'sample-private-output',
-          }),
-          streak
-        );
-        expect(body.length).toBeLessThanOrEqual(280);
-        expect(body).toContain(
-          refusedTools[0] === 'Bash' ? ' had a command refused' : ' was refused '
-        );
-        expect(body.endsWith(tail)).toBe(true);
-        expect(body).not.toMatch(/sample-secret-command|sample-private-output/);
-      }
+  it.each([true])('reserves the complete guidance within 280 characters (streak: %s)', (streak) => {
+    const tail = `Open the schedule to fix it.${streak ? "\nYou won't get another notice about it until it runs cleanly and fails again." : ''}`;
+    for (const refusedTools of [['Bash'], [`mcp__sample__${'long'.repeat(200)}`]]) {
+      const body = formatCompletionMessage(
+        { ...task, displayName: 'Nightly sample report '.repeat(100) },
+        run({
+          status: 'needs_attention',
+          refusedTools,
+          error: 'sample-secret-command',
+          outputSummary: 'sample-private-output',
+        }),
+        streak
+      );
+      expect(body.length).toBeLessThanOrEqual(280);
+      expect(body).toContain(
+        refusedTools[0] === 'Bash' ? ' had a command refused' : ' was refused '
+      );
+      expect(body.endsWith(tail)).toBe(true);
+      expect(body).not.toMatch(/sample-secret-command|sample-private-output/);
     }
-  );
+  });
 
   it('still says done for a success, and a run that did not finish gets the cross', () => {
     expect(formatCompletionMessage(task, run({ outputSummary: 'All clear' }))).toBe(

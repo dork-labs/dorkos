@@ -235,7 +235,7 @@ An `L` reference names a passing case in a JSON receipt under `contributing/capa
 | RT-TASK-01 | Run a task on its chosen runtime | unverified | yes (U) | unverified | unverified | unverified |
 
 - **RT-TASK-01** A scheduled run uses its named runtime and records a failure without starting a turn elsewhere when that runtime is disabled.
-  - codex. U [runs the task on the runtime IT names, not the registry default](../../apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts), U [fails the run loudly when the named runtime is not turned on, and starts no turn](../../apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts)
+  - codex. U [runs on the runtime the task names, and stamps the resolved runtime and model](../../apps/server/src/services/tasks/__tests__/task-scheduler/task-scheduler.runtimes.test.ts), U [fails the run loudly when the named runtime is not turned on, and starts no turn](../../apps/server/src/services/tasks/__tests__/task-scheduler/task-scheduler.runtimes.test.ts)
 
 ## Relay
 

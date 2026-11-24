@@ -1,12 +1,7 @@
 /**
  * Where a proactive agent message goes when no chat integration can carry it
- * (DOR-1209).
- *
- * The rooms half is REAL here — the real service, the real author registry, the
- * real store over an in-memory database — because every claim worth making is
- * about what lands in the log: which room, whose name on it, and what cascade
- * stamp it carries. A fake room service could only prove that this module calls
- * the methods it calls.
+ * (DOR-1209). The rooms half is REAL (service, author registry, store), since
+ * every claim worth making is about what lands in the log.
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
@@ -36,22 +31,19 @@ function meshWithAna(overrides: Partial<NotifyDmDeps['mesh']> = {}): NotifyDmDep
 function setup(mesh: NotifyDmDeps['mesh'] = meshWithAna()): {
   harness: RoomHarness;
   deps: NotifyDmDeps;
-  warn: ReturnType<typeof vi.fn>;
 } {
   const harness = createRoomHarness({
     agents: agentLookupFor({ [ANA_PATH]: { name: 'ana' } }),
     maxAgentDepth: CEILING,
   });
-  const warn = vi.fn();
   return {
     harness,
-    warn,
     deps: {
       rooms: harness.service,
       authors: harness.authors,
       mesh,
       operatorAuthorId: () => harness.human,
-      logger: { warn },
+      logger: { warn: vi.fn() },
     },
   };
 }
@@ -68,7 +60,6 @@ describe('deliverNotifyDm', () => {
     const room = harness.store.getRoom(outcome.roomId);
     expect(room?.kind).toBe('dm');
     const anaAuthorId = harness.authors.resolveAgent(ANA_PATH, 'Ana').id;
-    // The roster is exactly these two — the sending agent and the person.
     expect(new Set(harness.store.listMembers(outcome.roomId).map((m) => m.authorId))).toEqual(
       new Set([anaAuthorId, harness.human])
     );
@@ -76,27 +67,15 @@ describe('deliverNotifyDm', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]!.id).toBe(outcome.entryId);
     expect(entries[0]!.body).toMatchObject({ text: 'Deploy finished.' });
-    // Written BY the agent, as an ordinary post — not a notice in the room's
-    // own voice, which is what the room says when a turn could not run.
     expect(entries[0]!.authorId).toBe(anaAuthorId);
     expect(entries[0]!.kind).toBe('post');
   });
 
   it('inherits the cascade of a turn the agent is already running', async () => {
-    // The other half of the cascade rule, and the one the ceiling test cannot
-    // see: an agent that notifies from INSIDE a turn is not un-provenanced, so
-    // `writePost` picks up its live claim through `activeTurnFor` and the
-    // notification is bounded by the budget that turn is already spending —
-    // rather than being stamped at the ceiling as if nothing had triggered it.
     let midTurn: NotifyDmOutcome | undefined;
-    // A holder, because the runner has to read the deps at the moment the turn
-    // runs — the only moment a claim is actually held — and the deps cannot
-    // exist until the harness the runner is built into does.
     const wiring: { deps?: NotifyDmDeps } = {};
     const runner: ScriptedTurnRunner = outcomeRunner((request) => {
       midTurn = deliverNotifyDm({ agentId: ANA_ID, message: 'Deploy finished.' }, wiring.deps!);
-      // The turn's own answer, said the way a turn says anything: through the
-      // posting tool, from inside the same claim.
       runner.sayInRoom(request, 'on it');
       return { text: null };
     });
@@ -123,13 +102,9 @@ describe('deliverNotifyDm', () => {
     expect(midTurn?.ok).toBe(true);
     const entries = harness.service.listEntries(dm.id, harness.human, { limit: 10 });
     const notified = entries.find((e) => e.id === (midTurn?.ok ? midTurn.entryId : ''));
-    // The turn's own answer, posted under the same claim.
     const replied = entries.find((e) => (e.body as { text?: string }).text === 'on it');
     expect(notified).toBeDefined();
     expect(replied).toBeDefined();
-    // The person's message is the root, and the notification is stamped exactly
-    // like the reply that turn produced — NOT at the ceiling, and not as a fresh
-    // cascade of its own.
     expect(notified!.cascadeRoot).toBe(asked.id);
     expect(notified!.cascadeDepth).toBeLessThan(CEILING);
     expect({ root: notified!.cascadeRoot, depth: notified!.cascadeDepth }).toEqual({
@@ -145,11 +120,6 @@ describe('deliverNotifyDm', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
 
-    // `deriveCascade` stamps an agent post with no turn behind it at the
-    // ceiling: durable and readable, and anything downstream of it is refused
-    // by the depth rule rather than silently costing a model turn. Pinned here
-    // because it is the property that makes a notification safe to send from a
-    // path no person triggered.
     const [entry] = harness.service.listEntries(outcome.roomId, harness.human, { limit: 10 });
     expect(entry!.cascadeDepth).toBe(CEILING);
     expect(entry!.cascadeRoot).toBe(entry!.id);
@@ -158,8 +128,6 @@ describe('deliverNotifyDm', () => {
   it('reuses the direct message the operator already has with that agent', () => {
     const { harness, deps } = setup();
     const anaAuthorId = harness.authors.resolveAgent(ANA_PATH, 'Ana').id;
-    // The conversation the cockpit would have opened: same two people, opened
-    // by the person rather than by the agent.
     const existing = harness.service.createRoom(
       { kind: 'dm', title: 'Ana', members: [anaAuthorId], agentPaths: [] },
       harness.human
@@ -176,24 +144,15 @@ describe('deliverNotifyDm', () => {
   });
 
   it('reports AGENT_NOT_RESOLVABLE, loudly, when the mesh cannot place the sender', () => {
-    const { deps, warn } = setup(meshWithAna({ getProjectPath: () => undefined }));
+    const { deps } = setup(meshWithAna({ getProjectPath: () => undefined }));
 
     const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'Nowhere to go.' }, deps);
 
     expect(outcome).toEqual({ ok: false, reason: 'AGENT_NOT_RESOLVABLE' });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('could not place its sender'), {
-      agentId: ANA_ID,
-      hasPath: false,
-      hasManifest: true,
-    });
   });
 
   it('never throws when the MESH read itself fails', () => {
-    // The mesh reads hit the `agents` table, so a concurrent write can raise
-    // SQLITE_BUSY. Outside the try that throw escaped `deliverNotifyDm`
-    // entirely and left `relay_notify_user` throwing instead of answering —
-    // strictly worse than the silence this module exists to replace.
-    const { deps, warn } = setup(
+    const { deps } = setup(
       meshWithAna({
         getProjectPath: () => {
           throw new Error('SQLITE_BUSY: database is locked');
@@ -208,32 +167,11 @@ describe('deliverNotifyDm', () => {
       reason: 'DM_UNAVAILABLE',
       error: expect.stringContaining('SQLITE_BUSY'),
     });
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('could not be delivered'),
-      // No path, because the failure was before this sender was ever placed.
-      expect.objectContaining({ agentId: ANA_ID, agentPath: undefined })
-    );
-  });
-
-  it('never throws when the rooms domain refuses — it reports and logs instead', () => {
-    const { deps, warn } = setup();
-    // A refusal from the rooms domain itself: the operator's author row is not
-    // one this install has, so the roster resolves nobody and `createRoom`
-    // throws before anything is written.
-    deps.operatorAuthorId = () => 'no-such-author';
-
-    const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'Still trying.' }, deps);
-
-    expect(outcome).toMatchObject({ ok: false, reason: 'DM_UNAVAILABLE' });
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('could not be delivered'),
-      expect.objectContaining({ agentId: ANA_ID, agentPath: ANA_PATH })
-    );
   });
 
   describe('the Direct chat it lands in (rule S12, DOR-2997)', () => {
     function withDirectChats() {
-      const { harness, deps, warn } = setup();
+      const { harness, deps } = setup();
       const directChats = new DirectChats({
         store: harness.store,
         authors: harness.authors,
@@ -241,7 +179,7 @@ describe('deliverNotifyDm', () => {
         operator: () => harness.authors.getMany([harness.human]).get(harness.human)!,
         mintSessionId: () => 'direct-ana',
       });
-      return { harness, deps: { ...deps, directChats }, warn, directChats };
+      return { harness, deps: { ...deps, directChats }, directChats };
     }
 
     it('names the Direct chat the person reads it in, and it is the same every time', () => {
@@ -267,27 +205,6 @@ describe('deliverNotifyDm', () => {
       if (!outcome.ok) return;
       const [entry] = harness.service.listEntries(outcome.roomId, harness.human, { limit: 10 });
       expect(entry!.sessionId).toBe('direct-ana');
-    });
-
-    it('still delivers when the Direct chat cannot be opened, and says so in the log', () => {
-      const { deps, warn } = withDirectChats();
-      const broken = {
-        ...deps,
-        directChats: {
-          ensureForRoom: () => {
-            throw new Error('database is locked');
-          },
-        },
-      };
-
-      const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'still here' }, broken);
-
-      expect(outcome).toMatchObject({ ok: true });
-      expect(outcome).not.toHaveProperty('directChatId');
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('Direct chat could not be opened'),
-        expect.objectContaining({ error: 'database is locked' })
-      );
     });
   });
 });

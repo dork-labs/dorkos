@@ -89,14 +89,7 @@ describe('a task file on disk drives the running scheduler', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /**
-   * Write `<skillsDir>/<slug>/SKILL.md`, creating the directory if needed.
-   *
-   * Returns the file's REAL path, because that is the identity a row in a skills
-   * root is keyed on — and on macOS every temp directory sits under a symlinked
-   * `/var`, so a test that looked its own file up by the path it wrote would
-   * find nothing.
-   */
+  /** Write `<skillsDir>/<slug>/SKILL.md` and return its REAL path (a row's identity). */
   async function writeTask(slug: string, cron: string, timezone = 'UTC'): Promise<string> {
     const dir = path.join(skillsDir, slug);
     await mkdir(dir, { recursive: true });
@@ -105,15 +98,7 @@ describe('a task file on disk drives the running scheduler', () => {
     return realpath(filePath);
   }
 
-  /**
-   * Stand in for the operator, who is now part of every one of these stories.
-   *
-   * Since DOR-1485 a schedule DorkOS finds on disk parks at `pending_approval`
-   * instead of arming itself (ADR `260823-200726`), so "the file reached the
-   * clock" is a two-step claim: the row syncs, and a person says yes. This is
-   * the second step — the same `status: 'active'` transition `PATCH
-   * /api/tasks/:id` performs, which is what the route treats as the approval.
-   */
+  /** A person's approval: the `status: 'active'` transition `PATCH /api/tasks/:id` performs. */
   function approve(taskId: string): void {
     store.updateTask(taskId, { status: 'active' });
     registrar.syncTask(taskId);
@@ -147,47 +132,6 @@ describe('a task file on disk drives the running scheduler', () => {
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(21);
   });
 
-  it('parks a task whose SKILL.md is dropped in after the server started, then schedules it', async () => {
-    watcher.watch(skillsRoot(skillsDir, 'global'));
-
-    const filePath = await writeTask('brand-new', '0 4 * * *');
-
-    const task = await waitFor(
-      () => store.fileSync.getByFilePath(filePath),
-      'the new task to sync'
-    );
-    // Dropping a file on disk is not permission to run it unattended.
-    expect(task.status).toBe('pending_approval');
-    expect(task.origin).toBe('file');
-    expect(task.reason).toBeTruthy();
-    expect(scheduler.isRegistered(task.id)).toBe(false);
-
-    approve(task.id);
-    await waitFor(() => scheduler.isRegistered(task.id) || null, 'the new task to be scheduled');
-    expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(4);
-  });
-
-  it('drops the job when a good cron is edited into a bad one', async () => {
-    const filePath = await writeTask('drifts', '0 8 * * *');
-    watcher.watch(skillsRoot(skillsDir, 'global'));
-    const task = await waitFor(() => store.fileSync.getByFilePath(filePath), 'the task to sync');
-    approve(task.id);
-    await waitFor(() => scheduler.isRegistered(task.id) || null, 'the task to be scheduled');
-
-    await writeFile(filePath, skillFile('drifts', '99 * * * *'), 'utf-8');
-
-    await waitFor(
-      () => (!scheduler.isRegistered(task.id) ? true : null),
-      'the job to stop rather than keep the schedule nobody asked for'
-    );
-    // And now the operator is told WHICH file to open and what is wrong with
-    // it, rather than the failure living only in a server log line.
-    await waitFor(
-      () => (store.getTask(task.id)?.reason?.includes('99 * * * *') ? true : null),
-      'the row to carry the cron complaint'
-    );
-  });
-
   // The reconciler is the backstop for a change the watcher missed. A backstop
   // that only repaired the row left the clock exactly as stale as before.
   it('the reconciler re-registers a cron that changed while the watcher was blind', async () => {
@@ -215,37 +159,13 @@ describe('a task file on disk drives the running scheduler', () => {
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(19);
   });
 
-  it('the reconciler stops the job for a file that is gone', async () => {
-    const filePath = await writeTask('retired', '0 7 * * *');
-    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
-
-    await reconciler.reconcile();
-    const task = store.fileSync.getByFilePath(filePath)!;
-    approve(task.id);
-    expect(scheduler.isRegistered(task.id)).toBe(true);
-
-    await rm(filePath);
-    await reconciler.reconcile();
-
-    expect(scheduler.isRegistered(task.id)).toBe(false);
-    expect(store.getTask(task.id)?.status).toBe('paused');
-  });
-
-  // The third shape of the bug, and the quietest: `upsertFromFile` un-pauses a
-  // row whose file is back, so the cockpit called the task active while nothing
-  // was scheduled for it — and nothing ever would be until a restart.
-  //
-  // A file going away and coming back is what an ordinary SAVE looks like:
-  // editors write to a temp file and rename over the target, and the marketplace
-  // install transaction does the same. Re-parking there would un-approve every
-  // schedule a package ships on every package update, so an approval survives a
-  // round trip when the content key is unchanged (DOR-1485 review, I1).
-  it('the reconciler re-arms a returning file whose content never changed', async () => {
+  // A file going away and coming back is what an ordinary SAVE looks like
+  // (temp file + rename), so an approval survives a round trip when the
+  // content is unchanged (DOR-1485 review, I1), and only then.
+  it('the reconciler stops a gone file, re-arms it unchanged, and re-parks it changed', async () => {
     const filePath = await writeTask('comes-and-goes', '0 6 * * *');
     const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
     reconciler.addRoot(skillsRoot(skillsDir, 'global'));
-
     await reconciler.reconcile();
     const task = store.fileSync.getByFilePath(filePath)!;
     approve(task.id);
@@ -258,36 +178,15 @@ describe('a task file on disk drives the running scheduler', () => {
 
     await writeFile(filePath, skillFile('comes-and-goes', '0 6 * * *'), 'utf-8');
     await reconciler.reconcile();
-
     expect(store.getTask(task.id)?.status).toBe('active');
-    expect(scheduler.isRegistered(task.id)).toBe(true);
-  });
-
-  // The other half, and the reason the round trip above is safe: the grant is
-  // keyed on WHAT the schedule does, so a path that comes back carrying
-  // different work does not inherit the approval the old work had.
-  it('the reconciler re-parks a returning file whose content changed', async () => {
-    const filePath = await writeTask('swapped', '0 6 * * *');
-    const reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-    reconciler.addRoot(skillsRoot(skillsDir, 'global'));
-
-    await reconciler.reconcile();
-    const task = store.fileSync.getByFilePath(filePath)!;
-    approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
 
     await rm(filePath);
     await reconciler.reconcile();
-
-    // Same path, same slug, a different hour to fire at.
-    await writeFile(filePath, skillFile('swapped', '0 23 * * *'), 'utf-8');
+    await writeFile(filePath, skillFile('comes-and-goes', '0 23 * * *'), 'utf-8');
     await reconciler.reconcile();
-
     expect(store.getTask(task.id)?.status).toBe('pending_approval');
     expect(scheduler.isRegistered(task.id)).toBe(false);
-
-    approve(task.id);
-    expect(scheduler.isRegistered(task.id)).toBe(true);
   });
 
   // Containment, from the direction a real operator meets it: a typo in a file

@@ -93,36 +93,7 @@ describe('BridgeLifecycle', () => {
     harness = createRoomHarness({ agents: agentLookup });
   });
 
-  it('unbridge archives the room, stamps the row, and flips the binding off', async () => {
-    const room = harness.service.createBridgedRoom(bridgeDm());
-    const bindings = fakeBindings({
-      id: 'binding-ana',
-      adapterId: 'tg-main',
-      chatId: '555',
-      bridge: 'room',
-      roomId: room.id,
-    });
-
-    await lifecycle(bindings).unbridge('binding-ana');
-
-    expect(harness.store.getRoom(room.id)?.archived).toBe(true);
-    expect(harness.bridges.findBridgeByRoom(room.id)?.archivedAt).not.toBeNull();
-    expect(bindings.rows.get('binding-ana')).toMatchObject({ bridge: 'off', roomId: null });
-  });
-
-  it('unbridge is a no-op on a binding that is not bridged', async () => {
-    const bindings = fakeBindings({
-      id: 'binding-ana',
-      adapterId: 'tg-main',
-      chatId: '555',
-      bridge: 'off',
-      roomId: null,
-    });
-    await expect(lifecycle(bindings).unbridge('binding-ana')).resolves.toBeUndefined();
-    expect(bindings.update).not.toHaveBeenCalled();
-  });
-
-  it('rebridge un-archives the room and flips the binding back on', async () => {
+  it('unbridge archives the room and flips the binding off; rebridge reverses both on the same room', async () => {
     const room = harness.service.createBridgedRoom(bridgeDm());
     const bindings = fakeBindings({
       id: 'binding-ana',
@@ -134,6 +105,10 @@ describe('BridgeLifecycle', () => {
     const coordinator = lifecycle(bindings);
 
     await coordinator.unbridge('binding-ana');
+    expect(harness.store.getRoom(room.id)?.archived).toBe(true);
+    expect(harness.bridges.findBridgeByRoom(room.id)?.archivedAt).not.toBeNull();
+    expect(bindings.rows.get('binding-ana')).toMatchObject({ bridge: 'off', roomId: null });
+
     const back = await coordinator.rebridge({
       adapterId: 'tg-main',
       chatId: '555',

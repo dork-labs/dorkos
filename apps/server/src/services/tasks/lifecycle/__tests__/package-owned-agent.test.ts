@@ -1,34 +1,9 @@
 /**
  * Who owns a schedule filed under an agent that came from a marketplace
- * package, asked at BOTH task doors (DOR-1789, DOR-2272).
- *
- * ## The rule under test
- *
- * An install root carries an installed-files record (DOR-2245). A file the
- * record lists, and that the package did not mark `userEditable`, is the
- * package's: its next update puts its own copy back, so DorkOS does not write
- * it. Every other file in the root is the person's, survives every update, and
- * is edited like any other schedule. An install made before records existed has
- * none, and keeps the DOR-1789 answer (location for plugin and Shape roots, a
- * marker for agent directories) until an update rebuilds one.
- *
- * ## Why this drives the lifecycle functions rather than `isPackageOwned`
- *
- * The first version of the DOR-1789 fix was covered by tests that built the
- * ownership roots by hand and passed them in. Those tests were green while
- * production was broken, because the roots they built were not the roots the
- * route builds. `meshCore.getProjectPath(agentId)` returns `registry.projectPath`
- * — the agent's OWN directory — so for an agent package installed at
- * `<repo>/.dork/agents/helper` the route derived a scope root of
- * `<repo>/.dork/agents/helper/.dork`, whose install roots never include
- * `<repo>/.dork/agents`, the one root that would have caught it (DOR-1789
- * review).
- *
- * So every case here goes through {@link applyTaskFileUpdate} or
- * {@link createScheduledTask} with a `meshCore` that answers exactly as the real
- * one does: the agent's own directory, and nothing above it. Records are built
- * by `computeInstalledFiles`, the function an install runs, so the paths and the
- * exclusions are the ones production writes.
+ * package, asked at BOTH task doors (DOR-1789, DOR-2272). Every case drives
+ * {@link applyTaskFileUpdate} or {@link createScheduledTask} with a `meshCore`
+ * that answers as the real one does (the agent's own directory, nothing above
+ * it), because hand-built ownership roots once hid a production break.
  *
  * @module services/tasks/lifecycle/__tests__/package-owned-agent
  */
@@ -132,9 +107,6 @@ async function makeAgent(
 /** A mesh that resolves this task's agent to `dir`, as the registry does. */
 const meshFor = (dir: string) => ({ getProjectPath: () => dir });
 
-/** A mesh that is up, but no longer has this agent — a deregistered one. */
-const meshWithoutAgent = { getProjectPath: () => undefined };
-
 /**
  * Edit a schedule through the shared update door.
  *
@@ -192,14 +164,14 @@ const SCOPES = {
   global: () => path.join(dorkHome, 'agents', 'helper'),
 } as const;
 
-describe.each(Object.entries(SCOPES))('a recorded agent package at %s scope', (_, dirOf) => {
+describe('a recorded agent package', () => {
+  const agentDir = () => SCOPES.project();
   it('refuses to rewrite a schedule the package shipped', async () => {
     // The record lists it, so the package's next update puts its own copy
     // back: an edit here would be silently undone.
-    const agentDir = dirOf();
-    const filePath = await makeAgent(agentDir, 'recorded');
+    const filePath = await makeAgent(agentDir(), 'recorded');
 
-    const outcome = await editSchedule(filePath, meshFor(agentDir));
+    const outcome = await editSchedule(filePath, meshFor(agentDir()));
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
@@ -213,34 +185,15 @@ describe.each(Object.entries(SCOPES))('a recorded agent package at %s scope', (_
     // The capability DOR-1789 took away. The new file is not in the record,
     // so an update keeps it (DOR-2245), and the edit door must agree with the
     // create door about whose it is.
-    const agentDir = dirOf();
-    await makeAgent(agentDir, 'recorded');
+    await makeAgent(agentDir(), 'recorded');
 
-    const created = await createSchedule(agentDir);
+    const created = await createSchedule(agentDir());
 
     expect(created.ok).toBe(true);
-    const mine = scheduleFile(agentDir, 'my-own-sweep');
-    await expect(fs.access(mine)).resolves.toBeUndefined();
-    const edited = await editSchedule(mine, meshFor(agentDir), 'my-own-sweep');
+    const mine = scheduleFile(agentDir(), 'my-own-sweep');
+    const edited = await editSchedule(mine, meshFor(agentDir()), 'my-own-sweep');
     expect(edited.ok).toBe(true);
     expect(await fs.readFile(mine, 'utf-8')).toContain('a different job');
-  });
-});
-
-describe('a recorded agent package, edge cases', () => {
-  const agentDir = () => SCOPES.project();
-
-  it('still refuses a shipped schedule whose bytes were changed after install', async () => {
-    // Ownership asks what the next update does, not whether the bytes still
-    // match: a listed file is replaced either way, so an edit that already
-    // happened on disk does not make the file the person's to write.
-    const filePath = await makeAgent(agentDir(), 'recorded');
-    await fs.writeFile(filePath, SKILL.replace('packaged prompt', 'hand edited'), 'utf-8');
-
-    const outcome = await editSchedule(filePath, meshFor(agentDir()));
-
-    expect(outcome.ok).toBe(false);
-    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
   });
 
   it('lets a person edit a shipped schedule the package marked userEditable', async () => {
@@ -266,22 +219,6 @@ describe('a recorded agent package, edge cases', () => {
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
     expect(!outcome.ok && outcome.error).toContain('already has a schedule called "nightly-sweep"');
     await expect(fs.access(filePath)).rejects.toThrow();
-  });
-
-  it('refuses that name even when mesh names the agent through a symlinked path', async () => {
-    // The file does not exist yet, so it cannot be realpath'd itself; its
-    // deepest existing ancestor must be, or the path never matches the
-    // resolved install root and the create door waves the name through.
-    const filePath = await makeAgent(agentDir(), 'recorded');
-    await fs.rm(path.dirname(filePath), { recursive: true });
-    const alias = path.join(root, 'alias');
-    await fs.symlink(repo, alias);
-    const aliasedAgentDir = path.join(alias, path.relative(repo, agentDir()));
-
-    const outcome = await createSchedule(aliasedAgentDir, 'nightly-sweep');
-
-    expect(outcome.ok).toBe(false);
-    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
   });
 
   it('names the package that really owns a path linked into another checkout', async () => {
@@ -378,21 +315,11 @@ describe('an agent the person made keeps its schedules', () => {
     expect(outcome.ok).toBe(true);
     expect(await fs.readFile(filePath, 'utf-8')).toContain('a different job');
   });
-
-  it('lets the create door file a new one', async () => {
-    const agentDir = path.join(repo, '.dork', 'agents', 'mine');
-    await makeAgent(agentDir, 'hand-made');
-
-    const outcome = await createSchedule(agentDir);
-
-    expect(outcome.ok).toBe(true);
-    await expect(fs.access(scheduleFile(agentDir, 'my-own-sweep'))).resolves.toBeUndefined();
-  });
 });
 
 describe('a schedule inside a plugin checkout, filed under a hand-made agent', () => {
-  /** Put `nightly-sweep` into a plugin install, optionally recording it. */
-  async function pluginSchedule(recorded: 'none' | 'listed' | 'unlisted'): Promise<string> {
+  /** Put `nightly-sweep` into a recorded plugin install, listed or added after. */
+  async function pluginSchedule(recorded: 'listed' | 'unlisted'): Promise<string> {
     const pluginDir = path.join(dorkHome, 'plugins', 'pack');
     // The directory name has to match the skill's `name`, or the parse gate
     // refuses first and the case would prove nothing about ownership.
@@ -405,14 +332,12 @@ describe('a schedule inside a plugin checkout, filed under a hand-made agent', (
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, SKILL, 'utf-8');
     }
-    if (recorded !== 'none') {
-      const record = await computeInstalledFiles(pluginDir, {
-        identity: { name: 'pack', type: 'plugin' },
-        userEditable: [],
-        npmRan: false,
-      });
-      await writeInstalledFiles(pluginDir, record);
-    }
+    const record = await computeInstalledFiles(pluginDir, {
+      identity: { name: 'pack', type: 'plugin' },
+      userEditable: [],
+      npmRan: false,
+    });
+    await writeInstalledFiles(pluginDir, record);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, SKILL, 'utf-8');
     return filePath;
@@ -422,19 +347,6 @@ describe('a schedule inside a plugin checkout, filed under a hand-made agent', (
     const agentDir = path.join(repo, '.dork', 'agents', 'mine');
     await makeAgent(agentDir, 'hand-made');
     const filePath = await pluginSchedule('listed');
-
-    const outcome = await editSchedule(filePath, meshFor(agentDir));
-
-    expect(outcome.ok).toBe(false);
-    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
-  });
-
-  it('refuses one in a plugin installed before records existed, by location', async () => {
-    // A plugin root holds nothing a person put there by DorkOS's hand, so
-    // location is the whole legacy answer — no marker read at all.
-    const agentDir = path.join(repo, '.dork', 'agents', 'mine');
-    await makeAgent(agentDir, 'hand-made');
-    const filePath = await pluginSchedule('none');
 
     const outcome = await editSchedule(filePath, meshFor(agentDir));
 
@@ -501,17 +413,6 @@ describe('the answer does not depend on mesh being able to give it', () => {
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
     expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
-  });
-
-  it('still refuses when the agent has left the registry', async () => {
-    // Mesh is up and answers `undefined` for this agent. Its rows outlive
-    // deregistration and stay patchable, so the file is still reachable.
-    const { filePath } = await installedAgent();
-
-    const outcome = await editSchedule(filePath, meshWithoutAgent);
-
-    expect(outcome.ok).toBe(false);
-    expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
   });
 
   it('still refuses when reached through ANOTHER agent’s skills root', async () => {

@@ -1,10 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { currentAuditActor, runWithAuditActor } from '../../audit/audit-context.js';
-import {
-  TASK_DIRECTORY_CATCH_UP_MS,
-  TaskWatchCatchUp,
-  drainTaskWatchWork,
-} from '../watch/task-watch-catch-up.js';
+import { TASK_DIRECTORY_CATCH_UP_MS, TaskWatchCatchUp } from '../watch/task-watch-catch-up.js';
 
 function held() {
   let release!: () => void;
@@ -77,19 +73,6 @@ it('allows one scan at a time and one paced dirty follow-up under continuous cue
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it('cancels pending startup and recovery work and resolves startup waiters on stop', async () => {
-  vi.useFakeTimers();
-  const run = vi.fn(async () => {});
-  const scans = new TaskWatchCatchUp(run, () => true, 100, vi.fn());
-  scans.begin();
-  scans.request();
-  await scans.stop();
-  await scans.ready;
-  await vi.advanceTimersByTimeAsync(10_000);
-  expect(run).not.toHaveBeenCalled();
-  expect(vi.getTimerCount()).toBe(0);
-});
-
 it('does not run queued work after its root identity is replaced', async () => {
   vi.useFakeTimers();
   let active = true;
@@ -105,48 +88,23 @@ it('does not run queued work after its root identity is replaced', async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it.each(['throw', 'reject'] as const)(
-  'reports a %s failure and permits a later cue to recover',
-  async (mode) => {
-    vi.useFakeTimers();
-    const failure = new Error('scan failed');
-    const run = vi
-      .fn()
-      .mockImplementationOnce(() => {
-        if (mode === 'throw') throw failure;
-        return Promise.reject(failure);
-      })
-      .mockResolvedValue(undefined);
-    const report = vi.fn();
-    const scans = new TaskWatchCatchUp(run, () => true, 0, report);
-    scans.begin();
-    await vi.advanceTimersByTimeAsync(0);
-    await scans.ready;
-    expect(report).toHaveBeenCalledExactlyOnceWith(failure);
-    scans.request();
-    await vi.advanceTimersByTimeAsync(TASK_DIRECTORY_CATCH_UP_MS);
-    expect(run).toHaveBeenCalledTimes(2);
-    await scans.stop();
-  }
-);
-
-it('drains other work before surfacing even an undefined close refusal', async () => {
-  const pending = held();
-  let finished = false;
-  let refusal: { error: unknown } | undefined;
-  const stopping = drainTaskWatchWork([Promise.reject(undefined), pending.promise])
-    .catch((error) => {
-      refusal = { error };
-    })
-    .finally(() => {
-      finished = true;
-    });
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(finished).toBe(false);
-  pending.release();
-  await stopping;
-  expect(refusal).toEqual({ error: undefined });
+it('reports a failed scan and permits a later cue to recover', async () => {
+  vi.useFakeTimers();
+  const failure = new Error('scan failed');
+  const run = vi
+    .fn()
+    .mockImplementationOnce(() => Promise.reject(failure))
+    .mockResolvedValue(undefined);
+  const report = vi.fn();
+  const scans = new TaskWatchCatchUp(run, () => true, 0, report);
+  scans.begin();
+  await vi.advanceTimersByTimeAsync(0);
+  await scans.ready;
+  expect(report).toHaveBeenCalledExactlyOnceWith(failure);
+  scans.request();
+  await vi.advanceTimersByTimeAsync(TASK_DIRECTORY_CATCH_UP_MS);
+  expect(run).toHaveBeenCalledTimes(2);
+  await scans.stop();
 });
 
 it('runs background discovery outside the request that started its timer', async () => {

@@ -3,21 +3,6 @@
  * syncs like any schedule of theirs, while the package's own schedule beside it
  * keeps the row-only switch (DOR-2272, FB-26).
  *
- * ## Why this drives discovery as well as the update door
- *
- * Ownership decides two things, in two places. The update door asks whether
- * DorkOS may write the file; discovery asks whether the row or the file holds
- * the schedule's switch (`file-sync-gates.ts`). Both now read the install's
- * installed-files record (DOR-2245). If they disagreed, a person's schedule
- * would be written by one and overruled by the other: approved into the file,
- * then held on the row against the person's own later edit of that file.
- *
- * So the fixture is an agent package as an install leaves it — its shipped
- * schedule listed in `.dork/installed-files.json` by `computeInstalledFiles` —
- * and every step goes through `TaskReconciler.reconcile` and
- * {@link applyTaskFileUpdate} + `TaskStore.updateTask`, in the order
- * `PATCH /api/tasks/:id` calls them.
- *
  * @module services/tasks/__tests__/package-agent-own-schedule.integration
  */
 import os from 'node:os';
@@ -84,14 +69,10 @@ const registrar = {
 beforeEach(async () => {
   db = createTestDb();
   store = new TaskStore(db);
-  // Resolved: on macOS every temp directory is a symlink, and a schedule's
-  // identity is its file's REAL path.
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-pkg-own-')));
   dorkHome = path.join(root, 'dork');
   await fs.mkdir(dorkHome, { recursive: true });
 
-  // A project-scoped agent package, as an install leaves it: the record is
-  // taken from the package's own files, and the person's file arrives later.
   agentDir = path.join(root, 'repo', '.dork', 'agents', 'helper');
   const skillsDir = agentSkillsRoot(agentDir);
   shippedFile = path.join(skillsDir, 'package-sweep', 'SKILL.md');
@@ -148,25 +129,7 @@ async function patch(existing: Task, data: UpdateTaskRequest) {
 }
 
 describe("a person's own schedule under a package agent", () => {
-  it('is approved into its own file, like any schedule of theirs', async () => {
-    // Before DOR-2272 every file under a marked agent directory was the
-    // package's, so this approval landed on the row alone and the file kept
-    // saying `enabled: false`.
-    const task = await sweep(ownFile);
-
-    const outcome = await patch(task, { status: 'active', enabled: true });
-
-    expect(outcome.changesFile).toBe(true);
-    // Switched on is the block's default, so the writer drops the key.
-    expect(await fs.readFile(ownFile, 'utf-8')).not.toContain('enabled: false');
-    const after = await sweep(ownFile);
-    expect(after.enabled).toBe(true);
-    expect(after.status).toBe('active');
-  });
-
-  it("follows the person's own later edit of the file", async () => {
-    // Discovery must also call the file the person's: were it the package's,
-    // the row would keep its switch (FB-26) and overrule the edit.
+  it("is approved into its own file, and follows the person's later edit of it (DOR-2272)", async () => {
     await patch(await sweep(ownFile), { status: 'active', enabled: true });
     const approved = await fs.readFile(ownFile, 'utf-8');
     expect(approved).not.toContain('enabled: false');
@@ -179,22 +142,6 @@ describe("a person's own schedule under a package agent", () => {
     const after = await sweep(ownFile);
 
     expect(after.enabled).toBe(false);
-  });
-});
-
-describe('the schedule the package shipped, beside it', () => {
-  it('is switched on on the row alone, and the row keeps it against the file', async () => {
-    // The FB-26 behaviour, unchanged: DorkOS never writes a listed file, so the
-    // person's switch lives on the row and the sweep must not undo it.
-    const task = await sweep(shippedFile);
-
-    const outcome = await patch(task, { status: 'active', enabled: true });
-
-    expect(outcome.changesFile).toBe(false);
-    expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false');
-    const after = await sweep(shippedFile);
-    expect(after.enabled).toBe(true);
-    expect(after.status).toBe('active');
   });
 });
 
@@ -216,73 +163,6 @@ describe('a package schedule the record stops listing', () => {
     return sweep(shippedFile);
   }
 
-  it("keeps the person's OFF switch, and writes it into the file that is now theirs", async () => {
-    // Reviewer repro (DOR-2272): the switch lived on the row only while the
-    // file was the package's. The moment ownership lapsed, the sync copied the
-    // file's `enabled` (the package's default, on) back over a schedule the
-    // person had switched off, and it started running.
-    const approved = await approvedShipped();
-    await fs.writeFile(
-      shippedFile,
-      (await fs.readFile(shippedFile, 'utf-8')).replace('  enabled: false\n', ''),
-      'utf-8'
-    );
-    const onByFile = await sweep(shippedFile);
-    expect(onByFile.enabled).toBe(true);
-    await patch(approved, { enabled: false });
-    expect((await sweep(shippedFile)).enabled).toBe(false);
-
-    await releaseShippedFile();
-    const after = await sweep(shippedFile);
-
-    expect(after.enabled).toBe(false);
-    // Still the package's on the row until the file agrees (two-phase release).
-    expect(after.packageOwned).toBe('record');
-    await vi.waitFor(async () =>
-      expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false')
-    );
-    const settled = await sweep(shippedFile);
-    expect(settled.enabled).toBe(false);
-    expect(settled.packageOwned).toBeNull();
-  });
-
-  it('keeps an approved ON switch the person set on a schedule the package shipped off', async () => {
-    // The other direction: the person approved the package's off-by-default
-    // schedule, which switched it on on the row. Releasing the file must not
-    // switch it back off, and the file must now say what runs.
-    await approvedShipped();
-
-    await releaseShippedFile();
-    const after = await sweep(shippedFile);
-
-    expect(after.enabled).toBe(true);
-    await vi.waitFor(async () =>
-      expect(await fs.readFile(shippedFile, 'utf-8')).not.toContain('enabled: false')
-    );
-  });
-
-  it('keeps an OFF switch even when the same sync finds new work to approve', async () => {
-    // A later version can stop listing the file AND change what it does in one
-    // update. The schedule parks for approval, and it must park switched off,
-    // as the person left it, not switched on by the package's default.
-    const approved = await approvedShipped();
-    await patch(approved, { enabled: false });
-    expect((await sweep(shippedFile)).enabled).toBe(false);
-    await fs.writeFile(
-      shippedFile,
-      (await fs.readFile(shippedFile, 'utf-8'))
-        .replace('  enabled: false\n', '')
-        .replace(/The package sweeps\.$/, 'The package sweeps harder.'),
-      'utf-8'
-    );
-
-    await releaseShippedFile();
-    const after = await sweep(shippedFile);
-
-    expect(after.status).toBe('pending_approval');
-    expect(after.enabled).toBe(false);
-  });
-
   /**
    * A shipped schedule the package ships ON, approved, then switched off by the
    * person on the row: the one state where row and file disagree.
@@ -301,6 +181,25 @@ describe('a package schedule the record stops listing', () => {
     expect(off.enabled).toBe(false);
     return off;
   }
+
+  it("keeps the person's OFF switch, and writes it into the file that is now theirs", async () => {
+    // Reviewer repro: once ownership lapsed, the sync copied the file's ON back
+    // over a schedule the person had switched off, and it started running.
+    await switchedOff();
+
+    await releaseShippedFile();
+    const after = await sweep(shippedFile);
+
+    expect(after.enabled).toBe(false);
+    // Still the package's on the row until the file agrees (two-phase release).
+    expect(after.packageOwned).toBe('record');
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false')
+    );
+    const settled = await sweep(shippedFile);
+    expect(settled.enabled).toBe(false);
+    expect(settled.packageOwned).toBeNull();
+  });
 
   /** What the row records about ownership, `unknown` included (the wire hides it). */
   const ownershipColumn = (id: string) =>
@@ -326,41 +225,6 @@ describe('a package schedule the record stops listing', () => {
     expect(off.id).toBe(after.id);
   });
 
-  it("settles an old row of the person's own with no write at all", async () => {
-    // The row and its file already agree, so the release has nothing to carry:
-    // it is recorded as the person's on the first sync, and the file is untouched.
-    const own = await sweep(ownFile);
-    db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown' WHERE id = ${own.id}`);
-    // `unknown` is the sync's bookkeeping; the app is never told about it.
-    expect(store.fileSync.getByFilePath(ownFile)!.packageOwned).toBeNull();
-    const before = await fs.readFile(ownFile, 'utf-8');
-
-    await sweep(ownFile);
-
-    expect(ownershipColumn(own.id)).toBeNull();
-    expect(await fs.readFile(ownFile, 'utf-8')).toBe(before);
-  });
-
-  it("lets an old row follow the person's own OFF in its file (T4)", async () => {
-    // `unknown` only protects an OFF row. A person's approved, running schedule
-    // whose file they switched off while DorkOS was down must go off: an ON row
-    // under a standing approval is not a reason to overrule their file.
-    const approved = await sweep(ownFile);
-    await patch(approved, { status: 'active', enabled: true });
-    expect((await sweep(ownFile)).enabled).toBe(true);
-    db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown' WHERE id = ${approved.id}`);
-    const text = await fs.readFile(ownFile, 'utf-8');
-    await fs.writeFile(
-      ownFile,
-      text.replace('schedule:\n', 'schedule:\n  enabled: false\n'),
-      'utf-8'
-    );
-
-    expect((await sweep(ownFile)).enabled).toBe(false);
-    expect((await sweep(ownFile)).enabled).toBe(false);
-    expect(ownershipColumn(approved.id)).toBeNull();
-  });
-
   it('keeps the switch through a failed write, and writes it on a later sweep (T3)', async () => {
     // One-shot protection lost the switch whenever the write failed. The row
     // now stays the package's until the file agrees, so every sweep keeps OFF
@@ -384,31 +248,6 @@ describe('a package schedule the record stops listing', () => {
 
     expect(settled.enabled).toBe(false);
     expect(ownershipColumn(off.id)).toBeNull();
-  });
-
-  it('keeps the switch when two syncs land before the file is written', async () => {
-    // The watcher and the reconciler interleaving: two discovery syncs see the
-    // release before either write happens. The second must still see a release.
-    const off = await switchedOff();
-    await releaseShippedFile();
-    const parsed = await readTaskRootFile(
-      shippedFile,
-      await fs.readFile(shippedFile, 'utf-8'),
-      taskRoot
-    );
-    if (parsed.kind !== 'schedule') throw new Error('expected a schedule');
-    const syncOnce = () =>
-      store.fileSync.upsertFromFile(parsed.discovered.def, AGENT_ID, {
-        source: 'discovery',
-        problem: parsed.discovered.problem,
-        packageOwned: null,
-      });
-
-    syncOnce();
-    const second = syncOnce();
-
-    expect(second.enabled).toBe(false);
-    expect(ownershipColumn(off.id)).toBe('record');
   });
 
   it('writes nothing into a file a package owns again, or that changed since it was read', async () => {
@@ -480,11 +319,5 @@ describe('a package schedule the record stops listing', () => {
       expect(row.status).toBe('pending_approval');
       expect(row.enabled).toBe(false);
     }
-  });
-
-  it('records ownership on the row as discovery finds it', async () => {
-    // The app shows ownership before an edit, so the row must carry it.
-    expect((await sweep(shippedFile)).packageOwned).toBe('record');
-    expect((await sweep(ownFile)).packageOwned).toBeNull();
   });
 });

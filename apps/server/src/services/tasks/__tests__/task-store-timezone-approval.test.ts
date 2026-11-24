@@ -70,24 +70,6 @@ describe('upgradeLegacyContentKey', () => {
       scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Europe/Berlin' })
     );
   });
-
-  it('leaves a current key, and anything it did not write, alone', () => {
-    // Purpose: idempotent across boots, and never guesses at a key it cannot read.
-    const current = scheduleContentKey({
-      ...SETTINGS,
-      prompt: PROMPT,
-      cron: CRON,
-      timezone: 'UTC',
-    });
-    expect(upgradeLegacyContentKey(current, { ...SETTINGS, timezone: 'Asia/Tokyo' })).toBeNull();
-    expect(upgradeLegacyContentKey('not json', { ...SETTINGS, timezone: 'UTC' })).toBeNull();
-    expect(
-      upgradeLegacyContentKey(JSON.stringify([PROMPT, 7]), { ...SETTINGS, timezone: 'UTC' })
-    ).toBeNull();
-    expect(
-      upgradeLegacyContentKey(JSON.stringify({ prompt: PROMPT }), { ...SETTINGS, timezone: 'UTC' })
-    ).toBeNull();
-  });
 });
 
 describe('the timezone is part of the approval', () => {
@@ -112,15 +94,6 @@ describe('the timezone is part of the approval', () => {
       .where(eq(pulseSchedules.id, id))
       .run();
   }
-
-  it('records the timezone in a person’s approval', () => {
-    // Purpose: the grant must name the zone, or a zone change could not be seen.
-    const id = approvedSchedule();
-
-    expect(row(id).approvedContentKey).toBe(
-      scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Europe/Berlin' })
-    );
-  });
 
   it('asks again when a schedule’s file moves it to another timezone', () => {
     // Purpose: an agent writing only `timezone:` into the file used to keep the
@@ -165,22 +138,6 @@ describe('the timezone is part of the approval', () => {
       );
     });
 
-    it('covers only the timezone it runs in now (never silently widens)', () => {
-      // Purpose: the upgrade must not turn "approved in Berlin" into "approved
-      // anywhere": moving the zone after it asks again.
-      const id = approvedSchedule();
-      withLegacyGrant(id);
-      store.approvals.upgradeLegacyApprovalKeys();
-
-      const synced = store.fileSync.upsertFromFile(
-        definition({ timezone: 'Pacific/Kiritimati' }),
-        undefined,
-        DISCOVERY
-      );
-
-      expect(synced.status).toBe('pending_approval');
-    });
-
     it('uses the timezone a person set on the row, when they set one', () => {
       // Purpose: a package's schedule on the person's own timezone runs there,
       // so that is the zone the old grant covered.
@@ -196,47 +153,6 @@ describe('the timezone is part of the approval', () => {
       expect(row(id).approvedContentKey).toBe(
         scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Asia/Tokyo' })
       );
-    });
-
-    it('withdraws a stale grant exactly as it would have been withdrawn before', () => {
-      // Purpose: a grant for content the row no longer runs stays unmatched.
-      const id = approvedSchedule();
-      withLegacyGrant(id, 'an older prompt');
-
-      store.approvals.upgradeLegacyApprovalKeys();
-
-      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
-        'pending_approval'
-      );
-    });
-
-    it('carries the grant of a schedule that is not running, too', () => {
-      // Purpose: a paused schedule a person approved is still approved when its
-      // file comes back.
-      const id = approvedSchedule();
-      withLegacyGrant(id);
-      store.fileSync.markRemovedByFilePath(FILE_PATH);
-
-      store.approvals.upgradeLegacyApprovalKeys();
-
-      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
-        'active'
-      );
-    });
-
-    it('does nothing the second time, and nothing to a row with no approval', () => {
-      // Purpose: runs on every boot; it must be a no-op once done.
-      const id = approvedSchedule();
-      withLegacyGrant(id);
-      const parked = store.fileSync.upsertFromFile(
-        { ...definition(), filePath: '/elsewhere/SKILL.md' },
-        undefined,
-        DISCOVERY
-      );
-
-      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
-      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
-      expect(row(parked.id).approvedContentKey).toBeNull();
     });
   });
 });

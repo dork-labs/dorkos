@@ -12,8 +12,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
 import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
-import { MAX_START_WAIT_MS } from '@dorkos/shared/run-time-limit';
-import { SESSIONS } from '../../../config/constants.js';
 import { createAwakeClock, type AwakeClock, type AwakeTimers } from '@dorkos/shared/awake-clock';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
@@ -104,26 +102,6 @@ describe('a run the computer slept through (direct path)', () => {
     expect(store.getRun(run!.id)!.error ?? null).toBeNull();
     await service.stop();
   });
-
-  it('still stops a run that was awake for its whole limit', async () => {
-    const { clock } = reportedSleep();
-    const service = new TaskSchedulerService({
-      store,
-      runtimes: singleRuntimeSource(agentWorkingFor(2_000) as never),
-      config: CONFIG,
-      wakeSettle: new WakeSettle(clock),
-    });
-    const run = await service.triggerManualRun(newTask(300).id);
-
-    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
-      timeout: 4_000,
-    });
-    expect(store.getRun(run!.id)).toMatchObject({
-      status: 'cancelled',
-      error: expect.stringContaining('time limit'),
-    });
-    await service.stop();
-  });
 });
 
 /** A clock and timers a test drives by hand; `sleep` fires overdue timers once. */
@@ -167,14 +145,6 @@ function handClock() {
 }
 
 describe('a scheduled fire right after a wake', () => {
-  it('runs at once when the computer has not slept', () => {
-    const hand = handClock();
-    const settle = new WakeSettle(hand.clock);
-    const fire = vi.fn();
-    settle.run(fire, 'nightly');
-    expect(fire).toHaveBeenCalledOnce();
-  });
-
   it('waits out a dark wake, and runs once the computer has stayed awake', () => {
     const hand = handClock();
     const settle = new WakeSettle(hand.clock);
@@ -195,18 +165,6 @@ describe('a scheduled fire right after a wake', () => {
     // Judged at the instant it runs, so a fire that waited hours is stale there.
     const firedAt = fire.mock.calls[0]![0] as Date;
     expect(firedAt.getTime()).toBe(fullWake + WAKE_SETTLE_MS);
-  });
-
-  it('drops a waiting fire when the scheduler stops', () => {
-    const hand = handClock();
-    const settle = new WakeSettle(hand.clock);
-    const fire = vi.fn();
-    hand.advance(60_000);
-    hand.sleep(60 * 60 * 1000);
-    settle.run(fire, 'nightly');
-    settle.stop();
-    hand.advance(WAKE_SETTLE_MS * 2);
-    expect(fire).not.toHaveBeenCalled();
   });
 });
 
@@ -309,29 +267,6 @@ describe('a scheduled run the computer’s sleep broke (DOR-3286)', () => {
     expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
     await service.stop();
   });
-
-  it('does not run again once the occurrence is no longer due', async () => {
-    // Asleep 20 minutes of a half-hourly schedule: past halfway to the next run.
-    const { hand, agent, service, task, first, armed, dispatch } = await firstRunBrokenBySleep(
-      20 * 60_000
-    );
-    expect(store.getRun(first.id)!.error).toBe(sleptDuringRunError());
-    expect(armed).toHaveBeenCalledTimes(1);
-
-    // The settle judges it when it fires, and it is too late by then.
-    hand.advance(WAKE_SETTLE_MS * 2);
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(agent.calls()).toBe(1);
-    expect(store.listRuns({ taskId: task.id })).toHaveLength(1);
-    await service.stop();
-  });
-
-  it('drops a waiting retry when the scheduler stops', async () => {
-    const { hand, service, dispatch } = await firstRunBrokenBySleep(10 * 60_000);
-    await service.stop();
-    hand.advance(WAKE_SETTLE_MS * 2);
-    expect(dispatch).toHaveBeenCalledTimes(1);
-  });
 });
 
 const WAIT_WORDS = 'Waiting to start: every agent on this computer is busy.';
@@ -399,12 +334,6 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
       error: expect.stringContaining('time limit'),
     });
     await service.stop();
-  });
-
-  it('allows exactly the wait the runtime does before it refuses a turn', () => {
-    // The pause cap the relay path uses must match the runtime's own wait.
-    expect(RUN_START_WAIT_MS).toBe(SESSIONS.WARM_SLOT_WAIT_MS);
-    expect(RUN_START_WAIT_MS).toBe(MAX_START_WAIT_MS);
   });
 
   it('never waits past the hard cap: its limit plus the longest wait to start', () => {

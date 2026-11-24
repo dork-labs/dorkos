@@ -1,175 +1,121 @@
 /**
- * Integration guard: binding-router → per-runtime subject dispatch.
- *
- * Proves that the subject shape emitted by BindingRouter (new runtime-scoped
- * `relay.agent.<runtimeType>.<sessionId>`) round-trips through the shared
- * `parseAgentSubject` helper to the right adapter. Uses lightweight fake
- * RelayAdapter instances so the test stays focused on the routing contract,
- * not on the full Claude-Code / test-mode runtime surfaces.
- *
- * This test lives alongside `binding-router.test.ts` (which covers subject
- * shape in isolation) — here we verify that the shape the router emits is
- * actually matched by the `AdapterRegistry.getBySubject` prefix matcher.
+ * The subject BindingRouter emits (`relay.agent.<runtimeType>.<sessionId>`)
+ * reaches the right adapter through `AdapterRegistry.getBySubject`, whose
+ * longest-prefix match must not depend on registration order.
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, type Mock } from 'vitest';
 import type { RelayAdapter } from '@dorkos/relay';
-import { AdapterRegistry, extractSessionIdFromSubject } from '@dorkos/relay';
-import {
-  BindingRouter,
-  type RelayCoreLike,
-  type AgentSessionCreator,
-  type RuntimeTypeResolver,
-} from '../binding-router.js';
+import type { PermissionMode } from '@dorkos/shared/schemas';
+import { AdapterRegistry } from '@dorkos/relay';
+import { BindingRouter } from '../binding-router.js';
 import type { BindingStore } from '../binding-store.js';
-import type { AdapterMeshCoreLike } from '../adapter-manager.js';
-import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 vi.mock('node:fs/promises');
 
-interface FakeAdapter extends RelayAdapter {
-  readonly delivered: Array<{ subject: string; sessionId: string | null }>;
-}
+const CC_ID = 'cc-session-uuid-0000-0000-000000000001';
+const TM_ID = 'tm-session-uuid-0000-0000-000000000002';
 
-function createFakeAdapter(id: string, subjectPrefix: string | string[]): FakeAdapter {
-  const delivered: Array<{ subject: string; sessionId: string | null }> = [];
-  const adapter: FakeAdapter = {
+/** An adapter that records each subject delivered to it. */
+function fakeAdapter(id: string, subjectPrefix: string[]) {
+  const delivered: string[] = [];
+  const adapter = {
     id,
-    subjectPrefix: Array.isArray(subjectPrefix) ? subjectPrefix : [subjectPrefix],
+    subjectPrefix,
     displayName: id,
-    delivered,
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-    getStatus: vi.fn().mockReturnValue({
+    start: vi.fn(),
+    stop: vi.fn(),
+    getStatus: vi.fn(() => ({
       state: 'connected',
       messageCount: { inbound: 0, outbound: 0 },
       errorCount: 0,
-    }),
+    })),
     deliver: vi.fn(async (subject: string) => {
-      delivered.push({ subject, sessionId: extractSessionIdFromSubject(subject) });
+      delivered.push(subject);
       return { success: true, durationMs: 0 };
     }),
-  } as unknown as FakeAdapter;
-  return adapter;
+  } as unknown as RelayAdapter;
+  return { adapter, delivered };
 }
 
 describe('runtime-neutral dispatch (binding-router + adapter-registry)', () => {
-  const CLAUDE_SESSION_ID = 'cc-session-uuid-0000-0000-000000000001';
-  const TESTMODE_SESSION_ID = 'tm-session-uuid-0000-0000-000000000002';
-
-  let router: BindingRouter;
-  let mockRelayCore: RelayCoreLike;
-  let mockAgentManager: AgentSessionCreator;
-  let mockMeshCore: AdapterMeshCoreLike;
-  let mockBindingStore: Partial<BindingStore>;
-  let mockRuntimeResolver: RuntimeTypeResolver;
-  let capturedHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
-  let registry: AdapterRegistry;
-  let claudeAdapter: FakeAdapter;
-  let testModeAdapter: FakeAdapter;
+  let claude: ReturnType<typeof fakeAdapter>;
+  let testMode: ReturnType<typeof fakeAdapter>;
+  let handler: (envelope: Record<string, unknown>) => Promise<void>;
+  let createSession: Mock<
+    (cwd: string, mode: PermissionMode, agentPath: string) => Promise<{ id: string }>
+  >;
+  let getSessionRuntimeType: Mock<(sessionId: string) => Promise<string>>;
 
   beforeEach(async () => {
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));
-    vi.mocked(mkdir).mockResolvedValue(undefined);
-    vi.mocked(writeFile).mockResolvedValue();
-    vi.mocked(rename).mockResolvedValue();
-
-    // Adapter registry is populated with two adapters: the test-mode wrapper
-    // is registered FIRST with the more-specific prefix so it wins over the
-    // claude-code adapter's legacy catch-all prefix (`relay.agent.`).
-    registry = new AdapterRegistry();
-    registry.setRelay({
-      publish: vi.fn().mockResolvedValue({ messageId: 'msg', deliveredTo: 0 }),
-      subscribe: vi.fn().mockReturnValue(vi.fn()),
-      onSignal: vi.fn().mockReturnValue(vi.fn()),
-    });
-    testModeAdapter = createFakeAdapter('test-mode', ['relay.agent.test-mode.']);
-    claudeAdapter = createFakeAdapter('claude-code', ['relay.agent.claude-code.', 'relay.agent.']);
-    // Registration order deliberately puts the catch-all prefix adapter FIRST.
-    // With longest-prefix-wins matching (see `AdapterRegistry.getBySubject`)
-    // this must still route `relay.agent.test-mode.*` to the test-mode adapter,
-    // because `'relay.agent.test-mode.'` is a longer prefix match than
-    // `'relay.agent.'`. If this ever regresses, the router becomes silently
-    // order-dependent.
-    await registry.register(claudeAdapter);
-    await registry.register(testModeAdapter);
-
-    capturedHandler = undefined;
-    mockRelayCore = {
-      publish: vi.fn(async (subject: string, _payload: unknown, _opts: unknown) => {
-        // Route the published subject through the registry, mirroring what
-        // the real RelayCore does. We do not exercise Maildir / endpoints
-        // here — this is a routing-contract test.
-        const adapter = registry.getBySubject(subject);
-        if (adapter) {
-          await adapter.deliver(
-            subject,
-            {
-              id: 'test',
-              subject,
-              from: 'test',
-              payload: {},
-              budget: {
-                hopCount: 0,
-                maxHops: 5,
-                ttl: Date.now() + 60000,
-                callBudgetRemaining: 10,
-                ancestorChain: [],
-              },
-              createdAt: new Date().toISOString(),
-            } as never,
-            undefined
-          );
-        }
-        return { messageId: 'msg', deliveredTo: adapter ? 1 : 0 };
-      }),
-      subscribe: vi.fn((_pattern: string, handler: unknown) => {
-        capturedHandler = handler as typeof capturedHandler;
-        return vi.fn();
-      }),
-    };
-
-    mockAgentManager = {
-      createSession: vi.fn().mockResolvedValue({ id: CLAUDE_SESSION_ID }),
-    };
-    mockMeshCore = {
-      getProjectPath: vi.fn().mockReturnValue('/agents/a'),
-    };
-    mockBindingStore = {
-      resolve: vi.fn().mockReturnValue({
-        id: 'bind-1',
-        adapterId: 'tg-bot',
-        agentId: 'agent-a',
-        sessionStrategy: 'per-chat',
-        permissionMode: 'acceptEdits',
-        label: '',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      }),
-    };
-    // Resolver returns different runtime types depending on which session
-    // the router asks about — simulates the consolidated DB lookup.
-    mockRuntimeResolver = {
-      getSessionRuntimeType: vi.fn(async (sessionId: string) => {
-        if (sessionId === TESTMODE_SESSION_ID) return 'test-mode';
-        return 'claude-code';
-      }),
-    };
-
-    router = new BindingRouter({
-      bindingStore: mockBindingStore as BindingStore,
-      relayCore: mockRelayCore,
-      agentManager: mockAgentManager,
-      meshCore: mockMeshCore,
+    const registry = new AdapterRegistry();
+    registry.setRelay({ publish: vi.fn(), subscribe: vi.fn(), onSignal: vi.fn() } as never);
+    claude = fakeAdapter('claude-code', ['relay.agent.claude-code.', 'relay.agent.']);
+    testMode = fakeAdapter('test-mode', ['relay.agent.test-mode.']);
+    // The catch-all prefix registers FIRST; the longer prefix must still win.
+    await registry.register(claude.adapter);
+    await registry.register(testMode.adapter);
+    createSession = vi.fn();
+    getSessionRuntimeType = vi.fn(async (id: string) =>
+      id === TM_ID ? 'test-mode' : 'claude-code'
+    );
+    const router = new BindingRouter({
+      bindingStore: {
+        resolve: () => ({
+          id: 'bind-1',
+          adapterId: 'tg-bot',
+          agentId: 'agent-a',
+          sessionStrategy: 'per-chat',
+        }),
+      } as unknown as BindingStore,
+      relayCore: {
+        publish: async (subject: string) => {
+          await registry.getBySubject(subject)?.deliver(subject, {} as never, undefined);
+          return { messageId: 'msg', deliveredTo: 1 };
+        },
+        subscribe: vi.fn((_pattern: string, h: unknown) => {
+          handler = h as typeof handler;
+          return vi.fn();
+        }),
+      },
+      agentManager: { createSession },
+      meshCore: { getProjectPath: () => '/agents/a' },
       relayDir: '/tmp/relay',
-      runtimeResolver: mockRuntimeResolver,
+      runtimeResolver: { getSessionRuntimeType },
     });
     await router.init();
   });
 
-  const makeEnvelope = (chatId: string) =>
-    ({
-      id: `msg-${chatId}`,
-      subject: `relay.human.telegram.tg-bot.${chatId}`,
+  it.each([
+    [
+      'a claude-code session to the claude-code adapter',
+      CC_ID,
+      false,
+      'claude',
+      `relay.agent.claude-code.${CC_ID}`,
+    ],
+    [
+      'a test-mode session to the test-mode adapter',
+      TM_ID,
+      false,
+      'testMode',
+      `relay.agent.test-mode.${TM_ID}`,
+    ],
+    // A resolver failure falls back to the legacy subject, kept on claude-code.
+    [
+      'a legacy fallback subject to the claude-code adapter',
+      CC_ID,
+      true,
+      'claude',
+      `relay.agent.${CC_ID}`,
+    ],
+  ] as const)('routes %s', async (_label, sessionId, resolverFails, winner, subject) => {
+    createSession.mockResolvedValue({ id: sessionId });
+    if (resolverFails) getSessionRuntimeType.mockRejectedValueOnce(new Error('db offline'));
+    await handler({
+      id: 'msg-1',
+      subject: 'relay.human.telegram.tg-bot.chat',
       payload: { text: 'hello' },
       from: 'tg',
       budget: {
@@ -180,43 +126,9 @@ describe('runtime-neutral dispatch (binding-router + adapter-registry)', () => {
         ancestorChain: [],
       },
       createdAt: '2026-01-01T00:00:00.000Z',
-    }) as unknown as Record<string, unknown>;
-
-  it('routes a claude-code session through the claude-code adapter', async () => {
-    vi.mocked(mockAgentManager.createSession).mockResolvedValue({ id: CLAUDE_SESSION_ID });
-    await capturedHandler!(makeEnvelope('chat-cc'));
-
-    expect(claudeAdapter.delivered).toHaveLength(1);
-    expect(claudeAdapter.delivered[0].subject).toBe(`relay.agent.claude-code.${CLAUDE_SESSION_ID}`);
-    expect(claudeAdapter.delivered[0].sessionId).toBe(CLAUDE_SESSION_ID);
-    expect(testModeAdapter.delivered).toHaveLength(0);
-  });
-
-  it('routes a test-mode session through the test-mode adapter', async () => {
-    vi.mocked(mockAgentManager.createSession).mockResolvedValue({ id: TESTMODE_SESSION_ID });
-    await capturedHandler!(makeEnvelope('chat-tm'));
-
-    expect(testModeAdapter.delivered).toHaveLength(1);
-    expect(testModeAdapter.delivered[0].subject).toBe(
-      `relay.agent.test-mode.${TESTMODE_SESSION_ID}`
-    );
-    expect(testModeAdapter.delivered[0].sessionId).toBe(TESTMODE_SESSION_ID);
-    expect(claudeAdapter.delivered).toHaveLength(0);
-  });
-
-  it('routes legacy (fallback) subjects through the claude-code adapter', async () => {
-    // Simulate a resolver-throw path: the router falls back to the legacy
-    // 3-part subject shape, which must still land on the claude-code adapter
-    // via its retained legacy prefix.
-    vi.mocked(mockRuntimeResolver.getSessionRuntimeType).mockRejectedValueOnce(
-      new Error('db offline')
-    );
-    vi.mocked(mockAgentManager.createSession).mockResolvedValue({ id: CLAUDE_SESSION_ID });
-    await capturedHandler!(makeEnvelope('chat-legacy'));
-
-    expect(claudeAdapter.delivered).toHaveLength(1);
-    expect(claudeAdapter.delivered[0].subject).toBe(`relay.agent.${CLAUDE_SESSION_ID}`);
-    expect(claudeAdapter.delivered[0].sessionId).toBe(CLAUDE_SESSION_ID);
-    expect(testModeAdapter.delivered).toHaveLength(0);
+    });
+    const [hit, miss] = winner === 'claude' ? [claude, testMode] : [testMode, claude];
+    expect(hit.delivered).toEqual([subject]);
+    expect(miss.delivered).toEqual([]);
   });
 });
