@@ -148,7 +148,15 @@ describe('WorkLinkStore', () => {
 
   it('has no way to change or remove an edge', () => {
     const methods = Object.getOwnPropertyNames(WorkLinkStore.prototype).sort();
-    expect(methods).toEqual(['constructor', 'from', 'list', 'record', 'resolveRekey', 'to']);
+    expect(methods).toEqual([
+      'constructor',
+      'firstRekeyFrom',
+      'from',
+      'list',
+      'record',
+      'resolveRekey',
+      'to',
+    ]);
   });
 
   it.each([
@@ -204,11 +212,31 @@ describe('WorkLinkStore', () => {
       expect(store.resolveRekey('id-0')).toBe(`id-${REKEY_MAX_DEPTH}`);
     });
 
-    it('takes the newest edge when one id was re-keyed twice', () => {
-      rekey('a', 'b');
+    it('refuses a second re-key of one id, and still resolves to the first', () => {
+      expect(rekey('a', 'b')).toMatchObject({ ok: true, created: true });
       now += 1000;
-      rekey('a', 'c');
-      expect(store.resolveRekey('a')).toBe('c');
+      expect(rekey('a', 'c')).toEqual({ ok: false, reason: 'already-rekeyed' });
+      expect(rekey('a', 'b')).toMatchObject({ ok: true, created: false });
+      expect(db.select().from(workLinks).all()).toHaveLength(1);
+      expect(store.resolveRekey('a')).toBe('b');
+    });
+
+    it('takes the oldest edge out of an id that has two, from before the refusal', () => {
+      rekey('a', 'b');
+      // A second edge written straight to the table, as a row from before
+      // `record` refused one would be.
+      db.insert(workLinks)
+        .values({
+          id: '01KJ5Z8Y3M2N4P6Q8R0S2T4V7Z',
+          fromRef: encodeWorkLinkRef(chat('c'))!,
+          toRef: encodeWorkLinkRef(chat('a'))!,
+          relation: 'rekeyed_from',
+          recordedAt: new Date(now + 1000).toISOString(),
+          recordingChatId: null,
+          source: 'server',
+        })
+        .run();
+      expect(store.resolveRekey('a')).toBe('b');
     });
 
     it('hands back an unknown or malformed id unchanged', () => {

@@ -18,13 +18,18 @@
  * - **A fork**: the fork's id is recorded `forked_from` its source chat
  *   ({@link recordChatFork}, called by `POST /api/sessions/:id/fork`).
  *
+ * One read site: the re-key edges are registered as the durable record
+ * `followChatRekey` asks once the in-memory redirect is gone
+ * (`session/turn-identity/follow-chat-rekey.ts`), so a `/r/` link holding a
+ * new chat's first id still opens it after a restart.
+ *
  * The store lives in this computer's SQLite store for now; its move to the
  * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
  * code reaches it only through hooks or events, so DOR-5139 is a store move,
  * not a rewrite. Nothing under `services/runtimes/` or `services/session/`
  * imports this domain (the `work-graph/stay-out` lint rule): the re-key
- * write registers itself on the session's hook, and the fork write is called
- * by the route, since a fork raises no event.
+ * write and read register themselves on the session's hooks, and the fork
+ * write is called by the route, since a fork raises no event.
  *
  * @module services/work-graph
  */
@@ -32,6 +37,7 @@ import type { Db } from '@dorkos/db';
 import { entityRef } from '@dorkos/shared/entity-ref';
 import { logger } from '../../lib/logger.js';
 import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js';
+import { registerDurableRekeyResolver } from '../session/turn-identity/follow-chat-rekey.js';
 import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
 
 export {
@@ -49,11 +55,14 @@ export { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
 
 let store: WorkLinkStore | null = null;
 let stopRekeyWrites: (() => void) | null = null;
+let stopRekeyReads: (() => void) | null = null;
 
 /**
- * Install the edge store over the database and start recording re-keys.
- * Called once at startup, before any runtime takes a turn. Installing again
- * replaces the store; the re-key participant is registered once.
+ * Install the edge store over the database, start recording re-keys, and
+ * answer `followChatRekey` from the recorded ones. Called once at startup,
+ * before any runtime takes a turn. Installing again replaces the store; the
+ * re-key participant and resolver are registered once and read the current
+ * store.
  *
  * @param db - The DorkOS database.
  * @returns The installed store.
@@ -61,13 +70,18 @@ let stopRekeyWrites: (() => void) | null = null;
 export function installWorkLinkStore(db: Db): WorkLinkStore {
   store = new WorkLinkStore({ db });
   stopRekeyWrites ??= onDurableSessionRekey((oldId, newId) => recordChatRekey(oldId, newId));
+  stopRekeyReads ??= registerDurableRekeyResolver(
+    (chatId) => store?.resolveRekey(chatId) ?? chatId
+  );
   return store;
 }
 
-/** Remove the installed store and stop recording re-keys. For tests. */
+/** Remove the installed store and stop recording and answering re-keys. For tests. */
 export function uninstallWorkLinkStore(): void {
   stopRekeyWrites?.();
   stopRekeyWrites = null;
+  stopRekeyReads?.();
+  stopRekeyReads = null;
   store = null;
 }
 
@@ -113,7 +127,9 @@ function recordChatLink(
 
 /**
  * Record that a chat's id `newId` replaced its older id `oldId` (ADR-0267), so
- * an old reference can be resolved after a restart. Never throws.
+ * an old reference can be resolved after a restart. A chat is re-keyed once,
+ * so a second re-key of `oldId` to a different id is refused and logged, and
+ * the first stands. Never throws.
  *
  * @param oldId - The id the chat had.
  * @param newId - The id it has now.

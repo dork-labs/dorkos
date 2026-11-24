@@ -1,7 +1,9 @@
 /**
  * The work graph's two write sites (DOR-4968): a chat's re-key (ADR-0267) and a
  * fork. Each records its edge, and neither fails its action when the record
- * cannot be written.
+ * cannot be written. And its one read site: `followChatRekey` answers an old
+ * chat id from the recorded re-key once a restart has cleared the in-memory
+ * redirect (DOR-5046).
  *
  * The re-key is driven through the real `createCanonicalRekey` and the real
  * projector registry, so the edge is proved to land where every caller's
@@ -10,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sql, workLinks, type Db } from '@dorkos/db';
+import { logger } from '../../../lib/logger.js';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import {
   createCanonicalRekey,
@@ -19,10 +22,12 @@ import {
   rekeyProjector,
 } from '../../session/index.js';
 import { onDurableSessionRekey } from '../../session/turn-identity/durable-rekey.js';
+import { followChatRekey } from '../../session/turn-identity/follow-chat-rekey.js';
 import {
   getWorkLinkStore,
   installWorkLinkStore,
   recordChatFork,
+  recordChatRekey,
   uninstallWorkLinkStore,
   WorkLinkStore,
 } from '../index.js';
@@ -123,6 +128,45 @@ describe('the re-key write site', () => {
     rekeyTurn(requestId, canonicalId);
     disposeProjector(canonicalId);
     expect(record).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the re-key read site', () => {
+  /** A re-keyed chat, then a restart: no projector, and a new store over the same database. */
+  function rekeyThenRestart(): { requestId: string; canonicalId: string } {
+    const turn = ids();
+    rekeyTurn(turn.requestId, turn.canonicalId);
+    disposeProjector(turn.canonicalId);
+    expect(peekProjector(turn.requestId)).toBeUndefined();
+    installWorkLinkStore(db);
+    return turn;
+  }
+
+  it('answers an old chat id with the new one after a restart', () => {
+    const { requestId, canonicalId } = rekeyThenRestart();
+    expect(followChatRekey(requestId)).toBe(canonicalId);
+    expect(followChatRekey(canonicalId)).toBe(canonicalId);
+  });
+
+  it('answers the id as given when the edges cannot be read', () => {
+    const { requestId } = rekeyThenRestart();
+    db.run(sql`DROP TABLE work_links`);
+    expect(followChatRekey(requestId)).toBe(requestId);
+  });
+
+  it('keeps the first re-key when the same old id is re-keyed again', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { requestId, canonicalId } = rekeyThenRestart();
+    const { canonicalId: otherId } = ids();
+    recordChatRekey(requestId, otherId);
+    expect(warn).toHaveBeenCalledWith('[work-graph] edge refused', {
+      relation: 'rekeyed_from',
+      oldId: requestId,
+      newId: otherId,
+      reason: 'already-rekeyed',
+    });
+    installWorkLinkStore(db);
+    expect(followChatRekey(requestId)).toBe(canonicalId);
   });
 });
 

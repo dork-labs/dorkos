@@ -12,6 +12,9 @@
  *   (`@dorkos/shared/entity-ref`), stored by `./work-link-ref`, and an edge
  *   carries no free text. A worktree is its folder name, never a path. A
  *   branch name is stored as given, so write sites must not pass private names.
+ * - **One re-key per id.** A chat's id is re-keyed once (ADR-0267), so the
+ *   first `rekeyed_from` edge out of an old id is the true one, and a second
+ *   one to a different new id is refused.
  * - **Not the audit trail and not the lock.** The audit trail records actions;
  *   this records their results. `work_claims` stays the exclusivity lock.
  *
@@ -25,7 +28,6 @@
 import {
   and,
   asc,
-  desc,
   eq,
   WORK_LINK_RELATIONS,
   WORK_LINK_SOURCE_MAX_LENGTH,
@@ -100,7 +102,8 @@ export type WorkLinkRefusal =
   | 'bad-kinds'
   | 'self-link'
   | 'bad-source'
-  | 'bad-recording-chat';
+  | 'bad-recording-chat'
+  | 'already-rekeyed';
 
 /** What {@link WorkLinkStore.record} came to. */
 export type WorkLinkRecordResult =
@@ -165,7 +168,9 @@ export class WorkLinkStore {
    * Record one edge. Both ends are checked against their kinds' grammars and
    * stored in their canonical spelling. An exact repeat (same `from`,
    * `relation` and `to`) records nothing and hands back the earlier edge, so a
-   * write site may call this as often as its action repeats.
+   * write site may call this as often as its action repeats. A `rekeyed_from`
+   * edge out of an old id that already has one, to a different new id, is
+   * refused as `already-rekeyed`: the first re-key is the true one.
    *
    * @param input - The edge.
    * @returns The stored edge, or why it was refused. Throws only when the
@@ -185,6 +190,10 @@ export class WorkLinkStore {
     const recordingChatId = input.recordingChatId ?? null;
     if (recordingChatId !== null && !isDorkId(recordingChatId))
       return { ok: false, reason: 'bad-recording-chat' };
+    if (input.relation === 'rekeyed_from') {
+      const first = this.firstRekeyFrom(toRef);
+      if (first !== undefined && first !== fromRef) return { ok: false, reason: 'already-rekeyed' };
+    }
 
     const inserted = this.db
       .insert(workLinks)
@@ -251,12 +260,14 @@ export class WorkLinkStore {
    * The id a chat is known by now, following `rekeyed_from` edges from an
    * older id to the newest one (ADR-0267: a new chat's first id gives way to
    * its runtime's). The edges outlive a restart, so an old id can be resolved
-   * after one, which the in-memory redirect cannot do. Nothing reads this in
-   * production yet; the `/r/` link resolver (DOR-5046) is its first reader.
+   * after one, which the in-memory redirect cannot do. Its reader is
+   * `followChatRekey`, through the resolver `installWorkLinkStore` registers,
+   * so a `/r/` link (DOR-5046) holding an old id still opens the chat.
    *
    * Bounded and cycle-safe: it follows at most {@link REKEY_MAX_DEPTH} steps
-   * and stops at the last id before any id would repeat. Where one id was
-   * re-keyed twice, the newest edge wins.
+   * and stops at the last id before any id would repeat. Each step takes the
+   * oldest edge out of an id: {@link record} refuses a second one, and a row
+   * written before it did is not the chat's true re-key.
    *
    * @param chatId - A chat id, current or retired.
    * @returns The current id; `chatId` itself when it was never re-keyed or is
@@ -269,18 +280,23 @@ export class WorkLinkStore {
     for (let step = 0; step < REKEY_MAX_DEPTH; step += 1) {
       const toRef = encodeWorkLinkRef({ kind: 'chat', id: current });
       if (toRef === null) return current;
-      const row = this.db
-        .select({ fromRef: workLinks.fromRef })
-        .from(workLinks)
-        .where(and(eq(workLinks.toRef, toRef), eq(workLinks.relation, 'rekeyed_from')))
-        .orderBy(desc(workLinks.recordedAt), desc(workLinks.id))
-        .get();
-      const next = row ? decodeWorkLinkRef(row.fromRef) : null;
+      const fromRef = this.firstRekeyFrom(toRef);
+      const next = fromRef === undefined ? null : decodeWorkLinkRef(fromRef);
       if (next === null || next.kind !== 'chat' || seen.has(next.id)) return current;
       seen.add(next.id);
       current = next.id;
     }
     return current;
+  }
+
+  /** The new id's stored reference on the oldest `rekeyed_from` edge out of `toRef`. */
+  private firstRekeyFrom(toRef: string): string | undefined {
+    return this.db
+      .select({ fromRef: workLinks.fromRef })
+      .from(workLinks)
+      .where(and(eq(workLinks.toRef, toRef), eq(workLinks.relation, 'rekeyed_from')))
+      .orderBy(asc(workLinks.recordedAt), asc(workLinks.id))
+      .get()?.fromRef;
   }
 
   private list(where: SQL | undefined): WorkLink[] {
