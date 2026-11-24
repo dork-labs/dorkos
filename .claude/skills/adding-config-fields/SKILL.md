@@ -31,7 +31,7 @@ DorkOS uses the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0)
 | `apps/server/src/services/core/config-migrations/`               | The `CONFIG_MIGRATIONS` table (`index.ts`) and the helpers its keys call, grouped by version range. Change this second. |
 | `contributing/configuration.md`                                  | User-facing settings reference. Update the table + narrative.                                                           |
 | `docs/getting-started/configuration.mdx`                         | External Fumadocs mirror of the same reference. Keep in sync.                                                           |
-| `apps/server/src/services/core/__tests__/config-manager.test.ts` | Migration + upgrade-path tests.                                                                                         |
+| `apps/server/src/services/core/__tests__/config-manager/` | Migration + upgrade-path tests, one file per topic.                                                                     |
 | `packages/cli/src/cli.ts`                                        | CLI flag wiring (only if the field needs a flag).                                                                       |
 
 ### `conf`'s migration model
@@ -250,7 +250,7 @@ The `check-docs-changed.sh` hook will remind you at session-stop via the `config
 
 ### 8. Add or update tests
 
-Edit `apps/server/src/services/core/__tests__/config-manager.test.ts`. Add an **upgrade-path test** that exercises the migration against a realistic stale-config blob:
+Add to the topic file in `apps/server/src/services/core/__tests__/config-manager/` (or a new `config-manager.<topic>.test.ts` there); `config-manager.test.ts` keeps only the DOR-339 and DOR-1222 guards. Add an **upgrade-path test** that exercises the migration against a realistic stale-config blob:
 
 ```typescript
 it('migrates pre-0.35.0 configs to include server.timeout', async () => {

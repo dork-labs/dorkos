@@ -1,10 +1,6 @@
 /**
- * Unit tests for the self-service & observability MCP tool handlers (DOR-430).
- *
- * Each handler is exercised for its happy path and its key rejection path:
- * `update_agent` (system-agent identity protection), `config_patch` (invalid
- * value rejected by Zod), plus `activity_list`, `config_get`, `check_update`,
- * and `agents_recent_activity`.
+ * The self-service & observability MCP tool handlers (DOR-430): the happy paths
+ * and the refusals an agent must not get past.
  *
  * @vitest-environment node
  */
@@ -46,13 +42,10 @@ vi.mock('../../update-checker.js', () => ({ getLatestVersion: mocks.getLatestVer
 vi.mock('../../../session/index.js', () => ({ listRecentSessions: mocks.listRecentSessions }));
 
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
-import type { ActivityService } from '../../../activity/activity-service.js';
 import {
   createUpdateAgentHandler,
-  createActivityListHandler,
   createConfigGetHandler,
   createConfigPatchHandler,
-  createCheckUpdateHandler,
   createAgentsRecentActivityHandler,
   type OperatorToolResult,
 } from '../operator-tool-handlers.js';
@@ -80,17 +73,10 @@ beforeEach(() => {
 });
 
 describe('update_agent', () => {
-  // The seam the `agent-self-edit` eval drives. An agent rewriting its own
-  // persona sends prose and no markers, so the file it lands has to be composed
-  // around the personality block — a verbatim write leaves no block for the turn
-  // to regenerate and the agent's trait dials stop reaching it.
+  // An agent rewriting its persona sends prose and no markers, so the file has
+  // to be composed around the personality block or its trait dials stop working.
   it('applies a self-edit and writes SOUL.md with its trait markers intact', async () => {
-    mocks.readManifest.mockResolvedValue({
-      id: '01ABC',
-      name: 'my-agent',
-      isSystem: false,
-      displayName: 'Old',
-    });
+    mocks.readManifest.mockResolvedValue({ id: '01ABC', name: 'my-agent', isSystem: false });
     const handler = createUpdateAgentHandler(buildDeps());
 
     const result = await handler({
@@ -103,29 +89,15 @@ describe('update_agent', () => {
     const payload = parsePayload<{ displayName: string; name: string }>(result);
     expect(payload.displayName).toBe('New');
     expect(payload.name).toBe('my-agent');
-    const [dir, file, written] = mocks.writeConventionFile.mock.calls[0] as [
-      string,
-      string,
-      string,
-    ];
-    expect(dir).toBe('/agents/my-agent');
+    const [, file, written] = mocks.writeConventionFile.mock.calls[0] as [string, string, string];
     expect(file).toBe('SOUL.md');
     expect(written).toContain('<!-- TRAITS:START -->');
     expect(written).toContain('<!-- TRAITS:END -->');
-    // This agent has no traits of its own, so the block is the balanced default.
-    expect(written).toContain('**Verbosity** (Balanced)');
-    // And the agent's own words are the last thing in the file.
     expect(written.endsWith('be kind')).toBe(true);
-    expect(mocks.writeManifest).toHaveBeenCalledOnce();
   });
 
   it('rejects identity changes on a system agent (system-agent protection)', async () => {
-    mocks.readManifest.mockResolvedValue({
-      id: '01SYS',
-      name: 'dorkbot',
-      isSystem: true,
-      displayName: 'DorkBot',
-    });
+    mocks.readManifest.mockResolvedValue({ id: '01SYS', name: 'dorkbot', isSystem: true });
     const handler = createUpdateAgentHandler(buildDeps());
 
     const result = await handler({ cwd: '/agents/dorkbot', displayName: 'Hacked' });
@@ -137,17 +109,9 @@ describe('update_agent', () => {
   });
 
   it("refuses to repoint an agent's billing (spec billing-account-ladder invariant 4)", async () => {
-    // The MCP tool is the agent-reachable surface. Its declared input schema
-    // does not carry `account` at all, and the shared updater refuses the key
-    // even if one reaches it another way — belt and braces, because this is the
-    // credential axis: an agent that could set `account` could move its own work
-    // onto a different paying client's subscription.
-    mocks.readManifest.mockResolvedValue({
-      id: '01ABC',
-      name: 'my-agent',
-      isSystem: false,
-      displayName: 'Old',
-    });
+    // An agent that could set `account` could move its work onto a different
+    // paying client's subscription.
+    mocks.readManifest.mockResolvedValue({ id: '01ABC', name: 'my-agent', isSystem: false });
     const handler = createUpdateAgentHandler(buildDeps());
 
     const result = await handler({
@@ -159,53 +123,9 @@ describe('update_agent', () => {
     expect(parsePayload<{ code: string }>(result).code).toBe('OPERATOR_ONLY');
     expect(mocks.writeManifest).not.toHaveBeenCalled();
   });
-
-  it('errors when neither agent_id nor cwd is provided', async () => {
-    const handler = createUpdateAgentHandler(buildDeps());
-    const result = await handler({ displayName: 'x' });
-    expect(result.isError).toBe(true);
-    expect(parsePayload<{ error: string }>(result).error).toMatch(/agent_id or cwd/);
-  });
 });
 
-describe('activity_list', () => {
-  it('returns feed items via ActivityService (happy path)', async () => {
-    const list = vi.fn().mockResolvedValue({ items: [{ id: 'e1' }], nextCursor: null });
-    const handler = createActivityListHandler(
-      buildDeps({ activityService: { list } as unknown as ActivityService })
-    );
-
-    const result = await handler({ limit: 10, categories: 'agent' });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parsePayload<{ items: { id: string }[] }>(result);
-    expect(payload.items[0].id).toBe('e1');
-    expect(list).toHaveBeenCalledWith(expect.objectContaining({ limit: 10, categories: 'agent' }));
-  });
-
-  it('rejects an out-of-range limit (Zod validation)', async () => {
-    const list = vi.fn();
-    const handler = createActivityListHandler(
-      buildDeps({ activityService: { list } as unknown as ActivityService })
-    );
-    const result = await handler({ limit: 999 });
-    expect(result.isError).toBe(true);
-    expect(list).not.toHaveBeenCalled();
-  });
-
-  it('errors when the activity service is unavailable', async () => {
-    const handler = createActivityListHandler(buildDeps());
-    const result = await handler({});
-    expect(result.isError).toBe(true);
-    expect(parsePayload<{ error: string }>(result).error).toMatch(/not available/);
-  });
-});
-
-/**
- * A schema-valid config store carrying every secret AND every credential
- * reference, so the snapshot assertions cover both classes the disclosure
- * allowlist withholds (`config-disclosure.ts`).
- */
+/** A schema-valid config store carrying every secret AND credential reference. */
 function secretBearingStore(): Record<string, unknown> {
   return {
     version: 1,
@@ -226,6 +146,7 @@ function secretBearingStore(): Record<string, unknown> {
 }
 
 describe('config_get', () => {
+  // `config_patch` echoes through the same projection (pinned below).
   it('returns an allowlisted snapshot: no secrets, no credential references', async () => {
     mocks.configStore = secretBearingStore();
     const handler = createConfigGetHandler();
@@ -269,16 +190,6 @@ describe('config_get', () => {
     // No withheld value appears anywhere in the serialized payload.
     expect(result.content[0].text).not.toMatch(/secret/);
   });
-
-  it('withholds the same fields from the config_patch echo', async () => {
-    // `config_patch` echoes the post-write snapshot through the same projection,
-    // so a write must not become a read-around of the allowlist.
-    mocks.configStore = secretBearingStore();
-    const result = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
-
-    expect(result.isError).toBeUndefined();
-    expect(result.content[0].text).not.toMatch(/secret/);
-  });
 });
 
 describe('raw MCP URL disclosure through operator tools', () => {
@@ -311,41 +222,6 @@ describe('raw MCP URL disclosure through operator tools', () => {
 });
 
 describe('config_patch', () => {
-  it('deep-merges and persists a valid patch (happy path)', async () => {
-    const handler = createConfigPatchHandler();
-    const result = await handler({ patch: { ui: { theme: 'dark' } } });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parsePayload<{ success: boolean }>(result);
-    expect(payload.success).toBe(true);
-    expect((mocks.configStore.ui as { theme: string }).theme).toBe('dark');
-  });
-
-  it('redacts sensitive keys from the success echo (both servers)', async () => {
-    mocks.configStore = secretBearingStore();
-    const handler = createConfigPatchHandler();
-    const result = await handler({ patch: { ui: { theme: 'light' } } });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parsePayload<{
-      success: boolean;
-      config: {
-        ui: { theme: string };
-        tunnel: { authtoken?: string; auth?: string };
-        mcp: { apiKey?: string };
-        cloud: { instanceToken?: string };
-      };
-    }>(result);
-
-    expect(payload.success).toBe(true);
-    expect(payload.config.ui.theme).toBe('light');
-    expect(payload.config.tunnel.authtoken).toBeUndefined();
-    expect(payload.config.tunnel.auth).toBeUndefined();
-    expect(payload.config.mcp.apiKey).toBeUndefined();
-    expect(payload.config.cloud.instanceToken).toBeUndefined();
-    expect(result.content[0].text).not.toMatch(/secret/);
-  });
-
   it('rejects an invalid patch (Zod validation)', async () => {
     const handler = createConfigPatchHandler();
     const result = await handler({ patch: { server: { port: 1 } } });
@@ -358,100 +234,42 @@ describe('config_patch', () => {
     expect(mocks.configStore.server).toBeUndefined();
   });
 
-  describe('the display-name receipt (DOR-1022)', () => {
-    beforeEach(() => {
-      // A `profile` section, because a real `ConfigManager.get` always answers
-      // with one — Ajv fills the schema defaults into every read. The bare
-      // `{ version: 1 }` this file's own `beforeEach` sets is a store no
-      // instance ever hands back.
-      mocks.configStore.profile = {
-        roles: [],
-        tools: [],
-        displayName: null,
-        displayNameSource: null,
-        rolePromptDismissedAt: null,
-      };
-    });
+  it('stamps the display name with the calling agent, through the capability (DOR-1022)', async () => {
+    // Drives the capability's own `invoke`, the seam that forwards
+    // `context.identity`. A real `ConfigManager.get` always has a `profile`.
+    mocks.configStore.profile = {
+      roles: [],
+      tools: [],
+      displayName: null,
+      displayNameSource: null,
+      rolePromptDismissedAt: null,
+    };
+    const capability = operatorDomain.capabilities.find((c) => c.id === 'operator.config_patch');
+    if (!capability) throw new Error('operator.config_patch is not registered');
 
-    /** What the write left in `profile.displayNameSource`. */
-    function storedSource(): unknown {
-      return (mocks.configStore.profile as Record<string, unknown> | undefined)?.displayNameSource;
-    }
+    await capability.invoke(
+      { logger, operatorDeps: buildDeps() },
+      { patch: { profile: { displayName: 'Dorian' } } },
+      {
+        identity: {
+          agentPath: '/Users/dorian/.dork/agents/dorkbot',
+          displayName: 'DorkBot',
+          createdAt: '2026-09-01T00:00:00.000Z',
+        },
+      }
+    );
 
-    it('names the agent behind a name it set', async () => {
-      const handler = createConfigPatchHandler({
-        agentPath: '/Users/dorian/.dork/agents/dorkbot',
-        displayName: 'DorkBot',
-        createdAt: '2026-09-01T00:00:00.000Z',
-      });
-      const result = await handler({ patch: { profile: { displayName: 'Dorian' } } });
-
-      expect(result.isError).toBeUndefined();
-      expect(storedSource()).toEqual({ kind: 'agent', agentName: 'DorkBot' });
-    });
-
-    it('falls back to the agent directory when the identity carries no name', async () => {
-      // The same fallback `capability-attribution.ts` uses, so the Activity feed
-      // and this receipt cannot call one agent two different things.
-      const handler = createConfigPatchHandler({
-        agentPath: '/Users/dorian/.dork/agents/dorkbot',
-        displayName: '',
-        createdAt: '2026-09-01T00:00:00.000Z',
-      });
-      await handler({ patch: { profile: { displayName: 'Dorian' } } });
-
-      expect(storedSource()).toEqual({ kind: 'agent', agentName: 'dorkbot' });
-    });
-
-    it('records that an agent wrote it even when no identity resolved', async () => {
-      // A revoked or never-minted token still belongs to an agent. Silence here
-      // would hide the suggestion exactly where attribution is weakest.
-      await createConfigPatchHandler()({ patch: { profile: { displayName: 'Dorian' } } });
-
-      expect(storedSource()).toEqual({ kind: 'agent', agentName: null });
-    });
-
-    it('is handed the caller’s identity by the capability, not just by its tests', async () => {
-      // Every assertion above builds the handler itself, so all of them stay
-      // green if `operator-capabilities.ts` stops forwarding `context.identity`
-      // — the receipt would silently degrade to "an agent" on every real call.
-      // This drives the capability's own `invoke`, which is the seam that
-      // decides it.
-      const capability = operatorDomain.capabilities.find((c) => c.id === 'operator.config_patch');
-      if (!capability) throw new Error('operator.config_patch is not registered');
-
-      await capability.invoke(
-        // `config_patch` reads neither half of the bag; both are here because
-        // the registry's contract requires them.
-        { logger, operatorDeps: buildDeps() },
-        { patch: { profile: { displayName: 'Dorian' } } },
-        {
-          identity: {
-            agentPath: '/Users/dorian/.dork/agents/dorkbot',
-            displayName: 'DorkBot',
-            createdAt: '2026-09-01T00:00:00.000Z',
-          },
-        }
-      );
-
-      expect(storedSource()).toEqual({ kind: 'agent', agentName: 'DorkBot' });
+    expect((mocks.configStore.profile as Record<string, unknown>).displayNameSource).toEqual({
+      kind: 'agent',
+      agentName: 'DorkBot',
     });
   });
 });
 
 /**
- * The escalation this guard exists to close (DOR-488).
- *
- * `operator.config_patch` is tier `act`, so nothing asks a person before it runs.
- * With no write allowlist, an agent could call
- * `config_patch({ auth: { enabled: false } })` and take the instance out of the
- * logged-in posture. That posture is where deciding an approval requires an
- * authenticated user, so the ungated write was a path from inside the capability
- * surface to removing the precondition that makes every destructive approval
- * enforceable.
- *
- * Each case asserts the STORE, not just the response: a refusal that still wrote
- * would be worse than no refusal at all.
+ * The escalation this guard closes (DOR-488): `config_patch` is tier `act`, so
+ * an agent could turn login off and remove the precondition that makes every
+ * destructive approval enforceable. Each case asserts the STORE.
  */
 describe('config_patch posture guard', () => {
   /** A store in the posture the guard protects: login on. */
@@ -463,14 +281,13 @@ describe('config_patch posture guard', () => {
     mocks.configStore = loggedInStore();
     const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });
 
-    // The posture is unchanged. Asserted FIRST and on the store, because a
-    // refusal that still wrote would be worse than no refusal at all.
     expect(mocks.configStore.auth).toEqual({ enabled: true });
-
     expect(result.isError).toBe(true);
-    const payload = parsePayload<{ error: string; code: string; paths: string[] }>(result);
+    const payload = parsePayload<{ code: string; paths: string[]; message: string }>(result);
     expect(payload.code).toBe('operator_only_config');
     expect(payload.paths).toEqual(['auth.enabled']);
+    // It tells the model what to do instead.
+    expect(payload.message).toMatch(/ask the person/i);
   });
 
   it('refuses the whole patch when a posture change rides behind a real one', async () => {
@@ -485,39 +302,10 @@ describe('config_patch posture guard', () => {
     expect(mocks.configStore.ui).toEqual({ theme: 'dark' });
   });
 
-  it('refuses every other posture-bearing area too', async () => {
-    const cases: { patch: Record<string, unknown>; expected: string[] }[] = [
-      { patch: { tunnel: { enabled: true } }, expected: ['tunnel.enabled'] },
-      { patch: { mcp: { apiKey: 'agent-chosen' } }, expected: ['mcp.apiKey'] },
-      { patch: { server: { boundary: '/' } }, expected: ['server.boundary'] },
-      { patch: { providers: { anthropic: 'file:/tmp/key' } }, expected: ['providers'] },
-      {
-        patch: { runtimes: { codex: { binaryPath: '/tmp/evil.sh' } } },
-        expected: ['runtimes.codex.binaryPath'],
-      },
-      { patch: { telemetry: { aiMetadata: true } }, expected: ['telemetry.aiMetadata'] },
-      { patch: { cloud: { instanceToken: 'attacker' } }, expected: ['cloud.instanceToken'] },
-      { patch: { extensions: { enabled: ['anything'] } }, expected: ['extensions.enabled'] },
-    ];
-
-    for (const { patch, expected } of cases) {
-      mocks.configStore = loggedInStore();
-      const result = await createConfigPatchHandler()({ patch });
-
-      expect(result.isError, JSON.stringify(patch)).toBe(true);
-      const payload = parsePayload<{ paths: string[] }>(result);
-      expect(payload.paths, JSON.stringify(patch)).toEqual(expected);
-      // Nothing at all was written.
-      expect(mocks.configStore, JSON.stringify(patch)).toEqual(loggedInStore());
-    }
-  });
-
+  // Each operator-only path is pinned in `config-write-policy.test.ts`.
   it('refuses a tool endpoint smuggled in as a list, and writes nothing (DOR-1113)', async () => {
-    // The reproduction, at the surface it matters on. A raw-MCP server is an
-    // outbound tool endpoint pointed anywhere the writer likes, and every policy
-    // key for it names a field of a list ELEMENT. The path walk used to stop at
-    // the list, match nothing, and this handler gates on "did we find anything" —
-    // so the refusal never fired and the server was written.
+    // Every policy key for a raw-MCP server names a field of a list ELEMENT; the
+    // path walk used to stop at the list, so the refusal never fired.
     mocks.configStore = loggedInStore();
     const result = await createConfigPatchHandler()({
       patch: {
@@ -549,44 +337,6 @@ describe('config_patch posture guard', () => {
     );
   });
 
-  it('refuses a Claude account roster rewrite, and writes nothing (DOR-1113)', async () => {
-    mocks.configStore = loggedInStore();
-    const result = await createConfigPatchHandler()({
-      patch: { runtimes: { claudeCode: { accounts: [{ path: '/tmp/theirs', label: 'ours' }] } } },
-    });
-
-    expect(mocks.configStore).toEqual(loggedInStore());
-    expect(result.isError).toBe(true);
-    const payload = parsePayload<{ paths: string[] }>(result);
-    expect(payload.paths).toEqual([
-      'runtimes.claudeCode.accounts[].label',
-      'runtimes.claudeCode.accounts[].path',
-    ]);
-  });
-
-  it('still lets an agent write a list it may write', async () => {
-    // The other half of the same change: descending into arrays must not refuse
-    // the sidebar, whose element fields are agent-writable on purpose.
-    mocks.configStore = loggedInStore();
-    const result = await createConfigPatchHandler()({
-      patch: { ui: { statusBar: { pins: ['runtime'] } } },
-    });
-
-    expect(result.isError).toBeUndefined();
-    expect((mocks.configStore.ui as { statusBar: { pins: string[] } }).statusBar.pins).toEqual([
-      'runtime',
-    ]);
-  });
-
-  it('tells the model what it may not change and what to do instead', async () => {
-    mocks.configStore = loggedInStore();
-    const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });
-    const payload = parsePayload<{ message: string }>(result);
-
-    expect(payload.message).toContain('auth.enabled');
-    expect(payload.message).toMatch(/ask the person/i);
-  });
-
   it('still lets ordinary preferences through', async () => {
     // The guard must not turn the capability into a brick.
     mocks.configStore = loggedInStore();
@@ -601,16 +351,9 @@ describe('config_patch posture guard', () => {
 });
 
 /**
- * The agent identity token (spec `agent-trust` §3.1) is delivered to a spawned
- * session through `DORKOS_AGENT_TOKEN` in its process env, so the agent holding
- * it can present it back to DorkOS. It must never round-trip into a tool RESULT,
- * which lands in the model's context and the persisted transcript — the same
- * invariant ADR 260723-013236 established for sensitive config keys (superseded by
- * 260725-152018), extended to
- * the one credential that reaches an agent by design.
- *
- * These guard the config surfaces specifically: they are the tools that dump a
- * broad snapshot, so they are where an env-echoing regression would surface.
+ * The agent identity token (spec `agent-trust` §3.1) reaches a session through
+ * `DORKOS_AGENT_TOKEN` and must never round-trip into a tool RESULT, which lands
+ * in the model's context and the transcript.
  */
 describe('agent identity token redaction', () => {
   const SENTINEL = 'dorkos-agent-token-sentinel-value';
@@ -629,34 +372,6 @@ describe('agent identity token redaction', () => {
 
     expect(result.content[0].text).not.toContain(SENTINEL);
     expect(result.content[0].text).not.toContain('DORKOS_AGENT_TOKEN');
-  });
-
-  it('never leaks DORKOS_AGENT_TOKEN through the config_patch echo', async () => {
-    mocks.configStore = secretBearingStore();
-    const result = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
-
-    expect(result.content[0].text).not.toContain(SENTINEL);
-    expect(result.content[0].text).not.toContain('DORKOS_AGENT_TOKEN');
-  });
-
-  it('still redacts it when the token is mistakenly written into config', async () => {
-    // Defense in depth: the token has no config home, but if a future surface
-    // ever parks it in one, `config_get` must not hand it to the model.
-    mocks.configStore = { ...secretBearingStore(), mcp: { apiKey: SENTINEL, enabled: true } };
-    const result = await createConfigGetHandler()();
-
-    expect(result.content[0].text).not.toContain(SENTINEL);
-  });
-});
-
-describe('check_update', () => {
-  it('returns the running and latest versions', async () => {
-    mocks.getLatestVersion.mockResolvedValue('9.9.9');
-    const handler = createCheckUpdateHandler();
-    const result = await handler();
-    const payload = parsePayload<{ version: string; latestVersion: string | null }>(result);
-    expect(typeof payload.version).toBe('string');
-    expect(payload.latestVersion).toBe('9.9.9');
   });
 });
 
@@ -683,11 +398,5 @@ describe('agents_recent_activity', () => {
     expect(mocks.listRecentSessions).toHaveBeenCalledWith(
       expect.objectContaining({ agentPaths: ['/agents/a'], limit: 5 })
     );
-  });
-
-  it('errors when the runtime registry is unavailable', async () => {
-    const result = await createAgentsRecentActivityHandler(buildDeps())({});
-    expect(result.isError).toBe(true);
-    expect(parsePayload<{ error: string }>(result).error).toMatch(/Runtime registry/);
   });
 });

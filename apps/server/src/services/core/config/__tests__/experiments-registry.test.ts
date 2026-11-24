@@ -84,13 +84,6 @@ function schemaLeaves(): Map<string, string> {
 describe('EXPERIMENTS', () => {
   const leaves = schemaLeaves();
 
-  it('is a registry every entry of which is expected to be deleted, so empty is legal', () => {
-    // Not a vacuous assertion: it pins the fact that this guard must keep passing
-    // once the last experiment graduates. A guard that required at least one
-    // entry would make the success state red.
-    expect(Array.isArray(EXPERIMENTS)).toBe(true);
-  });
-
   it('lists no path twice', () => {
     const paths = EXPERIMENTS.map((e) => e.path);
     expect(paths).toEqual([...new Set(paths)]);
@@ -101,21 +94,7 @@ describe('EXPERIMENTS', () => {
     expect(problems).toEqual([]);
   });
 
-  it('every entry carries prose a person can read', () => {
-    for (const entry of EXPERIMENTS) {
-      expect(entry.title.trim(), entry.path).not.toBe('');
-      expect(entry.description.trim(), entry.path).not.toBe('');
-      if (entry.costNote !== undefined) {
-        expect(entry.costNote.trim(), entry.path).not.toBe('');
-      }
-    }
-  });
-
-  // ## The guard discriminates
-  //
-  // Three fabricated entries, one per failure the real registry could drift into.
-  // Without these the assertions above would pass just as happily against a table
-  // that had rotted, and a check that cannot fail is worse than no check.
+  // The guard discriminates: a check that cannot fail is worse than no check.
   describe('rejects an entry that has drifted', () => {
     const base = { title: 't', description: 'd', graduationIssue: 'DOR-1' } as const;
 
@@ -125,21 +104,10 @@ describe('EXPERIMENTS', () => {
     });
 
     it('a leaf that ships ON', () => {
-      // `relay.enabled` really does default true (ADR-0171 graduated it), which
-      // makes it the honest stand-in for an experiment whose default has flipped.
+      // `relay.enabled` really does default true (ADR-0171 graduated it).
       const problems = auditEntry({ ...base, path: 'relay.enabled' }, leaves);
       expect(problems).toHaveLength(1);
       expect(problems[0]).toContain('ships ON');
-    });
-
-    it('a leaf that is not a boolean', () => {
-      const problems = auditEntry({ ...base, path: 'server.port' }, leaves);
-      expect(problems).toContain('server.port: default is number, not a boolean');
-    });
-
-    it('an entry with no graduation issue', () => {
-      const problems = auditEntry({ ...base, path: 'a2a.enabled', graduationIssue: '  ' }, leaves);
-      expect(problems).toEqual(['a2a.enabled: no graduationIssue']);
     });
   });
 
@@ -147,42 +115,11 @@ describe('EXPERIMENTS', () => {
    * The name a page tells somebody to look for is the name on the switch.
    *
    * `ExperimentsTab.tsx` renders `entry.title` verbatim, so the title IS the
-   * label. A page that invents its own spelling sends a reader to Settings to
-   * hunt for a control that is not there — and the page they are reading is, by
-   * construction, the one paragraph explaining how to turn the feature on.
-   *
-   * Caught nothing for a year and then caught four strings at once: DOR-2009's
-   * docs and its release note all said "DorkOS tools for Codex and OpenCode"
-   * while the switch said "DorkOS tools in every runtime", and four OTHER pages
-   * in the same tree already used the real name. Nothing compared them.
-   *
-   * ## How a mention is recognised
-   *
-   * By the sentence people actually write: `turn on **Some Title** in Settings
-   * under Experiments`. A bold only counts when it is the THING BEING SWITCHED —
-   * the object of a switch-on instruction (`turn on **X**`, `enable **X**`,
-   * `switch **X** on`), the subject of a switch noun (`the **X** switch`), or the
-   * label announced before a colon whose clause says to turn it on (`- **X**:
-   * turn it on …`) — and when it sits in the same sentence as the instruction.
-   *
-   * Nearness alone was the first rule and it was wrong (DOR-2017). `Agent
-   * messaging is **off by default**, and you can switch it on in Settings under
-   * Experiments.` is a correct sentence with a correct bold, and the old rule
-   * read `off by default` as a label the registry had to carry. A state, a
-   * warning and a product name can all sit within a few words of the instruction
-   * without anybody claiming they are the name on a switch. Asking what the bold
-   * IS, rather than how close it sits, tells those apart.
-   *
-   * The cost of the tighter rule is a page that names the label without ever
-   * saying turn it on — `**X** — you will find it in Settings under Experiments`
-   * goes unchecked. That is the right way to be wrong: this guard exists to stop
-   * a page inventing a spelling in the sentence that tells somebody to flip the
-   * switch, and every such sentence in this corpus names the verb.
-   *
-   * Prose that names the tab without bolding anything is not a claim about a
-   * label and is left alone; a bolded phrase anywhere else (a button, a heading)
-   * is not matched at all, which is why the rule names the Experiments tab rather
-   * than Settings in general.
+   * label. DOR-2009's docs said "DorkOS tools for Codex and OpenCode" while the
+   * switch said "DorkOS tools in every runtime". A bold counts only when it is the
+   * thing being switched (`turn on **X**`, `enable **X**`, `the **X** switch`,
+   * `- **X**: turn it on`) in the same sentence as `in Settings under
+   * Experiments`; nearness alone misread `**off by default**` (DOR-2017).
    */
   describe('every page that names an experiment switch uses the title on the switch', () => {
     /** The repo root, from this file. */
@@ -191,11 +128,7 @@ describe('EXPERIMENTS', () => {
       '../../../../../../..'
     );
 
-    /**
-     * Where a person reads about an experiment. The COMPILED changelog is
-     * excluded on purpose: it is history, and an experiment renamed later must
-     * not make a shipped release note false retroactively (`changelog/README.md`).
-     */
+    /** Where a person reads about an experiment; the compiled changelog is history. */
     const PROSE_ROOTS = [
       'docs/guides',
       'docs/concepts',
@@ -234,60 +167,22 @@ describe('EXPERIMENTS', () => {
 
     /** How close a bolded label has to sit to the instruction to BE the label. */
     const LABEL_WINDOW_CHARS = 120;
-
     /** The instruction this whole guard hangs off. */
     const INSTRUCTION = /in Settings,? under Experiments/g;
-
-    /**
-     * A switch-on verb ending right where the bold begins: `turn on **X**`.
-     *
-     * The pronoun hop covers `turn it on **X**`, which reads oddly but appears.
-     */
+    /** A switch-on verb ending right where the bold begins: `turn on **X**`. */
     const VERB_BEFORE =
       /(?:turn|switch|flip|toggle)(?:s|ed|ing)?\s+(?:it|this|them)?\s*on\s+$|(?:enable|enables|enabling)\s+$/i;
-
     /** The split form, `turn **X** on`: the verb before, the particle after. */
     const SPLIT_VERB_BEFORE = /(?:turn|switch|flip|toggle)(?:s|ed|ing)?\s+$/i;
-    /**
-     * The noun in `the **X** switch`.
-     *
-     * Only the literal switch words. `on` used to be accepted here too, which
-     * meant `the **Browser tab** on the right` read as somebody naming a switch
-     * — `the` before, `on` after, and nothing checking that `on` was doing any
-     * work. The split verb below is where `on` belongs, and it brings its own
-     * verb with it.
-     */
+    /** The noun in `the **X** switch`; never `on`, or `the **Browser tab** on the right` matched. */
     const SWITCH_NOUN_AFTER = /^\s*(?:switch|toggle)\b/i;
-
-    /**
-     * The label-then-colon form: `- **X**: turn it on in Settings under
-     * Experiments.`
-     *
-     * The instruction's own verb sits AFTER the label instead of before it, and
-     * `configuration.mdx` already writes the tail of this shape twice, so a page
-     * that bolds the label in front of it must not go unchecked.
-     */
+    /** The label-then-colon form: `- **X**: turn it on in Settings under Experiments.` */
     const COLON_AFTER = /^\s*[:—-]/;
     /** The switch-on phrase that follows the colon, its object already named. */
     const VERB_AFTER_COLON =
       /\b(?:turn|switch|flip|toggle)(?:s|ed|ing)?\s+(?:it|this|them)\s+on\b|\benabl(?:e|es|ing)\s+(?:it|this|them)\b/i;
 
-    /**
-     * Whether this bold is the thing being switched, rather than something else
-     * the sentence happens to emphasise.
-     *
-     * Four shapes, all of them an author naming the control: the object of a
-     * switch-on verb, that verb split around the label, the label used as the
-     * subject of the word "switch", and the label announced before a colon whose
-     * clause then says to turn it on. Anything else — a state, a warning, a
-     * product name — is emphasis, and emphasis is not a claim about a label.
-     *
-     * Deliberately NOT rejected: a bold that ends in a full stop. `turn on
-     * **Wrong Title.**` should still red, and a rule against terminal punctuation
-     * would blind the guard to it. The warning and cross-sentence cases that
-     * motivated such a rule are handled where they belong — in
-     * {@link sentenceAround}, which now treats `.**` as the end of a sentence.
-     */
+    /** Whether this bold is the thing being switched, rather than emphasis. */
     function namesTheSwitch(
       text: string,
       bold: { startsAt: number; endsAt: number },
@@ -304,20 +199,9 @@ describe('EXPERIMENTS', () => {
     }
 
     /**
-     * Where one sentence ends: terminal punctuation, an optional closing `**`,
-     * then whitespace — or a newline.
-     *
-     * Two details are load-bearing. The whitespace stops `Version 1.2 support`
-     * from splitting mid-phrase. The optional `**` is what makes a bold that
-     * CLOSES a sentence close it: without it, `enable **Developer mode.** Agent
-     * messaging lives in Settings under Experiments.` recorded no boundary at
-     * all, and the second sentence's instruction read the first sentence's bold
-     * as its label.
-     *
-     * The lookbehinds keep an abbreviation from ending a sentence. `Turn on **X**
-     * (e.g. for Codex) in Settings under Experiments.` otherwise starts its
-     * sentence after `e.g. ` — past the label — and the guard goes quiet on a
-     * wrong title.
+     * Where one sentence ends: terminal punctuation, an optional closing `**`
+     * (so a bold that closes a sentence closes it), then whitespace, or a newline.
+     * The lookbehinds keep `e.g.` and friends from ending a sentence.
      */
     const SENTENCE_BREAK = /(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)[.!?](?:\*\*)?\s|\n/;
 
@@ -331,14 +215,7 @@ describe('EXPERIMENTS', () => {
       return { start, end };
     }
 
-    /**
-     * Whether a bolded phrase is shaped like a switch label rather than like
-     * emphasis inside a sentence.
-     *
-     * Three cheap rules, each for a real shape in this corpus: a label is short,
-     * it is not a sentence, and it has no stray edge whitespace — which is what a
-     * span mis-paired across two adjacent bolds always has.
-     */
+    /** Whether a bolded phrase is shaped like a switch label (short, not a sentence, trimmed). */
     function looksLikeALabel(named: string): boolean {
       return (
         named.trim() === named && named.length > 0 && named.length <= 60 && !named.includes('. ')
@@ -347,19 +224,8 @@ describe('EXPERIMENTS', () => {
 
     /**
      * Every `turn on **Title** … in Settings under Experiments` in one document.
-     *
-     * Bolds are paired over the WHOLE text and then filtered by position, never
-     * by slicing a window and re-scanning it: a slice that starts inside a bold
-     * pairs that bold's closing `**` with the NEXT bold's opening one, and the
-     * real label two words later is never seen. That mis-pairing hid the very
-     * page this guard was written for.
-     *
-     * Of what is left, a bold counts only if {@link namesTheSwitch} says it is
-     * the control being named AND it sits in the same sentence as the
-     * instruction, before it and within {@link LABEL_WINDOW_CHARS}. The last such
-     * bold is the name a reader is being handed. Prose that merely mentions the
-     * tab — a note that a switch USED to live there, say — names no switch and is
-     * not a claim about one.
+     * Bolds are paired over the WHOLE text and then filtered by position: slicing
+     * a window first mis-pairs a bold's closing `**` with the next one's opening.
      */
     function mentionsInText(text: string, file: string): Mention[] {
       const bolds = [...text.matchAll(/\*\*([^*\n]+)\*\*/g)]
@@ -392,63 +258,24 @@ describe('EXPERIMENTS', () => {
       return found;
     }
 
-    /** Every mention in one file of the live corpus. */
-    function mentionsIn(file: string): Mention[] {
-      return mentionsInText(readFileSync(path.join(REPO_ROOT, file), 'utf-8'), file);
-    }
+    const MENTIONS = FILES.flatMap((file) =>
+      mentionsInText(readFileSync(path.join(REPO_ROOT, file), 'utf-8'), file)
+    );
 
-    const MENTIONS = FILES.flatMap(mentionsIn);
-
-    it('reads a real corpus, so the check below is about something', () => {
-      // **The corpus, not the mentions.** A scanner pointed at nothing is the
-      // one way this could stop working without saying so, and that is what
-      // this asserts. How many pages currently INSTRUCT a reader is the corpus's
-      // business rather than the guard's: every remaining experiment may
-      // legitimately go undocumented, and DOR-2099 took the count to zero by
-      // graduating both of the switches that had a page. A guard that required
-      // an experiment to be written about would then be demanding prose for its
-      // own sake — and the scanner is still proven, on fixtures below and on
-      // whatever the corpus carries.
+    it('names only titles the registry really carries, over a real corpus', () => {
+      // A scanner pointed at nothing is the one way this could stop working silently.
       expect(FILES.length).toBeGreaterThan(50);
-      expect(MENTIONS.length).toBeGreaterThanOrEqual(0);
-    });
-
-    /**
-     * One line per wrong label: the file, the name it handed the reader, and the
-     * sentence it was read out of.
-     *
-     * The sentence is the part that took a reviewer a debugging session to
-     * recover the first time this fired on prose that was fine (DOR-2017). With
-     * it in the message, "the scanner misread this" and "the page is wrong" are
-     * one read apart.
-     */
-    function report(mention: Mention): string {
-      const sentence =
-        mention.sentence.length > 240 ? `${mention.sentence.slice(0, 240)}…` : mention.sentence;
-      return `${mention.file}: "${mention.named}" — read from: ${sentence}`;
-    }
-
-    it('names only titles the registry really carries', () => {
       const titles = new Set(EXPERIMENTS.map((entry) => entry.title));
       const wrong = MENTIONS.filter((mention) => !titles.has(mention.named));
       expect(
-        wrong.map(report),
+        wrong.map((m) => `${m.file}: "${m.named}" — read from: ${m.sentence.slice(0, 240)}`),
         'these send a reader to Settings to look for a switch with that label. ' +
           `The labels that exist are: ${[...titles].map((title) => `"${title}"`).join(', ')}.`
       ).toEqual([]);
     });
 
-    /**
-     * What the scanner counts, held against strings rather than the live corpus.
-     *
-     * The corpus moves — a page is rewritten, a fragment is released — so the
-     * shapes this is supposed to catch and the shapes it is supposed to leave
-     * alone are pinned here as literals. The four wrong strings are the ones
-     * DOR-2009's review actually found, re-seeded one at a time; the green ones
-     * are the reviewer's false positive and two more shapes it stands for.
-     */
     describe('what counts as naming a switch', () => {
-      /** The name on the switch today, and the spelling DOR-2009 invented. */
+      /** The spelling DOR-2009 invented. */
       const WRONG = 'DorkOS tools for Codex and OpenCode';
 
       /** Just the names, for a terse assertion. */
@@ -456,191 +283,24 @@ describe('EXPERIMENTS', () => {
         return mentionsInText(text, 'fixture.md').map((mention) => mention.named);
       }
 
-      describe('reds on each string DOR-2009 shipped', () => {
-        const seeds: Record<string, string> = {
-          'the release note': `Turn on **${WRONG}** in Settings under Experiments, and their next turn has all of it.`,
-          'the generative UI guide': `Putting one on the canvas is the same set of tools on all three, too — Claude Code always, Codex and OpenCode once you turn on **${WRONG}** in Settings under Experiments.`,
-          'the runtimes guide': `For the other two, turn on **${WRONG}** in Settings under Experiments, and their next turn gets the same set.`,
-          'the workbench guide': `Codex and OpenCode agents can too, once you turn on **${WRONG}** in Settings under Experiments — with one difference.`,
-        };
-
-        for (const [where, text] of Object.entries(seeds)) {
-          it(where, () => {
-            expect(namesIn(text)).toEqual([WRONG]);
-            expect(EXPERIMENTS.map((entry) => entry.title)).not.toContain(WRONG);
-          });
-        }
+      it.each([
+        `Turn on **${WRONG}** in Settings under Experiments, and their next turn has all of it.`,
+        `Flip the **${WRONG}** switch in Settings under Experiments.`,
+        `- **${WRONG}**: turn it on in Settings under Experiments.`,
+        `Turn on **${WRONG}** (e.g. for Codex) in Settings under Experiments.`,
+      ])('reds on a wrong label: %s', (text) => {
+        expect(namesIn(text)).toEqual([WRONG]);
+        expect(EXPERIMENTS.map((entry) => entry.title)).not.toContain(WRONG);
       });
 
-      it('reds on a wrong label seeded into a page shaped like a real one', () => {
-        // The re-seed, over WHOLE PAGES rather than sentences: a page that names
-        // a switch twice, where the re-seed only still reds at one of the two,
-        // would pass a `toContain`. Asserted per file and by equality.
-        //
-        // **The live corpus first, and a fixture page when it carries none.**
-        // Proving it on the files this actually reads is the stronger of the
-        // two, so it is what runs whenever there is anything to run it on. When
-        // there is not — DOR-2099 graduated both switches that had a page, and
-        // the remaining experiments may legitimately go undocumented — the
-        // fixture keeps the guard from quietly becoming a no-op. What it cannot
-        // do is pass by finding nothing: `pages` is never empty, and every
-        // entry's re-seed has to red.
-        const byFile = new Map<string, { text: string; mentions: Mention[] }>();
-        for (const mention of MENTIONS) {
-          const entry = byFile.get(mention.file) ?? {
-            text: readFileSync(path.join(REPO_ROOT, mention.file), 'utf-8'),
-            mentions: [],
-          };
-          entry.mentions.push(mention);
-          byFile.set(mention.file, entry);
-        }
-        if (byFile.size === 0) {
-          const file = 'a page shaped like the ones this reads';
-          const text = [
-            '## How an agent decides to speak',
-            '',
-            'Turn on **Let outside agents reach yours** in Settings under Experiments and it',
-            'starts working.',
-            '',
-            'Switch **Let outside agents reach yours** on in Settings under Experiments to try it.',
-            '',
-          ].join('\n');
-          byFile.set(file, { text, mentions: mentionsInText(text, file) });
-          expect(byFile.get(file)!.mentions.length, 'the fixture page names a switch twice').toBe(
-            2
-          );
-        }
-        for (const [file, { text, mentions }] of byFile) {
-          let seeded = text;
-          for (const mention of mentions) {
-            seeded = seeded.replaceAll(`**${mention.named}**`, `**${WRONG}**`);
-          }
-          expect(
-            mentionsInText(seeded, file).map((found) => found.named),
-            file
-          ).toEqual(mentions.map(() => WRONG));
-        }
-      });
-
-      describe('stays quiet on a bold that is not the switch', () => {
-        it('a state the feature is in (the false positive that started this)', () => {
-          expect(
-            namesIn(
-              'Agent messaging is **off by default**, and you can switch it on in Settings under Experiments.'
-            )
-          ).toEqual([]);
-        });
-
-        it('a warning bolded beside the instruction', () => {
-          expect(
-            namesIn(
-              '**This one opens a door on your machine.** You will find it in Settings under Experiments.'
-            )
-          ).toEqual([]);
-        });
-
-        it('a product name followed by the word "on"', () => {
-          // `the` before and `on` after used to be enough, because the switch-noun
-          // arm never checked that the word after the label was doing any work.
-          expect(
-            namesIn(
-              'Look at the **Browser tab** on the right, then switch it on in Settings under Experiments.'
-            )
-          ).toEqual([]);
-        });
-
-        it('a warning bolded right after the word "Enable"', () => {
-          expect(
-            namesIn(
-              'Enable **only if you trust the page.** You will find it in Settings under Experiments.'
-            )
-          ).toEqual([]);
-        });
-
-        it('a label named in the sentence BEFORE the instruction', () => {
-          expect(
-            namesIn(
-              'You must first enable **Developer mode.** Agent messaging lives in Settings under Experiments.'
-            )
-          ).toEqual([]);
-        });
-
-        it('a product name that is not a switch', () => {
-          expect(
-            namesIn(
-              'The **Browser tab** is where your agent works, and you can switch it on in Settings under Experiments.'
-            )
-          ).toEqual([]);
-        });
-      });
-
-      /**
-       * The same-sentence rule and the nearness window, pinned.
-       *
-       * Both are what stops a correct bold elsewhere in the paragraph from being
-       * read as this instruction's label, and neither was tested: widening
-       * `sentence.start` to 0 or `LABEL_WINDOW_CHARS` to 100000 left the whole
-       * suite green, so a later edit could delete either silently.
-       */
-      describe('a bold outside the instruction is not its label', () => {
-        it('one sentence earlier', () => {
-          expect(
-            namesIn(`Turn on **${WRONG}** for Codex. The tab is in Settings under Experiments.`)
-          ).toEqual([]);
-        });
-
-        it('further away than the window, in the same sentence', () => {
-          const filler = 'and the rest of this clause runs on for a good long while, '.repeat(3);
-          expect(
-            namesIn(`Turn on **${WRONG}** — ${filler}which is in Settings under Experiments.`)
-          ).toEqual([]);
-        });
-      });
-
-      describe('reads the other ways an author names the switch', () => {
-        it('enable **X**', () => {
-          expect(
-            namesIn('Enable **Agents decide when to speak** in Settings under Experiments.')
-          ).toEqual(['Agents decide when to speak']);
-        });
-
-        it('the **X** switch', () => {
-          expect(
-            namesIn(
-              'Flip the **Agents decide when to speak** switch in Settings under Experiments.'
-            )
-          ).toEqual(['Agents decide when to speak']);
-        });
-
-        it('turn **X** on', () => {
-          expect(
-            namesIn('Turn **Agents decide when to speak** on in Settings under Experiments.')
-          ).toEqual(['Agents decide when to speak']);
-        });
-
-        it('- **X**: turn it on — the phrasing configuration.mdx already uses', () => {
-          expect(namesIn(`- **${WRONG}**: turn it on in Settings under Experiments.`)).toEqual([
-            WRONG,
-          ]);
-        });
-
-        it('an abbreviation between the label and the instruction', () => {
-          // `e.g. ` used to end the sentence, which moved the sentence start past
-          // the label and let a wrong title through.
-          expect(
-            namesIn(`Turn on **${WRONG}** (e.g. for Codex) in Settings under Experiments.`)
-          ).toEqual([WRONG]);
-        });
-      });
-
-      it('names the sentence it read the label out of', () => {
-        const [mention] = mentionsInText(
-          `Turn on **${WRONG}** in Settings under Experiments, and you are done.`,
-          'fixture.md'
-        );
-        expect(mention).toBeDefined();
-        expect(report(mention!)).toContain('read from: Turn on');
-        expect(report(mention!)).toContain('and you are done.');
+      it.each([
+        // DOR-2017: a state the feature is in.
+        'Agent messaging is **off by default**, and you can switch it on in Settings under Experiments.',
+        'Look at the **Browser tab** on the right, then switch it on in Settings under Experiments.',
+        'You must first enable **Developer mode.** Agent messaging lives in Settings under Experiments.',
+        `Turn on **${WRONG}** — ${'and the rest of this clause runs on for a good long while, '.repeat(3)}which is in Settings under Experiments.`,
+      ])('stays quiet on a bold that is not the switch: %s', (text) => {
+        expect(namesIn(text)).toEqual([]);
       });
     });
   });

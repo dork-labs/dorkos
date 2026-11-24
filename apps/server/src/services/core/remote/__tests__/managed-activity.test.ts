@@ -10,7 +10,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -38,9 +37,12 @@ vi.mock('../../auth/session-gate.js', async (importOriginal) => {
 });
 
 import { initConfigManager } from '../../config-manager.js';
-import { decideSessionGate } from '../../auth/session-gate.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
+import { tunnelManager } from '../../tunnel-manager.js';
 import type { RemoteEventBatch } from '../activity-outbox.js';
-import { ingressOf, noteGateAdmitted, setManagedAdmissionListener } from '../ingress-mark.js';
+import { noteGateAdmitted, setManagedAdmissionListener } from '../ingress-mark.js';
 import {
   ACTIVITY_REPORT_INTERVAL_MS,
   ManagedActivity,
@@ -174,34 +176,31 @@ describe('counting through the real ingress and gate', () => {
     initConfigManager(tmpDir);
     counted.length = 0;
     setManagedAdmissionListener((req) => counted.push(`${req.method} ${req.url}`));
-    const app = express();
-    // A stand-in for a login the request does not have: refused before the gate admits.
-    app.use((req, res, next) => {
-      if (req.headers['x-test-signed-out']) return void res.status(401).end();
-      next();
+    // The hostname managed access serves, as the tunnel reports it while open,
+    // so the chain's host guard lets it through as it does in production.
+    vi.spyOn(tunnelManager, 'managedHosts', 'get').mockReturnValue([HOST]);
+    // The production chain (`http/api-chain.ts`): its session gate decides, and
+    // counts the managed request once it admits.
+    const app = createApiApp({
+      admission: new MainRequestAdmission(),
+      beforeBodyParsing: (early) => {
+        // A stand-in for a login the request does not have: refused before the gate admits.
+        early.use(async (c, next) => {
+          if (c.req.header('x-test-signed-out')) return c.body(null, 401);
+          await next();
+        });
+      },
     });
-    // A page or asset is served before the gate, as the front door does.
-    app.get('/', (_req, res) => void res.status(200).send('<html></html>'));
-    // The chain's session gate step (`http/api-chain.ts`): the real decision,
-    // and the managed-access count once it admits.
-    app.use(async (req, res, next) => {
-      const decision = await decideSessionGate(req.method, req.path, {
-        headers: req.headers,
-        peerAddress: req.socket.remoteAddress,
-        ingress: ingressOf(req),
-      });
-      if (!decision.allowed) return void res.status(401).end();
-      noteGateAdmitted(req, res);
-      next();
+    // A second pass through the hook (a later step, say) never counts twice.
+    app.use(async (c, next) => {
+      noteGateAdmitted(c.env.incoming, c.env.outgoing);
+      await next();
     });
-    // A second pass through the hook (the Hono chain, say) never counts twice.
-    app.use((req, res, next) => {
-      noteGateAdmitted(req, res);
-      next();
-    });
-    app.use((_req, res) => res.status(200).json({ ok: true }));
+    // A page: the ingress counts it, since the gate never decides on one.
+    app.get('/', (c) => c.html('<html></html>'));
+    app.all('*', (c) => c.json({ ok: true }));
     ingress = createManagedIngress({
-      handler: app,
+      handler: frontDoorListener(app),
       forwardUpgrade: (_r, socket) => socket.destroy(),
     });
     const url = await ingress.open();
@@ -211,6 +210,7 @@ describe('counting through the real ingress and gate', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     setManagedAdmissionListener(null);
     await ingress.close({ immediate: true });
     fs.rmSync(tmpDir, { recursive: true, force: true });

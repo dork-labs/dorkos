@@ -5,11 +5,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
+import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
-import { getAuth, initAuth, toNodeHandler, seedLegacyMcpApiKey } from '../index.js';
+import { getAuth, initAuth, seedLegacyMcpApiKey } from '../index.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { mountBetterAuth } from '../../../../http/better-auth.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 
@@ -17,7 +21,8 @@ const DOMAIN = 'dork.test';
 const OWNER_EMAIL = 'owner' + '@' + DOMAIN;
 const OWNER_PASSWORD = 'correct-horse-battery-staple';
 const OWNER_NAME = 'Owner';
-const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
+const HOST = `localhost:${env.DORKOS_PORT}`;
+const ORIGIN = `http://${HOST}`;
 const LEGACY_KEY = 'dork_mcp_legacy_value_1234567890';
 const requestTarget = swappableServer();
 
@@ -30,12 +35,13 @@ function setLegacyKey(value: string | null): void {
   });
 }
 
-/** Mount the Better Auth handler as `app.ts` does, so HTTP sign-up fires its hooks. */
-function buildApp(): express.Express {
-  const app = express();
-  app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
-  app.use(express.json({ limit: '1mb' }));
-  return app;
+/** The production `/api` chain with Better Auth mounted, so HTTP sign-up fires its hooks. */
+function buildApp(): RequestListener {
+  const app = createApiApp({
+    admission: new MainRequestAdmission(),
+    beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
+  });
+  return frontDoorListener(app);
 }
 
 describe('seedLegacyMcpApiKey — legacy MCP key migration (task 1.4)', () => {
@@ -60,6 +66,7 @@ describe('seedLegacyMcpApiKey — legacy MCP key migration (task 1.4)', () => {
     requestTarget.mount(app);
     const res = await request(requestTarget.server)
       .post('/api/auth/sign-up/email')
+      .set('Host', HOST)
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: OWNER_NAME });
     expect(res.status).toBe(200);

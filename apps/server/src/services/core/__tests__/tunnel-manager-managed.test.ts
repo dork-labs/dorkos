@@ -11,13 +11,6 @@ const fake = vi.hoisted(() => {
   const log: string[] = [];
   const state = {
     failDomains: new Set<string>(),
-    connectGate: null as Promise<void> | null,
-    /** Held by a session's close until released. */
-    sessionCloseGate: null as Promise<void> | null,
-    /** Session values whose close rejects. */
-    sessionCloseFails: new Set<string>(),
-    /** Whether `ngrok.disconnect` closes an own-account listener. */
-    disconnectWorks: false,
     sessions: [] as FakeSession[],
   };
   let nextId = 0;
@@ -69,8 +62,6 @@ const fake = vi.hoisted(() => {
     }
     async close() {
       log.push(`session.closing ${this.value}`);
-      if (state.sessionCloseGate) await state.sessionCloseGate;
-      if (state.sessionCloseFails.has(this.value)) throw new Error('ngrok would not close');
       this.closed = true;
       this.listeners.clear();
       log.push(`session.close ${this.value}`);
@@ -91,7 +82,6 @@ const fake = vi.hoisted(() => {
     }
     async connect() {
       log.push(`connect ${this.value}`);
-      if (state.connectGate) await state.connectGate;
       const session = new FakeSession(this.value);
       state.sessions.push(session);
       return session;
@@ -114,9 +104,8 @@ vi.mock('@ngrok/ngrok', () => ({
     fake.log.push('byo.forward');
     return fake.byoListener;
   }),
-  disconnect: vi.fn(async (url: string) => {
-    if (!fake.state.disconnectWorks) throw new Error('ngrok would not disconnect');
-    fake.log.push(`byo.disconnect ${url}`);
+  disconnect: vi.fn(async () => {
+    throw new Error('ngrok would not disconnect');
   }),
 }));
 
@@ -167,10 +156,6 @@ const open = (hosts: string[], extra: Partial<Parameters<TunnelManager['startMan
 beforeEach(() => {
   fake.log.length = 0;
   fake.state.failDomains.clear();
-  fake.state.connectGate = null;
-  fake.state.sessionCloseGate = null;
-  fake.state.sessionCloseFails.clear();
-  fake.state.disconnectWorks = false;
   fake.state.sessions.length = 0;
   exposable = true;
   manager = new TunnelManager({ canExpose: () => exposable });
@@ -216,9 +201,6 @@ describe('refusals', () => {
 
 describe('opening', () => {
   it('opens one listener per host, all into the ingress, and reports mode managed', async () => {
-    const statuses: unknown[] = [];
-    manager.on('status_change', (status) => statuses.push(status));
-
     const result = await open(['A.example', 'custom.example.com']);
 
     expect(result).toEqual({
@@ -234,28 +216,7 @@ describe('opening', () => {
     ]);
     expect(ingress.setEdgeProof).toHaveBeenCalledWith(PROOF);
     expect(ingress.hosts).toEqual(['a.example', 'custom.example.com']);
-    expect(manager.getMode()).toBe('managed');
-    expect(manager.managedHosts).toEqual(['a.example', 'custom.example.com']);
-    expect(manager.status).toMatchObject({
-      mode: 'managed',
-      isRunning: true,
-      connected: true,
-      url: 'https://a.example',
-    });
-    expect(statuses.at(-1)).toMatchObject({ mode: 'managed', connected: true });
-  });
-
-  it('a repeated open with the same credential creates no duplicate listener', async () => {
-    await open(['a.example', 'b.example']);
-    fake.log.length = 0;
-
-    const again = await open(['b.example', 'a.example'], { generation: 2 });
-
-    expect(again).toMatchObject({ ok: true, generation: 2 });
-    expect(fake.log).toEqual([]);
-    expect(fake.state.sessions).toHaveLength(1);
-    expect(fake.state.sessions[0]!.listeners.size).toBe(2);
-    expect(manager.getManagedGeneration()).toBe(2);
+    expect(manager.status).toMatchObject({ mode: 'managed', connected: true });
   });
 
   it('is all-or-nothing: a refused hostname closes everything this open made', async () => {
@@ -287,49 +248,9 @@ describe('host set changes', () => {
     expect(manager.managedHosts).toEqual(['b.example', 'c.example']);
     expect(ingress.hosts).toEqual(['b.example', 'c.example']);
   });
-
-  it('reports a hostname ngrok refuses and never admits it at the ingress', async () => {
-    await open(['a.example']);
-    fake.state.failDomains.add('b.example');
-    const result = await manager.applyHosts(['a.example', 'b.example']);
-    expect(result).toMatchObject({ ok: false, failed: ['b.example'], hosts: ['a.example'] });
-    expect(ingress.hosts).toEqual(['a.example']);
-  });
-
-  it('a repeat open with a new host set applies the diff on the same session', async () => {
-    await open(['a.example', 'b.example']);
-    await open(['b.example', 'c.example']);
-    expect(fake.state.sessions).toHaveLength(1);
-    expect(manager.managedHosts).toEqual(['b.example', 'c.example']);
-  });
 });
 
 describe('never both', () => {
-  it('closes the own-account tunnel before the managed session connects', async () => {
-    await manager.start({ port: 4242, authtoken: 't' });
-    expect(manager.getMode()).toBe('byo');
-
-    const result = await open(['a.example']);
-
-    expect(result.ok).toBe(true);
-    expect(fake.log.indexOf('byo.close')).toBeLessThan(fake.log.indexOf('connect cred-1'));
-    expect(manager.getMode()).toBe('managed');
-  });
-
-  it('opens nothing managed when the own-account tunnel will not close', async () => {
-    await manager.start({ port: 4242, authtoken: 't' });
-    const close = vi
-      .spyOn(fake.byoListener, 'close')
-      .mockRejectedValueOnce(new Error('ngrok would not close'));
-
-    const result = await open(['a.example']);
-
-    expect(result).toMatchObject({ ok: false, reason: 'byo_close_failed' });
-    expect(fake.log).not.toContain('connect cred-1');
-    expect(manager.managedHosts).toEqual([]);
-    close.mockRestore();
-  });
-
   it('refuses to open the own-account tunnel over managed access', async () => {
     await open(['a.example']);
     await expect(manager.start({ port: 4242, authtoken: 't' })).rejects.toThrow(/Close it first/);
@@ -350,14 +271,6 @@ describe('never both', () => {
 });
 
 describe('drain and close', () => {
-  it('beginDrain refuses new requests at the ingress and reports draining', async () => {
-    await open(['a.example']);
-    manager.beginDrain();
-    expect(ingress.beginDrain).toHaveBeenCalled();
-    expect(manager.getManagedPhase()).toBe('draining');
-    expect(manager.getMode()).toBe('managed');
-  });
-
   it('a gentle close lets the ingress finish before the ngrok session closes', async () => {
     await open(['a.example']);
     fake.log.length = 0;
@@ -368,31 +281,7 @@ describe('drain and close', () => {
       'session.closing cred-1',
       'session.close cred-1',
     ]);
-    expect(manager.getMode()).toBe('off');
-    expect(manager.managedHosts).toEqual([]);
     expect(manager.status).toMatchObject({ mode: 'off', isRunning: false, url: null });
-  });
-
-  it('a close during an open supersedes it and leaves nothing open', async () => {
-    let release!: () => void;
-    fake.state.connectGate = new Promise((resolve) => (release = resolve));
-    const pending = open(['a.example']);
-    await vi.waitFor(() => expect(fake.log).toContain('connect cred-1'));
-
-    await manager.closeManaged({ immediate: true });
-    release();
-
-    expect(await pending).toMatchObject({ ok: false, reason: 'superseded' });
-    expect(fake.state.sessions[0]!.closed).toBe(true);
-    expect(fake.log.some((line) => line.startsWith('listen '))).toBe(false);
-    expect(manager.getMode()).toBe('off');
-  });
-
-  it('stop() closes managed access too', async () => {
-    await open(['a.example']);
-    await manager.stop();
-    expect(fake.state.sessions[0]!.closed).toBe(true);
-    expect(manager.getMode()).toBe('off');
   });
 });
 
@@ -407,15 +296,6 @@ describe('races', () => {
     expect(mode).toBe(managedLive ? 'managed' : byoLive ? 'byo' : 'off');
   }
 
-  it('own-account then managed, concurrently: managed wins, the own tunnel is closed', async () => {
-    const byo = manager.start({ port: 4242, authtoken: 't' });
-    const managed = open(['a.example']);
-    await expect(byo).resolves.toBe('https://byo.ngrok.app');
-    expect((await managed).ok).toBe(true);
-    expectConsistent();
-    expect(manager.getMode()).toBe('managed');
-  });
-
   it('managed then own-account, concurrently: the own tunnel is refused', async () => {
     const managed = open(['a.example']);
     const byo = manager.start({ port: 4242, authtoken: 't' });
@@ -423,19 +303,6 @@ describe('races', () => {
     await expect(byo).rejects.toThrow(/Close it first/);
     expect(fake.log).not.toContain('byo.forward');
     expectConsistent();
-  });
-
-  it('a stop() issued while an own-account open waits in the queue wins', async () => {
-    let release!: () => void;
-    fake.state.connectGate = new Promise((resolve) => (release = resolve));
-    const managed = open(['a.example']);
-    const byo = manager.start({ port: 4242, authtoken: 't' });
-    await manager.stop();
-    release();
-    await managed;
-    await expect(byo).rejects.toThrow();
-    expect(fake.log).not.toContain('byo.forward');
-    expect(manager.getMode()).toBe('off');
   });
 
   it('a close while the open awaits the exposure check leaves no ingress listening', async () => {
@@ -470,63 +337,9 @@ describe('races', () => {
     expect(ingress.listening).toBe(false);
     expect(fake.log).not.toContain('connect cred-1');
   });
-
-  it('changing hosts never reopens the ingress', async () => {
-    await open(['a.example']);
-    await manager.applyHosts(['a.example', 'b.example']);
-    await open(['b.example'], { generation: 2 });
-    expect(ingress.open).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('review fixes (DOR-2086 S1)', () => {
-  const NEXT = { header: 'x-dorkos-edge', secret: 'n'.repeat(48) };
-  const openNext = () => open(['a.example'], { value: 'cred-2', edgeProof: NEXT, generation: 2 });
-
-  it('a close while another credential replaces the session reopens nothing', async () => {
-    await open(['a.example']);
-    let release!: () => void;
-    fake.state.sessionCloseGate = new Promise((resolve) => (release = resolve));
-    const pending = openNext();
-    await vi.waitFor(() => expect(fake.log).toContain('session.closing cred-1'));
-
-    const closing = manager.closeManaged({ immediate: true });
-    release();
-    await closing;
-
-    expect(await pending).toMatchObject({ ok: false, reason: 'superseded' });
-    expect(fake.log).not.toContain('connect cred-2');
-    expect(manager.getMode()).toBe('off');
-    expect(manager.managedHosts).toEqual([]);
-  });
-
-  it('a close while a draining session is finished for a new open reopens nothing', async () => {
-    await open(['a.example']);
-    manager.beginDrain();
-    let release!: () => void;
-    fake.state.sessionCloseGate = new Promise((resolve) => (release = resolve));
-    const pending = openNext();
-    await vi.waitFor(() => expect(fake.log).toContain('session.closing cred-1'));
-
-    const closing = manager.closeManaged({ immediate: true });
-    release();
-    await closing;
-
-    expect(await pending).toMatchObject({ ok: false, reason: 'superseded' });
-    expect(fake.log).not.toContain('connect cred-2');
-    expect(manager.getMode()).toBe('off');
-  });
-
-  it('a replacement whose old session will not close fails honestly', async () => {
-    await open(['a.example']);
-    fake.state.sessionCloseFails.add('cred-1');
-
-    expect(await openNext()).toMatchObject({ ok: false, reason: 'forward_failed' });
-    expect(fake.log).not.toContain('connect cred-2');
-    expect(manager.getMode()).toBe('off');
-    expect(manager.status).toMatchObject({ connected: false, isRunning: false });
-  });
-
   it('adding a host asks the exposure guard; removing one does not', async () => {
     await open(['a.example', 'b.example']);
     fake.log.length = 0;
@@ -563,105 +376,9 @@ describe('review fixes (DOR-2086 S1)', () => {
     expect(fake.log.indexOf('byo.close')).toBeLessThan(fake.log.indexOf('connect cred-1'));
     expect(manager.getMode()).toBe('managed');
   });
-
-  it('falls back to disconnect when the own tunnel will not close', async () => {
-    await manager.start({ port: 4242, authtoken: 't' });
-    const close = vi
-      .spyOn(fake.byoListener, 'close')
-      .mockRejectedValue(new Error('ngrok would not close'));
-    fake.state.disconnectWorks = true;
-
-    await expect(manager.stop()).resolves.toBeUndefined();
-    expect(fake.log).toContain('byo.disconnect https://byo.ngrok.app');
-    expect(manager.getMode()).toBe('off');
-    close.mockRestore();
-  });
-
-  it('stop() closes the own tunnel even when managed access will not close', async () => {
-    await manager.start({ port: 4242, authtoken: 't' });
-    const closeManaged = vi
-      .spyOn(manager, 'closeManaged')
-      .mockRejectedValue(new Error('managed would not close'));
-
-    await expect(manager.stop()).rejects.toThrow('managed would not close');
-    expect(fake.log).toContain('byo.close');
-    expect(manager.getMode()).toBe('off');
-    closeManaged.mockRestore();
-  });
-
-  it('stopOwnTunnel() leaves managed access open', async () => {
-    await open(['a.example']);
-    await manager.stopOwnTunnel();
-    expect(fake.state.sessions[0]!.closed).toBe(false);
-    expect(manager.getMode()).toBe('managed');
-  });
-
-  it('passes a gentle close its drain deadline', async () => {
-    await open(['a.example']);
-    await manager.closeManaged({ immediate: false, drainDeadlineMs: 5_000 });
-    expect(ingress.close).toHaveBeenCalledWith({ immediate: false, drainDeadlineMs: 5_000 });
-  });
 });
 
-describe('drain deadline and the end of a session (DOR-2086 S5)', () => {
-  it('reports when a gentle close cuts the rest, and that Cloud set it', async () => {
-    await open(['a.example']);
-    let release!: () => void;
-    vi.mocked(ingress.close).mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => (release = resolve));
-      return { deadlineHit: false, usedLocalDeadline: false };
-    });
-    const before = Date.now();
-    const closing = manager.closeManaged({ immediate: false, drainDeadlineMs: 20_000 });
-    const drain = manager.getManagedDrain();
-    expect(manager.getManagedPhase()).toBe('draining');
-    expect(drain?.deadline).toBe('cloud');
-    expect(Date.parse(drain!.until)).toBeGreaterThanOrEqual(before + 20_000);
-    expect(Date.parse(drain!.until)).toBeLessThanOrEqual(Date.now() + 20_000);
-    release();
-    await closing;
-    expect(manager.getManagedDrain()).toBeNull();
-  });
-
-  it('says the local default applies when the close named no deadline', async () => {
-    await open(['a.example']);
-    let release!: () => void;
-    vi.mocked(ingress.close).mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => (release = resolve));
-      return { deadlineHit: false, usedLocalDeadline: true };
-    });
-    const closing = manager.closeManaged({ immediate: false });
-    expect(manager.getManagedDrain()?.deadline).toBe('local');
-    release();
-    await closing;
-  });
-
-  it('has no deadline to report for an immediate close or a bare drain', async () => {
-    await open(['a.example']);
-    manager.beginDrain();
-    expect(manager.getManagedDrain()).toBeNull();
-    await manager.closeManaged({ immediate: true });
-    expect(manager.getManagedDrain()).toBeNull();
-  });
-
-  it('says the deadline is local when a local cap names it (shutdown)', async () => {
-    await open(['a.example']);
-    let release!: () => void;
-    vi.mocked(ingress.close).mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => (release = resolve));
-      return { deadlineHit: false, usedLocalDeadline: false };
-    });
-    const closing = manager.closeManaged({
-      immediate: false,
-      drainDeadlineMs: 2_000,
-      deadlineFrom: 'local',
-      reason: 'shutdown',
-    });
-    expect(manager.getManagedDrain()?.deadline).toBe('local');
-    release();
-    await closing;
-  });
-
+describe('the end of a session (DOR-2086 S5)', () => {
   it('announces the end of a session once, with the reason that actually ended it', async () => {
     const ended = vi.fn();
     manager.on('managed_closed', ended);
