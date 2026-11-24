@@ -87,9 +87,10 @@ export interface LanAccessDeps {
   bindHost?: string;
   /**
    * Whether a connecting peer is on this computer's own networks
-   * (`isLocalNetworkPeer`). Anyone else is cut at the socket.
+   * (`isLocalNetworkPeer`), given the address it connected from and the
+   * address on this computer it connected to. Anyone else is cut at the socket.
    */
-  isLocalPeer: (address: string | undefined) => boolean;
+  isLocalPeer: (address: string | undefined, localAddress: string | undefined) => boolean;
   /** The operating system; defaults to this one. See {@link SUPPORTED_PLATFORMS}. */
   platform?: NodeJS.Platform;
 }
@@ -241,7 +242,7 @@ export class LanAccess {
       // Checked and tracked from the first connection: a peer off this computer's
       // own networks is cut before it is answered, and a close can cut the rest.
       candidate.on('connection', (socket: Socket) => {
-        if (!this.deps.isLocalPeer(socket.remoteAddress)) {
+        if (!this.deps.isLocalPeer(socket.remoteAddress, socket.localAddress)) {
           socket.destroy();
           return;
         }

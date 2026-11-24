@@ -2,6 +2,7 @@
 covers:
   - 'fix(copy): say network, not Wi-Fi, for devices that reach this computer (DOR-5135)'
   - 'fix(lan-access): let devices on the same Tailscale network in (DOR-5135)'
+  - 'fix(lan-access): admit the tailnet range only on connections to the Tailscale address (DOR-5135)'
 ---
 
 ### Changed

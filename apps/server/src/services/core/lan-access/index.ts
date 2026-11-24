@@ -48,7 +48,7 @@ export const lanAccess = new LanAccess({
   writeSetting: writeLanAccessSetting,
   canExpose,
   setByEnvironment: lanAccessEnvironmentLock,
-  isLocalPeer: (address) => isLocalNetworkPeer(address),
+  isLocalPeer: (address, localAddress) => isLocalNetworkPeer(address, undefined, localAddress),
   secureCookies: AUTH_COOKIES_SECURE,
   readLocalName: () => readLocalName(),
   readAddresses: () => readLanAddresses(),
