@@ -105,7 +105,7 @@ it('keeps a generic 404 uncertain because server currentness checks may follow t
   vi.mocked(transport.writeFile).mockRejectedValue(
     Object.assign(new Error('closed after rename'), {
       status: 404,
-      code: 'CANVAS_DOCUMENT_NOT_FOUND',
+      code: 'not_found',
     })
   );
   await expect(

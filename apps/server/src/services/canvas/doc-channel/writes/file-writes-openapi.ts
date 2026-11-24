@@ -49,7 +49,7 @@ export function registerFileWriteOpenApi(registry: OpenAPIRegistry): void {
       ),
       412: {
         description:
-          '`precondition_failed`: the file changed since the caller read it (the body carries `currentHash` and `currentContent`), the file was replaced while saving, or a document save reused its id for different content. `save_not_applied`: the recorded document save failed before it changed the file, so sending it again is safe.',
+          '`precondition_failed`: the file changed since the caller read it (the body carries `currentHash` and `currentContent`), the file was replaced while saving, or a document save reused its id for different content. `save_not_applied`: the recorded document save failed before it changed the file. The file is unchanged; send a new save.',
         content: { [PROBLEM_CONTENT_TYPE]: { schema: StaleFileProblemSchema } },
       },
       500: problemResponse('`internal_error`: the save failed'),

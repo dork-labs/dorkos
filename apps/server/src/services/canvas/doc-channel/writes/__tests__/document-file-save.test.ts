@@ -24,6 +24,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
 import { createFileRoutes } from '../../../../../routes/files.js';
 import { saveOriginalDocumentFile } from '../installation-file-writes.js';
+import { saved } from './saved-outcome.js';
 
 const target = swappableServer();
 const cleanups: Array<() => Promise<void>> = [];
@@ -31,13 +32,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   for (const close of cleanups.splice(0).reverse()) await close();
 });
-/** A save's answer when the file did not change underneath it. */
-function saved<T>(result: T): Exclude<T, { stale: unknown }> {
-  if (typeof result === 'object' && result !== null && 'stale' in result)
-    throw new Error('The file changed underneath this save');
-  return result as Exclude<T, { stale: unknown }>;
-}
-
 async function setup() {
   const h = await fixture();
   cleanups.push(h.cleanup);

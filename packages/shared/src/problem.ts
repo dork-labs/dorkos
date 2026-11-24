@@ -246,7 +246,8 @@ export const PROBLEM_CODE_LIST = [
   { code: 'range_not_satisfiable', status: 416, title: 'That part of the file doesn’t exist.' },
   /**
    * A canvas document save the server recorded as failed before it touched
-   * the file: sending the same save again is safe.
+   * the file. The file is unchanged; send a new save (the same save id keeps
+   * answering with this failure).
    */
   { code: 'save_not_applied', status: 412, title: 'That save failed before it changed the file.' },
   // Tasks, to-dos, the work queue and settings.

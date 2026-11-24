@@ -19,18 +19,12 @@ import { saveOriginalDocumentFile } from '../installation-file-writes.js';
 import { readSessionDocSourceDescriptor } from '../../doc-source-policy.js';
 import { sameOriginalFileSaveSource } from '../file-save-recovery/applied-source.js';
 import { createDocChannelHttpComposition } from '../../http-composition.js';
+import { saved } from './saved-outcome.js';
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const close of cleanup.splice(0).reverse()) await close();
 });
-/** A save's answer when the file did not change underneath it. */
-function saved<T>(result: T): Exclude<T, { stale: unknown }> {
-  if (typeof result === 'object' && result !== null && 'stale' in result)
-    throw new Error('The file changed underneath this save');
-  return result as Exclude<T, { stale: unknown }>;
-}
-
 async function setup() {
   const h = await authorityFixture(false, false, true);
   cleanup.push(h.cleanup);

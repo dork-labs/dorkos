@@ -82,7 +82,7 @@ function saveFailure(c: Context, err: unknown): Response {
   }
   if (code === 'DOC_SAVE_FAILED') {
     return problem(c, 'save_not_applied', {
-      detail: 'That save failed before it changed the file. Try again.',
+      detail: 'That save failed before it changed the file. Send a new save.',
     });
   }
   if (code === 'DOC_SAVE_IN_DOUBT') {

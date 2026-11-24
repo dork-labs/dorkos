@@ -58,6 +58,8 @@ describe('the audit fallback, in the chain', () => {
     // A route with no choke point behind it.
     app.post('/api/rooms/:id/pins', (c) => c.json({ ok: true }));
     app.delete('/api/rooms/:id', (c) => c.json({ error: 'no' }, 403));
+    // A save that met changed bytes: an ordinary refusal, like a 409.
+    app.put('/api/files/content', (c) => c.json({ code: 'precondition_failed' }, 412));
     // A route whose work is recorded by a choke point.
     app.post('/api/covered', (c) => {
       recordAudit({ action: 'covered.done', operation: 'modify', outcome: 'ok', summary: 'Done' });
@@ -114,6 +116,11 @@ describe('the audit fallback, in the chain', () => {
   it('records a refused write as refused', async () => {
     await request(server).delete('/api/rooms/01J9Z3K8M2Q4R6S7T8V9W0X1Y2');
     expect(await rows()).toMatchObject([{ action: 'http.delete', outcome: 'refused' }]);
+  });
+
+  it('records a 412 (changed since the caller looked) as refused, not failed', async () => {
+    await request(server).put('/api/files/content').send({});
+    expect(await rows()).toMatchObject([{ action: 'http.put', outcome: 'refused' }]);
   });
 
   it('adds nothing when a choke point recorded the request', async () => {

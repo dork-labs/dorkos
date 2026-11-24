@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): file and folder routes answer errors as problem documents (DOR-4979)'
+  - 'fix(api): review round 1 on the file and folder problems (DOR-4979)'
 ---
 
 ### Changed
