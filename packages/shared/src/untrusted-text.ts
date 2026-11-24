@@ -10,8 +10,8 @@
  *   space, whitespace collapses, and the result is capped.
  * - {@link defuseSystemTags} is for a **message body**, which has to survive
  *   intact — people paste code into chat, and mangling `Vec<T>` would be a real
- *   cost. It removes only what has no legitimate use (invisible formatting
- *   characters) and defuses tags that mean something to a runtime.
+ *   cost. It removes only what a person cannot see (`hidden-characters.ts`)
+ *   and defuses tags that mean something to a runtime.
  *
  * The rule that follows from the split: anything that is somebody's WORDS goes
  * inside an untrusted fence, where the fence's own nonce is the real boundary
@@ -29,40 +29,15 @@
 /** Default cap on a sanitized label, in characters. */
 export const IDENTITY_MAX_LENGTH = 80;
 
-/**
- * Characters with no visible glyph that can hide inside a word.
- *
- * Zero-width spaces and joiners, the bidi overrides, the word joiner, the BOM
- * and the soft hyphen. A person cannot see any of them, so removing them costs
- * a reader nothing — and leaving them in is what lets a zero-width space in the
- * middle of `</room_context>` slip past a tag matcher while still reading as a
- * closing tag to the model, which is the parser that matters here.
- */
-const INVISIBLE_FORMAT = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff\ufff9-\ufffb]/g;
+import { stripHiddenCharacters } from './hidden-characters.js';
+
+export { stripStrayFlagLetters } from './hidden-characters.js';
 
 /**
- * A subdivision flag emoji pickers offer (England, Scotland, Wales), or one of
- * the letters such a flag is spelled with standing anywhere else.
- *
- * Those letters draw nothing on their own: a person sees them only as part of
- * one of these three flags. So a real flag is kept whole and every other letter
- * of that kind is dropped, which leaves the text reading exactly as it looks.
+ * A UTF-16 half with no other half. It draws as a replacement mark, if at all,
+ * and a cap must never be left ending on one.
  */
-const FLAG_OR_STRAY_FLAG_LETTER =
-  /(\u{1F3F4}\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073})\u{E007F})|[\u{E0000}-\u{E007F}]/gu;
-
-/**
- * Drop the flag letters that are not part of a real subdivision flag.
- *
- * Used by both sanitizers below, and by `isReactionEmoji`, which refuses any
- * value this would change.
- *
- * @param text - Any text.
- * @returns The text with only its real subdivision flags' letters left in it.
- */
-export function stripStrayFlagLetters(text: string): string {
-  return text.replace(FLAG_OR_STRAY_FLAG_LETTER, (_match, flag?: string) => flag ?? '');
-}
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 /** C0 controls, DEL and the C1 range — CR, LF and NEL (U+0085) among them. */
 // eslint-disable-next-line no-control-regex -- stripping control characters is the point
@@ -71,10 +46,11 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 /**
  * Sanitize a label for inclusion in a line DorkOS wrote.
  *
- * Strips invisible formatting characters, then the C0 and C1 control ranges plus
- * DEL — including CR/LF and NEL (U+0085), any of which could otherwise forge
- * additional header lines — collapses whitespace runs to a single space (which
- * also neutralizes the U+2028/U+2029 line separators via `\s`), strips `<`/`>`
+ * Drops broken UTF-16 halves and every character a person cannot see
+ * (`stripHiddenCharacters`, which also turns U+2028/U+2029 into a line break),
+ * then flattens the C0 and C1 control ranges plus DEL — including CR/LF and NEL
+ * (U+0085), any of which could otherwise forge additional header lines —
+ * collapses whitespace runs to a single space, strips `<`/`>`
  * so a name containing `</relay_context>` cannot close the structured block
  * early, trims, and caps the result.
  *
@@ -104,19 +80,19 @@ export function sanitizeIdentity(
   value: string,
   maxLength: number = IDENTITY_MAX_LENGTH
 ): string | undefined {
-  const collapsed = stripStrayFlagLetters(value)
-    .replace(INVISIBLE_FORMAT, '')
+  const collapsed = stripHiddenCharacters(value.replace(LONE_SURROGATE, ''))
     .replace(CONTROL_CHARS, ' ')
     .replace(/[<>]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (collapsed.length === 0) return undefined;
-  // The cap counts UTF-16 units, so it can land inside a pair: drop a lone high
-  // half rather than end on a broken character. Then strip again, so a flag cut
-  // in half leaves no letters behind, and trim what the cut left at the end.
+  // The cap counts UTF-16 units, so it can land inside a pair. Every half left
+  // in the text has its other half, so at most one is cut off: drop it. Then
+  // strip again, so a flag or a joined emoji cut in half leaves no letters or
+  // joiner behind, and trim what the cut left at the end.
   let capped = collapsed.slice(0, maxLength);
   if (/[\uD800-\uDBFF]$/.test(capped)) capped = capped.slice(0, -1);
-  return stripStrayFlagLetters(capped).trimEnd() || undefined;
+  return stripHiddenCharacters(capped).trimEnd() || undefined;
 }
 
 /**
@@ -124,7 +100,7 @@ export function sanitizeIdentity(
  *
  * Deliberately unbounded, which is safe because of who calls it: every caller
  * passes a FIXED module-level array, so the key space is the number of call
- * sites (two today) and not the number of messages. A caller that derived a tag
+ * sites (a handful today) and not the number of messages. A caller that derived a tag
  * set from user input would need a bound here — do not add one.
  */
 const PATTERN_CACHE = new Map<string, RegExp>();
@@ -149,7 +125,7 @@ const PATTERN_CACHE = new Map<string, RegExp>();
  * stream and the whole API. `(?:\s*\/)?\s*` has exactly one parse of any input,
  * because the group cannot match without consuming a `/`. Same payload: 0 ms.
  *
- * **The gap is `\s`, not a class of invisible characters.** They were already
+ * **The gap is `\s`, not a class of hidden characters.** They were already
  * stripped by the time this runs, so the wider class was unreachable — and it
  * was most of the alternation the backtracking above had to chew through.
  *
@@ -174,7 +150,8 @@ function systemTagPattern(names: readonly string[]): RegExp {
 /**
  * Defuse runtime tags in a message body, leaving the words alone.
  *
- * Invisible formatting characters are dropped outright; a matched tag keeps its
+ * Characters a person cannot see are dropped outright (`stripHiddenCharacters`;
+ * the line and paragraph separators become a line break); a matched tag keeps its
  * text but has its opening `<` escaped, so a reader still sees that somebody
  * wrote `</room_context>` and no parser can act on it. Ordinary angle brackets
  * are untouched, so `Vec<T>`, `a < b` and `<div>` survive a paste into chat.
@@ -206,9 +183,10 @@ function systemTagPattern(names: readonly string[]): RegExp {
  * @param tagNames - Tags that mean something to a runtime.
  */
 export function defuseSystemTags(text: string, tagNames: readonly string[]): string {
-  return stripStrayFlagLetters(text)
-    .replace(INVISIBLE_FORMAT, '')
-    .replace(systemTagPattern(tagNames), (match) => `&lt;${match.slice(1)}`);
+  return stripHiddenCharacters(text).replace(
+    systemTagPattern(tagNames),
+    (match) => `&lt;${match.slice(1)}`
+  );
 }
 
 /**

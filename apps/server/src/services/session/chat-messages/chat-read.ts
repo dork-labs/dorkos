@@ -13,6 +13,7 @@ import type { ChatState, ChatMessageKind, ChatMessageSender } from '@dorkos/shar
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
@@ -169,7 +170,10 @@ function readMessages(message: HistoryMessage, include: 'text' | 'tools'): ChatR
         ...(post.roomLabel ? { name: post.roomLabel } : {}),
         ...(post.author ? { author: post.author.displayName } : {}),
       };
-      return [{ id: message.id, from: 'room', room, ...at, text: message.content }];
+      // Another member's words, handed to a model: defused the way the room
+      // context defuses them, so a read cannot carry what the turn could not.
+      const text = defuseUntrustedText(message.content);
+      return [{ id: message.id, from: 'room', room, ...at, text }];
     }
     return [{ id: message.id, from: 'person', ...at, text: message.content }];
   }

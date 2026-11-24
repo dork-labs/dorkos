@@ -10,7 +10,7 @@
  */
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
+import { defuseFileText, defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
 import type { RoomService } from '../room-service.js';
 
 /**
@@ -26,7 +26,11 @@ export const UNTRUSTED_NOTE =
 /**
  * Every string inside a value somebody else wrote, defused for a model the way
  * {@link projectEntry} defuses a message body. Arrays and plain objects are
- * walked; anything else comes back as it was.
+ * walked, and an object's keys are defused as well as its values: a model reads
+ * a key as text just the same. Anything else comes back as it was.
+ *
+ * Two keys that differ only in what a person cannot see become one, and the
+ * later one's value wins, which is what a person reading the document sees too.
  *
  * @param value - A JSON-shaped value, such as a canvas document's content.
  * @returns A copy with every string defused.
@@ -36,10 +40,27 @@ export function defuseUntrusted<T>(value: T): T {
   if (Array.isArray(value)) return value.map((item: unknown) => defuseUntrusted(item)) as T;
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, defuseUntrusted(item)])
+      Object.entries(value).map(([key, item]) => [defuseUntrustedText(key), defuseUntrusted(item)])
     ) as T;
   }
   return value;
+}
+
+/**
+ * A file's text as a tool hands it back: code exactly as written, less what a
+ * person cannot see and any reminder tag (see `defuseFileText` for why a file
+ * is not defused like a message). The refusal sentence is defused in full: it
+ * can quote the path a member chose.
+ *
+ * @param file - What reading the file returned.
+ * @returns The same shape, ready for a model.
+ */
+export function defuseFile<T extends { content: string | null; reason?: string }>(file: T): T {
+  return {
+    ...file,
+    content: file.content === null ? null : defuseFileText(file.content),
+    ...(file.reason !== undefined ? { reason: defuseUntrustedText(file.reason) } : {}),
+  };
 }
 
 /**
