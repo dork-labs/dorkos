@@ -476,7 +476,11 @@ describe('shapes router', () => {
         .send({});
 
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ status: 'denied', reason: 'enforcement_unavailable' });
+      expect(res.body).toMatchObject({
+        status: 403,
+        code: 'forbidden',
+        capabilityId: 'shapes.apply',
+      });
       expect(createSchedule).not.toHaveBeenCalled();
     });
   });

@@ -112,18 +112,11 @@ const RESOURCE_INVALID = z
     issues: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
   })
   .loose();
-const GRANT_REQUIRED = {
-  error: 'This agent is not granted the selected operation.',
-  code: 'CONNECTOR_GRANT_REQUIRED',
-};
-// No level includes a destructive action, so its refusal says how to get it (DOR-4678).
-const OUTSIDE_LEVELS_GRANT_REQUIRED = {
-  error:
-    'No access level includes this action, so "Read and write" doesn\'t cover it. It has to ' +
-    'be given to this agent on its own: the person chooses it under exact actions for Gmail ' +
-    'on the Connections page.',
-  code: 'CONNECTOR_GRANT_REQUIRED',
-};
+const GRANT_REQUIRED = problemBody('forbidden', {
+  detail: 'This agent isn’t given that action. A person gives it on the Connections page.',
+});
+// No level includes a destructive action; the answer names the same fix (DOR-4678).
+const OUTSIDE_LEVELS_GRANT_REQUIRED = GRANT_REQUIRED;
 const PROVIDER_LIST = z
   .object({
     providers: z.array(
@@ -1429,8 +1422,8 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       headers: apiKey,
       body: target(revisions.read, 'not-an-agent'),
       expect: {
-        status: 409,
-        body: { error: 'That agent isn’t one of yours.', code: 'CONNECTOR_AGENT_NOT_OWNED' },
+        status: 403,
+        body: problemBody('forbidden', { detail: 'That agent isn’t one of yours.' }),
       },
     });
     await check(server, {

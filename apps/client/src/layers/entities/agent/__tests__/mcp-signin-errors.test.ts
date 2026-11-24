@@ -1,32 +1,27 @@
 /**
- * The sign-in failure copy table (DOR-982): which sentence a person reads, what
- * stays behind Details, and which failure offers the credentials form.
+ * The sign-in failure copy table (DOR-982): which sentence a person reads, and
+ * which failure offers the credentials form.
  *
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import { describeSigninError, readSigninFailurePayload } from '../lib/mcp-signin-errors';
+import { describeSigninError, readSigninFailureCode } from '../lib/mcp-signin-errors';
 
 describe('describeSigninError', () => {
   it('offers app credentials only for the provider-will-not-register family', () => {
     const view = describeSigninError({
-      message: 'HTTP 404: Invalid OAuth error response. Raw body: <html>…',
-      code: 'SIGNIN_NO_APP_REGISTRATION',
-      detail: 'HTTP 404: Invalid OAuth error response. Raw body: <html>…',
+      message: 'This server won’t let DorkOS register itself. Add your own app credentials.',
+      code: 'signin_no_app_registration',
     });
 
     expect(view.canUseOwnCredentials).toBe(true);
     expect(view.message).toContain('app credentials');
-    // The raw text a person cannot act on never becomes the headline.
-    expect(view.message).not.toContain('404');
-    expect(view.detail).toContain('404');
   });
 
   it('does not offer credentials for a server that publishes no sign-in details', () => {
     const view = describeSigninError({
       message: 'anything',
-      code: 'SIGNIN_NO_SIGNIN_SUPPORT',
-      detail: 'anything',
+      code: 'signin_no_signin_support',
     });
 
     expect(view.canUseOwnCredentials).toBe(false);
@@ -36,8 +31,7 @@ describe('describeSigninError', () => {
   it('does not offer credentials for an unreachable server', () => {
     const view = describeSigninError({
       message: 'fetch failed',
-      code: 'SIGNIN_UNREACHABLE',
-      detail: 'fetch failed',
+      code: 'signin_unreachable',
     });
 
     expect(view.canUseOwnCredentials).toBe(false);
@@ -52,12 +46,16 @@ describe('describeSigninError', () => {
     });
 
     expect(view.message).toBe('This sign-in link expired. Please start again.');
-    expect(view.detail).toBeNull();
     expect(view.canUseOwnCredentials).toBe(false);
   });
 
   it('ignores a code it does not recognise rather than showing a blank reason', () => {
-    const view = describeSigninError({ message: 'Server said no', code: 'SOMETHING_NEWER' });
+    // The old SCREAMING spelling is one of them: the server sends problem codes.
+    expect(
+      describeSigninError({ message: 'Server said no', code: 'SIGNIN_NO_APP_REGISTRATION' })
+    ).toEqual({ message: 'Server said no', canUseOwnCredentials: false });
+
+    const view = describeSigninError({ message: 'Server said no', code: 'something_newer' });
 
     expect(view.message).toBe('Server said no');
     expect(view.canUseOwnCredentials).toBe(false);
@@ -70,26 +68,20 @@ describe('describeSigninError', () => {
   });
 });
 
-describe('readSigninFailurePayload', () => {
-  it('reads the code and detail the transport attached', () => {
-    const err = Object.assign(new Error('boom'), {
-      code: 'SIGNIN_NO_APP_REGISTRATION',
-      body: { error: 'boom', code: 'SIGNIN_NO_APP_REGISTRATION', detail: 'HTTP 404' },
+describe('readSigninFailureCode', () => {
+  it('reads the problem code the transport attached', () => {
+    const err = Object.assign(new Error('This server won’t let DorkOS register itself.'), {
+      code: 'signin_no_app_registration',
     });
 
-    expect(readSigninFailurePayload(err)).toEqual({
-      code: 'SIGNIN_NO_APP_REGISTRATION',
-      detail: 'HTTP 404',
-    });
+    expect(readSigninFailureCode(err)).toBe('signin_no_app_registration');
   });
 
-  it('degrades to nothing for a rejection that carries neither', () => {
+  it('degrades to nothing for a rejection that carries no code', () => {
     // A dropped request or an abort can arrive as a plain Error.
-    expect(readSigninFailurePayload(new Error('Failed to fetch'))).toEqual({});
-    expect(readSigninFailurePayload('a string')).toEqual({});
-    expect(readSigninFailurePayload(null)).toEqual({});
-    expect(
-      readSigninFailurePayload(Object.assign(new Error('x'), { code: 7, body: 'nope' }))
-    ).toEqual({});
+    expect(readSigninFailureCode(new Error('Failed to fetch'))).toBeUndefined();
+    expect(readSigninFailureCode('a string')).toBeUndefined();
+    expect(readSigninFailureCode(null)).toBeUndefined();
+    expect(readSigninFailureCode(Object.assign(new Error('x'), { code: 7 }))).toBeUndefined();
   });
 });

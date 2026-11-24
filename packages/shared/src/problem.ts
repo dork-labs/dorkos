@@ -327,6 +327,24 @@ export const PROBLEM_CODE_LIST = [
    * answering with this failure).
    */
   { code: 'save_not_applied', status: 412, title: 'That save failed before it changed the file.' },
+  // Managed MCP servers: why a sign-in could not start.
+  /** The server won't let DorkOS register itself: the person adds their own app credentials. */
+  {
+    code: 'signin_no_app_registration',
+    status: 409,
+    title: 'This server won’t let DorkOS register itself.',
+  },
+  /** The server offers no sign-in DorkOS can use. */
+  {
+    code: 'signin_no_signin_support',
+    status: 409,
+    title: 'This server doesn’t offer sign-in the way DorkOS expects.',
+  },
+  /** The server didn't answer the start of a sign-in. */
+  { code: 'signin_unreachable', status: 502, title: 'Couldn’t reach the server to sign in.' },
+  // Money.
+  /** The monthly spending limit for paid actions is reached: nothing was spent. */
+  { code: 'spend_limit_reached', status: 409, title: 'This month’s spending limit is reached.' },
   // Tasks, to-dos, the work queue and settings.
   {
     code: 'schedule_package_owned',

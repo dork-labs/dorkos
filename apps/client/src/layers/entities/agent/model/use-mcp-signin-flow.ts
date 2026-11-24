@@ -9,7 +9,7 @@ import { useTransport } from '@/layers/shared/model';
 import { agentKeys } from '../api/queries';
 import {
   describeSigninError,
-  readSigninFailurePayload,
+  readSigninFailureCode,
   type McpSigninErrorView,
 } from '../lib/mcp-signin-errors';
 
@@ -63,11 +63,6 @@ interface McpSigninFlowState {
   authorizeUrl: string | null;
   /** Why the flow failed, once `failed` — the plain sentence, never the raw error. */
   error: string | null;
-  /**
-   * The raw error behind {@link error}, for a Details disclosure. Null when the
-   * plain sentence IS everything that is known.
-   */
-  errorDetail: string | null;
   /**
    * Whether this failure is one the person can fix by supplying app credentials
    * from the provider (DOR-982) — true only when the provider refused to let
@@ -240,7 +235,7 @@ function failedFrom(err: Error): SigninLocalState {
   return {
     ...IDLE_STATE,
     phase: 'failed',
-    startFailure: describeSigninError({ message: err.message, ...readSigninFailurePayload(err) }),
+    startFailure: describeSigninError({ message: err.message, code: readSigninFailureCode(err) }),
   };
 }
 
@@ -543,7 +538,6 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
       disclosure: local.disclosure,
       authorizeUrl: local.authorizeUrl,
       error: failure?.message ?? null,
-      errorDetail: failure?.detail ?? null,
       canUseOwnCredentials: failure?.canUseOwnCredentials ?? false,
       savingCredentials: credentialsMutation.isPending,
       credentialsError: local.credentialsError,

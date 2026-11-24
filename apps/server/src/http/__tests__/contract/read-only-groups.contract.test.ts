@@ -160,7 +160,9 @@ contractSuite('read-only and system groups', [
     body: {},
     expect: {
       status: 404,
-      body: { error: 'Unknown capability: nope.nope', code: 'UNKNOWN_CAPABILITY' },
+      body: problemBody('unknown_capability', {
+        detail: 'No action has that id. List them with `dorkos capabilities`.',
+      }),
     },
   },
 

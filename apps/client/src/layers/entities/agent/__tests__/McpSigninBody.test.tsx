@@ -1,7 +1,6 @@
 /**
- * The failed half of the shared sign-in surface (DOR-982): the plain reason, the
- * raw text behind Details, and the "use your own app credentials" path that only
- * one failure family offers.
+ * The failed half of the shared sign-in surface (DOR-982): the plain reason, and
+ * the "use your own app credentials" path that only one failure family offers.
  *
  * The form is driven through the REAL hook against a mock Transport rather than
  * a frozen flow object, because the behaviour under test is not "a form renders"
@@ -31,12 +30,18 @@ const startResult: StartMcpSigninResult = {
   message: 'sign-in link',
 };
 
-/** The rejection shape `HttpTransport` produces for a capability error payload. */
-function capabilityRejection(code: string, detail: string, message: string): Error {
+/** The rejection shape `HttpTransport` produces for a capability's problem document. */
+function capabilityRejection(code: string, message: string): Error {
   return Object.assign(new Error(message), {
     code,
-    status: 400,
-    body: { error: message, code, detail },
+    status: 409,
+    body: {
+      type: `urn:dorkos:problem:${code}`,
+      title: message,
+      status: 409,
+      code,
+      detail: message,
+    },
   });
 }
 
@@ -77,13 +82,12 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 describe('a sign-in that could not start', () => {
-  it('leads with the plain reason and keeps the raw OAuth text behind Details', async () => {
+  it('leads with the plain reason the code names', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.startMcpSignin).mockRejectedValue(
       capabilityRejection(
-        'SIGNIN_NO_APP_REGISTRATION',
-        'HTTP 404: Invalid OAuth error response. Raw body: <html>Not Found</html>',
+        'signin_no_app_registration',
         'This server doesn’t let DorkOS register itself. Add your own app credentials to try again.'
       )
     );
@@ -93,21 +97,15 @@ describe('a sign-in that could not start', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('doesn’t let DorkOS register itself');
-    // Demoting the raw text is the point: it is present, but not in the alert.
-    expect(alert).not.toHaveTextContent('404');
-    expect(screen.getByText('Details')).toBeInTheDocument();
-    expect(screen.getByText(/Invalid OAuth error response/)).toBeInTheDocument();
+    // The raw OAuth text never leaves the server, so there is nothing to disclose.
+    expect(screen.queryByText('Details')).not.toBeInTheDocument();
   });
 
   it('offers the credentials form only for the family a person can fix', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.startMcpSignin).mockRejectedValue(
-      capabilityRejection(
-        'SIGNIN_UNREACHABLE',
-        'fetch failed',
-        'Couldn’t reach the server to start the sign-in.'
-      )
+      capabilityRejection('signin_unreachable', 'Couldn’t reach the server to start the sign-in.')
     );
     renderHarness(transport);
 
@@ -128,8 +126,7 @@ describe('a sign-in that could not start', () => {
     vi.mocked(transport.startMcpSignin)
       .mockRejectedValueOnce(
         capabilityRejection(
-          'SIGNIN_NO_APP_REGISTRATION',
-          'HTTP 404',
+          'signin_no_app_registration',
           'This server doesn’t let DorkOS register itself.'
         )
       )
@@ -175,8 +172,7 @@ describe('a sign-in that could not start', () => {
     vi.mocked(transport.startMcpSignin)
       .mockRejectedValueOnce(
         capabilityRejection(
-          'SIGNIN_NO_APP_REGISTRATION',
-          'HTTP 404',
+          'signin_no_app_registration',
           'This server doesn’t let DorkOS register itself.'
         )
       )
@@ -202,8 +198,7 @@ describe('a sign-in that could not start', () => {
     vi.mocked(transport.startMcpSignin)
       .mockRejectedValueOnce(
         capabilityRejection(
-          'SIGNIN_NO_APP_REGISTRATION',
-          'HTTP 404',
+          'signin_no_app_registration',
           'This server doesn’t let DorkOS register itself.'
         )
       )
@@ -227,8 +222,7 @@ describe('a sign-in that could not start', () => {
     const transport = createMockTransport();
     vi.mocked(transport.startMcpSignin).mockRejectedValue(
       capabilityRejection(
-        'SIGNIN_NO_APP_REGISTRATION',
-        'HTTP 404',
+        'signin_no_app_registration',
         'This server doesn’t let DorkOS register itself.'
       )
     );
@@ -271,8 +265,7 @@ describe('a sign-in that could not start', () => {
     const transport = createMockTransport();
     vi.mocked(transport.startMcpSignin).mockRejectedValue(
       capabilityRejection(
-        'SIGNIN_NO_APP_REGISTRATION',
-        'HTTP 404',
+        'signin_no_app_registration',
         'This server doesn’t let DorkOS register itself.'
       )
     );

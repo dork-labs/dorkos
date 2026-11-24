@@ -184,9 +184,13 @@ describe('registerCapabilitiesInOpenApi', () => {
       '200',
       '202',
       '400',
+      '401',
       '403',
       '404',
+      '409',
+      '412',
       '500',
+      '502',
       '503',
     ]);
   });
@@ -196,11 +200,13 @@ describe('registerCapabilitiesInOpenApi', () => {
     registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc);
     const get = generate(doc).paths?.['/api/demo/things']?.get;
     expect(Object.keys(get?.responses ?? {}).sort()).toEqual(
-      ['200', '202', '400', '403', '404', '500', '503'].sort()
+      ['200', '202', '400', '401', '403', '404', '409', '412', '500', '502', '503'].sort()
     );
-    expect(get?.responses?.['404']?.content?.['application/json']?.schema).toEqual({
-      $ref: '#/components/schemas/ErrorResponse',
+    // Every error is a problem document, never the old `ErrorResponse`.
+    expect(get?.responses?.['404']?.content?.['application/problem+json']?.schema).toEqual({
+      $ref: '#/components/schemas/Problem',
     });
+    expect(get?.responses?.['404']?.content?.['application/json']).toBeUndefined();
   });
 
   it('reads a renamed path segment, a POST’s query fields and the success status from the surface', () => {

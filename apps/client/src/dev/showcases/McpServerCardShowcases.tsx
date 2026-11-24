@@ -29,7 +29,6 @@ function frozenFlow(
       disclosure: null,
       authorizeUrl: null,
       error: null,
-      errorDetail: null,
       canUseOwnCredentials: false,
       savingCredentials: false,
       credentialsError: null,
