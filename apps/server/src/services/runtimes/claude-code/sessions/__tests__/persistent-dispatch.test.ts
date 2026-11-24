@@ -190,6 +190,7 @@ import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-start
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
+import { takeTurnCutoff } from '../../../../session/turn-cutoff/turn-cutoff.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import {
   SessionStateProjector,
@@ -3437,6 +3438,34 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     }
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(session.pendingTimers).toBeUndefined();
+  });
+
+  // DOR-3755: a timer dies with its process, and nothing ran the chat again to
+  // fire it, so the agent's next turn is told.
+  it('owes the next turn a note when it takes a process with a timer still pending', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const session = (
+      runtime as unknown as {
+        sessionStore: { findSession: (id: string) => { pendingTimers?: number } };
+      }
+    ).sessionStore.findSession(sessionId);
+    session.pendingTimers = 2;
+
+    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    const awake = vi
+      .spyOn(performance, 'now')
+      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60 * 60_000);
+    try {
+      await runtime.reapSession(sessionId);
+    } finally {
+      clock.mockRestore();
+      awake.mockRestore();
+    }
+
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+    expect(takeTurnCutoff(sessionId)).toEqual({ timersStopped: 2, at: later });
   });
 
   it('is cleared when the process crashes while holding work', async () => {

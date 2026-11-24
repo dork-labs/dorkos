@@ -57,17 +57,32 @@ export interface ChatStopCutoff {
 }
 
 /**
- * A one-time note on a session's next turn, saying who really ended the turn
- * before it, and that no person did.
+ * DorkOS ended the Claude Code process this session's timers lived in
+ * (DOR-3755): to free a slot for another chat, at the four-hour ceiling, or on
+ * an eviction. A session timer (CronCreate, ScheduleWakeup, /loop) fires only
+ * inside a running process, and no process runs for the chat again until its
+ * next turn, so a timer that came due in between did not fire, and for a
+ * one-shot CronCreate nothing else tells the agent.
+ */
+export interface TimersStoppedCutoff {
+  /** How many session timers were still pending when the process ended. */
+  timersStopped: number;
+  /** When the process ended, as epoch ms. */
+  at: number;
+}
+
+/**
+ * A one-time note on a session's next turn, saying what DorkOS, not a person,
+ * ended before it: the turn itself, or the process its timers lived in.
  *
  * The note exists because the runtime's own record of the stop speaks for a
  * person. Claude Code writes `[Request interrupted by user]` for any
  * interrupt, and "The user doesn't want to proceed with this tool use" over a
  * tool that was running, and agents read both as a person's stop and waited
- * hours for one. SERVER-derived from the stall guard and the chat-message
- * service; nothing a caller can supply.
+ * hours for one. SERVER-derived from the stall guard, the chat-message service
+ * and the Claude Code process lifecycle; nothing a caller can supply.
  */
-export type TurnCutoffData = StalledTurnCutoff | ChatStopCutoff;
+export type TurnCutoffData = StalledTurnCutoff | ChatStopCutoff | TimersStoppedCutoff;
 
 /** Zod schema for {@link TurnCutoffData}. */
 export const TurnCutoffDataSchema = z.union([
@@ -78,6 +93,10 @@ export const TurnCutoffDataSchema = z.union([
   z.object({
     stoppedBy: z.literal('chat'),
     via: z.enum(['interrupt', 'stop']),
+  }),
+  z.object({
+    timersStopped: z.number().int().positive(),
+    at: z.number().int().nonnegative(),
   }),
 ]);
 

@@ -371,7 +371,7 @@ const TURN_BLOCK_SPECS = {
     'Turn cut off',
     'session/turn-cutoff/turn-cutoff.ts',
     'state',
-    'When the last turn was stopped early.'
+    'When the last turn or a pending timer was cut off.'
   ),
   new_since_last_run: turn(
     'New since last run',
