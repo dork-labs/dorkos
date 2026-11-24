@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { holdLocalSpaceId, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
+import { resetLocalSpaceIdForTests, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
 import { initConfigManager } from '../../../core/config-manager.js';
 import { resolveCodexLaunchTools } from '../mcp-server-config.js';
 
@@ -43,7 +43,7 @@ describe('resolveCodexLaunchTools — the references a signature carries (DOR-51
       );
       return { tools, home, spaceId };
     } finally {
-      holdLocalSpaceId(undefined);
+      resetLocalSpaceIdForTests();
       await fs.rm(root, { recursive: true, force: true });
     }
   }

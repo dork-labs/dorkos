@@ -10,7 +10,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getOrCreateSpaceId,
-  holdLocalSpaceId,
+  resetLocalSpaceIdForTests,
   loadLocalSpaceId,
   localSpaceId,
   SPACE_ID_FILENAME,
@@ -28,7 +28,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  holdLocalSpaceId(undefined);
+  resetLocalSpaceIdForTests();
   await fs.rm(dorkHome, { recursive: true, force: true });
 });
 
@@ -75,6 +75,7 @@ describe('getOrCreateSpaceId', () => {
     ['an install-id-shaped UUID', '11111111-2222-3333-4444-555555555555'],
     ['empty', ''],
   ])('reads %s as absent and never writes over it', async (_label, contents) => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const file = path.join(dorkHome, SPACE_ID_FILENAME);
     await fs.writeFile(file, contents);
     expect(await getOrCreateSpaceId(dorkHome)).toBeUndefined();
@@ -82,6 +83,7 @@ describe('getOrCreateSpaceId', () => {
   });
 
   it('reads an unreadable file as absent and never writes over it', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
     // A directory where the file should be: every read fails with EISDIR.
     await fs.mkdir(path.join(dorkHome, SPACE_ID_FILENAME));
     expect(await getOrCreateSpaceId(dorkHome)).toBeUndefined();
@@ -156,7 +158,7 @@ describe('the id boot holds (loadLocalSpaceId, localSpaceId)', () => {
     expect(booted).toMatch(ULID);
     expect(localSpaceId()).toBe(booted);
     const write = vi.spyOn(fs, 'writeFile');
-    holdLocalSpaceId(undefined);
+    resetLocalSpaceIdForTests();
     expect(await loadLocalSpaceId(dorkHome)).toBe(booted);
     expect(write).not.toHaveBeenCalled();
   });

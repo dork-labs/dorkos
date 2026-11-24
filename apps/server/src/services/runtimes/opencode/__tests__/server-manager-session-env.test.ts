@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { holdLocalSpaceId, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
+import { resetLocalSpaceIdForTests, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
 import { OpenCodeServerManager } from '../server-manager.js';
 import type { OpenCodeSessionEnvironment } from '../session-environment.js';
 
@@ -26,7 +26,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  holdLocalSpaceId(undefined);
+  resetLocalSpaceIdForTests();
   await manager.shutdown();
   await rm(dorkHome, { recursive: true, force: true });
 });

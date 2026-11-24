@@ -34,7 +34,7 @@ import { resolveLaunch } from '../launch-resolver.js';
 import type { AgentSession } from '../../agent-types.js';
 import {
   SPACE_ID_FILENAME,
-  holdLocalSpaceId,
+  resetLocalSpaceIdForTests,
   loadLocalSpaceId,
 } from '../../../../../lib/identity/space-id.js';
 import { INSTANCE_ID_FILENAME } from '../../../../../lib/instance-id.js';
@@ -193,7 +193,7 @@ describe('executeSdkQuery — the references a signature carries (DOR-5138)', ()
   });
 
   afterEach(async () => {
-    holdLocalSpaceId(undefined);
+    resetLocalSpaceIdForTests();
     vi.unstubAllEnvs();
     resetAgentIdentityService();
     await fs.rm(dorkHome, { recursive: true, force: true });

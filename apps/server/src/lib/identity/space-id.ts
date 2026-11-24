@@ -173,12 +173,12 @@ export function localSpaceId(): string | undefined {
 }
 
 /**
- * Set the held id directly, or clear it with `undefined`. Boot goes through
- * {@link loadLocalSpaceId}; this exists so a test can put the process back to
- * "not booted" after loading one.
+ * Put the process back to "not booted": clear the held id. Takes no id, so no
+ * caller can hold an arbitrary one; a test that needs a value loads it with
+ * {@link loadLocalSpaceId} from a temporary folder.
  *
- * @param id - The id to hold, or `undefined` for none.
+ * @internal
  */
-export function holdLocalSpaceId(id: string | undefined): void {
-  held = id;
+export function resetLocalSpaceIdForTests(): void {
+  held = undefined;
 }

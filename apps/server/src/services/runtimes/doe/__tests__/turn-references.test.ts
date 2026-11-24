@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { holdLocalSpaceId, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
+import { resetLocalSpaceIdForTests, loadLocalSpaceId } from '../../../../lib/identity/space-id.js';
 import { initConfigManager } from '../../../core/config-manager.js';
 import {
   clearTestHomes,
@@ -88,7 +88,7 @@ it('DOR-5138: the builder env names the chat’s Mesh agent and the local space'
     expect(environments[1]).not.toHaveProperty('DORKOS_AGENT_ID');
   } finally {
     vi.unstubAllEnvs();
-    holdLocalSpaceId(undefined);
+    resetLocalSpaceIdForTests();
     clearTestHomes();
     await rm(root, { recursive: true, force: true });
   }
