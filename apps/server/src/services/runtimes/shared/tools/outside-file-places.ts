@@ -1,0 +1,170 @@
+/**
+ * The folders whose files hold someone else's words (DOR-5236): this computer's temp folders, the
+ * person's Downloads folder, and where room attachments are kept. A file read from one of them, or a
+ * search rooted at or above one, marks the turn as one that read outside words, as a web page does
+ * (`outside-text-tools.ts`).
+ *
+ * Kept small on purpose. A read inside the agent's own folder or the turn's working folder does not
+ * mark when that folder sits below one of these (a throwaway project under the temp folder stays
+ * clean), but a Downloads folder inside a working folder of the whole home still marks. Room
+ * attachments copied into an agent's tree (`PROJECTED_ATTACHMENTS_ROOT`) always mark: they are a
+ * room's files wherever they land. On Claude Code, the CLI's own temp folder for the project
+ * (`claude-code-scratch.ts`) does not mark.
+ *
+ * A path is compared after `~` is expanded, as written and, when it exists, as the filesystem
+ * resolves it, against both spellings of each folder (`/tmp` and macOS's `/private/tmp`).
+ *
+ * @module services/runtimes/shared/tools/outside-file-places
+ */
+import { realpathSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { expandTilde } from '../../../../lib/boundary.js';
+import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '../../../rooms/attachments/attachment-paths.js';
+import { claudeCodeScratchFolders } from './claude-code-scratch.js';
+
+/** Where a call runs: the turn's working folder and the agent's own folder, when known. */
+export interface CallPlace {
+  /** The turn's (or the command's) working folder. */
+  cwd?: string;
+  /** The agent's own folder. */
+  agentHome?: string;
+  /** Whether the call runs in Claude Code, whose own temp folder for the project stays unmarked. */
+  claudeCode?: boolean;
+}
+
+/** The tests one call's paths are put to. */
+export interface OutsideFileTests {
+  /** Whether reading this path hands the turn outside words. */
+  holds: (target: string) => boolean;
+  /** Whether a search rooted here reaches outside words: it holds them, or a folder of them is below. */
+  searchReaches: (root: string) => boolean;
+}
+
+/** The fixed temp folders on a Unix-like system, in both spellings macOS uses. */
+const UNIX_TEMP_FOLDERS = ['/tmp', '/var/tmp', '/private/tmp', '/private/var/tmp'];
+
+/** How many paths one call may resolve on disk; past it the call counts as reading outside words. */
+const MAX_RESOLVED = 512;
+
+/** A folder's spellings: as given, and as the filesystem resolves it, when it can. */
+function spellings(folder: string): string[] {
+  const out = [path.resolve(folder)];
+  try {
+    out.push(realpathSync.native(folder));
+  } catch {
+    // A folder that does not exist yet still counts as written.
+  }
+  return [...new Set(out)];
+}
+
+/** Whether `target` is `folder` or inside it. Both absolute. */
+function isInside(target: string, folder: string): boolean {
+  const relative = path.relative(folder, target);
+  return (
+    relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
+}
+
+/** Whether `target` is strictly inside `folder`. Both absolute. */
+function isBelow(target: string, folder: string): boolean {
+  return target !== folder && isInside(target, folder);
+}
+
+/** Whether the way from `root` down to `folder` passes a hidden folder, which a search skips. */
+function hiddenBetween(root: string, folder: string): boolean {
+  return path
+    .relative(root, folder)
+    .split(path.sep)
+    .some((part) => part.startsWith('.') && part !== '..');
+}
+
+/** The folders whose files hold outside words, read fresh so a moved data folder is honoured. */
+function outsideFileFolders(): string[] {
+  const folders = [os.tmpdir(), expandTilde('~/Downloads'), path.join(resolveDorkHome(), 'rooms')];
+  if (process.platform !== 'win32') folders.push(...UNIX_TEMP_FOLDERS);
+  return [...new Set(folders.flatMap(spellings))];
+}
+
+/** The projected attachments folder as path segments, to find it inside any agent's tree. */
+const PROJECTED_SEGMENTS = PROJECTED_ATTACHMENTS_ROOT.split('/');
+
+/** Whether a path, absolute or relative, lies in a room attachments folder copied into a tree. */
+function inProjectedAttachments(target: string): boolean {
+  const parts = target.split(/[\\/]+/);
+  return parts.some((_, at) =>
+    PROJECTED_SEGMENTS.every((segment, offset) => parts[at + offset] === segment)
+  );
+}
+
+/**
+ * The tests for one call: the folders are looked up once, however many paths the call names.
+ *
+ * @param place - Where the call runs.
+ * @returns Tests taking a path as the call names it: absolute, `~`-relative or relative to
+ *   `place.cwd`. A relative path with no known working folder is taken to be the agent's own.
+ */
+export function outsideFileTests(place: CallPlace = {}): OutsideFileTests {
+  const folders = outsideFileFolders();
+  const ownFolders = [place.cwd, place.agentHome].filter(
+    (folder): folder is string => !!folder && path.isAbsolute(folder)
+  );
+  const own = ownFolders.flatMap(spellings);
+  const scratch =
+    place.claudeCode && place.cwd && path.isAbsolute(place.cwd)
+      ? claudeCodeScratchFolders(spellings(place.cwd), spellings)
+      : [];
+  let resolved = 0;
+
+  /** The path as written and, when it exists, as the filesystem resolves it; `null` past the cap. */
+  const forms = (target: string): string[] | null => {
+    const named = expandTilde(target);
+    if (!path.isAbsolute(named) && !place.cwd) return [];
+    const absolute = path.resolve(place.cwd ?? path.sep, named);
+    // A bare word (a command's argument, a word of prose) is read as written: only something
+    // spelled as a path is looked up on disk.
+    if (!/[\\/]/.test(target) && !target.startsWith('.')) return [absolute];
+    if (resolved >= MAX_RESOLVED) return null;
+    resolved += 1;
+    try {
+      const real = realpathSync.native(absolute);
+      return real === absolute ? [absolute] : [absolute, real];
+    } catch {
+      return [absolute];
+    }
+  };
+
+  /** Whether one absolute spelling of a path lies in a folder of outside files. */
+  const spelledInside = (absolute: string): boolean => {
+    if (inProjectedAttachments(absolute)) return true;
+    if (scratch.some((folder) => isInside(absolute, folder))) return false;
+    return folders.some(
+      (folder) =>
+        isInside(absolute, folder) &&
+        // The agent's own tree counts as its own only when it sits below this folder.
+        !own.some((mine) => isBelow(mine, folder) && isInside(absolute, mine))
+    );
+  };
+
+  const holds = (target: string): boolean => {
+    if (!target) return false;
+    if (inProjectedAttachments(target)) return true;
+    const spelled = forms(target);
+    return spelled === null || spelled.some(spelledInside);
+  };
+
+  const searchReaches = (root: string): boolean => {
+    if (!root) return false;
+    const spelled = forms(root);
+    if (spelled === null) return true;
+    return spelled.some(
+      (absolute) =>
+        spelledInside(absolute) ||
+        folders.some((folder) => isBelow(folder, absolute) && !hiddenBetween(absolute, folder))
+    );
+  };
+
+  return { holds, searchReaches };
+}
