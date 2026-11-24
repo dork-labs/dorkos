@@ -51,10 +51,10 @@ function agentName(agents: AgentChoice[], agentId: string): string {
 /** Why a notification could not be set up, in words that point at the fix. */
 function createErrorCopy(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
-  if (code === 'invalid_request') return 'Check the filter values, then try again.';
+  if (code === 'invalid_filter') return 'Check the filter values, then try again.';
   if (code === 'destination_unavailable')
     return 'That place can’t take notifications now. Pick another.';
-  if (code === 'precondition_failed')
+  if (code === 'updates_changed')
     return 'Something changed while you were choosing. Check your choices, then try again.';
   return 'Couldn’t finish setting this up. Try again.';
 }

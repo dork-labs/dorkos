@@ -137,20 +137,20 @@ export const EVENT_ACCESS_PROBLEM: Record<ConnectorEventAccessError['code'], Con
 export const SUBSCRIPTION_PROBLEM: Record<ConnectorSubscriptionError['code'], ConnectorProblem> = {
   not_found: { code: 'not_found', detail: 'That notification isn’t set up anymore.' },
   definition_changed: {
-    code: 'precondition_failed',
+    code: 'updates_changed',
     detail: 'These updates changed since you looked. Choose them again.',
   },
-  invalid_filter: { code: 'invalid_request', detail: 'Check the filter values, then try again.' },
+  invalid_filter: { code: 'invalid_filter', detail: 'Check the filter values, then try again.' },
   destination_unavailable: {
     code: 'destination_unavailable',
     detail: 'That place can’t take notifications now. Pick another.',
   },
   events_unavailable: {
-    code: 'temporarily_unavailable',
+    code: 'updates_unavailable',
     detail: 'Notifications aren’t available right now. Try again later.',
   },
   review_conflict: {
-    code: 'precondition_failed',
+    code: 'updates_changed',
     detail: 'Those updates changed while you chose them. Pick them again.',
   },
 };
@@ -178,13 +178,13 @@ export const AGENT_REQUEST_PROBLEM: Record<ConnectorAgentRequestError['code'], C
     code: 'already_resolved',
     detail: 'This request was already answered.',
   },
-  // Not `invalid_request`: that is the bad-update-choice answer, whose way out differs.
+  // A retry can work once the account is ready, so not `updates_unavailable`.
   selection_invalid: {
     code: 'conflict',
     detail: 'That account isn’t ready for this request yet. Try again.',
   },
   event_selection_unavailable: {
-    code: 'invalid_request',
+    code: 'updates_unavailable',
     detail: 'Those updates can’t be set up. Choose again, or answer without them.',
   },
   authority_sync_failed: {
@@ -196,7 +196,7 @@ export const AGENT_REQUEST_PROBLEM: Record<ConnectorAgentRequestError['code'], C
     detail: 'This app is turned off for this chat. Turn it on first.',
   },
   request_open_elsewhere: {
-    code: 'conflict',
+    code: 'request_open_elsewhere',
     detail: 'Signing in already started another way. Finish or close that first.',
   },
   request_rate_limited: {

@@ -137,7 +137,7 @@ export const PROBLEM_BY_CODE: Record<RoomErrorCode, RoomProblem> = {
   AGENT_IDENTITY_UNVERIFIED: { code: 'agent_identity_unverified' },
   // A write that only the owner's session could make theirs (DOR-3330).
   PERSON_SESSION_REQUIRED: { code: 'person_session_required' },
-  BROADCAST_NOT_BRIDGEABLE: { code: 'invalid_request' },
+  BROADCAST_NOT_BRIDGEABLE: { code: 'broadcast_not_bridgeable' },
   CHAT_ALREADY_BRIDGED: { code: 'conflict' },
   BRIDGE_SECOND_AGENT_REFUSED: { code: 'conflict' },
   UNKNOWN_CHAT_TYPE: { code: 'invalid_request' },

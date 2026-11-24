@@ -16,6 +16,7 @@ import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { RequestedWriteOffer } from '../../lib/access-level-offer';
 import { offerableAccounts } from '../../lib/readiness';
+import { unansweredReason } from '../../lib/unanswered-reason';
 import { AccessCardFrame } from '../access/AccessCardFrame';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
 import { AgentRequestEventScopes } from '../AgentRequestEventScopes';
@@ -46,55 +47,6 @@ function refusedAsOffHere(error: Error | null): boolean {
 
 /** Why turning the app back on for this chat did not land. */
 const TURN_ON_FAILED = 'Couldn’t turn it on for this chat. Nothing changed. Try again.';
-
-/**
- * Why an Allow's answer did not reach the request after the access itself had
- * already been saved, and the one fix: send it again, turn the app back on for
- * this chat (only when the server's view of the chat offers it), choose the
- * updates again or answer without them, or nothing.
- */
-function unansweredReason(
-  error: Error | null,
-  agentName: string,
-  serviceName: string
-): { reason: string; fix: 'retry' | 'turn_on' | 'updates' | null } {
-  switch ((error as { code?: string } | null)?.code) {
-    case 'app_off_in_chat':
-      // The chat's own switch is off. Turning it on is the same switch the
-      // chat's details show: it only undoes that off, putting back the access
-      // this chat had (its own hand-picked access, else what the agent has
-      // everywhere), never more. The card offers it only when the chat's
-      // readiness names it as the fix, then answers the request.
-      return {
-        reason: `This chat has ${serviceName} turned off for ${agentName}.`,
-        fix: 'turn_on',
-      };
-    case 'already_resolved':
-      return {
-        reason: `It was answered somewhere else. Ask ${agentName} again if it still needs this.`,
-        fix: null,
-      };
-    case 'expired':
-      return { reason: `The request ran out of time. Ask ${agentName} again.`, fix: null };
-    case 'not_found':
-      return { reason: 'The request is no longer open.', fix: null };
-    case 'temporarily_unavailable':
-      return { reason: 'The access is still being set up.', fix: 'retry' };
-    case 'invalid_request':
-    case 'precondition_failed':
-    case 'destination_unavailable':
-      // Sending the same updates again would fail the same way, so the card
-      // offers the two answers that can work instead of a retry.
-      return {
-        reason: `The updates you picked can’t be set up. Pick again, or answer without them.`,
-        fix: 'updates',
-      };
-    case 'conflict':
-      return { reason: 'That account isn’t ready for it yet.', fix: 'retry' };
-    default:
-      return { reason: 'The answer didn’t reach DorkOS.', fix: 'retry' };
-  }
-}
 
 /**
  * The one way a person answers an agent's request for an app, in the

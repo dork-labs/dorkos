@@ -4,7 +4,50 @@
     {
       "path": "apps/server/src/routes/relay-adapter-http.ts",
       "terms": ["connection"],
-      "reason": "The problem details a refused chat connection change answers with (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+      "contains": "A connection with that name already exists",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "That connection doesn’t exist.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "DorkOS doesn’t know that kind of connection.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "This kind of connection can be added only once.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "A built-in connection can’t be removed.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "Check this connection’s settings",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "DorkOS couldn’t start this connection.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "This connection changed since you looked.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
     },
     {
       "path": "apps/server/src/routes/relay-webhooks.ts",

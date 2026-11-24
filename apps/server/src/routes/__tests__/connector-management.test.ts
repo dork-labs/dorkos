@@ -13,6 +13,7 @@ import { getStaticLocalOrigins } from '../../lib/trusted-origins.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
+import { ConnectorAgentRequestError } from '../../services/connectors/agent-request-service.js';
 import { ConnectorGrantExclusionError } from '../../services/connectors/access/grant-exclusions.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 import { ApiError } from '../../../../../packages/cli/src/lib/api-client.js';
@@ -251,7 +252,7 @@ describe('connector management routes', () => {
       .expect(412);
     expect(conflict.headers['content-type']).toContain('application/problem+json');
     expect(conflict.body).toMatchObject({
-      code: 'precondition_failed',
+      code: 'updates_changed',
       detail: 'Those updates changed while you chose them. Pick them again.',
     });
     expect(conflict.body).not.toHaveProperty('error');
@@ -264,6 +265,24 @@ describe('connector management routes', () => {
       .send({ decision: 'current_access', connectionId: 'connection-a' })
       .expect(409);
     expect(refused.body.code).toBe('destination_unavailable');
+  });
+
+  // The card tells these apart by code alone (review on DOR-4979).
+  it.each([
+    ['request_open_elsewhere', 409, 'request_open_elsewhere'],
+    ['event_selection_unavailable', 503, 'updates_unavailable'],
+    ['selection_invalid', 409, 'conflict'],
+  ] as const)('answers an agent request %s as %i %s', async (code, status, problemCode) => {
+    const app = fixtureTarget.mount(buildApp());
+    agentRequests.resolve.mockRejectedValueOnce(
+      new ConnectorAgentRequestError(code, 'private words')
+    );
+    const res = await request(app)
+      .post('/api/connectors/agent-requests/request-a/decision')
+      .send({ decision: 'current_access', connectionId: 'connection-a' })
+      .expect(status);
+    expect(res.body.code).toBe(problemCode);
+    expect(JSON.stringify(res.body)).not.toContain('private words');
   });
 
   it('keeps request authentication behind the owner and exact request boundary', async () => {

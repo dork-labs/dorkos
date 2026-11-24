@@ -248,7 +248,9 @@ export class WebhookAdapter extends BaseRelayAdapter {
    * @param headers - Request headers object (Express `req.headers`)
    * @returns `{ ok: true }` on success, or `{ ok: false, error, status? }` on
    *   failure. `status` is the HTTP code the caller should return (defaults to
-   *   401 when absent).
+   *   401 when absent): 503 when the adapter isn't running or the bus refused
+   *   the message, 500 when publishing threw, and 422 for a signed body that
+   *   isn't JSON, all after the request checked out.
    */
   async handleInbound(
     rawBody: Buffer,
@@ -257,7 +259,7 @@ export class WebhookAdapter extends BaseRelayAdapter {
     if (this.invalidSubject) {
       return { ok: false, error: WEBHOOK_SERVER_SUBJECT_REFUSAL, status: 403 };
     }
-    if (!this.relay) return { ok: false, error: 'Adapter not started' };
+    if (!this.relay) return { ok: false, error: 'Adapter not started', status: 503 };
 
     const signature = normalizeHeader(headers['x-signature']);
     const timestamp = normalizeHeader(headers['x-timestamp']);
@@ -298,9 +300,16 @@ export class WebhookAdapter extends BaseRelayAdapter {
     // 5. Register nonce with TTL
     this.nonceMap.set(nonceKey, Date.now() + NONCE_TTL_MS);
 
-    // 6. Parse body and publish to Relay
+    // 6. Parse body and publish to Relay. A signed body that isn't JSON is the
+    // sender's mistake, not a delivery failure: 422, its own status.
+    let body: unknown;
     try {
-      const body: unknown = JSON.parse(rawBody.toString());
+      body = JSON.parse(rawBody.toString());
+    } catch (err) {
+      this.recordError(err);
+      return { ok: false, error: 'Body is not JSON', status: 422 };
+    }
+    try {
       const payload = {
         type: 'webhook',
         data: body,
@@ -317,14 +326,14 @@ export class WebhookAdapter extends BaseRelayAdapter {
       if (result.deliveredTo === 0 && result.rejected?.length) {
         const reason = result.rejected[0]?.reason ?? 'unknown';
         this.recordError(new Error(`Publish rejected: ${reason}`));
-        return { ok: false, error: `Publish rejected: ${reason}` };
+        return { ok: false, error: `Publish rejected: ${reason}`, status: 503 };
       }
 
       this.trackInbound();
       return { ok: true };
     } catch (err) {
       this.recordError(err);
-      return { ok: false, error: 'Publish failed' };
+      return { ok: false, error: 'Publish failed', status: 500 };
     }
   }
 

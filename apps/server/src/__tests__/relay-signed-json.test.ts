@@ -203,8 +203,9 @@ describe('signed Relay JSON through the finalized application', () => {
     const malformed = Buffer.from('{broken');
     const headers = signed(malformed);
     const response = await send(malformed, headers);
-    expect(response.status).toBe(401);
-    expect(response.body).toEqual(INVALID_SIGNATURE);
+    // Signed, so the sender is told its body isn't JSON (not the signature's 401).
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('malformed_request');
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledTimes(0);
     const replay = await send(EXACT, signed(EXACT, headers['X-Nonce']));
@@ -466,8 +467,9 @@ describe('signed Relay JSON through the finalized application', () => {
   it('keeps empty typed bodies at the real receiver but refuses an untyped absent body', async () => {
     const empty = Buffer.alloc(0);
     const typed = await send(empty);
-    expect(typed.status).toBe(401);
-    expect(typed.body).toEqual(INVALID_SIGNATURE);
+    // A signed empty body reaches the adapter, which reads it as not JSON.
+    expect(typed.status).toBe(400);
+    expect(typed.body.code).toBe('malformed_request');
     expect(inbound).toHaveBeenCalledTimes(1);
     expect(inbound.mock.calls[0]![0]).toEqual(empty);
     const untyped = await request(target.server).post(URL).set(signed(empty));

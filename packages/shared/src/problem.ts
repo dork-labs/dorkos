@@ -215,6 +215,12 @@ export const PROBLEM_CODE_LIST = [
     status: 409,
     title: 'A connection with that name already exists.',
   },
+  /** A new connection was saved, but it couldn't connect: fix its token, then turn it on. */
+  {
+    code: 'connection_saved_not_started',
+    status: 502,
+    title: 'Saved, but the connection didn’t start.',
+  },
   // Connected apps.
   /** This computer's link to the DorkOS account is gone or needs renewing: link it again. */
   {
@@ -247,6 +253,18 @@ export const PROBLEM_CODE_LIST = [
     code: 'destination_unavailable',
     status: 409,
     title: 'That place can’t take notifications now.',
+  },
+  /** The updates chosen with an answer can't be set up now: choose again, or answer without them. */
+  { code: 'updates_unavailable', status: 503, title: 'Those updates can’t be set up now.' },
+  /** The updates changed while they were being chosen: choose them again. */
+  { code: 'updates_changed', status: 412, title: 'Those updates changed. Choose them again.' },
+  /** An update filter's values don't fit the app's: fix them. */
+  { code: 'invalid_filter', status: 400, title: 'Check the filter values.' },
+  /** Signing in for an agent's request already started another way: finish that first. */
+  {
+    code: 'request_open_elsewhere',
+    status: 409,
+    title: 'Signing in already started another way.',
   },
   /** A management review is being settled right now; its outcome isn't known yet. */
   { code: 'review_resolving', status: 409, title: 'This review is being settled now.' },

@@ -40,6 +40,9 @@ interface UseAdapterWizardOptions {
   onOpenChange: (open: boolean) => void;
 }
 
+/** What a setting the server refused says under its field. */
+const REFUSED_FIELD = 'DorkOS couldn’t use this. Check it.';
+
 /** Encapsulates all state machine logic for the adapter setup wizard. */
 export function useAdapterWizard({
   manifest,
@@ -138,6 +141,41 @@ export function useAdapterWizard({
     }
     return valid;
   }, [form, visibleFields]);
+
+  /**
+   * Mark the settings a refused save named (`fields`, by key; DOR-4979) and
+   * go back to the settings step that holds the first of them.
+   *
+   * @returns Whether the refusal named any setting.
+   */
+  const markRefusedFields = useCallback(
+    (error: unknown): boolean => {
+      const named = (error as { body?: { fields?: unknown } } | null)?.body?.fields;
+      const fields = Array.isArray(named)
+        ? named.filter((key): key is string => typeof key === 'string')
+        : [];
+      if (fields.length === 0) return false;
+      for (const key of fields) {
+        // Dynamic field keys from manifest don't satisfy the typed path constraint.
+        form.setFieldMeta(key as never, (meta) => ({
+          ...meta,
+          isTouched: true,
+          errors: [REFUSED_FIELD],
+          errorMap: { onSubmit: REFUSED_FIELD },
+        }));
+      }
+      const steps = manifest.setupSteps?.length ?? 1;
+      for (let index = 0; index < steps; index++) {
+        if (setupStepFields(manifest, index).some((field) => fields.includes(field.key))) {
+          setSetupStepIndex(index);
+          break;
+        }
+      }
+      setStep('configure');
+      return true;
+    },
+    [form, manifest]
+  );
 
   const handleContinue = useCallback(() => {
     if (step === 'agent') {
@@ -240,7 +278,7 @@ export function useAdapterWizard({
     if (isEditMode && existingInstance) {
       updateConfig.mutate(
         { id: existingInstance.id, config: configWithLabel },
-        { onSuccess: () => onOpenChange(false) }
+        { onSuccess: () => onOpenChange(false), onError: markRefusedFields }
       );
       return;
     }
@@ -291,11 +329,15 @@ export function useAdapterWizard({
           );
         },
         onError: (error) => {
-          if (error.message?.includes('timed out')) {
+          // By code, never by the server's words (DOR-4979).
+          const code = (error as { code?: string }).code;
+          if (markRefusedFields(error)) return;
+          if (code === 'connection_saved_not_started') {
+            // Saved already, so adding it again would only clash: say how to fix it.
             toast.error(`Couldn’t reach ${manifest.displayName}`, {
-              description: 'Check your token and network, then try again.',
+              description: 'It was saved. Check your token and network, then turn it on.',
             });
-          } else if (error.message?.includes('duplicate') || error.message?.includes('exists')) {
+          } else if (code === 'connection_id_taken') {
             setStep('configure');
             setSetupStepIndex(0);
           }
@@ -317,6 +359,7 @@ export function useAdapterWizard({
     agentOptions,
     rollbackAdapter,
     onOpenChange,
+    markRefusedFields,
   ]);
 
   const handleOpenChange = useCallback(

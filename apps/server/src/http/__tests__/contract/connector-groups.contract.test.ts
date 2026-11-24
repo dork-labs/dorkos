@@ -1153,7 +1153,7 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     );
     expect(changed.status).toBe(412);
     expect(changed.json).toEqual(
-      problemBody('precondition_failed', {
+      problemBody('updates_changed', {
         detail: 'These updates changed since you looked. Choose them again.',
       })
     );

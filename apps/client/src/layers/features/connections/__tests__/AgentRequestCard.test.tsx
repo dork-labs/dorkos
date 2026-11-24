@@ -688,7 +688,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
-      Object.assign(new Error('unavailable'), { code: 'invalid_request' })
+      Object.assign(new Error('unavailable'), { code: 'updates_unavailable' })
     );
     renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
 

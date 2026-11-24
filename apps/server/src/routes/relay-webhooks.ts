@@ -97,14 +97,22 @@ export function createRelayWebhookRoutes(adapterManager: AdapterManager): Hono<A
       c.env.incoming.headers as Record<string, string | string[] | undefined>
     );
     if (result.ok) return c.json({ ok: true }, 200);
-    // A signature, timestamp or nonce refusal is the flat 401. The adapter's
-    // only other refusal is a 403 for an address DorkOS keeps for itself, a
-    // setting of the connection's, not of the sender's request.
-    if (result.status === 403) {
-      return problem(c, 'reserved_subject', {
-        detail: 'This connection posts to an address DorkOS keeps. Change it in Settings.',
+    // After the request checked out, a delivery that failed says so, so the
+    // sender tries again; its own words stay in the adapter's log.
+    if (result.status === 422) {
+      return problem(c, 'malformed_request', { detail: 'The request’s body isn’t JSON.' });
+    }
+    if (result.status === 503) {
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'DorkOS couldn’t take this request now. Send it again later.',
       });
     }
+    if (result.status === 500) {
+      return problem(c, 'internal_error', { detail: 'DorkOS couldn’t deliver this request.' });
+    }
+    // Every other refusal is the flat 401: a signature, timestamp or nonce, and
+    // the 403 for an address DorkOS keeps, which is checked before the
+    // signature and so must tell an unsigned caller nothing about settings.
     return refused();
   });
 

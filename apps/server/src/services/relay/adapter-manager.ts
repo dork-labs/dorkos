@@ -1058,7 +1058,12 @@ export class AdapterManager {
             const message = err instanceof Error ? err.message : String(err);
             this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
             logger.error('[AdapterManager] adapter start failed', { id, error: message });
-            throw err;
+            // Saved already: say so, so the caller doesn't offer an add that can only clash.
+            throw new AdapterError(
+              `Adapter '${id}' was saved but did not start`,
+              'START_FAILED',
+              id
+            );
           }
         });
       }

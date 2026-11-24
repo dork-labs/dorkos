@@ -58,6 +58,11 @@ const ADAPTER_PROBLEM: Record<AdapterErrorCode, { code: ProblemCode; detail: str
     code: 'internal_error',
     detail: 'DorkOS couldn’t start this connection. Restart DorkOS, then try again.',
   },
+  // Saved, but its start failed: fixing the token and turning it on is the way out.
+  START_FAILED: {
+    code: 'connection_saved_not_started',
+    detail: 'Saved, but couldn’t connect. Check the token, then turn it on.',
+  },
   // What the owner confirmed no longer matches the connection (DOR-3271).
   CONFIRMATION_STALE: {
     code: 'precondition_failed',
@@ -75,7 +80,12 @@ const ADAPTER_PROBLEM: Record<AdapterErrorCode, { code: ProblemCode; detail: str
 export function adapterProblem(err: AdapterError): Problem {
   logger.info('[relay] a connection change was refused', { code: err.code, message: err.message });
   const mapped = ADAPTER_PROBLEM[err.code];
-  return problemBody(mapped.code, { detail: mapped.detail });
+  // Which settings were refused, by key, so the form can mark them; never a value.
+  const fields = err.code === 'INVALID_CONFIG' && err.fields?.length ? [...err.fields] : undefined;
+  return problemBody(mapped.code, {
+    detail: mapped.detail,
+    ...(fields ? { extensions: { fields } } : {}),
+  });
 }
 
 /**

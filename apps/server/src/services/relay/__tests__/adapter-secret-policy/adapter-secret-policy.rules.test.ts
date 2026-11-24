@@ -31,6 +31,10 @@ describe('1. an adapter naming file:anthropic', () => {
       expect(() => assertSecretReferences('wh', config, WEBHOOK_MANIFEST, writer)).toThrow(
         /outbound\.secret' names a stored secret\. Enter the secret itself/
       );
+      // The form marks the field by its key (DOR-4979).
+      expect(() => assertSecretReferences('wh', config, WEBHOOK_MANIFEST, writer)).toThrow(
+        expect.objectContaining({ fields: ['outbound.secret'] })
+      );
     }
   });
 

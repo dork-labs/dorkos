@@ -165,6 +165,8 @@ describe('WebhookAdapter inbound', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Adapter not started');
+      // Not a signature failure: the caller should send it again later.
+      expect(result.status).toBe(503);
     });
 
     it('returns error when relay.publish() throws', async () => {
@@ -175,6 +177,8 @@ describe('WebhookAdapter inbound', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Publish failed');
+      // A delivery failure after the signature passed, never the signature's 401.
+      expect(result.status).toBe(500);
       expect(adapter.getStatus().errorCount).toBe(1);
       expect(adapter.getStatus().lastError).toBe('Relay unavailable');
     });

@@ -419,8 +419,10 @@ contractSuite('the Relay groups, login off, nothing set up', [
     },
     expect: {
       status: 400,
+      // The refused settings by key, for the form to mark; never their values.
       body: problemBody('invalid_request', {
         detail: 'Check this connection’s settings, then save again.',
+        extensions: { fields: ['inbound.subject', 'inbound.secret', 'outbound'] },
       }),
     },
   },
@@ -974,13 +976,16 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       body,
       expect: { status: 401, body: INVALID_SIGNATURE },
     });
-    // Signed, but not JSON: verified first, then refused.
+    // Signed, but not JSON: verified first, then told its body isn't JSON.
     await check(server, {
       method: 'POST',
       path: url,
       headers: signed('{broken'),
       body: '{broken',
-      expect: { status: 401, body: INVALID_SIGNATURE },
+      expect: {
+        status: 400,
+        body: problemBody('malformed_request', { detail: 'The request’s body isn’t JSON.' }),
+      },
     });
     // Any content type is read as bytes.
     const plain = 'plain text is still bytes';
@@ -989,7 +994,11 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: { ...signed(plain), 'content-type': 'text/plain' },
       body: plain,
-      expect: { status: 401, body: INVALID_SIGNATURE },
+      // Verified as bytes, then read as JSON, which plain text isn't.
+      expect: {
+        status: 400,
+        body: problemBody('malformed_request', { detail: 'The request’s body isn’t JSON.' }),
+      },
     });
     const { 'content-type': _type, ...untyped } = signed(body);
     await check(server, {

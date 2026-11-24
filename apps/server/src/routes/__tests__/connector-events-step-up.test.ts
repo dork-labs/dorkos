@@ -101,7 +101,7 @@ describe('notification confirmation', () => {
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
       ok: true,
       status: 412,
-      result: { code: 'precondition_failed' },
+      result: { code: 'updates_changed' },
     });
   });
 
