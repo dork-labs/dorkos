@@ -78,6 +78,7 @@ bash scripts/test-daily-sweep.sh
 bash scripts/test-after-merge-alert.sh
 bash scripts/test-browser-smoke-scope.sh
 bash scripts/test-release-branch-contents.sh
+bash scripts/test-release-gate.sh
 bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh
 bash .agents/skills/creating-pull-requests/scripts/test-open-pr-cap.sh
 bash .agents/skills/creating-pull-requests/scripts/test-pr-age-list.sh
