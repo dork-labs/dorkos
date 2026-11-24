@@ -105,6 +105,7 @@ describe('the mount', () => {
       'agent.pause',
       'agent.resume',
       'agent.list_paused',
+      'link.resolve',
     ]);
   });
 

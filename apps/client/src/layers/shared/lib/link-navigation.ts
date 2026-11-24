@@ -39,6 +39,7 @@
  */
 import { toast } from 'sonner';
 import { APP_ROUTE_PATHS } from '@dorkos/shared/app-route-paths';
+import { dorkUriFromLink } from '@dorkos/shared/dork-ref';
 import { isDesktopShell } from './platform';
 import { parseExtensionPagePath } from './extension-page-path';
 
@@ -60,14 +61,25 @@ export { APP_ROUTE_PATHS };
 const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
 
 /**
- * Whether the router serves this pathname: one of {@link APP_ROUTE_PATHS}, or
- * an extension page under `/x/<extensionId>/…` (spec `flow-multiproject`
- * §6.5). Extension pages are the one parameterised family, so they are matched
- * by shape rather than listed; whether the extension or the page exists is the
- * page route's question, and it answers with an empty state rather than a 404.
+ * The router path that serves `/r/<dork-uri>` links (DOR-5046), the second
+ * family matched by shape. The route-list drift guard names it.
+ */
+export const DORK_LINK_ROUTE_PATHS = ['/r/$'] as const;
+
+/**
+ * Whether the router serves this pathname: one of {@link APP_ROUTE_PATHS}, an
+ * extension page under `/x/<extensionId>/…` (spec `flow-multiproject` §6.5),
+ * or a `/r/<dork-uri>` link. The last two are the parameterised families, so
+ * they are matched by shape rather than listed; whether the extension, the
+ * page or the linked thing exists is the route's question, and it answers
+ * with an empty state or the not-found page.
  */
 function isAppRoutePath(pathname: string): boolean {
-  return APP_ROUTE_SET.has(pathname) || parseExtensionPagePath(pathname) !== null;
+  return (
+    APP_ROUTE_SET.has(pathname) ||
+    parseExtensionPagePath(pathname) !== null ||
+    dorkUriFromLink(pathname) !== null
+  );
 }
 
 /**

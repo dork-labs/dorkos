@@ -22089,6 +22089,101 @@
           "pauses"
         ]
       },
+      "ResolvedDorkLink": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "chat"
+                ]
+              },
+              "sessionId": {
+                "type": "string",
+                "description": "The chat’s id now: a new chat’s first id is followed to the one its runtime gave it."
+              }
+            },
+            "required": [
+              "kind",
+              "sessionId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "room"
+                ]
+              },
+              "roomId": {
+                "type": "string",
+                "description": "The room or DM."
+              }
+            },
+            "required": [
+              "kind",
+              "roomId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "entry"
+                ]
+              },
+              "roomId": {
+                "type": "string",
+                "description": "The room the message is in."
+              },
+              "entryId": {
+                "type": "string",
+                "description": "The message."
+              },
+              "seq": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "Where it sits in the room, for scrolling to it."
+              },
+              "threadRootEntryId": {
+                "type": "string",
+                "description": "The message a reply hangs under, when the message is a reply in a thread."
+              }
+            },
+            "required": [
+              "kind",
+              "roomId",
+              "entryId",
+              "seq"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "description": "The agent’s mesh id."
+              }
+            },
+            "required": [
+              "kind",
+              "agentId"
+            ]
+          }
+        ]
+      },
       "ListExtensionDecisionsResponse": {
         "type": "object",
         "properties": {
@@ -107076,6 +107171,100 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentPauseList"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The input failed the capability’s schema, or the capability refused it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: the caller may not run it, a network sign-in asked for an action, or the capability refused this caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not available on this computer, or the thing it names was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Something went wrong running it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting, or the extension that owns the tool is stopped",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/target": {
+      "get": {
+        "operationId": "link.resolve",
+        "tags": [
+          "Link"
+        ],
+        "summary": "Open a dork: link",
+        "description": "Find what a dork: reference names on this DorkOS, such as dork:chat:<id>, dork:room:<id>, dork:entry:<id> or dork:agent:<id> (the part of a /r/ link after /r/). Returns its kind and the ids that open it: a chat id, a room id, a message with its room and place, or an agent id. A chat named by the id it had before its first reply is followed to the id it has now. Anything that is not there, that you may not see, or that is not a chat, room, message or agent answers LINK_NOT_FOUND.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The dork: reference to open, such as dork:chat:<id>, dork:room:<id>, dork:entry:<id> or dork:agent:<id>. The part of a /r/ link after /r/."
+            },
+            "required": true,
+            "description": "The dork: reference to open, such as dork:chat:<id>, dork:room:<id>, dork:entry:<id> or dork:agent:<id>. The part of a /r/ link after /r/.",
+            "name": "uri",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open a dork: link result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedDorkLink"
                 }
               }
             }

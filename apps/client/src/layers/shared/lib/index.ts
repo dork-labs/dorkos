@@ -116,6 +116,7 @@ export {
 export {
   APP_ROUTE_PATHS,
   classifyLink,
+  DORK_LINK_ROUTE_PATHS,
   declaredScheme,
   describeRefusal,
   internalRoutePath,
@@ -477,6 +478,7 @@ export type { SessionTarget, SessionSearch } from './session-link';
 export { awayFromTheComputerSentence, serverSentence } from './server-sentence';
 
 export { appRoutes } from './route-factory';
+export { dorkLinkBeforeLoad, type DorkLinkBeforeLoadArgs } from './dork-link-route';
 
 export { newSessionTarget, sessionLocationTarget } from './session-link';
 export { WORK_PANEL_ID } from './right-panel-tab-ids';

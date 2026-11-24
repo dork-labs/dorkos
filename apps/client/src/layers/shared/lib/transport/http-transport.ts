@@ -60,6 +60,7 @@ import { createHubMethods } from './hub-methods';
 import { createDeviceMethods } from './device-methods';
 import { createSignInLandingMethods } from './sign-in-landing-methods';
 import { createDocLinkMethods } from './doc-link-methods';
+import { createDorkLinkMethods } from './dork-link-methods';
 import { createFrameBridgeMethods } from './frame-bridge-methods';
 import { createMiniAppAccessMethods } from './mini-app-access-methods';
 import { createExtensionRestartMethods } from './extension-restart-methods';
@@ -127,6 +128,7 @@ export interface HttpTransport
     ReturnType<typeof createDeviceMethods>,
     ReturnType<typeof createSignInLandingMethods>,
     ReturnType<typeof createDocLinkMethods>,
+    ReturnType<typeof createDorkLinkMethods>,
     ReturnType<typeof createFrameBridgeMethods>,
     ReturnType<typeof createMiniAppAccessMethods>,
     ReturnType<typeof createExtensionRestartMethods>,
@@ -197,6 +199,7 @@ export class HttpTransport implements Transport {
       createDeviceMethods(baseUrl),
       createSignInLandingMethods(baseUrl),
       createDocLinkMethods(baseUrl),
+      createDorkLinkMethods(baseUrl),
       createFrameBridgeMethods(baseUrl),
       createMiniAppAccessMethods(baseUrl),
       createExtensionRestartMethods(baseUrl),

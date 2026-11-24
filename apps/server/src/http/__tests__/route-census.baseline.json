@@ -255,6 +255,7 @@
     "GET /api/hub/computers/:computerId/sessions/:sessionId/stream",
     "GET /api/keep-awake",
     "GET /api/lan-access",
+    "GET /api/links/target",
     "GET /api/local-browser/capabilities",
     "GET /api/local-browser/handoff/state",
     "GET /api/local-browser/profiles",
