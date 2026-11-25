@@ -245,9 +245,13 @@ nativeSuite('the protected profile without the request’s selection', { timeout
     const sshKey = path.join(home!, '.ssh', 'authorized_keys');
     fs.writeFileSync(sshKey, 'CANARY-ssh-key');
     // Well-known credential files, denied home-wide, not only in agent folders (DOR-4388).
-    const homeSecrets = ['.git-credentials', '.kube/config', '.pypirc', '.gnupg/private.key'].map(
-      (rel) => path.join(home!, rel)
-    );
+    const homeSecrets = [
+      '.git-credentials',
+      '.kube/config',
+      '.pypirc',
+      '.gnupg/private.key',
+      '.vault-token',
+    ].map((rel) => path.join(home!, rel));
     for (const file of homeSecrets) {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, `CANARY-home-secret:${path.basename(file)}`);
