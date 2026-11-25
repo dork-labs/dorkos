@@ -1,6 +1,7 @@
 /**
  * Compiled, reviewed facts about new agent-facing features. Never load prose
- * from fragments, files or the network at runtime. Release stamps `next`.
+ * from fragments, files or the network at runtime. A build reads `next` as its
+ * own version; the back-merge after a release stamps it.
  * @module services/session/new-since/agent-release-notes
  */
 import { gt, lte, valid } from 'semver';
@@ -18,10 +19,13 @@ export type AgentReleaseNote = {
   | { readonly areas: readonly []; readonly gate: string }
 );
 
-/** Notes ship with the feature; unstamped notes can never render early. */
+/**
+ * Notes ship with the feature as `version: 'next'`; a `next` note renders only
+ * in a built release, as that release's version.
+ */
 export const AGENT_RELEASE_NOTES: readonly AgentReleaseNote[] = [
   {
-    version: 'next',
+    version: '0.133.0',
     name: 'New since you last ran',
     can: 'read a short note about new DorkOS features after an update.',
     covers: [],
@@ -37,18 +41,30 @@ export function releaseNoteLine(note: AgentReleaseNote): string {
   return `${note.name}: ${note.can} [${permission}]`;
 }
 
-/** Select stamped notes in (seen, current], in their authored order. */
+declare const __CLI_VERSION__: string | undefined;
+
+/**
+ * The version this build was made as, set by the CLI and desktop bundlers, or
+ * `null` in a source run. A daily release can't edit code (DOR-5123), so a
+ * `next` note it ships is read as this version; the back-merge then stamps it
+ * on main (`scripts/release/stamp-release-notes.ts`).
+ */
+export const BUILT_VERSION: string | null =
+  typeof __CLI_VERSION__ !== 'undefined' && valid(__CLI_VERSION__) ? __CLI_VERSION__ : null;
+
+/**
+ * Select notes in (seen, current], in their authored order. A `next` note
+ * counts as `builtAs`, and stays silent when the build has no version.
+ */
 export function notesSince(
   seen: string,
   current: string,
-  notes: readonly AgentReleaseNote[] = AGENT_RELEASE_NOTES
+  notes: readonly AgentReleaseNote[] = AGENT_RELEASE_NOTES,
+  builtAs: string | null = BUILT_VERSION
 ): readonly AgentReleaseNote[] {
   if (!valid(seen) || !valid(current) || !gt(current, seen)) return [];
-  return notes.filter(
-    (note) =>
-      note.version !== 'next' &&
-      valid(note.version) &&
-      gt(note.version, seen) &&
-      lte(note.version, current)
-  );
+  return notes.filter((note) => {
+    const version = note.version === 'next' ? builtAs : note.version;
+    return version !== null && !!valid(version) && gt(version, seen) && lte(version, current);
+  });
 }

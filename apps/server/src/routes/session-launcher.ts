@@ -243,6 +243,7 @@ export async function chatPlaceRefusal(
   // A chat nothing binds yet, known only by its folder (a runtime's own store, a
   // renamed chat's old id), is asked what the sessions route asks of an unbound
   // id: no chat agent, so its folder meets the rule a new chat's does (DOR-5201).
+  // A bound chat that names nobody meets that rule too (`launchPlaceRefusal`, DOR-5235).
   const chatAgent = owner === null && !(await isBoundChat(sessionId)) ? undefined : owner;
   const place = { ...(chatAgent !== undefined ? { chatAgent } : {}), ...(cwd ? { cwd } : {}) };
   const refusal = launchPlaceRefusal(meshCore, launcher, place);

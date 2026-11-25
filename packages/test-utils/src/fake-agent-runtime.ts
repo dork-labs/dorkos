@@ -424,6 +424,10 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    // Neither restart capability by default (spec `turns-survive-restarts`
+    // §7.2); a restart test overrides the one it is about.
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     // The fake produces no media. Overridable per test like every other field
     // here, which is what lets a suite exercise the `'attachments'` branch.
     mediaOutput: 'none',

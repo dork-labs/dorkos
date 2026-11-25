@@ -88,6 +88,10 @@ export function createComputerRuntime(options: ComputerRuntimeOptions): {
           // So do safety guards: the guest enforces none of the host's (DOR-3596).
           guards: undefined,
           settings: { configSection: null, supportsEffort: false, sections: [] },
+          // The VM is stopped at shutdown (`startup/computers.ts`) and it does not
+          // pass conformance yet (DOR-4902), so neither follows host OpenCode's.
+          wakesForLostBackgroundWork: false,
+          continuesInterruptedTurn: false,
         });
       if (property === 'getSupportedModels')
         return async () => {

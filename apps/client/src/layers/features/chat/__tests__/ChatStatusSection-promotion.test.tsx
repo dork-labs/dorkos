@@ -105,6 +105,8 @@ describe('ChatStatusSection — the permission item is ranked by what the mode d
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     nativeContext: [],
     permissionModes: {

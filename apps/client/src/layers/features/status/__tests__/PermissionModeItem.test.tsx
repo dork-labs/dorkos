@@ -117,6 +117,8 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -192,6 +194,8 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -244,6 +248,8 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -300,6 +306,8 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -353,6 +361,8 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: { supported: false, values: [] },
