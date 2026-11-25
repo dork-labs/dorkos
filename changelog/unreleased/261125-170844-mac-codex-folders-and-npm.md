@@ -2,6 +2,7 @@
 covers:
   - 'fix(codex): on a Mac, Codex chats can delete and rename folders and run npm again (DOR-4358)'
   - 'fix(codex): on a Mac, each protected file is refused by rules of its own (DOR-4358)'
+  - 'fix(codex): on a Mac, size the named-file rules by the bytes Codex writes for them (DOR-4358)'
 ---
 
 ### Fixed

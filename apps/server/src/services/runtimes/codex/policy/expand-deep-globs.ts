@@ -30,10 +30,10 @@
  * whole, when its last result is older than {@link BACKGROUND_RESULT_MAX_AGE_MS},
  * when its watch failed, lost track or saw more changes than it may hold,
  * when a changed folder is too big to look through, when a match's path holds
- * a backslash, or when its exact rules would pass {@link MAX_EXACT_RULES}
- * (Codex passes the profile on one command line, and ~1,800 rules overflow
- * it). Keeping them protects the secrets and only brings the folder lock back
- * for that base.
+ * a backslash, or when its exact rules would pass {@link MAX_EXACT_RULE_BYTES}
+ * (Codex passes the whole Seatbelt profile as one argument, and past the
+ * system's 1 MiB argument limit no command starts). Keeping them protects the
+ * secrets and only brings the folder lock back for that base.
  *
  * What is never scanned: symlinks (`rg` doesn't follow them), `node_modules`
  * (public package files, which often ship test `*.pem` keys or an `.npmrc`),
@@ -53,8 +53,27 @@ export { ripgrepScanner, type DeepGlobScanner } from './deep-glob-rg.js';
 
 type Access = 'read' | 'deny';
 
-/** The most exact rules one profile may gain; past this a base keeps its globs. */
-export const MAX_EXACT_RULES = 400;
+/**
+ * About how many bytes of Seatbelt rules the exact keys of one profile may add;
+ * past this a base keeps its globs. Measured on the vendored binary: about
+ * 840 KB of these rules started, about 1.1 MB failed with "Argument list too
+ * long". Codex may write a key twice (as given and through its real path), and
+ * the rest of the profile and the environment share the same limit.
+ */
+export const MAX_EXACT_RULE_BYTES = 320 * 1024;
+
+/**
+ * About how many bytes of Seatbelt rules Codex 0.163 writes for one glob key
+ * (codex-rs `build_seatbelt_unreadable_glob_policy`): a read and a write deny on
+ * the key, and an unlink deny on each folder above it, up to `/`.
+ *
+ * @param key - A glob key that names one path.
+ */
+export function exactRuleBytes(key: string): number {
+  let bytes = 2 * (key.length + 40) + 75;
+  for (let at = key.lastIndexOf('/'); at > 0; at = key.lastIndexOf('/', at - 1)) bytes += at + 75;
+  return bytes;
+}
 /** How often, at most, a background base is scanned again. */
 export const BACKGROUND_SCAN_EVERY_MS = 5 * 60_000;
 /** A background result older than this is not used; the base keeps its globs. */
@@ -417,7 +436,7 @@ export function expandDeepGlobs(
   if (options.platform !== 'darwin') return result;
   const scanner = options.scanner ?? ripgrepScanner;
   const now = options.now ?? Date.now;
-  let budget = MAX_EXACT_RULES;
+  let budget = MAX_EXACT_RULE_BYTES;
   for (const [base, byTail] of deepPatternsByBase(entries)) {
     if (!isFolder(base)) continue;
     const patterns = [...byTail.values()];
@@ -432,8 +451,11 @@ export function expandDeepGlobs(
         ? scanner.trackedNpmrc(base)
         : new Set<string>();
     const keys = exactKeys(base, files, patterns, tracked);
-    if (keys === null || keys.size > budget) continue;
-    budget -= keys.size;
+    if (keys === null) continue;
+    let cost = 0;
+    for (const spelled of keys.values()) for (const key of spelled) cost += exactRuleBytes(key);
+    if (cost > budget) continue;
+    budget -= cost;
     for (const pattern of patterns) for (const key of pattern.keys) delete result[key];
     for (const spelled of keys.values()) for (const key of spelled) result[key] = 'deny';
     options.onExact?.(base, new Set(keys.keys()));

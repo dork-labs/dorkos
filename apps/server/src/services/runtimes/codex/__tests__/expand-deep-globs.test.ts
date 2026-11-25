@@ -15,7 +15,8 @@ import path from 'node:path';
 import {
   BACKGROUND_RESULT_MAX_AGE_MS,
   BACKGROUND_SCAN_EVERY_MS,
-  MAX_EXACT_RULES,
+  MAX_EXACT_RULE_BYTES,
+  exactRuleBytes,
   MAX_FOLDER_WALK,
   expandDeepGlobs,
   explicitDenyKeys,
@@ -53,6 +54,18 @@ afterEach(async () => {
   resetBackgroundScans();
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+/** As many files from `name` as Codex's rules for them fit in `bytes`. */
+function filesWithin(bytes: number, name: (i: number) => string): string[] {
+  const files: string[] = [];
+  let used = 0;
+  for (let i = 0; ; i++) {
+    const cost = exactRuleBytes(explicitDenyKeys(name(i), false)![0]!);
+    if (used + cost > bytes) return files;
+    used += cost;
+    files.push(name(i));
+  }
+}
 
 /** A scanner that answers from fixed results, counts what it was asked, and holds the watch. */
 function fakeScanner(
@@ -156,9 +169,12 @@ describe('expandDeepGlobs in a working folder (DOR-4358)', () => {
   });
 
   it('keeps the globs when the exact rules would pass what Codex accepts', () => {
-    const many = Array.from({ length: MAX_EXACT_RULES + 1 }, (_, i) => `${base}/d${i}/${SECRET}`);
     const entries = { [`${base}/**/${SECRET}`]: 'deny' } as const;
-    expect(expandDeepGlobs(entries, darwin(fakeScanner(many).scanner))).toEqual(entries);
+    const fits = filesWithin(MAX_EXACT_RULE_BYTES, (i) => `${base}/d${i}/${SECRET}`);
+    const fitting = expandDeepGlobs(entries, darwin(fakeScanner(fits).scanner));
+    expect(Object.keys(fitting)).toHaveLength(fits.length);
+    const over = [...fits, `${base}/one-more/${SECRET}`];
+    expect(expandDeepGlobs(entries, darwin(fakeScanner(over).scanner))).toEqual(entries);
   });
 
   it('never scans node_modules, git objects or a folder already denied whole', () => {
@@ -248,10 +264,10 @@ describe('expandDeepGlobs outside the working folders: the background scan (DOR-
   });
 
   it('keeps the glob when the scan returns more rules than Codex accepts', async () => {
-    const many = Array.from(
-      { length: MAX_EXACT_RULES + 1 },
-      (_, i) => `${home()}/a${i}/.credentials.json`
-    );
+    const many = [
+      ...filesWithin(MAX_EXACT_RULE_BYTES, (i) => `${home()}/a${i}/.credentials.json`),
+      `${home()}/one-more/.credentials.json`,
+    ];
     const fake = fakeScanner(many);
     render(fake.scanner, 0);
     await settleBackgroundScans();
