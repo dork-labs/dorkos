@@ -17,6 +17,7 @@ import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../core/config-manager.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath, logProbeFailure } from '../shared/run-probe.js';
+import { checkCliBinary } from '../shared/program/cli-binary-check.js';
 import { resolveAsarUnpacked } from '../shared/asar-path.js';
 import { resolveProvisionedCodexPath } from './provision.js';
 
@@ -104,7 +105,7 @@ export function resolveCodexVendoredBinary(): string | null {
 function runCodex(binary: string, args: string[]): Promise<string> {
   return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS, {
     runtime: 'codex',
-    purpose: args.includes('--version') ? 'version-probe' : 'auth-probe',
+    purpose: 'auth-probe',
   });
 }
 
@@ -127,31 +128,6 @@ export function resolveCodexBinaryPath(): Promise<string | null> {
     { resolve: resolveProvisionedCodexPath },
     { resolve: () => findBinaryOnPath('codex', PROBE_TIMEOUT_MS, 'codex') },
   ]);
-}
-
-/** Check that the Codex CLI binary resolves and answers `--version`. */
-async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
-  const name = 'Codex CLI';
-  const description = 'The OpenAI Codex CLI powers Codex agent chats in DorkOS.';
-
-  if (binary) {
-    try {
-      const version = await runCodex(binary, ['--version']);
-      return { name, description, status: 'satisfied', version };
-    } catch (err) {
-      // Binary resolved but failed to launch — fall through to "missing", with
-      // one log line saying why (DOR-1334 / F3).
-      logProbeFailure(name, binary, err);
-    }
-  }
-
-  return {
-    name,
-    description,
-    status: 'missing',
-    installHint: CODEX_INSTALL_HINT,
-    infoUrl: CODEX_INFO_URL,
-  };
 }
 
 /** Check that Codex login state exists (ChatGPT OAuth or `CODEX_API_KEY`). */
@@ -191,7 +167,17 @@ async function checkLoginState(binary: string | null): Promise<DependencyCheck> 
  */
 export async function checkCodexDependencies(): Promise<DependencyCheck[]> {
   const binary = await resolveCodexBinaryPath();
-  return Promise.all([checkCliBinary(binary), checkLoginState(binary)]);
+  return Promise.all([
+    checkCliBinary(binary, {
+      name: 'Codex CLI',
+      description: 'The OpenAI Codex CLI powers Codex agent chats in DorkOS.',
+      installHint: CODEX_INSTALL_HINT,
+      infoUrl: CODEX_INFO_URL,
+      runtime: 'codex',
+      timeoutMs: PROBE_TIMEOUT_MS,
+    }),
+    checkLoginState(binary),
+  ]);
 }
 
 /**

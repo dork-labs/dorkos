@@ -26,13 +26,9 @@
  * @module services/runtimes/codex/media-capture
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import {
-  MAX_SESSION_ATTACHMENT_BYTES,
-  UnsupportedSessionMediaError,
-  deriveSessionAttachmentId,
-  type SessionAttachmentStore,
-} from '../../session/attachments/index.js';
+import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { logger } from '../../../lib/logger.js';
+import { decodeBase64Image, storeCapturedImage } from '../shared/media-capture.js';
 
 /** One image an MCP tool returned, recorded by the pure mapper and not yet stored. */
 export interface CodexMediaIntent {
@@ -129,60 +125,16 @@ export async function* captureCodexMedia(
 ): AsyncGenerator<StreamEvent> {
   while (state.pendingMedia.length > 0) {
     const intent = state.pendingMedia.shift()!;
-    if (!store) {
-      yield mediaError('This agent is not set up to keep images, so one was not saved.');
-      continue;
-    }
-    try {
-      const attachmentId = deriveSessionAttachmentId(intent.identity);
-      const existing = await store.peek(sessionId, attachmentId, intent.mediaType);
-      const stored =
-        existing ??
-        (await store.put(sessionId, attachmentId, intent.mediaType, decodeBase64(intent.base64)));
-      yield {
-        type: 'image_attachment',
-        data: { attachmentId, url: stored.url, mediaType: stored.mediaType, size: stored.size },
-      };
-    } catch (err) {
-      if (err instanceof UnsupportedSessionMediaError) {
-        yield mediaError(err.message);
-        continue;
-      }
-      logger.warn('[CodexRuntime] could not store an image a tool returned', { err, sessionId });
-      yield mediaError('An image was produced but could not be saved.');
-    }
+    yield await storeCapturedImage(
+      store,
+      sessionId,
+      {
+        identity: intent.identity,
+        mediaType: intent.mediaType,
+        bytes: () => decodeBase64Image(intent.base64),
+      },
+      (err) =>
+        logger.warn('[CodexRuntime] could not store an image a tool returned', { err, sessionId })
+    );
   }
-}
-
-/**
- * Decode a base64 image payload, refusing one too large to keep.
- *
- * The length is checked on the ENCODED string before decoding, because
- * `Buffer.from` would otherwise allocate the whole picture to discover it is too
- * big. Base64 is 4/3 of its payload, so the encoded cap is scaled to match.
- *
- * @param base64 - The payload exactly as the block carried it.
- * @throws {@link UnsupportedSessionMediaError} when it is past the cap.
- */
-function decodeBase64(base64: string): Buffer {
-  if (base64.length > Math.ceil((MAX_SESSION_ATTACHMENT_BYTES * 4) / 3) + 4) {
-    throw new UnsupportedSessionMediaError('An image was too large to keep, so it was not saved.');
-  }
-  return Buffer.from(base64, 'base64');
-}
-
-/**
- * The typed error a reader sees in place of an image that could not be kept.
- *
- * A typed `error` rather than prose, because prose in the transcript reads as
- * something the model said. `execution_error` is the honest category — a step of
- * the turn failed — and the projector deliberately does not settle the lifecycle
- * on one, so a picture that could not be saved reports itself without claiming
- * the turn failed.
- */
-function mediaError(message: string): StreamEvent {
-  return {
-    type: 'error',
-    data: { message, code: 'SESSION_IMAGE_NOT_STORED', category: 'execution_error' },
-  };
 }

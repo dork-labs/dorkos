@@ -21,10 +21,10 @@
  *
  * @module services/runtimes/claude-code/folder-settings/folder-config-scripts
  */
-import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
+import { sha256 } from '../repo-settings/repo-files.js';
 
 /** The largest file read. A real one is a few kilobytes. */
 const MAX_FILE_BYTES = 64 * 1024;
@@ -54,11 +54,6 @@ const PATH_LIKE = /\/|\.[A-Za-z0-9]+$/;
 function isInside(base: string, target: string): boolean {
   const rel = path.relative(base, target);
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
-
-/** sha256 of bytes or text, hex. */
-function sha256(content: string | Buffer): string {
-  return createHash('sha256').update(content).digest('hex');
 }
 
 /**

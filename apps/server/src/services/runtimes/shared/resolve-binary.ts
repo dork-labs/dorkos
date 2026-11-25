@@ -32,6 +32,17 @@ export interface BinaryCandidate {
    * silently substitute a different binary the user did not select.
    */
   authoritative?: boolean;
+  /**
+   * When true, the producer already confirmed its path exists (because it looks
+   * in several places, or checks more than existence), so it is used as given.
+   */
+  verified?: boolean;
+}
+
+/** A {@link BinaryCandidate} whose producer answers without awaiting anything. */
+export interface SyncBinaryCandidate extends BinaryCandidate {
+  /** Produce this source's candidate path, or `null` when it cannot. */
+  resolve: () => string | null;
 }
 
 /**
@@ -51,11 +62,32 @@ export interface BinaryCandidate {
  */
 export async function resolveRuntimeBinary(candidates: BinaryCandidate[]): Promise<string | null> {
   for (const candidate of candidates) {
-    const produced = await candidate.resolve();
-    if (produced === null) continue;
-    if (existsSync(produced)) return produced;
-    // A set-but-absent authoritative path is an honest miss — never fall through.
-    if (candidate.authoritative) return null;
+    const decided = decide(candidate, await candidate.resolve());
+    if (decided !== undefined) return decided;
   }
   return null;
+}
+
+/**
+ * {@link resolveRuntimeBinary} for a ladder whose every rung answers
+ * synchronously — the same order, existence checks and authoritative rule, for
+ * callers that cannot await (a constructor, a sync route).
+ *
+ * @param candidates - Ordered resolution sources, highest precedence first.
+ * @returns The first existing binary path, or `null` when none resolves.
+ */
+export function resolveRuntimeBinarySync(candidates: SyncBinaryCandidate[]): string | null {
+  for (const candidate of candidates) {
+    const decided = decide(candidate, candidate.resolve());
+    if (decided !== undefined) return decided;
+  }
+  return null;
+}
+
+/** One rung's verdict: a path to use, `null` to stop (report missing), `undefined` to go on. */
+function decide(candidate: BinaryCandidate, produced: string | null): string | null | undefined {
+  if (produced == null) return undefined;
+  if (candidate.verified || existsSync(produced)) return produced;
+  // A set-but-absent authoritative path is an honest miss — never fall through.
+  return candidate.authoritative ? null : undefined;
 }

@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import type { UUID } from 'node:crypto';
 import { resolveAsarUnpacked } from '../../shared/asar-path.js';
 import { logLocatorFailure } from '../../shared/run-probe.js';
+import { resolveRuntimeBinarySync } from '../../shared/resolve-binary.js';
 import { claudePlatformPackages, resolveProvisionedClaudePath } from '../tooling/provision.js';
 
 /** Resolve modules relative to this file — ESM has no ambient `require`. */
@@ -411,9 +412,11 @@ function findClaudeOnPath(): string | null {
  * @returns The first existing binary from those three rungs, or `null`.
  */
 export function resolveClaudeBinaryBeforePath(): string | null {
-  return (
-    resolveClaudeBinaryFromEnv() ?? resolveBundledClaudeBinary() ?? resolveProvisionedClaudePath()
-  );
+  return resolveRuntimeBinarySync([
+    { resolve: resolveClaudeBinaryFromEnv, verified: true },
+    { resolve: resolveBundledClaudeBinary, verified: true },
+    { resolve: () => resolveProvisionedClaudePath(), verified: true },
+  ]);
 }
 
 /**
@@ -441,5 +444,10 @@ export function resolveClaudeBinaryBeforePath(): string | null {
  * so resolving it always failed.
  */
 export function resolveClaudeCliPath(): string | undefined {
-  return resolveClaudeBinaryBeforePath() ?? findClaudeOnPath() ?? undefined;
+  return (
+    resolveRuntimeBinarySync([
+      { resolve: resolveClaudeBinaryBeforePath, verified: true },
+      { resolve: findClaudeOnPath, verified: true },
+    ]) ?? undefined
+  );
 }

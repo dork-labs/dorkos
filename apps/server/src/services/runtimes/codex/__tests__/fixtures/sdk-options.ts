@@ -17,13 +17,17 @@ import { runtimeEnvironment } from '../../../shared/runtime-environment-config.j
 import type { CodexOptions } from '@openai/codex-sdk';
 import { DORKOS_MCP_SERVER_NAME } from '../../../shared/dorkos-tool-names.js';
 import { type DorkosMcpInjection } from '../../../shared/dorkos-mcp-injection.js';
-import { dorkosHeaderEnv, dorkosHeaderEnvNames } from '../.././dorkos-header-env.js';
+import {
+  connectorHeaderEnv,
+  connectorHeaderEnvNames,
+  dorkosHeaderEnv,
+  dorkosHeaderEnvNames,
+} from '../.././dorkos-header-env.js';
 import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
   type ConnectorRuntimeMcpInjection,
 } from '../../../connector-tools.js';
-import { connectorHeaderEnv, connectorHeaderEnvNames } from '../.././connector-header-env.js';
 import {
   type CodexManagedMcpServers,
   type CodexMcpServerRecord,

@@ -21,6 +21,7 @@
 import type { GlobalEvent } from '@opencode-ai/sdk';
 import { logger, logError } from '../../../../lib/logger.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
+import { delay } from '../messaging/bounded-abort.js';
 
 /**
  * Pause between reconnect attempts when the previous connection delivered no
@@ -73,11 +74,6 @@ export interface HubSubscription {
    * events must not be missed.
    */
   live: Promise<void>;
-}
-
-/** Sleep helper (real timers; tests advance with fake timers when needed). */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
