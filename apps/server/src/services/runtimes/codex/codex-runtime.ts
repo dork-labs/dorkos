@@ -139,7 +139,7 @@ import { codexTurnPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
 import { buildCodexAgentContext } from './agent-context.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
-import { scanSkillCommands } from './scan-skill-commands.js';
+import { skillCommandsFor } from '../shared/home-skill-commands.js';
 import type { ConnectorRuntimeMcpInjection, ConnectorRuntimeTools } from '../connector-tools.js';
 import type {
   OpenConnectorTurnResult,
@@ -1619,17 +1619,15 @@ export class CodexRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
-   * Codex's built-in TUI commands can't run under `codex exec` and the SDK has
-   * no command-discovery API, so instead of faking them this surfaces every
-   * skill Codex itself can see in `<cwd>/.agents/skills` — authored dirs,
-   * linked-in sources, and the `<pkg>__<name>` projections of installed plugins
-   * alike — as `/<name>` slash commands, the same skills Claude's SDK exposes
-   * from `.claude/skills`. With no `cwd` (cold discovery, no session context)
-   * there is no project to scan, so the palette is empty.
+   * Codex's built-in TUI commands can't run under `codex exec` and the SDK has no
+   * command-discovery API, so instead of faking them this surfaces every skill Codex itself can
+   * see in `<cwd>/.agents/skills` — authored dirs, linked-in sources, and the `<pkg>__<name>`
+   * projections of installed plugins alike — as `/<name>` slash commands, the same skills Claude's
+   * SDK exposes from `.claude/skills`. With no `cwd` (cold discovery) the palette is empty.
+   * Outside its home, the agent's own skills join; the folder's names win (DOR-5250).
    */
-  async getCommands(_forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
-    const commands = cwd ? scanSkillCommands(cwd) : [];
-    return { commands, lastScanned: new Date().toISOString() };
+  async getCommands(_force?: boolean, cwd?: string, agentPath?: string): Promise<CommandRegistry> {
+    return { commands: skillCommandsFor(cwd, agentPath), lastScanned: new Date().toISOString() };
   }
 
   // --- MCP ---

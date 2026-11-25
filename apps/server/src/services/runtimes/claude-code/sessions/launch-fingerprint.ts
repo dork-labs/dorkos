@@ -181,12 +181,9 @@ export const PIN_DISPOSITIONS = {
    */
   settingsEnv: 'relaunch',
   /**
-   * The turn's folder grants (`settings.permissions`, spec `agent-home-desk`
-   * §4.2), as the sorted `path:access` list, so a reordered set rides and a
-   * changed one relaunches. The CLI reads settings at launch and has no live
-   * setter for them, and a grant a later turn does not carry must not stay
-   * reachable in a warm process (I5). Room sessions carry a stable set, so the
-   * steady state costs nothing.
+   * Folder grants (`settings.permissions`, spec `agent-home-desk` §4.2) as the sorted `path:access`
+   * list, so a reordered set rides, then the folders added at launch (the agent's home, DOR-5250).
+   * The CLI reads both at launch only; a grant a later turn lacks must not stay reachable (I5).
    */
   additionalDirectories: 'relaunch',
   /**
@@ -652,7 +649,10 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           ? ((options.settings as { fastMode?: boolean }).fastMode ?? false)
           : false
       ),
-      additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+      additionalDirectories: [
+        directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+        ...(options.additionalDirectories ?? []).map((folder) => `${folder}:added`),
+      ].join('\n'),
       folderAllows: digest(JSON.stringify(folderAllowsFromSettings(options.settings))),
       permissionsDeny: digest(JSON.stringify(denyRulesFromSettings(options.settings))),
       folderConfig: [

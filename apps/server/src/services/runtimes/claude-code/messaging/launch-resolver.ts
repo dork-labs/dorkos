@@ -75,6 +75,8 @@ import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
+import { applyHomeSkillsFolder } from '../tooling/home-skills-folder.js';
+import { homeOutside } from '../../shared/home-skills-block.js';
 import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool-guards.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
@@ -646,14 +648,10 @@ export async function resolveLaunch(args: {
       fastMode: true,
     };
   }
-  // This turn's folder grants, merged into the same settings object, and the
-  // variable that would make a granted folder's CLAUDE.md load stripped from the
-  // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
-  const turnGrants = marksHold(
-    marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined)
-  )
-    ? undefined
-    : messageOpts?.additionalDirectories;
+  // This turn's folder grants, merged into the same settings object, and the CLAUDE.md variable
+  // stripped from the env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
+  const marked = marksHold(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined));
+  const turnGrants = marked ? undefined : messageOpts?.additionalDirectories;
   // None for a marked turn (DOR-2956), whatever a caller passed: a grant widens what the turn
   // may touch, which a mark still holds back (Security, #3280), and this is the last place a
   // grant could reach the CLI.
@@ -698,6 +696,8 @@ export async function resolveLaunch(args: {
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
   applyCreditsSettingsEnv(sdkOptions, creditsSettings);
+  // Outside its home, its own skills load from it (DOR-5250); a marked turn's reach stays put.
+  applyHomeSkillsFolder(sdkOptions, marked ? undefined : homeOutside(effectiveCwd, forAgent));
   // The agent's own folder allow list (DOR-3039), as a person approved it; below Full the rest
   // of the folder's settings allow only what a person approved (`folderAllows` below, DOR-5237).
   await applyFolderAllowsToLaunch({
