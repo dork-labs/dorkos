@@ -395,13 +395,13 @@ gates:
   # --- scripts-test.yml ---
   - id: wf.scripts-test.attest
     source: .github/workflows/scripts-test.yml
-    purpose: In a merge group only, checks whether fixtures already succeeded on the entry PR's current head, so the queue can skip re-running it (DOR-5130); any doubt runs the real check.
+    purpose: In a merge group only, checks whether fixtures already succeeded on the entry PR's current head, and whether harness needs to run (main's scope list, then the same attested exit), so the queue can skip re-running them (DOR-5130); any doubt runs the real check.
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
     purpose: The required fixtures check; runs the shell fixture suites that pin the repo's guard hooks, gate scripts and assert scripts, and the docs-coverage-map drift check, on every PR and merge group.
   - id: wf.scripts-test.harness
     source: .github/workflows/scripts-test.yml
-    purpose: Typechecks and tests the TypeScript under scripts/, which no workspace package covers.
+    purpose: Typechecks and tests the TypeScript under scripts/, which no workspace package covers, and runs the shell suites that need node_modules; on every PR and queue entry the scope list can reach, unless the queue entry's PR head already passed it.
 
   # --- site-build.yml ---
   - id: wf.site-build.site-build
