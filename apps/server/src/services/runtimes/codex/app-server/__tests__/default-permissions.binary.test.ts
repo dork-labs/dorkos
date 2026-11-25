@@ -645,10 +645,10 @@ nativeSuite('the protected profile without the request’s selection', { timeout
               'mv a a2 2>/dev/null && echo THIRD-MOVED || echo THIRD-REFUSED',
               'ln deep/parent/.env hard-link 2>/dev/null && echo LINK-MADE || echo LINK-REFUSED',
               'cat hard-link 2>/dev/null',
-              'unlink deep/parent/.env 2>/dev/null; [ -e deep/parent/.env ] && echo UNLINK-REFUSED || echo UNLINKED',
+              'unlink deep/parent/.env 2>/dev/null && echo UNLINK-ALLOWED || echo UNLINK-REFUSED',
               // Row 3: folders with no secret file, beside one and far from one.
               `${del} deep/free; [ ! -e deep/free ] && echo SIBLING-REMOVED || echo SIBLING-KEPT`,
-              `${del} deep; [ -e deep/parent/.env ] && echo TREE-KEPT || echo TREE-REMOVED`,
+              `${del} deep; echo TREE-ATTEMPTED`,
               `mkdir -p fx/model && echo x > fx/model/x.ts && ${del} fx; [ ! -e fx ] && echo TEARDOWN-OK || echo TEARDOWN-FAIL`,
               'mkdir -p m1/m2 && mv m1 m3 2>/dev/null && echo RENAME-OK || echo RENAME-FAIL',
               // Row 4: known_hosts reads and never writes; the key beside it stays shut.
@@ -668,7 +668,7 @@ nativeSuite('the protected profile without the request’s selection', { timeout
             'GRANDPARENT-REFUSED',
             'THIRD-REFUSED',
             'UNLINK-REFUSED',
-            'TREE-KEPT',
+            'TREE-ATTEMPTED',
             'SIBLING-REMOVED',
             'TEARDOWN-OK',
             'RENAME-OK',
@@ -679,9 +679,12 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           ])
             expect(out, marker).toContain(marker);
           expect(out).toContain('LINK-REFUSED');
-          // Still there, as planted: a refused command alone doesn't prove that.
+          // Still there, as planted, seen from outside the sandbox: a refused
+          // command alone doesn't prove that, and a check from inside it depends
+          // on whether the sandbox lets the shell look.
           for (const file of [secret, bracketed, p('a/b/c/key.pem')])
             expect(fs.readFileSync(file, 'utf8'), file).toBe('CANARY-secret');
+          expect(fs.statSync(p('deep/parent')).isDirectory()).toBe(true);
           expect(fs.readFileSync(hosts, 'utf8')).not.toContain('x\n');
         }
       );
@@ -724,7 +727,7 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           const probe = Object.entries(targets)
             .map(
               ([name, file]) =>
-                `unlink ${quote(file)} 2>/dev/null; [ -e ${quote(file)} ] && echo ${name}:KEPT || echo ${name}:GONE`
+                `{ [ -e ${quote(file)} ] && v=seen || v=unseen; unlink ${quote(file)} 2>/dev/null && u=allowed || u=refused; echo ${name}:$v:$u; }`
             )
             .join('; ');
           const matrix: Record<string, Record<string, string>> = {};
@@ -736,7 +739,12 @@ nativeSuite('the protected profile without the request’s selection', { timeout
             matrix[profile] = Object.fromEntries(
               Object.entries(targets).map(([name, file]) => [
                 name,
-                `${/:(KEPT|GONE)/.exec(out.slice(out.indexOf(`${name}:`)))?.[1] ?? 'NONE'}/${
+                `${
+                  /:(seen|unseen):(allowed|refused)/
+                    .exec(out.slice(out.indexOf(`${name}:`)))
+                    ?.slice(1)
+                    .join('/') ?? 'none'
+                }/${
                   fs.existsSync(file) && fs.readFileSync(file, 'utf8') === `CANARY-matrix-${name}`
                     ? 'intact'
                     : 'changed'
@@ -748,9 +756,11 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           const summary = `${mode} on macOS ${os.release()}: ${JSON.stringify(matrix)}`;
           await annotate(summary);
           console.info('DOR-4358 unlink matrix', summary);
+          // Whether the shell can see the file is recorded, not judged: it is the
+          // system's call. The unlink's own status and the file itself are judged.
           for (const profile of Object.values(matrix))
             for (const result of Object.values(profile))
-              expect(result, summary).toBe('KEPT/intact');
+              expect(result, summary).toMatch(/^(seen|unseen)\/refused\/intact$/);
         }
       );
 
