@@ -63,19 +63,24 @@ function throughBase(file: string, bases: readonly string[]): string {
   return base ? path.join(realPathOf(base), path.relative(base, file)) : file;
 }
 
-/** Globs retain their spelling; the strongest refusal wins each collapsed key. */
+/**
+ * Globs retain their spelling; the strongest refusal wins each collapsed key.
+ * `isGlob` tells a glob from an exact path that holds glob characters, such as
+ * `site [old]`; by default any such character marks a glob.
+ */
 export function collapseProtectedPaths(
   entries: Readonly<Record<string, Access>>,
   bases: readonly string[],
   onMissing?: (target: string) => void,
-  allowBlocking?: (target: string) => boolean
+  allowBlocking?: (target: string) => boolean,
+  isGlob: (key: string) => boolean = (key) => /[*?[\]{}]/.test(key)
 ): Record<string, Access> {
   const collapsed: Record<string, Access> = {};
   for (const [file, access] of Object.entries(entries)) {
     let missing: string | undefined;
     let blocking: string | undefined;
     try {
-      missing = /[*?[\]{}]/.test(file) ? undefined : firstMissing(file);
+      missing = isGlob(file) ? undefined : firstMissing(file);
     } catch (error) {
       if (
         !(error instanceof ProtectedPathNotDirectoryError) ||

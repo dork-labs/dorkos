@@ -6,6 +6,10 @@ import path from 'node:path';
 import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { gitMetadataReadRules } from '../policy/git-metadata.js';
+import { codexGlobLiteral } from '../policy/codex-path-keys.js';
+
+const MODES = ['default', 'acceptEdits', 'bypassPermissions'];
+const INSIDE_GIT = 'Codex can’t work inside a Git folder. Choose the project folder instead.';
 
 const key = (file: string) => file.split(path.sep).join('/');
 let root: string;
@@ -22,18 +26,17 @@ function git(cwd: string, ...args: string[]): void {
   });
 }
 
+const rootsFor = (cwd: string) => ({
+  cwd,
+  home: path.join(root, 'home'),
+  data: path.join(root, 'data'),
+  accounts: [],
+  agentFolders: [cwd],
+  agentHomes: [],
+});
+
 function render(cwd: string, mode = 'acceptEdits', writable: string[] = []) {
-  const policy = {
-    roots: {
-      cwd,
-      home: path.join(root, 'home'),
-      data: path.join(root, 'data'),
-      accounts: [],
-      agentFolders: [cwd],
-      agentHomes: [],
-    },
-    writable,
-  };
+  const policy = { roots: rootsFor(cwd), writable };
   fs.mkdirSync(policy.roots.home, { recursive: true });
   fs.mkdirSync(policy.roots.data, { recursive: true });
   const config = codexProtectedConfig(cwd, policy, { permissionMode: mode });
@@ -118,7 +121,22 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
     }
   });
 
-  it('refuses Linux nested-denial mount conflicts without dropping the secret denial', () => {
+  it('starts at Full on Linux where Git files inside a protected folder refuse below it', () => {
+    const cwd = path.join(root, 'desk');
+    const grant = path.join(root, 'home', '.ssh', 'repository');
+    fs.mkdirSync(cwd);
+    fs.mkdirSync(path.join(grant, '.git'), { recursive: true });
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      expect(() => render(cwd, 'default', [grant])).toThrow(/protected folder on Linux/);
+      expect(render(cwd, 'bypassPermissions', [grant])[':root']).toBe('write');
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
+
+  it('refuses Linux nested-denial mount conflicts below Full only, without dropping the secret denial', () => {
     const cwd = path.join(root, 'desk');
     const home = path.join(root, 'home');
     const grant = path.join(home, '.ssh', 'repository');
@@ -132,34 +150,139 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
       agentFolders: [cwd],
       agentHomes: [],
     };
-    expect(gitMetadataReadRules([cwd], roots, 'linux')[key(path.join(cwd, '.git'))]).toBe('read');
-    expect(() => gitMetadataReadRules([cwd, grant], roots, 'linux')).toThrow(
-      /Choose another folder/
+    expect(
+      gitMetadataReadRules([cwd], roots, { platform: 'linux' })[key(path.join(cwd, '.git'))]
+    ).toBe('read');
+    expect(() => gitMetadataReadRules([cwd, grant], roots, { platform: 'linux' })).toThrow(
+      'Codex can’t keep Git files safe inside a protected folder on Linux. Choose another folder.'
     );
-    expect(gitMetadataReadRules([cwd, grant], roots, 'darwin')[key(path.join(grant, '.git'))]).toBe(
-      'deny'
-    );
+    // Full applies no Git rules, so nothing needs mounting there.
+    const full = gitMetadataReadRules([cwd, grant], roots, { platform: 'linux', enforced: false });
+    expect(full[key(path.join(grant, '.git'))]).toBe('deny');
+    const mac = gitMetadataReadRules([cwd, grant], roots, { platform: 'darwin' });
+    expect(mac[key(path.join(grant, '.git'))]).toBe('deny');
   });
 
-  it('refuses an unreadable git pointer instead of quietly granting its folder writes', () => {
+  it('keeps a .git file that is not a pointer read-only and starts', () => {
     const cwd = path.join(root, 'project');
     fs.mkdirSync(cwd);
     fs.writeFileSync(path.join(cwd, '.git'), 'not a git pointer');
-    expect(() => render(cwd)).toThrow(/git/i);
+    expect(render(cwd)[key(path.join(cwd, '.git'))]).toBe('read');
   });
 
   it.each([
     '[client]',
+    'site [old]',
     '{client}',
     // Windows cannot create names containing these characters.
     ...(process.platform === 'win32' ? [] : ['client*', 'client?']),
-  ])('refuses metadata paths that Codex would interpret as patterns: %s', (name) => {
+  ])('protects metadata in a folder Codex would read as a pattern at every level: %s', (name) => {
     const cwd = path.join(root, name);
     fs.mkdirSync(path.join(cwd, '.git'), { recursive: true });
-    for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
-      // Full still needs literal metadata roots for the shared secret scan.
-      expect(() => render(cwd, mode)).toThrow(/Choose another folder/);
+    // Every glob character becomes a one-character class; a lone `]` is plain.
+    const escaped = key(cwd).replace(/[*?[{}]/g, (char) => `[${char}]`);
+    for (const mode of MODES) {
+      // Linux below Full can't match an escaped glob as written, so it refuses there (DOR-4542).
+      if (process.platform === 'linux' && mode !== 'bypassPermissions') {
+        expect(() => render(cwd, mode)).toThrow(/needs Full/);
+        continue;
+      }
+      const files = render(cwd, mode);
+      // An exact path with glob characters takes the scoped spelling Codex reads as written.
+      expect(files[key(path.join(cwd, '.git'))]).toEqual(
+        mode === 'bypassPermissions' ? undefined : { '.': 'read' }
+      );
+      expect(files[`${escaped}/**/.credentials*`]).toBe('deny');
+      expect(files[`${escaped}/.git/**/.credentials*`]).toBe('deny');
+      expect(files[`${key(cwd)}/**/.credentials*`]).toBeUndefined();
     }
+  });
+
+  // Pinned on every platform, so a Mac run covers the Linux rule too.
+  it('refuses a glob over a pattern-character path only for Linux below Full', () => {
+    expect(() => codexGlobLiteral('/x/site [old]', true)).toThrow(/needs Full/);
+    expect(codexGlobLiteral('/x/site [old]', false)).toBe('/x/site [[]old]');
+    expect(codexGlobLiteral('/x/site', true)).toBe('/x/site');
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a folder with a backslash at every level, and not its look-alike',
+    () => {
+      // Codex reads a backslash in a glob as an escape: `a\b/**/.env` would guard `ab`.
+      const cwd = path.join(root, 'a\\b');
+      const lookalike = path.join(root, 'ab');
+      for (const dir of [cwd, lookalike]) fs.mkdirSync(dir);
+      for (const mode of MODES) {
+        expect(() => render(cwd, mode)).toThrow(
+          'Codex can’t protect a folder with a backslash in its path. Choose another folder.'
+        );
+        expect(render(lookalike, mode)[`${key(lookalike)}/**/.env`]).toBe('deny');
+      }
+    }
+  );
+
+  it('on Linux, refuses a folder Codex would read as a pattern below Full only', () => {
+    const cwd = path.join(root, 'site [old]');
+    const plain = path.join(root, 'plain');
+    for (const dir of [cwd, plain]) fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      for (const mode of ['default', 'acceptEdits'])
+        expect(() => render(cwd, mode)).toThrow(
+          'On Linux, Codex needs Full for a folder with * ? [ ] { } in its path.'
+        );
+      expect(render(cwd, 'bypassPermissions')[':root']).toBe('write');
+      expect(render(plain, 'acceptEdits')[key(path.join(plain, '.git'))]).toBe('read');
+      // Without a repository: the folder's own secret globs refuse alone.
+      const bare = path.join(root, 'bare [old]');
+      fs.mkdirSync(bare);
+      expect(() => render(bare, 'default')).toThrow(/needs Full/);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
+
+  it('starts a worktree whose git folder is gone at every level, keeping its pointer read-only', () => {
+    const cwd = path.join(root, 'tree');
+    fs.mkdirSync(cwd);
+    const pointer = path.join(cwd, '.git');
+    // Outside the temporary folders Edit can write, as a moved main checkout is.
+    const gone = path.join(path.parse(root).root, `dor-4542-gone-${path.basename(root)}`, 'tree');
+    fs.writeFileSync(pointer, `gitdir: ${gone}\n`);
+    for (const mode of MODES) {
+      const files = render(cwd, mode);
+      expect(files[key(pointer)]).toBe(mode === 'bypassPermissions' ? undefined : 'read');
+      expect(files[key(gone)]).toBeUndefined();
+    }
+    // Repaired mid-session: the next render, which every turn's load fingerprint
+    // takes, protects the restored git folder too.
+    const restored = path.join(root, 'main', '.git', 'worktrees', 'tree');
+    fs.writeFileSync(pointer, `gitdir: ${restored}\n`);
+    expect(render(cwd, 'default')[key(restored)]).toBeUndefined();
+    fs.mkdirSync(restored, { recursive: true });
+    expect(render(cwd, 'default')[key(restored)]).toBe('read');
+  });
+
+  it('refuses at Edit only a worktree whose missing git folder this chat could create', () => {
+    const cwd = path.join(root, 'tree');
+    fs.mkdirSync(cwd);
+    fs.writeFileSync(path.join(cwd, '.git'), 'gitdir: ./restorable\n');
+    expect(() => render(cwd, 'acceptEdits')).toThrow(
+      'This worktree’s Git folder is missing. Repair the worktree, or choose another folder.'
+    );
+    for (const mode of ['default', 'bypassPermissions'])
+      expect(() => render(cwd, mode)).not.toThrow();
+    // A missing folder outside every writable folder can't be made by a command.
+    expect(() =>
+      gitMetadataReadRules([cwd], rootsFor(cwd), { writable: [path.join(root, 'other')] })
+    ).not.toThrow();
+  });
+
+  it.each(MODES)('still refuses a folder inside a .git folder at %s', (mode) => {
+    const cwd = path.join(root, 'project', '.git', 'worktrees', 'side');
+    fs.mkdirSync(cwd, { recursive: true });
+    expect(() => render(cwd, mode)).toThrow(INSIDE_GIT);
   });
 
   it('protects a git pointer target without a worktree common-directory marker', () => {
@@ -179,7 +302,9 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
     fs.mkdirSync(cwd);
     fs.mkdirSync(path.join(metadata, 'commondir'), { recursive: true });
     fs.writeFileSync(path.join(cwd, '.git'), 'gitdir: ../metadata\n');
-    expect(() => render(cwd)).toThrow(/git/i);
+    expect(() => render(cwd)).toThrow(
+      'Codex can’t read this folder’s Git files. Choose another folder.'
+    );
   });
 
   it('leaves Full git writes and a non-repository folder alone', () => {
