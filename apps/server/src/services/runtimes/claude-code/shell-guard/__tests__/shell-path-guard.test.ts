@@ -961,6 +961,16 @@ describe('removing or moving a folder that holds a protected entry', () => {
     ['a git move of that folder', () => [base, `git mv ${projects} ${base}/moved`]],
     ['a git removal of that folder', () => [base, `git rm -r ${projects}`]],
     ['a tree too big to finish walking', () => [base, `rm -rf ${base}/big`]],
+    ['a filtered delete from that folder', () => [base, `find ${projects} -name '*.pyc' -delete`]],
+    ['a delete from the working folder', () => [site, 'find -delete']],
+    ['names piped into a recursive removal', () => [base, `find ${projects} | xargs rm -rf`]],
+    ['a clean of the working folder', () => [site, 'git clean -fdx']],
+    ['a clean of that folder', () => [base, `git clean -fd ${projects}`]],
+    ['a sync that deletes there', () => [base, `rsync -a --delete ${base}/plain/ ${projects}/`]],
+    [
+      'a sync that takes the source',
+      () => [base, `rsync -a --remove-source-files ${projects}/ ${base}/plain/`],
+    ],
   ])('refuses %s, at every level', (_label, call) => {
     const [cwd, command] = call();
     expect(shellWriteVerdict(command!, at(cwd!, false))).toBe('writes');
@@ -974,6 +984,16 @@ describe('removing or moving a folder that holds a protected entry', () => {
     ['removing a project’s dependencies', () => `rm -rf ${base}/app/node_modules`],
     ['removing a project with big dependencies and git history', () => `rm -rf ${base}/app`],
     ['moving a file into a project', () => `mv ${base}/plain/build/out.js ${site}`],
+    ['a filtered delete in a plain folder', () => `find ${base}/plain -name '*.pyc' -delete`],
+    [
+      'names from a plain folder piped into a removal',
+      () => `find ${base}/plain/build | xargs rm -rf`,
+    ],
+    ['a clean of a plain folder', () => `git clean -fd ${base}/plain`],
+    [
+      'a sync that deletes in a plain folder',
+      () => `rsync -a --delete ${base}/plain/build/ ${base}/plain/dist/`,
+    ],
   ])('still runs %s at Full', (_label, command) => {
     expect(shellWriteVerdict(command(), at(base, true))).toBe('none');
   });
@@ -981,6 +1001,7 @@ describe('removing or moving a folder that holds a protected entry', () => {
   it('leaves Claude Code’s own reading unchanged', () => {
     expect(shellWriteVerdict('rm -rf .dork', { ...roots, cwd: site })).toBe('none');
     expect(shellWriteVerdict(`mv ${projects} ${base}/moved`, roots)).toBe('none');
+    expect(shellWriteVerdict('git clean -fdx', { ...roots, cwd: site })).toBe('none');
   });
 });
 
