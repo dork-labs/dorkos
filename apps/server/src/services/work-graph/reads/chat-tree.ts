@@ -144,7 +144,8 @@ function positionOf(
       ...position,
       path: [...position.path, [d.chatId, starts.get(d.chatId)?.at ?? '']],
     };
-    if (JSON.stringify(next).length > TREE_CURSOR_BYTES - 128) {
+    // Bytes, not characters: the padding is counted in bytes. 128 are kept for the reader key.
+    if (Buffer.byteLength(JSON.stringify(next), 'utf8') > TREE_CURSOR_BYTES - 128) {
       position.whole = false;
       break;
     }
@@ -201,7 +202,13 @@ function resumeAt(lineage: ChatLineage, position: TreePosition, order: ChatTreeO
   throw invalidCursor();
 }
 
-/** The first child of `anchor` that sorts after `gone`, or the end of `anchor`'s subtree. */
+/**
+ * The first child of `anchor` that sorts after `gone`, or the end of `anchor`'s
+ * subtree. A start time either side has lost (its start record went between
+ * the pages) can't be placed, so the page skips forward rather than repeat:
+ * a gone chat with none goes on at the end of `anchor`'s subtree, and a child
+ * with none is never taken as the one after.
+ */
 function afterGoneChild(
   list: readonly LineageDescendant[],
   anchorAt: number,
@@ -216,9 +223,11 @@ function afterGoneChild(
     .map((d, i) => ({ d, i }))
     .slice(anchorAt + 1, end)
     .filter(({ d }) => d.parentId === anchor);
+  if (gone[1] === '') return end;
   const starts = order.parentsOf(children.map(({ d }) => d.chatId));
   const after = children.find(({ d }) => {
-    const at = starts.get(d.chatId)?.at ?? '';
+    const at = starts.get(d.chatId)?.at;
+    if (at === undefined) return false;
     return at > gone[1] || (at === gone[1] && d.chatId > gone[0]);
   });
   return after ? after.i : end;

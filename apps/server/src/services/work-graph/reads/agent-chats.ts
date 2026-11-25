@@ -14,7 +14,8 @@
  * them all. A page that stops at that bound with bindings left holds what it
  * found, which may be nothing, and still carries a cursor to go on. Such a
  * page tells a reader that more bindings exist beyond the scan, not how many,
- * whose or what they hold (Security accepted this, DOR-4970). The cursor is
+ * whose or what they hold (Security accepted this on DOR-4970; the pull
+ * request's body quotes the ruling). The cursor is
  * sealed and bound to its reader (`./page-cursor.ts`): the binding it stops
  * at may be one the reader may not read.
  *

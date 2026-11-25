@@ -11,7 +11,10 @@
  *
  * **Doors that take a chat id (step 10's D13 census, PR #4460 §8.7):**
  * `work-graph.chat_tree` and `work-graph.chat_work` take one in their path, and
- * `work-graph.agent_chats` and `work-graph.agent_work` return chat ids.
+ * `work-graph.agent_chats` and `work-graph.agent_work` return chat ids. When
+ * step 10 gives program keys their own reach, `readerKey`
+ * (`./page-cursor.ts`) must add the key's id: today every program key reads
+ * as the owner and shares the owner's cursors.
  *
  * All four are `observe` with no permission area, like the audit reads: what
  * a caller may SEE is the audit read side's one rule (spec `audit-trail`
