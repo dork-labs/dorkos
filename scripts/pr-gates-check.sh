@@ -113,11 +113,13 @@ cloud_security() { # <payload.json> -> pass | none
 
 # Outside contributions (review policy): a pull request from another repository
 # that changes any of these needs Security's signed review; the cloud verdict
-# alone does not count for it. A rename counts under both its old and new name.
-# The directories are the ones whose files the workflows run (`bash`, `node`,
-# `python3` and `pnpm` steps, including any `scripts/` directory), plus what
-# pnpm reads when it installs.
-OUTSIDE_REVIEW_PATHS='^\.github/|(^|/)scripts/|^tools/|^\.claude/|^ci/|^patches/|^packages/ci-steward/|(^|/)package\.json$|(^|/)pnpm-lock\.yaml$|(^|/)pnpm-workspace\.yaml$|(^|/)\.npmrc$|(^|/)\.pnpmfile\.c?js$|(^|/)lefthook(-local)?\.ya?ml$|(^|/)turbo\.json$'
+# alone does not count for it. A rename counts under both its old and new name,
+# and names match without regard to case. The directories are the ones whose
+# files the workflows run (`bash`, `node`, `python3` and `pnpm` steps, including
+# any `scripts/` directory), what pnpm reads when it installs, what the Docker
+# image build reads (publish-docker.yml), and the desktop packaging config and
+# resources that desktop-release.yml builds and signs with.
+OUTSIDE_REVIEW_PATHS='^\.github/|(^|/)scripts/|^tools/|^\.claude/|^ci/|^patches/|^packages/ci-steward/|(^|/)package\.json$|(^|/)pnpm-lock\.yaml$|(^|/)pnpm-workspace\.yaml$|(^|/)\.npmrc$|(^|/)\.pnpmfile\.c?js$|(^|/)lefthook(-local)?\.ya?ml$|(^|/)turbo\.json$|(^|/)dockerfile[^/]*$|^docker/|^apps/desktop/build/|^apps/desktop/electron-builder\.[^/]+$|^apps/desktop/electron\.vite\.config\.[^/]+$'
 
 # outside_review <payload.json>: prints the paths (one JSON string per line) that
 # need Security's signed review because the PR comes from another repository;
@@ -131,7 +133,7 @@ outside_review() {
     elif (.files | type) != "array" or (.changedFiles | type) != "number"
       or (.files | length) != .changedFiles or .changedFiles == 0 then error("file list")
     else [.files[] | (.filename, .previous_filename) | select(type == "string")
-          | select(test($re))] | unique | .[] | tojson
+          | select(test($re; "i"))] | unique | .[] | tojson
     end' "$1" 2>/dev/null || return 2
 }
 

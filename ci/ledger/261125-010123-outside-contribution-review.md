@@ -19,8 +19,11 @@ Pull requests from this repository, and outside ones that change none of those p
 
 The paths are `OUTSIDE_REVIEW_PATHS` in `scripts/pr-gates-check.sh`: `.github/`, `tools/`,
 `.claude/`, `ci/`, `patches/`, `packages/ci-steward/`, any `scripts/` directory, and at any depth
-`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, `.pnpmfile.cjs`, `lefthook.yml`
-and `turbo.json`. A rename counts under its old and new name. The check reads the whole paginated
+`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, `.pnpmfile.cjs`, `lefthook.yml`,
+`turbo.json` and `Dockerfile*`; also `docker/`, and the desktop packaging inputs that
+`desktop-release.yml` builds and signs with (`apps/desktop/build/`, `apps/desktop/electron-builder.*`,
+`apps/desktop/electron.vite.config.*`). Names match without regard to case, and a rename counts
+under its old and new name. The check reads the whole paginated
 file list, and stays red (exit 2) when it cannot tell which repository the PR comes from or when the
 file list is incomplete. `scripts/test-pr-gates-check.sh` covers each path, renames, a second page
 of files, and same-repository PRs.

@@ -481,7 +481,10 @@ check 'this repo, workflow and lockfile changes, the cloud verdict: passes (unch
 for p in packages/foo/package.json apps/site/package.json package.json pnpm-lock.yaml \
   pnpm-workspace.yaml .npmrc packages/foo/.npmrc lefthook.yml scripts/x.sh tools/t/run.sh \
   packages/cli/scripts/build.ts .claude/hooks/h.mjs ci/required-checks.json patches/p.patch \
-  .pnpmfile.cjs turbo.json packages/ci-steward/src/cli.ts; do
+  .pnpmfile.cjs turbo.json packages/ci-steward/src/cli.ts Scripts/x.sh .GitHub/workflows/a.yml \
+  Package.JSON packages/foo/PACKAGE.json Dockerfile Dockerfile.hub apps/x/Dockerfile.dev \
+  docker/entrypoint.sh apps/desktop/build/entitlements.mac.plist apps/desktop/electron-builder.yml \
+  apps/desktop/electron.vite.config.ts; do
   reset_fixtures
   comments
   cloud_pass
@@ -498,7 +501,9 @@ files_json packages/foo/package.json
 run run 12
 check 'another repo, a nested package.json, a signed review: passes' 0 "$rc"
 
-for p in packages/foo/src/package.ts docs/scripts.md apps/client/src/tools.ts README.md; do
+for p in packages/foo/src/package.ts docs/scripts.md apps/client/src/tools.ts README.md \
+  apps/desktop/src/main/index.ts apps/e2e/reporters/manifest-reporter.ts docs/docker.md \
+  apps/client/vite.config.ts; do
   reset_fixtures
   comments
   cloud_pass
