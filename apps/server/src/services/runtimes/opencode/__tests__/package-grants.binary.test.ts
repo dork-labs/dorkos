@@ -4,17 +4,18 @@
  * A globally installed package's own folder, on the pinned real binary
  * (DOR-4386).
  *
- * DorkOS's real runtime and real sidecar run four turns nobody is watching,
+ * DorkOS's real runtime and real sidecar run turns nobody is watching,
  * each driven by a fake model that asks for one tool call:
  *
  * 1. It reads the package's own skill: OpenCode raises `external_directory`,
  *    DorkOS answers it with no card, and the file's words reach the model.
  * 2. It writes over that skill: refused with no card, and the file is unchanged.
- * 3. A shell `touch` inside the package, in Default mode: the read grant does
- *    not answer it, so the ask reaches the person (denied here), and no file
- *    appears (Security's Should on #3793).
+ * 3. A shell `touch` inside the package, in Default mode and at Full: the read
+ *    grant does not answer it, and the shell's check refuses it with no card,
+ *    so no file appears (Security's Should on #3793, DOR-4522).
  * 4. It reads a backup an install left beside the package: no grant, so the ask
  *    reaches the person (denied here), and the file's words never reach the model.
+ * 5. A shell `touch` in the project at Full still runs.
  *
  * Nothing here can spend or reach the internet: a fake model on 127.0.0.1,
  * every other address sent to a proxy that does not answer, HOME, DORK_HOME
@@ -124,8 +125,11 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
   let runtime: InstanceType<typeof import('../opencode-runtime.js').OpenCodeRuntime>;
 
   /** Run one turn to its end, denying any card it raises, and return its events. */
-  async function turn(sessionId: string): Promise<StreamEvent[]> {
-    runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: project });
+  async function turn(
+    sessionId: string,
+    permissionMode: 'default' | 'bypassPermissions' = 'default'
+  ): Promise<StreamEvent[]> {
+    runtime.ensureSession(sessionId, { permissionMode, cwd: project });
     const events: StreamEvent[] = [];
     for await (const event of runtime.sendMessage(sessionId, 'go', { cwd: project })) {
       events.push(event);
@@ -250,19 +254,32 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
     expect(fs.readFileSync(packageSkill, 'utf8')).toBe(original);
   }, 150_000);
 
-  it('asks the person before a shell command writes inside the package, in Default mode', async () => {
-    // The read grant answers OpenCode's `external_directory` ask for the
-    // package folder, but it never answers a shell command: `bash` still
-    // reaches the person, and nothing is written while they have not said yes.
-    const created = path.join(path.dirname(packageSkill), 'touched-by-shell');
-    nextTool = { name: 'bash', args: { command: `touch ${created}`, description: 'touch' } };
+  it.each(['default', 'bypassPermissions'] as const)(
+    'refuses a shell command that writes inside the package, with no card, in %s mode',
+    async (mode) => {
+      // The read grant answers OpenCode's `external_directory` ask for the
+      // package folder, but never a write: the shell's own check refuses it at
+      // every level, Full included (DOR-4522), and nothing is written.
+      const created = path.join(path.dirname(packageSkill), `touched-in-${mode}`);
+      nextTool = { name: 'bash', args: { command: `touch ${created}`, description: 'touch' } };
 
-    const events = await turn('touch-package');
+      const events = await turn(`touch-package-${mode}`, mode);
+
+      expect(nextTool).toBeUndefined();
+      expect(events.filter((event) => event.type === 'approval_required')).toEqual([]);
+      expect(fs.existsSync(created)).toBe(false);
+    },
+    150_000
+  );
+
+  it('still runs an ordinary shell write at Full, so the refusal above is the check', async () => {
+    const ordinary = path.join(project, 'touched-at-full');
+    nextTool = { name: 'bash', args: { command: `touch ${ordinary}`, description: 'touch' } };
+
+    await turn('touch-project-full', 'bypassPermissions');
 
     expect(nextTool).toBeUndefined();
-    const asks = events.filter((event) => event.type === 'approval_required');
-    expect(asks.map((event) => (event.data as { toolName: string }).toolName)).toContain('bash');
-    expect(fs.existsSync(created)).toBe(false);
+    expect(fs.existsSync(ordinary)).toBe(true);
   }, 150_000);
 
   it('grants no read of a backup beside the package: the ask reaches the person', async () => {

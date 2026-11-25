@@ -79,8 +79,15 @@ it('keeps the original approval when another active request repeats its call ID'
 it.each(['turn', 'request'] as const)(
   'refuses a shell decision if the %s ends during the package check',
   async (owner) => {
-    const check = vi.spyOn(packageHooks, 'checkShellCommand').mockResolvedValue({ allowed: true });
-    const channel = new DoeApprovals();
+    let finish = () => {};
+    const check = vi
+      .spyOn(packageHooks, 'checkShellCommand')
+      .mockReturnValue(new Promise((resolve) => (finish = () => resolve({ allowed: true }))));
+    const channel = new DoeApprovals(async () => ({
+      outcome: 'checked',
+      write: 'none',
+      reaches: false,
+    }));
     const turn = new AbortController();
     const request = new AbortController();
     const emit = vi.fn();
@@ -88,9 +95,10 @@ it.each(['turn', 'request'] as const)(
     try {
       const ask = channel.callback('default', emit, turn.signal);
       const pending = ask({ ...write, name: 'shell' }, {}, context(request.signal));
-      expect(check).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(check).toHaveBeenCalledOnce());
       const ending = owner === 'turn' ? turn : request;
       ending.abort();
+      finish();
 
       await expect(pending).resolves.toBe('deny');
       expect(emit).not.toHaveBeenCalled();

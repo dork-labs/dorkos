@@ -137,6 +137,21 @@ export function isProtectedPath(
 }
 
 /**
+ * {@link isProtectedPath} for the many paths one shell command names, its rules compiled once
+ * (DOR-4522). Use it for one check only, so a changed link is read again next time. Throws, like
+ * it, on a path it can't check.
+ *
+ * @param roots - The turn's roots.
+ * @param operation - Which entries refuse: `read` or `write`.
+ */
+export function protectedPathTest(
+  roots: ProtectedPathRoots,
+  operation: ProtectedPath['deny']
+): (input: string) => boolean {
+  return checker(roots, operation);
+}
+
+/**
  * Refuse a native folder search only when its tree contains a protected read,
  * or cannot be checked completely. No file contents are opened. A bounded,
  * cycle-aware walk prevents a symlink loop or a huge tree from blocking a turn.
