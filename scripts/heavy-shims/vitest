@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# DORKOS-HEAVY-SHIM: vitest. Sends a heavy run into the machine's load gate;
+# anything else runs the real program unchanged. See scripts/lib/heavy-shim.sh.
+self=${BASH_SOURCE[0]}
+case $self in */*) ;; *) self=./$self ;; esac
+while [ -L "$self" ]; do
+  link=$(readlink -- "$self") || break
+  case $link in /*) self=$link ;; *) self=${self%/*}/$link ;; esac
+done
+HEAVY_SHIM_DIR=$(CDPATH='' cd -P -- "${self%/*}" && pwd) || exit 126
+# shellcheck source=scripts/lib/heavy-shim.sh
+. "$HEAVY_SHIM_DIR/../lib/heavy-shim.sh" || exit 126
+heavy_shim_main vitest "$@"
