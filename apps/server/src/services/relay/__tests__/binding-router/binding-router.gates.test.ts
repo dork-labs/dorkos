@@ -1,3 +1,5 @@
+import { sealTurnLimits } from '../../../../../../../packages/relay/src/lib/carried-turn-limits.js';
+import { turnPowerOptions } from '../../../../../../../packages/relay/src/adapters/claude-code/turn-shaping-sender.js';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { UnclaimedChatStore, type UnclaimedChat } from '../../unclaimed-chat-store.js';
@@ -90,6 +92,47 @@ describe('BindingRouter gates', () => {
       h.bind();
       await h.handler(env);
       expect(h.lastPayload().__untrustedWords).toBe(untrusted);
+    });
+  });
+
+  describe('the limits a message carries (DOR-5201)', () => {
+    const AGENT = 'relay.agent.default.porter';
+    const CHAIN = {
+      asks: 'never',
+      reach: 'everything',
+      teammate: [{ roomId: 'r1', authorId: 'a1' }],
+    };
+    /** What the turn the router started is sent with. */
+    const turnOf = (payload: Record<string, unknown>) =>
+      turnPowerOptions(false, false, payload, h.relayCore.publish.mock.calls.at(-1)![2]!.from);
+
+    it('keeps the server’s sealed stamp from an agent, so the turn still carries it', async () => {
+      h.bind();
+      const stamp = sealTurnLimits(AGENT, {
+        permissionCeiling: CHAIN,
+        carriedMarks: { outsider: true },
+      });
+      await h.handler(
+        envelope({ from: AGENT, payload: { content: 'hi', __carriedTurnLimits: stamp } })
+      );
+      expect(h.lastPayload().__carriedTurnLimits).toEqual(stamp);
+      expect(turnOf(h.lastPayload())).toEqual({
+        permissionCeiling: ['runtime-default', CHAIN],
+        carriedMarks: { outsider: true },
+      });
+    });
+
+    it('never counts a chain nobody sealed, though it still marks the turn', async () => {
+      h.bind();
+      await h.handler(
+        envelope({
+          from: AGENT,
+          payload: { content: 'hi', __carriedTurnLimits: { permissionCeiling: CHAIN } },
+        })
+      );
+      expect(turnOf(h.lastPayload())).toEqual({
+        permissionCeiling: ['runtime-default', { ...CHAIN, teammate: [] }],
+      });
     });
   });
 

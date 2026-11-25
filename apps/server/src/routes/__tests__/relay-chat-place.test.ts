@@ -11,6 +11,7 @@
  * The runtime registry runs on a real throwaway database, so "a chat" is a
  * real binding row; only the bus and Mesh's list of homes are fakes.
  */
+import os from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
@@ -30,6 +31,7 @@ import { OTHER_AGENTS_CHAT_MESSAGE } from '../../services/session/launch/launch-
 import { createRelayRoutes } from '../relay.js';
 import { relayWebhookBodyRule } from '../relay-webhooks.js';
 import { registerSessionQueueRoutes } from '../session-queue-handler.js';
+import { mountSessionSendMessage } from '../session-send-message.js';
 import { createMockRelayCore, target, useLoginOffConfig } from './relay/relay.fixtures.js';
 
 useLoginOffConfig();
@@ -73,6 +75,8 @@ let relayCore: RelayCore;
 let agentSessions: Map<string, string>;
 /** What the test runtime's own store answers, by id, with no binding row. */
 let runtimeHeld: Record<string, string>;
+/** The chats the test runtime's own store finds, by id, and the folder each is in. */
+let storeFound: Record<string, string>;
 
 /** Bind a chat as a launch binds it. */
 function chat(
@@ -91,6 +95,7 @@ function chat(
 function mount(): void {
   const sessions = new Hono<ApiEnv>();
   registerSessionQueueRoutes(sessions, mesh as never);
+  mountSessionSendMessage(sessions, { meshCore: mesh as never });
   target.mount(
     honoGroupListener(
       [
@@ -146,7 +151,8 @@ function registerLookupRuntime(): void {
     new FakeAgentRuntime('lookup-test');
   runtime.findSession = async (sessionId: string) => {
     if (sessionId === LOOKUP_FAILS_CHAT) throw new Error('store unreadable');
-    return null;
+    const cwd = storeFound[sessionId];
+    return cwd ? ({ id: sessionId, cwd } as never) : null;
   };
   runtime.getSessionCwd = (sessionId: string) => runtimeHeld[sessionId];
   runtimeRegistry.register(runtime as never);
@@ -161,6 +167,7 @@ beforeEach(() => {
   meshIds = { 'juno-id': JUNO, 'rio-id': RIO, mimic: MIMIC };
   agentSessions = new Map();
   runtimeHeld = {};
+  storeFound = {};
   registerTestHomes([JUNO, RIO, MIMIC]);
   registerLookupRuntime();
   setSessionAgentSources({ liveCwd: (sessionId) => live[sessionId] });
@@ -344,6 +351,69 @@ describe('which chat a message reaches', () => {
     const res = await send('relay.agent.default.lost-id', asRio);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('desk_not_own');
+  });
+
+  it('reads a chat’s folder from the same sources the sessions route reads it from (DOR-5201)', async () => {
+    // A bound chat with no recorded agent, whose folder only a runtime's own store knows.
+    const storeOnly = '00000000-0000-4000-8000-00000000a009';
+    chat(storeOnly, null);
+    runtimeHeld[storeOnly] = RIO;
+    const relay = await send(`relay.agent.claude-code.${storeOnly}`, asRio);
+    const sessions = await request(target.server)
+      .delete(`/api/sessions/${storeOnly}/queue/waiting-1`)
+      .set(asRio);
+    expect(relay.status).toBe(200);
+    expect(sessions.status).not.toBe(403);
+    runtimeHeld[storeOnly] = JUNO;
+    const elsewhere = await send(`relay.agent.claude-code.${storeOnly}`, asRio);
+    const sessionsElsewhere = await request(target.server)
+      .delete(`/api/sessions/${storeOnly}/queue/waiting-1`)
+      .set(asRio);
+    expect(elsewhere.status).toBe(403);
+    expect(sessionsElsewhere.status).toBe(403);
+  });
+
+  describe('a chat nothing binds, known only by a runtime’s own store (DOR-5201)', () => {
+    /** What the sessions route answers this agent for running a chat in that folder. */
+    const startThere = (sessionId: string, cwd: string) =>
+      request(target.server)
+        .post(`/api/sessions/${sessionId}/messages`)
+        .set(asRio)
+        .send({ content: 'hello', cwd, create: true });
+
+    it('is delivered in a folder no agent owns, as the sessions route starts a chat there', async () => {
+      runtimeHeld[RUNTIME_ONLY_CHAT] = '/made-up/projects/plain';
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+      const sessions = await startThere(RUNTIME_ONLY_CHAT, '/made-up/projects/plain');
+      expect(relay.status).toBe(200);
+      expect(sessions.status).not.toBe(403);
+    });
+
+    it('is refused in a protected folder, as the sessions route refuses starting one there', async () => {
+      runtimeHeld[RUNTIME_ONLY_CHAT] = os.homedir();
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+      const sessions = await startThere(RUNTIME_ONLY_CHAT, os.homedir());
+      expect(relay.status).toBe(403);
+      expect(relay.body.code).toBe('desk_not_own');
+      expect(sessions.status).toBe(403);
+      expect(relay.body.detail).toEqual(expect.any(String));
+      expect(relay.body.detail).toBe(sessions.body.detail);
+    });
+
+    it('is delivered when the store finds it with no recorded agent, on both routes alike', async () => {
+      // A chat the runtime's own store finds is bound, so it is asked as a bound chat with no
+      // agent: its folder is not asked the new-chat rule, even a protected one. Pins today's
+      // shared answer.
+      storeFound[RUNTIME_ONLY_CHAT] = os.homedir();
+      runtimeHeld[RUNTIME_ONLY_CHAT] = os.homedir();
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+      const sessions = await request(target.server)
+        .post(`/api/sessions/${RUNTIME_ONLY_CHAT}/messages`)
+        .set(asRio)
+        .send({ content: 'hello' });
+      expect(relay.status).toBe(200);
+      expect(sessions.status).toBe(202);
+    });
   });
 
   it('delivers to another agent whose conversation it already has', async () => {

@@ -12,8 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { defuseSystemTags, defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
+import { defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
 // One answer to "is this error the turn failing?", shared with the scheduled-run
 // tracker that reads the same streams (DOR-1658). The denylist and the reasoning
 // behind its direction live there.
@@ -24,7 +23,8 @@ import type {
   DeliveryResult,
   TraceStoreLike,
 } from '../../types.js';
-import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
+import { extractPayloadContent } from '../../lib/payload-utils.js';
+import { formatPromptWithContext } from './relay-context-block.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { buildResponseFormatBlock, type ResponseContext } from './response-format.js';
 import { relayMessageStarter } from './turn-starter.js';
@@ -642,7 +642,12 @@ export async function handleAgentMessage(
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
         // The sender bounds or marks the turn, plus what its own turns carry (`turnPowerOptions`).
-        ...turnPowerOptions(trustedShaper, deps.markStrangerTurns === true, payloadObj),
+        ...turnPowerOptions(
+          trustedShaper,
+          deps.markStrangerTurns === true,
+          payloadObj,
+          envelope.from
+        ),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
@@ -989,81 +994,4 @@ async function resolveTurnSettings(
 function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
   const account = payload?.account;
   return typeof account === 'string' && account.length > 0 ? account : undefined;
-}
-
-/**
- * Tags that mean something to a runtime and must not be forgeable by a stranger
- * on Telegram or Slack.
- *
- * Driven off the shared {@link CONTEXT_TAG} map plus `system-reminder`, exactly
- * as the rooms preamble does, so a new context kind is covered here the day it
- * is added rather than the day somebody remembers this list exists.
- */
-const SYSTEM_TAGS = [...Object.values(CONTEXT_TAG), 'system-reminder'];
-
-/**
- * Format the user prompt with a <relay_context> XML block.
- *
- * When the envelope's payload carries a sender name and/or chat title
- * (Telegram/Slack inbound), a `Sender:`/`Chat:` line is inserted right after
- * `From:` so the agent knows who it is talking to. Absent either field, the
- * block is byte-identical to the plain envelope-metadata format.
- *
- * ## The message body is somebody else's words
- *
- * Everything after the block is written by whoever sent the message, and a
- * chat platform will happily carry `</relay_context>` or `<system-reminder>` in
- * a message. Written straight through, those close the block early and let a
- * stranger add lines the agent reads as DorkOS's own instructions. The body is
- * therefore run through {@link defuseSystemTags}, which escapes the opening `<`
- * of a system tag and leaves ordinary prose and code (`Vec<T>`, `a < b`,
- * `<div>`) exactly as written — people paste code into chat, and mangling it
- * would be a real cost. The identity lines are a different job and were already
- * handled: {@link extractSenderIdentity} runs `sanitizeIdentity` over them.
- *
- * ## Known residual: no nonce fence here
- *
- * The strongest form of this boundary is a per-turn nonce fence — markers a
- * writer cannot predict, which is what makes the boundary unforgeable rather
- * than merely hard to spell. Rooms have one; relay does not, because the fence
- * helper currently lives in the server's runtime layer
- * (`services/runtimes/shared/room-context-block.ts`) and is not importable from
- * this package. Defusal is the whole boundary here rather than defence in
- * depth, so this is a real gap, narrowed but not closed. Extracting the fence
- * into `@dorkos/shared` so both callers share it is filed as follow-up.
- */
-function formatPromptWithContext(
-  content: string,
-  envelope: RelayEnvelope,
-  agentId: string,
-  sdkSessionId: string,
-  now: () => number
-): string {
-  const { sender, chat } = extractSenderIdentity(envelope.payload);
-  const lines = [
-    `Agent-ID: ${agentId}`,
-    `Session-ID: ${sdkSessionId}`,
-    `From: ${envelope.from}`,
-    ...(sender !== undefined ? [`Sender: ${sender}`] : []),
-    ...(chat !== undefined ? [`Chat: ${chat}`] : []),
-    `Message-ID: ${envelope.id}`,
-    `Subject: ${envelope.subject}`,
-    `Sent: ${envelope.createdAt}`,
-    '',
-    'Budget remaining:',
-    `- Hops: ${envelope.budget.hopCount} of ${envelope.budget.maxHops} used`,
-    `- TTL: ${Math.max(0, Math.round((envelope.budget.ttl - now()) / 1000))} seconds remaining`,
-    `- Max turns: ${envelope.budget.callBudgetRemaining}`,
-  ];
-  if (envelope.replyTo) {
-    lines.push(
-      '',
-      `Reply to: ${envelope.replyTo}`,
-      "If you cannot complete the task within the budget, summarize what you've done and stop."
-    );
-  }
-  return (
-    `<${CONTEXT_TAG.relay_context}>\n${lines.join('\n')}\n</${CONTEXT_TAG.relay_context}>\n\n` +
-    defuseSystemTags(content, SYSTEM_TAGS)
-  );
 }

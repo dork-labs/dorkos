@@ -178,7 +178,12 @@ export {
   TURN_SHAPING_PAYLOAD_FIELDS,
   resolveAgentTurnIdentity,
 } from './adapters/claude-code/index.js';
-export { CARRIED_TURN_LIMITS_FIELD, withoutCarriedTurnLimits } from './lib/carried-turn-limits.js';
+export {
+  CARRIED_TURN_LIMITS_FIELD,
+  isSealedTurnLimits,
+  sealTurnLimits,
+  withoutCarriedTurnLimits,
+} from './lib/carried-turn-limits.js';
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
