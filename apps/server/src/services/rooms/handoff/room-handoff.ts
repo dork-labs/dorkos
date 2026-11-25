@@ -7,7 +7,6 @@ import {
   handoffReceipt,
   renderPostedHandoff,
   type RoomHandoff,
-  type HandoffOrigin,
   type HandoffOutcome,
 } from './handoff-presentation.js';
 export type { RoomHandoff, HandoffOrigin, HandoffOutcome } from './handoff-presentation.js';
@@ -40,8 +39,9 @@ import {
  * **It routes a post and adds no ask.** Nothing here waits on a person, at any level, Full
  * included. The seat's turn runs under every bound a room turn has (one session per room, one
  * working tree per agent, the room's turn budget), so a busy seat queues the hand-off and runs it
- * when it is free (scenario B), and two hand-offs to one seat run one after the other (F). The
- * drafting chat's marks ride the seat's turn as its ceiling, so a stranger's words stay held (E).
+ * when it is free (scenario B), and two hand-offs to one seat run one after the other (F). One the
+ * seat has not taken two minutes after it was sent is posted for it (`seat-stand-in.ts`, DOR-4252).
+ * The drafting chat's marks ride the seat's turn as its ceiling, so a stranger's words stay held (E).
  *
  * **No auto-join.** An agent that is not in the room is refused, and told to ask the operator,
  * who can post it or add it: joining a room for it would grant access nobody gave.
@@ -64,15 +64,17 @@ import type { AsideResult } from '../room-trigger/aside.js';
 import { roomStartAnchor } from '../room-trigger/room-start-anchor.js';
 import type { RoomCore } from '../service/room-core.js';
 import { declineReason, noticeReason } from './decline-reason.js';
-import { HandoffOutcomes, type HandoffStatus } from './handoff-outcomes.js';
+import { HandoffOutcomes, type HandoffStatus, type HandoffWaiting } from './handoff-outcomes.js';
 import { HandoffQueue, handoffRetryDelay } from './handoff-queue.js';
 import { withRoomMarks } from './seat-carry.js';
 import { RoomSeatReports } from './seat-report.js';
+import { handoffOriginOf } from './handoff-origin.js';
+import { postForBusySeat, standInFor, type SeatStandInPort } from './seat-stand-in.js';
+import type { StandInResult } from './seat-stand-in.js';
 
-/** The longest a hand-off waits for a busy seat before it gives up and says so. */
+/** The longest a hand-off waits for its room chat before it ends and says so. */
 export const HANDOFF_WAIT_MAX_MS = 60 * 60_000;
-const WAIT_EXPIRED =
-  'The seat stayed busy for an hour. Continue in a chat that can receive messages.';
+const WAIT_EXPIRED = "its room chat didn't take it within an hour. Send it again.";
 
 /** Whether two drafts are the same words, ignoring the space around them. */
 function sameWords(a: string, b: string): boolean {
@@ -99,10 +101,13 @@ export class RoomHandoffs {
    * Build the seats and hand-offs for one room service.
    *
    * @param core - The room service's shared state.
+   * @param postOriginalNotice - Writes a hand-off's end notice into the room it came from.
+   * @param standIn - Posts a hand-off for a seat that stayed busy (DOR-4252).
    */
   constructor(
     private readonly core: RoomCore,
-    private readonly postOriginalNotice: HandoffRoomNoticeWriter
+    private readonly postOriginalNotice: HandoffRoomNoticeWriter,
+    private readonly standIn: SeatStandInPort
   ) {
     this.reports = new RoomSeatReports(core);
     this.queue = new HandoffQueue({
@@ -247,14 +252,12 @@ export class RoomHandoffs {
         this.core,
         input,
         { acceptedAt, waitDeadlineAt: acceptedAt + HANDOFF_WAIT_MAX_MS },
-        () => this.originOf(input.callerSessionId, author.id)
+        () => handoffOriginOf(this.core, input.callerSessionId, author.id)
       );
-      this.outcomes.noteWaiting(
-        handoff.id,
-        author.id,
-        queued ? 'queued' : 'running',
-        handoff.waitDeadlineAt
-      );
+      // Whether a busy room chat's draft may be posted for it, fixed now (DOR-4252).
+      handoff.standIn = standInFor(handoff, acceptedAt);
+      const ends = 'until' in handoff.standIn ? handoff.standIn.until : handoff.waitDeadlineAt;
+      this.outcomes.noteWaiting(handoff.id, author.id, queued ? 'queued' : 'running', ends);
       return handoff;
     });
     if (!admitted.accepted && admitted.why === 'invalid')
@@ -316,13 +319,9 @@ export class RoomHandoffs {
         this.core.store.handoffOutbox.declineQueued(row.id, WAIT_EXPIRED);
         continue;
       }
-      const admitted = this.queue.admit(
-        agentKey(row.roomId, row.authorId),
-        row.waitDeadlineAt,
-        () => {
-          return restoreHandoff(row);
-        }
-      );
+      // A restored hand-off has no stand-in: what its chat had read is gone with the process.
+      const key = agentKey(row.roomId, row.authorId);
+      const admitted = this.queue.admit(key, row.waitDeadlineAt, () => restoreHandoff(row));
       if (admitted.accepted) this.owned.set(row.id, admitted.item);
     }
   }
@@ -405,6 +404,14 @@ export class RoomHandoffs {
     this.owned.delete(handoff.id);
   }
 
+  /** Post a hand-off its seat did not take in time, with this process's ownership of it. */
+  private postFor(handoff: RoomHandoff): StandInResult {
+    return postForBusySeat(this.core, this.standIn, handoff, {
+      bootOwner: this.bootOwner,
+      targetCurrent: () => this.targetCurrent(handoff),
+      postedNotice: this.terminalText(handoff, null),
+    });
+  }
   /** A queued draft expires independently of any running model turn. */
   private async decline(handoff: RoomHandoff, reason: string): Promise<void> {
     const row = this.core.store.handoffOutbox.readOwned(handoff.id, handoff.authorId);
@@ -426,48 +433,16 @@ export class RoomHandoffs {
     if (!this.stopped) this.signalTerminals();
   }
 
-  /** Where a draft came from: the room the drafting chat sits in, and who asked there. */
-  private originOf(sessionId: string, authorId: string): HandoffOrigin {
-    // The room keeps the session, or a live turn there runs on it: a first turn is named by the
-    // runtime mid-turn, before the room's record of it moves.
-    const binding = this.core.store.sessionLedger.bindingForSession(sessionId);
-    const roomId =
-      binding?.authorId === authorId
-        ? binding.roomId
-        : [...this.core.triggers.claimed.values()].find(
-            (claim) => claim.authorId === authorId && claim.sessionId === sessionId
-          )?.roomId;
-    if (roomId === undefined) {
-      return {
-        sessionId,
-        roomId: null,
-        label: roomLabel(null, this.core.bridges),
-        requester: null,
-        memberJoinedAt: null,
-      };
-    }
-    const room = this.core.store.getRoom(roomId);
-    const turn = this.core.triggers.activeTurnHere(roomId, authorId);
-    const asked = turn ? this.core.store.getEntryById(roomId, turn.entryId) : null;
-    const requester =
-      asked && asked.kind === 'post' && asked.authorId !== authorId
-        ? nameForAgents(this.core, asked.authorId)
-        : null;
-    return {
-      sessionId,
-      roomId,
-      label: roomLabel(room, this.core.bridges),
-      requester,
-      memberJoinedAt: this.core.store.getMember(roomId, authorId)?.joinedAt ?? null,
-    };
-  }
-
   /** Run one hand-off in its seat, waiting out a busy one, and send the answer back. */
   private async run(handoff: RoomHandoff): Promise<HandoffOutcome> {
     const key = agentKey(handoff.roomId, handoff.authorId);
-    const deadline = handoff.waitDeadlineAt;
+    const scope = handoff.standIn;
+    // The stand-in's window first, when it has one (DOR-4252); then the hour, for the seat alone.
+    let deadline = scope && 'until' in scope ? scope.until : handoff.waitDeadlineAt;
     let executionClaimed = false;
     let result: AsideResult | null = null;
+    let stood: HandoffOutcome | undefined;
+    let waiting: HandoffWaiting = 'seat_busy';
     const trace: HandoffTrace = {
       handoffId: handoff.id,
       roomId: handoff.roomId,
@@ -480,9 +455,23 @@ export class RoomHandoffs {
       for (let attempt = 0; ; attempt += 1) {
         if (handoff.cancelled)
           return { posted: false, reason: 'it stopped before its turn started.' };
-        if (Date.now() >= deadline) {
+        if (Date.now() >= deadline && deadline === handoff.waitDeadlineAt) {
           result = { outcome: 'refused', why: 'deadline', text: null };
           break;
+        }
+        // A seat not yet asked, or one that answered, is tried first: it may be free now (C2).
+        const seatBusy = result?.outcome === 'busy' || result?.why === 'deadline';
+        if (Date.now() >= deadline && seatBusy) {
+          // Posted or declined ends it; a room that moved on keeps it for the seat to re-read.
+          const tried = this.stopped ? ({ kept: true } as const) : this.postFor(handoff);
+          deadline = handoff.waitDeadlineAt;
+          if (!('kept' in tried)) {
+            stood = tried;
+            break;
+          }
+          waiting = 'room_moved';
+          this.outcomes.noteWaiting(handoff.id, handoff.authorId, waiting, deadline);
+          continue;
         }
         const room = this.core.store.getRoom(handoff.roomId);
         if (room === null || room.archived) break;
@@ -500,13 +489,15 @@ export class RoomHandoffs {
           handoffRecovery: true,
           untrustedText: true,
           handoffTrace: trace,
-          admissionDeadlineAt: handoff.waitDeadlineAt,
+          admissionDeadlineAt: Date.now() >= deadline ? handoff.waitDeadlineAt : deadline,
           validateTarget: () => this.targetCurrent(handoff),
           beforeRun: () => {
             if (this.stopped || !this.targetCurrent(handoff) || !handoff.dispatchId) return false;
             // A runtime busy reply may retry under this live owner. Its saved running state
             // remains ambiguous across a crash; it must never become replayable queued work.
-            if (!executionClaimed) {
+            // A stand-in that claimed the record and then kept it has already moved it on.
+            const queued = this.core.store.handoffOutbox.readOwned(handoff.id, handoff.authorId);
+            if (!executionClaimed && queued?.state === 'queued') {
               this.core.store.handoffOutbox.claimQueued(
                 handoff.id,
                 handoff.envelopeJson,
@@ -563,12 +554,10 @@ export class RoomHandoffs {
           return { posted: false, reason: 'it stopped before its turn started.' };
         const left = deadline - Date.now();
         if (result.failure?.refusal !== undefined) break;
-        if (result.outcome === 'busy' && left <= 0) {
-          result = { outcome: 'refused', why: 'deadline', text: null };
-          break;
-        }
+        // The loop's top decides what a passed deadline means.
+        if (result.why === 'deadline' || (result.outcome === 'busy' && left <= 0)) continue;
         if (result.outcome !== 'busy') break;
-        this.outcomes.noteWaiting(handoff.id, handoff.authorId, 'seat_busy', deadline);
+        this.outcomes.noteWaiting(handoff.id, handoff.authorId, waiting, deadline);
         // Woken only when this agent's own turn ends: another agent's release says nothing about
         // this seat (and a refused try wakes nobody, see `releaseClaim`). Otherwise on a backoff.
         await this.core.triggers.nextRelease(
@@ -593,12 +582,13 @@ export class RoomHandoffs {
       if (this.running.get(key) === handoff) this.running.delete(key);
       this.owned.delete(handoff.id);
     }
+    const refused = stood?.posted === false ? stood.reason : undefined;
     const durable = this.core.store.handoffOutbox.readOwned(handoff.id, handoff.authorId);
     const room = this.core.store.getRoom(handoff.roomId);
     const outcome: HandoffOutcome =
       durable?.state === 'posted' && durable.postedEntryId !== null
         ? { posted: true, entryId: durable.postedEntryId }
-        : { posted: false, reason: declineReason(room, result) };
+        : { posted: false, reason: refused ?? declineReason(room, result) };
     if (!outcome.posted) logHandoffFailure(trace, result);
     this.outcomes.settle(
       handoff.id,
@@ -609,7 +599,7 @@ export class RoomHandoffs {
     );
     if (!outcome.posted) {
       // The status keeps the seat's reply; the notice that wakes the drafter never quotes it.
-      const text = this.terminalText(handoff, noticeReason(room, result));
+      const text = this.terminalText(handoff, refused ?? noticeReason(room, result));
       if (durable?.state === 'queued')
         this.core.store.handoffOutbox.declineQueued(handoff.id, outcome.reason, text);
       else if (durable?.state !== 'posted')

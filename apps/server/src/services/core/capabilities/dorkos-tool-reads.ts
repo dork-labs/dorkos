@@ -95,6 +95,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'audit.account_timeline': 'outside',
   'rooms.read_canvas': 'outside',
   tasks_get_run_history: 'outside',
+  // The app's run reads (DOR-4978): a run's summary is its own words, which quote what it read.
+  'tasks.view_runs': 'outside',
+  'tasks.view_run': 'outside',
   relay_get_trace: 'outside',
   // ── Marks itself, when what it returned holds outside words ────────────────
   'rooms.read_history': 'self',
@@ -275,6 +278,7 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   tasks_create: 'local',
   tasks_update: 'local',
   tasks_delete: 'local',
+  'tasks.view_list': 'local',
   relay_list_endpoints: 'local',
   relay_notify_user: 'local',
   relay_list_adapters: 'local',

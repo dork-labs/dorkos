@@ -27,6 +27,12 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import type { Task } from '@dorkos/shared/types';
 import { createTasksRoutes } from '../tasks.js';
+import { taskViewReader } from '../task-view-reader.js';
+import {
+  setTaskViewReader,
+  taskViewDomain,
+} from '../../services/tasks/view/task-view-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
@@ -105,22 +111,26 @@ describe('PATCH /api/tasks/:id — only a person turns a task on (DOR-3309)', ()
     await fs.mkdir(dir, { recursive: true });
     filePath = path.join(dir, 'SKILL.md');
     await fs.writeFile(filePath, SKILL, 'utf-8');
+    const deps = {
+      store,
+      scheduler,
+      registrar: new TaskRegistrar({ store, scheduler }),
+      defaultTimezone: () => 'UTC',
+      dorkHome,
+    };
+    // The list is served by the capability mount (DOR-4978), the writes by hand.
+    setTaskViewReader(taskViewReader(deps));
     fixtureTarget.mount(
-      honoGroupListener({
-        path: '/api/tasks',
-        routes: createTasksRoutes({
-          store,
-          scheduler,
-          registrar: new TaskRegistrar({ store, scheduler }),
-          defaultTimezone: () => 'UTC',
-          dorkHome,
-        }),
-      })
+      honoGroupListener([
+        capabilityGroup(taskViewDomain),
+        { path: '/api/tasks', routes: createTasksRoutes(deps) },
+      ])
     );
   });
 
   afterEach(async () => {
     store.close();
+    setTaskViewReader(undefined);
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 

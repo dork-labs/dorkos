@@ -6,7 +6,9 @@
  * only when its shape is one a capability cannot express: a stream, raw bytes
  * in or out, a callback another site calls, a sign-in handshake that sets a
  * cookie, an HTML page, the health and docs routes, or the invoke endpoint
- * every capability already runs through. Each entry says which, and why.
+ * every capability already runs through. One more holds writes the app makes
+ * from Wi-Fi on purpose until the mount can tell an API key from a person
+ * (`network-reachable`, DOR-5267). Each entry says which, and why.
  *
  * `../__tests__/hand-route-census.test.ts` holds the line: every served `/api`
  * route is a mounted capability, on this list, or on the pending list
@@ -20,7 +22,18 @@
 
 /** Why a route stays a hand route. */
 export type HandRouteCategory =
-  'stream' | 'bytes' | 'callback' | 'sign-in-handshake' | 'html-page' | 'health-docs' | 'invoke';
+  | 'stream'
+  | 'bytes'
+  | 'callback'
+  | 'sign-in-handshake'
+  | 'html-page'
+  | 'health-docs'
+  | 'invoke'
+  /**
+   * A write reachable from Wi-Fi by design, held by hand until the mount can
+   * tell an API key from a person (A5, DOR-5267). Security's ruling, 2026-11-25.
+   */
+  | 'network-reachable';
 
 /** One route that stays a hand route. */
 export interface HandRouteAllowlistEntry {
@@ -33,6 +46,9 @@ export interface HandRouteAllowlistEntry {
   /** One line on why. */
   readonly reason: string;
 }
+
+/** Why the scheduled-task writes stay by hand (Security's ruling on DOR-4978). */
+const TASK_WRITE_HELD = 'network-reachable by design, waits for A5 (API-key audience), DOR-5267';
 
 /** Every route that stays a hand route, grouped by category. */
 export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
@@ -367,6 +383,50 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     path: '/api/docs/*',
     category: 'health-docs',
     reason: "The API reference page's files.",
+  },
+
+  // Scheduled-task writes the app makes from Wi-Fi on purpose (Security, DOR-5267).
+  {
+    method: 'POST',
+    path: '/api/tasks',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
+  },
+  {
+    method: 'PATCH',
+    path: '/api/tasks/:id',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/tasks/:id',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
+  },
+  {
+    method: 'POST',
+    path: '/api/tasks/:id/trigger',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
+  },
+  {
+    method: 'POST',
+    path: '/api/tasks/runs/:id/cancel',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
+  },
+  {
+    method: 'POST',
+    path: '/api/tasks/:id/approve-file',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
+  },
+  {
+    method: 'POST',
+    path: '/api/tasks/:id/undo-agent-mode',
+    category: 'network-reachable',
+    reason: TASK_WRITE_HELD,
   },
 
   // The generic door every capability already runs through.

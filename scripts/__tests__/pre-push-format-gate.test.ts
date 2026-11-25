@@ -25,9 +25,10 @@
  * 2026-11-12 a fifth (`own-mocks`, ledger `261111-184639`), and on 2026-11-15 a
  * sixth (`ci-midrun`, which asks GitHub whether CI from the last push is still
  * running, under a 4 s limit), on 2026-11-24 a seventh (`test-ratio`, ledger
- * `261123-220533`), and on 2026-11-25 an eighth (`turn-port`, ledger
- * `261125-065516`). All eight are independent, so still no ordering.
- * The assertions below pin exactly those eight commands; `local-gate-shape.test.ts` beside this one pins that no test
+ * `261123-220533`), on 2026-11-25 an eighth (`turn-port`, ledger
+ * `261125-065516`) and a ninth (`computer-wall`, ledger `261125-191359`).
+ * All nine are independent, so still no ordering.
+ * The assertions below pin exactly those nine commands; `local-gate-shape.test.ts` beside this one pins that no test
  * command has come back without a ledger entry.
  *
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
@@ -106,6 +107,7 @@ const priorities = commandPriorities(prePush);
 /** Every command the pre-push hook runs, sorted by name. */
 const PRE_PUSH_COMMANDS = [
   'ci-midrun',
+  'computer-wall',
   'formatting',
   'fragments',
   'ledger-coverage',
@@ -116,7 +118,7 @@ const PRE_PUSH_COMMANDS = [
 ];
 
 describe('the pre-push formatting check is wired beside its sibling checks', () => {
-  it('finds the pre-push hook and its eight commands at all', () => {
+  it('finds the pre-push hook and its nine commands at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
     // quietly. `fragments` joined on 2026-10-30
@@ -125,14 +127,15 @@ describe('the pre-push formatting check is wired beside its sibling checks', () 
     // `own-mocks` on 2026-11-12 (ci/ledger/261111-184639-own-mocks-ratchet.md);
     // `ci-midrun` on 2026-11-15 (ci/ledger/261115-173750.md); `test-ratio` on
     // 2026-11-24 (ci/ledger/261123-220533-test-ratio-ceiling.md); `turn-port` on
-    // 2026-11-25 (ci/ledger/261125-065516-turn-port-ratchet.md).
+    // 2026-11-25 (ci/ledger/261125-065516-turn-port-ratchet.md); `computer-wall`
+    // the same day (ci/ledger/261125-191359-computer-wall.md).
     expect(prePush).not.toBe('');
     expect([...priorities.keys()].sort()).toEqual(PRE_PUSH_COMMANDS);
   });
 
-  it('declares no ordering, because the eight checks are independent', () => {
+  it('declares no ordering, because the nine checks are independent', () => {
     // `piped` and `priority` earned their lines when a two-second check had to
-    // preempt a six-minute sweep. These eight are all quick and answer
+    // preempt a six-minute sweep. These nine are all quick and answer
     // different questions, so each should report on the same push rather than
     // one hiding the other. Adding a slow command means deciding ordering
     // deliberately and putting them back — this is the line that makes you.

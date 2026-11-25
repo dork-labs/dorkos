@@ -681,7 +681,7 @@ export const roomsDomain: CapabilityDomain = {
               : {}),
           })
         );
-        noteHistoryRead(input.roomId, readerId, input, entries);
+        noteHistoryRead(input.roomId, readerId, input, entries, context.sessionId);
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
           entries: projectRead(rooms, context, input.roomId, entries),

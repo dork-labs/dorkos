@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTasksRoutes } from '../tasks.js';
+import { taskViewReader } from '../task-view-reader.js';
+import {
+  setTaskViewReader,
+  taskViewDomain,
+} from '../../services/tasks/view/task-view-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
@@ -185,22 +191,32 @@ describe('Tasks routes', () => {
     db = createTestDb();
     store = new TaskStore(db);
     scheduler = createMockScheduler();
+    const deps = {
+      store,
+      scheduler,
+      registrar: new TaskRegistrar({ store, scheduler }),
+      defaultTimezone: () => 'UTC',
+      dorkHome: DORK_HOME,
+    };
+    // The reads are served by the capability mount (DOR-4978), the writes by hand.
+    setTaskViewReader(taskViewReader(deps));
     fixtureTarget.mount(
-      honoGroupListener({
-        path: '/api/tasks',
-        routes: createTasksRoutes({
-          store,
-          scheduler,
-          registrar: new TaskRegistrar({ store, scheduler }),
-          defaultTimezone: () => 'UTC',
-          dorkHome: DORK_HOME,
-        }),
-      })
+      honoGroupListener([
+        capabilityGroup(taskViewDomain),
+        { path: '/api/tasks', routes: createTasksRoutes(deps) },
+      ])
     );
   });
 
+  /** The review revision the app reads off the list for one schedule. */
+  async function listedRevision(id: string): Promise<string> {
+    const listed = await request(fixtureServer).get('/api/tasks');
+    return listed.body.find((item: { id: string }) => item.id === id).approvalRevision;
+  }
+
   afterEach(() => {
     store.close();
+    setTaskViewReader(undefined);
     // Whether or not a case wired one, so a ladder never leaks into the next.
     setEscalationService(null);
     // Likewise the identity singleton: a case that minted one must not leave a
@@ -214,10 +230,7 @@ describe('Tasks routes', () => {
       async (field) => {
         const task = store.createTask(taskInput({ name: 'Sample review' }));
         store.updateTask(task.id, { status: 'pending_approval' });
-        const listed = await request(fixtureServer).get('/api/tasks');
-        const revision = listed.body.find(
-          (item: { id: string }) => item.id === task.id
-        ).approvalRevision;
+        const revision = await listedRevision(task.id);
         store.updateTask(
           task.id,
           field === 'prompt' ? { prompt: 'New instructions' } : { permissionMode: 'dontAsk' }
@@ -234,10 +247,7 @@ describe('Tasks routes', () => {
     it('refuses a row edit that lands during the file read, before activation', async () => {
       const task = store.createTask(taskInput({ name: 'Concurrent review' }));
       store.updateTask(task.id, { status: 'pending_approval' });
-      const listed = await request(fixtureServer).get('/api/tasks');
-      const revision = listed.body.find(
-        (item: { id: string }) => item.id === task.id
-      ).approvalRevision;
+      const revision = await listedRevision(task.id);
       const fs = await import('node:fs/promises');
       vi.mocked(fs.default.readFile).mockImplementationOnce(async () => {
         store.updateTask(task.id, { prompt: 'Instructions changed while approval was checked' });
@@ -261,10 +271,7 @@ describe('Tasks routes', () => {
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active' });
       expect(missing.status).toBe(412);
-      const listed = await request(fixtureServer).get('/api/tasks');
-      const revision = listed.body.find(
-        (item: { id: string }) => item.id === task.id
-      ).approvalRevision;
+      const revision = await listedRevision(task.id);
       const approved = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active', expectedApprovalRevision: revision });

@@ -243,6 +243,12 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     detail: `This queue already has ${WORK_QUEUE_MAX_QUEUED} items waiting.`,
   },
   WORK_ITEM_BAD_CWD: { code: 'invalid_request', detail: 'The folder must be an absolute path.' },
+  // The task reads kept the hand routes' sentence (`tasks/view/task-view-capabilities.ts`).
+  TASK_RUN_NOT_FOUND: { code: 'not_found', detail: 'No run has that id.' },
+  TASKS_UNAVAILABLE: {
+    code: 'temporarily_unavailable',
+    detail: 'Scheduled tasks are not running on this server.',
+  },
   // The to-do reads and a person's to-do writes kept the hand routes' codes and
   // sentences when they moved onto the mount (`services/todos/todo-http-capabilities.ts`,
   // `services/todos/todo-write-capabilities.ts`).

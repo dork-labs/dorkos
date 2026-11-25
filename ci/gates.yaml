@@ -479,6 +479,9 @@ gates:
   - id: lefthook.pre-push.turn-port
     source: lefthook.yml
     purpose: Refuses an entry of the turn port's import baseline raised or added by hand before pushing.
+  - id: lefthook.pre-push.computer-wall
+    source: lefthook.yml
+    purpose: Refuses an entry of the computer wall's baseline raised or added by hand, or a side map that places a path twice or names one that is gone, before pushing.
   - id: lefthook.pre-push.test-ratio
     source: lefthook.yml
     purpose: Refuses a package adding tests faster than source past its test budget, or a budget loosened by hand, before pushing.

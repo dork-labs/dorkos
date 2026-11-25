@@ -763,6 +763,8 @@ capabilityConformance(registry, {
     'link.resolve': { uri: `dork:room:${CONFORMANCE_ROOM_ID}` },
     // No such to-do, so the handler answers its own `TODO_NOT_FOUND`.
     'todos.view_card': { id: 'conformance-no-such-todo' },
+    // No Tasks running in conformance, so the handler answers its own `TASKS_UNAVAILABLE`.
+    'tasks.view_run': { id: 'conformance-no-such-run' },
     // A person's writes, valid input for each; the person-only door refuses the anonymous call.
     'todos.add_as_person': { what: 'Conformance', assignee: { kind: 'person', account: 'owner' } },
     'todos.change_as_person': { id: 'conformance-no-such-todo', state: 'kept' },

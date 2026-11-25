@@ -263,6 +263,16 @@ pre-push:
         turn_port_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:turn-port -- --base "$turn_port_base"
       fail_text: Turn port ratchet failed — fix the files listed above.
+    computer-wall:
+      # The computer wall (DOR-5158), on the same branch point as max-lines
+      # above. The lint rule holds each computer-side file to its entry; this
+      # refuses an entry raised or added by hand and a side map that places a
+      # path twice or names one that is gone. Pure file reads, under a second.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push computer-wall
+        computer_wall_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:computer-wall -- --base "$computer_wall_base"
+      fail_text: Computer wall failed — fix the files listed above.
     test-ratio:
       # The per-package test budget, on the same branch point as max-lines
       # above. Pure file reads, a few seconds.

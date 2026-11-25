@@ -12458,238 +12458,6 @@
         },
         "additionalProperties": false
       },
-      "TaskRun": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "scheduleId": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/TaskRunStatus"
-          },
-          "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "finishedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "durationMs": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "outputSummary": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "sessionId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "trigger": {
-            "$ref": "#/components/schemas/TaskRunTrigger"
-          },
-          "resolvedRuntime": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "resolvedModel": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "refusedTools": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "default": null
-          },
-          "cappedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "dontAsk",
-              null
-            ]
-          },
-          "cappedFile": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "path": {
-                "type": "string"
-              },
-              "from": {
-                "type": "string"
-              },
-              "to": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "path",
-              "from",
-              "to"
-            ]
-          },
-          "outcome": {
-            "$ref": "#/components/schemas/TaskRunOutcome"
-          },
-          "scheduledFor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "missedTicks": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "default": null
-          },
-          "accountMove": {
-            "$ref": "#/components/schemas/TaskRunAccountMove"
-          },
-          "createdAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "scheduleId",
-          "status",
-          "startedAt",
-          "finishedAt",
-          "durationMs",
-          "outputSummary",
-          "error",
-          "sessionId",
-          "trigger",
-          "createdAt"
-        ]
-      },
-      "TaskRunStatus": {
-        "type": "string",
-        "enum": [
-          "running",
-          "completed",
-          "failed",
-          "cancelled",
-          "skipped",
-          "needs_attention"
-        ]
-      },
-      "TaskRunTrigger": {
-        "type": "string",
-        "enum": [
-          "scheduled",
-          "manual",
-          "agent"
-        ]
-      },
-      "TaskRunOutcome": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "enum": [
-          "partial",
-          "nothing_done",
-          null
-        ],
-        "default": null
-      },
-      "TaskRunAccountMove": {
-        "type": "object",
-        "properties": {
-          "from": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "label": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "label"
-            ]
-          },
-          "to": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "label": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "label"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "limited",
-              "signed-out"
-            ]
-          }
-        },
-        "required": [
-          "from",
-          "to",
-          "reason"
-        ]
-      },
       "CancelTaskRunResponse": {
         "type": "object",
         "properties": {
@@ -22185,6 +21953,238 @@
         "required": [
           "runs",
           "nextCursor"
+        ]
+      },
+      "TaskRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scheduleId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskRunStatus"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "durationMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/TaskRunTrigger"
+          },
+          "resolvedRuntime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "resolvedModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "refusedTools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "cappedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "dontAsk",
+              null
+            ]
+          },
+          "cappedFile": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "from",
+              "to"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/TaskRunOutcome"
+          },
+          "scheduledFor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "missedTicks": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          },
+          "accountMove": {
+            "$ref": "#/components/schemas/TaskRunAccountMove"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scheduleId",
+          "status",
+          "startedAt",
+          "finishedAt",
+          "durationMs",
+          "outputSummary",
+          "error",
+          "sessionId",
+          "trigger",
+          "createdAt"
+        ]
+      },
+      "TaskRunStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "skipped",
+          "needs_attention"
+        ]
+      },
+      "TaskRunTrigger": {
+        "type": "string",
+        "enum": [
+          "scheduled",
+          "manual",
+          "agent"
+        ]
+      },
+      "TaskRunOutcome": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "partial",
+          "nothing_done",
+          null
+        ],
+        "default": null
+      },
+      "TaskRunAccountMove": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "limited",
+              "signed-out"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "reason"
         ]
       },
       "BrowseDirectoryResponse": {
@@ -47801,31 +47801,6 @@
       }
     },
     "/api/tasks": {
-      "get": {
-        "tags": [
-          "Tasks"
-        ],
-        "summary": "List all schedules",
-        "responses": {
-          "200": {
-            "description": "Array of schedules, each with its next run and a preview of the few after it",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Task"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "tasks.list"
-      },
       "post": {
         "tags": [
           "Tasks"
@@ -47894,6 +47869,129 @@
           }
         },
         "operationId": "tasks.create"
+      },
+      "get": {
+        "operationId": "tasks.view_list",
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "List scheduled tasks",
+        "description": "Every scheduled task, with its next run and, while one waits for approval, a preview of the few after it. Agents usually use `tasks_list`.",
+        "responses": {
+          "200": {
+            "description": "List scheduled tasks result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/tasks/{id}": {
@@ -48277,116 +48375,6 @@
           }
         },
         "operationId": "tasks.approveFile"
-      }
-    },
-    "/api/tasks/runs": {
-      "get": {
-        "tags": [
-          "Tasks"
-        ],
-        "summary": "List runs",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "scheduleId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "$ref": "#/components/schemas/TaskRunStatus"
-            },
-            "required": false,
-            "name": "status",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500,
-              "default": 50
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "minimum": 0,
-              "default": 0
-            },
-            "required": false,
-            "name": "offset",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Array of runs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TaskRun"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "tasks.listRuns"
-      }
-    },
-    "/api/tasks/runs/{id}": {
-      "get": {
-        "tags": [
-          "Tasks"
-        ],
-        "summary": "Get a specific run",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Run details",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskRun"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Run not found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "tasks.getRuns"
       }
     },
     "/api/tasks/runs/{id}/cancel": {
@@ -110035,6 +110023,308 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatRunsPage"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/runs": {
+      "get": {
+        "operationId": "tasks.view_runs",
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "List scheduled task runs",
+        "description": "Runs of scheduled tasks, newest first, by schedule or status. An agent reads only its own schedules’ runs and global ones’. Agents usually use `tasks_get_run_history`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "scheduleId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/TaskRunStatus"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List scheduled task runs result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskRun"
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/runs/{id}": {
+      "get": {
+        "operationId": "tasks.view_run",
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Open a scheduled task run",
+        "description": "One run of a scheduled task. An agent reads only its own and global ones.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The run."
+            },
+            "required": true,
+            "description": "The run.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open a scheduled task run result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRun"
                 }
               }
             }

@@ -76,12 +76,10 @@ import {
   HistoryReadSchema,
   TaskItemSchema,
   TaskSchema,
-  TaskRunSchema,
   CancelTaskRunResponseSchema,
   CreateTaskRequestSchema,
   UpdateTaskRequestSchema,
   TriggerTaskRequestSchema,
-  ListTaskRunsQuerySchema,
   ModelOptionSchema,
   ForkShapeRequestSchema,
   WorkbenchSignRequestSchema,
@@ -1828,20 +1826,6 @@ registry.registerPath({
 // --- Tasks Scheduler ---
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/tasks',
-  tags: ['Tasks'],
-  summary: 'List all schedules',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Array of schedules, each with its next run and a preview of the few after it',
-      content: { 'application/json': { schema: z.array(TaskSchema) } },
-    },
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/tasks',
   tags: ['Tasks'],
@@ -1976,40 +1960,6 @@ registry.registerPath({
     403: problemResponse('Only a person can do this'),
     404: problemResponse('Schedule not found'),
     412: problemResponse('`precondition_failed`: the file changed again since the cap you saw'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/tasks/runs',
-  tags: ['Tasks'],
-  summary: 'List runs',
-  request: {
-    query: ListTaskRunsQuerySchema,
-  },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Array of runs',
-      content: { 'application/json': { schema: z.array(TaskRunSchema) } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/tasks/runs/{id}',
-  tags: ['Tasks'],
-  summary: 'Get a specific run',
-  request: {
-    params: z.object({ id: z.string() }),
-  },
-  responses: {
-    200: {
-      description: 'Run details',
-      content: { 'application/json': { schema: TaskRunSchema } },
-    },
-    404: problemResponse('Run not found'),
   },
 });
 

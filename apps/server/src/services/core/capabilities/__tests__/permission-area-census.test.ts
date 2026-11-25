@@ -69,7 +69,17 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'rooms.set_up_files',
     'rooms.update',
   ],
-  tasks: ['tasks_create', 'tasks_delete', 'tasks_get_run_history', 'tasks_list', 'tasks_update'],
+  tasks: [
+    'tasks_create',
+    'tasks_delete',
+    'tasks_get_run_history',
+    'tasks_list',
+    'tasks_update',
+    // The app's task and run reads, on their REST paths (DOR-4978).
+    'tasks.view_list',
+    'tasks.view_runs',
+    'tasks.view_run',
+  ],
   agents: [
     'create_agent',
     'mesh_deny',
