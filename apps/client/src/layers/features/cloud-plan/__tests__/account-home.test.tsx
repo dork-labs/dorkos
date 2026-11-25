@@ -63,7 +63,11 @@ const SAID_NO: CloudCreditsStatus = {
 };
 
 /** An error shaped the way the HTTP transport throws one for a non-OK answer. */
-function serverError(status: number, message: string, body: object = { error: message }) {
+function serverError(
+  status: number,
+  message: string,
+  body: object = { title: 'Something went wrong.', status, code: 'conflict', detail: message }
+) {
   return Object.assign(new Error(message), { status, body });
 }
 
@@ -294,7 +298,7 @@ describe('errorReason', () => {
   it.each([
     ['a network failure', new Error('Failed to fetch')],
     ['a Safari network failure', new Error('Load failed')],
-    ['a body-less status', serverError(500, 'HTTP 500', { error: undefined })],
+    ['a body-less status', serverError(500, 'HTTP 500', {})],
     ['a status text', serverError(502, 'Bad Gateway')],
     ['a timeout with no answer', new Error('Request timed out after 30s. Check your network.')],
     ['something not an Error', 'boom'],

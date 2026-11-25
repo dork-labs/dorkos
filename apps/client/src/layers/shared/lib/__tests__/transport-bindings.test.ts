@@ -53,7 +53,15 @@ describe('HttpTransport — Relay Bindings', () => {
 
     it('throws when the server responds with an error', async () => {
       vi.mocked(fetch).mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Relay not enabled' }), { status: 503 })
+        new Response(
+          JSON.stringify({
+            title: 'That’s not available right now. Try again soon.',
+            status: 503,
+            code: 'temporarily_unavailable',
+            detail: 'Relay not enabled',
+          }),
+          { status: 503 }
+        )
       );
 
       const transport = new HttpTransport(BASE_URL);
@@ -88,7 +96,15 @@ describe('HttpTransport — Relay Bindings', () => {
 
     it('throws when the server responds with a validation error', async () => {
       vi.mocked(fetch).mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Validation failed' }), { status: 400 })
+        new Response(
+          JSON.stringify({
+            title: 'The request didn’t pass its checks.',
+            status: 400,
+            code: 'invalid_request',
+            detail: 'Validation failed',
+          }),
+          { status: 400 }
+        )
       );
 
       const transport = new HttpTransport(BASE_URL);
@@ -134,7 +150,15 @@ describe('HttpTransport — Relay Bindings', () => {
 
     it('throws when the server responds with 404', async () => {
       vi.mocked(fetch).mockResolvedValue(
-        new Response(JSON.stringify({ error: 'Binding not found' }), { status: 404 })
+        new Response(
+          JSON.stringify({
+            title: 'That doesn’t exist here.',
+            status: 404,
+            code: 'not_found',
+            detail: 'Binding not found',
+          }),
+          { status: 404 }
+        )
       );
 
       const transport = new HttpTransport(BASE_URL);

@@ -495,7 +495,6 @@ export {
   errorFromReading,
   readResponseError,
   responseError,
-  type ReadResponseErrorOptions,
   type ResponseError,
   type ResponseErrorReading,
 } from './response-error';

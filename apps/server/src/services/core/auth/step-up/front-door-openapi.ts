@@ -193,9 +193,11 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
           description: 'The action completed',
           content: { 'application/json': { schema: z.unknown() } },
         },
-        403: answersProblems(path)
-          ? problemResponse('This caller cannot change access here')
-          : { description: 'This caller cannot change access here' },
+        403: problemResponse(
+          path.startsWith('/api/auth/')
+            ? 'This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it'
+            : 'This caller cannot change access here'
+        ),
       },
     });
   }
@@ -229,27 +231,6 @@ const OlderPageRefusalSchema = z.object({
   blockedBy: z.array(z.unknown()).max(0).optional(),
   stale: z.enum(['stale-sign-in', 'stale-page']),
 });
-
-/**
- * The gap-filled routes whose refusals are problem documents (DOR-4979). The
- * rest still answer their own shape until their route group moves. Better
- * Auth's own `/api/auth/*` endpoints answer `{ message, code }`, so none is
- * declared there.
- */
-const PROBLEM_PREFIXES = [
-  '/api/cloud/',
-  '/api/tunnel/',
-  '/api/community-connections',
-  '/api/remote-access/',
-  '/api/lan-access',
-  '/api/devices/',
-  '/api/owner-factors/',
-];
-
-/** Whether a gap-filled route answers its refusals as problem documents. */
-function answersProblems(path: string): boolean {
-  return PROBLEM_PREFIXES.some((prefix) => path.startsWith(prefix));
-}
 
 /** A held action this caller may not see or answer. */
 const NOT_THIS_BROWSER = problemResponse(

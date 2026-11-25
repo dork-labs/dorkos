@@ -183,7 +183,7 @@ describe('GET /api/harness/status', () => {
   });
 
   it('answers 500 with nothing of the failure in it when a dependency throws', async () => {
-    // Seeded defect: echo `err.message` into the body — `{ error: toErrorMessage(err) }`
+    // Seeded defect: echo `err.message` into the problem's `detail`
     // — and this reds. Every other case here stays green through
     // that change, because none of them can reach the 500 path at all: the state
     // a person can act on is always a 200, so the only way in is a dependency

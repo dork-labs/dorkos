@@ -52,7 +52,6 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { RequestFacts } from '../http/request-facts.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import { errorBody } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { homeOf, resolveAgentHome } from '../services/core/agent-identity/agent-home.js';
 import {
@@ -202,7 +201,7 @@ export const CHAT_UNCHECKED_MESSAGE =
 
 /**
  * Why this caller may not send this message into the chat it reaches, as the
- * `403` body the sessions route answers with, or `null` when it may. A chat
+ * sentence of the `403` `desk_not_own` problem the route answers with, or `null` when it may. A chat
  * whose hold is `unknown` counts as held, so the place rule refuses it, with a
  * sentence that says the check could not be made.
  *
@@ -214,16 +213,13 @@ export async function relayChatPlaceRefusal(
   facts: RequestFacts,
   reach: RelayChatReach | null,
   sources: RelayChatPlaceSources
-): Promise<{ error: string; code: string } | null> {
+): Promise<string | null> {
   if (!reach || reach.agentAddress || sessionLauncherOf(facts).kind !== 'agent') return null;
   for (const [sessionId, { hold }] of reach.holds) {
     if (hold === 'free') continue;
     const refusal = await chatPlaceRefusal(facts, sources.mesh, sessionId, SESSION_LAUNCH_ACTION);
     if (refusal) {
-      return errorBody(
-        hold === 'unknown' ? CHAT_UNCHECKED_MESSAGE : refusal.message,
-        'DESK_NOT_OWN'
-      );
+      return hold === 'unknown' ? CHAT_UNCHECKED_MESSAGE : refusal.message;
     }
   }
   return null;

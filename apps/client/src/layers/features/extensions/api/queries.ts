@@ -50,8 +50,7 @@ export function useEnableExtension() {
         // throw that away and leave "403" on screen.
         const body = await readResponseError(
           res,
-          `Couldn’t turn on ${id}. The server answered ${res.status}.`,
-          { oldMessageFirst: true }
+          `Couldn’t turn on ${id}. The server answered ${res.status}.`
         );
         // The code rides along, so a cancelled "Confirm it's you" is told
         // apart from a failure and said once (DOR-4909).
@@ -84,8 +83,7 @@ export function useDisableExtension() {
         // throw that away and leave "403" on screen.
         const body = await readResponseError(
           res,
-          `Couldn’t turn off ${id}. The server answered ${res.status}.`,
-          { oldMessageFirst: true }
+          `Couldn’t turn off ${id}. The server answered ${res.status}.`
         );
         throw new Error(body.message);
       }

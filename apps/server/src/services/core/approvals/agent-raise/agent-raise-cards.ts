@@ -89,11 +89,12 @@ export interface AgentRaiseCaller {
   sessionId?: string;
 }
 
-/** What a route answers. */
-export interface AgentRaiseAnswer {
-  status: 403 | 428 | 429 | 503;
-  body: Record<string, unknown>;
-}
+/**
+ * What a route answers: the `428` card (a held request, not an error), or a
+ * refusal as a problem document.
+ */
+export type AgentRaiseAnswer =
+  { status: 428; body: Record<string, unknown>; refused?: undefined } | AgentRaiseRefusal;
 
 interface PendingRaise {
   readonly approvalId: string;
@@ -167,29 +168,19 @@ function retire(raise: PendingRaise, reason: string): void {
 export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite): AgentRaiseAnswer {
   const identity = caller.identity && !caller.identity.inactive ? caller.identity : undefined;
   if (!identity) {
-    return {
-      status: 403,
-      body: {
-        error: "DorkOS couldn't tell which agent asked, so nobody was asked.",
-        code: 'agent_raise_unidentified',
-      },
-    };
+    return raiseRefusal(
+      'agent_identity_unverified',
+      'DorkOS couldn’t tell which agent asked, so nobody was asked.'
+    );
   }
   if (turnMarked(identity.agentPath, caller.sessionId)) {
-    return {
-      status: 403,
-      body: {
-        error:
-          'This turn read words from outside your team, so DorkOS changed nothing and asked nobody.',
-        code: 'agent_raise_marked',
-      },
-    };
+    return raiseRefusal(
+      'forbidden',
+      'This turn read words from outside your team, so DorkOS changed nothing and asked nobody.'
+    );
   }
   if (!approvalService) {
-    return {
-      status: 503,
-      body: { error: 'DorkOS can’t raise a card right now.', code: 'agent_raise_unavailable' },
-    };
+    return raiseRefusal('temporarily_unavailable', 'DorkOS can’t raise a card right now.');
   }
   const mine = [...pending.values()].filter((p) => p.agentPath === identity.agentPath);
   // A newer ask for the same thing replaces the older card.
@@ -198,13 +189,10 @@ export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite)
   }
   const waiting = [...pending.values()].filter((p) => p.agentPath === identity.agentPath).length;
   if (waiting >= MAX_PENDING_PER_AGENT) {
-    return {
-      status: 429,
-      body: {
-        error: `This agent already has ${MAX_PENDING_PER_AGENT} cards waiting. Wait for an answer first.`,
-        code: 'agent_raise_cap',
-      },
-    };
+    return raiseRefusal(
+      'rate_limited',
+      `This agent already has ${MAX_PENDING_PER_AGENT} cards waiting. Wait for an answer first.`
+    );
   }
   const inputHash = hashApprovalInput({
     kind: write.kind,
@@ -253,16 +241,16 @@ export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite)
   };
 }
 
-/** Why a card can't be answered yes: a problem document, with its status. */
-export type AgentRaiseRefusal = { status: number; body: Problem };
+/** Why a card can't be raised or answered yes: a problem document, with its status. */
+export type AgentRaiseRefusal = { status: number; body: Problem; refused: true };
 
-/** A refusal of a yes, as the grant route hands it back. */
+/** A refusal, as a route hands it back. */
 function raiseRefusal(code: ProblemCode, detail: string): AgentRaiseRefusal {
   // Built from the shared code list, not @dorkos/http-kit: the space server's
   // test image reaches this module and does not carry that package.
   const { status, title } = PROBLEM_CODES[code];
   const body: Problem = { type: problemType(code), title, status, code, detail };
-  return { status, body };
+  return { status, body, refused: true };
 }
 
 /**

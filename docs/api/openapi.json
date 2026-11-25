@@ -358,6 +358,7 @@
           "space_rules_not_accepted",
           "space_limit_reached",
           "space_unsupported",
+          "spaces_disabled",
           "space_name_taken",
           "report_not_allowed",
           "reply_on_top_level_only",
@@ -13484,16 +13485,29 @@
           "observation_lost"
         ]
       },
-      "ErrorResponse": {
+      "AuthRequired": {
         "type": "object",
         "properties": {
           "error": {
             "type": "string"
           },
-          "details": {}
+          "code": {
+            "type": "string",
+            "enum": [
+              "AUTH_REQUIRED"
+            ]
+          },
+          "signInWith": {
+            "type": "string",
+            "enum": [
+              "dorkos",
+              "wifi-code"
+            ]
+          }
         },
         "required": [
-          "error"
+          "error",
+          "code"
         ]
       },
       "RelaySendMessageRequest": {
@@ -24935,6 +24949,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.getSpending"
@@ -26682,6 +26699,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "keepAwake.get"
@@ -26742,6 +26762,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "todoPromises.list"
@@ -27063,6 +27086,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "todos.list"
@@ -27777,10 +27803,24 @@
             }
           },
           "400": {
-            "description": "The body is not an answer"
+            "description": "`invalid_request`: the body is not an answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Only the owner of this DorkOS can answer"
+            "description": "`owner_only` or `person_only`: only the owner of this DorkOS can answer, in the app",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -27824,6 +27864,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "heartbeats.getWakersOff"
@@ -32749,6 +32792,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.listAccessChanges"
@@ -44046,6 +44092,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "health.get",
@@ -44104,6 +44153,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "health.getDeep"
@@ -44187,6 +44239,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "sessions.getPendingInteractions"
@@ -48014,10 +48069,24 @@
             }
           },
           "400": {
-            "description": "Unknown runtime slug"
+            "description": "`invalid_request`: an unknown runtime slug",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "503": {
-            "description": "The usage store is not running yet"
+            "description": "`temporarily_unavailable`: the usage store is not running yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "runtimes.getAccountsUsage"
@@ -48075,10 +48144,24 @@
             }
           },
           "404": {
-            "description": "No Claude Code account has that id (`code: \"UNKNOWN_ACCOUNT\"`)"
+            "description": "`not_found`: no Claude Code account has that id",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "503": {
-            "description": "The usage store is not running yet"
+            "description": "`temporarily_unavailable`: the usage store is not running yet",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "runtimes.probeClaudeCodeAccounts"
@@ -48112,6 +48195,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "runtimes.getClaudeCodeAccountsFound"
@@ -48138,10 +48224,24 @@
             "description": "The folder is hidden"
           },
           "400": {
-            "description": "No path, or a folder the found list does not offer"
+            "description": "`invalid_request`: no path, or a folder the found list does not offer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "An agent, or (with login on) a caller that is not signed in"
+            "description": "`person_only`: an agent, or (with login on) a caller that is not signed in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "runtimes.createClaudeCodeAccountsFoundDismiss"
@@ -48387,6 +48487,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "capabilities.get"
@@ -48718,6 +48821,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "tasks.list"
@@ -49236,6 +49342,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "tasks.listRuns"
@@ -49459,11 +49568,16 @@
             }
           },
           "401": {
-            "description": "Login requires a verified session or per-user API key, or an app window without a session must confirm the person (person_session_required)",
+            "description": "Login requires a verified session or per-user API key: the login gate’s `AUTH_REQUIRED` body; or an app window without a session must confirm the person (`person_session_required`, a problem document)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/AuthRequired"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -49570,6 +49684,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "relay.listMessages"
@@ -49622,11 +49739,11 @@
             }
           },
           "401": {
-            "description": "AUTH_REQUIRED before ID validation",
+            "description": "The login gate’s `AUTH_REQUIRED` body, before ID validation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/AuthRequired"
                 }
               }
             }
@@ -49817,6 +49934,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "relay.listEndpoints"
@@ -50093,6 +50213,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "relay.getDeadLetters"
@@ -50130,6 +50253,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "relay.getMetrics"
@@ -50165,6 +50291,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "relay.stream"
@@ -50530,6 +50659,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "mesh.getTopology"
@@ -51938,6 +52070,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "marketplace.getCache"
@@ -51950,6 +52085,9 @@
         "responses": {
           "204": {
             "description": "Cache cleared"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "marketplace.deleteCache"
@@ -57965,6 +58103,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "marketplace.getHeldBack"
@@ -58453,6 +58594,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "marketplace.getDevLinks"
@@ -59916,6 +60060,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "shapes.get"
@@ -60295,6 +60442,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.getProviders"
@@ -65149,6 +65299,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.getEveryAgentGrants"
@@ -78041,6 +78194,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.listReviews"
@@ -91318,11 +91474,11 @@
             }
           },
           "403": {
-            "description": "The principal lacks the exact grant",
+            "description": "`forbidden`: the principal lacks the exact grant",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -91530,11 +91686,11 @@
             }
           },
           "403": {
-            "description": "The principal lacks the exact grant",
+            "description": "`forbidden`: the principal lacks the exact grant",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -91703,6 +91859,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.listUsageAgent",
@@ -91868,6 +92027,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "connectors.listUsageOperator"
@@ -91988,6 +92150,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "relay.getUnclaimedChats"
@@ -92172,6 +92337,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "approvals.getPending"
@@ -92713,6 +92881,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "extensions.getPendingApprovals"
@@ -92943,6 +93114,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "extensions.getTrustedSources"
@@ -93124,6 +93298,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "permissions.get"
@@ -93393,6 +93570,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "permissions.listHistory"
@@ -96540,7 +96720,7 @@
           "409": {
             "description": "The file changed while it was being edited — `file_changed`, and ONLY that code carries `conflict` — or the save was refused for one of the room-state reasons above (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`), which answer with the code and the sentence alone. Switch on `code`, never on the presence of a field",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "anyOf": [
                     {
@@ -96608,7 +96788,7 @@
                       "description": "The error document every failed API request is answered with (RFC 9457)."
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorResponse"
+                      "$ref": "#/components/schemas/Problem"
                     }
                   ]
                 }
@@ -96971,7 +97151,7 @@
           "409": {
             "description": "A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "anyOf": [
                     {
@@ -97039,7 +97219,7 @@
                       "description": "The error document every failed API request is answered with (RFC 9457)."
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorResponse"
+                      "$ref": "#/components/schemas/Problem"
                     }
                   ]
                 }
@@ -97202,7 +97382,7 @@
           "409": {
             "description": "A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "anyOf": [
                     {
@@ -97270,7 +97450,7 @@
                       "description": "The error document every failed API request is answered with (RFC 9457)."
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorResponse"
+                      "$ref": "#/components/schemas/Problem"
                     }
                   ]
                 }
@@ -97428,7 +97608,7 @@
           "409": {
             "description": "A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "anyOf": [
                     {
@@ -97496,7 +97676,7 @@
                       "description": "The error document every failed API request is answered with (RFC 9457)."
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorResponse"
+                      "$ref": "#/components/schemas/Problem"
                     }
                   ]
                 }
@@ -97665,7 +97845,7 @@
           "409": {
             "description": "A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
                   "anyOf": [
                     {
@@ -97733,7 +97913,7 @@
                       "description": "The error document every failed API request is answered with (RFC 9457)."
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorResponse"
+                      "$ref": "#/components/schemas/Problem"
                     }
                   ]
                 }
@@ -107972,7 +108152,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -110676,7 +110863,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -110735,7 +110929,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -110801,7 +111002,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -110860,7 +111068,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -110919,7 +111134,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111241,7 +111463,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111295,7 +111524,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111349,7 +111585,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111600,6 +111843,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -111694,6 +111947,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -111765,6 +112028,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -111828,6 +112101,16 @@
           },
           "403": {
             "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -111919,6 +112202,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -111990,6 +112283,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -112052,7 +112355,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112136,6 +112446,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -112198,7 +112518,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112262,7 +112589,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112316,7 +112650,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112380,7 +112721,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112434,7 +112782,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112488,7 +112843,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112542,7 +112904,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112606,7 +112975,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112661,6 +113037,16 @@
           },
           "403": {
             "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -112740,6 +113126,16 @@
               }
             }
           },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
             "headers": {
@@ -112803,6 +113199,16 @@
           },
           "403": {
             "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -112881,7 +113287,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112935,7 +113348,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112999,7 +113419,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -113053,7 +113480,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -113117,7 +113551,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",

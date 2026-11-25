@@ -78,14 +78,13 @@ const OTHER_ID = '22222222-2222-4222-8222-222222222222';
 const PROXIED_HOST = 'dorkos.contract.example';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const SPACES_DISABLED = {
-  error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
-  code: 'SPACES_DISABLED',
-};
+const SPACES_DISABLED = problemBody('spaces_disabled', {
+  detail: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
+});
 const NO_CONNECTION = problemBody('not_found', {
   detail: 'That space connection doesn’t exist.',
 });
@@ -258,7 +257,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
         body,
         expect: {
           status: 404,
-          ...(method === 'HEAD' ? { body: '' } : { headers: JSON_TYPE, body: SPACES_DISABLED }),
+          ...(method === 'HEAD' ? { body: '' } : { headers: PROBLEM_TYPE, body: SPACES_DISABLED }),
         },
       });
     }

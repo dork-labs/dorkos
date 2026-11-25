@@ -93,7 +93,7 @@ describe('buildAuthRateLimiter', () => {
 
     const blocked = await request(app).post('/api/auth/sign-in/email').send({ email: 'a@b.c' });
     expect(blocked.status).toBe(429);
-    expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+    expect(blocked.body).toMatchObject({ code: 'rate_limited' });
   });
 
   // Spec `audit-trail` PR2: a refused attempt never reaches Better Auth, so
@@ -117,7 +117,7 @@ describe('buildAuthRateLimiter', () => {
       expect(db.select().from(auditEvents).all()).toEqual([]);
       const blocked = await request(app).post('/api/auth/sign-in/email').send({ email: 'a@b.c' });
       expect(blocked.status).toBe(429);
-      expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+      expect(blocked.body).toMatchObject({ code: 'rate_limited' });
       expect(db.select().from(auditEvents).all()).toMatchObject([
         {
           action: 'auth.sign_in_rate_limited',
@@ -376,7 +376,7 @@ describe('buildAccountSignInLimiter (DOR-3172)', () => {
     // Spelled differently, the same account: still refused, right password or not.
     const blocked = await signIn('  Owner@Dork.Test ', 'right');
     expect(blocked.status).toBe(429);
-    expect(blocked.body).toMatchObject({ code: 'RATE_LIMITED' });
+    expect(blocked.body).toMatchObject({ code: 'rate_limited' });
     // Another account is untouched.
     expect((await signIn('someone@dork.test', 'right')).status).toBe(200);
   });

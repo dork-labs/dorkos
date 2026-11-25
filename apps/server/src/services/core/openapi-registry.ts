@@ -72,7 +72,7 @@ import {
   CommandsQuerySchema,
   CommandRegistrySchema,
   HealthResponseSchema,
-  ErrorResponseSchema,
+  AuthRequiredBodySchema,
   HistoryReadSchema,
   TaskItemSchema,
   TaskSchema,
@@ -296,7 +296,8 @@ import {
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
-import { problemResponse } from './openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from './openapi/problem-openapi.js';
+import { documentSpacesGate } from './openapi/spaces-gate-openapi.js';
 import { PROBLEM_CONTENT_TYPE, ProblemSchema } from '@dorkos/shared/problem';
 import {
   CanvasChannelEventSchema,
@@ -669,6 +670,7 @@ registry.registerPath({
   tags: ['Health'],
   summary: 'Health check',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Server is healthy',
       content: { 'application/json': { schema: HealthResponseSchema } },
@@ -689,6 +691,7 @@ registry.registerPath({
     'share the `CheckResult` shape `dorkos doctor` renders; `dorkos doctor --deep` merges them ' +
     'into its checklist.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'One check result per deep check, in a fixed order',
       content: { 'application/json': { schema: DeepHealthResponseSchema } },
@@ -727,6 +730,7 @@ registry.registerPath({
   description:
     'One envelope per prompt any live session is parked on — a tool approval, a question, or an MCP elicitation — with server-authoritative time left and expired entries already dropped. `roomId` is present only for a session bound to a room. This is the seed a window reads on mount; after that the `interaction_pending` and `interaction_resolved` events on `/api/events` keep it current, so it is never polled. Bounded to live sessions: a projector lives until its session is evicted or the server restarts, so this answers for the recent fleet and not for all history. The list is SCOPED TO THE CALLER: a prompt is only ever listed to somebody who could act on it, so a caller presenting `X-DorkOS-Agent` receives an empty array — and an empty array, never a `403`, because a refusal would itself say that prompts exist.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Every pending prompt, with the room each belongs to when it has one',
       content: { 'application/json': { schema: PendingInteractionsResponseSchema } },
@@ -1460,8 +1464,8 @@ registry.registerPath({
         'application/json': { schema: z.object({ accounts: z.array(AccountUsageSchema) }) },
       },
     },
-    400: { description: 'Unknown runtime slug' },
-    503: { description: 'The usage store is not running yet' },
+    400: problemResponse('`invalid_request`: an unknown runtime slug'),
+    503: problemResponse('`temporarily_unavailable`: the usage store is not running yet'),
   },
 });
 
@@ -1496,8 +1500,8 @@ registry.registerPath({
         },
       },
     },
-    404: { description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)' },
-    503: { description: 'The usage store is not running yet' },
+    404: problemResponse('`not_found`: no Claude Code account has that id'),
+    503: problemResponse('`temporarily_unavailable`: the usage store is not running yet'),
   },
 });
 
@@ -1512,6 +1516,7 @@ registry.registerPath({
     'folders are listed and statted, and no file is ever opened. Settings offers each one with ' +
     'an Add button; nothing is registered until a person clicks it.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'The folders to offer, possibly none',
       content: {
@@ -1535,8 +1540,10 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'The folder is hidden' },
-    400: { description: 'No path, or a folder the found list does not offer' },
-    403: { description: 'An agent, or (with login on) a caller that is not signed in' },
+    400: problemResponse('`invalid_request`: no path, or a folder the found list does not offer'),
+    403: problemResponse(
+      '`person_only`: an agent, or (with login on) a caller that is not signed in'
+    ),
   },
 });
 
@@ -1675,6 +1682,7 @@ registry.registerPath({
     'Returns capabilities for all registered runtimes, keyed by type string, ' +
     'along with the default runtime type.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Runtime capabilities',
       content: {
@@ -1837,6 +1845,7 @@ registry.registerPath({
   tags: ['Tasks'],
   summary: 'List all schedules',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Array of schedules, each with its next run and a preview of the few after it',
       content: { 'application/json': { schema: z.array(TaskSchema) } },
@@ -1991,6 +2000,7 @@ registry.registerPath({
     query: ListTaskRunsQuerySchema,
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Array of runs',
       content: { 'application/json': { schema: z.array(TaskRunSchema) } },
@@ -2097,8 +2107,11 @@ registry.registerPath({
     ),
     401: {
       description:
-        'Login requires a verified session or per-user API key, or an app window without a session must confirm the person (person_session_required)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+        'Login requires a verified session or per-user API key: the login gate’s `AUTH_REQUIRED` body; or an app window without a session must confirm the person (`person_session_required`, a problem document)',
+      content: {
+        'application/json': { schema: AuthRequiredBodySchema },
+        'application/problem+json': { schema: ProblemSchema },
+      },
     },
     403: problemResponse(
       "`reserved_sender`, `reserved_subject` (a destination or reply address DorkOS keeps), `room_conversation` (post in the room instead), `person_only` (a person's address, sent by someone other than the person), `desk_not_own` (a chat a verified agent may not send into, or a place it may not start one), `protected_folder` (a new chat whose folder holds private files) or `not_from_wifi`."
@@ -2125,8 +2138,8 @@ registry.registerPath({
     },
     400: problemResponse('`invalid_request`: not a message id (checked after authentication).'),
     401: {
-      description: 'AUTH_REQUIRED before ID validation',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: 'The login gate’s `AUTH_REQUIRED` body, before ID validation',
+      content: { 'application/json': { schema: AuthRequiredBodySchema } },
     },
     404: problemResponse(
       '`not_found`: unknown, expired, untracked and other-owner locators have the same response.'
@@ -2144,6 +2157,7 @@ registry.registerPath({
     query: MessageListQuerySchema,
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Array of messages with cursor',
       content: {
@@ -2200,6 +2214,7 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'List registered endpoints',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Array of endpoints',
       content: {
@@ -2305,6 +2320,7 @@ registry.registerPath({
     query: DeadLetterQuerySchema,
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Dead-letter messages',
       content: {
@@ -2325,6 +2341,7 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'Relay system metrics',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Metrics data',
       content: {
@@ -2355,6 +2372,7 @@ registry.registerPath({
     }),
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'SSE event stream',
       content: {
@@ -2528,6 +2546,7 @@ registry.registerPath({
     }),
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Topology view scoped to the caller',
       content: { 'application/json': { schema: TopologyViewSchema } },
@@ -3051,6 +3070,7 @@ registry.registerPath({
   tags: ['Marketplace'],
   summary: 'Marketplace cache status',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Cache counts, total size, and whether automatic cleanup is paused',
       content: { 'application/json': { schema: MarketplaceCacheStatusSchema } },
@@ -3064,6 +3084,7 @@ registry.registerPath({
   tags: ['Marketplace'],
   summary: 'Clear the marketplace cache',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     204: { description: 'Cache cleared' },
   },
 });
@@ -3528,6 +3549,7 @@ registry.registerPath({
     'and what it runs. A linked install is approved by its folder instead. Each entry says why ' +
     'it is held back, what it runs, and `bindsTo`: what a decision is bound to.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Every held-back package',
       content: {
@@ -3625,6 +3647,7 @@ registry.registerPath({
     '`registryUnreadable` is set when the record of dev links cannot be read; no folder counts ' +
     'as linked then.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Every dev link',
       content: {
@@ -4221,6 +4244,7 @@ registry.registerPath({
   description:
     'Returns every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Installed Shapes',
       content: {
@@ -4301,6 +4325,7 @@ registry.registerPath({
     'refused to register — the honest error text. `appConnections` lists every way set up to ' +
     'reach apps and names the one new apps use. Never carries a secret or a credential reference.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Provider setup statuses',
       content: {
@@ -4623,6 +4648,7 @@ registry.registerPath({
   description:
     'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Connections every agent can use, and at which level',
       content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
@@ -4719,6 +4745,7 @@ registry.registerPath({
   summary: 'List owner-visible connector reviews',
   request: { query: z.object({ state: z.enum(['pending', 'resolved']).optional() }) },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Owner-visible reviews',
       content: {
@@ -4874,10 +4901,7 @@ for (const surface of ['executions', 'cli/executions'] as const) {
         description: 'Owner approval is required before execution',
         content: { 'application/json': { schema: z.unknown() } },
       },
-      403: {
-        description: 'The principal lacks the exact grant',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      403: problemResponse('`forbidden`: the principal lacks the exact grant'),
     },
   });
 }
@@ -4895,6 +4919,7 @@ registry.registerPath({
     }),
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Agent-scoped connector usage page',
       content: { 'application/json': { schema: ConnectorUsagePageSchema } },
@@ -4915,6 +4940,7 @@ registry.registerPath({
     }),
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Owner-scoped connector usage page',
       content: { 'application/json': { schema: ConnectorUsagePageSchema } },
@@ -4963,6 +4989,7 @@ registry.registerPath({
     }),
   },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Matching unclaimed chats',
       content: { 'application/json': { schema: UnclaimedChatListResponseSchema } },
@@ -5045,6 +5072,7 @@ registry.registerPath({
     'caller that may not read the person’s inbox (an agent) gets the list without `path` and ' +
     'without any folder in `sourceLabel`.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Extensions waiting to be turned on',
       content: { 'application/json': { schema: PendingExtensionApprovalsResponseSchema } },
@@ -5144,6 +5172,7 @@ registry.registerPath({
     'whose copy provably came from one of these (DorkOS’s own installer recorded fetching it ' +
     'from there) runs without asking first. A copy that only claims a source never counts.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'The trusted sources',
       content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
@@ -5232,6 +5261,7 @@ registry.registerPath({
     'The preset, the changes a person made on top of it, every area with its actions and the ' +
     'state each resolves to for everyone, and the agents that are set differently.',
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'The default layer',
       content: { 'application/json': { schema: PermissionsResponseSchema } },
@@ -5293,6 +5323,7 @@ registry.registerPath({
     'that touched that agent, bulk changes included.',
   request: { query: PermissionHistoryQuerySchema },
   responses: {
+    500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Permission changes',
       content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
@@ -6207,8 +6238,8 @@ registry.registerPath({
       description:
         'The file changed while it was being edited — `file_changed`, and ONLY that code carries `conflict` — or the save was refused for one of the room-state reasons above (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`), which answer with the code and the sentence alone. Switch on `code`, never on the presence of a field',
       content: {
-        'application/json': {
-          schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
+        'application/problem+json': {
+          schema: z.union([RoomFileConflictResponseSchema, ProblemSchema]),
         },
       },
     },
@@ -6240,8 +6271,8 @@ const roomFileChangeResponses = {
     description:
       'A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code`',
     content: {
-      'application/json': {
-        schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
+      'application/problem+json': {
+        schema: z.union([RoomFileConflictResponseSchema, ProblemSchema]),
       },
     },
   },
@@ -7622,6 +7653,7 @@ registerExtensionMediaOpenApi(registry);
 registerConfigBackupsOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
+documentSpacesGate(registry);
 registerSecuritySchemes(registry);
 
 // --- Generator ---

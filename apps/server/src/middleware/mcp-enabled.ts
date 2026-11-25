@@ -13,6 +13,7 @@ export const requireMcpEnabled: MiddlewareHandler = async (c, next) => {
 
   if (!enabled) {
     return c.json(
+      // eslint-disable-next-line problem-only/no-error-body -- MCP answers in JSON-RPC, not problem documents.
       {
         jsonrpc: '2.0',
         error: { code: -32000, message: 'External MCP access is disabled.' },

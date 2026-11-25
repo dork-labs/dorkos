@@ -11,7 +11,7 @@ describe('reportPermissionFailure', () => {
   it('adds no red toast for a Wi-Fi refusal, which the app already says calmly (DOR-3037)', () => {
     const refusal = Object.assign(new Error('Raising permissions works only at this computer.'), {
       status: 403,
-      code: 'NOT_FROM_WIFI',
+      code: 'not_from_wifi',
     });
     reportPermissionFailure(refusal);
     expect(toast.error).not.toHaveBeenCalled();

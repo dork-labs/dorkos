@@ -289,8 +289,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     const sources = { mesh: deps.chatMesh?.(), agentSessions: deps.agentSessions?.() };
     const reach = await relayChatReach(facts, result.data, sources);
     const placeRefused = await relayChatPlaceRefusal(facts, reach, sources);
-    if (placeRefused)
-      return problem(c, 'desk_not_own', { detail: placeRefused.error, status: 403 });
+    if (placeRefused) return problem(c, 'desk_not_own', { detail: placeRefused, status: 403 });
     // DOR-5151: only the person sends from a person's address.
     const personOnly = personSenderRefusal(facts, result.data.from);
     if (personOnly) return problem(c, 'person_only', personOnly);

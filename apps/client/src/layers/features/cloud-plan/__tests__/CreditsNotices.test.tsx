@@ -92,7 +92,12 @@ describe('CreditsNotices', () => {
       Object.assign(new Error(sentence), {
         status: 403,
         code: 'owner_only',
-        body: { error: sentence, code: 'owner_only' },
+        body: {
+          title: 'Only the owner of this DorkOS can do that.',
+          status: 403,
+          code: 'owner_only',
+          detail: sentence,
+        },
       })
     );
     await screen.findByTestId('credits-notice-filled');

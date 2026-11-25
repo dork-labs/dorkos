@@ -1,37 +1,10 @@
 {
   "$comment": "The API lint ratchet (scripts/api-lint/check-api-lint.ts, DOR-4996). Each number is how many findings a rule has in that route group (or file, for hand-registered-path). It may only fall. Run `pnpm check:api-lint -- --update` after fixing some; never raise a number by hand.",
   "rules": {
-    "error-missing": {
-      "approvals": 1,
-      "capabilities": 1,
-      "connectors": 7,
-      "extensions": 2,
-      "health": 2,
-      "heartbeats": 1,
-      "keep-awake": 1,
-      "marketplace": 4,
-      "mesh": 1,
-      "permissions": 2,
-      "relay": 6,
-      "runtimes": 1,
-      "sessions": 1,
-      "shapes": 1,
-      "tasks": 2,
-      "todo-promises": 1,
-      "todos": 1
-    },
+    "error-missing": {},
     "error-shape": {
-      "auth": 5,
-      "config": 3,
-      "connectors": 3,
-      "extensions": 5,
-      "heartbeats": 2,
-      "permissions": 1,
-      "relay": 4,
-      "rooms": 5,
-      "runtimes": 10,
-      "step-up": 1,
-      "workspaces": 2
+      "extensions": 3,
+      "step-up": 1
     },
     "hand-registered-path": {
       "apps/server/src/services/browser/profile-scan-openapi.ts": 1,

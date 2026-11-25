@@ -445,7 +445,7 @@ describe('signed Relay JSON through the finalized application', () => {
         gate === 'host'
           ? 'host_not_allowed'
           : gate === 'admission'
-            ? 'SERVER_STOPPING'
+            ? 'temporarily_unavailable'
             : 'origin_not_allowed'
       );
       expect(inbound).toHaveBeenCalledTimes(0);

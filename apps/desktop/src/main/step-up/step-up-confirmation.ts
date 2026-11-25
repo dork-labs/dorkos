@@ -77,7 +77,7 @@ function blockedLineOf(entry: unknown): string[] {
 
 interface ServerFailure {
   code?: unknown;
-  error?: unknown;
+  detail?: unknown;
   retryAfterMs?: unknown;
   minLength?: unknown;
 }

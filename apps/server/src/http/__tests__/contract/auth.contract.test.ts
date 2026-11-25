@@ -151,10 +151,9 @@ contractSuite(
           'ratelimit-remaining': '0',
           'retry-after': /^\d+$/,
         },
-        body: {
-          error: 'Too many sign-in attempts. Try again in a few minutes.',
-          code: 'RATE_LIMITED',
-        },
+        body: problemBody('rate_limited', {
+          detail: 'Too many sign-in attempts. Try again in a few minutes.',
+        }),
       },
     },
     {

@@ -807,7 +807,10 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
             status: 403,
             json: () =>
               Promise.resolve({
-                error: 'Only a person can approve an extension to run inside DorkOS',
+                title: 'Only a person can do that, not an agent.',
+                status: 403,
+                code: 'person_only',
+                detail: 'Only a person can approve an extension to run inside DorkOS',
               }),
           });
         }

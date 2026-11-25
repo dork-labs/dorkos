@@ -50,7 +50,15 @@ describe('HttpTransport.listRelayDeadLetters', () => {
 
   it('throws when the server responds with an error', async () => {
     vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Relay not enabled' }), { status: 503 })
+      new Response(
+        JSON.stringify({
+          title: 'That’s not available right now. Try again soon.',
+          status: 503,
+          code: 'temporarily_unavailable',
+          detail: 'Relay not enabled',
+        }),
+        { status: 503 }
+      )
     );
 
     const transport = new HttpTransport(BASE_URL);

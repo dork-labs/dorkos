@@ -114,10 +114,9 @@ const DOC_METRICS = z
     requestAttempts: z.object({ rejectedRequestsByClass: z.object({}).loose() }).loose(),
   })
   .loose();
-const DOC_METRICS_FORBIDDEN = {
-  code: 'DOC_METRICS_FORBIDDEN',
-  error: 'Only the owner can read document metrics.',
-};
+const DOC_METRICS_FORBIDDEN = problemBody('owner_only', {
+  detail: 'Only the owner can read document metrics.',
+});
 const DOC_NOT_FOUND = problemBody('not_found', { detail: 'The document is not available.' });
 const DOC_EVENT_TOO_LARGE = problemBody('request_too_large', {
   detail: 'The document event is too large. Send a smaller one.',

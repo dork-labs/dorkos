@@ -286,7 +286,12 @@ describe('runMarketplaceOutdated', () => {
 
   it('exits 2 on a server error answer', async () => {
     fetchMock.mockResolvedValueOnce(
-      mockResponse(403, { error: 'Access denied: projectPath outside boundary' })
+      mockResponse(403, {
+        title: 'Refused.',
+        status: 403,
+        code: 'outside_boundary',
+        detail: 'Access denied: projectPath outside boundary',
+      })
     );
 
     const code = await runMarketplaceOutdated({ projectPath: '/etc', json: false });

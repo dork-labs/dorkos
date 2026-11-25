@@ -222,8 +222,11 @@ afterAll(() => {
 const debug = () => request(server).get('/api/debug/doc-channels');
 const attempts = () => metrics.readCommittedSnapshot().requestAttempts;
 const unavailable = {
-  code: 'DOC_CHANNEL_METRICS_UNAVAILABLE',
-  error: 'Document metrics are not available.',
+  type: 'urn:dorkos:problem:temporarily_unavailable',
+  title: 'That’s not available right now. Try again soon.',
+  status: 503,
+  code: 'temporarily_unavailable',
+  detail: 'Document metrics are not available.',
 };
 
 describe('document metrics through the full app', () => {

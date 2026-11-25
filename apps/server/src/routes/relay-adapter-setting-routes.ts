@@ -165,7 +165,7 @@ async function runOrHold(
       { identity: facts.agentIdentity, presentsAgent: true },
       { kind: 'relay.allowlist', target: use.target, input: use.input, ...use.agentCard() }
     );
-    return c.json(card.body, card.status);
+    return card.refused ? sendProblem(c, card.body) : c.json(card.body, card.status);
   }
   if (writer !== 'person') return answer(await use.run(writer));
   if (!ownerExists()) {

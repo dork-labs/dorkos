@@ -47,7 +47,13 @@ describe('postToRoom', () => {
         status: 409,
         statusText: 'Conflict',
         headers: new Headers(),
-        json: () => Promise.resolve({ error: 'This room is archived', code: 'room_archived' }),
+        json: () =>
+          Promise.resolve({
+            title: 'This room is archived.',
+            status: 409,
+            code: 'room_archived',
+            detail: 'This room is archived',
+          }),
       })
     );
     await expect(setup().postToRoom('room-1', { text: 'anyone still here?' })).rejects.toThrow(
@@ -102,7 +108,13 @@ describe('room settings and roster writes', () => {
         status: 403,
         statusText: 'Forbidden',
         headers: new Headers(),
-        json: () => Promise.resolve({ error: 'Only you can change who is in a room' }),
+        json: () =>
+          Promise.resolve({
+            title: 'Only the owner of this DorkOS can do that.',
+            status: 403,
+            code: 'owner_only',
+            detail: 'Only you can change who is in a room',
+          }),
       })
     );
     await expect(setup().removeRoomMember('room-1', 'author-1')).rejects.toThrow(
@@ -276,7 +288,9 @@ describe('saveRoomFile', () => {
 
   it('rejects with the server’s code and its conflict, so an editor can offer the choice', async () => {
     const conflict = {
-      error: 'Somebody changed this file while you were editing it',
+      title: 'This file changed.',
+      status: 409,
+      detail: 'Somebody changed this file while you were editing it',
       code: 'file_changed',
       conflict: { path: 'docs/plan.md', commit: 'def5678', lastCommit: null },
     };

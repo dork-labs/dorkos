@@ -358,19 +358,15 @@ export function createDebugRoutes(source: () => DebugDeps | undefined): Hono<Api
         !clearsTheAgentBar(caller) ||
         (loginOn && (!owner || user?.credential !== 'cookie' || user.userId !== owner.id))
       ) {
-        return c.json(
-          { code: 'DOC_METRICS_FORBIDDEN', error: 'Only the owner can read document metrics.' },
-          403
-        );
+        return problem(c, 'owner_only', { detail: 'Only the owner can read document metrics.' });
       }
       const metrics = source()?.docChannelMetrics;
       if (!metrics) throw new DocChannelMetricsUnavailableError();
       return c.json(metrics.readCommittedSnapshot());
     } catch {
-      return c.json(
-        { code: 'DOC_CHANNEL_METRICS_UNAVAILABLE', error: 'Document metrics are not available.' },
-        503
-      );
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'Document metrics are not available.',
+      });
     }
   });
 

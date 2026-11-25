@@ -11,7 +11,7 @@ import {
   SetSpendingPriceBodySchema,
   SpendingSummarySchema,
 } from '@dorkos/shared/connector-spending';
-import { problemResponse } from '../../core/openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../../core/openapi/problem-openapi.js';
 
 const held = { description: 'Confirm it’s you first: more money could leave without a card.' };
 const refused = problemResponse(
@@ -36,7 +36,10 @@ export function registerConnectorSpendingOpenApi(registry: OpenAPIRegistry): voi
     path: '/api/connectors/spending',
     tags: ['Connections'],
     summary: 'Read the monthly spend limit and what agents spent this month',
-    responses: { 200: ok },
+    responses: {
+      500: INTERNAL_ERROR_RESPONSE,
+      200: ok,
+    },
   });
   registry.registerPath({
     method: 'put',

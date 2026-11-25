@@ -4,6 +4,7 @@ import testConfig from '@dorkos/eslint-config/test';
 import spaces from './eslint-rules/space-boundary.js';
 import workGraph from './eslint-rules/work-graph-boundary.js';
 import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
+import problemOnly from './eslint-rules/problem-only.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -431,6 +432,15 @@ export default defineConfig([
     ignores: ['src/services/session/**/__tests__/**', 'src/services/session/**/*.test.{ts,tsx}'],
     plugins: { 'session-runtimes': sessionRuntimes },
     rules: { 'session-runtimes/no-runtimes': 'error' },
+  },
+
+  // Every error answer is a problem document (ADR 261123-170831): no hand-built `{ error }`
+  // body in the HTTP layer. Tests are not checked: they assert what old shapes looked like.
+  {
+    files: ['src/routes/**/*.ts', 'src/http/**/*.ts', 'src/middleware/**/*.ts'],
+    ignores: ['src/**/__tests__/**', 'src/**/*.test.ts'],
+    plugins: { 'problem-only': problemOnly },
+    rules: { 'problem-only/no-error-body': 'error' },
   },
 
   ...testConfig,

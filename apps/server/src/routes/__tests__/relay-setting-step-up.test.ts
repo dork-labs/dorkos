@@ -697,7 +697,7 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
   // DOR-4355 M4: an unmarked agent's addition goes on a card for the person instead
   // (`agent-raise-cards.test.ts`); a marked turn still gets no card.
   it.each([
-    ['a marked agent turn', true, 403, 'agent_raise_marked'],
+    ['a marked agent turn', true, 403, 'forbidden'],
     ['an unmarked agent', false, 428, 'agent_raise_card'],
   ])('answers %s adding an approver, and applies nothing', async (_label, marked, status, code) => {
     slackConnection();
@@ -723,7 +723,7 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
         { 'X-DorkOS-Agent': 'made-up-unknown-token' }
       )
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -760,7 +760,7 @@ describe('opening a chat connection to every DM sender', () => {
       .send({ config: { dmPolicy: 'open' } });
 
   it.each([
-    ['a marked agent turn', true, 403, 'agent_raise_marked'],
+    ['a marked agent turn', true, 403, 'forbidden'],
     ['an unmarked agent', false, 428, 'agent_raise_card'],
   ])(
     'answers %s switching DMs to open, and applies nothing',
