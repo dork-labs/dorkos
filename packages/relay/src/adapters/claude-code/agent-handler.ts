@@ -29,6 +29,8 @@ import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { buildResponseFormatBlock, type ResponseContext } from './response-format.js';
 import { relayMessageStarter } from './turn-starter.js';
 import { isTurnShapingSender, turnPowerOptions } from './turn-shaping-sender.js';
+import { turnPlaceOf } from './turn-place.js';
+import { requestedAccountOf, resolveTurnSettings } from './turn-settings.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
@@ -38,7 +40,6 @@ import type {
   SessionRuntimeBinder,
   TurnStartNote,
   TurnDeskCheck,
-  TurnExecutionSettings,
 } from './types.js';
 import {
   publishAgentResult,
@@ -439,15 +440,20 @@ export async function handleAgentMessage(
     { permissionMode?: PermissionMode } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
-  // Resolve CWD: payload cwd > Mesh agent context directory > deferred
-  const payloadCwd = shaping?.cwd as string | undefined;
-  const effectiveCwd = payloadCwd ?? context?.agent?.directory;
-  // The agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2
-  // row 12). Read off the same payload as `cwd`, which alone already decides
-  // whose identity a turn carries — so this can only NARROW what a forged
+  // Where the turn stands and as whom (`turn-place.ts`): the sender's folder >
+  // the Mesh agent's home > the server's place for a new chat > deferred. The
+  // agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2 row
+  // 12) rides the same payload as `cwd`, so it can only NARROW what a forged
   // payload could claim: a `cwd` resolving to another agent's home is refused.
-  const payloadForAgent =
-    typeof shaping?.forAgent === 'string' && shaping.forAgent !== '' ? shaping.forAgent : undefined;
+  const place = turnPlaceOf({
+    shaping,
+    payload: envelope.payload,
+    from: envelope.from,
+    sessionKey: identity.key,
+    started: persistedSdkSessionId !== undefined,
+    contextDirectory: context?.agent?.directory,
+  });
+  const { senderCwd: payloadCwd, cwd: effectiveCwd, forAgent: turnForAgent } = place;
   // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
   // off the relay bus, so the field can be absent for reasons the binding never
   // controls (an older publisher, a hand-built envelope). It lands on the
@@ -456,13 +462,8 @@ export async function handleAgentMessage(
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
 
   // Which model an agent is, is a property of the AGENT — so the manifest is
-  // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
-  // exactly when a payload names its own working directory: that moves where
-  // the turn runs, which is a fact about this message, and it must not silently
-  // re-decide who the answering agent is. Never the payload's directory, either:
-  // a checkout can carry a `.dork/agent.json` of its own. When the subject named
-  // no agent, the host reads the chat's own agent instead (DOR-5057).
-  const agentManifestDir = context?.agent?.directory;
+  // looked for where the agent lives, and NOT at `effectiveCwd` (`turn-place.ts`).
+  const agentManifestDir = place.agentDirectory;
 
   // What this turn runs on. Asked BEFORE `ensureSession`, because that call is
   // the only one that can answer it: the claude-code runtime reads
@@ -538,7 +539,7 @@ export async function handleAgentMessage(
       .checkTurnDesk({
         cwd: payloadCwd,
         agentDirectory: context?.agent?.directory,
-        forAgent: payloadForAgent,
+        forAgent: turnForAgent,
         sessionKey: ccaSessionKey,
       })
       .catch((err: unknown) =>
@@ -649,7 +650,7 @@ export async function handleAgentMessage(
           envelope.from
         ),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
+        ...(turnForAgent ? { forAgent: turnForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
         // Sent again, for the same reason the permission mode and the cwd are:
         // the runtime contract resolves a turn as per-send override → persisted
@@ -936,62 +937,4 @@ export async function handleAgentMessage(
     deadLettered: aborted,
     durationMs: now() - startTime,
   };
-}
-
-// === Private: pure helpers ===
-
-/**
- * Ask the host what this turn should run on, and never let the answer stop it.
- *
- * Two ways to get nothing, and both mean the same thing — no preference, so the
- * runtime picks, which is what every relay turn did before this existed: a host
- * that wired no resolver, and a lookup that threw. With no agent from the
- * subject, the host reads the chat's own agent itself (DOR-5057). The last one is the reason this is a function rather than
- * an inline `await`: reading a manifest or a settings row can fail for reasons
- * that have nothing to do with the message, and a dropped agent-to-agent
- * message is a far worse outcome than a turn on the default model.
- *
- * @param deps - The handler's dependencies; the resolver is optional on them.
- * @param sessionId - The key this turn runs under (`ccaSessionKey`).
- * @param agentDirectory - The agent the relay resolved from the subject, whose
- *   manifest this is; never the folder the turn runs in.
- * @param requestedAccount - The account the message asked a new conversation to
- *   launch on, for the host to allow or refuse.
- * @param log - Where a failed lookup is reported.
- */
-async function resolveTurnSettings(
-  deps: AgentHandlerDeps,
-  sessionId: string,
-  agentDirectory: string | undefined,
-  requestedAccount: string | undefined,
-  log: NonNullable<AgentHandlerDeps['logger']> | Console
-): Promise<TurnExecutionSettings> {
-  if (!deps.resolveExecutionSettings) return {};
-  try {
-    return await deps.resolveExecutionSettings({
-      sessionId,
-      runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
-      ...(agentDirectory ? { agentDirectory } : {}),
-      ...(requestedAccount ? { requestedAccount } : {}),
-    });
-  } catch (err) {
-    log.warn(
-      `[CCA] could not resolve execution settings for ${sessionId}; running on the runtime default`,
-      describeError(err)
-    );
-    return {};
-  }
-}
-
-/**
- * The account a payload asks a new conversation to launch on: its `account`
- * when that is a non-empty string, else nothing. Anything else is ignored
- * rather than refused, because a malformed billing preference is never a reason
- * to drop a message.
- *
- * @param payload - The envelope payload, when it is an object.
- */
-function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
-  const account = payload?.account;
-  return typeof account === 'string' && account.length > 0 ? account : undefined;
 }

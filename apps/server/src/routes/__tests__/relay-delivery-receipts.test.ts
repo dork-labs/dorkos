@@ -21,6 +21,7 @@ import { initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
 import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 import { initConfigManager, configManager } from '../../services/core/config-manager.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 // The real session gate, so one case can stand in for an identity it proved.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
@@ -59,6 +60,8 @@ beforeEach(() => {
   configManager.set('auth', { enabled: false });
   db = createDb(join(dir, 'receipts.db'));
   runMigrations(db);
+  // Whether the subject names a chat is read from the registry (DOR-5200, DOR-5209).
+  runtimeRegistry.setDb(db);
   db.insert(user)
     .values({
       id: 'install-owner',
@@ -121,6 +124,13 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** Mesh, which knows the subject as an agent's own address (DOR-5209). */
+const receiptMesh = () =>
+  ({
+    listWithPaths: () => [{ id: 'receipt-test', projectPath: '/made-up/agents/receipt' }],
+    getProjectPath: (id: string) => (id === 'receipt-test' ? '/made-up/agents/receipt' : undefined),
+  }) as never;
+
 /** Serve the Relay routes over the real Core, behind the real `/api` chain and session gate. */
 function mount(
   manager?: AdapterManager,
@@ -129,7 +139,12 @@ function mount(
 ) {
   target.mount(
     relayRoutesListener(
-      { relayCore: core, ...(manager && { adapterManager: manager }), activity },
+      {
+        relayCore: core,
+        ...(manager && { adapterManager: manager }),
+        activity,
+        chatMesh: receiptMesh,
+      },
       { before }
     )
   );
@@ -293,7 +308,7 @@ it('a second real Core observer is busy with zero loser effects', async () => {
     logger: noopLogger,
     adapterRegistry: registry,
   });
-  target.mount(relayRoutesListener({ relayCore: loser }));
+  target.mount(relayRoutesListener({ relayCore: loser, chatMesh: receiptMesh }));
   try {
     const response = await send();
     expect(response.status).toBe(503);

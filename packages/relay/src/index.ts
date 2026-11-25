@@ -185,6 +185,7 @@ export {
   sealTurnLimits,
   withoutCarriedTurnLimits,
 } from './lib/carried-turn-limits.js';
+export type { NewChatPlace } from './lib/carried-turn-limits.js';
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,

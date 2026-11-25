@@ -75,7 +75,7 @@ export interface ResolveChatPlaceDeps {
   ): Promise<ResolvedSessionPlace>;
 }
 
-/** Production chat-place collaborators with selected test seams replaced. */
+/** Production chat-place collaborators with selected seams replaced. */
 function chatPlaceDeps(overrides: Partial<ResolveChatPlaceDeps>): ResolveChatPlaceDeps {
   return {
     resolveSession: (sessionId) =>
@@ -98,7 +98,8 @@ function chatPlaceDeps(overrides: Partial<ResolveChatPlaceDeps>): ResolveChatPla
  * `launchSessionMessage`'s workspace branch still owns that per-turn binding.
  *
  * @param input - The chat id and place hints the launch surface knows.
- * @param overrides - Test seams for runtime and room-aware place resolution.
+ * @param overrides - Seams for runtime and room-aware place resolution: a caller that
+ *   already read who holds the chat, or a test.
  * @returns A dispatchable place and ownership read, or a refusal.
  */
 export async function resolveChatPlace(

@@ -50,13 +50,13 @@ The examples below use port 4242, the default. If yours is different, swap it in
 </Step>
 <Step>
 
-**Send a message.** Every message needs a subject: a named address, like an email address for a message. This one is addressed to an agent called `backend`:
+**Send a message.** Every message needs a subject: a named address, like an email address for a message. This one is addressed to one of your agents by its ID. `GET /api/mesh/agents` lists each agent's `id`; put yours in place of `<agent-id>`:
 
 ```bash
 curl -X POST http://localhost:4242/api/relay/messages \
   -H 'Content-Type: application/json' \
   -d '{
-    "subject": "relay.agent.backend",
+    "subject": "relay.agent.<agent-id>",
     "payload": { "task": "Run the test suite" },
     "from": "relay.external.my-script"
   }'
@@ -153,8 +153,10 @@ Browser requests still follow CORS (the browser rule that controls which sites m
 DorkOS refuses reserved server senders, destinations, and reply addresses. It also sets who a message is from. You still send a `from`, but only you, in the DorkOS app, keep it:
 
 - **You, in the app**, send from the address you choose, including a person's address such as `relay.human.console`. With nobody signed up yet, any program on this computer counts as you, because there is no one to sign in as.
-- **An agent** sends from its own address, whatever its `from` says. It can send into its own chat, but not into a chat that is another agent's, just as with the chat API.
+- **An agent** sends from its own address, whatever its `from` says. It can send into its own chat, but not into a chat that is another agent's, just as with the chat API. A new chat it starts, at an address no chat has yet, opens in its own folder and runs as that agent.
 - **Any other program** sends from `relay.external.http`.
+
+A message to an address no chat has yet starts a new chat, and the chat API's folder rules apply to it. A program DorkOS can't name gets the default folder, so when that folder holds private files (your home folder, for example), the message is refused with `protected_folder`. Send to an agent's own address instead.
 
 A program that names a person's address (`relay.human.*`) is refused. When the app's own window is refused this way, it asks for your password once and then sends. A per-user API key counts as a program here, not as you.
 
@@ -240,7 +242,7 @@ Every message carries a budget that keeps chains of messages from running away:
 curl -X POST http://localhost:4242/api/relay/messages \
   -H 'Content-Type: application/json' \
   -d '{
-    "subject": "relay.agent.backend",
+    "subject": "relay.agent.<agent-id>",
     "payload": { "task": "Refactor the auth module" },
     "from": "relay.external.my-script",
     "budget": {

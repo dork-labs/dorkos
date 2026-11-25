@@ -43,8 +43,18 @@ import {
   publishRelayMessage,
   type RelayPublishDeps,
 } from './relay-delivery-receipts.js';
-import { relayMessageSender, type AgentSubjectLookup } from './relay-message-sender.js';
-import { relayChatPlaceRefusal, type RelayChatMesh } from './relay-chat-place.js';
+import {
+  personSenderRefusal,
+  relayMessageSender,
+  type AgentSubjectLookup,
+} from './relay-message-sender.js';
+import {
+  relayChatPlaceRefusal,
+  relayChatReach,
+  relayNewChatPlace,
+  type RelayChatMesh,
+} from './relay-chat-place.js';
+import { launchRefusalReply } from './session-route-replies.js';
 
 /** Allowed subject prefixes for SSE subscription patterns. */
 const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
@@ -276,16 +286,20 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
 
     // DOR-5200: a verified agent's message into a chat follows the chat route's place rule.
     const facts = honoRequestFacts(c);
-    const placeRefused = await relayChatPlaceRefusal(facts, result.data, {
-      mesh: deps.chatMesh?.(),
-      agentSessions: deps.agentSessions?.(),
-    });
+    const sources = { mesh: deps.chatMesh?.(), agentSessions: deps.agentSessions?.() };
+    const reach = await relayChatReach(facts, result.data, sources);
+    const placeRefused = await relayChatPlaceRefusal(facts, reach, sources);
     if (placeRefused)
       return problem(c, 'desk_not_own', { detail: placeRefused.error, status: 403 });
+    // DOR-5151: only the person sends from a person's address.
+    const personOnly = personSenderRefusal(facts, result.data.from);
+    if (personOnly) return problem(c, 'person_only', personOnly);
+    // DOR-5209: a new chat opens where the sessions route would open it, or is refused as there.
+    const newChat = await relayNewChatPlace(facts, reach, sources);
+    if ('refused' in newChat) return launchRefusalReply(c, newChat.refused);
 
     // DOR-5151: the server sets the sender, by the chat route's own reading of the caller.
-    const sent = relayMessageSender(facts, result.data, deps.agentSubjectOf);
-    if ('refused' in sent) return problem(c, 'person_only', { detail: sent.refused.detail });
+    const sent = relayMessageSender(facts, result.data, deps.agentSubjectOf, newChat.place);
     return publishRelayMessage(c, deps, { ...result.data, ...sent });
   });
 
