@@ -142,6 +142,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     effects,
     ...(agentHome ? { agentHome } : {}),
     computer: computer ?? getComputerTurnPort,
+    queueRowExists,
     starts: (): StartTurns => starts,
     pausedAgent: (agentId, cwd) => admissionSources.pausedAgent(agentId, cwd),
     preview: (run, start) => {

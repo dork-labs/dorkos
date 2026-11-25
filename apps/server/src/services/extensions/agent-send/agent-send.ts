@@ -80,7 +80,9 @@ import {
 } from '@dorkos/extension-api/server';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logError, logger } from '../../../lib/logger.js';
+import { RunIdSchema } from '@dorkos/shared/turn-port';
 import {
+  RUN_ENDS,
   TurnStartRefusedError,
   turnPort,
   type SpaceTurnPort,
@@ -103,17 +105,18 @@ import {
   describeSessionFor,
   liveSessionCwd,
   reserveKeptChat,
+  resumeChatQueueFor,
   type SessionFacts,
 } from './agent-send-defaults.js';
 import { messageOfRun, SEND_SOURCE, sendSourceRef, stepOf } from './agent-send-runs.js';
+import { DeliveryListeners } from './agent-send-listeners.js';
 
 export type { SessionFacts } from './agent-send-defaults.js';
 
 /** How often held messages are tried again. */
 export const HELD_RETRY_MS = 5_000;
 
-/** How many delivery events are kept for an extension nobody is listening for. */
-export const UNHEARD_EVENTS_MAX = 200;
+export { UNHEARD_EVENTS_MAX } from './agent-send-listeners.js';
 
 /** What the agent-send seam needs. Everything after `store` has a production default. */
 export interface AgentSendDeps {
@@ -139,6 +142,8 @@ export interface AgentSendDeps {
   ) => { ok: true; reservation: StartReservation } | { ok: false; message: string } | null;
   /** The turn port's space face, read at call time; the server's own by default. */
   port?: () => SpaceTurnPort | undefined;
+  /** Re-arm a chat's queued rows after a restart, a mini app's included. */
+  resumeQueue?: (sessionId: string, cwd: string | undefined) => Promise<void>;
   /** A fence nonce (tests pin it). */
   nonce?: () => string;
   /** How often held messages are retried. */
@@ -163,15 +168,14 @@ type Attempt =
 export class AgentSendService {
   /** Sends in flight, by extension and key: a racing retry waits for the first. */
   private readonly inflight = new Map<string, Promise<AgentSendReceipt>>();
-  /** Delivery listeners, by extension. */
-  private readonly listeners = new Map<string, Set<(event: AgentDeliveryEvent) => void>>();
-  /** Events nobody was listening for, by extension, delivered to the first listener. */
-  private readonly unheard = new Map<string, AgentDeliveryEvent[]>();
+  /** Each extension's listeners, and the events it has not heard yet. */
+  private readonly hearers = new DeliveryListeners();
   private readonly nonce: () => string;
   private readonly describeSession: (sessionId: string) => Promise<SessionFacts>;
   private readonly sessionCwd: (sessionId: string) => Promise<string | undefined>;
   private readonly reserveChat: NonNullable<AgentSendDeps['reserveChat']>;
   private readonly port: () => SpaceTurnPort | undefined;
+  private readonly resumeQueue: NonNullable<AgentSendDeps['resumeQueue']>;
   /** The port this seam reads its runs from, once it has heard of one. */
   private attachedTo: SpaceTurnPort | undefined;
   private detach: (() => void) | null = null;
@@ -208,6 +212,9 @@ export class AgentSendService {
     this.sessionCwd = deps.sessionCwd ?? liveSessionCwd;
     this.reserveChat = deps.reserveChat ?? reserveKeptChat;
     this.port = deps.port ?? turnPort;
+    this.resumeQueue =
+      deps.resumeQueue ??
+      resumeChatQueueFor(deps.meshCore, deps.roomSessionPlace, { orFromApps: true });
     this.attach();
   }
 
@@ -249,6 +256,7 @@ export class AgentSendService {
     if (this.started) return;
     this.started = true;
     const port = this.attach();
+    const resumed = new Set<string>();
     for (const row of this.deps.store.listByStatus(['queued', 'started'])) {
       if (this.createdHere.has(row.id)) continue;
       const ref = sendSourceRef(row.id);
@@ -256,7 +264,23 @@ export class AgentSendService {
         ? port?.list(row.sessionId).find((each) => each.sourceRef === ref)
         : undefined;
       if (run) this.onRun(run);
-      else this.fail(row, 'interrupted');
+      // An earlier version queued it in the chat itself: still there, the
+      // queue still runs it, and its run (once adopted) is heard by its row's id.
+      else if (row.status !== 'queued' || !port?.waitsInQueue(row.id)) {
+        this.fail(row, 'interrupted');
+        continue;
+      }
+      // Waiting in a chat's queue: re-armed now, so an idle chat runs it
+      // without waiting for the next message there.
+      const waiting = this.deps.store.get(row.id)?.status === 'queued';
+      if (!waiting || !row.sessionId || resumed.has(row.sessionId)) continue;
+      resumed.add(row.sessionId);
+      await this.resumeQueue(row.sessionId, row.cwd ?? undefined).catch((err: unknown) =>
+        logger.warn('[agent-send] could not re-arm a chat’s queued messages', {
+          sessionId: row.sessionId,
+          ...logError(err),
+        })
+      );
     }
     const retryMs = this.deps.retryMs ?? HELD_RETRY_MS;
     this.retryTimer = setInterval(
@@ -313,19 +337,7 @@ export class AgentSendService {
    * @returns A function that stops listening.
    */
   subscribe(extensionId: string, listener: (event: AgentDeliveryEvent) => void): () => void {
-    let set = this.listeners.get(extensionId);
-    if (!set) this.listeners.set(extensionId, (set = new Set()));
-    set.add(listener);
-    const backlog = this.unheard.get(extensionId);
-    if (backlog) {
-      this.unheard.delete(extensionId);
-      for (const event of backlog) this.call(extensionId, listener, event);
-    }
-    return () => {
-      set.delete(listener);
-      if (set.size === 0 && this.listeners.get(extensionId) === set)
-        this.listeners.delete(extensionId);
-    };
+    return this.hearers.subscribe(extensionId, listener);
   }
 
   /**
@@ -466,6 +478,12 @@ export class AgentSendService {
         // A kept chat still this agent's is used; one the agent moved away
         // from is replaced by a new chat on this send.
         if (facts.bound && facts.agentPath === agentPath) return { sessionId: kept, agent };
+        // Opened by a message whose run has not ended: the chat is not bound
+        // until that run is handed over, and it is still this agent's.
+        const opening = this.port()
+          ?.list(kept)
+          .some((run) => !RUN_ENDS.has(run.status));
+        if (opening) return { sessionId: kept, agent };
       }
       return { sessionId: null, agent };
     }
@@ -559,7 +577,8 @@ export class AgentSendService {
               }
             : {}),
         },
-        { runId: row.id }
+        // A message from before runs were named by it (a UUID) gets a run id of its own.
+        RunIdSchema.safeParse(row.id).success ? { runId: row.id } : {}
       ));
     } catch (err) {
       reservation?.cancel();
@@ -637,7 +656,9 @@ export class AgentSendService {
 
   /** Translate a change of a message's run into this extension's delivery event. */
   private onRun(run: TurnRun): void {
-    const messageId = messageOfRun(run);
+    // Its words' source names it; a run adopted from an earlier version's
+    // queue row is named by that row, which is the message's own id.
+    const messageId = messageOfRun(run) ?? run.queueMessageId ?? undefined;
     const row = messageId === undefined ? undefined : this.deps.store.get(messageId);
     if (!row || row.status === 'done' || row.status === 'failed') return;
     const step = stepOf(run);
@@ -693,36 +714,11 @@ export class AgentSendService {
     });
   }
 
-  /** Hand an event to the extension's listeners, or keep it for the first one. */
+  /** Hand an event to the extension's listeners, or hold it while its message is mid-attempt. */
   private deliver(extensionId: string, event: AgentDeliveryEvent): void {
     const buffered = this.attempting.get(event.messageId);
-    if (buffered) {
-      buffered.push(event);
-      return;
-    }
-    const set = this.listeners.get(extensionId);
-    if (set && set.size > 0) {
-      for (const listener of [...set]) this.call(extensionId, listener, event);
-      return;
-    }
-    const backlog = this.unheard.get(extensionId) ?? [];
-    backlog.push(event);
-    // Bounded: an extension that never listens must not grow this forever.
-    if (backlog.length > UNHEARD_EVENTS_MAX) backlog.splice(0, backlog.length - UNHEARD_EVENTS_MAX);
-    this.unheard.set(extensionId, backlog);
-  }
-
-  /** Call one listener, so a throwing extension cannot break delivery or the dispatcher. */
-  private call(
-    extensionId: string,
-    listener: (event: AgentDeliveryEvent) => void,
-    event: AgentDeliveryEvent
-  ): void {
-    try {
-      listener(event);
-    } catch (err) {
-      logger.warn(`[ext:${extensionId}] an agent delivery listener threw`, logError(err));
-    }
+    if (buffered) buffered.push(event);
+    else this.hearers.deliver(extensionId, event);
   }
 }
 

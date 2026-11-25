@@ -291,7 +291,7 @@ describe('ctx.agent.send — the extension stops', () => {
 });
 
 describe('ctx.agent.send — across a restart', () => {
-  it('a message queued in the chat runs after a restart with its mark; one an earlier build left reads interrupted', async () => {
+  it('a message queued in the chat runs on its own after a restart, with its mark; one with no row left reads interrupted', async () => {
     let clock = Date.now();
     uninstallRunRecord();
     bootTurnPort({ now: () => clock });
@@ -344,28 +344,17 @@ describe('ctx.agent.send — across a restart', () => {
     expect(h.queue.list(h.session).map((row) => row.id)).toEqual([waiting.messageId]);
     expect(h.dispatched.filter((opts) => opts.runId === waiting.messageId)).toHaveLength(1);
 
-    // The next message to the chat picks the older one up first, as every dispatch does.
-    const next = await h.service.send(EXT, {
-      to: h.session,
-      text: 'and this',
-      idempotencyKey: 'n',
-    });
-    await vi.waitFor(() => expect(h.events).toHaveLength(5), { timeout: 3_000 });
-
-    expect(h.events[0]).toEqual(
+    // Re-armed at start: the idle chat runs it on its own.
+    await vi.waitFor(() => expect(h.events).toHaveLength(3), { timeout: 3_000 });
+    expect(h.events).toEqual([
       expect.objectContaining({
         kind: 'turn.failed',
         messageId: 'm-running',
         reason: 'interrupted',
-      })
-    );
-    // Both ran, each once (which goes first is the dispatcher's own order).
-    for (const messageId of [waiting.messageId, next.messageId]) {
-      expect(h.events.filter((e) => e.messageId === messageId).map((e) => e.kind)).toEqual([
-        'turn.started',
-        'turn.done',
-      ]);
-    }
+      }),
+      { kind: 'turn.started', messageId: waiting.messageId, sessionId: h.session },
+      { kind: 'turn.done', messageId: waiting.messageId, sessionId: h.session, outcome: 'ok' },
+    ]);
     // The row the restart left carries the outsider mark too, read from who
     // queued it (DOR-4594).
     const adopted = h.runtime.sendMessage.mock.calls.find((call) =>
@@ -373,5 +362,84 @@ describe('ctx.agent.send — across a restart', () => {
     );
     expect(adopted?.[2]).toMatchObject({ carriedMarks: { outsider: true } });
     first.open();
+  });
+});
+
+describe('ctx.agent.send — opening and upgrading (DOR-5232)', () => {
+  it('opens ONE chat for two first messages sent close together, before either is handed over', async () => {
+    h.agents.set(AGENT, HOME);
+    h.runtime.withScenarios([quickTurn(), quickTurn()]);
+    // No settle between them: the first chat is not bound yet.
+    const first = await h.service.send(EXT, { to: AGENT, text: 'one', idempotencyKey: 'a' });
+    const second = await h.service.send(EXT, { to: AGENT, text: 'two', idempotencyKey: 'b' });
+    expect(second.sessionId).toBe(first.sessionId);
+    expect(h.reserved).toHaveLength(1);
+    await settle();
+    expect(h.events.filter((e) => e.kind === 'turn.done')).toHaveLength(2);
+    h.projectors.push(first.sessionId!);
+  });
+
+  it('sends a held message an earlier version saved under a UUID, on a run id of its own', async () => {
+    h.agents.set(AGENT, HOME);
+    h.store.insert({
+      id: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c',
+      extensionId: EXT,
+      idempotencyKey: 'old',
+      agentId: AGENT,
+      sessionId: null,
+      cwd: null,
+      status: 'held',
+      receiptStatus: 'queued',
+      receiptReason: 'at_capacity',
+      failureReason: null,
+      content: 'from before the upgrade',
+    });
+    h.runtime.withScenarios([quickTurn()]);
+    await h.service.drainHeld();
+    await settle();
+    expect(h.events.map((e) => [e.kind, e.messageId])).toEqual([
+      ['turn.started', '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c'],
+      ['turn.done', '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c'],
+    ]);
+    h.projectors.push(...h.reserved);
+  });
+
+  it('leaves a message an earlier version queued in the chat to the queue, and hears it run', async () => {
+    h.service.stop();
+    h.events = [];
+    // Queued by the version before: a row in the chat's queue, no run.
+    const id = '6a7b8c9d-1e2f-4a3b-8c4d-5e6f7a8b9c0d';
+    h.queue.enqueue({
+      id,
+      sessionId: h.session,
+      content: 'queued before the upgrade',
+      clientId: `extension:${EXT}`,
+      disposition: 'queue',
+      context: null,
+    });
+    h.store.insert({
+      id,
+      extensionId: EXT,
+      idempotencyKey: 'old-q',
+      agentId: null,
+      sessionId: h.session,
+      cwd: null,
+      status: 'queued',
+      receiptStatus: 'queued',
+      receiptReason: 'busy',
+      failureReason: null,
+      content: null,
+    });
+    h.runtime.withScenarios([quickTurn()]);
+    h.service = build();
+    await h.service.start();
+    h.service.subscribe(EXT, (event) => h.events.push(event));
+    await vi.waitFor(() => expect(h.events).toHaveLength(2), { timeout: 3_000 });
+    // Run once, heard by its own id: never called interrupted, so never resent.
+    expect(h.events.map((e) => [e.kind, e.messageId])).toEqual([
+      ['turn.started', id],
+      ['turn.done', id],
+    ]);
+    expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 });

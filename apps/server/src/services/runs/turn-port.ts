@@ -119,6 +119,8 @@ export interface SpaceTurnPortDeps {
    * been, because nobody can yet see a waiting run to take it back (§3.5).
    */
   pausedAgent?: (agentId: string | null, cwd: string | undefined) => { name: string } | undefined;
+  /** Whether a queue row still holds a run's words (this computer's queue). */
+  queueRowExists?: (queueMessageId: string) => boolean;
   /** The computer face, for taking back a run its caller no longer wants. */
   computer?: () => ComputerTurnPort | undefined;
   /** The record side of the hand-overs, for cancelling a run that never left here. */
@@ -314,6 +316,16 @@ export class SpaceTurnPort {
     if (held !== undefined || run.sourceRef === null) return held;
     const colon = run.sourceRef.indexOf(':');
     return this.sources.get(run.sourceRef.slice(0, colon))?.read(run.sourceRef.slice(colon + 1));
+  }
+
+  /**
+   * Whether a chat's queue still holds a row by this id: a message an earlier
+   * version queued in the chat, which the queue still starts.
+   *
+   * @param rowId - The queue row's id.
+   */
+  waitsInQueue(rowId: string): boolean {
+    return this.deps.queueRowExists?.(rowId) ?? false;
   }
 
   /**

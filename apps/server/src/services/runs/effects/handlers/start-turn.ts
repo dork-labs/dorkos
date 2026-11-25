@@ -84,8 +84,15 @@ export function startTurnHandler(deps: StartTurnDeps): EffectHandler {
       // Waiting for a launch this process no longer holds (its plan was
       // dropped without a word to the record): hand it over again, now.
       const run = effect.runId === null ? undefined : deps.runs.get(effect.runId);
-      if (run?.status !== 'queued' || run.queueMessageId !== null) return;
-      if (deps.computer()?.holds(run.id) === false) deps.starts.reopen(run, 0);
+      if (run?.status !== 'queued' || deps.computer()?.holds(run.id) !== false) return;
+      // A row in the queue is the queue's to start: this effect is done.
+      if (run.queueMessageId !== null) {
+        if (deps.queueRowExists(run.queueMessageId)) {
+          deps.starts.handOffToQueue(run.id);
+        }
+        return;
+      }
+      deps.starts.reopen(run, 0);
     },
     expireHeld: (effect) => {
       const run = effect.runId === null ? undefined : deps.runs.get(effect.runId);
@@ -110,7 +117,10 @@ async function handOver(
   if (run.status === 'starting') return { kind: 'await' };
   if (run.status !== 'queued') return { kind: 'done' };
   if (run.queueMessageId !== null) {
-    if (deps.queueRowExists(run.queueMessageId)) return { kind: 'await' };
+    // Its words are a queue row: the queue starts it (the pump, adoption, a
+    // re-arm), so this effect's work is done rather than awaited forever.
+    if (deps.queueRowExists(run.queueMessageId))
+      return { kind: 'done', outcome: { inQueue: true } };
     deps.starts.cancel(run.id, 'removed');
     return { kind: 'done' };
   }

@@ -122,6 +122,16 @@ export class StartTurns implements HandedStarts {
   }
 
   /**
+   * A run's words wait in the queue and nothing here holds its launch: the
+   * queue starts it, so its `start_turn` ends rather than waits forever.
+   *
+   * @param runId - The run.
+   */
+  handOffToQueue(runId: string): void {
+    this.effects.endStartOf(runId, 'done', { inQueue: true });
+  }
+
+  /**
    * A run's words became a queue row: tell its watchers.
    *
    * @param run - The run, as stored with its row.

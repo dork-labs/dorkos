@@ -179,13 +179,15 @@ export function reserveKeptChat(
  * @param roomSessionPlace - The room binding port available to this launch surface.
  * @param placeDeps - Test seams for place resolution.
  * @param agentOverrides - Live Mesh and pause readers, with optional test seams.
+ * @param rows - `orFromApps`: re-arm a mini app's rows too, not only other chats'.
  */
 export async function resumeChatQueue(
   sessionId: string,
   liveCwd: string | undefined,
   roomSessionPlace?: RoomSessionPlacePort,
   placeDeps: Partial<ResolveChatPlaceDeps> = {},
-  agentOverrides: Partial<VerifyChatAgentDeps> = {}
+  agentOverrides: Partial<VerifyChatAgentDeps> = {},
+  rows: { orFromApps?: boolean } = {}
 ): Promise<void> {
   const agentPath = (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? undefined;
   const verification = chatAgentDeps(agentOverrides);
@@ -241,6 +243,7 @@ export async function resumeChatQueue(
     ...(forAgent !== undefined ? { forAgent } : {}),
     ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
     onlyFromChats: true,
+    ...(rows.orFromApps ? { orFromApps: true } : {}),
   });
   clearResumeRefusals(sessionId);
 }
@@ -250,10 +253,12 @@ export async function resumeChatQueue(
  *
  * @param meshCore - The live Mesh accessor already held by the service.
  * @param roomSessionPlace - The live room-place accessor held by the service.
+ * @param rows - `orFromApps`: re-arm a mini app's rows too, not only other chats'.
  */
 export function resumeChatQueueFor(
   meshCore: () => Pick<MeshCore, 'listWithPaths'> | undefined,
-  roomSessionPlace: (() => RoomSessionPlacePort | undefined) | undefined
+  roomSessionPlace: (() => RoomSessionPlacePort | undefined) | undefined,
+  rows: { orFromApps?: boolean } = {}
 ): (sessionId: string, cwd: string | undefined) => Promise<void> {
   return (sessionId, cwd) =>
     resumeChatQueue(
@@ -266,6 +271,7 @@ export function resumeChatQueueFor(
           meshCore()
             ?.listWithPaths()
             .map((agent) => agent.projectPath),
-      }
+      },
+      rows
     );
 }

@@ -27,6 +27,7 @@ vi.mock('../../../../session/context-assembler.js', () => ({
 }));
 
 import {
+  adoptQueuedMessages,
   dispatchMessage,
   isTurnInFlight,
   resetMessageDispatcher,
@@ -220,6 +221,17 @@ export function build(overrides: Partial<ConstructorParameters<typeof AgentSendS
       return { ok: true, reservation: { settle() {}, cancel() {}, rekey() {} } };
     },
     port: () => getRunRecord()?.port,
+    // The re-arm a restart does: a mini app's rows in this chat's queue.
+    resumeQueue: async (id, cwd) => {
+      adoptQueuedMessages({
+        sessionId: id,
+        projector: projectorFor(id),
+        runtime: h.runtime,
+        ...(cwd ? { cwd } : {}),
+        onlyFromChats: true,
+        orFromApps: true,
+      });
+    },
     nonce: () => 'abcd1234',
     ...overrides,
   });

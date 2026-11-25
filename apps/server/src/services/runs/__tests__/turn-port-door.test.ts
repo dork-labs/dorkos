@@ -588,43 +588,41 @@ describe('the start_turn rules (§6.2)', () => {
     expect(startEffect(seven).state).toBe('done');
   });
 
-  it('never hands a run over twice: its queue row present it waits; its row gone it is cancelled', async () => {
-    // Another chat's message through the port: its words wait in the composer, as a row.
-    const person = record.port.start({
-      sessionId,
-      cwd: AGENT.home,
-      content: 'a chat, through the port',
-      origin: { kind: 'chat-message' },
-      tier: 'owner',
-    });
+  it('never hands a run over twice: its queue row present the queue owns it; its row gone it is cancelled', async () => {
+    // Other chats' messages through the port: their words wait in the composer, as rows.
+    const chatMessage = (content: string) =>
+      record.port.start({
+        sessionId,
+        cwd: AGENT.home,
+        content,
+        origin: { kind: 'chat-message' },
+        tier: 'owner',
+      }).runId;
     await personWorking();
+    const kept = chatMessage('a chat, through the port');
+    const lost = chatMessage('a chat whose row an older build deleted');
     await pass();
-    expect(handed).toEqual([person.runId]);
-    const run = record.store.get(person.runId)!;
-    expect(run.queueMessageId).toBe(person.runId);
-    expect(startEffect(run.id).state).toBe('leased');
+    expect(handed).toEqual([kept, lost]);
+    expect(record.store.get(kept)?.queueMessageId).toBe(kept);
+    expect(startEffect(kept).state).toBe('leased');
+    // One row goes behind the record's back (an older build's delete).
+    db.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, lost)).run();
 
-    // A restart: the lease runs out, the next boot takes the effect back and
-    // finds the row present, so it hands nothing over again.
+    // A restart: the leases run out, the next boot takes the effects back.
     resetMessageDispatcher();
     uninstallRunRecord();
     clock += Math.max(RUN_LEASE_MS, EFFECT_LEASE_MS) + 1;
     record = boot(LATER_EPOCH);
     await pass();
-    expect(handed).toEqual([person.runId]);
-    expect(startEffect(run.id).state).toBe('leased');
-
-    // Its row gone without its run (an older build): cancelled, never handed over.
-    db.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, run.id)).run();
-    clock += Math.max(RUN_LEASE_MS, EFFECT_LEASE_MS) + 1;
-    uninstallRunRecord();
-    record = boot(EPOCH);
-    await pass();
-    expect(record.store.get(run.id)).toMatchObject({
+    // Nothing is handed over again. The row still there is the queue's to
+    // start, so its effect ends rather than waits forever; the one gone is cancelled.
+    expect(handed).toEqual([kept, lost]);
+    expect(startEffect(kept)).toMatchObject({ state: 'done', outcome: { inQueue: true } });
+    expect(record.store.get(kept)?.status).toBe('queued');
+    expect(record.store.get(lost)).toMatchObject({
       status: 'cancelled',
       endingDetail: { cancelledBecause: 'removed' },
     });
-    expect(handed).toEqual([person.runId]);
   });
 });
 

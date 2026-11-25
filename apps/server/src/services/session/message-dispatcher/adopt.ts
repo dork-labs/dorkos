@@ -5,6 +5,7 @@
  *
  * @module services/session/message-dispatcher/adopt
  */
+import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import crypto from 'node:crypto';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
@@ -57,6 +58,12 @@ export interface AdoptQueuedMessagesOpts {
    * when they next send.
    */
   onlyFromChats?: boolean;
+  /**
+   * With {@link onlyFromChats}, a mini app's rows too (`extension:` lock
+   * identity): nobody is watching those either, and a restart must not leave
+   * one waiting in an idle chat (DOR-5232).
+   */
+  orFromApps?: boolean;
 }
 
 /**
@@ -136,7 +143,12 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
     // no other dispatch may press it for them after a resume. Any other person
     // row (queued behind a busy turn, then a restart) is adopted and runs.
     if (awaitsPersonSend(row.id)) continue;
-    if (opts.onlyFromChats && !isChatClientId(row.enqueuedBy)) continue;
+    if (
+      opts.onlyFromChats &&
+      !isChatClientId(row.enqueuedBy) &&
+      !(opts.orFromApps && isExtensionClientId(row.enqueuedBy))
+    )
+      continue;
     // Protected rows have their own adoption path because their visible queue
     // text is only a placeholder. Generic recovery must never send it or bypass
     // the source adapter's final authority preflight.

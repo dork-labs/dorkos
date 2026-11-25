@@ -3,6 +3,7 @@ covers:
   - 'feat(extensions): mini apps start turns through the turn port, and wait rather than refuse (DOR-5232)'
   - "feat(extensions): a mini app's stop takes back its waiting messages, and its sends keep their folder rules (DOR-5232)"
   - "feat(extensions): a mini app's start survives a restart, and its owner hears when one never runs (DOR-5232)"
+  - "fix(extensions): a mini app's first messages share one chat, and its queued messages survive an upgrade and a restart (DOR-5232)"
 ---
 
 ### Changed
