@@ -36,6 +36,10 @@ import { relayWebhookBodyRule } from '../relay-webhooks.js';
 import { registerSessionQueueRoutes } from '../session-queue-handler.js';
 import { mountSessionSendMessage } from '../session-send-message.js';
 import { createMockRelayCore, target, useLoginOffConfig } from './relay/relay.fixtures.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// The protected-path roots fail closed until the startup registers them (DOR-4928).
+registerClaudeCodeFacts();
 
 useLoginOffConfig();
 
