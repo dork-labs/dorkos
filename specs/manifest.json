@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261125-210729",
+      "slug": "member-checks",
+      "title": "Member checks replace the Mac's owner checks: one predicate called by the registry, the space in every call, a member directory, the inventory in five classes, the computer-owner check and a ratchet that only falls",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-5150"
+    },
+    {
       "id": "261125-193257",
       "slug": "send-to-an-agent",
       "title": "Send to an agent: one capability, the seat rule, a program's own identity and level, the reply by id and as a stream, A2A as a projection, and a server with one agent",
