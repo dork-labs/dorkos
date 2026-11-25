@@ -71,6 +71,7 @@ verdict() {
     return
   fi
   case "$stderr" in
+    "Blocked: a package manager with"*) echo block-home ;;
     "Blocked: "*"load gate"*"pnpm heavy"*) echo block ;;
     *) echo "block-unknown" ;;
   esac
@@ -186,6 +187,26 @@ block cd apps/server/src && pnpm typecheck
 block cd apps/server && cd src && pnpm test
 allow cd apps/server && cd ../.. && pnpm typecheck
 allow cd apps/server && pnpm vitest run src/a.test.ts
+# --- a package manager with its home moved (Nov 25 fork bomb), refused even inside the gate. ---
+block-home HOME=/tmp/x pnpm vitest run a.test.ts
+block-home HOME=$PWD/.tmp/home pnpm install
+block-home env HOME=/tmp/h npx vitest run a.test.ts
+block-home XDG_DATA_HOME=/tmp/x pnpm -v
+block-home PNPM_HOME=/tmp/p pnpm add x
+block-home export HOME=/tmp/h && pnpm test
+block-home pnpm heavy env HOME=/tmp/h pnpm vitest run a.test.ts
+block-home HOME=/tmp/h pnpm heavy pnpm typecheck
+block-home pnpm heavy bash -c 'HOME=/tmp/h pnpm vitest run a.test.ts'
+block-home bash -c 'HOME=/tmp/h pnpm vitest run a.test.ts'
+block-home env -i pnpm install
+block-home env -u HOME pnpm install
+block-home COREPACK_HOME=/tmp/c corepack enable
+block-home HOME=/tmp/h yarn install
+block-home HOME=/tmp/h npm ci
+allow HOME=/tmp/h git status
+allow env HOME=/tmp/h node scripts/x.mjs
+allow git commit -m "set HOME=x before pnpm"
+allow DORKOS_HOME=/tmp/d pnpm vitest run a.test.ts
 # --- the wrappers that already join the gate. ---
 allow pnpm heavy pnpm vitest run
 allow pnpm heavy turbo build
