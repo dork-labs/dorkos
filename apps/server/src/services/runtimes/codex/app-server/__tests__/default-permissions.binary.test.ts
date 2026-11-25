@@ -120,10 +120,17 @@ function watchChildren(rootPid: number, limitMs: number) {
   };
 }
 
-/** The first executable `name` on PATH outside `node_modules`, or `undefined`. */
+/**
+ * The first executable `name` on PATH outside this checkout, or `undefined`.
+ * CI's pnpm sits in its setup action's own `node_modules/.bin`, so only the
+ * checkout's package bins are skipped.
+ */
 function findOnPath(name: string): string | undefined {
+  const checkout = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+    encoding: 'utf8',
+  }).trim();
   for (const dir of (process.env.PATH ?? '').split(':')) {
-    if (!dir || dir.includes('node_modules')) continue;
+    if (!dir || dir === checkout || dir.startsWith(`${checkout}/`)) continue;
     const file = path.join(dir, name);
     try {
       fs.accessSync(file, fs.constants.X_OK);
@@ -567,7 +574,7 @@ nativeSuite('the protected profile without the request’s selection', { timeout
       });
 
       it.for(['acceptEdits', 'bypassPermissions'])(
-        'at %s, the previous profile and this one both keep protected files in place',
+        'at %s, the previous profile and this one both keep protected files in place, unchanged',
         async (mode, { annotate }) => {
           const fx = macFixture();
           const targets = {
@@ -589,7 +596,9 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           const probe = Object.entries(targets)
             .map(
               ([name, file]) =>
-                `{ [ -e ${quote(file)} ] && v=seen || v=unseen; unlink ${quote(file)} 2>/dev/null && u=allowed || u=refused; echo ${name}:$v:$u; }`
+                // After the unlink, a write of new contents at the same path: a
+                // file the shell can't see must not become one it can replace.
+                `{ [ -e ${quote(file)} ] && v=seen || v=unseen; unlink ${quote(file)} 2>/dev/null && u=allowed || u=refused; printf replaced 2>/dev/null > ${quote(file)} && w=allowed || w=refused; echo ${name}:$v:$u:$w; }`
             )
             .join('; ');
           const matrix: Record<string, Record<string, string>> = {};
@@ -602,7 +611,7 @@ nativeSuite('the protected profile without the request’s selection', { timeout
               Object.entries(targets).map(([name, file]) => [
                 name,
                 `${
-                  /:(seen|unseen):(allowed|refused)/
+                  /:(seen|unseen):(allowed|refused):(allowed|refused)/
                     .exec(out.slice(out.indexOf(`${name}:`)))
                     ?.slice(1)
                     .join('/') ?? 'none'
@@ -615,14 +624,16 @@ nativeSuite('the protected profile without the request’s selection', { timeout
             );
             plant();
           }
-          const summary = `${mode} on macOS ${os.release()}: ${JSON.stringify(matrix)}`;
+          const macos = execFileSync('sw_vers', ['-productVersion'], { encoding: 'utf8' }).trim();
+          const summary = `${mode} on macOS ${macos}: ${JSON.stringify(matrix)}`;
           await annotate(summary);
           console.info('DOR-4358 unlink matrix', summary);
           // Whether the shell can see the file is recorded, not judged: it is the
-          // system's call. The unlink's own status and the file itself are judged.
+          // system's call. The unlink's and the write's own status, and the file
+          // itself seen from outside, are judged.
           for (const profile of Object.values(matrix))
             for (const result of Object.values(profile))
-              expect(result, summary).toMatch(/^(seen|unseen)\/refused\/intact$/);
+              expect(result, summary).toMatch(/^(seen|unseen)\/refused\/refused\/intact$/);
         }
       );
 
