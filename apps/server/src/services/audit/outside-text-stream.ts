@@ -28,6 +28,33 @@ import { toolReadsOutsideText } from '../runtimes/shared/tools/outside-text-tool
 /** The most of a call's streamed input kept; past it the input no longer parses, and a command marks. */
 const MAX_STREAMED_INPUT = 200_000;
 
+/**
+ * A safety bound on running turns' markers, for streams nobody closed: far above how many turns
+ * one computer runs at once, so a running chat is not dropped.
+ */
+const MAX_TURN_MARKERS = 10_000;
+/** Each chat's running turn's mark, which knows the agent the turn acts as; dropped at its end. */
+const turnMarkers = new Map<string, () => void>();
+
+/**
+ * Mark a chat's running turn as one that read outside text, from a runtime's own notice that is
+ * not a tool call (what Codex is typed into a running command): with the agent its latest turn
+ * acts as, so callers that name only the agent see the mark too.
+ *
+ * @param sessionId - The chat.
+ */
+export function markChatTurnOutsideText(sessionId: string): void {
+  const mark = turnMarkers.get(sessionId);
+  if (mark) mark();
+  else markRunningTurnOutsider(sessionId, undefined, { kind: 'tool' });
+}
+
+/** A turn's watcher: hand it each event, and end it when the turn's stream ends. */
+export type OutsideTextMarker = ((event: StreamEvent) => void) & {
+  /** The turn's stream ended: the chat's running-turn mark no longer names this turn. */
+  end: () => void;
+};
+
 /** A call seen in this turn and not yet judged by its whole input. */
 interface OpenCall {
   name: string;
@@ -50,13 +77,14 @@ function fieldsOf(event: StreamEvent): { id: string; name: string; input?: strin
  * @param runtime - The runtime's type.
  * @param sessionId - The chat the turn runs in.
  * @param opts - The turn's options: its working folder and the agent it acts as.
- * @returns A function to hand each event to, before it is passed on.
+ * @returns A function to hand each event to, before it is passed on, and `end` to call when the
+ *   turn's stream ends.
  */
 export function outsideTextMarker(
   runtime: string,
   sessionId: string,
   opts: MessageOpts | undefined
-): (event: StreamEvent) => void {
+): OutsideTextMarker {
   const open = new Map<string, OpenCall>();
   /** Calls already judged by their whole input, or marked: neither is judged again. */
   const settled = new Set<string>();
@@ -75,6 +103,9 @@ export function outsideTextMarker(
     placeOf();
     markRunningTurnOutsider(sessionId, agentHome, { kind: 'tool' });
   };
+  turnMarkers.delete(sessionId);
+  turnMarkers.set(sessionId, mark);
+  if (turnMarkers.size > MAX_TURN_MARKERS) turnMarkers.delete(turnMarkers.keys().next().value!);
   const reads = (name: string, input: string | undefined): boolean => {
     try {
       return toolReadsOutsideText(runtime, name, input === '' ? undefined : input, placeOf());
@@ -83,7 +114,7 @@ export function outsideTextMarker(
     }
   };
 
-  return (event) => {
+  const watch = (event: StreamEvent): void => {
     if (event.type === 'background_task_started') {
       if (runtime === 'claude-code') return;
       if ((event.data as { taskType?: unknown } | undefined)?.taskType === 'agent') mark();
@@ -127,4 +158,9 @@ export function outsideTextMarker(
     }
     if (readsOutside) mark();
   };
+  return Object.assign(watch, {
+    end: () => {
+      if (turnMarkers.get(sessionId) === mark) turnMarkers.delete(sessionId);
+    },
+  });
 }

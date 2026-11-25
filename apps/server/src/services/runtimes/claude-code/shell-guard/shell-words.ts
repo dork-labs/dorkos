@@ -131,6 +131,8 @@ export function parseShell(command: string): ShellSegment[] {
           current.scripts.push(command.slice(at, bodyEnd));
           at = next;
         }
+        // The line the heredoc started on ends with it: what follows is the next command.
+        endSegment();
         i = at;
       } else {
         endSegment();

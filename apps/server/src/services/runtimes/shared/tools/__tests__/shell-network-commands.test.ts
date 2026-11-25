@@ -123,3 +123,43 @@ describe('more programs and modules that reach the network mark', () => {
     expect(marks(command)).toBe(true);
   });
 });
+
+describe('more ways a command reaches the network mark', () => {
+  it.each([
+    'exec 3<>/dev/tcp/example.com/80',
+    'cat < /dev/tcp/example.com/80',
+    'echo hi > /dev/udp/example.com/53',
+    `php -r '$u = "https:" . "//example.com"; echo file_get_contents($u);'`,
+    `php -r '$s = fsockopen($argv[1], 80);' example.com`,
+    'openssl s_client -connect example.com:443',
+    'openssl s_time -connect example.com:443',
+    'yt-dlp -a list.txt',
+    'youtube-dl ytsearch:made-up',
+    `osascript -e 'do shell script "curl example.com"'`,
+    `osascript -e 'do shell script "gh issue list"'`,
+    `osascript -e 'do shell script cmd'`,
+    `osascript -e 'open location "https://example.com"'`,
+    'python3 -m http.client',
+    'python3 -m urllib.request example.com',
+    'python3 -murllib.request example.com',
+    'xargs -a urls.txt curl',
+    'xargs --arg-file=urls.txt wget',
+    'xargs -0 -a urls.txt -n 1 curl -s',
+    "cat > notes.md <<'EOF'\nhi\nEOF\ngh issue list",
+  ])('%s', (command) => {
+    expect(marks(command)).toBe(true);
+  });
+
+  it.each([
+    'openssl rand -hex 16',
+    'openssl x509 -in cert.pem -noout -text',
+    `osascript -e 'display notification "done"'`,
+    `osascript -e 'do shell script "ls"'`,
+    'python3 -m pytest',
+    'python3 -m json.tool data.json',
+    'xargs -a files.txt wc -l',
+    'cat /dev/null',
+  ])('%s does not', (command) => {
+    expect(marks(command)).toBe(false);
+  });
+});

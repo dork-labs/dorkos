@@ -7,7 +7,8 @@
  * thread's late sink. This class is otherwise pure: it keeps the turn's own
  * state (which tools started, how much of each message streamed, the latest
  * token usage, a held fatal error) and returns the events each notification
- * means.
+ * means. The one thing it does besides: what the model types into a running
+ * command marks the turn when it reads outside words (`tool-turn/outside-text-reads.ts`).
  *
  * Exhaustive by construction: the disposition table
  * (`notification-disposition.ts`) and the item handler table are keyed on the full unions from `protocol/methods.ts`, so a
@@ -21,6 +22,7 @@
  * @module services/runtimes/codex/app-server/notification-mapper
  */
 import { mapPlan } from './plan-events.js';
+import { runningToolProgress } from '../tool-turn/outside-text-reads.js';
 import { timeRuntimeEvents } from '../../shared/timing/runtime-timing.js';
 import { codexRequestUsage, codexNotificationTime } from './request-timing.js';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -153,19 +155,10 @@ export class AppServerTurnMapper {
         const delta = String(params.delta);
         return delta ? [{ type: 'thinking_delta', data: { text: delta } }] : [];
       }
-      case 'item/commandExecution/outputDelta': {
-        const delta = String(params.delta);
-        return delta
-          ? [{ type: 'tool_progress', data: { toolCallId: String(params.itemId), content: delta } }]
-          : [];
-      }
+      case 'item/commandExecution/outputDelta':
+      case 'item/commandExecution/terminalInteraction':
       case 'item/mcpToolCall/progress':
-        return [
-          {
-            type: 'tool_progress',
-            data: { toolCallId: String(params.itemId), content: String(params.message) },
-          },
-        ];
+        return runningToolProgress(this.ctx.sessionId, notification.method, params);
       case 'item/started':
         return this.mapItem(params.item as Item, 'started', params);
       case 'item/completed':

@@ -22,6 +22,9 @@
  *   completions becomes ONE wake, and handed to the runtime as a
  *   {@link BackgroundWake}: the completions, and whether to start a model turn.
  *
+ * Either way, a finished command that read outside words marks the turn its
+ * output is handed to (`tool-turn/outside-text-reads.ts`), as the turn that started it was.
+ *
  * A model turn starts only when the work's own turn ended normally
  * (`completed`). After a stop or a failure the completion is shown and
  * nothing more: the person stopped it, and DorkOS does not restart it behind
@@ -44,6 +47,7 @@
  */
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
+import { markFinishedCommand } from '../tool-turn/outside-text-reads.js';
 import type { ServerNotification } from './protocol/methods.js';
 
 /** Completions arriving within this window become one wake. */
@@ -237,6 +241,7 @@ export class CodexBackgroundWork {
     if (item.type === 'commandExecution') {
       const tracked = this.tasks.get(String(item.id));
       if (!tracked) return undefined;
+      markFinishedCommand(tracked.task.sessionId, tracked.task);
       return { task: tracked.task, completion: commandCompletion(tracked, item) };
     }
     if (item.type === 'subAgentActivity') {
@@ -441,6 +446,7 @@ export class CodexBackgroundWork {
     const pending = this.pending.get(sessionId);
     if (!pending) return;
     this.pending.delete(sessionId);
+    for (const completion of pending.completions) markFinishedCommand(sessionId, completion);
     const wake: BackgroundWake = {
       sessionId,
       completions: pending.completions,
