@@ -1943,8 +1943,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         NO_PROXY: '127.0.0.1,localhost',
       }));
       try {
+        // On macOS the profile names each secret file exactly at render (DOR-4358),
+        // so a secret made during a turn can be read in that turn: Security accepts
+        // that window. It stays for the next turn, whose render must cover it.
+        const sameTurnWindow = process.platform === 'darwin';
         for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
-          probe.resetLate();
+          const firstTurn = mode === 'default';
+          probe.resetLate(sameTurnWindow && !firstTurn);
           const snapshot = () =>
             [...protectedFiles].sort().map((file) => ({
               file,
@@ -1991,7 +1996,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
             expect(result).toContain(control);
             expect(result).toContain(skillControl);
             for (const marker of probe.attemptMarkers) expect(result).toContain(marker);
-            for (const canary of probe.canaries) expect(result).not.toContain(canary);
+            for (const canary of probe.canaries)
+              if (!(sameTurnWindow && firstTurn && canary === probe.lateCanary))
+                expect(result, canary).not.toContain(canary);
             expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
             expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
             expect(snapshot()).toEqual(before);

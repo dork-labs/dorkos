@@ -19,6 +19,9 @@ named secret can't be read, moved, unlinked or hard-linked and keeps its folder;
 folders without one can be removed and renamed (with a control that the old
 globs still lock them); `npm ci` runs twice and pnpm installs twice with a
 bounded process count; `known_hosts` reads but never writes and a tracked
-project `.npmrc` reads. Skipped on Linux, so `codex-sandbox` is unchanged. Adds
+project `.npmrc` reads. Skipped on Linux, so `codex-sandbox` is unchanged.
+In `app-server.binary.test.ts`, the protected-probe row's first-turn check of
+its mid-turn secret is skipped on macOS by design; the secret is kept for the
+next two turns, whose renders must cover it. Adds
 about half a minute to the macOS job. Revert if the npm or pnpm row turns flaky
 on the hosted runner.
