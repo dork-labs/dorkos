@@ -94,11 +94,19 @@ export function renderPrBody(input: {
   previous: string;
   fragments: readonly Fragment[];
   unfragmented: readonly ListedCommit[];
+  /** The version a rollback release rolls back. */
+  rollback?: string;
 }): string {
-  const { decision, previous, fragments, unfragmented } = input;
+  const { decision, previous, fragments, unfragmented, rollback } = input;
   const lines = [
     `Release v${decision.version}, compiled from ${fragments.length} changelog ${fragments.length === 1 ? 'fragment' : 'fragments'} by \`scripts/release/release-commit.ts\`.`,
     '',
+    ...(rollback === undefined
+      ? []
+      : [
+          `**Rollback of v${rollback}.** This release is cut at the commit the release before v${rollback} was cut at, and ships that release's notes again.`,
+          '',
+        ]),
     `- Version: ${previous} to ${decision.version} (${decision.bump}: ${decision.reason})`,
     `- Breaking: ${decision.breaking ? 'yes, called out at the top of the notes' : 'no'}`,
     ...migrationLine(decision),
