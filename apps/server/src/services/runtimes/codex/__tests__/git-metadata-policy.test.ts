@@ -94,13 +94,23 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
   it('protects both a temporary folder alias and its canonical spelling', () => {
     const real = path.join(root, 'real');
     const alias = path.join(root, 'alias');
-    fs.mkdirSync(path.join(real, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(real, '.git', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(real, '.git', 'x', '.credentials.json'), 'made-up');
     fs.symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
     const files = render(alias);
     expect(files[key(path.join(alias, '.git'))]).toBe('read');
     expect(files[key(path.join(real, '.git'))]).toBe('read');
+    // On macOS the deep rule names each match exactly (DOR-4358).
     for (const dir of [alias, real])
-      expect(files[key(path.join(dir, '.git', '**', '.credentials*'))]).toBe('deny');
+      expect(
+        files[
+          key(
+            process.platform === 'darwin'
+              ? path.join(dir, '.git', 'x', '.credentials.json')
+              : path.join(dir, '.git', '**', '.credentials*')
+          )
+        ]
+      ).toBe('deny');
   });
 
   it('does not reopen metadata underneath a protected secret folder', () => {

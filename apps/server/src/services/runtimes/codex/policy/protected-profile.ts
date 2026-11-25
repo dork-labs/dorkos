@@ -17,6 +17,9 @@ import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.j
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
 import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
 import { gitMetadataReadRules } from './git-metadata.js';
+import { expandDeepGlobs } from './expand-deep-globs.js';
+import { withMacKnownSecrets } from './mac-known-secrets.js';
+import { noteRenderedSecrets } from './secret-file-activity.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -33,7 +36,8 @@ export interface CodexFilePolicy {
 function protectedEntries(
   { roots, writable }: CodexFilePolicy,
   onMissingTargets?: (targets: string[]) => void,
-  metadataFolders: readonly string[] = []
+  metadataFolders: readonly string[] = [],
+  sessionId?: string
 ): Record<string, 'read' | 'deny'> {
   const entries: Record<string, 'read' | 'deny'> = {};
   // Codex's rg and internal walkers disagree on fixed-depth glob suffixes.
@@ -168,11 +172,28 @@ function protectedEntries(
   // `:workspace` also opens /tmp and $TMPDIR (what os.tmpdir() reads) for
   // writes, so they count as opened too.
   const tmp = [...new Set(['/tmp', os.tmpdir()])];
-  return keepScansOutOfHiddenFolders(collapsed, [
+  const scanned = keepScansOutOfHiddenFolders(collapsed, [
     ...activeFolders,
     ...writable.flatMap(spellings),
     ...tmp.flatMap(spellings),
   ]);
+  // macOS only: a deep glob would stop every folder under its base being
+  // removed or renamed (DOR-4358), so name the matches exactly instead. The
+  // working folders are scanned now; every other base in the background. A
+  // file that appeared since the chat's last render gets an Activity line.
+  const platform = process.platform;
+  const exact = new Map<string, ReadonlySet<string>>();
+  const expanded = expandDeepGlobs(scanned, {
+    platform,
+    working: [...activeFolders, ...writable.flatMap(spellings)],
+    onExact: (base, keys) => exact.set(base, keys),
+  });
+  if (platform === 'darwin' && sessionId !== undefined) noteRenderedSecrets(sessionId, exact);
+  return withMacKnownSecrets(expanded, {
+    homes: spellings(roots.home),
+    data: roots.data,
+    platform,
+  });
 }
 
 /**
@@ -188,7 +209,8 @@ export function codexProtectedConfig(
   cwd: string,
   policy: CodexFilePolicy = { roots: turnProtectedRoots(cwd), writable: [] },
   settings: Pick<SessionSettings, 'permissionMode'> = {},
-  onMissingTargets?: (targets: string[]) => void
+  onMissingTargets?: (targets: string[]) => void,
+  sessionId?: string
 ): NonNullable<CodexOptions['config']> {
   const metadataRules = gitMetadataReadRules([cwd, ...policy.writable], policy.roots);
   // Linked worktree metadata can sit outside every active folder. Reuse the
@@ -196,7 +218,7 @@ export function codexProtectedConfig(
   const metadataFolders = Object.keys(metadataRules).filter((file) =>
     fs.statSync(file).isDirectory()
   );
-  const protectedFiles = protectedEntries(policy, onMissingTargets, metadataFolders);
+  const protectedFiles = protectedEntries(policy, onMissingTargets, metadataFolders, sessionId);
   const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
   const profile = codexPermissionProfile(settings);
   return {

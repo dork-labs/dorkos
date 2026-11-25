@@ -718,7 +718,8 @@ export function buildLoadOverrides(
     input.cwd,
     input.tools.filePolicy,
     input.settings,
-    guardedMountTargetRecorder(input.settings, secrets.onMissingTargets, input.tools.filePolicy)
+    guardedMountTargetRecorder(input.settings, secrets.onMissingTargets, input.tools.filePolicy),
+    input.sessionId
   );
   const servers: Record<string, unknown> = { ...withLiteralHeaders(input.tools.managed) };
   if (secrets.threadKey !== undefined) {
