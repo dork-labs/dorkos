@@ -138,9 +138,9 @@ export type AddWorkItemRequest = z.infer<typeof AddWorkItemRequestSchema>;
  * @param body - The change's fields.
  */
 export function changesWorkQueue(body: {
-  enabled?: boolean;
-  target?: number;
-  dailyStartCap?: number;
+  enabled?: boolean | undefined;
+  target?: number | undefined;
+  dailyStartCap?: number | undefined;
 }): boolean {
   return (
     body.enabled !== undefined || body.target !== undefined || body.dailyStartCap !== undefined
