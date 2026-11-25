@@ -52,6 +52,10 @@
 #         signature counts.
 #       - the cloud Security lens's passing `security-verdict` status (below).
 #     A `security-reviewed` label with neither is printed as a note.
+#     Outside contributions: a pull request from another repository that
+#     changes workflows, scripts, package manifests or lockfiles (the paths in
+#     OUTSIDE_REVIEW_PATHS) needs Security's signed review; the cloud verdict
+#     alone does not count for it. Same-repository PRs are unchanged.
 #
 # Fails closed: any read that fails is exit 2, and so is an `unreadable`
 # verdict. (arm-door fails open because it must never jam the queue; a required
@@ -88,6 +92,7 @@ err() {
 explain() {
   case "$1" in
     no-security-signoff) echo "Security has not signed off at this head: no signed review marker that verifies against main's key, and no passing cloud security-verdict." ;;
+    outside-contribution-needs-signed-review) echo "this pull request comes from another repository and changes workflows, scripts, package manifests or lockfiles, so it needs Security's signed review marker at this head; the cloud security-verdict alone does not count for it." ;;
     no-qa-label) echo "this PR touches config or migration code and has no qa-real-data label from QA." ;;
     qa-label-older-than-head) echo "qa-real-data was added before the latest push; QA re-checks this head." ;;
     no-design-ok) echo "this PR changes something a person sees and has no design-ok from the designer." ;;
@@ -106,9 +111,34 @@ cloud_security() { # <payload.json> -> pass | none
          | if . != null and .state == "success" then "pass" else "none" end' "$1" 2>/dev/null || echo none
 }
 
+# Outside contributions (review policy): a pull request from another repository
+# that changes any of these needs Security's signed review; the cloud verdict
+# alone does not count for it. A rename counts under both its old and new name.
+# The directories are the ones whose files the workflows run (`bash`, `node`,
+# `python3` and `pnpm` steps, including any `scripts/` directory), plus what
+# pnpm reads when it installs.
+OUTSIDE_REVIEW_PATHS='^\.github/|(^|/)scripts/|^tools/|^\.claude/|^ci/|^patches/|^packages/ci-steward/|(^|/)package\.json$|(^|/)pnpm-lock\.yaml$|(^|/)pnpm-workspace\.yaml$|(^|/)\.npmrc$|(^|/)\.pnpmfile\.c?js$|(^|/)lefthook(-local)?\.ya?ml$|(^|/)turbo\.json$'
+
+# outside_review <payload.json>: prints the paths (one JSON string per line) that
+# need Security's signed review because the PR comes from another repository;
+# nothing for a same-repository PR or one that changes none of them. Fails
+# closed: an unreadable base repository or an incomplete file list is exit 2,
+# and a head repository that no longer exists counts as another repository.
+outside_review() {
+  jq -r --arg re "$OUTSIDE_REVIEW_PATHS" '
+    if (.baseRepo | type) != "string" or .baseRepo == "" then error("base repository")
+    elif (.headRepo | type) == "string" and .headRepo == .baseRepo then empty
+    elif (.files | type) != "array" or (.changedFiles | type) != "number"
+      or (.files | length) != .changedFiles or .changedFiles == 0 then error("file list")
+    else [.files[] | (.filename, .previous_filename) | select(type == "string")
+          | select(test($re))] | unique | .[] | tojson
+    end' "$1" 2>/dev/null || return 2
+}
+
 # SECURITY_SIGNOFF (signed | cloud | none) says whether Security signed off at
-# the head; anything else is none. arm-door's own Security-label reasons never
-# count either way.
+# the head; anything else is none. SIGNED_REVIEW_ONLY=yes (an outside
+# contribution, above) means only `signed` counts. arm-door's own Security-label
+# reasons never count either way.
 decide() {
   local line=$1 reasons="" r out=() later=() list=()
   case "$line" in
@@ -119,9 +149,11 @@ decide() {
       ;;
     *) err "unexpected verdict '$line'" ;;
   esac
-  case "${SECURITY_SIGNOFF:-none}" in
-    signed | cloud) ;;
-    *) out+=(no-security-signoff) ;;
+  case "${SECURITY_SIGNOFF:-none}:${SIGNED_REVIEW_ONLY:-no}" in
+    signed:*) ;;
+    cloud:no) ;;
+    *:no) out+=(no-security-signoff) ;;
+    *) out+=(outside-contribution-needs-signed-review) ;;
   esac
   [ -n "$reasons" ] && IFS=, read -r -a list <<<"$reasons"
   for r in ${list[@]+"${list[@]}"}; do
@@ -239,7 +271,9 @@ payload() {
   trap 'rm -rf "$w"' RETURN
   head=$("$GH" api "repos/$REPO/pulls/$pr" --jq .head.sha) || err "could not read #$pr"
   [[ "$head" =~ ^[0-9a-f]{40}$ ]] || err "unexpected head '$head' for #$pr"
-  "$GH" api "repos/$REPO/pulls/$pr" --jq '{title, changed_files, branch: .head.ref}' >"$w/pull" ||
+  "$GH" api "repos/$REPO/pulls/$pr" \
+    --jq '{title, changed_files, branch: .head.ref, headRepo: .head.repo.full_name, baseRepo: .base.repo.full_name}' \
+    >"$w/pull" ||
     err "could not read #$pr"
   committed=$("$GH" api "repos/$REPO/commits/$head" --jq '.commit.committer.date') ||
     err "could not read the head commit"
@@ -280,7 +314,8 @@ payload() {
      designLabelEvents: [$events[] | select(.name == "design-ok") | .at],
      statuses: $statuses, checkRuns: $runs, required: $required[0],
      files: [$files[] | {filename, previous_filename}], changedFiles: $pull[0].changed_files,
-     labels: $labels, patches: $patches, title: $pull[0].title}' || err "could not build the payload"
+     labels: $labels, patches: $patches, title: $pull[0].title,
+     headRepo: $pull[0].headRepo, baseRepo: $pull[0].baseRepo}' || err "could not build the payload"
 }
 
 mode=${1:-}
@@ -311,14 +346,28 @@ case "$mode" in
     elif [ "$SIGNED" = bad ]; then
       echo "Signed review not counted: $SIGNED_WHY."
     fi
+    outside=$(outside_review "$tmp/payload.json") ||
+      err "could not tell whether #$2 comes from another repository and what it changes. Re-run this check."
+    SIGNED_REVIEW_ONLY=no
+    if [ -n "$outside" ]; then
+      SIGNED_REVIEW_ONLY=yes
+      echo "Outside contribution: this pull request comes from another repository and changes these paths, so only Security's signed review counts:"
+      head -n 20 <<<"$outside" | sed 's/^/  changed: /'
+      n=$(wc -l <<<"$outside" | tr -d ' ')
+      [ "$n" -gt 20 ] && echo "  changed: ...and $((n - 20)) more"
+    fi
     if [ "$(cloud_security "$tmp/payload.json")" = pass ]; then
-      [ "$SECURITY_SIGNOFF" = none ] && SECURITY_SIGNOFF=cloud
-      echo "The cloud Security lens passed this head (security-verdict), which counts as Security's sign-off."
+      if [ "$SIGNED_REVIEW_ONLY" = yes ]; then
+        echo "The cloud Security lens passed this head (security-verdict), but for an outside contribution like this one only Security's signed review counts."
+      else
+        [ "$SECURITY_SIGNOFF" = none ] && SECURITY_SIGNOFF=cloud
+        echo "The cloud Security lens passed this head (security-verdict), which counts as Security's sign-off."
+      fi
     fi
     if [ "$SIGNED" != pass ] && jq -e '.labels | any(. == "security-reviewed")' "$tmp/payload.json" >/dev/null 2>&1; then
       echo "Note: the security-reviewed label is on this PR, but a label alone is not Security's sign-off. Security signs off with a signed review marker in a comment (or the cloud verdict passes)."
     fi
-    export SECURITY_SIGNOFF
+    export SECURITY_SIGNOFF SIGNED_REVIEW_ONLY
     decide "$line"
     ;;
   *) usage ;;
