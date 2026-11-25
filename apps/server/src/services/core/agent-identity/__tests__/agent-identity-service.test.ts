@@ -58,6 +58,23 @@ describe('AgentIdentityService', () => {
       ]);
     });
 
+    it('names no chat once a token is held for a second chat, until every holder lets go', () => {
+      const chats = new TokenChats();
+      chats.hold('t', 'chat-a');
+      chats.hold('t', 'chat-a');
+      expect(chats.chatOf('t')).toBe('chat-a');
+      chats.hold('t', 'chat-b');
+      // Neither chat: a process of chat A must never record to B, nor B to A.
+      expect(chats.chatOf('t')).toBeUndefined();
+      chats.release(['t']);
+      chats.release(['t']);
+      expect(chats.chatOf('t')).toBeUndefined();
+      chats.release(['t']);
+      // Every holder has gone, so the token starts clean.
+      chats.hold('t', 'chat-b');
+      expect(chats.chatOf('t')).toBe('chat-b');
+    });
+
     it('is gone in a fresh process', async () => {
       const token = await heldFor('chat-a');
       expect((await new AgentIdentityService(db).resolve(token))?.chatId).toBeUndefined();

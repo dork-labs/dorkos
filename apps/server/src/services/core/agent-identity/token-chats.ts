@@ -22,6 +22,10 @@
  * entry. Past {@link TOKEN_CHAT_LIMIT} the least recently used entry goes
  * first, and reading one counts as use. A restart empties the map.
  *
+ * A token held for a second chat while the first still holds it is
+ * conflicted: it names no chat until every holder has let it go. Tokens are
+ * minted per launch, so this should never happen; it fails closed if it does.
+ *
  * An entry is not a pass on its own: the one reader, `work-graph.record-pr`,
  * also needs a live run of that chat right now, and a revoked token names no
  * chat at all. No launch knows its run id yet, so an entry names a chat. C18
@@ -40,6 +44,12 @@ interface TokenChat {
   chatId: string;
   /** How many live processes hold the token. */
   holders: number;
+  /**
+   * The token was held for two different chats. It then names no chat until
+   * every holder has let it go, so no process can record to a chat it does
+   * not run.
+   */
+  conflicted?: true;
 }
 
 /** Token digest → the chat its processes run, least recently used first. */
@@ -67,10 +77,16 @@ export class TokenChats {
   hold(tokenHash: string, chatId: string): void {
     const held = this.entries.get(tokenHash);
     this.entries.delete(tokenHash);
-    this.entries.set(tokenHash, {
-      chatId,
-      holders: held?.chatId === chatId ? held.holders + 1 : 1,
-    });
+    this.entries.set(
+      tokenHash,
+      held === undefined
+        ? { chatId, holders: 1 }
+        : {
+            chatId: held.chatId,
+            holders: held.holders + 1,
+            ...(held.conflicted || held.chatId !== chatId ? { conflicted: true as const } : {}),
+          }
+    );
     while (this.entries.size > this.limit) {
       const oldest = this.entries.keys().next().value;
       if (oldest === undefined) break;
@@ -79,8 +95,9 @@ export class TokenChats {
   }
 
   /**
-   * The chat a token's processes run, or `undefined` when no entry holds it.
-   * A read counts as use, so live tokens are the last to go.
+   * The chat a token's processes run, or `undefined` when no entry holds it
+   * or it was held for two chats. A read counts as use, so live tokens are the
+   * last to go.
    *
    * @param tokenHash - The presented token's digest.
    */
@@ -89,7 +106,7 @@ export class TokenChats {
     if (entry === undefined) return undefined;
     this.entries.delete(tokenHash);
     this.entries.set(tokenHash, entry);
-    return entry.chatId;
+    return entry.conflicted ? undefined : entry.chatId;
   }
 
   /**
