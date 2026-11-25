@@ -380,9 +380,17 @@ const registry = composeDorkOsCapabilityRegistry({
   },
   // The person's work queue domain serves its doors (`/api/agents/{id}/work-queue/*`,
   // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
+  // The agents' own work queue tools (`work-queue.*`, DOR-3462), checked
+  // beside the person's doors; no agent is on this team.
+  workQueueDeps: {
+    service: {} as NonNullable<CapabilityDeps['workQueueDeps']>['service'],
+    agentIdForPath: () => undefined,
+    agentName: () => undefined,
+  },
   workQueuePersonDeps: {
     service: {} as NonNullable<CapabilityDeps['workQueuePersonDeps']>['service'],
     agentExists: () => false,
+    isOwner: () => true,
   },
   // The link domain serves `GET /api/links/target` (DOR-5046), over the
   // harness's real rooms; it holds no chats and no agents.
@@ -690,6 +698,17 @@ capabilityConformance(registry, {
     'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
     'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
     'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    // The agents' queue tools, parseable so the gate or the handler answers:
+    // with no identity each refuses `NO_AGENT`; the destructive ones meet the gate.
+    'work-queue.add': { title: 'Conformance', prompt: 'A conformance probe.' },
+    'work-queue.remove': { id: 'conformance-item' },
+    'work-queue.read_agent': { agentId: 'conformance-agent' },
+    'work-queue.configure': {
+      before: { enabled: false, target: 1, dailyStartCap: 1 },
+      changes: { enabled: true },
+    },
+    'work-queue.reorder': { itemIds: ['conformance-item'] },
+    'work-queue.requeue': { id: 'conformance-item' },
     // No workspace subsystem here, so the pin answers its own `WORKSPACE_NOT_FOUND`.
     'workspaces.pin': { id: 'conformance-workspace', pinned: true },
     // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.

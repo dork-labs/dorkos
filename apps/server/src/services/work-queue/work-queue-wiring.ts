@@ -49,6 +49,7 @@ import {
   type QueueAgent,
   type StartResult,
 } from './work-queue-runner.js';
+import { isInstallOwner } from '../core/auth/install-owner.js';
 import { WorkQueueService } from './work-queue-service.js';
 import { WorkQueueStore } from './work-queue-store.js';
 
@@ -80,7 +81,7 @@ export interface WorkQueueWiringDeps {
 export interface WorkQueueWiring {
   /** The `work-queue` capability domain's deps. */
   capabilityDeps: NonNullable<CapabilityDeps['workQueueDeps']>;
-  /** The `workqueue` domain's deps: a person's queue doors. */
+  /** The person's `work-queue` doors' deps: a person's queue doors. */
   personDeps: NonNullable<CapabilityDeps['workQueuePersonDeps']>;
   /** Stop the timers, stop listening, and give up the lock. */
   stop(): void;
@@ -264,6 +265,7 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
     personDeps: {
       service,
       agentExists: (agentId) => deps.meshCore()?.get(agentId) !== undefined,
+      isOwner: (userId) => isInstallOwner({ userId }),
     },
     stop() {
       clearInterval(passTimer);

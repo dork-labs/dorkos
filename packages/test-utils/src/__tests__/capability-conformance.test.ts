@@ -401,6 +401,28 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
     const violations = checkCapabilityConformance(registry, fixtures);
     expect(hasCheck(violations, 'metadata')).toBe(true);
   });
+
+  it('metadata: a hyphenated domain is a domain; a malformed id is not', () => {
+    const idViolations = (id: string) => {
+      const obs = observeCapability();
+      obs.id = id;
+      const registry = conformantRegistry([obs, actCapability()]);
+      return checkCapabilityConformance(registry, conformantFixtures(registry)).filter(
+        (violation) => violation.check === 'metadata'
+      );
+    };
+    expect(idViolations('work-queue.view_queue')).toEqual([]);
+    expect(idViolations('work-claims.check')).toEqual([]);
+    for (const bad of [
+      'Work.list',
+      'work-.list',
+      '-work.list',
+      'work--queue.list',
+      'work.queue-list',
+    ]) {
+      expect(idViolations(bad).length, bad).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('checkRegistryGateConformance', () => {

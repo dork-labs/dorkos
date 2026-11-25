@@ -35,13 +35,25 @@ afterAll(() => rmSync(home, { recursive: true, force: true }));
 
 let service: { [K in keyof QueueDeps['service']]: ReturnType<typeof vi.fn> };
 
-function serve() {
+/**
+ * Serve the doors. `signedInAs` stands in for the session gate having resolved a
+ * signed-in person (login on): the chain itself only sets one from a real session.
+ */
+function serve(signedInAs?: string) {
   const deps: QueueDeps = {
     service: service as unknown as QueueDeps['service'],
     agentExists: (id) => id === 'scout',
+    isOwner: (userId) => userId === 'owner',
   };
   return fixtureTarget.mount(
-    honoGroupListener(capabilityGroup(workQueuePersonDomain, { workQueuePersonDeps: deps }))
+    honoGroupListener(capabilityGroup(workQueuePersonDomain, { workQueuePersonDeps: deps }), {
+      ...(signedInAs && {
+        before: async (c, next) => {
+          c.set('user', { userId: signedInAs, credential: 'cookie', sessionId: 's1' });
+          await next();
+        },
+      }),
+    })
   );
 }
 
@@ -77,6 +89,32 @@ describe('work queue doors', () => {
       expect(res.body.code).toBe('person_only');
     }
     for (const fn of Object.values(service)) expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('refuses a program: a call that sends an Authorization header is not a person', async () => {
+    const res = await request(serve())
+      .put('/api/work-queues/stop')
+      .set('Authorization', 'Bearer some-key')
+      .send({ stopped: true });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(service.setAllStopped).not.toHaveBeenCalled();
+  });
+
+  it('refuses a signed-in person who is not the owner, on both path families', async () => {
+    const guest = serve('guest');
+    const read = await request(guest).get('/api/agents/scout/work-queue');
+    expect(read.status).toBe(403);
+    expect(read.body.code).toBe('owner_only');
+    const stop = await request(guest).put('/api/work-queues/stop').send({ stopped: true });
+    expect(stop.status).toBe(403);
+    expect(stop.body.code).toBe('owner_only');
+    for (const fn of Object.values(service)) expect(fn).not.toHaveBeenCalled();
+
+    const owner = serve('owner');
+    expect((await request(owner).get('/api/agents/scout/work-queue')).status).toBe(200);
+    const stopped = await request(owner).put('/api/work-queues/stop').send({ stopped: true });
+    expect(stopped.status).toBe(200);
   });
 
   it('reads a queue, and answers 404 for an agent not on the team', async () => {

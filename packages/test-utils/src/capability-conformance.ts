@@ -279,8 +279,11 @@ export interface ConformanceViolation {
   detail: string;
 }
 
-/** The `${domain}.${verb}` id shape every capability id must match. */
-const ID_PATTERN = /^[a-z0-9]+\.[a-z0-9_]+$/;
+/**
+ * The `${domain}.${verb}` id shape every capability id must match. A domain may
+ * be hyphenated (`work-queue`, `work-claims`); a verb uses underscores.
+ */
+const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.[a-z0-9_]+$/;
 
 /** Minimum model-facing description length — an ACI description is more than a label. */
 const MIN_DESCRIPTION_LENGTH = 20;

@@ -104544,9 +104544,9 @@
     },
     "/api/agents/{id}/work-queue": {
       "get": {
-        "operationId": "workqueue.get",
+        "operationId": "work-queue.view_queue",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Open an agent’s work queue",
         "description": "What waits in order, what is running, what recently ended, whether the queue is on, its target and daily cap, and what is stopping the next start.",
@@ -104677,9 +104677,9 @@
         }
       },
       "patch": {
-        "operationId": "workqueue.update",
+        "operationId": "work-queue.change_settings",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Change how an agent’s work queue runs",
         "description": "Turn a queue on or off, or set its target or daily cap. A queue is off until a person turns it on.",
@@ -104836,9 +104836,9 @@
     },
     "/api/work-queues/stop": {
       "put": {
-        "operationId": "workqueue.stop_all",
+        "operationId": "work-queue.stop_all",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Stop every work queue",
         "description": "Stop every queue (`stopped: true`) or lift the stop. Chats already running keep going.",
@@ -104967,9 +104967,9 @@
     },
     "/api/agents/{id}/work-queue/order": {
       "put": {
-        "operationId": "workqueue.set_order",
+        "operationId": "work-queue.set_order",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Set the order of waiting work",
         "description": "Set the order of what waits. An item that started meanwhile is left out.",
@@ -105125,9 +105125,9 @@
     },
     "/api/agents/{id}/work-queue/items": {
       "post": {
-        "operationId": "workqueue.add_item",
+        "operationId": "work-queue.add_item",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Add work to an agent’s queue",
         "description": "Add one item to the back of an agent’s queue: a title, a prompt and a folder.",
@@ -105289,9 +105289,9 @@
     },
     "/api/agents/{id}/work-queue/items/{itemId}": {
       "delete": {
-        "operationId": "workqueue.remove_item",
+        "operationId": "work-queue.remove_item",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Remove waiting work",
         "description": "Remove an item that has not started. A running item is its chat’s to end.",
@@ -105428,9 +105428,9 @@
     },
     "/api/agents/{id}/work-queue/items/{itemId}/requeue": {
       "post": {
-        "operationId": "workqueue.requeue_item",
+        "operationId": "work-queue.requeue_item",
         "tags": [
-          "Workqueue"
+          "Work-queue"
         ],
         "summary": "Queue ended work again",
         "description": "Put an ended item at the back of the queue. It starts a new chat.",

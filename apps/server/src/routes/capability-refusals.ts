@@ -226,10 +226,6 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     detail: `This queue already has ${WORK_QUEUE_MAX_QUEUED} items waiting.`,
   },
   WORK_ITEM_BAD_CWD: { code: 'invalid_request', detail: 'The folder must be an absolute path.' },
-  WORK_QUEUE_CAP_CEILING: {
-    code: 'conflict',
-    detail: 'Daily cap exceeds the Settings limit. Lower it first.',
-  },
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */
