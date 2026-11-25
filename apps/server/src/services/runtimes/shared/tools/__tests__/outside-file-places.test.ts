@@ -12,13 +12,19 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { outsideFileTests } from '../outside-file-places.js';
 import { toolReadsOutsideText } from '../outside-text-tools.js';
 import { commandReadsOutsideText } from '../shell-outside-text.js';
+import { madeUpHome } from './made-up-home.js';
 
 const AGENT = '/agents/wren';
 const PLACE = { cwd: AGENT, agentHome: AGENT };
-const HOME = os.homedir();
+// A made-up home with a Downloads folder, so no test leans on the real home.
+const { home: HOME, remove: removeHome } = madeUpHome(['Downloads']);
 
 beforeEach(() => {
+  vi.stubEnv('HOME', HOME);
   vi.stubEnv('DORK_HOME', '/made-up/dork-home');
+});
+afterAll(() => {
+  removeHome();
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -104,10 +110,17 @@ describe('a search rooted at or above a folder of outside files marks', () => {
   );
 
   it('a folder of outside files reached only through a hidden folder does not', () => {
-    vi.stubEnv('DORK_HOME', '/made-up/project/.dork');
-    expect(commandReadsOutsideText('rg made-up', { cwd: '/made-up/project' })).toBe(false);
-    vi.stubEnv('DORK_HOME', '/made-up/project/dork-home');
-    expect(commandReadsOutsideText('rg made-up', { cwd: '/made-up/project' })).toBe(true);
+    const project = mkdtempSync(path.join(os.tmpdir(), 'made-up-project-'));
+    try {
+      mkdirSync(path.join(project, '.dork', 'rooms'), { recursive: true });
+      mkdirSync(path.join(project, 'dork-home', 'rooms'), { recursive: true });
+      vi.stubEnv('DORK_HOME', path.join(project, '.dork'));
+      expect(commandReadsOutsideText('rg made-up', { cwd: project })).toBe(false);
+      vi.stubEnv('DORK_HOME', path.join(project, 'dork-home'));
+      expect(commandReadsOutsideText('rg made-up', { cwd: project })).toBe(true);
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
   });
 });
 
