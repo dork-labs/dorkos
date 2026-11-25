@@ -73,14 +73,19 @@ async function readTrust(request: APIRequestContext): Promise<TrustView> {
  */
 async function reloadOnConfirmedConfig(basePage: BasePage): Promise<void> {
   const { page } = basePage;
-  const confirmed = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'GET' &&
-      new URL(response.url()).pathname === '/api/config' &&
-      response.ok()
-  );
+  // Read the body the moment the response lands: once the app navigates on
+  // (it can, right after load), Chromium drops the body and .json() throws
+  // "No resource with given identifier found" (main, Nov 25, run 45688259553).
+  const confirmed = page
+    .waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === '/api/config' &&
+        response.ok()
+    )
+    .then((response) => response.json() as Promise<{ ui?: { trustNoticeSeenAt?: string | null } }>);
   await basePage.goto();
-  const config = (await (await confirmed).json()) as { ui?: { trustNoticeSeenAt?: string | null } };
+  const config = await confirmed;
   expect(config.ui?.trustNoticeSeenAt ?? null).not.toBeNull();
   await basePage.waitForAppReady();
   await page.evaluate(
