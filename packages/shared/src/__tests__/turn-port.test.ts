@@ -172,6 +172,13 @@ const SAMPLES: Record<string, readonly unknown[]> = {
       runId: RUN,
       ending: 'stopped',
       receipt: { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'claude-code' },
+      interrupted: true,
+    },
+    {
+      kind: 'ended',
+      runId: RUN,
+      ending: 'completed',
+      stopRequest: { by: 'dork:person:person-1', outcome: 'unconfirmed' },
     },
     { kind: 'ended', runId: RUN, ending: 'refused', refusal: 'The model is not available.' },
   ],
@@ -288,7 +295,7 @@ export type PlainDataProof = [
 ];
 
 describe('the transition table', () => {
-  /** The thirteen legal pairs, as the spec's table (§4.3) writes them. */
+  /** The fifteen legal pairs: the spec's table (§4.3) and the architect's rows 14 and 15. */
   const SPEC: ReadonlyArray<readonly [RunStatus | null, RunStatus]> = [
     [null, 'queued'],
     [null, 'running'],
@@ -303,12 +310,16 @@ describe('the transition table', () => {
     ['started', 'ended'],
     ['running', 'ended'],
     ['ended', 'settled'],
+    ['started', 'queued'],
+    ['running', 'queued'],
   ];
   const STATUSES = RunStatusSchema.options;
 
-  it('holds exactly the spec rows, numbered 1 to 13', () => {
+  it('holds exactly the fifteen rows, numbered 1 to 15', () => {
+    expect(SPEC).toHaveLength(15);
     expect(RUN_TRANSITIONS.map(({ from, to }) => [from, to])).toEqual(SPEC);
     expect(RUN_TRANSITIONS.map(({ row }) => row)).toEqual(SPEC.map((_, index) => index + 1));
+    expect(canTransition('starting', 'superseded')).toBe(false);
   });
 
   it('answers every pair, legal or not', () => {
@@ -406,25 +417,57 @@ describe('facts', () => {
     ]);
   });
 
-  it('a stopped ending always carries its receipt, confirmed or unconfirmed, never failed', () => {
+  describe('a stopped ending needs proof the turn ended (ADR 260823-021312)', () => {
     const stopped = { kind: 'ended', runId: RUN, ending: 'stopped' } as const;
-    const receipt = (outcome: 'acked' | 'closed' | 'not-running' | 'unconfirmed' | 'failed') => ({
-      ...stopped,
-      receipt: { outcome, runtime: 'claude-code' },
+    type Outcome = 'acked' | 'closed' | 'not-running' | 'unconfirmed' | 'failed';
+    const receipt = (outcome: Outcome) => ({ outcome, runtime: 'claude-code' });
+
+    it('accepts a receipt that observed the end', () => {
+      for (const outcome of ['acked', 'closed', 'not-running'] as const) {
+        expect(RunFactSchema.safeParse({ ...stopped, receipt: receipt(outcome) }).success).toBe(
+          true
+        );
+      }
     });
-    expect(RunFactSchema.safeParse(stopped).success).toBe(false);
-    for (const outcome of ['acked', 'closed', 'not-running', 'unconfirmed'] as const) {
-      expect(RunFactSchema.safeParse(receipt(outcome)).success, outcome).toBe(true);
-    }
-    expect(RunFactSchema.safeParse(receipt('failed')).success).toBe(false);
-    expect(
-      RunFactSchema.safeParse({
+
+    it("accepts an unconfirmed receipt with the runtime's own interrupt", () => {
+      expect(
+        RunFactSchema.safeParse({ ...stopped, receipt: receipt('unconfirmed'), interrupted: true })
+          .success
+      ).toBe(true);
+      expect(RunFactSchema.safeParse({ ...stopped, interrupted: true }).success).toBe(true);
+    });
+
+    it('refuses an unconfirmed receipt alone, or no proof at all', () => {
+      expect(RunFactSchema.safeParse({ ...stopped, receipt: receipt('unconfirmed') }).success).toBe(
+        false
+      );
+      expect(RunFactSchema.safeParse(stopped).success).toBe(false);
+    });
+
+    it('never makes stopped from a failed receipt', () => {
+      expect(RunFactSchema.safeParse({ ...stopped, receipt: receipt('failed') }).success).toBe(
+        false
+      );
+      expect(
+        RunFactSchema.safeParse({ ...stopped, receipt: receipt('failed'), interrupted: true })
+          .success
+      ).toBe(false);
+    });
+
+    it('keeps an unconfirmed request on a turn that ended on its own', () => {
+      const completed = {
         kind: 'ended',
         runId: RUN,
         ending: 'completed',
-        receipt: { outcome: 'acked', runtime: 'claude-code' },
-      }).success
-    ).toBe(false);
+        stopRequest: { outcome: 'unconfirmed' },
+      } as const;
+      expect(RunFactSchema.parse(JSON.parse(JSON.stringify(completed)))).toEqual(completed);
+      expect(
+        RunFactSchema.safeParse({ ...completed, receipt: receipt('unconfirmed') }).success
+      ).toBe(false);
+      expect(RunFactSchema.safeParse({ ...completed, interrupted: true }).success).toBe(false);
+    });
   });
 
   it('names who stopped it only on a stopped ending, as a dork: reference', () => {
@@ -453,7 +496,7 @@ describe('facts', () => {
     ).toBe(false);
   });
 
-  it('a runtime-opened turn names its agent', () => {
+  it('a runtime-opened turn is accepted with or without its agent', () => {
     const opened = {
       kind: 'started',
       runId: RUN,
@@ -462,8 +505,9 @@ describe('facts', () => {
       runtime: 'claude-code',
       runtimeTurnRef: 7,
     } as const;
-    expect(RunFactSchema.safeParse(opened).success).toBe(false);
+    expect(RunFactSchema.safeParse(opened).success).toBe(true);
     expect(RunFactSchema.safeParse({ ...opened, agentId: AGENT }).success).toBe(true);
+    expect(RunFactSchema.safeParse({ ...opened, agentId: 'not-a-ulid' }).success).toBe(false);
     expect(RunFactSchema.safeParse({ ...opened, openedBy: 'caller' }).success).toBe(true);
   });
 

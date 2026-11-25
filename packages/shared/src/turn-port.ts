@@ -571,7 +571,7 @@ export type TurnStartRequest = z.infer<typeof TurnStartRequestSchema>;
  *
  * - `already_held`: the computer side already holds THIS `runId`: a repeated
  *   start (§6.2). No second turn starts and no transition is written: the
- *   run stays `starting`, and the `start_turn` handler keeps waiting for the
+ *   run keeps its status, and the `start_turn` handler keeps waiting for the
  *   `started` fact. It is not answered as `accepted`.
  * - `agent_paused`: the agent is paused and the turn is a person's own chat.
  *   The run goes `starting` → `cancelled` and the caller sees today's
@@ -585,6 +585,12 @@ export type TurnStartRequest = z.infer<typeof TurnStartRequestSchema>;
  * `desk_not_own`, `account_not_allowed`), each in the PR whose caller can hit
  * it, and each cancels the run. None is ever carried as `ended` with
  * `refused`, which stays the runtime's own refusal (DOR-2994).
+ *
+ * Where a refusal cancels from depends on who writes `queued` → `starting`.
+ * On a Mac the dispatcher hook writes it inside the chat's mutex when the
+ * launch begins, so a door refusal cancels the run from `queued` (row 5).
+ * For a remote computer the space side has already written `starting`, so it
+ * cancels from `starting` (row 9).
  */
 export const RefusalReasonSchema = z.enum(['already_held', 'agent_paused']);
 
@@ -607,7 +613,8 @@ export type TurnStartAnswer = z.infer<typeof TurnStartAnswerSchema>;
  * writes an ending it did not observe (ADR 260823-021312).
  *
  * - `completed`, `failed`: the runtime's turn ended on its own.
- * - `stopped`: a stop ended it, with that stop's receipt.
+ * - `stopped`: a stop ended it, proven by a receipt that observed the end or
+ *   by the runtime's own `turn_end` reporting an interrupt.
  * - `limited`: a usage limit ended it.
  * - `refused`: the runtime refused before the agent saw it.
  * - `shutdown`: DorkOS ended it while shutting down gracefully.
@@ -668,21 +675,25 @@ const BackgroundWorkEntrySchema = z.strictObject({
  *   `seq` of `turn_start`) and `turnBindingId` feed the record's columns.
  *   `openedBy: 'runtime'` is a turn the runtime opened on its own (§4.3
  *   row 2): no caller asked, so the computer side mints its `runId` (a ULID)
- *   and the fact carries `sessionId` and `agentId`. The space side inserts
+ *   and the fact carries `sessionId`, and `agentId` when the chat has a Mesh
+ *   agent (a chat may have none, so the record's `agent_id` is nullable,
+ *   §4.1). The space side inserts
  *   the run if it is absent; a repeat of the fact is the same row; an id that
  *   already exists for another chat is refused.
  * - `delivered`: the runtime's first event for the turn arrived.
  * - `waiting_on_person`, `resumed_from_person`: an ask opened, and closed.
  * - `background_work`: the work the run's process holds now, the whole list.
- * - `ended`: the turn ended. A `stopped` ending always carries the stop's
- *   receipt, and may name who stopped it (`stoppedBy`, a `dork:` reference).
- *   The receipt is one that observed the end (`acked`, `closed`,
- *   `not-running`), or `unconfirmed`: the computer face sends `stopped` with
- *   an `unconfirmed` receipt only when the runtime's `turn_end` arrived after
- *   that stop request, and the record keeps `unconfirmed`. The schema cannot
- *   see the `turn_end`, so that half is the computer face's rule. A `failed`
- *   receipt never makes a `stopped` ending. A `refused` ending may carry the
- *   runtime's words.
+ * - `ended`: the turn ended. DorkOS never writes an ending it did not observe
+ *   (ADR 260823-021312), so a `stopped` ending needs proof: a `receipt` for
+ *   which `turnEnded()` is true (`acked`, `closed`, `not-running`), or
+ *   `interrupted: true`, the runtime's own `turn_end` reporting an interrupt.
+ *   An `unconfirmed` receipt alone is not proof: after an unconfirmed stop, a
+ *   plain `turn_end` ends the run as the runtime reports it (`completed`,
+ *   `failed`, `limited`). A `failed` receipt never makes a `stopped` ending.
+ *   Any ending may carry `stopRequest`, a stop that was asked for and what
+ *   its receipt said, so the record keeps an unconfirmed request; a
+ *   `stopped` ending may also name who stopped it (`stoppedBy`). A `refused`
+ *   ending may carry the runtime's words.
  */
 export const RunFactSchema = z.discriminatedUnion('kind', [
   z
@@ -695,22 +706,17 @@ export const RunFactSchema = z.discriminatedUnion('kind', [
       message: 'A joined run is another run, never the one being started',
       path: ['joinedRunId'],
     }),
-  z
-    .strictObject({
-      kind: z.literal('started'),
-      runId: RunIdSchema,
-      sessionId: SessionIdSchema,
-      openedBy: z.enum(['caller', 'runtime']),
-      /** The agent, by its Mesh id. Required for a runtime-opened turn, which has no caller's run to name it. */
-      agentId: RelayAgentIdSchema.optional(),
-      runtime: z.string().min(1),
-      runtimeTurnRef: z.number().int().nonnegative(),
-      turnBindingId: z.string().min(1).optional(),
-    })
-    .refine((fact) => fact.openedBy === 'caller' || fact.agentId !== undefined, {
-      message: 'A runtime-opened turn names its agent',
-      path: ['agentId'],
-    }),
+  z.strictObject({
+    kind: z.literal('started'),
+    runId: RunIdSchema,
+    sessionId: SessionIdSchema,
+    openedBy: z.enum(['caller', 'runtime']),
+    /** The agent, by its Mesh id, when the chat has one. */
+    agentId: RelayAgentIdSchema.optional(),
+    runtime: z.string().min(1),
+    runtimeTurnRef: z.number().int().nonnegative(),
+    turnBindingId: z.string().min(1).optional(),
+  }),
   z.strictObject({ kind: z.literal('delivered'), runId: RunIdSchema }),
   z.strictObject({ kind: z.literal('waiting_on_person'), runId: RunIdSchema }),
   z.strictObject({ kind: z.literal('resumed_from_person'), runId: RunIdSchema }),
@@ -724,22 +730,50 @@ export const RunFactSchema = z.discriminatedUnion('kind', [
       kind: z.literal('ended'),
       runId: RunIdSchema,
       ending: RunEndingSchema,
-      /** The stop's receipt (ADR 260823-021312's vocabulary), strict as every port object is. */
+      /**
+       * The stop's receipt (ADR 260823-021312's vocabulary), strict as every
+       * port object is. Only on a `stopped` ending.
+       */
       receipt: z.strictObject(InterruptReceiptSchema.shape).optional(),
+      /** The runtime's own `turn_end` reported an interrupt. Only on a `stopped` ending. */
+      interrupted: z.literal(true).optional(),
       /** Who stopped it, as a `dork:` reference. Only on a `stopped` ending. */
       stoppedBy: DorkReferenceSchema.optional(),
+      /**
+       * A stop that was asked for during the turn, whatever the ending: who
+       * asked, and what its receipt said. How the record keeps an
+       * `unconfirmed` request on a turn that then ended on its own.
+       */
+      stopRequest: z
+        .strictObject({
+          by: DorkReferenceSchema.optional(),
+          outcome: InterruptReceiptSchema.shape.outcome,
+        })
+        .optional(),
       refusal: z.string().min(1).optional(),
     })
-    .refine((fact) => (fact.ending === 'stopped') === (fact.receipt !== undefined), {
-      message: 'A stopped ending carries its receipt, and only a stopped ending does',
+    .refine((fact) => fact.ending === 'stopped' || fact.receipt === undefined, {
+      message: 'Only a stopped ending carries a receipt; use stopRequest otherwise',
+      path: ['receipt'],
+    })
+    .refine((fact) => fact.ending === 'stopped' || fact.interrupted === undefined, {
+      message: 'Only a stopped ending reports an interrupt',
+      path: ['interrupted'],
+    })
+    .refine((fact) => fact.receipt?.outcome !== 'failed', {
+      message: 'A failed stop never ends a run as stopped',
       path: ['receipt'],
     })
     .refine(
       (fact) =>
-        fact.receipt === undefined ||
-        turnEnded(fact.receipt) ||
-        fact.receipt.outcome === 'unconfirmed',
-      { message: 'A failed stop never ends a run as stopped', path: ['receipt'] }
+        fact.ending !== 'stopped' ||
+        fact.interrupted === true ||
+        (fact.receipt !== undefined && turnEnded(fact.receipt)),
+      {
+        message:
+          "A stopped ending needs a receipt that observed the end, or the runtime's own interrupt",
+        path: ['ending'],
+      }
     )
     .refine((fact) => fact.stoppedBy === undefined || fact.ending === 'stopped', {
       message: 'Only a stopped ending names who stopped it',
@@ -758,7 +792,10 @@ export type RunFact = z.infer<typeof RunFactSchema>;
 
 /** One legal move of a run's status; `from: null` creates the run. */
 export interface RunTransition {
-  /** The row of the spec's table (§4.3), for tracing a write back to its rule. */
+  /**
+   * The row of the spec's table (§4.3), for tracing a write back to its rule.
+   * Rows 14 and 15 are the architect's additions to that table.
+   */
   readonly row: number;
   /** The status before, or `null` when the write creates the run. */
   readonly from: RunStatus | null;
@@ -767,7 +804,8 @@ export interface RunTransition {
 }
 
 /**
- * The thirteen legal transitions (spec §4.3); every other pair is illegal.
+ * The fifteen legal transitions (spec §4.3, plus rows 14 and 15); every other
+ * pair is illegal. `starting` → `superseded` is one of the illegal ones.
  * The run store checks each write against this table and throws on a pair it
  * does not hold.
  */
@@ -787,6 +825,11 @@ export const RUN_TRANSITIONS: readonly RunTransition[] = [
   { row: 11, from: 'started', to: 'ended' },
   { row: 12, from: 'running', to: 'ended' },
   { row: 13, from: 'ended', to: 'settled' },
+  // A pause that cuts the turn before the agent did anything puts its row back
+  // on the queue, held (DOR-4353, `holdStartedForPause` in
+  // `apps/server/src/services/session/message-dispatcher/pause-hold.ts`).
+  { row: 14, from: 'started', to: 'queued' },
+  { row: 15, from: 'running', to: 'queued' },
 ];
 
 /** The statuses no transition leaves (spec §4.3). */
