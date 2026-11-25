@@ -148,6 +148,18 @@ const STDIN_SHELLS = new Set([
   '.',
 ]);
 
+/** Shell options that take the next word as their value (not a script file). */
+const SHELL_FLAGS_WITH_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
+
+/** A redirection written apart from its target: `<`, `<<`, `<<-`, `>`, `2>>`, `>|`, `&>`. */
+const BARE_REDIRECTION = /^(\d*[<>]+[-|&]?|&>>?)$/;
+
+/** A redirection that writes, with its target attached: `>f`, `2>>f`, `>|f`, `&>f` (not `>&2`). */
+const ATTACHED_WRITE = /^(?:\d*>>?\|?|&>>?)([^&].*)$/;
+
+/** A "script file" that is really stdin: `bash /dev/stdin <<EOF` runs the body. */
+const STDIN_DEVICE = /^\/dev\/(stdin|fd\/\d+)$|^\/proc\/self\/fd\/\d+$/;
+
 /**
  * Skip flags (and the value a `-R` style flag takes) to reach the next word.
  *
@@ -282,13 +294,71 @@ function inspectSegment(segment, depth) {
 }
 
 /**
- * Whether a segment hands text to a shell (a shell word is one of its tokens).
+ * The files a line writes through a redirection (`> f`, `>>f`, `&> f`) or
+ * `tee`, so `bash f` on the same line counts as running text from the line.
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {Set<string>} Normalized paths the line writes.
+ */
+function writtenFiles(segments) {
+  const written = new Set();
+  for (const segment of segments) {
+    const tokens = tokenize(segment);
+    const tee = tokens.findIndex((token) => basename(token) === 'tee');
+    tokens.forEach((token, index) => {
+      let target = /^(\d*>>?\|?|&>>?)$/.test(token)
+        ? tokens[index + 1]
+        : (ATTACHED_WRITE.exec(token)?.[1] ?? null);
+      if (tee !== -1 && index > tee && !token.startsWith('-')) target = token;
+      if (target) written.add(path.normalize(target));
+    });
+  }
+  return written;
+}
+
+/**
+ * Whether a segment hands TEXT to a shell: `eval`, `ssh`, a shell with
+ * `-c`/`-s` (also `-lc`), or a shell with no script file, which reads stdin
+ * (piped into, `bash <<EOF`). `bash <script file>` runs a file, so a quoted
+ * heredoc beside it stays data, unless the file is stdin (`/dev/stdin`), a
+ * process substitution, or written by this same line. Same reading as
+ * merge-guard.mjs `feedsAShell`, which explains each step.
  *
  * @param {string} segment - One command segment.
+ * @param {Set<string>} [written] - Files the line writes (`writtenFiles`).
  * @returns {boolean} True when the segment runs text through a shell.
  */
-function feedsAShell(segment) {
-  return tokenize(segment).some((token) => STDIN_SHELLS.has(basename(token)));
+function feedsAShell(segment, written = new Set()) {
+  const tokens = tokenize(segment);
+  return tokens.some((token, index) => {
+    const name = basename(token);
+    if (!STDIN_SHELLS.has(name)) return false;
+    if (name === 'eval' || name === 'ssh') return true;
+    const rest = tokens.slice(index + 1);
+    if (rest.some((arg) => /^-[a-zA-Z]*[cs][a-zA-Z]*$/.test(arg))) return true;
+    for (let k = 0; k < rest.length; k++) {
+      const arg = rest[k];
+      if (arg.startsWith('<(')) return true;
+      if (SHELL_FLAGS_WITH_VALUE.has(arg) || BARE_REDIRECTION.test(arg)) {
+        k++;
+        continue;
+      }
+      if (/^[-+]/.test(arg) || /^(\d*[<>]|&>)/.test(arg)) continue;
+      return STDIN_DEVICE.test(arg) || written.has(path.normalize(arg));
+    }
+    return true;
+  });
+}
+
+/**
+ * Whether any segment of a line hands text to a shell (`feedsAShell`).
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {boolean} True when the line runs text through a shell.
+ */
+function lineFeedsAShell(segments) {
+  const written = writtenFiles(segments);
+  return segments.some((segment) => feedsAShell(segment, written));
 }
 
 /** Shell operators that end one command, longest first. */
@@ -337,7 +407,7 @@ function commandSegments(command, strict) {
     }
   }
   keep(start, masked.length);
-  return segments.some(feedsAShell) ? splitSegments(command) : segments;
+  return lineFeedsAShell(segments) ? splitSegments(command) : segments;
 }
 
 /**
@@ -357,7 +427,7 @@ function inspectCommand(command, depth = 0, strict = false) {
     if (refusal) return refusal;
   }
 
-  if (depth < 2 && segments.some(feedsAShell)) {
+  if (depth < 2 && lineFeedsAShell(segments)) {
     for (const segment of segments) {
       for (const token of tokenize(segment)) {
         if (!/\s/.test(token)) continue;
