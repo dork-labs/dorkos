@@ -177,11 +177,15 @@ name: scripts-test
 ###     outside the list broke a suite that did not run" class this header is a
 ###     catalogue of. Unscoped, it also sees the queue's combined tree, where an
 ###     INDEX.md edit in one PR and a stale map in another only meet.
-###   * `harness` keeps the scope, decided by the first step of `fixtures` from
-###     ONE list, scripts/scripts-test-scope.sh (pinned by test-scripts-test-scope.sh).
-###     Every entry discussed above lives there. `harness` is not required, so
-###     a job-level skip is safe for it and for nothing else in this file.
-###     It does not run in the merge queue (see its job comment).
+###   * `harness` keeps the scope, decided from ONE list,
+###     scripts/scripts-test-scope.sh (pinned by test-scripts-test-scope.sh):
+###     by the first step of `fixtures` on a pull request or push, and by the
+###     `attest` job, from main's copy, in the merge queue. Every entry
+###     discussed above lives there. `harness` is being made REQUIRED (ledger
+###     261125-110419-harness-required): it reports on every event, because a
+###     job-level skip reports `skipped`, which a required check counts as a
+###     pass. So the scope skip is safe only because the scope list is the one
+###     reviewed copy, and every way the scope cannot be decided runs the job.
 ###
 ### `push` to main STAYS, unfiltered, for one reader: the `main-green` SLO
 ### (ci/slos.yaml) is computed from push-to-main runs, and this workflow is one
@@ -224,6 +228,10 @@ jobs:
   # the real check. The push-to-main run plus after-merge-alert.yml are the
   # backstop for a two-PR clash. On every other event this job is skipped and
   # the heavy job runs as before.
+  #
+  # It also decides `harness` for the queue (output `harness`), on the same
+  # runner so the queue pays for no extra one: `fixtures` is often skipped
+  # there, so its scope answer cannot be the queue's.
   attest:
     if: ${{ github.event_name == 'merge_group' }}
     runs-on: ubuntu-latest
@@ -234,6 +242,7 @@ jobs:
       pull-requests: read
     outputs:
       attested: ${{ steps.attest.outputs.attested }}
+      harness: ${{ steps.harness.outputs.harness }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -243,6 +252,7 @@ jobs:
           sparse-checkout: |
             scripts/attest-pr-check.sh
             scripts/queue-repeat-guard.sh
+            scripts/scripts-test-scope.sh
           sparse-checkout-cone-mode: false
       - name: Did fixtures already pass on this PR's head?
         id: attest
@@ -261,6 +271,49 @@ jobs:
             exit 0
           fi
           bash scripts/attest-pr-check.sh fixtures "$HEAD_REF" >> "$GITHUB_OUTPUT"
+
+      # `harness=false` only when main's scope list says this entry cannot
+      # reach `harness`, or `harness` already succeeded on the entry PR's
+      # current head. The entry's change is its commit against the group's base
+      # (main plus every entry ahead of it), fetched by SHA. The list is MAIN's
+      # copy, so a PR cannot narrow the scope that grades it in the queue.
+      # Every doubt (no script on main yet, a fetch or diff that fails) answers
+      # true and runs `harness`. A PR that `harness` skipped by scope is not
+      # attested (a skipped run proves nothing), so the scope comes first.
+      - name: Does harness need to run for this queue entry?
+        id: harness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -uo pipefail
+          answer() {
+            echo "$2"
+            echo "harness=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          [ -f scripts/scripts-test-scope.sh ] ||
+            answer true 'scripts/scripts-test-scope.sh is not on main; harness runs'
+          git fetch --no-tags --quiet --depth=2 origin "$HEAD_SHA" ||
+            answer true "could not fetch the queue commit ${HEAD_SHA}; harness runs"
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet --depth=1 origin "$BASE_SHA" ||
+              answer true "could not fetch the group's base ${BASE_SHA}; harness runs"
+          fi
+          changed=$(git -c core.quotePath=false diff --no-renames --name-only "$BASE_SHA" "$HEAD_SHA") ||
+            answer true 'git could not diff this entry; harness runs'
+          verdict=$(printf '%s\n' "$changed" | bash scripts/scripts-test-scope.sh) ||
+            answer true 'the scope list failed; harness runs'
+          [ "$verdict" = false ] &&
+            answer false 'Nothing in this entry can reach harness, so it does not run in the queue.'
+          [ -f scripts/attest-pr-check.sh ] ||
+            answer true 'scripts/attest-pr-check.sh is not on main; harness runs'
+          [ "$(bash scripts/attest-pr-check.sh harness "$HEAD_REF")" = attested=true ] &&
+            answer false "harness already succeeded on this PR's head; the queue skips it (DOR-5130)."
+          answer true 'This entry can reach harness and no pass on the PR head proves it; harness runs.'
 
   fixtures:
     # Skipped only when attest proved this check passed on the PR's head (a
@@ -306,9 +359,10 @@ jobs:
       # pull_request diffs the test-merge commit against its first parent, so
       # it sees exactly the PR's change on top of the current base. push diffs
       # the push's own range, fetched by SHA, because one queue merge can push
-      # several commits at once. merge_group answers false: `harness` does not
-      # run in the queue. A base git cannot fetch (a new branch's zero SHA)
-      # runs `harness` rather than guessing.
+      # several commits at once. merge_group answers false here: in the queue
+      # the `attest` job decides `harness`, because this job is often skipped
+      # there. A base git cannot fetch (a new branch's zero SHA) runs `harness`
+      # rather than guessing.
       #
       # `--no-renames` is load-bearing: with rename detection on, moving a file
       # OUT of scope reports only the destination path, so a change that
@@ -429,19 +483,19 @@ jobs:
   # proofs, its canary accounting, and the destructive-path guard in provision.ts —
   # would have no automated gate at all.
   #
-  # Started only when `fixtures`' scope step says the change can reach it, and
-  # `!cancelled()` rather than the default `success()`, so a red fixture does
-  # not also hide this job's answer: the output is written by the job's FIRST
-  # step, before any suite can fail.
+  # Skipped only when the scope says the change cannot reach it: `fixtures`'
+  # scope step on a pull request or push, the `attest` job in the merge queue
+  # (which also says false when harness already succeeded on the entry PR's
+  # head, DOR-5130's attested exit). `!= 'false'`, so a missing answer runs
+  # it, and `!cancelled()` rather than the default `success()`, so a red
+  # fixture does not also hide this job's answer.
   #
-  # NOT REQUIRED, and it does not run in the merge queue (the scope step says
-  # false there). Decided in ledger 260923-094812: over
-  # 2026-09-09..09-23 it went red on 3 of ~240 completed pull request runs (a
-  # typecheck, two unit-test failures) and on 0 of 114 push-to-main runs, so no
-  # harness break on record reached main, while running it in every queue build
-  # would cost a pnpm install, a turbo build and ~4 minutes of runner per build.
-  # The push leg still watches main for it. If a harness red does reach main,
-  # requiring it is the next experiment, not a line added here.
+  # BEING MADE REQUIRED (ledger 261125-110419-harness-required). Ledger
+  # 260923-094812 left it advisory and out of the queue (3 reds in ~240 PR
+  # runs, none on main), so a PR red here could merge anyway and break main
+  # (#4396 nearly did). A skipped job reports success, so the scope skip above is the one
+  # way it passes without running; the first step fails it closed when attest
+  # failed.
   #
   # One part of it did (ledger 261112-185148): the suites that read the whole
   # repo went red on main three times in one week, each time after a PR this
@@ -450,14 +504,37 @@ jobs:
   # job on every PR and queue build. The unit-test step below still runs the
   # whole project, them included.
   harness:
-    needs: fixtures
-    if: ${{ !cancelled() && needs.fixtures.outputs.harness == 'true' }}
+    needs: [attest, fixtures]
+    if: >-
+      ${{ !cancelled() && (
+      github.event_name == 'merge_group' && needs.attest.outputs.harness != 'false' ||
+      github.event_name != 'merge_group' && needs.fixtures.outputs.harness != 'false') }}
     runs-on: ubuntu-latest
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 291 completed
     # runs over 2026-09-07..09-19, p95 4.13 min, max 4.58. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 13
     steps:
+      # The census's fan-in rule (DOR-5130), as in `fixtures`: in the queue
+      # this job runs when attest did not answer false, and an attest that
+      # failed fails this check closed rather than letting a skip report
+      # success. `fixtures` is read only for its scope answer: a red fixtures
+      # is its own required check and does not stop this one, but outside the
+      # queue it never skips, so a skipped one means the answer is missing.
+      - name: Require the attest job to have succeeded or been skipped
+        env:
+          ATTEST: ${{ needs.attest.result }}
+          FIXTURES: ${{ needs.fixtures.result }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$ATTEST" != success ] && [ "$ATTEST" != skipped ]; then
+            echo "::error::the attest job ended '$ATTEST', so this check cannot tell whether it was skipped on purpose. Re-run the workflow."
+            exit 1
+          fi
+          if [ "$EVENT" != merge_group ] && [ "$FIXTURES" = skipped ]; then
+            echo "::error::fixtures was skipped on a $EVENT run, where it always runs, so this check has no scope answer. Re-run the workflow."
+            exit 1
+          fi
       - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
@@ -511,7 +588,7 @@ jobs:
       # `lint` gained an explicit `pnpm lint:root` step: `eslint .` from the
       # repo root covers `scripts/` AND the `.claude/` and `.agents/`
       # automation that nothing linted at all. That step is in a REQUIRED
-      # merge-queue check, where this job is advisory and scoped, so the
+      # merge-queue check, where this job was advisory and is scoped, so the
       # coverage moved strictly upward. Leaving the old step would have linted
       # `scripts/` twice on every PR and left two places to keep in step.
       #
@@ -529,7 +606,7 @@ jobs:
       # real gate against this checkout, and for a long time that canary was
       # the only place the gate ran at all — which was the hole DOR-1814
       # found: this job is scoped to `scripts/**` and friends and
-      # does not run in the merge queue, so a PR touching nothing but
+      # did not run in the merge queue, so a PR touching nothing but
       # apps/client/src copy never reached the canary. The gate itself now
       # runs as its own step in typecheck.yml, which is unfiltered, required,
       # and reports on merge_group. Keep both: that step enforces the result,

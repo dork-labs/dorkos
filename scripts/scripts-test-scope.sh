@@ -9,8 +9,11 @@
 # `fixtures` now runs on every event, unscoped (it is about a minute of bash and
 # Node with no install), and this list is the ONE copy of the scope that is left.
 # It decides only whether `harness` (pnpm install, a turbo build, a typecheck
-# and a vitest run: about four minutes) is worth starting. `harness` is not a
-# required check, so skipping it satisfies nothing and blocks nothing.
+# and a vitest run: about four minutes) is worth starting. `harness` is being
+# made a required check (ledger 261125-110419-harness-required), and a skipped
+# required job reports success, so `false` here passes it without running: a
+# path missing from this list is a path whose break can merge. In the merge
+# queue, main's copy of this list decides (scripts-test.yml's `attest` job).
 #
 # The entries are the old filter, one for one, translated from GitHub's glob
 # syntax to extended regular expressions:
