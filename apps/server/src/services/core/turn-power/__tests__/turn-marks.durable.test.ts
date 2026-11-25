@@ -24,6 +24,11 @@ import { registerTaskTools } from '../../external-mcp/task-tools.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { ToolRegistrar } from '../../mcp-tool-gate.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const PRIYA = { roomId: 'space-room', authorId: 'priya' };
 

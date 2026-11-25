@@ -15,6 +15,11 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../task-store.js';
 import { createScheduledTask } from '../create-task.js';
 import { agentIdOfHome } from '../../approvals/schedule-owner.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const state = vi.hoisted(() => ({
   preset: 'trusted' as 'trusted' | 'careful',

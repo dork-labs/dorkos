@@ -109,6 +109,11 @@ import {
   setDeclaredReaders,
 } from '../../services/core/turn-power/declared-readers.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 taskRuntimeCapabilitiesFixture();
 

@@ -39,7 +39,7 @@ import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { renderContextEntry } from '../../claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../codex/turn-input.js';
 import { buildOpenCodeParts } from '../../opencode/messaging/turn-input.js';
-import { parseTranscript } from '../../claude-code/sessions/transcript-parser.js';
+import { parseTranscript } from '../../claude-code/sessions/__tests__/parse-transcript.js';
 import { formatSeedContext } from '../seed-context-block.js';
 
 /** A seed with a paragraph break — the shape JSON rendering visibly ruins. */

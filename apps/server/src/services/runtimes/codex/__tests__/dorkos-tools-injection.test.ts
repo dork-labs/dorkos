@@ -61,6 +61,11 @@ import {
 import { bodyHash } from '../../../tasks/agent-mode/file-cap/file-hash.js';
 import { initBoundary } from '../../../../lib/boundary.js';
 import type { MeshCore } from '@dorkos/mesh';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).

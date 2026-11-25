@@ -14,6 +14,11 @@ import {
 } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 describe('a tightened trial of a sticky schedule', () => {
   let store: TaskStore;

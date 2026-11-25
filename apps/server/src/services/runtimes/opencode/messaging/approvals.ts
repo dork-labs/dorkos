@@ -55,7 +55,7 @@ import {
 import { resolveGrantVerdict } from './directory-grants.js';
 import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
-import { protectedPathRoots } from '../../../core/protected-paths/protected-path-roots.js';
+import { turnProtectedRoots } from '../../shared/policy/turn-protected-roots.js';
 import type { ProtectedPathRoots } from '../../../core/protected-paths/protected-path-check.js';
 import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
 import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
@@ -542,7 +542,7 @@ async function* decideApproval(
     // inside a `read` grant has to beat `bypassPermissions`, which would
     // otherwise approve the write below. A refusal that cannot be delivered
     // falls to the person's card, never to the mode's auto-approve.
-    const roots = turn.protectedRoots ?? protectedPathRoots(cwd);
+    const roots = turn.protectedRoots ?? turnProtectedRoots(cwd);
     const fileVerdict = protectedFileVerdict(approval, roots);
     if (fileVerdict !== undefined) {
       if (fileVerdict === 'deny')

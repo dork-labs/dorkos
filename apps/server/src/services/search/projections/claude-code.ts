@@ -176,7 +176,7 @@ export function projectClaudeCodeLines(
       ordinal: ordinal++,
       // The record's OWN uuid, or nothing — and for an assistant record, patched
       // below to the uuid of the record that CLOSES its run. See
-      // `closeAssistantRun`. Never a uuid this function made up: `parseTranscript`
+      // `closeAssistantRun`. Never a uuid this function made up: `createTranscriptParser`
       // falls back to `crypto.randomUUID()` for a record without one, and that
       // branch mints a fresh id per parse, so an indexed copy of one would name a
       // message no later read agrees exists (DOR-1579).
@@ -201,7 +201,7 @@ export function projectClaudeCodeLines(
  * that closed it, and forget the run.
  *
  * **This exists because the session view MERGES an assistant turn and this
- * projection does not.** `parseTranscript` emits one message per assistant
+ * projection does not.** `createTranscriptParser` emits one message per assistant
  * record and then folds consecutive ones into a single turn keeping the LAST
  * id (`mergeConsecutiveAssistantMessages`), while this function indexes each
  * record that carries text as its own searchable message — which is right for
@@ -257,7 +257,7 @@ function closeAssistantRun(
  * it pairs with the `isMeta` "Continue from where you left off." prompt DorkOS
  * writes on every `query({resume})` turn.
  *
- * `parseTranscript` skips it outright, so the session view never draws it, and
+ * `createTranscriptParser` skips it outright, so the session view never draws it, and
  * it is skipped here for the same reason and in both senses: nobody said it, so
  * it is not indexed; and it cannot close an assistant run, so its uuid never
  * becomes the id another message lands on.
@@ -284,7 +284,7 @@ function isResumeBootstrapReply(line: TranscriptLine): boolean {
 }
 
 /**
- * The string-content `user` records `parseTranscript` walks straight past — one
+ * The string-content `user` records `createTranscriptParser` walks straight past — one
  * unconditional `continue` there for each, and the reason each is machine
  * plumbing is in that file.
  *
@@ -303,7 +303,7 @@ const SKIPPED_USER_PREFIXES = [
  * Whether this non-assistant record ends the assistant turn the session view
  * would draw.
  *
- * **Read against `parseTranscript`'s own loop, branch by branch.** A turn ends
+ * **Read against `createTranscriptParser`'s own loop, branch by branch.** A turn ends
  * there when a NON-assistant message is emitted between two assistant ones; a
  * record that emits nothing leaves the assistant records either side of it
  * consecutive, and they are folded into one message.
@@ -332,7 +332,7 @@ const SKIPPED_USER_PREFIXES = [
 function endsAssistantTurn(line: TranscriptLine): boolean {
   if (line.type === 'system') return line.subtype === 'local_command';
   if (line.type !== 'user') return false;
-  // BEFORE the content shape, because `parseTranscript` checks it before it
+  // BEFORE the content shape, because `createTranscriptParser` checks it before it
   // looks at the content at all — and its `isMeta` branch can flush a pending
   // slash command, which emits a bubble and splits the turn. Reading the shape
   // first left an `isMeta` record carrying a `tool_result` continuing the run

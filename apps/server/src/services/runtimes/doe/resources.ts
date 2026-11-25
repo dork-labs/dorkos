@@ -5,7 +5,7 @@ import {
   type ProtectedPathRoots,
 } from '../../core/protected-paths/protected-path-check.js';
 import { logger } from '../../../lib/logger.js';
-import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
+import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { readdir, stat } from 'node:fs/promises';
 import {
   LocalResources,
@@ -44,7 +44,7 @@ export async function assembleDoeResources(
   options: DoeResourceOptions
 ): Promise<{ resources: Resources; pathPolicy: PathPolicy }> {
   const cwd = await canonicalPath(options.cwd, options.cwd);
-  const protectedRoots = options.protectedRoots ?? protectedPathRoots(cwd, options.agentPath);
+  const protectedRoots = options.protectedRoots ?? turnProtectedRoots(cwd, options.agentPath);
   const assertReadable = (file: string): void => {
     if (!isProtectedPath(file, 'read', protectedRoots)) return;
     logger.warn('[ProtectedFiles] Refused a Doe resource read');

@@ -45,7 +45,7 @@ import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
 import type { CodexTurnTools } from './transport/codex-transport.js';
 import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
-import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
+import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
 import { RESERVED_MCP_SERVER_NAMES } from '@dorkos/shared/global-mcp-schemas';
 import { logger } from '../../../lib/logger.js';
@@ -428,7 +428,7 @@ export async function resolveCodexLaunchTools(
     connectorTools,
     managed: managedMcpServers,
     filePolicy: {
-      roots: protectedPathRoots(cwd, home, mesh),
+      roots: turnProtectedRoots(cwd, home, mesh),
       writable,
     },
   };

@@ -4,8 +4,9 @@
  * reverse edge made the two one tangle. A piece both need lives on the session side, or
  * outside both (`services/core`); a fact only an adapter knows reaches session through a
  * registered port (`session/resolution/claude-code-facts.ts`) or the runtime object itself.
- * Every import form counts, type-only ones included. Tests are not checked: they wire real
- * runtimes on purpose.
+ * Every import form counts, type-only ones included: the forms `importsOf` sees, plus a type
+ * written as `import('…')` and `import x = require('…')`. Tests are not checked: they wire
+ * real runtimes on purpose.
  */
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,9 @@ const SERVER = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RUNTIMES = resolve(SERVER, 'src/services/runtimes');
 
 const inside = (path) => path === RUNTIMES || path.startsWith(RUNTIMES + sep);
+
+/** The string literal a type-position `import('…')` names (`source` in typescript-eslint 8). */
+const importTypeSource = (node) => node.source ?? node.argument?.literal;
 
 export default {
   rules: {
@@ -30,8 +34,8 @@ export default {
       },
       create(context) {
         const from = dirname(context.filename);
-        return importsOf((node, specifier) => {
-          if (!specifier.startsWith('.')) return;
+        const check = (node, specifier) => {
+          if (typeof specifier !== 'string' || !specifier.startsWith('.')) return;
           const target = resolve(from, specifier);
           if (inside(target))
             context.report({
@@ -39,7 +43,15 @@ export default {
               messageId: 'reach',
               data: { specifier, path: relative(SERVER, target) },
             });
-        });
+        };
+        const literal = (node) => {
+          if (node?.type === 'Literal') check(node, node.value);
+        };
+        return {
+          ...importsOf(check),
+          TSImportType: (node) => literal(importTypeSource(node)),
+          TSExternalModuleReference: (node) => literal(node.expression),
+        };
       },
     },
   },

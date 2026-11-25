@@ -50,7 +50,7 @@ import { env } from '../../../env.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
 import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
-import type { ContextPart } from '../../session/turn-context/context-fit.js';
+import type { ContextPart } from '../../session/context-window/context-fit.js';
 import { diskContextSource, type AgentContextSource } from './source/agent-context-source.js';
 
 /**

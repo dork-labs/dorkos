@@ -64,7 +64,7 @@ import {
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { createToolState } from '../agent-types.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
-import { parseTranscript } from '../sessions/transcript-parser.js';
+import { parseTranscript } from '../sessions/__tests__/parse-transcript.js';
 import { SessionCrashRecovery } from '../sessions/session-crash-recovery.js';
 import {
   failedSessionAuthority,
@@ -76,6 +76,11 @@ import {
   validatedRecoveryRoute,
 } from '../messaging/launch/required-launch.js';
 import type { AgentSession } from '../agent-types.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const PRIOR_TEXT = 'Prior task: do not replay this instruction.';
 const NEW_DRAFT = 'The release is ready.';

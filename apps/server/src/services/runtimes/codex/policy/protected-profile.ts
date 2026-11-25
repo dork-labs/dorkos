@@ -11,7 +11,7 @@ import {
   isProtectedPath,
   type ProtectedPathRoots,
 } from '../../../core/protected-paths/protected-path-check.js';
-import { protectedPathRoots } from '../../../core/protected-paths/protected-path-roots.js';
+import { turnProtectedRoots } from '../../shared/policy/turn-protected-roots.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
@@ -186,7 +186,7 @@ function protectedEntries(
  */
 export function codexProtectedConfig(
   cwd: string,
-  policy: CodexFilePolicy = { roots: protectedPathRoots(cwd), writable: [] },
+  policy: CodexFilePolicy = { roots: turnProtectedRoots(cwd), writable: [] },
   settings: Pick<SessionSettings, 'permissionMode'> = {},
   onMissingTargets?: (targets: string[]) => void
 ): NonNullable<CodexOptions['config']> {

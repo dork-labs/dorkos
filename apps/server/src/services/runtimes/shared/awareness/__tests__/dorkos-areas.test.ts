@@ -11,7 +11,7 @@ import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import { MCP_TOOL_TIERS, type McpToolTier } from '../../../../core/mcp-tool-tiers.js';
 import { DORKOS_AREAS, areaLineCovers, buildDorkosAreasBlock } from '../dorkos-areas.js';
-import { estimateTokens } from '../../../../session/turn-context/context-fit.js';
+import { estimateTokens } from '../../../../session/context-window/context-fit.js';
 
 /** Every agent-reachable id, with the permission area it belongs to. */
 function everyId(): { id: string; area: string | null }[] {

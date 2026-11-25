@@ -37,6 +37,11 @@ import {
   AGENT_CONTENT_CHANGE_REASON,
   AGENT_SETTINGS_CHANGE_REASON,
 } from '../../../../tasks/timing/effective-timing.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {

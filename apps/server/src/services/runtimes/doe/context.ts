@@ -18,7 +18,7 @@ import {
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
 import { connectionToolName } from './mcp.js';
-import { joinFitted, type ContextPart } from '../../session/turn-context/context-fit.js';
+import { joinFitted, type ContextPart } from '../../session/context-window/context-fit.js';
 /** Render all additional context kinds without inserting opaque roomTurn routing metadata. */
 export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
   switch (entry.kind) {

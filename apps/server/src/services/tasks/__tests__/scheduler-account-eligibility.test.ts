@@ -42,6 +42,11 @@ import {
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const SENTENCE =
   "Client Work can't be used in project. It's set to work only in client-app. Pick another account, or change this in Settings → Runtimes.";

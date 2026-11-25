@@ -125,7 +125,7 @@ import {
 import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
-import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
+import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { OpenCodeMcpManager, type EnsureManagedResult } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
@@ -777,7 +777,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         ocSessionId,
         cwd,
         permissions: ctx,
-        protectedRoots: protectedPathRoots(cwd, agentPath, this.meshCore),
+        protectedRoots: turnProtectedRoots(cwd, agentPath, this.meshCore),
         // A Stop ends a heavy shell job's wait for the machine's line (DOR-4209).
         signal: controller.signal,
       };

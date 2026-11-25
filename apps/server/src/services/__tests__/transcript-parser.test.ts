@@ -2,11 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   stripRelayContext,
   stripSystemTags,
-  parseTranscript,
   buildCommandMessage,
   extractLocalCommandOutput,
-  extractCommandMeta,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
+import { parseTranscript } from '../runtimes/claude-code/sessions/__tests__/parse-transcript.js';
 import { applyToolResult } from '../runtimes/claude-code/sessions/tool-result-outcome.js';
 // These cases are about SHAPE — a typed error part instead of assistant text —
 // so they ask for the auth copy rather than restating it, and a reword by the
@@ -16,6 +15,17 @@ import { describeAssistantError } from '../runtimes/claude-code/sdk/sdk-error-ma
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { wrapKickoff } from '@dorkos/shared/kickoff';
+
+/**
+ * The command a `local_command` record names, read through the parser the way a
+ * transcript is read: `{ commandName, commandArgs }`, or `null` when it names none.
+ */
+function commandOf(raw: string): { commandName: string; commandArgs: string } | null {
+  const record = { type: 'system', subtype: 'local_command', content: raw, uuid: 'c1' };
+  const [message] = parseTranscript([JSON.stringify(record)]);
+  if (message?.messageType !== 'command' || !message.commandName) return null;
+  return { commandName: message.commandName, commandArgs: message.commandArgs ?? '' };
+}
 
 describe('stripRelayContext', () => {
   it('returns original text when no relay_context prefix', () => {
@@ -1202,7 +1212,7 @@ describe('transcript parsing stays linear on hostile text (js/polynomial-redos)'
 
   it('reads command args out of a wall of unclosed opens quickly', () => {
     const hostile = `<command-name>/go</command-name>${'<command-args>'.repeat(50_000)}`;
-    const { result, elapsed } = timed(() => extractCommandMeta(hostile));
+    const { result, elapsed } = timed(() => commandOf(hostile));
     expect(result).toEqual({ commandName: '/go', commandArgs: '' });
     expect(elapsed).toBeLessThan(budgetMs);
   });
@@ -1215,22 +1225,22 @@ describe('transcript parsing stays linear on hostile text (js/polynomial-redos)'
   });
 });
 
-describe('extractCommandMeta — behaviour preserved by the linear rewrite', () => {
+describe('command records — behaviour preserved by the linear rewrite', () => {
   it('reads name and args out of a normal command record', () => {
     expect(
-      extractCommandMeta('<command-name>/flow</command-name><command-args> verify </command-args>')
+      commandOf('<command-name>/flow</command-name><command-args> verify </command-args>')
     ).toEqual({ commandName: '/flow', commandArgs: 'verify' });
   });
 
   it('returns empty args when the args block is absent', () => {
-    expect(extractCommandMeta('<command-name>/flow</command-name>')).toEqual({
+    expect(commandOf('<command-name>/flow</command-name>')).toEqual({
       commandName: '/flow',
       commandArgs: '',
     });
   });
 
   it('returns empty args when the args block is opened but never closed', () => {
-    expect(extractCommandMeta('<command-name>/flow</command-name><command-args>oops')).toEqual({
+    expect(commandOf('<command-name>/flow</command-name><command-args>oops')).toEqual({
       commandName: '/flow',
       commandArgs: '',
     });
@@ -1238,14 +1248,14 @@ describe('extractCommandMeta — behaviour preserved by the linear rewrite', () 
 
   it('takes the FIRST args block when several are present', () => {
     expect(
-      extractCommandMeta(
+      commandOf(
         '<command-name>/flow</command-name><command-args>one</command-args><command-args>two</command-args>'
       )
     ).toEqual({ commandName: '/flow', commandArgs: 'one' });
   });
 
   it('returns null when there is no command name', () => {
-    expect(extractCommandMeta('<command-args>orphan</command-args>')).toBeNull();
+    expect(commandOf('<command-args>orphan</command-args>')).toBeNull();
   });
 });
 

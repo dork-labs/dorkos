@@ -1,16 +1,14 @@
 import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * Runtime-neutral contract for the DorkOS `control_ui` tool — its description
- * and input schema, the single source of truth both runtimes register against.
+ * and input schema, the single source of truth every runtime is served.
  *
- * The Claude Code adapter registers this contract as an in-process MCP tool
- * ({@link ../claude-code/mcp-tools/ui-tools}, session-bound so it emits real
- * `ui_command` events); the Codex adapter registers the SAME contract on its
- * scoped external `dorkos_ui` server ({@link ../codex/codex-ui-mcp-server}, a
- * session-less stub whose effect is produced downstream in the event-mapper).
- * Keeping the description and schema here — depending only on `zod` and the
- * shared schemas, never on a runtime SDK — guarantees byte-for-byte parity and
- * keeps the Codex module graph clear of the Claude SDK (ESLint confines
+ * The `ui.control` capability declares it once (`./ui-capabilities.ts`), and the
+ * capability registry serves it to all three runtimes: Claude Code in process,
+ * Codex and OpenCode through the loopback `dorkos` server. Keeping the
+ * description and schema here — depending only on `zod` and the shared schemas,
+ * never on a runtime SDK — guarantees byte-for-byte parity and keeps every module
+ * graph that reads it clear of the Claude SDK (ESLint confines
  * `@anthropic-ai/claude-agent-sdk` to `claude-code/`).
  *
  * ## Why the teaching is generated
@@ -370,13 +368,11 @@ export const CANVAS_LOCAL_SRC_RULE =
   "Canvas limit: the canvas shows a local src only from your own folder, or on a room's canvas your own copy of the room's files. Anything else returns an error naming the path. You can still read that file yourself and show what's in it, or copy it into your folder and open the copy.";
 
 /**
- * Tool description for control_ui (shared between the Claude in-process tool and
- * the Codex scoped stub).
+ * Tool description for control_ui, served verbatim to every runtime.
  *
- * The single source of truth for the tool contract: both the Claude Code adapter
- * ({@link ../claude-code/mcp-tools/ui-tools}) and the Codex runtime's scoped
- * `dorkos_ui` MCP server ({@link ../codex/codex-ui-mcp-server}) register it
- * verbatim so agents on either runtime call the exact same tool. Composed from
+ * The single source of truth for the tool contract: the `ui.control` capability
+ * (`./ui-capabilities.ts`) declares it, so agents on every runtime call the exact
+ * same tool. Composed from
  * {@link buildUiActionCatalog} and {@link buildCanvasContentCatalog} so it names
  * every action and every content type the schema accepts — see the module note.
  */

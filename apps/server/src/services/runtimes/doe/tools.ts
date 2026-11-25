@@ -17,7 +17,7 @@ import type {
 import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-identity/index.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
-import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
+import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { assembleDoeMcp } from './mcp.js';
 import { assembleDoeResources } from './resources.js';
 import { buildDoeContextParts } from './context.js';
@@ -26,7 +26,7 @@ import {
   dorkosContextBudget,
   fitItemOf,
   joinFitted,
-} from '../../session/turn-context/context-fit.js';
+} from '../../session/context-window/context-fit.js';
 import { fitHostTools, hostToolChars, type DoeWindow } from './window-fit.js';
 import { loadsAgentToAgentTools } from '../shared/tools/tool-exposure-policy.js';
 import { doeBuilderTool, type DoeBuilderLifecycle } from './builder.js';
@@ -46,7 +46,7 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
   webFetchPolicy?: WebFetchOptions;
   /**
    * The model's window. When set, DorkOS's own share is trimmed to fit it
-   * (`session/turn-context/context-fit.ts`); when absent, nothing is left out.
+   * (`session/context-window/context-fit.ts`); when absent, nothing is left out.
    */
   window?: DoeWindow;
   /** The effective, already-clamped mode for the folder pin. */
@@ -60,7 +60,7 @@ export async function assembleDoeHost(options: DoeHostOptions) {
   const agentPath = options.agentPath ?? homeOf(resolution);
   const agentToAgent = loadsAgentToAgentTools(!!(agentPath && options.mesh?.getByPath(agentPath)));
   const held = await managedConfigHeld(agentPath, options.cwd, options.full === true, options.mesh);
-  const protectedRoots = protectedPathRoots(options.cwd, agentPath, options.mesh);
+  const protectedRoots = turnProtectedRoots(options.cwd, agentPath, options.mesh);
   const mcp = await assembleDoeMcp({
     agentPath,
     connectorInjection: options.connectorInjection,

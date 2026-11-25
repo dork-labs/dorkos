@@ -87,6 +87,11 @@ import {
 } from '../../services/session/message-queue-store.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { recordDispatchStart } from '../../services/observability/dispatch-buffers.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
 // Routed as the running server routes: the diff routes answer from Hono.

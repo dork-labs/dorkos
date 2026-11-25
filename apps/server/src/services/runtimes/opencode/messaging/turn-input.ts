@@ -44,7 +44,7 @@ import {
   fitItemOf,
   joinFitted,
   type ContextPart,
-} from '../../../session/turn-context/context-fit.js';
+} from '../../../session/context-window/context-fit.js';
 import { openCodeProjectInstructions } from './project-instructions.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */

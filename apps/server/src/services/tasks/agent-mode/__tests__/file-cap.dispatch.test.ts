@@ -23,6 +23,11 @@ import { capabilitiesForTaskRuntime } from '../../scheduled-run-power.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { OPENCODE_CAPABILITIES } from '../../../runtimes/opencode/runtime-constants.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 describe('a capped task at dispatch (M4, M8)', () => {
   useFileCapEnv();

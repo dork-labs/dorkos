@@ -44,6 +44,11 @@ import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import { recordAudit } from '../../services/audit/audit-trail.js';
 import { promptHashOf } from '../../services/tasks/approvals/schedule-owner.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const target = swappableServer();
 

@@ -22,6 +22,11 @@ import {
   relayStub,
 } from './task-scheduler.fixtures.js';
 import type { MockRelay, Dispatchable } from './task-scheduler.fixtures.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /** One tick every dispatch in this file claims unless it needs its own. */
 const TICK = new Date(1_700_000_000_000);

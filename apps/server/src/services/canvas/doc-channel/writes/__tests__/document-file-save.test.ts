@@ -25,6 +25,11 @@ import { honoGroupListener } from '../../../../../http/__tests__/hono-group-list
 import { createFileRoutes } from '../../../../../routes/files.js';
 import { saveOriginalDocumentFile } from '../installation-file-writes.js';
 import { saved } from './saved-outcome.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const target = swappableServer();
 const cleanups: Array<() => Promise<void>> = [];

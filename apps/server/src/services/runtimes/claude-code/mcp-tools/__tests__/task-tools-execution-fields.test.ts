@@ -25,6 +25,11 @@ import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { RULES_NOTE } from '../../../../tasks/agent-mode/agent-mode-asked-for.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {

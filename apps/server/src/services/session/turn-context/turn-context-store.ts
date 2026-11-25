@@ -33,7 +33,7 @@ import {
   turnContexts,
   type Db,
 } from '@dorkos/db';
-import { estimateTokens } from './context-fit.js';
+import { estimateTokens } from '../context-window/context-fit.js';
 import { sweepContextBody } from './turn-context-redaction.js';
 
 /** How long a body's full text is kept: 30 days (Security, Nov 8). */

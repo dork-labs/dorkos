@@ -13,7 +13,7 @@ import { claimReplayIsolation } from '../lib/replay/isolation.js';
 import { reconcileMountTargets } from '../services/runtimes/codex/policy/reconcile-mount-targets.js';
 import { registerComputerRuntime } from './computers.js';
 import { setLiveTaskProbe } from '../services/session/projector/running-tasks.js';
-import { setClaudeCodeFacts } from '../services/session/resolution/claude-code-facts.js';
+import { registerClaudeCodeFacts } from './register-claude-code-facts.js';
 import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
 import { env } from '../env.js';
@@ -27,9 +27,6 @@ import {
   registerOptionalRuntime,
 } from '../services/core/runtime-registry.js';
 import { ClaudeCodeRuntime } from '../services/runtimes/claude-code/claude-code-runtime.js';
-import { isCreditsClaudeRoot } from '../services/runtimes/claude-code/credits-root.js';
-import { runtimeUnlessHeld } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
-import { claudeTranscriptPath } from '../services/runtimes/claude-code/sessions/project-slug.js';
 import { CodexRuntime, CodexThreadMap } from '../services/runtimes/codex/index.js';
 import { resolveCodexTransport } from '../services/runtimes/codex/transport/index.js';
 import { DoeRuntime } from '../services/runtimes/doe/index.js';
@@ -82,13 +79,10 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
   setLiveTaskProbe((sessionId) =>
     runtimeRegistry.listRuntimes().flatMap((runtime) => runtime.liveHelperIds?.(sessionId) ?? [])
   );
-  // Turn code asks Claude Code's folders through this, never by import (DOR-4928). Registered
-  // before every branch below, since the agent-file pin applies whatever runtimes this server runs.
-  setClaudeCodeFacts({
-    runtimeUnlessHeld,
-    isCreditsRoot: isCreditsClaudeRoot,
-    transcriptPath: claudeTranscriptPath,
-  });
+  // Turn code and core ask Claude Code's folders through these, never by import (DOR-4928).
+  // Before every branch below: the agent-file pin and the protected account folders apply
+  // whatever runtimes this server runs.
+  registerClaudeCodeFacts();
   if (claimReplayIsolation(deps.dorkHome)) {
     const { registerReplayRuntimes } = await import('./replay-runtimes.js');
     return registerReplayRuntimes(deps);

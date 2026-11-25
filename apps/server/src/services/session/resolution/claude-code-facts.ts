@@ -3,7 +3,7 @@
  * handed over at startup rather than imported (DOR-4928). Nothing under
  * `services/session/` imports `services/runtimes/`
  * (`eslint-rules/session-runtimes-boundary.js`), so the adapter that owns each
- * answer registers it here, from `startup/runtimes.ts`:
+ * answer registers it here, from `startup/register-claude-code-facts.ts`:
  *
  * - which runtime an agent file names, unless the folder-settings pin holds it
  *   back (DOR-3068 M3), for a new session's runtime;

@@ -30,6 +30,7 @@ import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
+import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
@@ -119,6 +120,11 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // (spec `tool-only-room-replies` §D13). Scoped to the sandbox DB like
   // everything else here.
   initAgentIdentityService(db);
+
+  // Claude Code's folder facts, as `start()` registers them before any runtime: the
+  // protected-path policy refuses every path until the account folders are registered,
+  // and a manifest's runtime is never honoured without the agent-file pin (DOR-4928).
+  registerClaudeCodeFacts();
 
   // Register the deterministic TestModeRuntime as default — a dynamic import so
   // it never enters a production module graph (the guard index.ts uses too).

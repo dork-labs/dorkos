@@ -26,6 +26,11 @@ import { initBoundary } from '../../../../lib/boundary.js';
 import { setRoomRepoService, setRoomService } from '../../../rooms/index.js';
 import { controlUi } from '../ui-control.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const SESSION = 'sess-3519';
 const ROOM = 'room-3519';

@@ -19,7 +19,7 @@ import { createRoomMessageLookup } from '../session-bindings/room-message-lookup
 import { setRoomMessageLookup } from '../../session/chat-messages/room-message-stamps.js';
 import { stampEvent, stampHistory } from '../../session/chat-messages/chat-message-stamps.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
-import { parseTranscript } from '../../runtimes/claude-code/sessions/transcript-parser.js';
+import { parseTranscript } from '../../runtimes/claude-code/sessions/__tests__/parse-transcript.js';
 import { renderContextEntry } from '../../runtimes/claude-code/messaging/context-builder.js';
 import { readRoomTurnRef } from '../../session/chat-messages/room-turn-ref.js';
 import { applyRoomMessages } from '../../session/overlays/room-message-overlay.js';

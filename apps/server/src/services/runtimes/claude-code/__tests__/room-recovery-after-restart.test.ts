@@ -59,6 +59,8 @@ interface BootOptions {
 /** Boot one server process over the database file; nothing in memory survives from the last. */
 async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
   vi.resetModules();
+  // What the server's startup registers (DOR-4928), in this fresh module graph.
+  (await import('../../../../startup/register-claude-code-facts.js')).registerClaudeCodeFacts();
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
   const { sdkSimpleText, wrapSdkQuery } = await import('./sdk-scenarios.js');
   const db = await import('@dorkos/db');

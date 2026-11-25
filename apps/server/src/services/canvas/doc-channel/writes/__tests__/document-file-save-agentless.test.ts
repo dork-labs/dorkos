@@ -35,6 +35,11 @@ import {
   discoverOriginalDocumentFileSaves,
   saveOriginalDocumentFile,
 } from '../installation-file-writes.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 // Pass-through by default; a test flips one to inject a real fault at the exact
 // place the save path decides between "not available" and a server fault.

@@ -24,15 +24,18 @@ const EVERY_FORM = [
   "import type { AgentSession } from '../../runtimes/claude-code/agent-types.js';",
   "export { deriveTitle } from '../../runtimes/shared/derive-title.js';",
   "export const later = () => import('../../runtimes/codex/index.js');",
+  "export type Inline = import('../../runtimes/claude-code/agent-types.js').AgentSession;",
+  "import required = require('../../runtimes/shared/derive-title.js');",
   'export type { AgentSession };',
   'void projectSlug;',
+  'void required;',
 ].join('\n');
 
 describe('the session to runtimes boundary', () => {
   it('refuses every import form from session code', async () => {
     // Purpose: fails if session code could reach a runtime by a side-effect, named,
-    // type-only, re-export or dynamic import.
-    expect(await boundary('src/services/session/launch/example.ts', EVERY_FORM)).toHaveLength(5);
+    // type-only, re-export, dynamic, inline type or `import = require` import.
+    expect(await boundary('src/services/session/launch/example.ts', EVERY_FORM)).toHaveLength(7);
     expect(
       await boundary('src/services/session/example.ts', "import '../runtimes/index.js';")
     ).toEqual([expect.stringMatching(/^'\.\.\/runtimes\/index\.js' is runtime code/u)]);

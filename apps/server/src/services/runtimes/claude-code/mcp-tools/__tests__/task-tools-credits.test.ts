@@ -45,6 +45,11 @@ import type { GatedAction } from '../../../../core/capabilities/tier-enforcement
 import type { AgentIdentity } from '../../../../core/agent-identity/agent-identity-service.js';
 import { registerAgentModeEscalators } from '../../../../tasks/agent-mode/agent-mode-escalation.js';
 import { noteRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 interface SessionTool {
   name: string;

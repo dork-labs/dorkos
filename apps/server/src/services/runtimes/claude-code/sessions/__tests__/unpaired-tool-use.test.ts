@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { HistoryMessage, ToolCallPart } from '@dorkos/shared/types';
-import { parseTranscript } from '../transcript-parser.js';
+import { parseTranscript } from './parse-transcript.js';
 
 /**
  * A `tool_use` the transcript never pairs with a result (DOR-2011).

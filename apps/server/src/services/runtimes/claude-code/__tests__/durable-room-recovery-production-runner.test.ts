@@ -186,6 +186,8 @@ it.each(['eligible', 'paused', 'rejoined', 'independent-reseat'] as const)(
     const { latestClaudeRoomServerFailure } =
       await import('../../../session/history/latest-room-failure.js');
     const { claudeTranscriptPath } = await import('../sessions/project-slug.js');
+    // What the server's startup registers (DOR-4928), in this fresh module graph.
+    (await import('../../../../startup/register-claude-code-facts.js')).registerClaudeCodeFacts();
     const { HandoffTerminalSource } =
       await import('../../../rooms/handoff/handoff-terminal-source.js');
     const { HandoffTerminalNotices } =
