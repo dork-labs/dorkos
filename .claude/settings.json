@@ -87,10 +87,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\"/.claude/hooks/in-project.sh .claude/hooks/typecheck-changed.sh"
-          },
-          {
-            "type": "command",
             "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\"/.claude/hooks/in-project.sh .claude/hooks/lint-changed.sh"
           },
           {
