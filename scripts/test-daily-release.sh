@@ -143,6 +143,12 @@ check 'unreadable facts: exit 2' 2 "$?"
 cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON (#4434).
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=.
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --jq ] && filter=${args[$((i + 1))]}; done
@@ -164,9 +170,9 @@ case "$*" in
   *) exit 1 ;;
 esac
 [ -f "$FX/$f" ] || exit 1
-# Like the real gh: a --jq result of null prints nothing at all (Nov 25: the
-# hold lookup read that empty answer as unreadable and refused every day).
-jq -r "$filter" "$FX/$f" | { grep -vx null || true; }
+# Like the real gh (Nov 25: the hold lookup read gh's empty answer for null as
+# unreadable and refused every day, #4429).
+gh_jq "$filter" "$FX/$f"
 EOF
 cat >"$tmp/npm" <<'EOF'
 #!/usr/bin/env bash
