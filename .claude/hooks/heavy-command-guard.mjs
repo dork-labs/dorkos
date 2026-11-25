@@ -34,6 +34,11 @@
  *     `pnpm <script>` after `cd apps/…` / `cd packages/…` (or with the hook's
  *     cwd there). Only the root build/test/typecheck/verify scripts join the
  *     gate on their own; the root `lint` and `lint:fix` run turbo lint raw.
+ *   - EVEN INSIDE THE GATE: a package manager (pnpm, npx, npm, yarn,
+ *     corepack) with its home moved on the same line: `HOME=…`, `PNPM_HOME=…`,
+ *     `XDG_*=…`, `COREPACK_HOME=…` inline, through `env`, or `export`ed earlier,
+ *     or `env -i` / `env -u`. pnpm then re-installs the repo's pinned pnpm, and
+ *     the child does the same without end (Nov 25 fork bomb).
  *   - A raised Node heap (`NODE_OPTIONS=--max-old-space-size=…`, `export
  *     NODE_OPTIONS=…`, `node --max-old-space-size=…`) outside `pnpm heavy`.
  *     Nov 25: the Mac panicked twice on an exhausted memory compressor while
@@ -115,6 +120,12 @@ const UNGATED_ROOT_SCRIPTS = new Set(['lint', 'lint:fix']);
 
 /** A raised V8 heap: `--max-old-space-size` (or its `max_old_space_size` spelling). */
 const HEAP_FLAG = /max[-_]old[-_]space[-_]size/;
+
+/** Package managers that may re-install themselves to match the repo's pin. */
+const PACKAGE_MANAGERS = new Set(['pnpm', 'pnpx', 'npx', 'npm', 'yarn', 'corepack']);
+
+/** Environment that tells a package manager where its own installs live. */
+const PM_HOME_VAR = /^(HOME|PNPM_HOME|XDG_[A-Z_]+|COREPACK_HOME)=/;
 
 /** turbo tasks that are heavy. */
 const HEAVY_TURBO_TASKS = new Set(['build', 'typecheck', 'test', 'lint', 'e2e']);
@@ -410,6 +421,42 @@ function inspectSegment(segment, depth, ctx = {}) {
 }
 
 /**
+ * Whether a command line moves a package manager's home: an inline
+ * `HOME=… pnpm`, `env HOME=… npx`, `env -i pnpm`, or `export HOME=…` before a
+ * package manager in the same line. Nov 25: with HOME pointed at an empty
+ * folder inside a worktree, pnpm could not find the pinned version it manages,
+ * ran `pnpm add pnpm@<pin>` to fetch it, and the child saw the same pin and did
+ * the same, until 399 node processes held 23 GB. `pnpm heavy` does not make this
+ * safe, so it is refused inside the gate too.
+ *
+ * @param {string} command - The whole command line.
+ * @returns {string | null} A refusal message, or null to allow.
+ */
+function checkPackageManagerHome(command) {
+  const tokens = tokenize(command).map((token) => token.replace(/^[({]+|[)};]+$/g, ''));
+  const names = tokens.map((token) => basename(token));
+  const runsPm = names.some((name) => PACKAGE_MANAGERS.has(name));
+  if (!runsPm) return null;
+  const moved = tokens.find((token) => PM_HOME_VAR.test(token));
+  const cleared = tokens.some(
+    (token, i) =>
+      basename(token) === 'env' && /^(-i|--ignore-environment|-u)$/.test(tokens[i + 1] ?? '')
+  );
+  if (!moved && !cleared) return null;
+  const what = moved ? moved.split('=')[0] : 'a cleared environment';
+  return `Blocked: a package manager with ${what} moved (${what === 'a cleared environment' ? 'env -i / env -u' : `${what}=…`}).
+
+pnpm manages its own version from the repo's packageManager pin, and finds the
+versions it installed under HOME (or PNPM_HOME / XDG_*). Pointed somewhere empty,
+it installs the pin again, and when that place is inside the repo the child does
+the same, without end (Nov 25: 399 processes, 23 GB, the Mac went down twice).
+This is refused even through pnpm heavy.
+
+Keep HOME as it is. For a clean test config, point the tool's own variable at a
+temp folder instead (for example DORKOS_HOME or a --config flag), not HOME.`;
+}
+
+/**
  * Whether a command already runs inside the gate (`pnpm heavy …` or the lock script).
  *
  * @param {string[]} tokens - Tokens of one command, prefixes stripped.
@@ -516,6 +563,9 @@ function commandSegments(command, strict) {
  */
 function inspectCommand(command, depth = 0, strict = false, ctx = {}) {
   if (!command) return null;
+  // Before anything else, and inside the gate too: a package manager with a moved home.
+  const moved = checkPackageManagerHome(command);
+  if (moved) return moved;
   const segments = commandSegments(command, strict);
   let here = { ...ctx };
   for (const segment of segments) {
