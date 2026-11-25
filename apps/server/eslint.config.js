@@ -6,6 +6,7 @@ import workGraph from './eslint-rules/work-graph-boundary.js';
 import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
 import problemOnly from './eslint-rules/problem-only.js';
 import turnPort from './eslint-rules/turn-port-boundary.js';
+import computerWall from './eslint-rules/computer-wall.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -452,6 +453,17 @@ export default defineConfig([
     ignores: ['src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
     plugins: { 'turn-port': turnPort },
     rules: { 'turn-port/boundary': 'error' },
+  },
+
+  // The computer wall (spec `computer-side-starts-alone` §4): every file under services/ is on a
+  // side in `sides.json`, and a computer-side file adds no import of space-side or front-door code
+  // and names no space table, beyond its entry in `computer-wall.baseline.json`. Tests and
+  // fixtures are not checked.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/**/__tests__/**', 'src/**/__fixtures__/**', 'src/**/*.{test,spec}.{ts,tsx}'],
+    plugins: { 'computer-wall': computerWall },
+    rules: { 'computer-wall/wall': 'error' },
   },
 
   ...testConfig,
