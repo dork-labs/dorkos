@@ -86,9 +86,9 @@ r '.rollback.bad = "0.141.0"'
 check 'bad_version not the newest: refuse' \
   'REFUSE 0.141.0 is not the newest published version (npm has 0.142.0); only the newest can be rolled back' "$out"
 r '.rollback.bad = "" | .rollback.newest = "0.142.0"'
-check 'no bad_version: refuse' 'REFUSE a rollback needs bad_version as X.Y.Z; got ""' "$out"
+check 'no bad_version: refuse' 'REFUSE a rollback needs bad_version as X.Y.Z' "$out"
 r '.rollback.bad = "v0.142.0"'
-check 'bad_version must be plain X.Y.Z' 'REFUSE a rollback needs bad_version as X.Y.Z; got "v0.142.0"' "$out"
+check 'bad_version must be plain X.Y.Z' 'REFUSE a rollback needs bad_version as X.Y.Z' "$out"
 r '.rollback.prev = ""'
 check 'nothing published before it: refuse' 'REFUSE npm has no version before 0.142.0 to roll back to' "$out"
 r '.rollback.pPrev = ""'
@@ -105,7 +105,7 @@ r ".inflight = {version: \"0.142.1\", branchSha: \"$B\", base: \"$A\", pr: \"ope
 check 'a newer release in flight (this rollback, cut already): refuse a second cut' \
   'REFUSE release v0.142.1 is in flight; a rollback cuts only when nothing newer than v0.142.0 is (if it is this rollback, it advances on its own)' "$out"
 r 'del(.rollback)'
-check 'rollback with no rollback facts: refuse' 'REFUSE a rollback needs bad_version as X.Y.Z; got ""' "$out"
+check 'rollback with no rollback facts: refuse' 'REFUSE a rollback needs bad_version as X.Y.Z' "$out"
 
 i '.pr = "open"'
 check 'release PR open: wait' 'WAIT the release PR #9 for v0.142.0 is open' "$out"
@@ -457,9 +457,12 @@ contains 'hold runs for a rollback only' "needs.plan.outputs.step == 'rollback'"
 contains 'hold writes issues and nothing else' $'    permissions:\n      issues: write\n    env:' "$(job hold)"
 contains 'a rollback cuts only once its hold is set' "needs.plan.outputs.step == 'rollback' && needs.hold.result == 'success'" "$(job cut)"
 contains 'the cut passes the rollback to release-commit.ts' '--commit ${rollback[@]+"${rollback[@]}"}' "$(job cut)"
-check 'the plan job writes nothing' no "$(job plan | grep -qE ': write$|create-github-app-token|--method' && echo yes || echo no)"
+check 'the plan job writes nothing' no "$(job plan | grep -E ': write$|create-github-app-token|--method' >/dev/null && echo yes || echo no)"
 contains 'bad_version reaches the script through the env only' 'BAD_VERSION: ${{ inputs.bad_version }}' "$(job plan)"
 check 'bad_version is read in that one env line and nowhere else' 1 "$(grep -c 'inputs\.bad_version' "$wf")"
+contains 'a rollback checks bad_version is plain X.Y.Z before facts' '[[ "$BAD_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]' "$(job plan)"
+check 'the format check runs before facts' yes "$(job plan | awk '/BAD_VERSION" =~/ {v = NR} /daily-release.sh facts/ {f = NR} END {print (v && f && v < f) ? "yes" : "no"}')"
+check 'the format error never echoes bad_version' no "$(job plan | grep -E '::error::.*BAD_VERSION|::error::.*bad_version }' >/dev/null && echo yes || echo no)"
 
 # --- usage ---
 "$SCRIPT" >/dev/null 2>&1

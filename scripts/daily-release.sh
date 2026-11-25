@@ -90,7 +90,7 @@ decide() {
     | ($f.rollback // {}) as $r
     | if ($f.unreadable // ["facts"] | length) > 0 then "REFUSE unreadable: " + ($f.unreadable // ["facts"] | join(", "))
       elif $f.action == "rollback" then
-        if ($r.bad | semver | not) then "REFUSE a rollback needs bad_version as X.Y.Z; got \"\($r.bad // "")\""
+        if ($r.bad | semver | not) then "REFUSE a rollback needs bad_version as X.Y.Z"
         elif $r.newest != $r.bad then
           "REFUSE \($r.bad) is not the newest published version (npm has \($r.newest // "none")); only the newest can be rolled back"
         elif ($r.prev | semver | not) then "REFUSE npm has no version before \($r.bad) to roll back to"
