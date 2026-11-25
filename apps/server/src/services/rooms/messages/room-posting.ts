@@ -10,6 +10,7 @@ import type { DbTransaction } from '@dorkos/db';
  * @module server/services/rooms/messages/room-posting
  */
 import { postLevelFor, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
+import { mergeMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { directChatHoldApplies } from '../limits/direct-chat-hold.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import type { ForwardVia } from '@dorkos/shared/chat-messages';
@@ -76,6 +77,12 @@ export interface RoomPostInput {
    * POST body; no other door carries one.
    */
   via?: ForwardVia;
+  /**
+   * Set only by {@link RoomPosting.postStandIn}: the dispatch of a hand-off posted for a busy
+   * room chat (DOR-4252). The post is then its own turn, rooted at itself at the ceiling, and no
+   * live turn's provenance is read. No request body or tool argument carries one.
+   */
+  standInDispatchId?: string;
 }
 
 /** The two doors a message comes through, and the files it may bring. */
@@ -327,6 +334,66 @@ export class RoomPosting {
     );
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
+  }
+
+  /**
+   * Post a hand-off's draft for an agent whose room chat stayed busy (DOR-4252), held to what
+   * {@link RoomPosting.postFromTool} holds the room chat's own post to, minus the live turn.
+   *
+   * The same refusals: a room the agent cannot see or is not in, an archived room, and a turn
+   * somebody stopped there (`TURN_WAS_STOPPED`). The same level: the stricter of the chat that
+   * wrote the draft and the room chat, and outside words either had read ride on with the post.
+   * The hand-off's own saved marks join that, so a restart that forgot the chats forgets nothing.
+   *
+   * What it does not take from a live turn here: its thread, its answer pointer, its dispatch,
+   * its cascade, or its "spoke" mark. Nothing in that turn wrote these words, so the post is its
+   * own turn, rooted at itself at the ceiling: it wakes nobody and is never read as a reply.
+   *
+   * @param roomId - The room the draft was for.
+   * @param input.authorId - The agent whose room chat it was handed to.
+   * @param input.text - The draft, with the line that says where it came from.
+   * @param input.replyTo - The thread the sender named, if any.
+   * @param input.vouching - The chat that wrote the draft, and the room chat.
+   * @param input.carriedMarks - The marks the hand-off saved from the drafting chat.
+   * @param input.dispatchId - The stand-in's own dispatch, which `postBind` checks.
+   * @param postBind - Runs inside the append transaction; throwing rolls the post back.
+   * @returns The committed entry.
+   */
+  postStandIn(
+    roomId: string,
+    input: {
+      authorId: string;
+      text: string;
+      replyTo?: string;
+      vouching: readonly string[];
+      carriedMarks: TurnMarks;
+      dispatchId: string;
+    },
+    postBind: (entryId: string, tx: DbTransaction, seq: number) => void
+  ): PostedEntry {
+    this.visibility.requireVisibleRoom(roomId, input.authorId);
+    if (this.triggers.stoppedIn(roomId, input.authorId)) {
+      throw new RoomError('TURN_WAS_STOPPED', 'This conversation was stopped.');
+    }
+    const known = postLevelFor(input.vouching);
+    const agentPath = this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey;
+    const authorLevel: PostAuthorBound = known
+      ? { ...known, ...mergeMarks(known, input.carriedMarks) }
+      : { marks: mergeMarks(unknownLevelMarks(input.vouching, agentPath), input.carriedMarks) };
+    // A named reply is read as its thread, as the room chat's own post of it would be (FB-63).
+    const replyTo = this.threadForToolPost(roomId, input.replyTo, undefined);
+    return this.post(
+      roomId,
+      {
+        authorId: input.authorId,
+        text: input.text,
+        ...(replyTo !== undefined ? { replyTo } : {}),
+        standInDispatchId: input.dispatchId,
+      },
+      authorLevel,
+      input.vouching,
+      postBind
+    );
   }
 
   /**

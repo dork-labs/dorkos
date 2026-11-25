@@ -12,6 +12,8 @@ export const POST_TO_ROOM_DESCRIPTION =
   "path in attachments; it has to be a file in your own folder or your own copy of a room's files. " +
   'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary. ' +
   'Only your own chat in a room posts there: from any other chat, the post goes to that chat, which re-reads the room, then posts it or says why not. ' +
+  'If that chat is busy, DorkOS posts your draft as written after two minutes, but only when ' +
+  'this chat read the room first and nothing new has been said there since it did: read it before you send. ' +
   'An eligible recorded Claude Code server failure may let a new hand-off use one ' +
   'fresh room chat, only when the original account, configuration folder, inference ' +
   'source, billing and permission bounds can be kept and current checks allow it. ' +

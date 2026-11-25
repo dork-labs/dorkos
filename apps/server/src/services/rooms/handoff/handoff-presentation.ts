@@ -30,6 +30,14 @@ export interface HandoffOrigin {
   memberJoinedAt: string | null;
 }
 
+/**
+ * Whether a hand-off may be posted for its busy room chat (DOR-4252), fixed at acceptance: the
+ * window and the newest entry the drafting chat had read, or why it never may be.
+ */
+export type HandoffStandIn =
+  | { until: number; freshThroughSeq: number }
+  | { refused: 'outside-words' | 'unconfirmed' | 'unread' };
+
 /** One draft on its way to an agent's seat in a room. */
 export interface RoomHandoff {
   /** The hand-off's id, returned to the sender. */
@@ -63,6 +71,8 @@ export interface RoomHandoff {
   dispatchId?: string;
   /** The entry the seat posted, once it did. */
   postedEntryId?: string;
+  /** Set at acceptance; a hand-off restored after a restart has none and stays with the seat. */
+  standIn?: HandoffStandIn;
 }
 
 /** How a hand-off ended. */
@@ -119,16 +129,39 @@ export function seatPrompt(handoff: RoomHandoff, target: string): string {
   return defuseFileReferences(lines.join('\n'));
 }
 
+/** What happens if the room chat is busy, as the receipt says it at acceptance (DOR-4252). */
+function busyLine(handoff: RoomHandoff, room: string): string {
+  const scope = handoff.standIn;
+  const free = 'that chat is free, it re-reads the room, then posts it or says why not. ';
+  if (scope !== undefined && 'until' in scope)
+    return (
+      `If that chat is still busy in two minutes and nothing new has been said in ${room} ` +
+      'since this chat read it, ' +
+      'DorkOS posts your draft for it as written. If not, when ' +
+      free
+    );
+  const why =
+    scope?.refused === 'outside-words'
+      ? 'This chat read words from outside your team, so only that chat may post it. '
+      : scope?.refused === 'unread'
+        ? `This chat has not read ${room}, so only that chat may post it. ` +
+          'Read the room first next time to let DorkOS post for a busy chat. '
+        : 'DorkOS cannot confirm what this chat had read, so only that chat may post it. ';
+  return `${why}When ${free}`;
+}
+
 /** Tell the verified sender where its durable result can be read. */
 export function handoffReceipt(core: RoomCore, handoff: RoomHandoff): Record<string, unknown> {
+  const room = roomLabel(core.store.getRoom(handoff.roomId), core.bridges);
   return {
     posted: false,
     handedOff: true,
     handoffId: handoff.id,
     instruction:
-      `Not posted from this chat: only your own chat in ${roomLabel(core.store.getRoom(handoff.roomId), core.bridges)} posts there. It has your ` +
-      'draft, re-reads the room, then posts it or says why not. ' +
-      'Waiting ends an hour after acceptance. A started turn may take longer. ' +
+      `Not posted from this chat: only your own chat in ${room} posts there, and it has your ` +
+      'draft. ' +
+      busyLine(handoff, room) +
+      'Waiting ends an hour after it was sent. ' +
       (handoff.origin.roomId !== null
         ? 'The answer shows in this room. '
         : isChatSendable({
