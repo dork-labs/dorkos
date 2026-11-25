@@ -38,6 +38,12 @@ dir=${GH_FIXTURES:?}
 echo "$*" >>"$dir/calls.log"
 [ "$1" = api ] || exit 1
 url=$2
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=.
 [ "${3:-}" = --jq ] && filter=$4
 case "$url" in
@@ -47,7 +53,7 @@ case "$url" in
   *) exit 1 ;;
 esac
 [ -f "$f" ] || exit 1
-jq -r "$filter" "$f"
+gh_jq "$filter" "$f"
 STUB
 chmod +x "$tmp/gh-stub"
 export GH=$tmp/gh-stub GH_FIXTURES=$tmp/gh REPO=o/r

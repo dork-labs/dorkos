@@ -40,6 +40,12 @@ printf '%s\n' "$*" >>"$GH_LOG"
 [ "$1" = pr ] && [ "$2" = comment ] && exit 0 # review-gh.sh's verdict comment
 [ "$1" = api ] || { echo "stub gh: unexpected $*" >&2; exit 1; }
 shift
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=. path= input= method=GET
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,7 +69,7 @@ case "$path" in
   */issues/*/comments*) data=${FAKE_COMMENTS:-'[]'} ;;
   *) echo "stub gh: unexpected path $path" >&2; exit 1 ;;
 esac
-jq -r "$filter" <<<"$data"
+gh_jq "$filter" <<<"$data"
 EOF
 
 # Stub `age`. Encrypting logs its argv and writes fixed armour that carries
