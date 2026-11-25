@@ -199,11 +199,13 @@ export function launchDispatchInner(
   // the chat with no slot. Otherwise the run is `starting` now (transition 4).
   const verdict = launchVerdictOf(plan);
   if (verdict.kind === 'busy') {
+    // A known gap, accepted (spec §4.7, beside DOR-2346): between a Claude Code
+    // SDK rebind and the running turn's next event, the in-memory slot can be
+    // keyed under the new SDK id while the turn's settle wakes the old key, so
+    // a launch re-parked here waits out its bound.
     reparkBehindLiveRun(plan, opts.budgetExhausted, verdict.retryAt);
     return Promise.resolve({ accepted: false });
   }
-  // This process holds the run's owner until the launch is done with it.
-  if (plan.runId !== undefined) holdRun(plan.runId);
   const { sessionKey, clientId, messageId } = plan;
   let turnStarted = false;
   // Set when a pause landed between the check above and this turn's start: the
@@ -225,11 +227,11 @@ export function launchDispatchInner(
   // nobody, if it ran) in the same synchronous beat.
   launching.add(messageId);
   joinWaitingChatRows(sessionKey, messageId);
-  const clearIfOurs = (): void => {
+  const clearIfOurs = (opts?: { keepHold?: true }): void => {
     // A launch that started no turn: its words go back in line (transition 8),
     // unless something on the way out already cancelled its run.
     if (!turnStarted) feedRun(plan, 'back in line', (feed, runId) => feed.backInLine(runId));
-    if (plan.runId !== undefined) releaseRun(plan.runId);
+    if (plan.runId !== undefined && opts?.keepHold !== true) releaseRun(plan.runId);
     launching.delete(messageId);
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
     schedulePump(sessionKey);
@@ -258,6 +260,9 @@ export function launchDispatchInner(
     }
   }
   let started: Promise<TriggerTurnResult>;
+  // This process holds the run's owner until the launch is done with it: every
+  // exit releases it through `clearIfOurs`, the settle only after its run ended.
+  if (plan.runId !== undefined) holdRun(plan.runId);
   try {
     started = triggerTurn({
       sessionId: plan.sessionId,
@@ -391,12 +396,18 @@ export function launchDispatchInner(
           clearIfOurs();
           return;
         }
-        clearIfOurs();
-        if (turn.privateReceiptId !== undefined) {
-          getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
+        // Held until its run has ended, so a receipt settle that throws can
+        // never leave a live run nobody in this process holds.
+        clearIfOurs({ keepHold: true });
+        try {
+          if (turn.privateReceiptId !== undefined) {
+            getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
+          }
+        } finally {
+          // The status moves now, at settle, never at `turn_end` (§4.7).
+          if (turnStarted) recordTurnSettled(plan, turnOutcome, reason);
+          if (plan.runId !== undefined) releaseRun(plan.runId);
         }
-        // The status moves now, at settle, never at `turn_end` (§4.7).
-        if (turnStarted) recordTurnSettled(plan, turnOutcome, reason);
         emitLifecycle({
           phase: 'settled',
           messageId,

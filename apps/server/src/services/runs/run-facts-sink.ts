@@ -64,9 +64,11 @@ function cancelRun(store: RunStore, run: TurnRun, why: string, detail: RunEnding
 function requeueOtherStarting(store: RunStore, chatKey: string, keepId?: string): void {
   const live = store.liveRunOf(chatKey);
   if (live && live.status === 'starting' && live.id !== keepId) {
+    const ours = live.ownerEpoch === store.epoch;
     store.move(live, 'queued', { ownerEpoch: null, leaseUntil: null });
-    // Its launch is this process's and still under way.
-    store.holdWords(live.id);
+    // A launch of this boot is still under way and holds its words; another
+    // boot's would have been retired already, and its words are not here.
+    if (ours) store.holdWords(live.id);
   }
 }
 

@@ -256,6 +256,11 @@ export function dropTransient(plan: DispatchPlan, why: string): void {
  * re-park included), rather than wait out a whole bound behind a turn that
  * is already gone.
  *
+ * Known edge: a re-parked message can be passed by a later one of its chat
+ * that launches first (a direct launch the slot did not stop); the record
+ * still keeps one writer, only their order can change until T15's gate holds
+ * every path.
+ *
  * @param plan - The launch that met a live run.
  * @param budgetExhausted - Whether the wait bound launched it.
  * @param retryAt - Epoch ms at which the live run, another boot's, can be retired.

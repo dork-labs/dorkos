@@ -15,7 +15,7 @@ import { chatKeyOf, isRunHeld, setTurnFactsSink } from '../session/turn-port/ind
 import { logger } from '../../lib/logger.js';
 import { createRunFactsSink } from './run-facts-sink.js';
 import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
-import { writeStopReceipt, writeStopRequest } from './run-stops.js';
+import { writeStopReceipt, writeStopRequest, type StopRequestRef } from './run-stops.js';
 
 export {
   IllegalRunTransitionError,
@@ -27,6 +27,7 @@ export {
   type TurnRun,
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
+export type { StopRequestRef } from './run-stops.js';
 
 let installed: { store: RunStore; renew: ReturnType<typeof setInterval> } | undefined;
 
@@ -78,12 +79,12 @@ export function uninstallRunRecord(): void {
  *
  * @param sessionId - The chat, by any id it answers to.
  * @param request - Who asked, and through which door.
- * @returns The run it was written on, for {@link recordStopReceipt}.
+ * @returns The request as written, for {@link recordStopReceipt}.
  */
 export function recordStopRequest(
   sessionId: string,
   request: Pick<RunStopRequest, 'by' | 'via'>
-): string | undefined {
+): StopRequestRef | undefined {
   const store = installed?.store;
   if (!store) return undefined;
   try {
@@ -100,17 +101,20 @@ export function recordStopRequest(
 /**
  * Add a stop's receipt to the request {@link recordStopRequest} wrote.
  *
- * @param runId - The run the request was written on; nothing happens for `undefined`.
+ * @param request - The request {@link recordStopRequest} wrote; nothing happens for `undefined`.
  * @param receipt - What the runtime answered.
  */
-export function recordStopReceipt(runId: string | undefined, receipt: { outcome: string }): void {
+export function recordStopReceipt(
+  request: StopRequestRef | undefined,
+  receipt: { outcome: string }
+): void {
   const store = installed?.store;
-  if (!store || runId === undefined) return;
+  if (!store || request === undefined) return;
   try {
-    writeStopReceipt(store, runId, receipt);
+    writeStopReceipt(store, request, receipt);
   } catch (err) {
     logger.warn('[runs] could not record a stop receipt', {
-      runId,
+      runId: request.runId,
       error: err instanceof Error ? err.message : String(err),
     });
   }

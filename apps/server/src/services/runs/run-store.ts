@@ -276,6 +276,8 @@ export class RunStore {
    * {@link retireDeadRuns}.
    */
   private readonly heldWords = new Set<string>();
+  /** The runs each open store transaction dropped from `heldWords`, innermost last. */
+  private readonly dropFrames: string[][] = [];
 
   /**
    * Open the store over the machine store.
@@ -317,7 +319,22 @@ export class RunStore {
    * @param fn - The reads and writes.
    */
   transaction<T>(fn: () => T): T {
-    return this.db.transaction(() => fn(), { behavior: 'immediate' });
+    // Runs this frame dropped from `heldWords` go back if it rolls back, so a
+    // run whose move out of `queued` never committed is still held. A frame
+    // that commits hands them to the frame around it, if any, which may still
+    // roll back. Known edge: a store frame that commits inside a caller's own
+    // transaction (the queue's `atomically`) that then rolls back keeps the
+    // drop; no such caller moves a rowless run out of `queued` today.
+    this.dropFrames.push([]);
+    try {
+      const result = this.db.transaction(() => fn(), { behavior: 'immediate' });
+      const dropped = this.dropFrames.pop()!;
+      this.dropFrames.at(-1)?.push(...dropped);
+      return result;
+    } catch (error) {
+      for (const id of this.dropFrames.pop()!) this.heldWords.add(id);
+      throw error;
+    }
   }
 
   /**
@@ -357,7 +374,7 @@ export class RunStore {
    * first whatever a gone boot left live in that chat ({@link retireDeadRuns}),
    * so no reader can ever be held behind a turn nobody runs.
    *
-   * @param chatKey - The chat.
+   * @param chatId - The chat, by any id it has had.
    */
   liveRunOf(chatId: string): TurnRun | undefined {
     const chatKey = chatKeyOf(chatId);
@@ -554,7 +571,7 @@ export class RunStore {
       .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, run.status)))
       .run().changes;
     if (changed === 0) throw new IllegalRunTransitionError(run.id, run.status, to);
-    if (to !== 'queued') this.heldWords.delete(run.id);
+    if (to !== 'queued' && this.heldWords.delete(run.id)) this.dropFrames.at(-1)?.push(run.id);
     return this.get(run.id)!;
   }
 
@@ -695,7 +712,8 @@ export class RunStore {
    *
    * Throws when both ids hold a live run (the one-live-run index refuses the
    * move): nothing moves, the runs stay under the old id, and the queue
-   * store's caller logs both ids and still moves its rows.
+   * store's caller logs both ids and still moves its rows. Known edge: the
+   * runs then stay under the old id until something moves them by hand.
    *
    * @param fromChatKey - The id they are kept under.
    * @param toChatKey - The id they move to.

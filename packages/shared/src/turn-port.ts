@@ -192,11 +192,12 @@ export type TurnOrigin =
    */
   | { readonly kind: 'account-resume' }
   /**
-   * DorkOS carries on in a chat that is already bound: an approval's verdict
-   * reaching the turn that asked for it, a finished sign-in resuming the work
-   * that needed it, work a restart cut short. Nobody typed it, and the chat's
-   * own row is its power, so it seeds nothing and names no session first.
-   * A carry-on after an account's reset is `account-resume`, not this.
+   * DorkOS starts a turn in a chat that is already bound, to hand it the
+   * outcome of something it was waiting on (an approval's verdict, a finished
+   * sign-in, a connector's answer, a hand-off that ended, work a restart cut
+   * short). It never opens a chat. Nobody typed it, and the chat's own row is
+   * its power, so it seeds nothing. A carry-on after an account's reset is
+   * `account-resume`, not this.
    */
   | { readonly kind: 'resume' }
   /**

@@ -630,7 +630,7 @@ describe('a stop request (F6)', () => {
     await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('running'));
 
     const stopped = recordStopRequest(sessionId, { via: 'stop' });
-    expect(stopped).toBe(run!.id);
+    expect(stopped?.runId).toBe(run!.id);
     // Written when asked, before any answer.
     expect(runs.get(run!.id)?.endingDetail.stopRequests).toEqual([
       { at: expect.any(String), via: 'stop' },

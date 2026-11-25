@@ -31,57 +31,67 @@
 import { InterruptReceiptSchema } from '@dorkos/shared/schemas';
 import type { RunStopRequest, RunStore } from './run-store.js';
 
+/** The request {@link writeStopRequest} wrote, for its receipt to find it again. */
+export interface StopRequestRef {
+  /** The run it was written on. */
+  runId: string;
+  /** When it was asked, as written. */
+  at: string;
+  /** Which door asked. */
+  via: RunStopRequest['via'];
+}
+
 /**
  * Write a stop request on the chat's turn, if one is running.
  *
  * @param store - The run store.
  * @param chatKey - The chat, by the id its queue rows are kept under.
  * @param request - Who asked, and through which door.
- * @returns The run it was written on, for {@link writeStopReceipt}; `undefined`
+ * @returns The request as written, for {@link writeStopReceipt}; `undefined`
  *   when no turn of the chat is `started` or `running`.
  */
 export function writeStopRequest(
   store: RunStore,
   chatKey: string,
   request: Pick<RunStopRequest, 'by' | 'via'>
-): string | undefined {
+): StopRequestRef | undefined {
   return store.transaction(() => {
     const live = store.liveRunOf(chatKey);
     if (!live || (live.status !== 'started' && live.status !== 'running')) return undefined;
+    const at = store.stamp();
     const stopRequests = [
       ...(live.endingDetail.stopRequests ?? []),
-      {
-        at: store.stamp(),
-        via: request.via,
-        ...(request.by !== undefined ? { by: request.by } : {}),
-      },
+      { at, via: request.via, ...(request.by !== undefined ? { by: request.by } : {}) },
     ];
     store.annotate(live.id, { endingDetail: { ...live.endingDetail, stopRequests } });
-    return live.id;
+    return { runId: live.id, at, via: request.via };
   });
 }
 
 /**
- * Add the receipt to the newest stop request on a run that has no receipt yet.
- * An outcome outside the receipt vocabulary (ADR 260823-021312) is not kept.
+ * Add the receipt to the stop request it answers: the one
+ * {@link writeStopRequest} wrote, matched by its time and door, still without
+ * a receipt. A request a pause cut cleared finds nothing. An outcome outside
+ * the receipt vocabulary (ADR 260823-021312) is not kept.
  *
  * @param store - The run store.
- * @param runId - The run {@link writeStopRequest} wrote on.
+ * @param request - The request {@link writeStopRequest} wrote.
  * @param receipt - What the runtime answered.
  */
 export function writeStopReceipt(
   store: RunStore,
-  runId: string,
+  request: StopRequestRef,
   receipt: { outcome: string }
 ): void {
   const outcome = InterruptReceiptSchema.shape.outcome.safeParse(receipt.outcome);
   if (!outcome.success) return;
   store.transaction(() => {
-    const run = store.get(runId);
+    const run = store.get(request.runId);
     const requests = run?.endingDetail.stopRequests;
     if (!run || !requests) return;
-    let index = requests.length - 1;
-    while (index >= 0 && requests[index]!.outcome !== undefined) index -= 1;
+    const index = requests.findIndex(
+      (asked) => asked.at === request.at && asked.via === request.via && asked.outcome === undefined
+    );
     if (index === -1) return;
     const stopRequests = requests.map((request, i) =>
       i === index ? { ...request, outcome: outcome.data } : request
