@@ -100,7 +100,11 @@ export interface SettingsFolders {
   folders: string[];
   /** The folder a person's Always allow is kept in. */
   alwaysAllowFolder: string;
-  /** The folders whose local settings file a launch loads: the working folder and {@link alwaysAllowFolder}, by each spelling. */
+  /**
+   * The folders whose local settings file a launch loads: the working folder and
+   * {@link alwaysAllowFolder}, by each spelling, and the repo's top when no checkout is known to
+   * own its git folder.
+   */
   localFolders: string[];
 }
 
@@ -117,7 +121,10 @@ function foldersFrom(start: string, userHome: string): SettingsFolders {
   const main = repo?.main !== undefined && !samePlace(repo.main, userHome) ? repo.main : undefined;
   if (main !== undefined && !folders.includes(main)) folders.push(main);
   const alwaysAllowFolder = main ?? start;
-  return { folders, alwaysAllowFolder, localFolders: [...new Set([start, alwaysAllowFolder])] };
+  // A `.git` DorkOS can't follow to its checkout: Claude Code may still load the top's file.
+  const top = repo !== undefined && repo.main === undefined && !samePlace(repo.top, userHome);
+  const localFolders = [start, alwaysAllowFolder, ...(top ? [repo.top] : [])];
+  return { folders, alwaysAllowFolder, localFolders: [...new Set(localFolders)] };
 }
 
 /**

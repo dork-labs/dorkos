@@ -58,17 +58,23 @@ export class GitMissingError extends Error {
  * Every option goes in as an argument, never the environment: the runner
  * takes only the locale.
  *
+ * Git is always given the work tree, which wins over a repo's own
+ * `core.worktree`; the runner accepts one only when it names the checkout whose
+ * `.git` file leads back to its git folder, as a submodule's does.
+ *
  * @param cwd - The folder to run in.
  * @param args - The subcommand and its arguments, after any global options.
+ * @param workTree - The work tree's top; every caller but {@link locateRepo} runs there.
  * @throws {GitMissingError} When git is not installed.
  * @throws Any other git failure, as the runner reports it.
  */
-async function git(cwd: string, args: string[]): Promise<Buffer> {
+async function git(cwd: string, args: string[], workTree = cwd): Promise<Buffer> {
   try {
     return await runSafeGitBuffer([...BASELINE_GIT_ARGS, ...args], cwd, {
       timeoutMs: GIT_TIMEOUT_MS,
       maxBuffer: GIT_MAX_BUFFER,
       env: { LC_ALL: 'C' },
+      workTree,
     });
   } catch (err) {
     // A spawn reports a missing folder the same way as a missing program, and
@@ -83,9 +89,9 @@ async function git(cwd: string, args: string[]): Promise<Buffer> {
 }
 
 /** One git command's stdout as trimmed text, or `undefined` when it failed (git present). */
-async function gitText(cwd: string, args: string[]): Promise<string | undefined> {
+async function gitText(cwd: string, args: string[], workTree = cwd): Promise<string | undefined> {
   try {
-    return (await git(cwd, args)).toString('utf8').trim();
+    return (await git(cwd, args, workTree)).toString('utf8').trim();
   } catch (err) {
     if (err instanceof GitMissingError) throw err;
     return undefined;
@@ -140,13 +146,11 @@ export async function locateRepo(cwd: string): Promise<RepoLocation | null> {
   const top = workTreeTop(cwd);
   if (!top) return null;
   // `--git-common-dir` may print a path relative to `cwd` on older git.
-  const out = await gitText(cwd, [
-    `--work-tree=${top}`,
-    'rev-parse',
-    '--is-inside-work-tree',
-    '--show-toplevel',
-    '--git-common-dir',
-  ]);
+  const out = await gitText(
+    cwd,
+    ['rev-parse', '--is-inside-work-tree', '--show-toplevel', '--git-common-dir'],
+    top
+  );
   const [inside, root, commonDir] = (out ?? '').split('\n');
   if (inside !== 'true' || !root || !commonDir) {
     throw new RepoLocationError(`git could not place ${cwd} in the repo at ${top}`);

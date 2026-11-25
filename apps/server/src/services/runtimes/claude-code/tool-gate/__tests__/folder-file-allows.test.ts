@@ -384,14 +384,21 @@ describe('worktrees and links', () => {
     }
   );
 
-  it('reads only the working folder when a repo’s git folder is missing', () => {
-    const top = path.join(root, 'gone');
+  it.each([
+    ['names a git folder that is missing', 'gitdir: nowhere\n'],
+    ['has no gitdir line', 'not a pointer\n'],
+    ['is empty', ''],
+    ['leads to a shared folder not named .git', 'gitdir: store/worktrees/w\n'],
+  ])('reads the top’s local settings too when its .git file %s', (_label, pointer) => {
+    const top = path.join(root, 'broken');
     fs.mkdirSync(path.join(top, 'x'), { recursive: true });
-    fs.writeFileSync(path.join(top, '.git'), `gitdir: ${path.join(root, 'nowhere')}\n`);
+    fs.mkdirSync(path.join(top, 'store', 'worktrees', 'w'), { recursive: true });
+    fs.writeFileSync(path.join(top, 'store', 'worktrees', 'w', 'commondir'), '../..\n');
+    fs.writeFileSync(path.join(top, '.git'), pointer);
     const cwd = path.join(top, 'x');
     expect(settingsFolders(cwd, TURN.userHome)).toMatchObject({
       alwaysAllowFolder: cwd,
-      localFolders: [cwd],
+      localFolders: [cwd, top],
     });
   });
 

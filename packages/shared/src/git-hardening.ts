@@ -64,8 +64,10 @@ export const SESSION_GIT_CONFIG: readonly GitConfigEntry[] = [
 
 /**
  * Settings for git that DorkOS runs itself, against folders it did not
- * create: everything in {@link SESSION_GIT_CONFIG}, and no hooks. DorkOS never
- * needs a repository's hooks to read status, list files or fetch a package.
+ * create: everything in {@link SESSION_GIT_CONFIG}, no hooks, and no recursion
+ * into submodules, whose own git folders hold settings no audit reads. DorkOS
+ * never needs a repository's hooks or submodules to read status, list files or
+ * fetch a package.
  *
  * @param platform - Where git runs; Windows has no `/dev/null`, and git there
  *   reads `NUL` as the empty device.
@@ -75,6 +77,8 @@ export function internalGitConfig(platform: NodeJS.Platform = process.platform):
   return [
     ...SESSION_GIT_CONFIG,
     { key: 'core.hooksPath', value: platform === 'win32' ? 'NUL' : '/dev/null' },
+    // Wins over a person's own `submodule.recurse=true`, which the server's git inherits.
+    { key: 'submodule.recurse', value: 'false' },
   ];
 }
 

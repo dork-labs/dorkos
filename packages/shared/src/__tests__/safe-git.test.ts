@@ -17,6 +17,7 @@ import {
   GitRepoConfigUnsafeError,
   SAFE_REPO_CONFIG_KEY,
   assertRepoConfigSafe,
+  isSafeRoomRepoConfigKey,
   runSafeGit,
   runSafeGitBuffer,
 } from '../safe-git.js';
@@ -257,7 +258,16 @@ describe('runSafeGit', () => {
   });
 
   it('keeps the safe list to keys that run nothing', () => {
-    for (const key of ['core.bare', 'remote.origin.url', 'branch.main.merge', 'user.email']) {
+    for (const key of [
+      'core.bare',
+      'remote.origin.url',
+      'branch.main.merge',
+      'user.email',
+      'submodule.sm.url',
+      'submodule.sm.active',
+      'submodule.my lib+2@é.url',
+      'submodule.a.update.active',
+    ]) {
       expect(SAFE_REPO_CONFIG_KEY.test(key)).toBe(true);
     }
     for (const key of [
@@ -265,6 +275,9 @@ describe('runSafeGit', () => {
       'core.sshcommand',
       'core.hookspath',
       'core.worktree',
+      'submodule.sm.update',
+      'submodule.url',
+      'submodule.sm.url.update',
       'filter.x.clean',
       'diff.x.textconv',
       'credential.helper',
@@ -275,6 +288,99 @@ describe('runSafeGit', () => {
     ]) {
       expect(SAFE_REPO_CONFIG_KEY.test(key)).toBe(false);
     }
+  });
+
+  it('reads a submodule given its work tree, its worktree, and the repository holding it', async () => {
+    const origin = repo('sm-origin');
+    const holder = repo('holder');
+    git(holder, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', origin, 'sm');
+    const sm = path.join(holder, 'sm');
+    const linked = path.join(scratch, 'sm-linked');
+    fs.rmSync(linked, { recursive: true, force: true });
+    git(sm, 'worktree', 'add', '-q', '-b', 'linked', linked);
+    const top = ['rev-parse', '--show-toplevel'];
+    await expect(runSafeGit(top, holder)).resolves.toBe(`${holder}\n`);
+    // The submodule's git folder sets core.worktree, which only a given work tree overrides.
+    await expect(runSafeGit(top, sm)).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
+    for (const dir of [sm, linked]) {
+      await expect(runSafeGit(top, dir, { workTree: dir })).resolves.toBe(`${dir}\n`);
+    }
+  });
+
+  it('refuses a repository that moves its work tree elsewhere, given a work tree or not', async () => {
+    const dir = repo('moved-tree');
+    const elsewhere = path.join(scratch, 'elsewhere');
+    fs.mkdirSync(elsewhere, { recursive: true });
+    git(dir, 'config', 'core.worktree', elsewhere);
+    expect(git(dir, 'rev-parse', '--show-toplevel')).toBe(elsewhere);
+    const top = ['rev-parse', '--show-toplevel'];
+    await expect(runSafeGit(top, dir, { workTree: dir })).rejects.toBeInstanceOf(
+      GitRepoConfigUnsafeError
+    );
+    // A planted .git that leads somewhere else does not make it the repository's own.
+    fs.writeFileSync(path.join(elsewhere, '.git'), `gitdir: ${path.join(scratch, 'other')}\n`);
+    await expect(runSafeGit(top, dir, { workTree: dir })).rejects.toBeInstanceOf(
+      GitRepoConfigUnsafeError
+    );
+  });
+
+  it('keeps submodule keys out of a room’s own settings', () => {
+    expect(isSafeRoomRepoConfigKey('submodule.sm.url')).toBe(false);
+    expect(isSafeRoomRepoConfigKey('submodule.sm.active')).toBe(false);
+    expect(isSafeRoomRepoConfigKey('remote.origin.url')).toBe(true);
+  });
+
+  it.each([
+    ['status', '--porcelain=v1'],
+    ['diff', '--stat'],
+    ['diff-files'],
+    ['diff-index', 'HEAD'],
+  ])('never looks inside a submodule its .gitmodules says to watch: %s', async (...command) => {
+    const origin = repo('watched-origin');
+    const holder = repo('watched-holder');
+    git(holder, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', origin, 'sm');
+    plantFilter(path.join(holder, '.git', 'modules', 'sm'));
+    // Same bytes, a new time: git has to read the file again, through the filter.
+    let tick = 0;
+    const touch = () => {
+      const at = new Date(Date.now() + 10_000 * ++tick);
+      fs.utimesSync(path.join(holder, 'sm', 'a.txt'), at, at);
+    };
+    for (const ignore of ['none', 'untracked']) {
+      git(holder, 'config', '--file', '.gitmodules', 'submodule.sm.ignore', ignore);
+      // The control: plain git with the runner's settings goes in and runs the filter.
+      touch();
+      execFileSync(realGit, ['-c', 'diff.ignoreSubmodules=all', ...command], {
+        cwd: holder,
+        stdio: 'ignore',
+      });
+      expect(fs.existsSync(marker), ignore).toBe(true);
+      fs.rmSync(marker);
+      for (const args of [command, ['--no-optional-locks', ...command]]) {
+        touch();
+        await runSafeGit(args, holder);
+      }
+      expect(fs.existsSync(marker), ignore).toBe(false);
+    }
+  });
+
+  it('refuses a caller that sets --ignore-submodules itself', async () => {
+    const dir = repo('own-ignore');
+    await expect(
+      runSafeGit(['status', '--ignore-submodules=none', '--porcelain=v1'], dir)
+    ).rejects.toThrow('--ignore-submodules');
+  });
+
+  it('still audits every other key of a submodule given its work tree', async () => {
+    const origin = repo('sm-origin-2');
+    const holder = repo('holder-2');
+    git(holder, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', origin, 'sm');
+    const sm = path.join(holder, 'sm');
+    fs.writeFileSync(path.join(sm, 'a.txt'), 'three\n');
+    plantFilter(sm);
+    const read = runSafeGit(['status', '--porcelain=v1'], sm, { workTree: sm });
+    await expect(read).rejects.toBeInstanceOf(GitRepoConfigUnsafeError);
+    expect(fs.existsSync(marker)).toBe(false);
   });
 
   it('reads a .git file exactly as git does, odd spacing included', async () => {
