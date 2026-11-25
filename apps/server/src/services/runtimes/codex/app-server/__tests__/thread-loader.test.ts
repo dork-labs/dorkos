@@ -6,9 +6,9 @@ import {
   CodexThreadLoader,
   THREAD_STARTS_FRESH_NOTICE,
   buildLoadOverrides,
-  trustLevelFor,
   type ThreadLoadInput,
 } from '../thread-loader.js';
+import { trustLevelFor } from '../thread-trust.js';
 import type { CodexTurnTools } from '../../transport/codex-transport.js';
 import fs from 'node:fs';
 import os from 'node:os';
