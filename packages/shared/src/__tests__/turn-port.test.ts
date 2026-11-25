@@ -165,6 +165,13 @@ const SAMPLES: Record<string, readonly unknown[]> = {
       runId: RUN,
       ending: 'stopped',
       receipt: { outcome: 'acked', runtime: 'claude-code' },
+      stoppedBy: 'dork:person:person-1',
+    },
+    {
+      kind: 'ended',
+      runId: RUN,
+      ending: 'stopped',
+      receipt: { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'claude-code' },
     },
     { kind: 'ended', runId: RUN, ending: 'refused', refusal: 'The model is not available.' },
   ],
@@ -399,15 +406,17 @@ describe('facts', () => {
     ]);
   });
 
-  it('a stopped ending needs a receipt that observed the end', () => {
+  it('a stopped ending always carries its receipt, confirmed or unconfirmed, never failed', () => {
     const stopped = { kind: 'ended', runId: RUN, ending: 'stopped' } as const;
+    const receipt = (outcome: 'acked' | 'closed' | 'not-running' | 'unconfirmed' | 'failed') => ({
+      ...stopped,
+      receipt: { outcome, runtime: 'claude-code' },
+    });
     expect(RunFactSchema.safeParse(stopped).success).toBe(false);
-    expect(
-      RunFactSchema.safeParse({
-        ...stopped,
-        receipt: { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'claude-code' },
-      }).success
-    ).toBe(false);
+    for (const outcome of ['acked', 'closed', 'not-running', 'unconfirmed'] as const) {
+      expect(RunFactSchema.safeParse(receipt(outcome)).success, outcome).toBe(true);
+    }
+    expect(RunFactSchema.safeParse(receipt('failed')).success).toBe(false);
     expect(
       RunFactSchema.safeParse({
         kind: 'ended',
@@ -415,6 +424,32 @@ describe('facts', () => {
         ending: 'completed',
         receipt: { outcome: 'acked', runtime: 'claude-code' },
       }).success
+    ).toBe(false);
+  });
+
+  it('names who stopped it only on a stopped ending, as a dork: reference', () => {
+    const stopped = {
+      kind: 'ended',
+      runId: RUN,
+      ending: 'stopped',
+      receipt: { outcome: 'acked', runtime: 'claude-code' },
+    } as const;
+    const withStopper = { ...stopped, stoppedBy: `dork:agent:${AGENT}` };
+    expect(RunFactSchema.parse(JSON.parse(JSON.stringify(withStopper)))).toEqual(withStopper);
+    expect(RunFactSchema.safeParse({ ...stopped, stoppedBy: 'person-1' }).success).toBe(false);
+    expect(
+      RunFactSchema.safeParse({
+        kind: 'ended',
+        runId: RUN,
+        ending: 'completed',
+        stoppedBy: `dork:agent:${AGENT}`,
+      }).success
+    ).toBe(false);
+  });
+
+  it('a joined run is never the run being started', () => {
+    expect(
+      RunFactSchema.safeParse({ kind: 'accepted', runId: RUN, joinedRunId: RUN }).success
     ).toBe(false);
   });
 
