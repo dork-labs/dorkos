@@ -39,14 +39,14 @@ ADR `261124-150519` settles where this belongs. The core watches nothing outside
 - **A new turn origin for a watcher's wake.** Its words are marked as outside words and fenced; the space side records the mark on the run when it accepts it, and a computer may only add to it.
 - **`ctx.wakes`** for a mini app's server half, and its manifest grants. A tool call carries a call id the core ties to its chat; the mini app never holds a chat id. The seam contract does not change.
 - **What people and agents see**: a line in the chat, two capabilities to list and cancel, and the words a person reads.
-- **The six gaps of DOR-5171**, one step each, with gap 4 left for Security's ruling.
+- **The six gaps of DOR-5171**, one step each, with gap 4 built as Security ruled: what reaches a beat waits for its next tick.
 - **The first-party pull request watcher**, which ships off, what a watch costs, and where it replaces the script.
 
 ## What is left to later parts
 
 - Moving DorkOS's own wakes onto the port, and the wakes a restart loses today: step 5's T7, which this spec needs.
 - A generic "wake me when" tool in the core. The core cannot see X, so a watcher's own tool asks for the wake.
-- Waking an agent's beat from an outside source: gap 4, waiting on Security's ruling.
+- Waking an agent's beat from an outside source: Security ruled that a beat is never woken by one.
 - A person registering a watch by hand, and a way for an owner to say a watcher's words are not outside words.
 - A webhook product, a database for each mini app, and publishing the author API to npm (DOR-3544).
 - The contract over the wire (item 8). This spec says only what a wake needs from it.
