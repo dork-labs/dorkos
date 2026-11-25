@@ -103,11 +103,63 @@ block out=$(pnpm vitest run)
 # --- targeted runs stay allowed. ---
 allow pnpm vitest run apps/server/src/services/core/load-gate/__tests__/load-gate.test.ts
 allow vitest run scripts/__tests__/load-wait.test.ts
-allow pnpm vitest run apps/server/src/services/core/load-gate
 allow pnpm vitest run --project server apps/server/src/x.test.ts
 allow npx vitest --version
 allow npx playwright --version
 allow npx playwright install --help
+# --- vitest given more than a few named files (Nov 25: ~2,200 runs walked the gate). ---
+block pnpm vitest run apps/server/src/services/core/load-gate
+block pnpm vitest run apps/server/src/services/runtimes apps/server/src/routes packages
+block pnpm vitest run auth
+block pnpm vitest run a.test.ts b.test.ts c.test.ts d.test.ts
+block printf '%s\n' apps/server/src | xargs pnpm vitest run
+block find . -name '*.test.ts' | xargs -n 5 npx vitest run
+allow pnpm vitest run a.test.ts b.test.ts c.test.ts
+allow pnpm vitest run apps/client/src/x.spec.tsx
+# --- tsc in any spelling. ---
+block tsc --noEmit
+block npx tsc -p apps/server/tsconfig.json --noEmit
+block pnpm exec tsc --noEmit
+block pnpm tsc -b
+block node node_modules/typescript/bin/tsc --noEmit
+block cd apps/server && npx tsc --noEmit
+allow npx tsc --version
+allow tsc --help
+allow pnpm exec tsc --showConfig
+# --- a package's own heavy script. ---
+block pnpm --filter @dorkos/server typecheck
+block pnpm -F @dorkos/client test
+block pnpm --filter=@dorkos/shared build
+block pnpm -C apps/server typecheck
+block pnpm --dir apps/server run test
+block pnpm -r typecheck
+block pnpm --recursive run lint
+block pnpm --filter @dorkos/server test:unit
+block npm --workspace apps/server run typecheck
+block npm -w apps/server test
+block yarn workspace @dorkos/server typecheck
+block cd apps/server && pnpm typecheck
+block cd packages/shared; pnpm test
+block pnpm lint
+block pnpm lint:fix
+allow pnpm --filter @dorkos/server dev
+allow pnpm -C apps/server exec node -e 1
+allow cd apps/server && pnpm dev
+allow cd apps/server && ls
+allow pnpm -w add -D typescript --help
+# --- a raised Node heap outside the gate. ---
+block NODE_OPTIONS=--max-old-space-size=8192 pnpm --filter @dorkos/server typecheck
+block NODE_OPTIONS=--max-old-space-size=8192 node scripts/x.mjs
+block export NODE_OPTIONS=--max-old-space-size=8192 && pnpm typecheck
+block node --max-old-space-size=8192 node_modules/typescript/bin/tsc
+block env NODE_OPTIONS=--max_old_space_size=8192 npx tsc --noEmit
+# --- the gate with a raised heap still passes. ---
+allow NODE_OPTIONS=--max-old-space-size=8192 pnpm heavy pnpm --filter @dorkos/server typecheck
+allow pnpm heavy env NODE_OPTIONS=--max-old-space-size=8192 pnpm --filter @dorkos/server typecheck
+allow pnpm heavy npx tsc -p apps/server/tsconfig.json --noEmit
+allow pnpm heavy pnpm vitest run apps/server/src/routes
+allow pnpm heavy bash -c 'cd apps/server && pnpm typecheck'
+allow bash scripts/heavy-run-lock.sh --job pnpm --filter @dorkos/server typecheck
 # --- the wrappers that already join the gate. ---
 allow pnpm heavy pnpm vitest run
 allow pnpm heavy turbo build
@@ -118,7 +170,6 @@ allow pnpm test -- --run
 allow pnpm typecheck
 allow pnpm verify
 allow pnpm verify:preopen
-allow pnpm --filter @dorkos/server typecheck
 # --- light turbo and everything else. ---
 allow turbo dev
 allow turbo watch build
@@ -135,6 +186,14 @@ CASES
 # In a DorkOS chat the server's own hook holds the command in the gate.
 check 'a DorkOS chat (DORKOS_SESSION_ID set) is left to the server gate' allow \
   "$(DORKOS_SESSION_ID=fixture-chat verdict 'turbo build')"
+
+# The hook's cwd inside a package makes a bare `pnpm typecheck` that package's own script.
+status=$(printf '%s' '{"tool_name":"Bash","cwd":"/repo/apps/server","tool_input":{"command":"pnpm typecheck"}}' |
+  node "$guard" >/dev/null 2>&1; echo $?)
+check 'pnpm typecheck with cwd in apps/server is refused' 2 "$status"
+status=$(printf '%s' '{"tool_name":"Bash","cwd":"/repo","tool_input":{"command":"pnpm typecheck"}}' |
+  node "$guard" >/dev/null 2>&1; echo $?)
+check 'pnpm typecheck with cwd at the root joins the gate itself' 0 "$status"
 
 # A payload the guard cannot read fails open, like its siblings.
 status=$(printf 'not json' | node "$guard" >/dev/null 2>&1; echo $?)
