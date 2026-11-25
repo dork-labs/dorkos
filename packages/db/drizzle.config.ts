@@ -70,6 +70,7 @@ export default defineConfig({
     './src/schema/work-queue/work-queue.ts',
     './src/schema/heartbeats/heartbeats.ts',
     './src/schema/remote/remote-commands.ts',
+    './src/schema/runs/turn-runs.ts',
   ],
   out: './drizzle',
   // Snapshot baselines are sorted by filename; keep future names after the timestamp migration.
