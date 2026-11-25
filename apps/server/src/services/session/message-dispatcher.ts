@@ -165,7 +165,7 @@ import {
   noteContextWarningBoundary,
 } from './agent-compaction/context-warning.js';
 import { SESSIONS } from '../../config/constants.js';
-import { isChatClientId } from './chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { logger } from '../../lib/logger.js';
 import { carryBridgedSender } from '../core/turn-power/continuation-hold.js';
 import { turnDeps } from './message-dispatcher/turn-deps.js';

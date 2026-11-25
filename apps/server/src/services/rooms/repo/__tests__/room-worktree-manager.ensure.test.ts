@@ -8,7 +8,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { RoomError } from '../../room-errors.js';
-import { RoomWorktreeManager } from '../room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
 import { commitAll, commonGitDir, hasLocalBranch } from '../room-repo-git.js';
 
 import {
@@ -31,29 +31,29 @@ describe('RoomWorktreeManager', () => {
 
   describe('slugFor', () => {
     it('is filesystem-safe whatever the agent is called', () => {
-      const slug = RoomWorktreeManager.slugFor('../../etc/passwd', '/tmp/a');
+      const slug = roomWorktreeSlug('../../etc/passwd', '/tmp/a');
       expect(slug).toMatch(/^[a-z][a-z0-9-]*-[0-9a-f]{8}$/);
       expect(path.basename(slug)).toBe(slug);
     });
 
     it('keeps a name that is nothing but punctuation from becoming an empty path', () => {
-      expect(RoomWorktreeManager.slugFor('...', '/tmp/a')).toMatch(/^agent-[0-9a-f]{8}$/);
+      expect(roomWorktreeSlug('...', '/tmp/a')).toMatch(/^agent-[0-9a-f]{8}$/);
     });
 
     it('gives two agents with one name two different worktrees', () => {
       // The collision case, and why the digest is unconditional: a suffix added
       // only on collision would depend on who arrived first, and would change
       // under the survivor when the other agent was deleted.
-      const ana = RoomWorktreeManager.slugFor('Ana', '/agents/ana');
-      const other = RoomWorktreeManager.slugFor('ana', '/agents/ana-the-second');
+      const ana = roomWorktreeSlug('Ana', '/agents/ana');
+      const other = roomWorktreeSlug('ana', '/agents/ana-the-second');
       expect(ana).not.toBe(other);
       expect(ana.startsWith('ana-')).toBe(true);
       expect(other.startsWith('ana-')).toBe(true);
     });
 
     it('is the same answer every time for the same agent, however its path is spelled', () => {
-      expect(RoomWorktreeManager.slugFor('Ana', '/agents/ana')).toBe(
-        RoomWorktreeManager.slugFor('Ana', '/agents/./ana/')
+      expect(roomWorktreeSlug('Ana', '/agents/ana')).toBe(
+        roomWorktreeSlug('Ana', '/agents/./ana/')
       );
     });
   });
@@ -169,7 +169,7 @@ describe('RoomWorktreeManager', () => {
       // unreadable directory as stranded work and never removes it, so nothing
       // could ever repair the thing this method kept answering with.
       await service.enable(ROOM_ID, OPERATOR);
-      const slug = RoomWorktreeManager.slugFor('Ana', agentPath('ana'));
+      const slug = roomWorktreeSlug('Ana', agentPath('ana'));
       const corpse = path.join(store.worktreesPath(ROOM_ID), slug);
       await mkdir(corpse, { recursive: true });
       await writeFile(path.join(corpse, 'half-written.md'), 'from the crash', 'utf-8');
@@ -198,7 +198,7 @@ describe('RoomWorktreeManager', () => {
       // map, that caller took the early return and handed a turn a path with no
       // `.git` in it.
       await service.enable(ROOM_ID, OPERATOR);
-      const slug = RoomWorktreeManager.slugFor('Ana', agentPath('ana'));
+      const slug = roomWorktreeSlug('Ana', agentPath('ana'));
       await mkdir(path.join(store.worktreesPath(ROOM_ID), slug), { recursive: true });
 
       const [a, b] = await Promise.all([

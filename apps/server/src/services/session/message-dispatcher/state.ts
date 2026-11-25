@@ -14,7 +14,7 @@ import type {
   TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
 import type { TriggerTurnDeps, TriggerTurnResult } from '../trigger-turn.js';
-import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { logger } from '../../../lib/logger.js';
 import type {
   DispatchLifecycleEvent,

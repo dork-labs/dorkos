@@ -9,7 +9,10 @@
  * were argued once, on DOR-682, and getting either wrong the second time is a
  * blackout rather than a bug (see {@link collapseRoots}).
  *
- * @module server/services/search/jsonl-walk
+ * Kernel, beside the Codex discovery that uses it; the search index's Claude Code
+ * discovery imports it from here too.
+ *
+ * @module services/core/codex-rollouts/jsonl-walk
  */
 import fs from 'fs/promises';
 import path from 'path';

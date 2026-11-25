@@ -366,7 +366,7 @@ const { initPermissionGate, resetPermissionGate } =
 const { SessionEventStore, setSessionEventStore } = await import('../../session/index.js');
 const { setRoomAttachmentStores } = await import('../index.js');
 const { LocalRoomAttachmentStore } = await import('../attachments/local-room-attachment-store.js');
-const { PROJECTED_ATTACHMENTS_ROOT } = await import('../attachments/attachment-paths.js');
+const { PROJECTED_ATTACHMENTS_ROOT } = await import('@dorkos/shared/room-attachment-paths');
 // The relay's answer to the same question, imported HERE rather than tested
 // beside itself: the claim is that the two surfaces agree, and this is the file
 // that drives the room's real path. Its own behavior is covered in

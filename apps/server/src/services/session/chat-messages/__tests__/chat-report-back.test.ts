@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { logger } from '../../../../lib/logger.js';
-import { CHAT_MESSAGE_MAX } from '../chat-client-id.js';
+import { CHAT_MESSAGE_MAX } from '@dorkos/shared/chat-client-id';
 import {
   ChatReportBack,
   DEFER_MAX_MS,

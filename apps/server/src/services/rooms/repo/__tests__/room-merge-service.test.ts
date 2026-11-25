@@ -41,6 +41,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { MAX_QUEUE_DEPTH, RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
 import { RoomMergeService, symlinkLeavesRepo } from '../room-merge-service.js';
 import { mergeNoFf, runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
@@ -115,7 +116,7 @@ describe('RoomMergeService', () => {
   function slugOf(authorId: string): string {
     const agent = roster[authorId];
     if (!agent) throw new Error(`no such agent ${authorId}`);
-    return RoomWorktreeManager.slugFor(agent.displayName, agentPath(agent.name));
+    return roomWorktreeSlug(agent.displayName, agentPath(agent.name));
   }
 
   /** Give an agent its working copy and answer where it is. */

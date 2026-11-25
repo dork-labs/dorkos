@@ -17,7 +17,7 @@ import {
   type DbTransaction,
   type SessionBirthAllocation,
 } from '@dorkos/db';
-import { chatClientId } from '../../session/chat-messages/chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 
 /** Prepared server inputs. These values describe an admitted owner and never grant admission themselves. */

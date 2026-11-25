@@ -76,7 +76,10 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../../../lib/logger.js';
-import { RoomWorktreeManager } from '../../rooms/repo/room-worktree-manager.js';
+import {
+  ROOM_WORKTREE_NAME_CHARS,
+  roomWorktreeDigest,
+} from '../../core/room-worktree-name/room-worktree-name.js';
 import { projectSlug } from './sessions/project-slug.js';
 
 /** The marker's path, relative to the DorkOS data directory. */
@@ -95,13 +98,6 @@ export const ROOM_TRANSCRIPT_MIGRATION_MARKER = path.join(
  * start before the marker is written; being too eager costs a split transcript.
  */
 export const RECENT_WRITE_WINDOW_MS = 15 * 60_000;
-
-/**
- * How much of an agent's name rides in its worktree name, mirrored from
- * `RoomWorktreeManager.slugFor` (`SLUG_NAME_CHARS`). A test builds a worktree
- * name from the longest possible agent name, so a drift fails there.
- */
-const WORKTREE_NAME_CHARS = 40;
 
 /** A ULID, which is what every room id is (`room-lifecycle.ts`). */
 const ROOM_ID = '[0-9A-HJKMNP-TV-Z]{26}';
@@ -258,14 +254,14 @@ export async function frozenRoomWorktrees(dorkHome: string): Promise<string[]> {
 
 /**
  * The folders in a frozen list that belong to one agent, matched on the digest
- * half of the folder name — the scheme `RoomWorktreeManager.slugFor` names them
+ * half of the folder name — the scheme `roomWorktreeSlug` names them
  * by, so a folder left by a renamed agent still matches.
  *
  * @param frozen - From {@link frozenRoomWorktrees}.
  * @param agentPath - The agent's home.
  */
 export function roomWorktreesOfAgent(frozen: readonly string[], agentPath: string): string[] {
-  const suffix = `-${RoomWorktreeManager.digestFor(agentPath)}`;
+  const suffix = `-${roomWorktreeDigest(agentPath)}`;
   return frozen.filter((folder) => path.basename(folder).endsWith(suffix));
 }
 
@@ -282,7 +278,7 @@ function ownerOfDigest(digest: string, digests: ReadonlyMap<string, string[]>): 
 
 /**
  * The registered agent a worktree folder belongs to, by the digest suffix of its
- * name (`RoomWorktreeManager.slugFor`: `<name>-<digest of the agent path>`).
+ * name (`roomWorktreeSlug`: `<name>-<digest of the agent path>`).
  */
 function ownerOf(worktree: string, digests: ReadonlyMap<string, string[]>): string | null {
   const name = path.basename(worktree);
@@ -305,7 +301,7 @@ function escapeRegExp(value: string): string {
  * own data under `<worktree>/apps/server/.temp/.dork/rooms/…/worktrees/…`, whose
  * slug starts with the outer worktree's and ends in a real agent's digest. Here
  * the name part is a slugified agent name of at most
- * {@link WORKTREE_NAME_CHARS} characters with no dash-delimited token equal to
+ * {@link ROOM_WORKTREE_NAME_CHARS} characters with no dash-delimited token equal to
  * a known worktree digest (a registered agent's, or one on a worktree folder on
  * disk), which is what any path nested inside a worktree carries: the outer
  * worktree's own digest. Any other 8-hex word is a legitimate name ("Release
@@ -320,7 +316,8 @@ function worktreeSlugPattern(roomsSlug: string): RegExp {
 /** Whether a worktree slug's name part could have come from `slugFor`. */
 function isAgentNamePart(name: string, knownDigests: ReadonlySet<string>): boolean {
   return (
-    name.length <= WORKTREE_NAME_CHARS && !name.split('-').some((token) => knownDigests.has(token))
+    name.length <= ROOM_WORKTREE_NAME_CHARS &&
+    !name.split('-').some((token) => knownDigests.has(token))
   );
 }
 
@@ -637,7 +634,7 @@ export async function migrateRoomTranscripts(
 
   const digests = new Map<string, string[]>();
   for (const agentPath of new Set(deps.agentPaths)) {
-    const digest = RoomWorktreeManager.digestFor(agentPath);
+    const digest = roomWorktreeDigest(agentPath);
     digests.set(digest, [...(digests.get(digest) ?? []), agentPath]);
   }
 

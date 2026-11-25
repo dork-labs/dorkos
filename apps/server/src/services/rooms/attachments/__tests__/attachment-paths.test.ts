@@ -8,11 +8,8 @@
  * the same joins the implementation uses, which would agree with any mistake.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  PROJECTED_ATTACHMENTS_ROOT,
-  projectedAttachmentPath,
-  projectedEntryDir,
-} from '../attachment-paths.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
+import { projectedAttachmentPath, projectedEntryDir } from '../attachment-paths.js';
 
 describe('projected attachment paths', () => {
   it('puts an entry’s files in their own directory under the sweep root', () => {

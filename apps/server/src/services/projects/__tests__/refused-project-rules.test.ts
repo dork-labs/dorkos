@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { lookupProjectRoot } from '../resolve-project-root.js';
+import { lookupProjectRoot } from '../../core/project-root/resolve-project-root.js';
 import { accountEligibility, projectOfFolder } from '../../core/usage/account-eligibility.js';
 
 let base: string;

@@ -14,11 +14,11 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const serverSrc = path.resolve(import.meta.dirname, '..', '..', '..');
+const serverSrc = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 
 /** The only non-test files allowed to name the flag, relative to `apps/server/src`. */
 const ALLOWED = new Set([
-  'services/projects/resolve-project-root.ts',
+  'services/core/project-root/resolve-project-root.ts',
   'services/rooms/repo/room-repo-git.ts',
   'services/runtimes/claude-code/repo-settings/repo-git.ts',
 ]);
@@ -36,7 +36,7 @@ function sourceFiles(dir: string): string[] {
 describe('the single project-root rule', () => {
   it('finds the server source to scan (so the check below cannot pass vacuously)', () => {
     const files = sourceFiles(serverSrc).map((file) => path.relative(serverSrc, file));
-    expect(files).toContain('services/projects/resolve-project-root.ts');
+    expect(files).toContain('services/core/project-root/resolve-project-root.ts');
     expect(files.length).toBeGreaterThan(100);
   });
 

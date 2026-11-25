@@ -13,7 +13,10 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GitRepoConfigUnsafeError, runSafeGit } from '@dorkos/shared/safe-git';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { createProjectRootResolver, lookupProjectRoot } from '../resolve-project-root.js';
+import {
+  createProjectRootResolver,
+  lookupProjectRoot,
+} from '../../core/project-root/resolve-project-root.js';
 import { accountEligibility, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { resolveSessionCwd } from '../../workspace/resolve-session-cwd.js';
 

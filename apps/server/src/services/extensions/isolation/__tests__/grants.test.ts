@@ -4,12 +4,9 @@
  * accepts from an untrusted child.
  */
 import { describe, expect, it } from 'vitest';
-import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { ancestorsOf, buildChildEnv, childExecArgv, selfCheckPassed } from '../grants.js';
 import { isChildMessage, type PermissionReport } from '../ipc-protocol.js';
-import { unpackedPath } from '../child-entry.js';
 
 const PASSING: PermissionReport = {
   present: true,
@@ -174,29 +171,5 @@ describe('isChildMessage', () => {
     ]) {
       expect(isChildMessage(bad)).toBe(false);
     }
-  });
-});
-
-describe('unpackedPath', () => {
-  // Purpose: a path inside app.asar maps to its unpacked twin when it exists
-  // (the permission model grants real files, not archive entries)...
-  it('maps into app.asar.unpacked when the twin exists', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'asar-'));
-    try {
-      const twin = path.join(root, 'app.asar.unpacked', 'dist', 'server', 'x.cjs');
-      await fs.mkdir(path.dirname(twin), { recursive: true });
-      await fs.writeFile(twin, '');
-      expect(unpackedPath(path.join(root, 'app.asar', 'dist', 'server', 'x.cjs'))).toBe(twin);
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  // ...and only then.
-  it('leaves paths alone when no unpacked twin exists', () => {
-    expect(unpackedPath('/Applications/X.app/Contents/Resources/app.asar/dist/server/x.cjs')).toBe(
-      '/Applications/X.app/Contents/Resources/app.asar/dist/server/x.cjs'
-    );
-    expect(unpackedPath('/tmp/not-asar/x.cjs')).toBe('/tmp/not-asar/x.cjs');
   });
 });

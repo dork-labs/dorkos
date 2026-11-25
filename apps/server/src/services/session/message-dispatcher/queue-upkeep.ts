@@ -24,7 +24,7 @@ import { forgetContextWarning } from '../agent-compaction/context-warning.js';
 import { forgetTurnCutoff } from '../turn-cutoff/turn-cutoff.js';
 import { forgetTimersStopped } from '../turn-cutoff/timers-stopped.js';
 import { logger } from '../../../lib/logger.js';
-import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import {
   emitLifecycle,
   inFlight,

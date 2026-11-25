@@ -19,7 +19,11 @@
  * The round trip with {@link formatRoomContext} is pinned by a test, so a change
  * to the ids line that this stops reading fails there rather than silently.
  *
- * @module services/session/chat-messages/room-turn-ref
+ * Kernel: a pure reader of a line DorkOS writes. The Claude Code transcript
+ * parser (computer side) builds history messages with it, and the room's own
+ * tests pin the round trip, so it sits where both sides may import it.
+ *
+ * @module services/core/room-turn-ref/room-turn-ref
  */
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { HistoryMessage } from '@dorkos/shared/types';

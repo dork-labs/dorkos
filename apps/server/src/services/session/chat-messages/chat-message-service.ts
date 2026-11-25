@@ -77,7 +77,7 @@ import {
 import { cancelQueuedMessage } from '../queued-message-edits.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaults.js';
-import { CHAT_MESSAGE_MAX, chatClientId, isChatClientId } from './chat-client-id.js';
+import { CHAT_MESSAGE_MAX, chatClientId, isChatClientId } from '@dorkos/shared/chat-client-id';
 import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
 import type { FreshDmBirth } from './sending/chat-message-birth.js';
@@ -89,7 +89,6 @@ import { assertChatSendable, sameChat, type ChatTarget } from './chat-target.js'
 
 export { ChatMessageError } from './chat-message-error.js';
 export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
-export { CHAT_MESSAGE_MAX } from './chat-client-id.js';
 
 /** The calling chat, as the verified turn names it. */
 export interface ChatCaller {

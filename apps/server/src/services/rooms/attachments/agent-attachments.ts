@@ -44,7 +44,7 @@ import {
   protectedPathRefusal,
 } from '../../core/protected-paths/protected-file-guard.js';
 import { RoomError } from '../room-errors.js';
-import { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../core/room-worktree-name/room-worktree-name.js';
 import { SAFE_ROOM_ID } from '../repo/room-repo-store.js';
 import { sanitizeAttachmentName, storedExtension } from './attachment-paths.js';
 import type { AttachmentRowStore } from './attachment-row-store.js';
@@ -102,7 +102,7 @@ function isWithin(root: string, target: string): boolean {
 /**
  * The agent's own copy of ONE room's files — the folder a turn in that room is
  * granted to write — by the exact name the worktree manager gives it
- * (`RoomWorktreeManager.slugFor`, from the same author label a room turn is
+ * (`roomWorktreeSlug`, from the same author label a room turn is
  * placed with), spelled under the rooms directory's real path. `null` when it
  * does not exist.
  *
@@ -127,7 +127,7 @@ export async function ownRoomCopy(
     realRooms,
     roomId,
     'worktrees',
-    RoomWorktreeManager.slugFor(agent.agentName, agent.agentPath)
+    roomWorktreeSlug(agent.agentName, agent.agentPath)
   );
   const stat = await fs.lstat(copy).catch(() => null);
   return stat?.isDirectory() ? copy : null;

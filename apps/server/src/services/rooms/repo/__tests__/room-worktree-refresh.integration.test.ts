@@ -35,6 +35,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
 import { RoomMergeService } from '../room-merge-service.js';
 import { RoomFileEditor } from '../room-file-editor.js';
 import { RoomFilesService } from '../room-files.js';
@@ -164,7 +165,7 @@ describe('an agent’s copy of the room’s files is brought up to date at turn 
 
   /** An agent's copy, as the manager names it. */
   function copyOf(roomId: string, agentPath: string, name: string): string {
-    return path.join(repoStore.worktreesPath(roomId), RoomWorktreeManager.slugFor(name, agentPath));
+    return path.join(repoStore.worktreesPath(roomId), roomWorktreeSlug(name, agentPath));
   }
 
   /** What an agent does in its own copy with its own shell: write, commit. */

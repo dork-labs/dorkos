@@ -8,7 +8,7 @@
  *
  * @module services/session/message-dispatcher/join-chat-rows
  */
-import { CHAT_MESSAGE_MAX, isChatClientId } from '../chat-messages/chat-client-id.js';
+import { CHAT_MESSAGE_MAX, isChatClientId } from '@dorkos/shared/chat-client-id';
 import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';

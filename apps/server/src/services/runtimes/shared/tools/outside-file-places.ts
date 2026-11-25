@@ -19,9 +19,9 @@
 import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 import { expandTilde } from '../../../../lib/boundary.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '../../../rooms/attachments/attachment-paths.js';
 import { claudeCodeScratchFolders } from './claude-code-scratch.js';
 import { hasWildcard, patternReachesFolder } from './outside-file-patterns.js';
 import { linksReach, newLinkWalk } from './outside-file-links.js';

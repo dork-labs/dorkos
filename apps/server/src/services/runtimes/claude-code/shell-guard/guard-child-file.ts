@@ -1,10 +1,10 @@
 /**
- * Find the shell guard's child file (`extensions/isolation/child-bundle.ts`).
+ * Find the shell guard's child file (`core/child-bundle/child-bundle.ts`).
  *
  * @module services/runtimes/claude-code/shell-guard/guard-child-file
  */
 import path from 'node:path';
-import { resolveChildBundle } from '../../../extensions/isolation/child-bundle.js';
+import { resolveChildBundle } from '../../../core/child-bundle/child-bundle.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 
 /** The file name the production builds emit beside the server bundle. */

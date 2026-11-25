@@ -96,7 +96,7 @@ import {
   createOpenCodeSource,
 } from '../apps/server/src/services/search/registry.js';
 import { discoverClaudeCodeTranscripts } from '../apps/server/src/services/search/claude-code-discovery.js';
-import { discoverCodexRollouts } from '../apps/server/src/services/search/codex-discovery.js';
+import { discoverCodexRollouts } from '../apps/server/src/services/core/codex-rollouts/codex-discovery.js';
 import { resolveClaudeRootSet } from '../apps/server/src/services/runtimes/claude-code/claude-config-dir.js';
 import { resolveCodexRolloutRoots } from '../apps/server/src/services/runtimes/codex/codex-home.js';
 import { resolveOpenCodeStorePath } from '../apps/server/src/services/runtimes/opencode/opencode-data-dir.js';
@@ -162,7 +162,7 @@ const MAX_REBUILD_MS = 60_000;
  * rollouts hold **261** `response_item` message records and the index holds
  * **214** of them — **82%**. The other 47 are Codex's own `developer`-role
  * instructions (20), user records that are nothing but injected context (22),
- * and widget clicks carrying no words (5); `projections/codex.ts` breaks that
+ * and widget clicks carrying no words (5); `core/codex-rollouts/codex-projection.ts` breaks that
  * down. So the ratio is a property of how much plumbing a corpus carries, and a
  * floor at half leaves a corpus with twice this machine's proportion of plumbing
  * passing.

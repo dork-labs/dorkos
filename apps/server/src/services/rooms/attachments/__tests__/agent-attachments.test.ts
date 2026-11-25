@@ -11,7 +11,10 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { RoomWorktreeManager } from '../../repo/room-worktree-manager.js';
+import {
+  roomWorktreeDigest,
+  roomWorktreeSlug,
+} from '../../../core/room-worktree-name/room-worktree-name.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -454,8 +457,8 @@ describe('an agent attaches from its own copy of a room`s files (spec `agent-hom
     rooms = path.join(dorkHome, 'rooms');
     worktrees = path.join(rooms, roomId, 'worktrees');
     // Named exactly as the worktree manager names them, from the author label.
-    anaCopy = path.join(worktrees, RoomWorktreeManager.slugFor('Ana', ANA_PATH));
-    kaiCopy = path.join(worktrees, RoomWorktreeManager.slugFor('Kai', KAI_PATH));
+    anaCopy = path.join(worktrees, roomWorktreeSlug('Ana', ANA_PATH));
+    kaiCopy = path.join(worktrees, roomWorktreeSlug('Kai', KAI_PATH));
     repo = path.join(rooms, roomId, 'repo');
     for (const dir of [anaCopy, kaiCopy, repo]) await fs.mkdir(dir, { recursive: true });
   });
@@ -534,9 +537,9 @@ describe('an agent attaches from its own copy of a room`s files (spec `agent-hom
       rooms,
       'room-2',
       'worktrees',
-      RoomWorktreeManager.slugFor('Ana', ANA_PATH)
+      roomWorktreeSlug('Ana', ANA_PATH)
     );
-    const lookAlike = path.join(worktrees, `mallory-${RoomWorktreeManager.digestFor(ANA_PATH)}`);
+    const lookAlike = path.join(worktrees, `mallory-${roomWorktreeDigest(ANA_PATH)}`);
     for (const dir of [otherRoomCopy, lookAlike]) {
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'shot.png'), PNG);

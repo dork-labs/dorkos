@@ -61,10 +61,13 @@
  * survives, which is what makes the trade acceptable; 0 records on this corpus
  * are in that shape.
  *
- * @module server/services/search/projections/codex
+ * Kernel: the search index projects rollouts with it, and the Codex runtime reads
+ * a session's history with the same rules, so both import it from here.
+ *
+ * @module services/core/codex-rollouts/codex-projection
  */
 import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
-import type { ProjectedMessage, Projection } from '../types.js';
+import type { ProjectedMessage, Projection } from './rollout-types.js';
 
 /** Which container these lines belong to, and where its ordinals resume. */
 export interface CodexProjectionContext {

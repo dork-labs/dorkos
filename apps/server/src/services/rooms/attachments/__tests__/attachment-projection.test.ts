@@ -29,7 +29,7 @@ import { Readable } from 'stream';
 import type { ProjectableAttachment } from '../../room-context.js';
 import type { RoomAttachmentStore } from '../room-attachment-store.js';
 import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '../attachment-paths.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 import { projectRoomAttachments } from '../attachment-projection.js';
 
 /**

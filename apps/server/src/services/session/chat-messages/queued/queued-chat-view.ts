@@ -22,7 +22,7 @@ import {
 } from '@dorkos/shared/chat-messages';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import type { QueuedChatView } from '../../message-queue-store.js';
-import { isChatClientId } from '../chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 
 /** The sender name on a row whose sender could not be found again. */
 export const LEGACY_SENDER_NAME = 'Another chat';

@@ -865,7 +865,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { extensionSkillPluginRoots } =
-        await import('../../extensions/agent-skills/running-skills-ledger.js');
+        await import('../../core/skills-ledger/skill-plugin-roots.js');
       const loaded = new Set(packages.map((plugin) => path.basename(plugin.path)));
       const roots = await extensionSkillPluginRoots(resolveDorkHome(), loaded);
       skillRoots = roots.map((root) => ({ type: 'local' as const, path: root }));

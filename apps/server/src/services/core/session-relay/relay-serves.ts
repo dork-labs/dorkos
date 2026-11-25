@@ -15,8 +15,8 @@
  * @module services/core/session-relay/relay-serves
  */
 import path from 'node:path';
+import { HEARTBEAT_ORIGIN_LABEL } from '@dorkos/shared/heartbeat-schemas';
 import type { Session } from '@dorkos/shared/types';
-import { HEARTBEAT_ORIGIN_LABEL } from '../../heartbeats/beat-chat.js';
 import type { TurnOrigin } from '../../session/origin/turn-origin.js';
 
 /** A registered agent, as the relay needs to know it. Never sent to the web side. */

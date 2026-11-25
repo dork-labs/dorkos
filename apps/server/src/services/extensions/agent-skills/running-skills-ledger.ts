@@ -27,7 +27,10 @@
  * owns that folder whole: anything in it that is not a current root is removed.
  *
  * Writes happen only when something changed: the ledger is compared with the
- * file on disk, and each root with what it should hold.
+ * file on disk, and each root with what it should hold. The reader the Claude
+ * Code runtime asks, `extensionSkillPluginRoots`, is the kernel's
+ * (`services/core/skills-ledger/`), so the computer side reads the published
+ * answer without importing the code that decides it.
  *
  * @module services/extensions/agent-skills/running-skills-ledger
  */
@@ -51,6 +54,7 @@ import { writeFileAtomic } from '../extension-build-cache.js';
 import type { ExtensionsConfig } from '../extension-enable-resolution.js';
 import { runDirOf } from '../pin/run-dir.js';
 import { logger } from '../../../lib/logger.js';
+import { isRegularFile } from '../../core/skills-ledger/skill-plugin-roots.js';
 
 /** What the reconciler needs besides the records. */
 export interface RunningSkillsContext {
@@ -116,15 +120,6 @@ export function projectRootOf(
     return undefined;
   }
   return path.dirname(projectDork);
-}
-
-/** Whether `file` is a regular file (not a link, not a folder). */
-async function isRegularFile(file: string): Promise<boolean> {
-  try {
-    return (await fs.lstat(file)).isFile();
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -433,46 +428,6 @@ export async function reconcileRunningSkills(
     projects: changedProjects(before, after),
     globalChanged: rootsChanged || globalKey(before) !== globalKey(after),
   };
-}
-
-/**
- * The generated plugin roots DorkOS's Claude Code sessions should load: one per
- * global extension the ledger lists, when its root is in place.
- *
- * Read from the ledger rather than from live server state, so it answers the
- * same question the global sync does. A root that is missing or is not a real
- * folder is left out. So is an extension whose id is the name of a global
- * plugin the session already loads: Claude Code names a plugin's skills by the
- * plugin's name, so two plugins of one name would collide, and the plugin wins,
- * as it does everywhere else. Never throws; a ledger it cannot read loads none.
- *
- * @param dorkHome - DorkOS's data directory.
- * @param loadedPluginNames - Names of the global plugins sessions already load.
- * @returns Absolute plugin root paths, sorted by extension id.
- */
-export async function extensionSkillPluginRoots(
-  dorkHome: string,
-  loadedPluginNames: ReadonlySet<string> = new Set()
-): Promise<string[]> {
-  const roots: string[] = [];
-  for (const entry of readRunningExtensionSkillsSync(dorkHome).entries) {
-    if (entry.scope !== 'global') continue;
-    if (loadedPluginNames.has(entry.id)) {
-      logger.info(
-        `[Extensions] Left the "${entry.id}" extension's skills out of Claude Code sessions: a plugin of the same name is loaded, and the plugin wins`
-      );
-      continue;
-    }
-    const root = extensionSkillPluginRoot(dorkHome, entry.id);
-    try {
-      if (!(await fs.lstat(root)).isDirectory()) continue;
-      if (!(await isRegularFile(path.join(root, '.claude-plugin', 'plugin.json')))) continue;
-    } catch {
-      continue;
-    }
-    roots.push(root);
-  }
-  return roots;
 }
 
 /**

@@ -69,7 +69,7 @@
     "apps/server/src/services/rooms/canvas/room-canvas-service.ts": 555,
     "apps/server/src/services/rooms/repo/room-file-editor.ts": 611,
     "apps/server/src/services/rooms/repo/room-repo-git.ts": 552,
-    "apps/server/src/services/rooms/repo/room-worktree-manager.ts": 578,
+    "apps/server/src/services/rooms/repo/room-worktree-manager.ts": 569,
     "apps/server/src/services/rooms/room-capabilities.ts": 1108,
     "apps/server/src/services/rooms/room-store.ts": 944,
     "apps/server/src/services/rooms/room-turn-runner.ts": 526,
