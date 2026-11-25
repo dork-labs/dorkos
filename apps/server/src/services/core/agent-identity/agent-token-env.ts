@@ -45,11 +45,14 @@ export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
  * @param agentPath - Absolute path to the agent's project directory, or
  *   `undefined` when the session's working directory hosts no registered agent.
  * @param displayName - Human-readable agent name for attribution labels.
+ * @param chatId - The chat the spawned process runs, so a script it runs can
+ *   act for that chat without naming it (DOR-5264, `token-chats.ts`).
  * @returns `{ DORKOS_AGENT_TOKEN }`, or `{}` when no identity applies.
  */
 export async function resolveAgentTokenEnv(
   agentPath: string | undefined,
-  displayName: string | undefined
+  displayName: string | undefined,
+  chatId?: string
 ): Promise<Record<string, string>> {
   if (!agentPath) return {};
 
@@ -60,6 +63,7 @@ export async function resolveAgentTokenEnv(
     const token = await service.mint({
       agentPath,
       displayName: displayName?.trim() || agentPath,
+      ...(chatId ? { chatId } : {}),
     });
     // The token's lifecycle in the audit log (spec `audit-trail` PR2): DorkOS
     // minted it, for this agent. Named by a short one-way hash, never itself.

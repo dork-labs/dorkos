@@ -20,6 +20,41 @@ describe('AgentIdentityService', () => {
     service = new AgentIdentityService(db);
   });
 
+  describe('the chat a token was minted for (DOR-5264)', () => {
+    it('names it on a live token, and only for that token', async () => {
+      const bound = await service.mint({
+        agentPath: AGENT_PATH,
+        displayName: 'R',
+        chatId: 'chat-a',
+      });
+      const unbound = await service.mint({ agentPath: AGENT_PATH, displayName: 'R' });
+      expect((await service.resolve(bound))?.chatId).toBe('chat-a');
+      expect((await service.resolve(unbound))?.chatId).toBeUndefined();
+      // Memory only: nothing about the chat reaches the stored row.
+      expect(JSON.stringify(db.select().from(agentIdentityTokens).all())).not.toContain('chat-a');
+    });
+
+    it('forgets it when the agent is revoked, and never names it on a revoked token', async () => {
+      const token = await service.mint({
+        agentPath: AGENT_PATH,
+        displayName: 'R',
+        chatId: 'chat-a',
+      });
+      await service.revoke(AGENT_PATH);
+      expect(await service.resolve(token)).toMatchObject({ inactive: 'revoked' });
+      expect((await service.resolve(token))?.chatId).toBeUndefined();
+    });
+
+    it('is gone in a fresh process', async () => {
+      const token = await service.mint({
+        agentPath: AGENT_PATH,
+        displayName: 'R',
+        chatId: 'chat-a',
+      });
+      expect((await new AgentIdentityService(db).resolve(token))?.chatId).toBeUndefined();
+    });
+  });
+
   describe('mint()', () => {
     it('returns a 128-bit token and stores ONLY its sha256 hash', async () => {
       const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'Researcher' });

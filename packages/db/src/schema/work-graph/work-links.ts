@@ -84,6 +84,15 @@ export const workLinks = sqliteTable(
     recordingChatId: text('recording_chat_id'),
     /** What wrote it, as one short word: `server`, `open-pr`, `flow`, ... */
     source: text('source').notNull(),
+    /**
+     * The turn marks of the chat's turn that recorded it (DOR-5264,
+     * `specs/turn-marks`): JSON `{ outsider?: true, teammate?: [...] }`, read
+     * from the live turn when the edge is written. `{}` for a known unmarked
+     * turn; NULL for the server's own bookkeeping, a write no turn made, and
+     * rows from before this column. Added by `ALTER TABLE ADD`, so the
+     * append-only triggers stand.
+     */
+    turnMarks: text('turn_marks'),
   },
   (table) => [
     uniqueIndex('work_links_edge_unique').on(table.fromRef, table.relation, table.toRef),

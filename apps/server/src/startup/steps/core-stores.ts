@@ -77,7 +77,11 @@ import {
   liveSessionIds,
 } from '../../services/core/auth/sessions/signed-in-devices.js';
 import { env } from '../../env.js';
-import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
+import {
+  forgetChatTokens,
+  initAgentIdentityService,
+} from '../../services/core/agent-identity/index.js';
+import { onSessionRemoved } from '../../services/session/catalog/session-list-broadcaster.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { wireAuditTrail } from '../../services/audit/index.js';
 import { wireAgentPause } from '../../services/mesh/pause/index.js';
@@ -347,6 +351,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // first request, whose agent-identity step in the chain reaches this
   // singleton lazily (it has no database handle in scope, same as `getAuth`).
   initAgentIdentityService(db);
+  // A chat that is gone for good names no token's chat any more (DOR-5264).
+  onSessionRemoved((sessionId) => forgetChatTokens(sessionId));
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);

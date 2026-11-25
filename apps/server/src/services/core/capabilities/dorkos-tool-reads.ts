@@ -216,6 +216,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-claims.claim': 'local',
   'work-claims.check': 'local',
   'work-claims.release': 'local',
+  // Writes links between ids; it hands back only the refs it was sent.
+  'work-graph.record-pr': 'local',
   'audit.verify': 'local',
   'agent.pause': 'local',
   'agent.resume': 'local',

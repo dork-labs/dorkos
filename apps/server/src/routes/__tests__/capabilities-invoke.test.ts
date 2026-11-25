@@ -23,6 +23,14 @@ import { ApprovalService, hashApprovalInput } from '../../services/core/approval
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../services/core/agent-identity/agent-identity-service.js';
+import { resolveAgentIdentityFromHeaders } from '../../middleware/agent-identity.js';
+import { RunStore } from '../../services/runs/run-store.js';
+import { workGraphDomain } from '../../services/work-graph/work-graph-capabilities.js';
+import { WorkLinkStore } from '../../services/work-graph/work-link-store.js';
 import { createApprovalsRoutes } from '../approvals.js';
 import { createCapabilitiesCatalogRoutes } from '../capabilities-catalog.js';
 import capabilitiesMatrixRoutes from '../capabilities.js';
@@ -583,5 +591,96 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     expect(approvals.answerScope(raising.approvalId)?.state).toBe('pending');
     const denied = await request(server).post(`/api/approvals/${raising.approvalId}/deny`);
     expect(denied.status).toBe(200);
+  });
+});
+
+describe('work-graph.record-pr over HTTP (DOR-5264): the chat is the token’s', () => {
+  const CHAT = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
+  const OTHER = '9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a';
+  let links: WorkLinkStore;
+  let token: string;
+
+  /** The real chain step: the token in `X-DorkOS-Agent`, resolved by the real service. */
+  const resolving: MiddlewareHandler<ApiEnv> = async (c, next) => {
+    const identity = await resolveAgentIdentityFromHeaders(
+      Object.fromEntries(c.req.raw.headers.entries()),
+      'test'
+    );
+    if (identity) c.set('agentIdentity', identity);
+    await next();
+  };
+
+  beforeEach(async () => {
+    const db = createTestDb();
+    links = new WorkLinkStore({ db });
+    const runs = new RunStore(db, { epoch: '01THISBOOT0000000000000000' });
+    for (const chat of [CHAT, OTHER])
+      runs.create({
+        chatKey: chat,
+        status: 'running',
+        openedBy: 'runtime',
+        origin: null,
+        agentId: 'agent-ana',
+      });
+    initCapabilityTierGate({ approvals: new ApprovalService(db) });
+    token = await initAgentIdentityService(db).mint({
+      agentPath: '/agents/ana',
+      displayName: 'Ana',
+      chatId: CHAT,
+    });
+    const registry = composeRegistry([workGraphDomain], {
+      logger: noopLogger,
+      workGraphDeps: {
+        store: () => links,
+        agentIdForPath: (agentPath) => (agentPath === '/agents/ana' ? 'agent-ana' : undefined),
+        resolveChat: (chatId) => links.resolveRekey(chatId),
+        liveRun: (chatId) => {
+          const run = runs.liveRunOf(chatId);
+          return run ? { agentId: run.agentId } : undefined;
+        },
+        projectorBusy: () => false,
+        chatAgentPath: async () => '/agents/ana',
+        marksOf: () => ({}),
+      },
+    });
+    fixtureTarget.mount(
+      honoGroupListener(
+        { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(registry) },
+        { before: resolving }
+      )
+    );
+  });
+
+  afterEach(() => {
+    resetCapabilityTierGate();
+    resetAgentIdentityService();
+  });
+
+  const pr = 'https://github.com/dork-labs/dorkos/pull/4242';
+
+  it('records on the chat the token was minted for, whatever the query names', async () => {
+    const res = await request(fixtureServer)
+      .post(`/api/capabilities/work-graph.record-pr/invoke?sessionId=${OTHER}`)
+      .set('X-DorkOS-Agent', token)
+      .send({ pr, tickets: ['DOR-5264'] });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, chat: CHAT, tickets: ['DOR-5264'] });
+    expect(links.from({ kind: 'chat', id: OTHER })).toEqual([]);
+  });
+
+  it('refuses a chat in the body, and a caller with no token', async () => {
+    const named = await request(fixtureServer)
+      .post('/api/capabilities/work-graph.record-pr/invoke')
+      .set('X-DorkOS-Agent', token)
+      .send({ pr, chat: OTHER });
+    expect(named.status).toBe(400);
+    const anonymous = await request(fixtureServer)
+      .post('/api/capabilities/work-graph.record-pr/invoke')
+      .send({ pr });
+    expect(anonymous.status).toBe(403);
+    expect(anonymous.body).toMatchObject({ code: 'forbidden' });
+    expect(
+      links.from({ kind: 'chat', id: CHAT }).concat(links.from({ kind: 'chat', id: OTHER }))
+    ).toEqual([]);
   });
 });

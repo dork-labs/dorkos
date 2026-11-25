@@ -55,6 +55,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, isNull, agentIdentityTokens, type Db } from '@dorkos/db';
+import { TokenChats } from './token-chats.js';
 
 /** Bytes of CSPRNG randomness behind a minted token (128 bits, per spec §3.1). */
 const TOKEN_BYTES = 16;
@@ -118,6 +119,13 @@ export interface AgentIdentity {
    * anything.
    */
   inactive?: 'revoked' | 'expired';
+  /**
+   * The chat the presented token was minted for (DOR-5264), from this
+   * process's memory (`token-chats.ts`). Set only by {@link AgentIdentityService.resolve},
+   * only for a live token, and only while its entry lasts. Absent means the
+   * token names no chat; it never names another one.
+   */
+  chatId?: string;
 }
 
 /** What {@link AgentIdentityService.mint} needs to describe a new identity. */
@@ -126,6 +134,8 @@ export interface MintAgentTokenInput {
   agentPath: string;
   /** Human-readable agent name. */
   displayName: string;
+  /** The chat whose process the token is for, when the launch knows it. */
+  chatId?: string;
 }
 
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
@@ -181,8 +191,13 @@ export class AgentIdentityService {
    * Build the service over a database handle.
    *
    * @param db - The DorkOS database handle.
+   * @param chats - Which chat each token was minted for, in memory only
+   *   (`token-chats.ts`); tests pass a smaller one.
    */
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    readonly chats = new TokenChats()
+  ) {}
 
   /**
    * Mint a fresh token for an agent and persist only its hash.
@@ -196,14 +211,16 @@ export class AgentIdentityService {
    */
   async mint(input: MintAgentTokenInput): Promise<string> {
     const token = randomBytes(TOKEN_BYTES).toString('hex');
+    const tokenHash = hashToken(token);
     await this.db.insert(agentIdentityTokens).values({
-      tokenHash: hashToken(token),
+      tokenHash,
       agentPath: input.agentPath,
       displayName: input.displayName,
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
       revokedAt: null,
     });
+    if (input.chatId) this.chats.bind(tokenHash, input.chatId, input.agentPath);
     return token;
   }
 
@@ -253,7 +270,8 @@ export class AgentIdentityService {
 
     await this.touch(row, now);
 
-    return this.identityOf(row);
+    const chatId = this.chats.chatOf(row.tokenHash);
+    return { ...this.identityOf(row), ...(chatId ? { chatId } : {}) };
   }
 
   /**
@@ -357,6 +375,7 @@ export class AgentIdentityService {
    */
   async revoke(agentPath: string): Promise<number> {
     const revokedAt = new Date().toISOString();
+    this.chats.forgetAgent(agentPath);
     const live = await this.db
       .select({ tokenHash: agentIdentityTokens.tokenHash })
       .from(agentIdentityTokens)
@@ -406,6 +425,17 @@ export function initAgentIdentityService(db: Db): AgentIdentityService {
  */
 export function getAgentIdentityService(): AgentIdentityService | undefined {
   return service;
+}
+
+/**
+ * Forget which chat this process's tokens were minted for, for one chat: its
+ * process was disposed or the chat is gone (DOR-5264, `token-chats.ts`). The
+ * tokens themselves stay valid; they just name no chat any more.
+ *
+ * @param chatIds - Every id the chat is known by.
+ */
+export function forgetChatTokens(...chatIds: string[]): void {
+  service?.chats.forgetChat(chatIds);
 }
 
 /**

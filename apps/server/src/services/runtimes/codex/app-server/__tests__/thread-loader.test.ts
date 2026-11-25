@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../../../core/agent-identity/agent-identity-service.js';
+import { resolveAgentTokenEnv } from '../../../../core/agent-identity/agent-token-env.js';
 import { FakeAppServerHost } from '../../__tests__/fake-app-server.js';
 import { CodexAppServerPool } from '../process-pool.js';
 import {
@@ -371,6 +377,34 @@ describe('thread key lifecycle', () => {
     expect(keys.size).toBe(0);
     expect(loader.holdsSession('s1')).toBe(false);
   });
+});
+
+describe('DOR-5264: the token a load mints names its chat until the thread goes', () => {
+  afterEach(() => resetAgentIdentityService());
+
+  it.each(['the thread unloads', 'its process exits'] as const)(
+    'names the chat, then forgets it when %s',
+    async (how) => {
+      const identities = initAgentIdentityService(createTestDb());
+      const { loader, input, process, fake } = await setup();
+      const minted: string[] = [];
+      const tools: CodexTurnTools = {
+        ...NO_TOOLS,
+        mintAgentToken: async (chatId) => {
+          const env = await resolveAgentTokenEnv('/agents/ana', 'Ana', chatId);
+          minted.push(env.DORKOS_AGENT_TOKEN!);
+          return env;
+        },
+      };
+      const loaded = await loader.ensureLoaded(input({ tools }));
+      expect((await identities.resolve(minted[0]!))?.chatId).toBe('s1');
+      if (how === 'the thread unloads') loader.dropThread(process, loaded.threadId);
+      else fake.exit(1);
+      await vi.waitFor(async () =>
+        expect((await identities.resolve(minted[0]!))?.chatId).toBeUndefined()
+      );
+    }
+  );
 });
 
 describe('review fixes: fingerprint and identity', () => {

@@ -96,6 +96,7 @@ import {
 import { WarmSlotBook } from './warm-slot-book.js';
 import type { PumpTeardownReason } from './session-pump-contract.js';
 import { logger } from '../../../../lib/logger.js';
+import { forgetChatTokens } from '../../../core/agent-identity/agent-identity-service.js';
 
 /**
  * How often a launch waiting for a slot checks again with nothing having woken
@@ -403,6 +404,8 @@ export class SessionPumpRegistry {
   private drop(sessionId: string): void {
     const entry = this.entries.get(sessionId);
     if (entry) this.disarmIdle(entry);
+    // Its process, and the identity token it held, are gone (DOR-5264).
+    forgetChatTokens(sessionId, ...(entry ? [entry.pump.sessionId] : []));
     this.entries.delete(sessionId);
     // Releases the reservation too, so a launch that died between claiming a
     // slot and reaching WARMING cannot shrink the ceiling for good.

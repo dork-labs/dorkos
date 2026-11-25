@@ -7,6 +7,7 @@
 export {
   AgentIdentityService,
   agentTokenDigestPrefix,
+  forgetChatTokens,
   initAgentIdentityService,
   getAgentIdentityService,
   resetAgentIdentityService,
