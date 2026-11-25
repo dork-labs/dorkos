@@ -4,8 +4,8 @@
  *
  * Text, not an import, for two callers that must not run the file. The daily
  * release reads the release point as data and runs nothing from it, and the
- * PR check (`scripts/check-config-migration.ts`) reads the base commit's copy
- * through `git show`. It lives here, not beside that check, because the daily
+ * PR check (`scripts/config-migration/check-config-migration.ts`) reads the
+ * base commit's copy through `git show`. It lives here, not beside that check, because the daily
  * release's sparse checkout of main's tools holds only `scripts/release/`. A table this
  * reader cannot read exactly is an error, never an empty list, because an
  * empty list would read as "no migration to wait for".

@@ -1,0 +1,149 @@
+{
+  "$comment": "Each case starts from base-shape.json and migrations.txt (VERSION 0.20.0, so '0.21.0' is unreleased), applies its edits, and expects the check's findings to match `fails` in order, or to be empty. Read by scripts/config-migration/__tests__/check-config-migration.test.ts.",
+  "cases": [
+    {
+      "name": "a new member, with a default, in a section stored files already hold",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "fails": ["added ui.composer.markdown"]
+    },
+    {
+      "name": "a new member of every stored array element",
+      "set": { "runtimes.accounts[].label": "string (default)" },
+      "fails": ["added runtimes.accounts[].label"]
+    },
+    {
+      "name": "a removed field",
+      "delete": ["server.port"],
+      "fails": ["removed server.port"]
+    },
+    {
+      "name": "a renamed field, which is a removal and an addition",
+      "delete": ["ui.composer.richText"],
+      "set": { "ui.composer.formatting": "boolean (default)" },
+      "fails": ["added ui.composer.formatting", "removed ui.composer.richText"]
+    },
+    {
+      "name": "a type change",
+      "set": { "server.port": "string (default)" },
+      "fails": ["retyped server.port"]
+    },
+    {
+      "name": "an enum value dropped",
+      "set": { "ui.theme": "\"dark\" | \"light\" (default)" },
+      "fails": ["retyped ui.theme"]
+    },
+    {
+      "name": "a field that loses its default and becomes required",
+      "set": { "runtimes.accounts[].color": "null | string" },
+      "fails": ["retyped runtimes.accounts[].color"]
+    },
+    {
+      "name": "a removed section is reported once, at its top",
+      "delete": ["ui.composer", "ui.composer.richText"],
+      "fails": ["removed ui.composer"]
+    },
+    {
+      "name": "a migration edit that only touches comments",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "migrations": [["// Seeds the theme.", "// Seeds the theme, and says so."]],
+      "fails": ["added ui.composer.markdown"]
+    },
+    {
+      "name": "a code change to a key that has shipped, which append-only refuses on its own",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "migrations": [["'0.20.0': seedComposer,", "'0.20.0': seedComposerTwice,"]],
+      "fails": ["added ui.composer.markdown"]
+    },
+    {
+      "name": "a waiver the base already had does not cover a new change",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "baseWaivers": [
+        {
+          "path": "ui.composer.markdown",
+          "change": "added",
+          "reason": "absent reads as off everywhere"
+        }
+      ],
+      "headWaivers": [
+        {
+          "path": "ui.composer.markdown",
+          "change": "added",
+          "reason": "absent reads as off everywhere"
+        }
+      ],
+      "fails": ["added ui.composer.markdown"]
+    },
+    {
+      "name": "a waiver whose reason the PR rewrites is the PR's own",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "baseWaivers": [
+        {
+          "path": "ui.composer.markdown",
+          "change": "added",
+          "reason": "an older reason for an older change"
+        }
+      ],
+      "headWaivers": [
+        {
+          "path": "ui.composer.markdown",
+          "change": "added",
+          "reason": "absent reads as off everywhere"
+        }
+      ],
+      "fails": []
+    },
+    {
+      "name": "a waiver that matches no change",
+      "headWaivers": [
+        { "path": "ui.theme", "change": "retyped", "reason": "nothing stored can hold it" }
+      ],
+      "fails": ["the entry for retyped ui.theme matches no change"]
+    },
+    {
+      "name": "no shape change at all, as from a comment-only edit",
+      "fails": []
+    },
+    {
+      "name": "a new top-level section, which conf writes from its defaults",
+      "set": { "a2a": "object (default)", "a2a.enabled": "boolean (default)" },
+      "fails": []
+    },
+    {
+      "name": "a new member that is optional with no default",
+      "set": { "ui.composer.lastUsed": "string | undefined" },
+      "fails": []
+    },
+    {
+      "name": "a widened field: a new enum value, and nullable",
+      "set": {
+        "ui.theme": "\"dark\" | \"dim\" | \"light\" | \"system\" (default)",
+        "server.port": "integer | null (default)"
+      },
+      "fails": []
+    },
+    {
+      "name": "a new member with the new key that seeds it",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "migrations": [["} as const;", "  '0.22.0': seedMarkdown,\n} as const;"]],
+      "fails": []
+    },
+    {
+      "name": "a new member seeded under the key that has not shipped yet",
+      "set": { "ui.composer.markdown": "boolean (default)" },
+      "migrations": [["store.get('ui');", "store.get('ui');\n    store.get('ui.composer');"]],
+      "fails": []
+    },
+    {
+      "name": "a removal with a reason added in the same PR",
+      "delete": ["server.port"],
+      "headWaivers": [
+        {
+          "path": "server.port",
+          "change": "removed",
+          "reason": "the stored value is ignored and harmless"
+        }
+      ],
+      "fails": []
+    }
+  ]
+}

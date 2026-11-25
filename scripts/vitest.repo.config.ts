@@ -88,6 +88,10 @@ export const REPO_WIDE_SUITES = [
   '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
+  // Imports packages/shared/src/config-schema.ts and reads the migrations table:
+  // a config schema change without `pnpm check:config-migration -- --update`
+  // turns it red (DOR-5123).
+  'config-migration/__tests__/check-config-migration.test.ts',
   // Imports packages/shared/src/provenance.ts: a change there can turn it red (DOR-5047).
   'provenance/__tests__/provenance-line.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',

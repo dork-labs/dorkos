@@ -29,6 +29,7 @@
     "measure-agent-hours.ts",
     "agent-hours/**/*.ts",
     "check-copy-spec-drift.ts",
+    "config-migration/**/*.ts",
     "vitest-flake-reporter.ts",
     "lib/load-wait.ts",
     "load-gate/**/*.ts",

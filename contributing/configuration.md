@@ -707,6 +707,20 @@ Two details in `0.115.0` are easy to get wrong. A stored `'trusted'` beside `'su
 
 A config wipe now lands on Trusted, so `PROTECTIVE_CARRYOVERS` carries every way a person asked to be asked: `permissions.preset` when `'careful'`, the `'ask'` and `'blocked'` entries of `permissions.defaults.areas` and `.actions`, and any of the four `defaultTrustStop` leaves holding `'ask'` or `'act'`.
 
+### What CI and the daily release check
+
+Two checks turn the release's migration questions into code (DOR-5123), because the daily release has no person to ask.
+
+**On every pull request: a shape change brings its migration.** `scripts/config-migration/check-config-migration.ts` runs in the required `typecheck` job. It reduces `UserConfigSchema` to its shape (each path and the values it accepts, read from the same JSON Schema conf validates against) and keeps that shape in `scripts/config-migration/shape.json`. Change the schema and run `pnpm check:config-migration -- --update`, then commit the file with your change. Against the base's copy the check fails:
+
+- a new member inside a section a stored file can already hold (`ui.composer.markdown`, a new field on every `accounts[]` row), because conf fills in only whole top-level sections;
+- a removed path, and so a rename;
+- a type that now refuses a value it used to accept (an enum value dropped, a field newly required).
+
+A new top-level section, a new member that is optional with no default, a widened type, a changed default and a comment-only edit all pass. A failing PR passes once it changes `CONFIG_MIGRATIONS` (a new key, or new code under a key above `VERSION`), or adds an entry to `scripts/config-migration/no-migration.json` with the path and change as the check names them and a `reason` a reviewer can verify. Only entries the PR adds count, so an old entry never covers a later change, and an added entry that matches no change fails. The check cannot tell whether your migration is the right one; review and the upgrade-boot test in step 11 still decide that.
+
+**On every daily release: the version reaches the newest key.** conf runs a key only once the app's version is at or above it, so `scripts/release/release-commit.ts` plans the release as the higher of the fragments' bump and the newest key above the last release, and names the key in the plan and the release PR when it raised the version. It refuses a key past the next minor (almost surely a typo) and a `--version` below the newest key. It reads the table as text and runs nothing from the release point.
+
 ### Interaction with `/system:release`
 
 The `/system:release` command includes a **config schema migration drift** check in Phase 2. When it detects that `packages/shared/src/config-schema.ts`, `apps/server/src/services/core/config-manager.ts` or `apps/server/src/services/core/config-migrations/` changed since the last tag without a matching migration entry at the target version, it offers three paths:

@@ -1,0 +1,13 @@
+{
+  "runtimes": "object (default)",
+  "runtimes.accounts": "array (default)",
+  "runtimes.accounts[]": "object",
+  "runtimes.accounts[].color": "null | string (default)",
+  "runtimes.accounts[].id": "string",
+  "server": "object (default)",
+  "server.port": "integer (default)",
+  "ui": "object (default)",
+  "ui.composer": "object (default)",
+  "ui.composer.richText": "boolean (default)",
+  "ui.theme": "\"dark\" | \"light\" | \"system\" (default)"
+}
