@@ -381,6 +381,25 @@ jobs:
           fi
           pnpm run check:max-lines -- --base "$base"
 
+      # The turn port's ratchet (DOR-5232, spec turns-survive-restarts §3.4).
+      # The server's lint holds each space-side file to its entry in
+      # apps/server/eslint-rules/turn-port-boundary.baseline.json; this refuses
+      # an entry raised or added by hand, against the same base the step above
+      # picks, for the same reasons. Static reads only, under a second.
+      - name: Turn port ratchet (DOR-5232)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          pnpm run check:turn-port -- --base "$base"
+
       # The API lint gate (DOR-4996). Holds the committed OpenAPI document
       # (docs/api/openapi.json, kept fresh by docs-openapi-check) and the route
       # census (kept fresh by the booted census test) to

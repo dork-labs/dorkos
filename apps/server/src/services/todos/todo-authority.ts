@@ -208,9 +208,15 @@ export type TodoActor =
    * owner's own session cookie and is not held by the Wi-Fi hold (`personProof`); anything less
    * writes no `person` authority. `ownerless` grants the no-owner allowance (`todo-policy`): when
    * the install has no owner account, so no request can ever be proven, or, on `/api/todos` only,
-   * when it is the owner's own sign-in on a Wi-Fi device not let run agents (DOR-5070).
+   * when it is the owner's own sign-in on a Wi-Fi device not let run agents (DOR-5070). `held`
+   * marks that sign-in: it may not give an agent work (`mayGiveAgentWork`).
    */
-  | { readonly kind: 'person'; readonly proven: boolean; readonly ownerless?: boolean }
+  | {
+      readonly kind: 'person';
+      readonly proven: boolean;
+      readonly ownerless?: boolean;
+      readonly held?: boolean;
+    }
   /**
    * An agent, by the Mesh id `callerAgentId` resolved, with the level and marks of the turn it is
    * acting from. An unknown level (a restart, a caller with no recorded turn) is the stranger bound.
@@ -271,4 +277,27 @@ export function floorAfter(
       mergeMarks(readAuthorityMarks(stored.authorityMarks), own.marks)
     ),
   };
+}
+
+/**
+ * Whose spend a turn an actor asked for counts against. Only a proven person is never charged; a
+ * request that did not prove the person could be any program here, so it shares one capped charge.
+ *
+ * @param actor - Who asked.
+ */
+export function chargeOf(actor: TodoActor): string | null {
+  if (actor.kind === 'agent') return actor.agentId;
+  if (actor.kind === 'outsider') return `outsider:${actor.id}`;
+  return actor.proven ? null : 'unproven-person';
+}
+
+/**
+ * Who acted, for the audit row.
+ *
+ * @param actor - Who acted.
+ */
+export function actorLabel(actor: TodoActor): string {
+  if (actor.kind === 'agent') return `agent:${actor.agentId}`;
+  if (actor.kind === 'outsider') return `outsider:${actor.id}`;
+  return actor.proven ? 'person' : 'person:unproven';
 }

@@ -147,6 +147,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'Tasks',
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
+    // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978).
     covers: ['tasks_', 'heartbeat.'],
     areas: ['tasks'],
   },
@@ -177,6 +178,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'To-dos',
     can: "promises and to-dos: add, assign, read the team's, mark kept or dropped.",
+    // Also the app's to-do reads and a person's to-do writes, "add a promise" among them
+    // (DOR-4978): the writes are person-only, so no agent can call them.
     covers: ['todo_promises.', 'todos.'],
     areas: ['todos'],
   },

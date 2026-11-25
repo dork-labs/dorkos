@@ -108,6 +108,13 @@ const ALLOWED = new Map<string, string>([
       'computer stays awake while it is consumed, and starts nothing of its own.',
   ],
   [
+    'apps/server/src/services/core/runtime-seam/report-empty-turns.ts',
+    'The empty-turn report (DOR-3606), a decorator on the same terms as the ' +
+      'keep-awake one: registered at the same seam (`RuntimeRegistry.register`), it ' +
+      'wraps the generator a caller already asked for, adds the no-response error to ' +
+      'a turn that showed nothing, and starts nothing of its own.',
+  ],
+  [
     'apps/server/src/services/audit/record-tool-use.ts',
     'The audit wrap (spec `audit-trail` PR3), a decorator on the same terms as the ' +
       'keep-awake one: registered at the same seam (`RuntimeRegistry.register`), it ' +

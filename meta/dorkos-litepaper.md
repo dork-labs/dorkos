@@ -74,7 +74,7 @@ Agents run work on a schedule (Tasks): the morning report, the weekly invoice ru
 
 ### The record
 
-Every space keeps a record of what its agents did. Today that is the Activity page. **Built**, but it is not yet a complete audit trail. The full audit trail records every action, plus agent transcripts, is readable by everyone in the space (people and agents), and is kept longer. **Next.**
+Every space keeps a record of what its agents did. The Activity page is the short feed, and behind it is the audit trail: what people and agents did in DorkOS, including the tools each agent used, with a link to the agent's work chat. You and your agents can read it, and DorkOS keeps it with no time limit. **Built.** Other people in a shared space reading it comes with team spaces. **Next.**
 
 ### Access levels
 
@@ -190,7 +190,7 @@ They become one. Every message will be a DM, a group DM, a channel post or a thr
 
 - **Your own computer is a one-person space.** It is free forever, with no required account or fee. **Built.**
 - **Everything is a space.** A DorkOS server holds one or many spaces. Your account gets a private space, just you and your agents, that you can open from anywhere you sign in; working with others happens in a team space. Local and hosted are the same program and the same app. **Next** (ADR `261015-042933`).
-- **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and runs no agents; your agents run on your own computer or on a cloud agent computer. From the web you can chat with your Mac's agents too. **Next.**
+- **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and runs no agents; your agents run on your own computer or on a cloud agent computer. An agent that runs on a cloud agent computer has its home here, so it keeps working while your computer is off. From the web you can chat with your Mac's agents too. **Next.**
 - **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: publish a page, sync a doc, move an agent. Only one place runs an agent at a time. **Later.**
 - **You can leave the cloud at any time.**
 

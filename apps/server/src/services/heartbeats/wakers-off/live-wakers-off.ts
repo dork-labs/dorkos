@@ -6,7 +6,7 @@
  * @module services/heartbeats/wakers-off/live-wakers-off
  */
 import type { Db } from '@dorkos/db';
-import type { WakersOffRouterDeps } from '../../../routes/wakers-off.js';
+import type { WakersOffReader } from './wakers-off-capability.js';
 import { auditTrail } from '../../audit/audit-trail.js';
 import { configManager } from '../../core/config-manager.js';
 import { agentPause } from '../../mesh/pause/index.js';
@@ -42,7 +42,7 @@ export interface LiveWakersOffDeps {
  *
  * @param deps - What heartbeats' startup hands over.
  */
-export function liveWakersOffReader(deps: LiveWakersOffDeps): WakersOffRouterDeps {
+export function liveWakersOffReader(deps: LiveWakersOffDeps): WakersOffReader {
   return wakersOffReader({
     db: deps.db,
     agents: deps.agents,

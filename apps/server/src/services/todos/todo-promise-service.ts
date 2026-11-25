@@ -81,6 +81,7 @@ import {
 } from './todo-authority.js';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { todoTurnPower } from './todo-turn-power.js';
+import { requireMayGiveAgentWork } from './todo-policy.js';
 import { isLateMove, nextDueHistory } from './timing/due-history.js';
 import { readingOrder, toTodoPromise } from './todo-promise-view.js';
 import {
@@ -282,13 +283,15 @@ export class TodoPromiseService {
    * @param input - What, to whom, by when, and where it was made.
    * @param assigner - Who made it: the agent itself (the default), or a person (`person`
    *   authority only when proven, or at this computer with no owner account: {@link speaksAsPerson}).
-   * @throws {TodoPromiseError} `PAST_DUE` when the due date has passed.
+   * @throws {TodoPromiseError} `PAST_DUE` when the due date has passed, or `HELD_DEVICE` from a
+   *   held Wi-Fi device.
    */
   create(
     agentId: string,
     input: NewTodoPromise,
     assigner: TodoPromiseActor = { kind: 'agent', agentId }
   ): TodoPromise {
+    requireMayGiveAgentWork(assigner);
     if (assigner.kind === 'agent' && assigner.agentId !== agentId) {
       throw new TodoPromiseError('NOT_YOURS', 'An agent records only its own promises.');
     }
@@ -354,9 +357,11 @@ export class TodoPromiseService {
    * @param actor - Who is changing it. Another agent is refused.
    * @param id - The to-do id.
    * @param change - The new state, and optionally a new due date and a note.
-   * @throws {TodoPromiseError} `NOT_FOUND`, `NOT_YOURS`, `NOTHING_TO_CHANGE` or `PAST_DUE`.
+   * @throws {TodoPromiseError} `NOT_FOUND`, `NOT_YOURS`, `NOTHING_TO_CHANGE`, `PAST_DUE`, or
+   *   `HELD_DEVICE` from a held Wi-Fi device: every promise is an agent's.
    */
   update(actor: TodoPromiseActor, id: string, change: TodoPromiseChange): TodoPromise {
+    requireMayGiveAgentWork(actor);
     const row = this.store.get(id);
     if (!row) throw new TodoPromiseError('NOT_FOUND', 'No promise has that id.');
     if (actor.kind === 'agent' && actor.agentId !== row.agentId) {

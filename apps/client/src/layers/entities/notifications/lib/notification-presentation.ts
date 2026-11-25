@@ -110,6 +110,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'extension.decision': MessageCircleQuestion,
   // An extension that stopped on its own, restarted or left off (DOR-4785).
   'extension.stopped': Puzzle,
+  // A chat a mini app started that never ran (DOR-5232).
+  'extension.work_not_started': Puzzle,
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
   'community.teammate-limit': CircleAlert,

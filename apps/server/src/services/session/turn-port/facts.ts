@@ -43,7 +43,11 @@ import type { RunFact, TurnOrigin, WaitReason, RunEnding } from '@dorkos/shared/
  *   lease runs out, so the launch looks again then.
  */
 export type LaunchVerdict =
-  { kind: 'starting' } | { kind: 'queued' } | { kind: 'busy'; retryAt?: number };
+  | { kind: 'starting' }
+  | { kind: 'queued' }
+  | { kind: 'busy'; retryAt?: number }
+  /** The run already ended without starting (cancelled, superseded): the launch is dropped. */
+  | { kind: 'gone' };
 
 /**
  * Why queue rows are leaving the table, which decides what becomes of a run
@@ -86,6 +90,34 @@ export interface DispatcherRunFeed {
    * @returns The new run's id.
    */
   accept(input: { chatKey: string; origin: TurnOrigin | null; queueMessageId?: string }): string;
+  /**
+   * A run the turn port handed over took its words into the queue: the row
+   * is recorded on the run (§4.7, write 1). Called inside the transaction
+   * that writes the row.
+   *
+   * @param runId - The run the port saved.
+   * @param queueMessageId - Its queue row.
+   * @returns False when the run no longer waits (it was taken back while its
+   *   hand-over was under way): the row must not stay.
+   */
+  queueRowTaken(runId: string, queueMessageId: string): boolean;
+  /**
+   * The turn port's run whose words stay at their source started no turn and
+   * goes back to the space side: `queued` again (transition 8 from
+   * `starting`), its `start_turn` back to `pending` so it is handed over for
+   * a new launch (§6.2).
+   *
+   * @param runId - The run.
+   */
+  handBack(runId: string): void;
+  /**
+   * The chat's live run (`starting`, `started` or `running`), by id: what the
+   * computer face reads before it takes a run whose words stay at their
+   * source (§3.1, `chat_busy`).
+   *
+   * @param chatKey - The chat, by the id its queue rows are kept under.
+   */
+  liveRunOf(chatKey: string): string | undefined;
   /**
    * The run of a queue row this process is adopting: the one its acceptance
    * wrote, its `paused` wait cleared (transition 3) since a re-arm is what a

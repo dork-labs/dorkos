@@ -21,12 +21,11 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { HistoryMessage, ImagePart, MessagePart, StreamEvent } from '@dorkos/shared/types';
 import {
-  MAX_SESSION_ATTACHMENT_BYTES,
-  UnsupportedSessionMediaError,
   deriveSessionAttachmentId,
   storableImageExtension,
   type SessionAttachmentStore,
 } from '../../session/attachments/index.js';
+import { decodeBase64Image, mediaError, storeCapturedImage } from '../shared/media-capture.js';
 import { mapSdkMessage } from './sdk/sdk-event-mapper.js';
 import type { AgentSession, ToolState } from './agent-types.js';
 import type { ToolResultImage, ToolResultImageState } from './tool-result-images.js';
@@ -87,32 +86,22 @@ async function* captureClaudeCodeMedia(
       yield mediaError(image.reason);
       continue;
     }
-    if (!store) {
-      yield mediaError('This agent is not set up to keep images, so one was not saved.');
-      continue;
-    }
-    try {
-      const attachmentId = deriveSessionAttachmentId(image.identity);
-      const existing = await store.peek(storageId, attachmentId, image.mediaType);
-      const stored =
-        existing ??
-        (await store.put(storageId, attachmentId, image.mediaType, decodeBase64(image.base64)));
-      yield {
-        type: 'image_attachment',
-        data: { attachmentId, url: stored.url, mediaType: stored.mediaType, size: stored.size },
-      };
-    } catch (err) {
-      if (err instanceof UnsupportedSessionMediaError) {
-        yield mediaError(err.message);
-        continue;
-      }
-      logger.warn('[ClaudeCode] could not store an image a tool returned', {
-        err,
-        sessionId,
-        storageId,
-      });
-      yield mediaError('An image was produced but could not be saved.');
-    }
+    const { base64 } = image;
+    yield await storeCapturedImage(
+      store,
+      storageId,
+      {
+        identity: image.identity,
+        mediaType: image.mediaType,
+        bytes: () => decodeBase64Image(base64),
+      },
+      (err) =>
+        logger.warn('[ClaudeCode] could not store an image a tool returned', {
+          err,
+          sessionId,
+          storageId,
+        })
+    );
   }
 }
 
@@ -123,7 +112,7 @@ async function* captureClaudeCodeMedia(
  * (`messaging/message-sender.ts`) on the resume-per-message path and
  * `streamTurnWindow` (`sessions/pump-turn-stream.ts`) on the persistent pump.
  * Wrapping the mapper rather than editing both loops is what keeps the two
- * paths from drifting — the same reason `empty-stream-guard.ts` exists.
+ * paths from drifting — the same reason `shared/empty-stream-guard.ts` exists.
  *
  * **The drain after the loop is the only one that fires for a message that maps
  * to no events at all**, and such messages exist — the in-loop drain runs after
@@ -193,7 +182,7 @@ export async function* mapSdkMessageWithMedia(
  * the bytes only exist in the JSONL until something materializes them. It is
  * self-limiting rather than unbounded: the work is proportional to the images
  * already in that transcript (nothing here amplifies), every write is capped at
- * {@link MAX_SESSION_ATTACHMENT_BYTES}, and the derived id makes every reopen
+ * `MAX_SESSION_ATTACHMENT_BYTES`, and the derived id makes every reopen
  * after the first a `stat` per image and no write at all. A cap on the COUNT was
  * considered and rejected — it would silently drop the oldest pictures from a
  * long session's transcript, which is the defect this whole change exists to
@@ -262,7 +251,7 @@ async function resolveHistoryImage(
       sessionId,
       attachmentId,
       image.mediaType,
-      decodeBase64(image.base64)
+      decodeBase64Image(image.base64)
     );
     return { type: 'image', attachmentId, ...written };
   } catch {
@@ -272,37 +261,4 @@ async function resolveHistoryImage(
   const url = store.urlFor(sessionId, attachmentId, image.mediaType);
   if (!url) return null;
   return { type: 'image', attachmentId, url, mediaType: image.mediaType, size: 0 };
-}
-
-/**
- * Decode a base64 image payload, refusing one too large to keep.
- *
- * The length is checked on the ENCODED string before decoding, because
- * `Buffer.from` would otherwise allocate the whole picture to discover it is too
- * big. Base64 is 4/3 of its payload, so the encoded cap is scaled to match.
- *
- * @param base64 - The payload exactly as the block carried it.
- * @throws {@link UnsupportedSessionMediaError} when it is past the cap.
- */
-function decodeBase64(base64: string): Buffer {
-  if (base64.length > Math.ceil((MAX_SESSION_ATTACHMENT_BYTES * 4) / 3) + 4) {
-    throw new UnsupportedSessionMediaError('An image was too large to keep, so it was not saved.');
-  }
-  return Buffer.from(base64, 'base64');
-}
-
-/**
- * The typed error a reader sees in place of an image that could not be kept.
- *
- * A typed `error` rather than prose, because prose in the transcript reads as
- * something the model said. `execution_error` is the honest category — a step of
- * the turn failed — and the projector deliberately does not settle the lifecycle
- * on one, so a picture that could not be saved reports itself without claiming
- * the turn failed.
- */
-function mediaError(message: string): StreamEvent {
-  return {
-    type: 'error',
-    data: { message, code: 'SESSION_IMAGE_NOT_STORED', category: 'execution_error' },
-  };
 }

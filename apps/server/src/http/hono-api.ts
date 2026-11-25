@@ -66,12 +66,6 @@ import { createCommunityConnectionsRoutes } from '../routes/community-connection
 import configRoutes from '../routes/config.js';
 import { createConfigBackupsRoutes } from '../routes/config-backups.js';
 import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
-import {
-  createAgentTodoPromisesRoutes,
-  createTodoPromisesRoutes,
-  type TodoPromiseRouterDeps,
-} from '../routes/todo-promises.js';
-import { createTodosRoutes, type TodoRouterDeps } from '../routes/todos.js';
 import { createDebugRoutes, type DebugDeps } from '../routes/debug.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
@@ -98,7 +92,6 @@ import {
   createHeartbeatTriageRoutes,
   type HeartbeatTriageRouterDeps,
 } from '../routes/heartbeat-triage.js';
-import { createWakersOffRoutes, type WakersOffRouterDeps } from '../routes/wakers-off.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
@@ -231,8 +224,6 @@ export interface ComposedGroupDeps {
    * {@link ComposedGroupDeps.heartbeat}.
    */
   heartbeatTriage?: HeartbeatTriageRouterDeps;
-  /** Every waker that cannot wake now, for the team page (`GET /api/heartbeats/wakers-off`). */
-  wakersOff?: WakersOffRouterDeps;
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
@@ -248,10 +239,6 @@ export interface ComposedGroupDeps {
   discovery?: MeshCore;
   /** Where a managed MCP server's sign-in lands (`/api/agents/mcp-oauth`). */
   mcpOAuth?: AgentMcpOAuthService;
-  /** What agents promised (`/api/todo-promises`, `/api/agents/:id/todo-promises`). */
-  todoPromises?: TodoPromiseRouterDeps;
-  /** To-dos (`/api/todos`), present only behind `DORKOS_TODOS_ENABLED` (DOR-3088). */
-  todos?: TodoRouterDeps;
   /**
    * Scheduled tasks and their runs (`/api/tasks`). Only handed over when Tasks
    * started (`startup/tasks.ts`).
@@ -554,11 +541,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
   // What the app's `/signed-in` page reads after any sign-in's callback.
   app.route('/api/sign-in-landings', createSignInLandingRoutes());
-  if (deps.todos) app.route('/api/todos', createTodosRoutes(deps.todos));
-  if (deps.todoPromises) {
-    app.route('/api/todo-promises', createTodoPromisesRoutes(deps.todoPromises));
-    app.route('/api/agents/:id/todo-promises', createAgentTodoPromisesRoutes(deps.todoPromises));
-  }
   if (deps.heartbeat) {
     app.route('/api/agents/:id/heartbeat', createHeartbeatRoutes(deps.heartbeat));
   }
@@ -600,8 +582,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.heartbeatTriage) {
     app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
   }
-  if (deps.wakersOff)
-    app.route('/api/heartbeats/wakers-off', createWakersOffRoutes(deps.wakersOff));
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.localBrowser) {
     const viewerInput = () => env.DORKOS_AGENT_BROWSER_STREAM && env.DORKOS_AGENT_BROWSER_INPUT;

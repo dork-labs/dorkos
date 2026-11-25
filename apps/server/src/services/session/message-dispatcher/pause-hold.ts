@@ -33,7 +33,8 @@
  *
  * @module services/session/message-dispatcher/pause-hold
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { RunIdSchema } from '@dorkos/shared/turn-port';
 import { agentPause, type PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import {
   getMessageQueueStore,
@@ -91,10 +92,25 @@ const rerunIds = new Map<string, string>();
  * The id a row's turn is sent to the runtime under: the row's own, or a fresh
  * one after a pause cut it.
  *
+ * A row the turn port wrote is named by its run (a ULID), and a runtime types
+ * its message id as a UUID: Claude Code's `uuid` on the user message it reads,
+ * which it keeps in the transcript. A row named by a run goes out under a UUID
+ * derived from its id, the same one every time (so a resend is the same
+ * message to the runtime), never the ULID itself (DOR-5232). Any other id goes
+ * as it is. The row keeps its own id.
+ *
  * @param rowId - The queue row.
  */
 export function runtimeMessageIdFor(rowId: string): string {
-  return rerunIds.get(rowId) ?? rowId;
+  const rerun = rerunIds.get(rowId);
+  if (rerun !== undefined) return rerun;
+  if (!RunIdSchema.safeParse(rowId).success) return rowId;
+  // A version-8 UUID (RFC 9562) from the id's digest.
+  const bytes = createHash('sha256').update(rowId).digest().subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**

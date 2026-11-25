@@ -16,6 +16,7 @@ import { meterTeammateTurns } from '../turn-power/teammate-turn-cost.js';
 import { recordToolUse } from '../../audit/record-tool-use.js';
 import { holdPausedAgents, isSessionPaused } from '../../mesh/pause/hold-paused-turns.js';
 import { keepAwakeService } from '../keep-awake/keep-awake-service.js';
+import { reportEmptyTurns } from './report-empty-turns.js';
 
 /** What the seam reads about a session from the registry that stores it. */
 export interface SessionReads {
@@ -30,6 +31,11 @@ export interface SessionReads {
  *
  * The innermost display provenance scope follows the send’s own lifetime,
  * including errors and early returns. It changes no arguments or authority.
+ *
+ * Inside even that, **the empty-turn report** (DOR-3606) sits on the runtime
+ * itself, so every decorator above, tracing and the run record among them,
+ * sees its error as the runtime's own, and every stop that reaches the runtime
+ * passes it on the way in.
  *
  * 0. **The agent's level** (DOR-3175) holds every turn to its agent's
  *    current level before anything records it, so the level a turn hands on
@@ -79,10 +85,13 @@ export function decorateRuntime(runtime: AgentRuntime, sessions: SessionReads): 
         watchRuntimeSignin(
           traceRuntime(
             meterTeammateTurns(
-              boundToAgentLevel(recordTurnLevels(recordTurnStarters(runtime), storedModeOf), {
-                storedModeOf,
-                ...(recordedAgentOf ? { recordedAgentOf } : {}),
-              })
+              boundToAgentLevel(
+                recordTurnLevels(recordTurnStarters(reportEmptyTurns(runtime)), storedModeOf),
+                {
+                  storedModeOf,
+                  ...(recordedAgentOf ? { recordedAgentOf } : {}),
+                }
+              )
             )
           )
         )

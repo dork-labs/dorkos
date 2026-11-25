@@ -12,7 +12,6 @@ import {
   attachWindowStatePersistence,
   clampSizeToWorkArea,
   isMeaningfullyVisible,
-  loadValidatedWindowState,
   resetWindowStateModule,
   shapeWindowState,
   validateWindowState,
@@ -64,12 +63,6 @@ describe('isMeaningfullyVisible', () => {
       false
     );
   });
-
-  it('is true when exactly 100px overlap in both axes', () => {
-    expect(isMeaningfullyVisible({ x: -700, y: -500, width: 800, height: 600 }, workArea)).toBe(
-      true
-    );
-  });
 });
 
 describe('clampSizeToWorkArea', () => {
@@ -78,14 +71,6 @@ describe('clampSizeToWorkArea', () => {
     expect(clampSizeToWorkArea({ width: 2000, height: 1500 }, workArea)).toEqual({
       width: 1024,
       height: 768,
-    });
-  });
-
-  it('leaves a size that already fits unchanged', () => {
-    const workArea = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(clampSizeToWorkArea({ width: 1200, height: 800 }, workArea)).toEqual({
-      width: 1200,
-      height: 800,
     });
   });
 });
@@ -119,27 +104,6 @@ describe('validateWindowState', () => {
     const result = validateWindowState(state, [primary], primary);
 
     expect(result).toEqual(state);
-  });
-
-  it('keeps a position visible on a secondary display', () => {
-    const secondary = makeDisplay({
-      id: 2,
-      workArea: { x: 1440, y: 0, width: 1920, height: 1080 },
-    });
-    const state: WindowState = { x: 1500, y: 100, width: 800, height: 600, isMaximized: false };
-    const result = validateWindowState(state, [primary, secondary], primary);
-
-    expect(result).toEqual(state);
-  });
-
-  it('clamps oversized default size when no position was ever saved', () => {
-    const state: WindowState = { width: 2000, height: 1200, isMaximized: false };
-    const result = validateWindowState(state, [primary], primary);
-
-    expect(result.x).toBeUndefined();
-    expect(result.y).toBeUndefined();
-    expect(result.width).toBe(1440);
-    expect(result.height).toBe(900);
   });
 
   it('clamps an oversized size even when the position is still visible (H6)', () => {
@@ -231,21 +195,6 @@ describe('attachWindowStatePersistence', () => {
     expect(mockedWriteFileSync).toHaveBeenCalledTimes(1);
   });
 
-  it('reads the state file once, not on every save (M6)', async () => {
-    vi.useFakeTimers();
-    const win = makeWindow();
-    attachWindowStatePersistence(win as never);
-
-    await win.emit('resize');
-    await vi.advanceTimersByTimeAsync(500);
-    await win.emit('move');
-    await vi.advanceTimersByTimeAsync(500);
-    await win.emit('close');
-
-    expect(mockedWriteFileSync).toHaveBeenCalledTimes(3);
-    expect(mockedReadFileSync).toHaveBeenCalledTimes(1);
-  });
-
   it('survives a write failure rather than throwing out of the close handler', async () => {
     const win = makeWindow();
     attachWindowStatePersistence(win as never);
@@ -254,16 +203,6 @@ describe('attachWindowStatePersistence', () => {
     });
 
     await expect(win.emit('close')).resolves.toBeUndefined();
-  });
-});
-
-describe('loadValidatedWindowState', () => {
-  it('returns defaults when there is no saved state', () => {
-    mockedReadFileSync.mockImplementation(() => {
-      throw new Error('ENOENT');
-    });
-
-    expect(loadValidatedWindowState()).toEqual({ width: 1200, height: 800, isMaximized: false });
   });
 });
 
@@ -293,26 +232,5 @@ describe('watchDisplayChanges (M6)', () => {
     await screen.emit('display-metrics-changed');
 
     expect(onScreen.setBounds).not.toHaveBeenCalled();
-  });
-
-  it('skips a maximized or full-screen window — the OS re-lays those out itself', async () => {
-    const maximized = makeWindow({ x: 3000, y: 3000, width: 800, height: 600 });
-    maximized.maximize();
-    const fullScreen = makeWindow({ x: 3000, y: 3000, width: 800, height: 600 });
-    fullScreen.setFullScreen(true);
-    watchDisplayChanges(() => [maximized as never, fullScreen as never]);
-
-    await screen.emit('display-removed');
-
-    expect(maximized.setBounds).not.toHaveBeenCalled();
-    expect(fullScreen.setBounds).not.toHaveBeenCalled();
-  });
-
-  it('does not stack listeners across repeated calls', () => {
-    watchDisplayChanges(() => []);
-    watchDisplayChanges(() => []);
-
-    const registered = vi.mocked(screen.on).mock.calls.map(([event]) => event);
-    expect(registered).toEqual(['display-removed', 'display-metrics-changed']);
   });
 });

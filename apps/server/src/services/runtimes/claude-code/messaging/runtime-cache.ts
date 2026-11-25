@@ -625,11 +625,11 @@ export class RuntimeCache {
   /**
    * Build cache-population callbacks for executeSdkQuery.
    *
-   * Returns callback functions that update internal caches when the SDK
-   * reports models, subagents, MCP status, and commands during a query.
-   * Models always refresh (no first-call guard) and write to disk.
+   * Returns callback functions that update internal caches when the SDK reports models,
+   * subagents, MCP status, and commands during a query. Models always refresh and write to disk.
+   * Commands go under `commandsKey`, which keeps a launch that adds the agent's home apart.
    */
-  buildSendCallbacks(cwdKey: string): CacheCallbacks {
+  buildSendCallbacks(cwdKey: string, commandsKey = cwdKey): CacheCallbacks {
     return {
       onModelsReceived: (models) => {
         this.cachedModels = models.map(mapSdkModelToModelOption);
@@ -654,10 +654,10 @@ export class RuntimeCache {
       // full, MCP-inclusive set — clearing the provisional flag so later
       // messages don't re-fetch.
       onCommandsReceived:
-        !this.cachedSdkCommands.has(cwdKey) || this.provisionalSdkCommandCwds.has(cwdKey)
+        !this.cachedSdkCommands.has(commandsKey) || this.provisionalSdkCommandCwds.has(commandsKey)
           ? (commands) => {
-              this.cachedSdkCommands.set(cwdKey, commands);
-              this.markCommandsAuthoritative(cwdKey);
+              this.cachedSdkCommands.set(commandsKey, commands);
+              this.markCommandsAuthoritative(commandsKey);
               logger.debug('[sendMessage] cached supported commands', {
                 cwd: cwdKey,
                 count: commands.length,
@@ -667,7 +667,7 @@ export class RuntimeCache {
       // Unguarded (fires every turn): a `commands_changed` push REPLACES the
       // cached list so /api/commands stays fresh after a mid-session change.
       // Authoritative by default, so it also clears any provisional warm flag.
-      onCommandsChanged: (commands) => this.replaceSdkCommands(cwdKey, commands),
+      onCommandsChanged: (commands) => this.replaceSdkCommands(commandsKey, commands),
       onSubagentsReceived: !this.cachedSubagents.has(cwdKey)
         ? (agents) => {
             this.cachedSubagents.set(cwdKey, agents);

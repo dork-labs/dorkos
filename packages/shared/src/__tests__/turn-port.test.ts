@@ -77,6 +77,7 @@ const FULL_INPUT = {
   additionalDirectories: [{ path: '/tmp/shared', access: 'read' }],
   prepare: { kind: 'room-files', roomId: 'room-1', authorId: 'author-1' },
   settings: { model: 'test-model', effort: 'high' },
+  seedContext: 'This chat was opened by the Demo app so it can send this agent messages.',
 } as const;
 
 /** The same start as the computer face receives it, a continuation. */
@@ -115,7 +116,12 @@ const SAMPLES: Record<string, readonly unknown[]> = {
   TurnPreparationSchema: [FULL_INPUT.prepare],
   StartTurnInputSchema: [
     MINIMAL_INPUT,
-    { ...FULL_INPUT, notAfter: 1_764_000_000_000, accountHint: 'account-1' },
+    {
+      ...FULL_INPUT,
+      notAfter: 1_764_000_000_000,
+      accountHint: 'account-1',
+      sourceRef: 'extension-send:3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c',
+    },
   ],
   RunStatusSchema: enumValues(port.RunStatusSchema),
   StartTurnResultSchema: [{ runId: RUN, status: 'queued', queuePosition: 1 }],
@@ -401,6 +407,32 @@ describe('a start request', () => {
     expect(
       StartTurnInputSchema.safeParse({ ...MINIMAL_INPUT, originRef: 'dork:nope:room-1' }).success
     ).toBe(false);
+  });
+
+  it('names where the words wait by <kind>:<id>, and takes no asker yet (T6)', () => {
+    // Purpose: fails if a caller could put a free-form source on the record, or an asker early.
+    const parse = (extra: Record<string, unknown>) =>
+      StartTurnInputSchema.safeParse({ ...MINIMAL_INPUT, ...extra }).success;
+    expect(parse({ askedByRef: 'dork:chat:3f1c2b7a' })).toBe(false);
+    expect(parse({ sourceRef: 'extension-send:row-1' })).toBe(true);
+    expect(parse({ sourceRef: 'row-1' })).toBe(false);
+    expect(parse({ sourceRef: 'Extension:row 1' })).toBe(false);
+  });
+});
+
+describe('refusals', () => {
+  it('are the closed list the spec names, each with its row (§3.1)', () => {
+    expect(port.RefusalReasonSchema.options).toEqual([
+      'already_held',
+      'chat_busy',
+      'agent_paused',
+      'invalid_agent_path',
+      'unknown_runtime',
+      'room_session_moved',
+      'desk_not_own',
+      'account_not_allowed',
+      'runtime_mismatch',
+    ]);
   });
 });
 

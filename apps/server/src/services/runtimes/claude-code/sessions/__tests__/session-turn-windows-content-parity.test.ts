@@ -22,7 +22,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createToolState } from '../../agent-types.js';
 import type { AgentSession } from '../../agent-types.js';
-import { isContentEvent } from '../../messaging/empty-stream-guard.js';
+import { isContentEvent } from '../../../shared/empty-stream-guard.js';
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
 import { carriesVisibleContent } from '../session-turn-windows.js';
 

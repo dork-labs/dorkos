@@ -12,7 +12,6 @@ import path from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
 const rules = vi.hoisted(() => ({ claudeCode: {} as Record<string, unknown> }));
-const launches = vi.hoisted(() => [] as Array<{ sessionId: string }>);
 
 vi.mock('../../core/config-manager.js', () => ({
   configManager: {
@@ -27,18 +26,11 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 vi.mock('../../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
-vi.mock('../../session/launch/launch-session.js', () => ({
-  agentLaunchCapMessage: () => 'Too many spin-off chats are running (8).',
-  isSessionLaunchRefusal: (result: object) => 'refused' in result,
-  dispatchSessionMessage: vi.fn(async (opts: { sessionId: string }) => {
-    launches.push(opts);
-    return { accepted: true, canonicalId: opts.sessionId, queued: false, queuePosition: 1 };
-  }),
-}));
-
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
+import { createRunRecord, type RunRecord } from '../../runs/index.js';
 import type { ProjectInfo } from '@dorkos/extension-api/server';
 import { createExtensionsRoutes } from '../../../routes/extensions.js';
 import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
@@ -66,9 +58,19 @@ const INPUT = {
 };
 
 let store: SessionStartedByStore;
+let record: RunRecord;
+/** Every start the turn port was asked for. */
+let launches: StartTurnInput[];
 
 beforeEach(() => {
-  launches.length = 0;
+  const db = createTestDb();
+  record = createRunRecord(db, { epoch: '01BOOTEPOCHROUTESTART00000' });
+  launches = [];
+  const start = record.port.start.bind(record.port);
+  vi.spyOn(record.port, 'start').mockImplementation((input) => {
+    launches.push(input);
+    return start(input);
+  });
   rules.claudeCode = {
     accounts: [{ id: 'work', path: '/accounts/work', label: 'Work', onlyProjects: null }],
     defaultAccountOnlyProjects: null,
@@ -78,6 +80,7 @@ beforeEach(() => {
   store = new SessionStartedByStore(createTestDb());
   setStartWorkService(
     new StartWorkService({
+      port: () => record.port,
       store,
       projects: {
         rootWithin: async (dir: string) => (dir.startsWith(DORKOS.root) ? DORKOS.root : null),

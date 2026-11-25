@@ -69,8 +69,8 @@ export const FAILURE_MESSAGE: Record<AgentDeliveryFailureReason, string> = {
   session_gone: 'The chat the message was waiting in no longer exists.',
   interrupted:
     'DorkOS restarted before the message finished. Check the chat to see how far it got.',
-  undeliverable: 'The message waited for room, and then the agent or chat could no longer take it.',
-  stopped: 'The message was waiting for room when the extension stopped, so it was never sent.',
+  undeliverable: 'When its turn came, the agent or chat could not take the message.',
+  stopped: 'The extension stopped before the message started, so it was never sent.',
 };
 
 /**
@@ -138,7 +138,12 @@ export function describeInputProblem(input: unknown): string {
   return 'Send { to, text, idempotencyKey } and an optional context.';
 }
 
-/** The receipt a stored message answers with: the first one, or `failed` once it has. */
+/**
+ * The receipt a stored message answers with: where it is now (`queued`, then
+ * `started` once its turn began), or `failed` once it has.
+ *
+ * @param row - The stored message.
+ */
 export function receiptOf(row: AgentSendRecord): AgentSendReceipt {
   if (row.status === 'failed') {
     return {
@@ -148,10 +153,13 @@ export function receiptOf(row: AgentSendRecord): AgentSendReceipt {
       sessionId: row.sessionId,
     };
   }
+  // Where the message is now: running (or done) once its turn started, else
+  // waiting, with the reason on the row (a resend passes the current one).
+  const status = row.status === 'started' || row.status === 'done' ? 'started' : 'queued';
   return {
     messageId: row.id,
-    status: row.receiptStatus,
-    ...(row.receiptStatus === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
+    status,
+    ...(status === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
     sessionId: row.sessionId,
   };
 }

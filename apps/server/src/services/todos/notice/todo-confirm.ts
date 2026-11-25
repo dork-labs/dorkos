@@ -12,6 +12,7 @@ import { recordAudit } from '../../audit/audit-trail.js';
 import type { TodoPromiseStore } from '../todo-promise-store.js';
 import { TodoPromiseError, type TodoPromiseActor } from '../todo-promise-types.js';
 import { toTodoPromise } from '../todo-promise-view.js';
+import { requireMayGiveAgentWork } from '../todo-policy.js';
 
 /** A person's answer to "was it kept?". */
 export type TodoConfirmAnswer = 'yes' | 'not-yet';
@@ -69,9 +70,11 @@ export class TodoConfirm {
    * @param actor - The person answering.
    * @param id - The promise.
    * @param answer - Yes or Not yet.
-   * @throws {TodoPromiseError} `NOT_FOUND`, or `NOTHING_TO_CHANGE` when no answer is waiting.
+   * @throws {TodoPromiseError} `NOT_FOUND`, `NOTHING_TO_CHANGE` when no answer is waiting, or
+   *   `HELD_DEVICE` from a held Wi-Fi device (Not yet wakes the agent).
    */
   answer(actor: TodoPromiseActor, id: string, answer: TodoConfirmAnswer): TodoPromise {
+    requireMayGiveAgentWork(actor);
     const row = this.deps.store.get(id);
     if (!row) throw new TodoPromiseError('NOT_FOUND', 'No promise has that id.');
     const closed = row.closedAt ? Date.parse(row.closedAt) : NaN;

@@ -248,6 +248,23 @@ mkdir -p "$tmp/stray/apps/e2e/old"
 : >"$tmp/stray/apps/e2e/old/legacy.spec.ts"
 check 'a spec outside tests/ is named' "$tmp/stray" 1 'old/legacy.spec.ts'
 
+# A directory another Playwright config collects (release-smoke, #4366) is not stray,
+# but only while that config still declares it as its testDir.
+make_workspace "$tmp/smoke"
+mkdir -p "$tmp/smoke/apps/e2e/release-smoke"
+: >"$tmp/smoke/apps/e2e/release-smoke/reply.spec.ts"
+printf "export default defineConfig({\n  testDir: './release-smoke',\n});\n" >"$tmp/smoke/apps/e2e/playwright.release-smoke.config.ts"
+check 'a spec under release-smoke/ with its own config is not stray' "$tmp/smoke" 0 ''
+make_workspace "$tmp/smoke-noconfig"
+mkdir -p "$tmp/smoke-noconfig/apps/e2e/release-smoke"
+: >"$tmp/smoke-noconfig/apps/e2e/release-smoke/reply.spec.ts"
+check 'release-smoke/ without its config fails' "$tmp/smoke-noconfig" 1 'does not declare testDir'
+make_workspace "$tmp/smoke-moved"
+mkdir -p "$tmp/smoke-moved/apps/e2e/release-smoke"
+: >"$tmp/smoke-moved/apps/e2e/release-smoke/reply.spec.ts"
+printf "export default defineConfig({\n  testDir: './elsewhere',\n});\n" >"$tmp/smoke-moved/apps/e2e/playwright.release-smoke.config.ts"
+check 'release-smoke/ whose config points elsewhere fails' "$tmp/smoke-moved" 1 'does not declare testDir'
+
 # Every test in a spec skipped — a dead webServer leg or an inverted skip guard.
 make_workspace "$tmp/allskipped"
 python3 - "$tmp/allskipped/apps/e2e/test-results/results.json" <<'PY'

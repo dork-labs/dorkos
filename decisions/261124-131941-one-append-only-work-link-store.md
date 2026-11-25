@@ -1,7 +1,7 @@
 ---
 id: 261124-131941
 title: One append-only edge store for the work graph, keyed by entity references and written at the moment of action
-status: proposed
+status: accepted
 created: 2026-11-24
 spec: null
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Proposed (DOR-4968, W2 of the work graph DOR-4966). Drafted in [`research/20261121_architecture-target-design.md`](../research/20261121_architecture-target-design.md), "The work graph". The first table and its first two write sites (a chat's re-key and a fork) land with it. The PM accepts it once the later write sites are scheduled.
+Accepted (2026-11-25; DOR-4968, W2 of the work graph DOR-4966). Drafted in [`research/20261121_architecture-target-design.md`](../research/20261121_architecture-target-design.md), "The work graph". The table and its first two write sites (a chat's re-key and a fork) are built, and the `/r/` link resolver reads it. Its condition for acceptance was that the later write sites be scheduled, and they are: a chat that starts a chat (DOR-5263), a pull request a chat opens and the tickets it names (DOR-5264), a worktree (DOR-5265), a to-do or a promise (DOR-5266) and claims (DOR-4972).
 
 ## Context
 
@@ -40,7 +40,7 @@ We will keep one append-only edge table, `work_links`, in this computer's SQLite
 ### Positive
 
 - One place answers "what did this chat make, and what does it work on", and later views (W3 to W5) read it without new tables.
-- An old chat id can be resolved after a restart (`resolveRekey`). Nothing reads it in production yet; the `/r/` link resolver (DOR-5046) is its first reader.
+- An old chat id can be resolved after a restart (`resolveRekey`). The `/r/` link resolver (DOR-5046) is its first reader.
 
 ### Negative
 

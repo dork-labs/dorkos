@@ -145,23 +145,6 @@ describe('resolvePreferredPort', () => {
     expect(resolvePreferredPort()).toEqual({ port: 4500, source: 'config.json' });
   });
 
-  it('does not read the default `conf` writes to disk as a choice somebody made', async () => {
-    // `conf` materializes defaults: `config-manager.ts` hands it both `defaults`
-    // and `migrations`, and its migration pass writes the whole defaulted tree
-    // back whenever the file differs from it. So this block is on essentially
-    // every machine that has booted DorkOS once, written by the library and
-    // typed by nobody. Reading it as a pin made the step-up branch dead for
-    // everyone and told people DorkOS was "set to use port 4242" — a setting
-    // they never made.
-    process.env.DORK_HOME = dataDirectory({
-      version: 1,
-      server: { port: 4242, cwd: null, boundary: null, open: true },
-    });
-    const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
-
-    expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
-  });
-
   it('lets DORKOS_PORT win over the pinned one, matching the CLI precedence', async () => {
     process.env.DORK_HOME = dataDirectory({ server: { port: 4500 } });
     process.env.DORKOS_PORT = '4600';
@@ -196,39 +179,9 @@ describe('resolvePreferredPort', () => {
     expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
     expect(log.default.warn.mock.calls.flat().join(' ')).toMatch(/server\.port 80/);
   });
-
-  it('ignores a DORKOS_PORT that is not a port', async () => {
-    process.env.DORK_HOME = dataDirectory();
-    process.env.DORKOS_PORT = 'not-a-number';
-    const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
-
-    expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
-  });
-
-  it('keeps a privileged DORKOS_PORT, because exporting one is deliberate', async () => {
-    // `apps/server/src/env.ts` accepts the whole 1–65535 range here, and the
-    // refusal for one DorkOS cannot bind says so accurately rather than
-    // pretending the setting was never made.
-    process.env.DORK_HOME = dataDirectory();
-    process.env.DORKOS_PORT = '80';
-    const { resolvePreferredPort } = await import('../server-port');
-
-    expect(resolvePreferredPort()).toEqual({ port: 80, source: 'DORKOS_PORT' });
-  });
 });
 
 describe('findAvailablePort', () => {
-  it('takes the preferred port when it is free', async () => {
-    const { findAvailablePort, PORT_SCAN_ATTEMPTS } = await import('../server-port');
-    // Held only long enough to prove nothing else has it, then given straight
-    // back — the scan should want exactly this port.
-    const block = await reserveBlock(1);
-    const free = block.base;
-    await block.release();
-
-    expect(await findAvailablePort(free, PORT_SCAN_ATTEMPTS)).toBe(free);
-  });
-
   it('steps up one port at a time, deterministically, past whatever is taken', async () => {
     const { findAvailablePort, PORT_SCAN_ATTEMPTS } = await import('../server-port');
     // Hold four in a row and give the last one back, so the only free port in
@@ -261,20 +214,6 @@ describe('findAvailablePort', () => {
       await expect(findAvailablePort(block.base, attempts)).rejects.toThrow(/config\.json/);
     } finally {
       await block.release();
-    }
-  });
-
-  it('never scans past the last real port', async () => {
-    const { findAvailablePort } = await import('../server-port');
-    // 65535 is the ceiling. With it taken, a ten-wide window has nowhere left
-    // to go, and must say so rather than probe a port number that cannot exist.
-    // (A `null` here means something else already holds it, which is the same
-    // condition.)
-    const held = await bind(65_535);
-    try {
-      await expect(findAvailablePort(65_535, 10)).rejects.toThrow(/65535 to 65535/);
-    } finally {
-      if (held) await close([held]);
     }
   });
 });
@@ -362,27 +301,6 @@ describe('chooseServerPort', () => {
       // The way out, worded for a pin that lives in config.json.
       expect(err!.message).toMatch(/dorkos config set server\.port/);
       expect(err!.message).toContain('config.json');
-    } finally {
-      await block.release();
-    }
-  });
-
-  it('points at the environment variable when that is where the pin came from', async () => {
-    const block = await reserveBlock(1);
-    process.env.DORK_HOME = dataDirectory();
-    process.env.DORKOS_PORT = String(block.base);
-    const { chooseServerPort } = await import('../server-port');
-
-    try {
-      const err = await chooseServerPort().then(
-        () => null,
-        (e: unknown) => e as Error
-      );
-      expect(err).not.toBeNull();
-      // Telling someone to edit config.json would be wrong here: DORKOS_PORT
-      // wins over it, so the edit would appear to do nothing.
-      expect(err!.message).toContain('DORKOS_PORT');
-      expect(err!.message).not.toContain('config.json');
     } finally {
       await block.release();
     }

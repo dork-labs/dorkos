@@ -14,23 +14,21 @@ const expected: Record<string, number> = {
   'claude-code/sessions/warm-process-ledger.ts': 1,
   'claude-code/sdk/launch-query.ts': 2,
   'claude-code/sdk/sdk-utils.ts': 1,
-  'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
   'codex/app-server/process-pool.ts': 1,
   'codex/app-server/protocol/snapshot.ts': 2,
-  'codex/provision.ts': 1,
   'codex/policy/mount-target-guard.ts': 1,
   // hasPathCopy only: Codex's vendored rg via execFileSync, no shell, fixed
   // `--files --hidden --no-ignore --glob` flags; DorkOS sets the root and glob.
   'codex/policy/hidden-folder-scans.ts': 1,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
-  'opencode/providers/provision.ts': 1,
   'opencode/providers/ollama-provision.ts': 2,
   'opencode/providers/ollama-catalog.ts': 1,
   // An installed package's own shell guards, for OpenCode and Doe (DOR-4379):
   // credential-free `process-inspection` env, the guard's command via `sh -c`.
   'shared/policy/package-hooks.ts': 1,
+  'shared/program/provision-npm.ts': 1,
   'shared/run-probe.ts': 1,
 };
 function files(dir: string): string[] {

@@ -131,33 +131,68 @@ describe('extension layer — the handler sees a narrowed call (DOR-2685 review)
   });
 });
 
-describe('only an action that lowers an agent’s power runs from Wi-Fi', () => {
-  it('refuses to compose any other capability that declares allowFromWifi', () => {
-    const smuggler = {
-      ...defineCapability({
-        id: 'agent.resume_everything',
-        title: 'Resume',
-        description: 'Resume it.',
-        tier: 'act',
-        area: null,
-        areaNote: 'test',
-        input: z.object({}),
-        output: z.unknown(),
-        surfaces: {},
-        invoke: async () => ({}),
-      }),
-      allowFromWifi: true as const,
-    };
-    expect(() => composeRegistry([{ name: 'agent', capabilities: [smuggler] }], deps)).toThrow(
+describe('only a reviewed list runs from Wi-Fi, each in its one mode (ADR 261125-114705)', () => {
+  /** An `act` capability no list names, to smuggle a network mode onto. */
+  function smuggler(id: `${string}.${string}`, surfaces: Record<string, unknown> = {}) {
+    return defineCapability({
+      id,
+      title: 'Smuggle',
+      description: 'Smuggle it.',
+      tier: 'act',
+      area: null,
+      areaNote: 'test',
+      input: z.object({}),
+      output: z.unknown(),
+      surfaces,
+      invoke: async () => ({}),
+    });
+  }
+
+  it('refuses to compose any other capability that declares a network mode', () => {
+    for (const wifi of ['lowers-power', 'person-held'] as const) {
+      const capability = { ...smuggler('agent.resume_everything'), wifi };
+      expect(
+        () => composeRegistry([{ name: 'agent', capabilities: [capability] }], deps),
+        wifi
+      ).toThrow(/may not run from a sign-in on your network/);
+    }
+  });
+
+  it('refuses a listed id that declares the other mode', () => {
+    const capability = { ...smuggler('agent.pause'), wifi: 'person-held' as const };
+    expect(() => composeRegistry([{ name: 'agent', capabilities: [capability] }], deps)).toThrow(
       /may not run from a sign-in on your network/
     );
   });
 
-  it('is declared by agent.pause and nothing else in the full registry', () => {
+  it('refuses person-held on a capability an agent may call', () => {
+    const capability = {
+      ...smuggler('todos.add_as_person', { http: { method: 'post', path: '/api/todos' } }),
+      wifi: 'person-held' as const,
+    };
+    expect(() => composeRegistry([{ name: 'todos', capabilities: [capability] }], deps)).toThrow(
+      /only a person may call it/
+    );
+  });
+
+  it('pins the exact set of surfaces with any network mode: the pause and a person’s four to-do writes', () => {
     const declaring = composeCapabilityRegistryForDocs()
-      .capabilities.filter((capability) => capability.allowFromWifi)
-      .map((capability) => capability.id);
-    expect(declaring).toEqual(['agent.pause']);
+      .capabilities.filter((capability) => capability.wifi !== undefined)
+      .map((capability) => [
+        capability.id,
+        capability.wifi,
+        capability.surfaces.http?.method,
+        capability.surfaces.http?.path,
+        capability.surfaces.http?.audience,
+      ])
+      .sort(([a], [b]) => String(a).localeCompare(String(b)));
+    expect(declaring).toEqual([
+      ['agent.pause', 'lowers-power', 'post', '/api/agents/{agentId}/pause', undefined],
+      ['todos.add_as_person', 'person-held', 'post', '/api/todos', 'person'],
+      ['todos.change_as_person', 'person-held', 'patch', '/api/todos/{id}', 'person'],
+      ['todos.change_promise', 'person-held', 'patch', '/api/todo-promises/{id}', 'person'],
+      ['todos.confirm_promise', 'person-held', 'post', '/api/todo-promises/{id}/confirm', 'person'],
+    ]);
   });
 });
 

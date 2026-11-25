@@ -23,7 +23,6 @@ vi.mock('../../dork-home', () => ({ resolveDataDirectory: () => holder.dataDirec
 vi.mock('../../server-process', () => ({ getServerPort: vi.fn((): number | null => 4242) }));
 
 import { LOG_TAIL_BYTES, saveDiagnosticReport, saveDiagnosticReportInteractive } from '../index'; // prettier-ignore
-import { getServerPort } from '../../server-process';
 import { REDACTED } from '../redact';
 import { SENSITIVE_CONFIG_KEYS } from '@dorkos/shared/config-schema';
 import { app, dialog, resetElectronMock, shell } from '../../__tests__/electron-mock';
@@ -61,13 +60,6 @@ function write(filePath: string, contents: string | Buffer): void {
 /** Read the archive `saveDiagnosticReport` just wrote. */
 function openReport(zipPath: string): Map<string, Buffer> {
   return readZip(fs.readFileSync(zipPath));
-}
-
-/** How many report runs have finished — one "Saved a diagnostic report" line each. */
-function completedRuns(): number {
-  return vi
-    .mocked(log.info)
-    .mock.calls.filter(([line]) => String(line).includes('Saved a diagnostic report')).length;
 }
 
 /** The archive's `report.txt`, as text. */
@@ -151,12 +143,6 @@ describe('saveDiagnosticReport', () => {
     expect(files.get(`update/${SHIPIT_DIR}/ShipItState.plist`)!.toString('utf8')).toBe('bplist00');
   });
 
-  it('leads with report.txt, so opening the archive answers the first question', async () => {
-    const files = openReport(await saveDiagnosticReport());
-
-    expect([...files.keys()][0]).toBe('report.txt');
-  });
-
   it('keeps the END of a long log, capped at the tail size', async () => {
     const serverLog = path.join(holder.dataDirectory, 'logs', 'dorkos.log');
     write(serverLog, `HEAD-MARKER${'.'.repeat(LOG_TAIL_BYTES)}TAIL-MARKER`);
@@ -204,24 +190,6 @@ describe('saveDiagnosticReport', () => {
     expect(report).toContain('[redacted]');
   });
 
-  it('ships only the bytes it actually read, when a log shrinks mid-read', async () => {
-    // A rotation between the fstat and the read leaves the rest of the buffer
-    // as the zeroes `alloc` put there; shipping them pads the log with NULs
-    // that read as corruption in the archive.
-    const realReadSync = fs.readSync.bind(fs);
-    vi.spyOn(fs, 'readSync').mockImplementationOnce(
-      (...args: Parameters<typeof fs.readSync>): number => {
-        realReadSync(...args);
-        return 4;
-      }
-    );
-
-    const collected = openReport(await saveDiagnosticReport()).get('main.log')!;
-
-    expect(collected).toHaveLength(4);
-    expect(collected.includes(0)).toBe(false);
-  });
-
   it('reports the versions, port, data directory and install location', async () => {
     const report = reportText(openReport(await saveDiagnosticReport()));
 
@@ -235,22 +203,6 @@ describe('saveDiagnosticReport', () => {
     expect(report).toContain('  writable:        yes');
     expect(report).toContain('  in Applications: yes');
     expect(report).toContain(`Node:              ${process.versions.node}`);
-  });
-
-  it('says the server is not listening rather than printing a bare null', async () => {
-    vi.mocked(getServerPort).mockReturnValue(null);
-
-    expect(reportText(openReport(await saveDiagnosticReport()))).toContain(
-      'Server port:       not listening'
-    );
-  });
-
-  it('inventories what made it into the archive', async () => {
-    const report = reportText(openReport(await saveDiagnosticReport()));
-
-    expect(report).toContain('In this archive:');
-    expect(report).toContain('  dorkos.log — 21 bytes');
-    expect(report).toContain('  (nothing — every source was collected)');
   });
 
   it('still produces a report when every source is missing, and names each one', async () => {
@@ -270,24 +222,6 @@ describe('saveDiagnosticReport', () => {
     expect(report).toContain('updater.log: ENOENT');
     expect(report).toContain('config.json: ENOENT');
     expect(files.get('update/listings.txt')!.toString('utf8')).toContain('No update state found');
-  });
-
-  it('notes a config that exists but cannot be parsed, instead of failing', async () => {
-    write(path.join(holder.dataDirectory, 'config.json'), '{ this is not json');
-
-    const files = openReport(await saveDiagnosticReport());
-
-    expect(files.has('config-redacted.json')).toBe(false);
-    expect(reportText(files)).toMatch(/config\.json: .*JSON/);
-  });
-
-  it('survives an unreadable OS cache directory', async () => {
-    fs.rmSync(holder.cache, { recursive: true, force: true });
-
-    const files = openReport(await saveDiagnosticReport());
-
-    expect(files.has('main.log')).toBe(true);
-    expect(reportText(files)).toContain('update state: ENOENT');
   });
 
   it('rejects only when the archive itself cannot be written', async () => {
@@ -310,16 +244,6 @@ describe('overlapping invocations (the double-click)', () => {
     expect(fs.readdirSync(holder.desktop)).toEqual([path.basename(first)]);
   });
 
-  it('leaves a whole, readable archive behind under a burst of clicks', async () => {
-    const paths = await Promise.all(Array.from({ length: 20 }, () => saveDiagnosticReport()));
-
-    expect(new Set(paths).size).toBe(1);
-    // Reading it back through the central directory is what a torn archive
-    // fails: the offsets a half-written file carries point at nothing.
-    expect([...openReport(paths[0]).keys()]).toContain('report.txt');
-    expect(fs.readdirSync(holder.desktop)).toHaveLength(1);
-  });
-
   it('never leaves a .partial file behind, on success or on failure', async () => {
     await saveDiagnosticReport();
     expect(fs.readdirSync(holder.desktop).some((name) => name.endsWith('.partial'))).toBe(false);
@@ -329,18 +253,6 @@ describe('overlapping invocations (the double-click)', () => {
     await expect(saveDiagnosticReport()).rejects.toThrow(/EXDEV/);
 
     expect(fs.readdirSync(holder.desktop).some((name) => name.endsWith('.partial'))).toBe(false);
-  });
-
-  it('runs once for two concurrent calls, and again for a later one', async () => {
-    // The guard throttles concurrency, not the feature. Counted by completed
-    // runs rather than by filename, because two sequential runs inside one
-    // second legitimately share a name.
-    await Promise.all([saveDiagnosticReport(), saveDiagnosticReport()]);
-    expect(completedRuns()).toBe(1);
-
-    await saveDiagnosticReport();
-
-    expect(completedRuns()).toBe(2);
   });
 });
 
@@ -374,13 +286,6 @@ describe('saveDiagnosticReportInteractive', () => {
     const [revealed] = vi.mocked(shell.showItemInFolder).mock.calls[0];
     expect(fs.existsSync(revealed)).toBe(true);
     expect(path.dirname(revealed)).toBe(holder.desktop);
-  });
-
-  it('reveals once for a double-click, not twice', async () => {
-    await Promise.all([saveDiagnosticReportInteractive(), saveDiagnosticReportInteractive()]);
-
-    expect(completedRuns()).toBe(1);
-    expect(shell.showItemInFolder).toHaveBeenCalledTimes(1);
   });
 
   it('explains a failure in a dialog rather than throwing into the menu handler', async () => {

@@ -14,7 +14,14 @@
  * @module services/runtimes/claude-code/repo-settings/repo-files
  */
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
+import {
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import path from 'node:path';
 
 /** The largest file read. */
@@ -183,6 +190,19 @@ export function sha256(content: string | Buffer): string {
  */
 export function repoRelative(root: string, abs: string): string {
   return path.relative(root, abs).split(path.sep).join('/');
+}
+
+/**
+ * A path by its real path, or resolved when it is not there.
+ *
+ * @param p - The path.
+ */
+export function realOrResolved(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 /**

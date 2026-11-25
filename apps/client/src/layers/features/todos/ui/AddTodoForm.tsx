@@ -35,8 +35,7 @@ export function AddTodoForm({ agentId, onDone }: AddTodoFormProps) {
   const trimmed = what.trim();
   // The server judges the date again, by its own clock (`past_due`).
   const refusedCode = create.isError ? (create.error as { code?: string } | null)?.code : undefined;
-  // `PAST_DUE` is the old spelling until routes/todo-promises moves (DOR-4979).
-  const serverSaysPast = refusedCode === 'past_due' || refusedCode === 'PAST_DUE';
+  const serverSaysPast = refusedCode === 'past_due';
   // `datetime-local` is the person's own clock; a Date reads it as local time.
   const dueMs = due ? new Date(due).getTime() : null;
   // Judged when the time is picked, not on every render: a clock read during
