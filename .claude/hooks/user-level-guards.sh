@@ -37,6 +37,14 @@ JQ=${JQ:-/usr/bin/jq}
 GUARDS=(file-guard git-guard process-guard merge-guard pr-create-guard heavy-command-guard)
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 0
 repo_common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+# The guards run from the top of THIS checkout, the one that holds them. file-guard
+# reads its deny rules from <working folder>/.claude/settings.json, and a hook
+# process starts wherever the session is homed (an agent home has no such rules),
+# so without this it allowed `cd <dorkos> && cat .env` (t2, Nov 25). Not the
+# target's own top: a worktree is a branch the agent edits, and its settings.json
+# could drop the rules. file-guard matches secret names by basename, so a path in
+# any worktree is still caught.
+root=$(git -C "$here" rev-parse --show-toplevel 2>/dev/null) || exit 0
 
 payload=$(cat) || exit 0
 [ -n "$payload" ] || exit 0
@@ -76,7 +84,7 @@ for target in "${targets[@]}"; do
   if [ "$(common_of "$target")" = "$repo_common" ]; then
     for guard in "${GUARDS[@]}"; do
       [ -f "$here/$guard.mjs" ] || continue
-      printf '%s' "$payload" | "$here/run-node-hook.sh" "$here/$guard.mjs"
+      (cd "$root" && printf '%s' "$payload" | "$here/run-node-hook.sh" "$here/$guard.mjs")
       status=$?
       [ "$status" -eq 0 ] || exit 2
     done
