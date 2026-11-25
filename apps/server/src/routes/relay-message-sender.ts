@@ -17,14 +17,22 @@
  * refused, except a verified agent, which is sent from its own address. The
  * app's window without a session is then asked for the password by the chain
  * (`http/person-session-refusal.ts`). A message that is not the person's never
- * shapes the turn it starts: its folder, agent, mode and word fields, and the
+ * shapes the turn it starts: its folder, agent, mode and word fields, the
  * reply format it asks for (`responseContext`, which reaches the receiving
- * turn's system prompt), are dropped. The limits field is the server's alone,
- * so a caller's copy of it is always dropped.
+ * turn's system prompt), and the display name and chat title a chat bridge
+ * sets (`senderName`, `channelName`, the turn's `Sender:` and `Chat:` lines)
+ * are dropped (DOR-5201). The limits field is the server's alone, so a
+ * caller's copy of it is always dropped, and the server's own copy is sealed
+ * for the sender it goes from (`sealTurnLimits`), so the turn can tell the two
+ * apart. A message from `relay.external.http` always carries the outsider mark.
  *
  * @module routes/relay-message-sender
  */
-import { CARRIED_TURN_LIMITS_FIELD, TURN_SHAPING_PAYLOAD_FIELDS } from '@dorkos/relay';
+import {
+  CARRIED_TURN_LIMITS_FIELD,
+  sealTurnLimits,
+  TURN_SHAPING_PAYLOAD_FIELDS,
+} from '@dorkos/relay';
 import type { RelaySendMessageRequest } from '@dorkos/shared/relay-schemas';
 import type { RequestFacts } from '../http/request-facts.js';
 import { launcherTurnCeiling, sessionLauncherOf } from './session-launcher.js';
@@ -41,6 +49,13 @@ export type AgentSubjectLookup = (agentPath: string) => string | undefined;
 
 /** What the route sends: who from, and the payload, or why it refuses. */
 export type RelayMessageSend = { refused: { detail: string } } | { from: string; payload: unknown };
+
+/**
+ * Payload fields only the person may set, beyond the turn-shaping ones: the
+ * reply format the receiving turn is told to use, and who a chat bridge says
+ * is talking and where.
+ */
+const NOT_THE_PERSONS_TO_NAME = ['responseContext', 'senderName', 'channelName'] as const;
 
 /** Whether a value is a plain JSON object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,12 +100,17 @@ export function relayMessageSender(
     HTTP_RELAY_SENDER;
   const payload = without(data.payload, [
     ...TURN_SHAPING_PAYLOAD_FIELDS,
-    'responseContext',
+    ...NOT_THE_PERSONS_TO_NAME,
     CARRIED_TURN_LIMITS_FIELD,
   ]);
-  const limits = launcherTurnCeiling(launcher, facts);
+  const limits = {
+    ...launcherTurnCeiling(launcher, facts),
+    // Spelled out, so a check that reads only the marks sees an outsider (DOR-5201).
+    ...(from === HTTP_RELAY_SENDER ? { carriedMarks: { outsider: true as const } } : {}),
+  };
   if (limits.permissionCeiling === undefined && limits.carriedMarks === undefined) {
     return { from, payload };
   }
-  return { from, payload: { ...asObject(payload), [CARRIED_TURN_LIMITS_FIELD]: limits } };
+  const stamp = sealTurnLimits(from, limits);
+  return { from, payload: { ...asObject(payload), [CARRIED_TURN_LIMITS_FIELD]: stamp } };
 }

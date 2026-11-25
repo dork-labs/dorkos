@@ -13,7 +13,7 @@
  *
  * @module services/runtimes/claude-code/sessions/__tests__/session-turn-windows
  */
-import { expect, vi, beforeAll } from 'vitest';
+import { expect, vi, afterEach, beforeAll } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -45,6 +45,23 @@ export const CWD = process.cwd();
 beforeAll(async () => {
   await initBoundary(CWD);
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/**
+ * Put the windower's grace and cap timers on a fake clock, so a case moves
+ * time with `vi.advanceTimersByTimeAsync` instead of sleeping. Only timers and
+ * `Date` are faked: the pump's async iteration still runs on real microtasks,
+ * and `vi.waitFor` advances the fake clock by its interval on every check.
+ * Real timers come back after each test.
+ */
+export function useFakeClock(): void {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+  });
+}
 
 /**
  * A `result` that answers `answers`, or one that answers nothing it can name.
@@ -393,11 +410,23 @@ export function groupWindows(events: SessionEvent[]): ProjectedWindow[] {
  * `windows` is the number expected to have opened by now, and waiting for it is
  * load-bearing: a window the pump has not delivered a message for yet is not in
  * `projected`, so draining without the wait would resolve instantly and assert
- * against a stream that has not happened.
+ * against a stream that has not happened. Under {@link useFakeClock} it moves
+ * the fake clock too, since nothing else will.
  */
 export async function settled(h: Harness, windows: number): Promise<void> {
   await vi.waitFor(() => expect(h.opened.length).toBe(windows));
-  await Promise.all(h.projected);
+  const all = Promise.all(h.projected);
+  if (!vi.isFakeTimers()) return void (await all);
+  // On the fake clock nothing moves unless a test moves it: a close still
+  // waits on the fake process's next-macrotask control answers and on its own
+  // timers, so walk the clock forward until every window has ended.
+  let done = false;
+  void all.then(
+    () => (done = true),
+    () => (done = true)
+  );
+  while (!done) await vi.advanceTimersByTimeAsync(10);
+  await all;
 }
 
 /**

@@ -47,7 +47,7 @@ HEAD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # (pushed 10:00) is green on every required check and merges cleanly.
 base() {
   jq -n --argjson req "$REQ" --arg head "$HEAD" '{
-    id: "PR_node", number: 7, state: "OPEN", isDraft: false, baseRefName: "main",
+    id: "PR_node", number: 7, state: "OPEN", isDraft: false, isCrossRepository: false, baseRefName: "main",
     mergeable: "MERGEABLE", headRefOid: $head,
     autoMergeRequest: null, mergeQueueEntry: null,
     labels: {nodes: [{name: "review:deep"}]},
@@ -197,6 +197,12 @@ check 'a draft: left alone' 'SKIP draft' "$out"
 
 verdict_of '.baseRefName = "feature/x"'
 check 'not into main: left alone' 'SKIP base-not-main' "$out"
+
+verdict_of '.isCrossRepository = true'
+check 'from a fork: a maintainer re-arms it, not this sweep' 'SKIP from-fork' "$out"
+
+verdict_of 'del(.isCrossRepository)'
+check 'origin unreadable: left alone' 'SKIP origin-unknown' "$out"
 
 verdict_of '.events.nodes[2].reason = "merged"'
 check 'a removal that is the merge itself is not an ejection' 'SKIP not-removed' "$out"

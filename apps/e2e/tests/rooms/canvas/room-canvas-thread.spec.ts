@@ -98,10 +98,18 @@ test.describe('A document on a room’s canvas has its own discussion', () => {
     const rootId = (await roomsApi.entryIds(room.id)).at(-1);
     expect(rootId).toBeDefined();
 
+    // The server answers the second press with the thread it already has.
+    const answered = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/api\/rooms\/[^/]+\/canvas\/[^/]+\/thread$/.test(new URL(response.url()).pathname)
+    );
     await page.getByRole('button', { name: 'Discuss' }).click();
+    expect(
+      ((await (await answered).json()) as { threadRootEntryId: string }).threadRootEntryId
+    ).toBe(rootId);
     await expect(roomsPage.threadPanel).toBeVisible();
     // Nothing new was written, and the panel is still on the same root.
-    await page.waitForTimeout(500);
     expect(await roomsApi.entryIds(room.id)).toHaveLength(1);
     await expect(roomsPage.threadEntries.first()).toContainText(title);
   });

@@ -16,6 +16,8 @@
 # deliberate act and is never undone), with auto-merge off and not turned on
 # or off by anyone since that removal:
 #   - held (hold, do-not-merge, wip, blocked)        -> nothing
+#   - from a fork                                    -> nothing; a
+#     maintainer turns auto-merge back on, as for the first arming
 #   - mergeable, every required check green          -> auto-merge back on,
 #     which queues it again
 #   - conflicting with main                          -> one comment per head
@@ -106,7 +108,7 @@ LIST_QUERY='query($owner:String!,$name:String!,$endCursor:String){
   repository(owner:$owner,name:$name){
     pullRequests(states:OPEN, first:50, after:$endCursor){
       pageInfo{ hasNextPage endCursor }
-      nodes{ number state isDraft baseRefName mergeable headRefOid
+      nodes{ number state isDraft isCrossRepository baseRefName mergeable headRefOid
         autoMergeRequest{ enabledAt } mergeQueueEntry{ state }
         labels(first:100){ nodes{ name } }
         events: timelineItems(last:30, itemTypes:['"$EVENT_TYPES"']){ '"$EVENT_FIELDS"' } } } } }'
@@ -116,7 +118,7 @@ LIST_QUERY='query($owner:String!,$name:String!,$endCursor:String){
 DETAIL_QUERY='query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){
-      id number state isDraft baseRefName mergeable headRefOid
+      id number state isDraft isCrossRepository baseRefName mergeable headRefOid
       autoMergeRequest{ enabledAt } mergeQueueEntry{ state }
       labels(first:100){ nodes{ name } }
       labelEvents: timelineItems(last:50, itemTypes:[LABELED_EVENT]){ nodes{
@@ -134,7 +136,8 @@ DETAIL_QUERY='query($owner:String!,$name:String!,$number:Int!){
           ... on StatusContext{ context state createdAt } } } } } } } } } }'
 
 # The part of the rule the cheap list read can already answer, shared with the
-# verdict so the two cannot disagree: open, into main, not a draft, auto-merge
+# verdict so the two cannot disagree: open, into main, not a draft, from a
+# branch of this repository (not a fork), auto-merge
 # off, not queued, and the latest merge-queue event a removal by the queue
 # itself with no auto-merge change after it. Prints "eligible" or why not.
 ELIGIBLE_DEF='
@@ -149,6 +152,10 @@ ELIGIBLE_DEF='
     elif (.isDraft | type) != "boolean"               then "draft-unknown"
     elif .isDraft                                     then "draft"
     elif (.baseRefName // "") != "main"               then "base-not-main"
+    # Only a branch of this repository goes back in by itself. A pull request
+    # from a fork is re-armed by a maintainer, as it was armed the first time.
+    elif (.isCrossRepository | type) != "boolean"     then "origin-unknown"
+    elif .isCrossRepository                           then "from-fork"
     elif (has("autoMergeRequest") | not)              then "auto-merge-unknown"
     elif .autoMergeRequest != null                    then "auto-merge-on"
     elif (has("mergeQueueEntry") | not)               then "queue-entry-unknown"

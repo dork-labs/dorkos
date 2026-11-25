@@ -98,6 +98,16 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['.better-auth-secret.*.tmp', 'file'],
   // The key the CLI calls this server with.
   ['api-key', 'file'],
+  // The one-time code that makes the first owner (`auth/setup-code.ts`).
+  ['setup-code', 'file'],
+  // A hub's private signing key, and its `<name>.<pid>.tmp` while being made
+  // (`hub/hub-signing-key.ts`, DOR-5241).
+  ['hub-signing-key.pem*', 'file'],
+  // This computer's relay pin (it holds the relay secret), its own signing key,
+  // and the passkeys it takes approvals from (`session-relay/`).
+  ['session-relay', 'folder'],
+  // The key page stamps are signed with, and its temp file (`step-up/page-stamp.ts`).
+  ['step-up/page-stamp.key*', 'file'],
   // The database: sign-in sessions and connected-app tokens, with its -wal/-shm,
   // under its current and its old name (`dorkos.db`).
   ['dork*.db*', 'file'],

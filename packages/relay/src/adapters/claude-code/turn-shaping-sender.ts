@@ -9,7 +9,7 @@ import type {
   TurnPermissionBound,
   TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
-import { CARRIED_TURN_LIMITS_FIELD } from '../../lib/carried-turn-limits.js';
+import { CARRIED_TURN_LIMITS_FIELD, isSealedTurnLimits } from '../../lib/carried-turn-limits.js';
 
 /**
  * Senders whose payload may shape a turn — its folder, the agent it acts as and
@@ -51,8 +51,14 @@ type CarriedTurnLimits = Pick<MessageOpts, 'permissionCeiling' | 'carriedMarks'>
 const ASKS = new Set(['always', 'when-risky', 'never']);
 const REACH = new Set(['read', 'edit', 'workspace', 'everything']);
 
-/** One carried bound as written, or the runtime's default when it can't be read. */
-function readBound(value: unknown): TurnPermissionBound {
+/**
+ * One carried bound as written, or the runtime's default when it can't be read.
+ * A teammate's chain counts a turn against a space's monthly limit by the rooms
+ * it names, so those rooms are kept only from limits the server sealed
+ * (DOR-5201). An unsealed chain still marks the turn, as an empty chain: a
+ * mark only ever adds, and a stamp from before a restart no longer verifies.
+ */
+function readBound(value: unknown, sealed: boolean): TurnPermissionBound {
   if (value === 'runtime-default' || typeof value !== 'object' || value === null) {
     return 'runtime-default';
   }
@@ -65,23 +71,30 @@ function readBound(value: unknown): TurnPermissionBound {
   if (!ASKS.has(level.asks as string) || !REACH.has(level.reach as string) || !teammateOk) {
     return 'runtime-default';
   }
-  return value as TurnPermissionBound;
+  if (sealed || teammate === undefined) return value as TurnPermissionBound;
+  return { ...level, teammate: [] } as unknown as TurnPermissionBound;
 }
 
 /**
  * The limits a payload carries onto its turn. Anything there that can't be
  * read holds the turn at the runtime's default and marks it, never looser.
  */
-function carriedTurnLimitsOf(payload: Record<string, unknown> | null): CarriedTurnLimits {
+function carriedTurnLimitsOf(
+  payload: Record<string, unknown> | null,
+  from: string | undefined
+): CarriedTurnLimits {
   const raw = payload?.[CARRIED_TURN_LIMITS_FIELD];
   if (raw === undefined) return {};
   if (typeof raw !== 'object' || raw === null) {
     return { permissionCeiling: 'runtime-default', carriedMarks: { outsider: true } };
   }
   const { permissionCeiling, carriedMarks } = raw as Record<string, unknown>;
+  const sealed = from !== undefined && isSealedTurnLimits(from, raw as Record<string, unknown>);
   const bounds = permissionCeiling === undefined ? [] : [permissionCeiling].flat();
   return {
-    ...(bounds.length > 0 ? { permissionCeiling: bounds.map(readBound) } : {}),
+    ...(bounds.length > 0
+      ? { permissionCeiling: bounds.map((bound) => readBound(bound, sealed)) }
+      : {}),
     ...(carriedMarks !== undefined ? { carriedMarks: { outsider: true } } : {}),
   };
 }
@@ -114,21 +127,26 @@ function boundsOf(ceiling: TurnPermissionCeiling | undefined): TurnPermissionBou
  * by an agent whose running turns are marked or held carries those limits
  * ({@link CARRIED_TURN_LIMITS_FIELD}), exactly as a chat it starts over the
  * sessions API does, so the message's turn holds them too. They add to the
- * bounds above and never lift one.
+ * bounds above and never lift one. A teammate's chain among them counts the
+ * turn against a space's monthly limit, so it is read only from limits the
+ * server sealed for this sender ({@link isSealedTurnLimits}); anyone else's
+ * copy keeps its bounds and its mark, and names no room (DOR-5201).
  *
  * @param trustedShaper - Whether the sender may shape the turn ({@link isTurnShapingSender}).
  * @param markStrangers - Whether DOR-3858's flag is on, so a sender the host found unproven
  *   (`__untrustedWords` from a shaping sender) is marked.
  * @param payload - The message's payload, for whether the host found the sender unproven and
  *   the limits it carries.
+ * @param from - The envelope's sender, which the server's seal on those limits names.
  */
 export function turnPowerOptions(
   trustedShaper: boolean,
   markStrangers: boolean,
-  payload: Record<string, unknown> | null = null
+  payload: Record<string, unknown> | null = null,
+  from?: string
 ): CarriedTurnLimits {
   const stranger = markStrangers && trustedShaper && payload?.__untrustedWords === true;
-  const carried = carriedTurnLimitsOf(payload);
+  const carried = carriedTurnLimitsOf(payload, from);
   const bounds: TurnPermissionBound[] = [
     ...(trustedShaper ? [] : ['runtime-default' as const]),
     ...boundsOf(carried.permissionCeiling),

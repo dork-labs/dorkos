@@ -51,9 +51,12 @@ jobs:
       group: review-redispatch
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). The schedule runs main's copy on main, so it enters.
+    environment: automation
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: scripts/should-redispatch-review.sh
@@ -61,7 +64,7 @@ jobs:
 
       - name: Mint the merge-tail app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           # The client id is a secret, not a variable, on purpose: repo secrets
           # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.

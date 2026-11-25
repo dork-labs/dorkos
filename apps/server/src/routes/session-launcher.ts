@@ -173,6 +173,40 @@ async function forkPlaceRefusal(
 }
 
 /**
+ * The folder a chat stands in, read from every source that knows one: the
+ * runtime binding's recorded folder, a runtime running it now, then a
+ * registered runtime's own store (which also answers to an id a chat no longer
+ * goes by, such as a renamed chat's old id). `undefined` when none knows it.
+ * The one reader for both the chat place rule here and the relay's
+ * (`relay-chat-place.ts`, DOR-5201).
+ *
+ * @param sessionId - The chat.
+ */
+export function chatFolderOf(sessionId: string): string | undefined {
+  const known = runtimeRegistry.getNativeSessionCwd?.(sessionId) ?? liveSessionCwd(sessionId);
+  if (known) return known;
+  for (const runtime of runtimeRegistry.listRuntimes()) {
+    const cwd = runtime.getSessionCwd?.(sessionId);
+    if (cwd !== undefined) return cwd;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a binding names this chat's runtime, read as the sessions route reads
+ * it (`resolveChatPlace`). A lookup that fails counts as unbound, so the
+ * chat's folder meets every check a new chat's does.
+ *
+ * @param sessionId - The chat.
+ */
+async function isBoundChat(sessionId: string): Promise<boolean> {
+  return runtimeRegistry
+    .resolveSessionRuntime(sessionId, { allowUnbound: true })
+    .then((resolved) => resolved.bound)
+    .catch(() => false);
+}
+
+/**
  * Why this caller may not touch a message waiting in this chat, or `null` when
  * it may: the same place rule a new message meets, asked of the chat's
  * recorded agent (else its folder's agent) and, when known, its folder
@@ -196,17 +230,21 @@ export async function chatPlaceRefusal(
   const recorded = await runtimeRegistry
     .getSessionAgentPath(sessionId)
     .catch(() => 'unreadable' as const);
-  const cwd = runtimeRegistry.getNativeSessionCwd?.(sessionId) ?? liveSessionCwd(sessionId);
+  const cwd = chatFolderOf(sessionId);
   // A chat bound without an agent is its folder's agent's. A folder the resolver
   // refuses, or no folder known, names nobody: refused like an unreadable record (DOR-5035).
   const folder = recorded === null && cwd ? resolveAgentHome(cwd) : undefined;
-  const chatAgent =
+  const owner =
     recorded !== null
       ? recorded
       : folder === undefined || folder.kind === 'refused'
         ? 'unreadable'
         : (homeOf(folder) ?? null);
-  const place = { chatAgent, ...(cwd ? { cwd } : {}) };
+  // A chat nothing binds yet, known only by its folder (a runtime's own store, a
+  // renamed chat's old id), is asked what the sessions route asks of an unbound
+  // id: no chat agent, so its folder meets the rule a new chat's does (DOR-5201).
+  const chatAgent = owner === null && !(await isBoundChat(sessionId)) ? undefined : owner;
+  const place = { ...(chatAgent !== undefined ? { chatAgent } : {}), ...(cwd ? { cwd } : {}) };
   const refusal = launchPlaceRefusal(meshCore, launcher, place);
   if (refusal) {
     auditRefusedLaunch(sessionId, refusal, launchedByOf(meshCore, launcher), place, action);

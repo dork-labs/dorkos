@@ -1,4 +1,5 @@
 import type { APIRequestContext } from '@playwright/test';
+import type { BasePage } from '../pages/BasePage.js';
 import { test, expect } from '../fixtures';
 
 /**
@@ -62,6 +63,32 @@ async function readTrust(request: APIRequestContext): Promise<TrustView> {
     trustStop: config.executionDefaults?.trustStop ?? null,
     preset: permissions.preset ?? null,
   };
+}
+
+/**
+ * Reload the app and wait for the signal the notice decides on: the config
+ * the server confirms during this launch, already stamped seen. Two frames
+ * later anything that config would open is on screen, so a count of zero
+ * means the notice stayed shut rather than had not decided yet.
+ */
+async function reloadOnConfirmedConfig(basePage: BasePage): Promise<void> {
+  const { page } = basePage;
+  const confirmed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/config' &&
+      response.ok()
+  );
+  await basePage.goto();
+  const config = (await (await confirmed).json()) as { ui?: { trustNoticeSeenAt?: string | null } };
+  expect(config.ui?.trustNoticeSeenAt ?? null).not.toBeNull();
+  await basePage.waitForAppReady();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
 }
 
 /** Seed the state the migration leaves a Trusted install in: notice unseen. */
@@ -132,9 +159,7 @@ test.describe('Trust notice @trust-notice', () => {
     expect(view.seenAt).not.toBeNull();
     expect(view.preset).toBe('trusted');
 
-    await basePage.goto();
-    await basePage.waitForAppReady();
-    await page.waitForTimeout(2000);
+    await reloadOnConfirmedConfig(basePage);
     await expect(page.getByTestId('trust-notice')).toHaveCount(0);
   });
 
@@ -153,9 +178,7 @@ test.describe('Trust notice @trust-notice', () => {
     expect(view.trustStop).toBe('ask');
     expect(view.seenAt).not.toBeNull();
 
-    await basePage.goto();
-    await basePage.waitForAppReady();
-    await page.waitForTimeout(2000);
+    await reloadOnConfirmedConfig(basePage);
     await expect(page.getByTestId('trust-notice')).toHaveCount(0);
   });
 });

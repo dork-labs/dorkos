@@ -99,6 +99,23 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(await refused(adapter, file, entry.deny)).toBe(true);
   });
 
+  // DOR-5241: DorkOS's key and secret files in the data folder, named as their
+  // writers name them, temp files included. Refused at every level, Full too.
+  it.each([
+    'hub-signing-key.pem',
+    'hub-signing-key.pem.4242.tmp',
+    'session-relay/pin.json',
+    'session-relay/computer-key.pem',
+    'session-relay/.computer-key.pem.4242.made-up-uuid.tmp',
+    'setup-code',
+    'step-up/page-stamp.key',
+    'step-up/page-stamp.key.4242.tmp',
+  ])('refuses a read of %s below Full and at Full', async (file) => {
+    const target = path.join(roots.data, file);
+    expect(await refused(adapter, target, 'read')).toBe(true);
+    expect(await refused(adapter, target, 'read', true)).toBe(true);
+  });
+
   // DOR-3613: an agent that reads the person's DorkOS sign-in, or the agent
   // browser's cookies, can act as the person (and press Resume on a paused
   // browser). Each of these is a real file those stores keep.

@@ -83,7 +83,7 @@ jobs:
       due: ${{ steps.due.outputs.due }}
       marker: ${{ steps.due.outputs.marker }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -128,7 +128,7 @@ jobs:
       previous: ${{ steps.plan.outputs.previous }}
       live: ${{ steps.plan.outputs.live }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: tools
@@ -179,7 +179,7 @@ jobs:
 
       - name: Check out P as data
         if: steps.pick.outputs.p != ''
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.pick.outputs.p }}
           path: p
@@ -261,6 +261,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.live == 'true' && needs.plan.outputs.step == 'cut'
     runs-on: ubuntu-latest
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). A schedule, workflow_run or dispatch run on main is main's copy.
+    environment: automation
     timeout-minutes: 15
     permissions:
       contents: read
@@ -270,7 +273,7 @@ jobs:
       P: ${{ needs.plan.outputs.p }}
       PREVIOUS: ${{ needs.plan.outputs.previous }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: tools
@@ -281,7 +284,7 @@ jobs:
             packages/cli/scripts/release-branch
           sparse-checkout-cone-mode: false
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.plan.outputs.p }}
           path: p
@@ -295,7 +298,7 @@ jobs:
 
       - name: Mint the merge-tail app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
@@ -332,6 +335,9 @@ jobs:
       needs.plan.outputs.live == 'true' &&
       contains(fromJSON('["tag","publish","surfaces","backmerge"]'), needs.plan.outputs.step)
     runs-on: ubuntu-latest
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). A schedule, workflow_run or dispatch run on main is main's copy.
+    environment: automation
     timeout-minutes: 10
     permissions:
       contents: read
@@ -345,7 +351,7 @@ jobs:
       - name: Mint the merge-tail app token
         id: app-token
         if: needs.plan.outputs.step == 'tag'
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}

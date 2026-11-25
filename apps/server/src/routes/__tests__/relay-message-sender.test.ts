@@ -20,6 +20,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations } from '@dorkos/db';
+import { isSealedTurnLimits, withoutCarriedTurnLimits } from '@dorkos/relay';
 import type { AgentRuntimeLike, RelayCore, RelayPublisher } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -241,9 +242,48 @@ describe('a relay message from someone other than the person', () => {
       },
     });
     expect(res.status).toBe(200);
-    expect(published()).toEqual([
-      { subject: SUBJECT, from: 'relay.external.http', payload: { content: 'hello' } },
-    ]);
+    const [sent] = published();
+    expect(sent).toMatchObject({ subject: SUBJECT, from: 'relay.external.http' });
+    const { __carriedTurnLimits: stamp, ...words } = sent!.payload as Record<string, unknown>;
+    expect(words).toEqual({ content: 'hello' });
+    expect(stamp).toEqual({ carriedMarks: { outsider: true }, seal: expect.any(String) });
+  });
+
+  it('spells out the outsider mark on a message from the outside address (DOR-5201)', async () => {
+    await send({ from: 'relay.agent.default.someone' });
+    const stamp = (published()[0]!.payload as Record<string, unknown>).__carriedTurnLimits as {
+      carriedMarks?: unknown;
+    };
+    expect(stamp.carriedMarks).toEqual({ outsider: true });
+    const { opts } = await runPublishedTurn();
+    expect(opts.carriedMarks).toEqual({ outsider: true });
+    expect(opts.permissionCeiling).toBe('runtime-default');
+  });
+
+  it('seals the limits it stamps for the address it sends from, and only that one', async () => {
+    await send({ from: 'relay.agent.default.someone' });
+    const [sent] = published();
+    const stamp = (sent!.payload as Record<string, unknown>).__carriedTurnLimits as Record<
+      string,
+      unknown
+    >;
+    expect(isSealedTurnLimits(sent!.from, stamp)).toBe(true);
+    expect(isSealedTurnLimits(PORTER_SUBJECT, stamp)).toBe(false);
+    expect(isSealedTurnLimits(sent!.from, { ...stamp, carriedMarks: undefined })).toBe(false);
+  });
+
+  it('can’t name who is talking or the chat it is in (DOR-5201)', async () => {
+    await send(
+      {
+        from: 'relay.human.console',
+        payload: { content: 'hello', senderName: 'Avery Example', channelName: 'Owners only' },
+      },
+      { [AGENT_HEADER]: 'token', 'x-test-agent-path': PORTER }
+    );
+    expect(published()[0]!.payload).toEqual({ content: 'hello' });
+    const { prompt } = await runPublishedTurn();
+    expect(prompt).not.toContain('Avery Example');
+    expect(prompt).not.toContain('Owners only');
   });
 
   it('runs like any outside message: held to the runtime’s default, its words defused', async () => {
@@ -317,7 +357,7 @@ describe('a relay message from someone other than the person', () => {
       },
     });
     expect(res.status).toBe(200);
-    expect(published()[0]!.payload).toEqual({ content: 'hello' });
+    expect(withoutCarriedTurnLimits(published()[0]!.payload)).toEqual({ content: 'hello' });
     const { opts } = await runPublishedTurn();
     expect(opts.systemPromptAppend).toBeUndefined();
   });
@@ -333,6 +373,13 @@ describe('a relay message from the person', () => {
     const res = await send({ from: 'relay.human.console', payload }, { cookie: ownerCookie });
     expect(res.status).toBe(200);
     expect(published()).toEqual([{ subject: SUBJECT, from: 'relay.human.console', payload }]);
+  });
+
+  it('keeps the display name and chat title the person’s payload names', async () => {
+    configManager.set('auth', { enabled: true });
+    const payload = { content: 'hello', senderName: 'Avery Example', channelName: 'Team chat' };
+    await send({ from: 'relay.human.console', payload }, { cookie: ownerCookie });
+    expect(published()[0]!.payload).toEqual(payload);
   });
 
   it('asks an app window with no session for the password before it sends', async () => {

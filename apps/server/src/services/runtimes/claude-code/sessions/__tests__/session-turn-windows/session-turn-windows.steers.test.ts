@@ -14,6 +14,7 @@ import {
   type Harness,
   harness,
   settled,
+  useFakeClock,
 } from './session-turn-windows.fixtures.js';
 
 describe('a steered window waits for the continuation, and only for that (DOR-1314)', () => {
@@ -65,10 +66,11 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     // The other shape that precedes a continuation's first word, and one the
     // pump already drives end to end elsewhere: the CLI compacts to make room
     // for the steer's turn, then runs it.
+    useFakeClock();
     const h = harness({ graceMs: 40 });
     await steeredAndAnswered(h, [compactBoundaryMessage()]);
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await vi.advanceTimersByTimeAsync(150);
     h.live().emit(textDeltaMessage('answering after the compaction'));
     h.live().emit(resultMessage('steer-1'));
 
@@ -107,14 +109,15 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     // 400ms of grace, spent in two 200ms halves with a steer between them. The
     // second half ends 200ms past the ORIGINAL deadline, so only a restarted
     // clock still has this window open when the answer arrives.
+    useFakeClock();
     const h = harness({ graceMs: 400 });
     await steeredAndAnswered(h);
     await graceIsOpen(h);
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await vi.advanceTimersByTimeAsync(200);
     // The agent has just gone quiet, which is exactly when a person types.
     expect(h.windows.steerOpenWindow('steer-2')).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await vi.advanceTimersByTimeAsync(200);
     h.live().emit(textDeltaMessage('answering the second steer'));
     h.live().emit(resultMessage('steer-2'));
 
@@ -139,6 +142,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     // against a 400ms cap, with the continuation arriving at 150ms, is red
     // unless the count was read.
     it('waits toward the cap when the CLI says a turn is still queued', async () => {
+      useFakeClock();
       const h = harness({ graceMs: 40, capMs: 400 });
 
       await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
@@ -146,7 +150,7 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
       h.live().emit(textDeltaMessage('the first answer'));
       h.live().emit(resultMessage('m1', { queued_turn_count: 1 }));
 
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await vi.advanceTimersByTimeAsync(150);
       h.live().emit(textDeltaMessage('and the steer, in its own turn'));
       h.live().emit(resultMessage('steer-1'));
       await settled(h, 1);
@@ -208,10 +212,11 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
   // whole continuation into a runtime window nothing projects, which is the
   // DOR-1314 loss reached by a different road.
   it('lets a thinking continuation outlast the cap when the frame names the steer', async () => {
+    useFakeClock();
     const h = harness({ graceMs: 40, capMs: 120 });
     await steeredAndAnswered(h, [thinkingTokensMessage('steer-1')]);
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await vi.advanceTimersByTimeAsync(250);
     h.live().emit(textDeltaMessage('here is what I thought about'));
     h.live().emit(resultMessage('steer-1'));
 

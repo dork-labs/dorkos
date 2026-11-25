@@ -172,12 +172,18 @@ gates:
     purpose: Restores the pnpm overrides block Dependabot drops from pnpm-lock.yaml, so its PRs can install at all.
 
   # --- desktop-release.yml ---
+  - id: wf.desktop-release.tag-is-on-main
+    source: .github/workflows/desktop-release.yml
+    purpose: On a manual run of main's copy only, picks the commit to build (main's, or the tag input's) and refuses it unless main's tag-is-on-main.sh accepts it, so the signing job only ever runs checked code.
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
-    purpose: Builds, signs and notarizes the macOS desktop app on a release tag, checks its signature and Gatekeeper, attaches it, and publishes the draft release.
+    purpose: Builds the macOS desktop app at the checked commit, signs and notarizes it behind the release environment (main only), checks its signature and Gatekeeper, and uploads it for publish.
   - id: wf.desktop-release.build-windows
     source: .github/workflows/desktop-release.yml
-    purpose: Builds the unsigned Windows installer on a release tag, silent-installs it, and attaches it, without blocking the release.
+    purpose: Builds the unsigned Windows installer, silent-installs it, and uploads it for publish, without blocking the release.
+  - id: wf.desktop-release.publish
+    source: .github/workflows/desktop-release.yml
+    purpose: On a tag run of main's copy only, checks the tag still names the built commit, attaches the verified macOS and Windows artifacts to the draft release and publishes it; the one job here that may write to a release.
 
   # --- desktop-renderer.yml ---
   - id: wf.desktop-renderer.renderer-defines
@@ -229,20 +235,26 @@ gates:
     purpose: Fails a change to the seeded skill pack unless its version is strictly higher than the base branch's.
 
   # --- publish-docker.yml ---
+  - id: wf.publish-docker.tag-is-on-main
+    source: .github/workflows/publish-docker.yml
+    purpose: On a manual run of main's copy with a tag only, refuses to push or mirror any image unless main's tag-is-on-main.sh accepts that tag's commit.
   - id: wf.publish-docker.build-and-push
     source: .github/workflows/publish-docker.yml
-    purpose: Builds the multi-arch Docker image from the published npm package on a release tag and pushes it to GHCR.
+    purpose: On a manual run of main's copy with a tag, builds the multi-arch Docker image at the tag's checked commit from the published npm package and pushes it to GHCR.
   - id: wf.publish-docker.build-and-push-hub
     source: .github/workflows/publish-docker.yml
-    purpose: On a release tag, builds the hub image DorkOS Cloud boots, pushes it to GHCR by version and commit, and attests and verifies its digest.
+    purpose: On a manual run of main's copy with a tag, builds the hub image DorkOS Cloud boots at the tag's checked commit, pushes it to GHCR by version and commit, and attests and verifies its digest.
   - id: wf.publish-docker.mirror-docker-hub
     source: .github/workflows/publish-docker.yml
-    purpose: Mirrors the released image to Docker Hub when the mirror is switched on.
+    purpose: In the same run, copies the GHCR image build-and-push just pushed to Docker Hub by its digest, when the mirror is switched on.
 
   # --- publish-community.yml ---
+  - id: wf.publish-community.tag-is-on-main
+    source: .github/workflows/publish-community.yml
+    purpose: On a v* tag push, refuses to publish the Community image and manifest unless the tag is exactly vX.Y.Z and main's tag-is-on-main.sh accepts its commit.
   - id: wf.publish-community.build-and-publish
     source: .github/workflows/publish-community.yml
-    purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
+    purpose: On a v* tag push, publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
   # --- review-redispatch.yml ---
   - id: wf.review-redispatch.redispatch
@@ -263,7 +275,7 @@ gates:
   # --- queue-repeat-guard.yml ---
   - id: wf.queue-repeat-guard.door
     source: .github/workflows/queue-repeat-guard.yml
-    purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
+    purpose: Seconds after every merge-queue entry (when its changelog-fragment-check finishes), runs from main and takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
 
   # --- queue-reentry.yml ---
   - id: wf.queue-reentry.sweep
@@ -393,9 +405,12 @@ gates:
     purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, the 500-line ratchet, the API lint ratchet, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
 
   # --- update-homebrew.yml ---
+  - id: wf.update-homebrew.tag-is-on-main
+    source: .github/workflows/update-homebrew.yml
+    purpose: On a manual run of main's copy only, refuses to update the Homebrew tap unless main's tag-is-on-main.sh accepts the tag input's commit.
   - id: wf.update-homebrew.update-formula
     source: .github/workflows/update-homebrew.yml
-    purpose: Updates the Homebrew formula to the newly released npm version.
+    purpose: On a manual run of main's copy with a tag, updates the Homebrew formula (and the desktop cask once its dmg is attached) to that release.
 
   # --- lefthook.yml ---
   # Every command below opens with the CI Steward time-wrap

@@ -1,90 +1,140 @@
 name: Update Homebrew Formula
 
+# DISPATCHED ON MAIN ONLY (DOR-4030, Security M1, Nov 19). The release person
+# starts this by hand on main with `tag: vX.Y.Z`, once npm has the version
+# (the run waits for it) and, for the desktop cask, once the desktop release
+# is published with its .dmg attached; one run then bumps both. A run before
+# the .dmg is attached bumps the formula and skips the cask; run it again
+# later for the cask.
+#
+# There is no tag-push trigger any more. On a tag push GitHub runs the tag's
+# own copy of this file, which an unreviewed tag could have edited, and the
+# tap token must never be in reach of that. HOMEBREW_TAP_TOKEN lives only in
+# the `release-mirrors` environment, which deploys only `main`. (The old
+# `release: published` trigger never fired: desktop-release.yml publishes with
+# GITHUB_TOKEN, and GitHub starts no workflow for an event that token caused.)
 on:
-  # Two automatic triggers per release, on purpose:
-  #
-  #   - Tag push (`v*`): updates the CLI formula ASAP. The dmg is NOT attached
-  #     yet at this point — desktop-release.yml spends 5-15+ min on macOS
-  #     sign+notarize and only flips the draft release to published after its
-  #     verify jobs pass — so the cask step gracefully skips on this run.
-  #   - Release published: updates the desktop cask. By publish time the dmg is
-  #     attached AND verified (and npm is long since live), so the cask bump
-  #     actually lands. The formula steps re-run too; the commit step is
-  #     idempotent, so an unchanged formula is a logged no-op.
-  #
-  # `workflow_dispatch` still works exactly as before for manual runs.
-  push:
-    tags: ['v*']
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to update to (e.g., 1.2.3). Leave empty to use latest from npm.'
-        required: false
+      tag:
+        description: 'Release tag to put in the tap, e.g. v0.135.0'
+        required: true
+        type: string
 
 # Opt into Node 24 for every JavaScript-based action (checkout) ahead of
 # GitHub's Sept 2026 hard cutoff for Node 20 runtime. See
 # https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # Untrusted text: scripts read it from here, never `${{ }}` inside `run:`,
+  # and refuse anything but vX.Y.Z before using it.
+  RELEASE_TAG: ${{ inputs.tag }}
 
 jobs:
-  update-formula:
+  # DOR-4030: the tap is updated only for a tag whose commit main's
+  # scripts/ci/tag-is-on-main.sh accepts (on main, or the run-time tip of a
+  # release/vX.Y.Z branch that passes main's release-branch check). This is
+  # main's copy of the file, so the check binds update-formula. Anonymous, so
+  # this job reads no secret and holds no token.
+  tag-is-on-main:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/update-homebrew.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            { echo "::error::tag must be exactly vX.Y.Z. The tap was not touched."; exit 1; }
+      # Node runs main's release-branch check for a release-branch tag.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Fail unless the tag's commit is on main or a checked release branch
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/main-check"
+          git init -q "$dir"
+          git -C "$dir" remote add origin "$REPO_URL"
+          git -C "$dir" fetch -q --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          # A full fetch, not tree:0: the release-branch path reads blobs.
+          if ! git -C "$dir" fetch -q --no-tags origin "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"; then
+            echo "::error::No tag ${RELEASE_TAG} in ${GITHUB_REPOSITORY}. The tap was not touched."
+            exit 1
+          fi
+          if ! sha="$(git -C "$dir" rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}")"; then
+            echo "::error::${RELEASE_TAG} does not name a commit. Nothing was done."
+            exit 1
+          fi
+          # Main's copy of the gate, never the tagged commit's (scripts/ci/tag-is-on-main.sh).
+          git -C "$dir" show origin/main:scripts/ci/tag-is-on-main.sh > "$RUNNER_TEMP/tag-is-on-main.sh"
+          bash "$RUNNER_TEMP/tag-is-on-main.sh" --dir "$dir" \
+            --sha "$sha" --ref "refs/tags/${RELEASE_TAG}" --what 'The Homebrew tap is updated'
+
+  update-formula:
+    needs: tag-is-on-main
+    # Names `release-mirrors`, so main's copy, dispatched on main, only
+    # (DOR-4030; the census's tag gate checks this line).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # HOMEBREW_TAP_TOKEN lives only in the `release-mirrors` environment
+    # (DOR-4030), which needs Dorian's approval and deploys only `main`.
+    environment: release-mirrors
+    # Read-only: the tap push uses HOMEBREW_TAP_TOKEN, and this token only
+    # reads this repository's releases for the cask step.
+    permissions:
+      contents: read
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 10 completed
     # runs over 2026-08-22..09-14, p95 30.38 min, max 30.38. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 92
     steps:
-      # Every run needs the shared scripts: release-version.sh for the version
-      # below, and npm-tarball-sha256.sh for the checksum. So this checkout runs
-      # first, on manual runs too; only the npm wait is skipped for those.
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/update-homebrew.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+
+      # Main's copy of the shared scripts (this run's commit is main's):
+      # release-version.sh for the version below, wait-for-npm.sh, and
+      # npm-tarball-sha256.sh for the checksum.
       - name: Checkout for the shared release scripts
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           sparse-checkout: |
             scripts/release-version.sh
             scripts/wait-for-npm.sh
             scripts/npm-tarball-sha256.sh
 
-      # The tag, the release's tag and the manual input are all untrusted text,
-      # so each goes through release-version.sh, which refuses anything but a
-      # plain release version before it reaches $GITHUB_OUTPUT (DOR-4175). A
-      # newline in the input could otherwise write a second `version=` line.
+      # The tag is untrusted text, and the version reaches shells and sed
+      # replacements below, so it goes through release-version.sh too, which
+      # refuses anything but a plain release version before it reaches
+      # $GITHUB_OUTPUT (DOR-4175, DOR-4030). Later steps read it from `env:`,
+      # never `${{ }}` in a script.
       - name: Get version
         id: version
-        env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            # Tag run: derive the version from the pushed tag.
-            TAG="$GITHUB_REF_NAME"
-          elif [ "$GITHUB_EVENT_NAME" = "release" ]; then
-            # Release-published run: derive it from the release's tag.
-            TAG="$RELEASE_TAG"
-          elif [ -n "${INPUT_VERSION:-}" ]; then
-            TAG="$INPUT_VERSION"
-          else
-            TAG=$(npm view dorkos version)
-          fi
-          VERSION=$(bash scripts/release-version.sh "$TAG")
+          VERSION=$(bash scripts/release-version.sh "$RELEASE_TAG")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Updating Homebrew formula to v$VERSION"
 
-      # On a tag run the tag is pushed before npm publish finishes, so wait for
-      # the exact version to land on npm before computing its tarball SHA (the
-      # tarball 404s until then). Also runs on release-published events — cheap,
-      # since npm is live long before publish and the wait exits on first hit.
-      # Skipped for workflow_dispatch, which either names an already-published
-      # version or reads npm's current latest — keeping manual runs
-      # byte-for-byte as before. Shares scripts/wait-for-npm.sh with
-      # publish-docker.yml's "Wait for npm package availability" step
-      # (DOR-1606) rather than carrying its own copy of the loop.
+      # A run started right after the tag push can beat npm publish, so wait
+      # for the exact version to land on npm before computing its tarball SHA
+      # (the tarball 404s until then); for a version already there it returns
+      # at once. Shares scripts/wait-for-npm.sh with publish-docker.yml's "Wait
+      # for npm package availability" step (DOR-1606).
       - name: Wait for npm package availability
-        if: github.event_name == 'push' || github.event_name == 'release'
         env:
           PKG_VERSION: ${{ steps.version.outputs.version }}
         run: bash scripts/wait-for-npm.sh "$PKG_VERSION"
@@ -104,7 +154,7 @@ jobs:
           echo "SHA256: $SHA256"
 
       - name: Checkout tap repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: dork-labs/homebrew-dorkos
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -123,10 +173,9 @@ jobs:
       # added to the tap separately, and desktop builds can lag a CLI release,
       # so this step SKIPS GRACEFULLY when either the cask file is absent from
       # the tap OR the GitHub release for this version has no macOS .dmg asset
-      # yet — the CLI formula update still lands on its own. On the tag-push
-      # run the dmg is never attached yet (see the trigger comment up top), so
-      # the skip path is expected there; the release-published run is the one
-      # that lands the cask bump.
+      # yet — the CLI formula update still lands on its own. Run this after the
+      # desktop release is published and one run lands both (see the trigger
+      # comment up top).
       #
       # When both are present: download the dmg, compute its sha256, and rewrite
       # the cask's `version` + `sha256` fields (the cask's `url` interpolates
@@ -178,10 +227,9 @@ jobs:
           if [ -f Casks/dorkos-desktop.rb ]; then
             git add Casks/dorkos-desktop.rb
           fi
-          # Idempotent: a healthy release runs this job twice (tag push, then
-          # release published). If this run changed nothing — e.g. the formula
-          # was already bumped by the tag-push run and the cask is unchanged —
-          # log and exit cleanly instead of letting `git commit` fail.
+          # Idempotent: a manual re-run after the tag push may change nothing
+          # (the formula is already bumped and the cask unchanged), so log and
+          # exit cleanly instead of letting `git commit` fail.
           if git diff --cached --quiet; then
             echo "Nothing to update — tap already at ${PKG_VERSION}."
             exit 0

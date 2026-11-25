@@ -1,98 +1,107 @@
 name: Desktop Release
 
-# Rides the unified `v*` product release tags (the same tags `/system:release`
-# creates). When that command bumps VERSION, commits, tags `vX.Y.Z`, and pushes,
-# this workflow builds two independent platform packages and ATTACHES their
-# assets to the GitHub Release the command already created — it never creates
-# its own release or rewrites the human-written notes:
+# Builds the unified `v*` product release (the tags `/system:release`
+# creates). Once that command has tagged `vX.Y.Z` and created the draft
+# release, the release person starts this workflow by hand ON MAIN with
+# `tag: vX.Y.Z` (see DISPATCHED ON MAIN ONLY below). It builds two independent
+# platform packages and ATTACHES their assets to that GitHub Release — it
+# never creates its own release or rewrites the human-written notes:
 #
 #   - macOS (build-macos): signs + notarizes the arm64 app, then notarizes
-#     and staples the .dmg around it (DOR-4261), attaches
+#     and staples the .dmg around it (DOR-4261); publish attaches
 #     .dmg + .zip + .blockmap + latest-mac.yml. electron-updater (Squirrel.Mac)
 #     reads the .zip as the update payload and the .blockmap for differential
 #     (delta) downloads; the .dmg is the human-facing installer.
 #   - Windows (build-windows): packages an UNSIGNED x64 NSIS installer
 #     (signing is a business-gated follow-up — see
-#     specs/desktop-windows-support/02-specification.md "Decision: signing"),
-#     attaches .exe + latest.yml + .blockmap. electron-updater (NSIS updater)
-#     reads latest.yml to find the update payload; without it, update checks
-#     404. The .exe is the human-facing installer.
+#     specs/desktop-windows-support/02-specification.md "Decision: signing");
+#     publish attaches .exe + latest.yml + .blockmap. electron-updater (NSIS
+#     updater) reads latest.yml to find the update payload; without it, update
+#     checks 404. The .exe is the human-facing installer.
 #
 # `/system:release` creates the release as a DRAFT (Phase 6.11, --draft).
 # electron-updater ignores draft releases, so clients keep seeing the previous
 # release as the latest — and correctly report "up to date" — until a release is
-# published. The two build jobs ATTACH their assets to that draft (attach-only:
-# they never create a release, flip the draft flag, or rewrite the human-written
-# notes). Each build job verifies its own installer on its own runner BEFORE
-# attaching it ("Verify the macOS app bundle", "Verify the Windows installer"),
-# so a broken installer is never attached at all.
+# published. The publish job ATTACHES the assets to that draft (attach-only: it
+# never creates a release or rewrites the human-written notes), then flips the
+# draft to published. Each build job verifies its own installer on its own
+# runner BEFORE uploading it ("Verify the macOS app bundle", "Verify the
+# Windows installer"), so a broken installer is never attached at all.
 #
-# TWO JOBS, ONE RUNNER EACH (DOR-2728). Verification and publishing used to be
-# three more jobs (verify-macos, verify-windows, publish-release). Each needed a
-# fresh runner, and each runner assignment is a place a release can stall: on
-# v0.98.0, during a GitHub runner-assignment incident, verify-macos waited 10.7
-# min for a Mac and publish-release never got a runner at all. The checks were
-# the same commands against the same files, so they now run as steps after the
-# package step, and publishing is the last step of build-macos. Nothing they
-# enforced was dropped; ci/ledger/*-desktop-release-one-runner-per-platform.md
-# records the change and the metric that judges it.
+# THREE JOBS, NOT TWO (DOR-4030, which partly undoes DOR-2728). DOR-2728 folded
+# attach and publish into the build jobs to save runner assignments: on
+# v0.98.0, during a GitHub runner-assignment incident, a separate
+# publish-release job never got a runner. Security's ruling for DOR-4030 needs
+# the write token in structure, not in step `if:`s: the build jobs hold only
+# `contents: read`, so a rehearsal can build and sign but never write to a
+# release, and only `publish` holds `contents: write`. That brings back one
+# ubuntu runner assignment per release, the risk DOR-2728 removed. If it
+# stalls, publish by hand (`gh release edit vX.Y.Z --draft=false` after
+# attaching the artifacts from the run) rather than re-running the builds.
 #
 # ASYMMETRIC gating — macOS gates, Windows does not. macOS is the shipped,
-# signed + notarized surface, so the release is published only by build-macos's
-# last step, which runs only when every earlier step (package, verify, attach)
-# passed. The Windows build is an explicitly-unverified early alpha (AGENTS.md —
+# signed + notarized surface, so publish runs only when build-macos passed.
+# The Windows build is an explicitly-unverified early alpha (AGENTS.md —
 # labeled alpha, behind the demo-claim gate), so build-windows is
-# `continue-on-error: true`: it still runs and surfaces problems in the run, but
-# a Windows failure must never hold back an otherwise-good macOS release. The
-# publish step first waits for build-windows to FINISH, whatever its outcome, so
-# on the happy path every asset (installer + latest*.yml) is attached before the
-# release is visible and an update check can never 404 on a not-yet-uploaded
-# metadata file. If the Windows verify step fails, the Windows assets are
-# never attached (before DOR-2728 a broken installer was attached and shipped),
-# so the release goes out macOS-only and Windows update checks 404 until the
-# next release; dorkos.ai/download/windows falls back to the newest release
-# that has an .exe.
+# `continue-on-error: true` and publish does not `needs:` it: a Windows failure
+# must never hold back an otherwise-good macOS release. Publish first waits
+# for build-windows to FINISH, whatever its outcome, so on the happy path every
+# asset (installer + latest*.yml) is attached before the release is visible
+# and an update check can never 404 on a not-yet-uploaded metadata file. If
+# the Windows verify step fails, its artifact is never uploaded, so the release
+# goes out macOS-only and Windows update checks 404 until the next release;
+# dorkos.ai/download/windows falls back to the newest release that has an .exe.
 #
 # A desktop failure never unwinds the CLI/product release (that release is
-# published by /system:release's own npm + changelog path). If build-macos
-# fails, the desktop-facing GitHub Release stays an unpublished DRAFT (the safe
-# outcome — electron-updater ignores drafts, so users keep the previous version)
-# until a human re-runs the failed job from the Actions UI; the publish step is
-# idempotent (--draft=false on a published release is a no-op).
+# published by /system:release's own npm + changelog path). If build-macos or
+# publish fails, the desktop-facing GitHub Release stays an unpublished DRAFT
+# (the safe outcome — electron-updater ignores drafts, so users keep the
+# previous version) until a human re-runs the failed job from the Actions UI;
+# publish is idempotent (--clobber uploads, and --draft=false on a published
+# release is a no-op).
 #
-# `workflow_dispatch` builds and verifies both apps without attaching or
-# publishing: off a tag (or with `dry_run`), the publish step rehearses (waits
-# for build-windows, then says what it would publish) and changes nothing.
+# DISPATCHED ON MAIN ONLY (DOR-4030, Security M1, Nov 19). A tag push no longer
+# starts this workflow. On a tag push, or a manual run on any ref but main,
+# GitHub runs the copy of this file at that ref, and a tag on an unreviewed
+# commit could carry a copy that skips every check here. So the only way in is
+# a manual run on main, and this file and every check it runs come from main:
 #
-# `workflow_dispatch` with a `tag` input (e.g. `v0.135.0`) re-runs a release
-# with THIS workflow file and THAT tag's code. A plain re-run of a tag-push run
-# uses the tag's own copy of this file, so a fix to the workflow can never reach
-# a release already tagged, and a tag cannot be moved once npm has the version.
-# With `tag` set, each job first checks the tag (exactly vX.Y.Z, an existing
-# tag, its commit already on main, a DRAFT Release waiting for it) and fails
-# before building anything if one is not so. It then checks out
-# `refs/tags/<tag>`, builds and verifies as usual, and attaches to that draft
-# with stricter rules than a tag push: never an asset that is already there
-# (no --clobber), and never publishing. The release stays a draft until a
-# person publishes it by hand after checking the installers. `dry_run` still
-# rehearses instead. It never creates a release, rewrites its notes, or moves a
-# tag. RELEASE_TAG below is the one place that says which release a run
-# targets; every attach and publish step reads it.
+#   - `tag` set (e.g. v0.135.0): the release build. tag-is-on-main peels the
+#     tag and runs main's scripts/ci/tag-is-on-main.sh on its commit (on main,
+#     or the run-time tip of a release/vX.Y.Z branch that passes main's
+#     release-branch check). Both builds check out exactly that commit, by SHA,
+#     and confirm it; build-macos signs it; publish checks the tag still names
+#     it, attaches the installers to the draft release and publishes it.
+#   - `tag` empty: a rehearsal of main's own commit. It builds (and signs,
+#     unless `sign` is off) but publish never runs.
+#   - `sign` off or `dry_run` on: nothing is published. `sign` off also names
+#     no environment, so the run waits for nobody.
+#
+# The signing secrets live only in the `release` environment, which deploys
+# only `main` and needs Dorian's approval; build-macos alone names it. Each job
+# also refuses, as its first step, any run that is not main's copy of this file
+# dispatched on main. That check, and the job-level `if:`s the census reads
+# (tag_gate in ci/config.yaml), are defense in depth. The lock on the
+# certificate is the environment's reviewer (DOR-4036) and the tag and
+# release-branch rulesets.
+#
+# It never creates a release, rewrites its notes, or moves a tag.
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: 'Dry run (build but do not publish)'
-        type: boolean
-        default: false
       tag:
-        description: 'Existing release tag to build and attach to, e.g. v0.135.0 (empty: no release)'
+        description: 'Release tag to build, sign and publish, e.g. v0.135.0 (empty: a rehearsal of main that publishes nothing)'
         type: string
         default: ''
+      sign:
+        description: 'Sign and notarize (off: an unsigned build that publishes nothing and waits for nobody)'
+        type: boolean
+        default: true
+      dry_run:
+        description: 'Dry run (build and sign, but do not attach or publish)'
+        type: boolean
+        default: false
 
 env:
   # Opt into Node 24 for every JavaScript-based action (checkout, setup-node,
@@ -100,95 +109,126 @@ env:
   # cutoff for Node 20 runtime. See
   # https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  # The release this run attaches to and publishes: the `tag` input when given,
-  # else the pushed tag, else empty (a branch dispatch, which only rehearses).
-  RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
+  # Untrusted text: every script reads it from here, never `${{ }}` inside
+  # `run:`, and refuses anything but empty or vX.Y.Z before using it.
+  RELEASE_TAG: ${{ inputs.tag }}
 
 jobs:
+  # DOR-4030: decides which commit this run builds, with main's scripts, before
+  # anything else runs. Only git and main's tag-is-on-main.sh (plus, for a
+  # release-branch tag, main's release-branch check under node, with no
+  # install); anonymous, so this job reads no secret and holds no write token.
+  tag-is-on-main:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.main-check.outputs.sha }}
+    steps:
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/desktop-release.yml@refs/heads/main" ]] || exit 1
+          [[ -z "$RELEASE_TAG" || "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            { echo "::error::tag must be empty or exactly vX.Y.Z. Nothing was built."; exit 1; }
+      # Node runs main's release-branch check for a release-branch tag.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Fail unless the commit to build is on main or a checked release branch
+        id: main-check
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/main-check"
+          # Main's copy of the gate, never the tagged commit's (scripts/ci/tag-is-on-main.sh).
+          git init -q "$dir"
+          git -C "$dir" remote add origin "$REPO_URL"
+          git -C "$dir" fetch -q --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          git -C "$dir" show origin/main:scripts/ci/tag-is-on-main.sh > "$RUNNER_TEMP/tag-is-on-main.sh"
+          if [ -z "$RELEASE_TAG" ]; then
+            sha="$GITHUB_SHA"
+            ref="$GITHUB_REF"
+          else
+            # A full fetch, not tree:0: the release-branch path reads blobs.
+            if ! git -C "$dir" fetch -q --no-tags origin "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"; then
+              echo "::error::No tag ${RELEASE_TAG} in ${GITHUB_REPOSITORY}. Nothing was built."
+              exit 1
+            fi
+            if ! sha="$(git -C "$dir" rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}")"; then
+              echo "::error::${RELEASE_TAG} does not name a commit. Nothing was done."
+              exit 1
+            fi
+            ref="refs/tags/${RELEASE_TAG}"
+          fi
+          bash "$RUNNER_TEMP/tag-is-on-main.sh" --dir "$dir" \
+            --sha "$sha" --ref "$ref" --what 'Desktop builds run'
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Building \`${sha}\` (${RELEASE_TAG:-a rehearsal of main})." >> "$GITHUB_STEP_SUMMARY"
+
   build-macos:
+    needs: tag-is-on-main
+    # Names the `release` environment, so main's copy, dispatched on main, only
+    # (DOR-4030; the census's tag gate checks this line).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
+    # The signing secrets live only in the `release` environment (DOR-4030),
+    # which deploys only `main`. An unsigned run names no environment (an
+    # empty name means none), so it never asks to enter `release`.
+    environment: ${{ inputs.sign && 'release' || '' }}
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
     # runs over 2026-08-22..09-14, p95 18.38 min, max 18.38. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 56
+    # Read-only (DOR-4030): this job builds, signs and uploads a run artifact.
+    # Only publish may write to a release.
     permissions:
-      contents: write
-      # The publish step reads this run's own jobs list to wait for
-      # build-windows to finish.
-      actions: read
+      contents: read
+    env:
+      # The same condition as `environment:` above.
+      SIGN: ${{ inputs.sign }}
+      EXPECTED_SHA: ${{ needs.tag-is-on-main.outputs.sha }}
     steps:
-      # The publish step's wait budget is measured from here: see its comment.
-      - name: Record job start
-        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
-
-      # A `tag` dispatch only: refuse anything but an existing vX.Y.Z tag whose
-      # commit is already on main, with a draft Release waiting for it. Runs
-      # first, so a bad input fails before anything is built or signed. The
-      # input reaches the shell through env, never inlined into the script.
-      - name: Check the release tag
-        id: release-tag
-        if: inputs.tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.tag }}
+      - name: Refuse anything but main's copy and a strict tag
         run: |
           set -euo pipefail
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::tag must look like v1.2.3 exactly." >&2
-            exit 1
-          fi
-          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null; then
-            echo "::error::No tag ${TAG} in ${GITHUB_REPOSITORY}." >&2
-            exit 1
-          fi
-          sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha)"
-          on_main="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq .status)"
-          case "$on_main" in
-            ahead | identical) ;;
-            *)
-              echo "::error::${TAG} (${sha}) is not on main (compare says '${on_main}')." >&2
-              exit 1
-              ;;
-          esac
-          if ! is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"; then
-            echo "::error::Release ${TAG} does not exist. This run attaches to an existing draft and never creates one." >&2
-            exit 1
-          fi
-          if [ "$is_draft" != "true" ]; then
-            echo "::error::Release ${TAG} is already published. A tag dispatch only attaches to a draft." >&2
-            exit 1
-          fi
-          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "Release tag: \`${TAG}\` at \`${sha}\` (draft release, commit on main)." >> "$GITHUB_STEP_SUMMARY"
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/desktop-release.yml@refs/heads/main" ]] || exit 1
+          [[ -z "$RELEASE_TAG" || "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
 
-      - uses: actions/checkout@v7
+      # The commit tag-is-on-main checked, by SHA: a tag moved since cannot
+      # change what is built.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ needs.tag-is-on-main.outputs.sha }}
           persist-credentials: false
 
-      - name: Confirm the checkout is the checked tag
-        if: inputs.tag
-        env:
-          EXPECTED_SHA: ${{ steps.release-tag.outputs.sha }}
+      - name: Confirm the checkout is the checked commit
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           if [ "$actual" != "$EXPECTED_SHA" ]; then
-            echo "::error::Checked out ${actual}, but the tag pointed at ${EXPECTED_SHA} when it was checked." >&2
+            echo "::error::Checked out ${actual}, but tag-is-on-main checked ${EXPECTED_SHA}." >&2
             exit 1
           fi
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
 
-      # NO dependency cache, restored or saved (DOR-4635, DOR-4695). This job runs
-      # on a tag push and holds release credentials, so it installs cold from the
-      # registry, checked against pnpm-lock.yaml's integrity hashes. (Saving into
-      # a tag's scope was also waste: a tag's cache is readable only by that tag.)
-      # Cost: one cold install per job per release.
+      # NO dependency cache, restored or saved (DOR-4635, DOR-4695). This job
+      # holds release credentials, so it installs cold from the registry,
+      # checked against pnpm-lock.yaml's integrity hashes. Cost: one cold
+      # install per job per release.
 
       - run: pnpm install --frozen-lockfile
 
@@ -252,8 +292,10 @@ jobs:
           fi
           echo "ELECTRON_BUILDER_ICONS_TOOLSET_DIR=${dir}/icons-bundle" >> "$GITHUB_ENV"
 
+      # Exactly one of these two package steps runs: signed only when this run
+      # signs and the Apple credentials are configured.
       - name: Package DMG (unsigned)
-        if: ${{ !vars.APPLE_DEVELOPER_CONFIGURED }}
+        if: ${{ env.SIGN != 'true' || vars.APPLE_DEVELOPER_CONFIGURED != 'true' }}
         run: |
           cd apps/desktop
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --config electron-builder.yml --publish never
@@ -261,7 +303,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Package DMG (signed + notarized)
-        if: ${{ vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
+        if: ${{ env.SIGN == 'true' && vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
         run: |
           cd apps/desktop
           npx electron-builder --mac --arm64 --config electron-builder.yml --publish never
@@ -288,7 +330,10 @@ jobs:
       # keychain is read or written: the credentials go on the command line from
       # env, the way electron-builder's own notarize call passes them.
       - name: Notarize and staple the DMG
-        if: ${{ vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
+        # The same condition as the signed package step: an unsigned run has no
+        # DMG signature to notarize, and no `release` environment to hold the
+        # Apple secrets (DOR-4030).
+        if: ${{ env.SIGN == 'true' && vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -333,17 +378,18 @@ jobs:
       # sha512 and size in latest-mac.yml and its .blockmap are now stale. This
       # rebuilds both with electron-builder's own block-map code. No secrets.
       - name: Refresh the DMG's update info
-        if: ${{ vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
+        if: ${{ env.SIGN == 'true' && vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
         run: pnpm --filter @dorkos/desktop exec tsx scripts/refresh-dmg-update-info.ts release
 
       # The gate that used to be the verify-macos job, unchanged except that it
       # reads the .dmg where the package step wrote it instead of downloading
-      # the artifact on a second runner. It runs BEFORE upload and attach, so a
-      # .dmg that fails it is never attached to the release.
+      # the artifact on a second runner. It runs BEFORE upload, so a .dmg that
+      # fails it is never uploaded, and so never attached to the release.
       - name: Verify the macOS app bundle
         # spctl's Gatekeeper assessment only makes sense for a real Developer ID
-        # signature, so it is gated on the SAME repo variable that chooses the
-        # signed vs unsigned package step above (APPLE_DEVELOPER_CONFIGURED).
+        # signature, so it is gated on the SAME condition that chooses the
+        # signed vs unsigned package step above (SIGN and the repo variable
+        # APPLE_DEVELOPER_CONFIGURED).
         # codesign --verify runs unconditionally: electron-builder ad-hoc-signs
         # the arm64 app even when unsigned (arm64 binaries must carry at least an
         # ad-hoc signature to run), and --verify checks structural integrity, not
@@ -353,7 +399,7 @@ jobs:
         # notarization ticket, so this runner gives the same answer a clean one
         # would.
         env:
-          APPLE_DEVELOPER_CONFIGURED: ${{ vars.APPLE_DEVELOPER_CONFIGURED }}
+          SIGNED: ${{ env.SIGN == 'true' && vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -383,7 +429,7 @@ jobs:
             exit 1
           fi
 
-          if [ "${APPLE_DEVELOPER_CONFIGURED:-}" = "true" ]; then
+          if [ "${SIGNED:-}" = "true" ]; then
             echo "Signed build — asserting Gatekeeper acceptance…"
             if ! spctl --assess --type execute --verbose=4 "$app"; then
               echo "::error::spctl --assess rejected ${app}; a signed build must pass Gatekeeper." >&2
@@ -400,196 +446,34 @@ jobs:
               exit 1
             fi
           else
-            echo "Unsigned build (APPLE_DEVELOPER_CONFIGURED != true) — skipping spctl Gatekeeper assessment."
+            echo "Unsigned build — skipping spctl Gatekeeper assessment."
           fi
           echo "macOS artifact verification passed."
 
+      # Everything publish attaches, latest-mac.yml included.
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: DorkOS-macOS-arm64
+          if-no-files-found: error
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/*.blockmap
-
-      # Attaches the macOS artifacts to the vX.Y.Z release that /system:release
-      # created (Phase 6.11). This step is ATTACH-ONLY on purpose: `gh release
-      # upload` uploads assets to an existing release without ever creating one,
-      # touching the draft flag, or regenerating notes — so the human-written
-      # narrative notes always survive. It deliberately does NOT use
-      # action-gh-release, which would CREATE a release when none exists yet and
-      # could win a race against Phase 6.11, minting a bare, notes-less release.
-      #
-      # Ordering: /system:release pushes the tag (Phase 6.10, triggers this run)
-      # then creates the release (Phase 6.11) seconds-to-minutes later, while
-      # this job spends many minutes signing + notarizing before it reaches this
-      # step — so the release is normally already present. The poll below only
-      # covers a slow operator, and FAILS LOUDLY if the release is still absent
-      # (Phase 6.11 skipped): a red run is the correct signal, not a silent bare
-      # release. The release is created as a DRAFT; the "Publish the release"
-      # step below flips it to published once both platform builds finish, which
-      # is what makes dorkos.ai/download/mac resolve the .dmg.
-      #
-      # The .zip must ship alongside the .dmg: latest-mac.yml points
-      # electron-updater (Squirrel.Mac) at the zip as the update payload, so
-      # a release without it 404s every auto-update check. The dmg is only
-      # the human-facing installer. The .blockmap files (one per target) enable
-      # differential (delta) downloads for Squirrel.Mac auto-updates — without
-      # them electron-updater logs "Cannot download differentially… status 404"
-      # and falls back to a full download every time (confirmed in a real
-      # user's log).
-      #
-      # A `tag` dispatch is stricter than a tag push: the release must still be
-      # a draft, and it never replaces an asset (no --clobber). If one of these
-      # files is already attached, it fails and names it; delete that asset by
-      # hand first if replacing it is really what you want.
-      - name: Attach macOS artifacts to the release
-        if: env.RELEASE_TAG && !inputs.dry_run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DISPATCH_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_TAG}"
-          files=(
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.zip
-            apps/desktop/release/*.blockmap
             apps/desktop/release/latest-mac.yml
-          )
-          if [ -n "${DISPATCH_TAG:-}" ]; then
-            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]; then
-              echo "::error::Release $tag is no longer a draft. A tag dispatch only attaches to a draft." >&2
-              exit 1
-            fi
-            existing="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-            for f in "${files[@]}"; do
-              if grep -qxF "$(basename "$f")" <<<"$existing"; then
-                echo "::error::Release $tag already has $(basename "$f"). A tag dispatch never replaces an asset." >&2
-                exit 1
-              fi
-            done
-            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}"
-            exit 0
-          fi
-          # Wait up to ~10 min for the release (created in /system:release
-          # Phase 6.11) to exist. Never create it here.
-          found=""
-          for attempt in $(seq 1 30); do
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              found=1
-              break
-            fi
-            echo "Release $tag not found yet (attempt $attempt/30); waiting 20s…"
-            sleep 20
-          done
-          if [ -z "$found" ]; then
-            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create the GitHub Release before the desktop build can attach to it; this workflow will not mint a bare release (it would drop the human-written notes)." >&2
-            exit 1
-          fi
-          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}" --clobber
-
-      # Flip the draft release (created by /system:release Phase 6.11 with
-      # --draft) to published. This is what closes the auto-update window
-      # described in the file header: until it runs, electron-updater sees the
-      # previous release as latest and reports "up to date".
-      #
-      # It was its own ubuntu job until DOR-2728, and on v0.98.0 that job never
-      # got a runner. As the last step here it needs none: reaching it means
-      # the package, verify and attach steps above all passed, which is the
-      # whole macOS gate.
-      #
-      # First it waits for build-windows to FINISH, with any outcome, so the
-      # Windows installer and latest.yml are attached before the release is
-      # visible. The old publish-release job got that from `needs:`, which
-      # waits without limit. A step cannot: it lives inside this job's 56-min
-      # timeout, and `timeout-minutes` counts from when a runner picks a job
-      # up, so a build-windows stuck QUEUED (the v0.98.0 incident) can outlast
-      # any cap. So the wait spends this job's own remaining budget: it keeps
-      # polling until 50 min after this job started (see "Record job start"),
-      # leaving 6 min to publish. Only past that does it publish without the
-      # Windows assets, with a warning, because the Windows alpha must never
-      # hold back the macOS release. Windows update checks then 404 on
-      # latest.yml until build-windows attaches it; re-run build-windows.
-      #
-      # build-windows is found by its job id as the jobs API names it. Give
-      # that job a `name:` and this lookup must change with it: on a first
-      # attempt a missing build-windows is warned about, never silently passed.
-      #
-      # If this step fails, publish by hand (`gh release edit vX.Y.Z
-      # --draft=false`) rather than re-running this job: a re-run repeats the
-      # whole build and notarization.
-      #
-      # Off a tag, or with dry_run, it does the wait and stops before changing
-      # anything, so a workflow_dispatch run rehearses the whole path.
-      #
-      # A `tag` dispatch never publishes: it leaves the release a draft, and a
-      # person publishes it by hand once the attached installers are checked.
-      - name: Publish the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISH: ${{ env.RELEASE_TAG != '' && !inputs.tag && !inputs.dry_run }}
-          DISPATCH_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
-          deadline=$(( ${JOB_STARTED_AT:?Record job start must run first} + 50 * 60 ))
-          while :; do
-            # A failed read is retried, never treated as "finished".
-            if ! status="$(gh api "$jobs_api" --jq '[.jobs[] | select(.name == "build-windows") | .status] | first // "absent"' 2>/dev/null)"; then
-              status=unknown
-            fi
-            case "$status" in
-              completed)
-                echo "build-windows finished."
-                break
-                ;;
-              absent)
-                if [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
-                  echo "::warning::No job named build-windows in this run; publishing without waiting for it. Was the job renamed?"
-                else
-                  echo "build-windows was not re-run in attempt ${GITHUB_RUN_ATTEMPT}; nothing to wait for."
-                fi
-                break
-                ;;
-            esac
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::warning::build-windows still '${status}' 50 min after this job started; publishing without the Windows assets. Re-run build-windows to attach them."
-              break
-            fi
-            echo "build-windows is '${status}'; checking again in 20s…"
-            sleep 20
-          done
-
-          tag="${RELEASE_TAG:-$GITHUB_REF_NAME}"
-          if [ -n "${DISPATCH_TAG:-}" ]; then
-            echo "Tag dispatch: release '${tag}' stays a draft. Publish it by hand once the installers are checked: gh release edit ${tag} --draft=false"
-            exit 0
-          fi
-          if [ "$PUBLISH" != "true" ]; then
-            echo "Rehearsal (not a tag push, or dry_run): would publish release '${tag}'. Changed nothing."
-            exit 0
-          fi
-          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create it (as a draft) before this workflow can publish it." >&2
-            exit 1
-          fi
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
-          echo "Published release $tag."
 
   build-windows:
     # Non-gating: the Windows build is an explicitly-unverified early alpha
     # (see AGENTS.md — labeled alpha, behind the demo-claim gate). It runs the
     # installer check so a failure is visible in the run, but it must never
-    # block publishing an otherwise-good release. build-macos's publish step
-    # waits for this job to finish, whatever its outcome, so the Windows assets
-    # are attached first; continue-on-error keeps a failure here from turning
-    # the run red in a way that reads as a failed release.
+    # block publishing an otherwise-good release. publish waits for this job
+    # to finish, whatever its outcome, so the Windows assets are attached
+    # first; continue-on-error keeps a failure here from turning the run red in
+    # a way that reads as a failed release.
     continue-on-error: true
-    # build-macos's publish step finds this job by the name the jobs API
-    # reports, which is this id while no `name:` is set. Keep it that way, or
-    # change that lookup with it.
+    needs: tag-is-on-main
+    # publish finds this job by the name the jobs API reports, which is this id
+    # while no `name:` is set. Keep it that way, or change that lookup with it.
     # Pinned to windows-2022, NOT windows-latest, on purpose. windows-latest now
     # ships Visual Studio 18 (2026), and node-gyp 11.x — which @electron/rebuild
     # uses to force-compile better-sqlite3 + node-pty against Electron's ABI —
@@ -603,67 +487,30 @@ jobs:
     # runs over 2026-08-22..09-14, p95 12.90 min, max 12.90. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 39
+    # Read-only (DOR-4030): this job builds and uploads a run artifact; only
+    # publish may write to a release.
     permissions:
-      contents: write
+      contents: read
     steps:
-      # The same gate as build-macos's "Check the release tag": this job runs
-      # in parallel, so it checks for itself rather than trusting the other.
-      - name: Check the release tag
-        id: release-tag
-        if: inputs.tag
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::tag must look like v1.2.3 exactly." >&2
-            exit 1
-          fi
-          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null; then
-            echo "::error::No tag ${TAG} in ${GITHUB_REPOSITORY}." >&2
-            exit 1
-          fi
-          sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha)"
-          on_main="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq .status)"
-          case "$on_main" in
-            ahead | identical) ;;
-            *)
-              echo "::error::${TAG} (${sha}) is not on main (compare says '${on_main}')." >&2
-              exit 1
-              ;;
-          esac
-          if ! is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"; then
-            echo "::error::Release ${TAG} does not exist. This run attaches to an existing draft and never creates one." >&2
-            exit 1
-          fi
-          if [ "$is_draft" != "true" ]; then
-            echo "::error::Release ${TAG} is already published. A tag dispatch only attaches to a draft." >&2
-            exit 1
-          fi
-          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
-          echo "Release tag: \`${TAG}\` at \`${sha}\` (draft release, commit on main)." >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/checkout@v7
+      # The commit tag-is-on-main checked, by SHA, as in build-macos.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ needs.tag-is-on-main.outputs.sha }}
           persist-credentials: false
 
-      - name: Confirm the checkout is the checked tag
-        if: inputs.tag
+      - name: Confirm the checkout is the checked commit
         shell: bash
         env:
-          EXPECTED_SHA: ${{ steps.release-tag.outputs.sha }}
+          EXPECTED_SHA: ${{ needs.tag-is-on-main.outputs.sha }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           if [ "$actual" != "$EXPECTED_SHA" ]; then
-            echo "::error::Checked out ${actual}, but the tag pointed at ${EXPECTED_SHA} when it was checked." >&2
+            echo "::error::Checked out ${actual}, but tag-is-on-main checked ${EXPECTED_SHA}." >&2
             exit 1
           fi
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -760,8 +607,8 @@ jobs:
       # it runs the installer the package step just wrote instead of
       # downloading the artifact on a second runner (windows-latest then; this
       # windows-2022 runner now, which matters only for compiling native
-      # modules, and this step compiles nothing). It runs BEFORE upload and
-      # attach, so an installer that fails it is never attached.
+      # modules, and this step compiles nothing). It runs BEFORE upload, so an
+      # installer that fails it is never uploaded, and so never attached.
       - name: Verify the Windows installer
         shell: pwsh
         run: |
@@ -804,55 +651,142 @@ jobs:
           }
           Write-Host "Windows installer verification passed: $appExe exists."
 
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: DorkOS-windows-x64
-          path: |
-            apps/desktop/release/*.exe
-            apps/desktop/release/latest.yml
-            apps/desktop/release/*.blockmap
-
-      # Attaches the Windows artifacts to the vX.Y.Z release that
-      # /system:release created (Phase 6.11), mirroring "Attach macOS
-      # artifacts to the release" above — same attach-only rationale, same
-      # poll-for-release loop, same fail-loud-if-release-absent behavior. See
-      # that step's comment for the full explanation; only the platform and
-      # asset globs differ here.
-      #
       # latest.yml must ship alongside the .exe: it's electron-updater's
       # (NSIS updater's) update manifest, and a release without it 404s every
       # auto-update check on Windows — the .exe is only the human-facing
       # installer. The .blockmap enables differential (delta) downloads for
       # NSIS auto-updates.
-      - name: Attach Windows artifacts to the release
-        if: env.RELEASE_TAG && !inputs.dry_run
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DISPATCH_TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_TAG}"
-          files=(
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: DorkOS-windows-x64
+          if-no-files-found: error
+          path: |
             apps/desktop/release/*.exe
             apps/desktop/release/latest.yml
             apps/desktop/release/*.blockmap
-          )
-          if [ -n "${DISPATCH_TAG:-}" ]; then
-            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]; then
-              echo "::error::Release $tag is no longer a draft. A tag dispatch only attaches to a draft." >&2
-              exit 1
+
+  # The one job that writes to the release (DOR-4030). It runs only for a
+  # `tag` run of main's copy, dispatched on main, that signs and is not a dry
+  # run: its job-level `if:` opens with that condition, which the census's tag
+  # gate checks. A rehearsal never reaches the write token.
+  # Attach-only: `gh release upload` never creates a release, touches the
+  # draft flag or regenerates notes, so the human-written notes always survive.
+  # It deliberately does NOT use action-gh-release, which would CREATE a
+  # release when none exists yet and could win a race against Phase 6.11.
+  publish:
+    needs: [tag-is-on-main, build-macos]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.sign && !inputs.dry_run
+    runs-on: ubuntu-latest
+    # Up to 40 min waiting for build-windows, up to 10 for the release to
+    # exist, then a few uploads.
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      # Reads this run's own jobs list and artifacts.
+      actions: read
+    env:
+      EXPECTED_SHA: ${{ needs.tag-is-on-main.outputs.sha }}
+      REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+    steps:
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/desktop-release.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+
+      # The wait budget for build-windows is measured from here.
+      - name: Record job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Download the macOS artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: DorkOS-macOS-arm64
+          path: mac
+
+      # Waits for build-windows to FINISH, with any outcome, so the Windows
+      # installer and latest.yml are attached before the release is visible.
+      # It cannot simply `needs:` build-windows: a job stuck QUEUED (the v0.98.0
+      # incident) would hold the macOS release forever. So it polls for up to
+      # 40 min after this job started; past that it publishes without the
+      # Windows assets, with a warning, because the Windows alpha must never
+      # hold back the macOS release. Re-run publish later to attach them.
+      #
+      # build-windows is found by its job id as the jobs API names it. Give
+      # that job a `name:` and this lookup must change with it: on a first
+      # attempt a missing build-windows is warned about, never silently passed.
+      - name: Wait for build-windows, then download its artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
+          deadline=$(( ${JOB_STARTED_AT:?Record job start must run first} + 40 * 60 ))
+          while :; do
+            # A failed read is retried, never treated as "finished".
+            if ! status="$(gh api "$jobs_api" --jq '[.jobs[] | select(.name == "build-windows") | .status] | first // "absent"' 2>/dev/null)"; then
+              status=unknown
             fi
-            existing="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-            for f in "${files[@]}"; do
-              if grep -qxF "$(basename "$f")" <<<"$existing"; then
-                echo "::error::Release $tag already has $(basename "$f"). A tag dispatch never replaces an asset." >&2
-                exit 1
-              fi
-            done
-            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}"
-            exit 0
+            case "$status" in
+              completed)
+                echo "build-windows finished."
+                break
+                ;;
+              absent)
+                if [ "${GITHUB_RUN_ATTEMPT}" = "1" ]; then
+                  echo "::warning::No job named build-windows in this run; publishing without waiting for it. Was the job renamed?"
+                else
+                  echo "build-windows was not re-run in attempt ${GITHUB_RUN_ATTEMPT}; nothing to wait for."
+                fi
+                break
+                ;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::warning::build-windows still '${status}' 40 min after publish started; publishing without the Windows assets. Re-run publish once build-windows finishes to attach them."
+              break
+            fi
+            echo "build-windows is '${status}'; checking again in 20s…"
+            sleep 20
+          done
+          # Absent when build-windows failed before its upload (a broken
+          # installer is never uploaded): the release then goes out macOS-only.
+          if gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" -n DorkOS-windows-x64 -D win 2>/dev/null; then
+            echo "Windows artifacts downloaded."
+          else
+            echo "::warning::No Windows artifacts in this run; the release goes out macOS-only."
+          fi
+
+      # Ordering: /system:release pushes the tag (Phase 6.10, triggers this run)
+      # then creates the release (Phase 6.11) seconds-to-minutes later, while
+      # the builds spend many minutes signing + notarizing — so the release is
+      # normally already present. The poll below only covers a slow operator,
+      # and FAILS LOUDLY if the release is still absent (Phase 6.11 skipped): a
+      # red run is the correct signal, not a silent bare release.
+      #
+      # The .zip must ship alongside the .dmg: latest-mac.yml points
+      # electron-updater (Squirrel.Mac) at the zip as the update payload, so
+      # a release without it 404s every auto-update check. The .blockmap files
+      # (one per target) enable differential (delta) downloads — without them
+      # electron-updater logs "Cannot download differentially… status 404"
+      # and falls back to a full download every time (confirmed in a real
+      # user's log).
+      - name: Attach the artifacts to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tag="${RELEASE_TAG}"
+          # The tag must still name the commit that was built: a tag moved
+          # since tag-is-on-main must not get these installers.
+          now="$(git ls-remote "$REPO_URL" "refs/tags/${tag}" "refs/tags/${tag}^{}" | awk '{print $1}' | tail -n 1)"
+          if [ "$now" != "$EXPECTED_SHA" ]; then
+            echo "::error::${tag} now names ${now:-nothing}, not the built ${EXPECTED_SHA}. Nothing was attached." >&2
+            exit 1
           fi
           # Wait up to ~10 min for the release (created in /system:release
           # Phase 6.11) to exist. Never create it here.
@@ -869,4 +803,22 @@ jobs:
             echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create the GitHub Release before the desktop build can attach to it; this workflow will not mint a bare release (it would drop the human-written notes)." >&2
             exit 1
           fi
-          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}" --clobber
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" \
+            mac/*.dmg mac/*.zip mac/*.blockmap mac/latest-mac.yml \
+            --clobber
+          win=(win/*.exe win/latest.yml win/*.blockmap)
+          if [ ${#win[@]} -gt 0 ]; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${win[@]}" --clobber
+          fi
+
+      # Flip the draft release (created by /system:release Phase 6.11 with
+      # --draft) to published. This is what closes the auto-update window
+      # described in the file header: until it runs, electron-updater sees the
+      # previous release as latest and reports "up to date".
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release edit "${RELEASE_TAG}" --repo "$GITHUB_REPOSITORY" --draft=false
+          echo "Published release ${RELEASE_TAG}."

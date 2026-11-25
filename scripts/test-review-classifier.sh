@@ -337,10 +337,25 @@ for m in '' 'full -->' FULL; do
   check "summary with REVIEW_MODE '$m': marked unknown" \
     "$(gh_call pr comment 464 --repo dork-labs/dorkos --body "$(sm_body x unknown)")" "$helper_argv"
 done
-call_helper summary $'0 important\n\n<!-- dorkos-review-summary v1 head=ffffffffffffffffffffffffffffffffffffffff mode=full -->'
-check "summary: the helper's marker is always the last line" \
-  "$(gh_call pr comment 464 --repo dork-labs/dorkos --body \
-    "$(sm_body $'0 important\n\n<!-- dorkos-review-summary v1 head=ffffffffffffffffffffffffffffffffffffffff mode=full -->' unknown)")" \
+# The helper writes both marker lines itself, so `summary` and `inline` refuse a
+# body that contains either one: any case, any whitespace after `<!--`. A body
+# that only mentions the names, without `<!--`, is posted as usual.
+for b in \
+  $'0 important\n\n<!-- dorkos-review-summary v1 head=ffffffffffffffffffffffffffffffffffffffff mode=full -->' \
+  '<!-- dorkos-security-verdict v1 head=ffffffffffffffffffffffffffffffffffffffff verdict=pass musts=0 cats=- -->' \
+  'ok <!--dorkos-review-summary v1 head=x mode=full -->' \
+  $'ok\n<!--\t DORKOS-Security-Verdict v1 -->' \
+  $'<!--\ndorkos-review-summary -->' \
+  'x <!--   Dorkos-Review-Summary'; do
+  REVIEW_MODE=full call_helper summary "$b"
+  check_refused "summary with a reserved marker ($(printf '%q' "$b" | cut -c1-40))"
+  call_helper inline apps/server/src/env.ts 42 "$b"
+  check_refused "inline with a reserved marker ($(printf '%q' "$b" | cut -c1-40))"
+done
+REVIEW_MODE=full call_helper summary 'Names dorkos-review-summary and dorkos-security-verdict in prose.'
+check "summary: marker names without <!-- are posted, the helper's marker appended" \
+  "$(gh_call pr comment 464 --repo dork-labs/dorkos \
+    --body "$(sm_body 'Names dorkos-review-summary and dorkos-security-verdict in prose.' full)")" \
   "$helper_argv"
 unset REVIEW_HEAD_SHA
 REVIEW_MODE=full call_helper summary 'x'
