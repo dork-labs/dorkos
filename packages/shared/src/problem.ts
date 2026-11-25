@@ -478,12 +478,6 @@ export const PROBLEM_CODE_LIST = [
   /** The disk won't say how much space it has: put DORK_HOME on a local disk. */
   { code: 'disk_space_unknown', status: 507, title: 'This computer can’t report its free space.' },
   // Remote access through the person's own tunnel (`/api/tunnel`).
-  /** Opening DorkOS to other devices needs sign-in on: create the owner account first. */
-  {
-    code: 'auth_required_for_exposure',
-    status: 409,
-    title: 'Turn on sign-in before other devices can reach DorkOS.',
-  },
   /** The tunnel is already open; `url` is its address. Not a failure: it converges. */
   { code: 'tunnel_running', status: 409, title: 'Remote access is already on.' },
   { code: 'tunnel_token_missing', status: 400, title: 'Add an ngrok auth token first.' },

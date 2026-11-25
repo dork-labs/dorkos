@@ -202,7 +202,6 @@ describe('the space, account, tunnel, hub and computer codes', () => {
       ['credits_off', 409],
       ['disk_full', 507],
       ['disk_space_unknown', 507],
-      ['auth_required_for_exposure', 409],
       ['tunnel_running', 409],
       ['tunnel_token_missing', 400],
       ['tunnel_port_mismatch', 409],
