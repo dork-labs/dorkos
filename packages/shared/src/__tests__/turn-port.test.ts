@@ -139,6 +139,15 @@ const SAMPLES: Record<string, readonly unknown[]> = {
       runtimeTurnRef: 42,
       turnBindingId: 'binding-1',
     },
+    {
+      kind: 'started',
+      runId: RUN,
+      sessionId: SESSION,
+      openedBy: 'runtime',
+      agentId: AGENT,
+      runtime: 'claude-code',
+      runtimeTurnRef: 7,
+    },
     { kind: 'delivered', runId: RUN },
     { kind: 'waiting_on_person', runId: RUN },
     { kind: 'resumed_from_person', runId: RUN },
@@ -358,6 +367,14 @@ describe('a start request', () => {
     ).toBe(true);
   });
 
+  it('takes a chat with no Mesh agent, but never an agent id that is not one', () => {
+    const { agentId: _agentId, ...noAgent } = MINIMAL_INPUT;
+    expect(StartTurnInputSchema.safeParse(noAgent).success).toBe(true);
+    expect(
+      StartTurnInputSchema.safeParse({ ...MINIMAL_INPUT, agentId: 'not-a-ulid' }).success
+    ).toBe(false);
+  });
+
   it('takes only a dork: reference as originRef', () => {
     expect(StartTurnInputSchema.safeParse({ ...MINIMAL_INPUT, originRef: 'room-1' }).success).toBe(
       false
@@ -399,6 +416,20 @@ describe('facts', () => {
         receipt: { outcome: 'acked', runtime: 'claude-code' },
       }).success
     ).toBe(false);
+  });
+
+  it('a runtime-opened turn names its agent', () => {
+    const opened = {
+      kind: 'started',
+      runId: RUN,
+      sessionId: SESSION,
+      openedBy: 'runtime',
+      runtime: 'claude-code',
+      runtimeTurnRef: 7,
+    } as const;
+    expect(RunFactSchema.safeParse(opened).success).toBe(false);
+    expect(RunFactSchema.safeParse({ ...opened, agentId: AGENT }).success).toBe(true);
+    expect(RunFactSchema.safeParse({ ...opened, openedBy: 'caller' }).success).toBe(true);
   });
 
   it("only a refused ending carries the runtime's words", () => {

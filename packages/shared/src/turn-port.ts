@@ -10,6 +10,10 @@
  * computer face answers {@link TurnStartAnswer}, then reports what happens to
  * the turn as {@link RunFact} values through one sink.
  *
+ * Only `start` has payload schemas here. The argument schemas of `stop`,
+ * `answer` and `watch` arrive with the port door itself (T5); `stop` answers
+ * the existing `InterruptReceipt` (`@dorkos/shared/schemas`).
+ *
  * ## Plain data only
  *
  * Every payload here is a Zod schema over JSON values: strings, numbers,
@@ -36,7 +40,7 @@
  */
 import { z } from 'zod';
 import { AGENT_ID_PATTERN, formatDorkReference, parseDorkReference } from './dork-ref.js';
-import { RelayMessageContentSchema } from './session-relay.js';
+import { RelayAgentIdSchema, RelayMessageContentSchema } from './session-relay.js';
 import {
   AgentComputerTurnOriginSchema,
   AgentComputerTurnTierSchema,
@@ -327,9 +331,6 @@ const DorkReferenceSchema = z
 /** A chat, by its canonical id. */
 const SessionIdSchema = z.string().min(1).max(200);
 
-/** An agent, by its Mesh id (a ULID). */
-const AgentIdSchema = z.string().regex(AGENT_ID_PATTERN);
-
 /** A moment, as epoch milliseconds. */
 const EpochMsSchema = z.number().int().nonnegative();
 
@@ -422,8 +423,15 @@ export type TurnPreparation = z.infer<typeof TurnPreparationSchema>;
 const callerTurnFields = {
   /** The chat, by its canonical id. */
   sessionId: SessionIdSchema,
-  /** The agent the turn runs as, by its Mesh id. */
-  agentId: AgentIdSchema,
+  /**
+   * The agent the turn runs as, by its Mesh id. Optional because a chat can
+   * have none: a person may chat in a folder no Mesh agent is registered for
+   * (`SendMessageRequest.agentPath` is optional), which is also why the run
+   * record's `agent_id` is nullable (spec §4.1). The agent-computer wire's
+   * `turn.start` requires one, so a request without it is only ever served by
+   * this computer's own computer face, never sent to an agent computer.
+   */
+  agentId: RelayAgentIdSchema.optional(),
   /** The directory the turn runs in, absolute. */
   cwd: z.string().min(1),
   /**
@@ -464,6 +472,11 @@ const callerTurnFields = {
  * (`wireOrigin`) or decides at admission (`accountRef`, `playbookId`) is not
  * here: it is added when the `start_turn` handler builds the
  * {@link TurnStartRequest}.
+ *
+ * Three record columns get their input fields with the callers that need
+ * them: `askedByRef` with T5, `startKey` with T7, `sourceRef` with T8 (then
+ * T10 and T11). The schema is strict, so adding an optional field later
+ * changes nothing a caller sends today.
  */
 export const StartTurnInputSchema = z.strictObject({
   ...callerTurnFields,
@@ -532,7 +545,12 @@ export const TurnStartRequestSchema = z
     wireOrigin: AgentComputerTurnOriginSchema,
     /** The account the turn runs on, as admission chose it (§3.5). */
     accountRef: z.string().min(1).optional(),
-    /** The playbook the turn starts under (DOR-5187). Absent until playbooks exist. */
+    /**
+     * The playbook the turn starts under (DOR-5187). Absent, never `null`:
+     * when admission answers "no playbook" (spec §3.5 writes it `null`), the
+     * `start_turn` handler leaves the field out, so "none" has one spelling on
+     * the port and on the wire. Admission's own type follows (T5).
+     */
     playbookId: z.string().min(1).optional(),
   })
   .refine((request) => request.wireOrigin === wireOriginOf(request.origin), {
@@ -551,10 +569,16 @@ export type TurnStartRequest = z.infer<typeof TurnStartRequestSchema>;
  * Why the computer face refused a start. It has no "waiting" answer: waiting
  * is decided on the space side before the computer face is asked (spec §3.5).
  *
- * - `already_held`: the computer face already holds a run with this id, so a
- *   repeated start never starts the turn twice (§6.2).
- * - `agent_paused`: the agent is paused and the turn is a person's own chat,
- *   which keeps today's `AGENT_PAUSED` refusal (§3.5).
+ * - `already_held`: the computer side already holds THIS `runId`: a repeated
+ *   start (§6.2). No second turn starts and no transition is written: the
+ *   run stays `starting`, and the `start_turn` handler keeps waiting for the
+ *   `started` fact. It is not answered as `accepted`.
+ * - `agent_paused`: the agent is paused and the turn is a person's own chat.
+ *   The run goes `starting` → `cancelled` and the caller sees today's
+ *   `AGENT_PAUSED` refusal (§3.5).
+ *
+ * "This chat has another live turn" is not a reason: this computer's
+ * dispatcher queues it, and the wire's answer for it comes with DOR-5163.
  */
 export const RefusalReasonSchema = z.enum(['already_held', 'agent_paused']);
 
@@ -630,10 +654,13 @@ const BackgroundWorkEntrySchema = z.strictObject({
  * - `accepted`: the computer face took the start. `joinedRunId` when the
  *   words joined another run's turn instead (a drain join), which supersedes
  *   this run (§4.3 row 6).
- * - `started`: `turn_start` was ingested. `openedBy: 'runtime'` for a turn
- *   the runtime opened on its own, whose run the computer side names itself
- *   because no caller did (§4.3 row 2); `runtime` and `runtimeTurnRef` (the
+ * - `started`: `turn_start` was ingested; `runtime`, `runtimeTurnRef` (the
  *   `seq` of `turn_start`) and `turnBindingId` feed the record's columns.
+ *   `openedBy: 'runtime'` is a turn the runtime opened on its own (§4.3
+ *   row 2): no caller asked, so the computer side mints its `runId` (a ULID)
+ *   and the fact carries `sessionId` and `agentId`. The space side inserts
+ *   the run if it is absent; a repeat of the fact is the same row; an id that
+ *   already exists for another chat is refused.
  * - `delivered`: the runtime's first event for the turn arrived.
  * - `waiting_on_person`, `resumed_from_person`: an ask opened, and closed.
  * - `background_work`: the work the run's process holds now, the whole list.
@@ -647,15 +674,22 @@ export const RunFactSchema = z.discriminatedUnion('kind', [
     runId: RunIdSchema,
     joinedRunId: RunIdSchema.optional(),
   }),
-  z.strictObject({
-    kind: z.literal('started'),
-    runId: RunIdSchema,
-    sessionId: SessionIdSchema,
-    openedBy: z.enum(['caller', 'runtime']),
-    runtime: z.string().min(1),
-    runtimeTurnRef: z.number().int().nonnegative(),
-    turnBindingId: z.string().min(1).optional(),
-  }),
+  z
+    .strictObject({
+      kind: z.literal('started'),
+      runId: RunIdSchema,
+      sessionId: SessionIdSchema,
+      openedBy: z.enum(['caller', 'runtime']),
+      /** The agent, by its Mesh id. Required for a runtime-opened turn, which has no caller's run to name it. */
+      agentId: RelayAgentIdSchema.optional(),
+      runtime: z.string().min(1),
+      runtimeTurnRef: z.number().int().nonnegative(),
+      turnBindingId: z.string().min(1).optional(),
+    })
+    .refine((fact) => fact.openedBy === 'caller' || fact.agentId !== undefined, {
+      message: 'A runtime-opened turn names its agent',
+      path: ['agentId'],
+    }),
   z.strictObject({ kind: z.literal('delivered'), runId: RunIdSchema }),
   z.strictObject({ kind: z.literal('waiting_on_person'), runId: RunIdSchema }),
   z.strictObject({ kind: z.literal('resumed_from_person'), runId: RunIdSchema }),

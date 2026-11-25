@@ -46,6 +46,10 @@ import type { TurnOrigin } from '@dorkos/shared/turn-port';
  * `@dorkos/shared/turn-port`, because the turn port carries an origin as data
  * (spec `turns-survive-restarts` §3.2); it is re-exported here so every
  * caller keeps importing it from this path.
+ *
+ * Temporary. A space-side file importing it from here imports turn code, so
+ * each such import counts against the turn port ratchet's baseline (T5,
+ * spec §3.4) and moves to `@dorkos/shared/turn-port` as its caller moves.
  */
 export type { TurnOrigin };
 
