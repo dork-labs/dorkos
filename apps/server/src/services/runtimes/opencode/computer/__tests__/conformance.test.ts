@@ -95,8 +95,6 @@ runtimeConformance(() => makeComputer().runtime, {
   projectDir: ANCHOR,
   messageContent: CONFORMANCE_PROMPT,
   expectHistory: true,
-  singleFolderRuntimeReason:
-    'the computer maps exactly one host folder into its guest and refuses every other, so a session cannot start in a subfolder until DOR-5251 maps them',
   restartContinueUnprovenReason:
     'the agent computer is stopped at shutdown (`startup/computers.ts`), so no turn survives a restart to be continued',
   userLastMessageAtOmittedReason:
@@ -104,7 +102,7 @@ runtimeConformance(() => makeComputer().runtime, {
   creditsUnprovenReason:
     'the computer never runs on DorkOS credits: it refuses a credits model before any guest call (`factory.test.ts`), so there is no credits turn to prove negatives on',
   directoryGrantsUnprovenReason:
-    'the computer refuses every extra folder grant before any guest call (`factory.test.ts`): the guest can reach only its one mapped folder',
+    'the computer refuses every extra folder grant before any guest call (`factory.test.ts`): the guest can reach only its anchor and the folders under it',
   systemPromptAppendUnprovenReason:
     'the computer runtime is the host OpenCode runtime over another client and its proxy passes the append through untouched; delivery is proven in the host OpenCode suite',
   // DOR-2732, RT-CMP-03: the reply's usage names no window; the guest's catalog does.

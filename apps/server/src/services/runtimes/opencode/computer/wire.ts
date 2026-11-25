@@ -1,22 +1,11 @@
 import { CREDITS_PROVIDER_ID } from '../../shared/credits/environment.js';
+import { ComputerFolders } from './folders.js';
 
-/** Structural OpenCode directory translation; tool output and prose remain untouched. */
-export class ComputerWire {
-  constructor(
-    readonly anchor: string,
-    readonly guestDirectory: string
-  ) {}
-
-  toGuest(value: unknown): string {
-    if (value !== this.anchor) throw new Error('COMPUTER_DIRECTORY_REFUSED');
-    return this.guestDirectory;
-  }
-
-  toHost(value: unknown): string {
-    if (value !== this.guestDirectory) throw new Error('COMPUTER_DIRECTORY_REFUSED');
-    return this.anchor;
-  }
-
+/**
+ * Structural OpenCode directory translation; tool output and prose remain
+ * untouched. Which folders map, and how, is {@link ComputerFolders}'s.
+ */
+export class ComputerWire extends ComputerFolders {
   request(
     request: Request,
     allowedMcpUrls: readonly string[],
@@ -99,7 +88,7 @@ export class ComputerWire {
     const hostCwd = 'cwd' in path ? this.toHost(path.cwd) : undefined;
     if ('root' in path) {
       // OpenCode uses '/' as its global project root outside a git checkout.
-      // Admit that metadata sentinel only beside the exact owned guest cwd.
+      // Admit that metadata sentinel only beside an owned guest cwd, as the anchor.
       path.root = path.root === '/' && hostCwd ? this.anchor : this.toHost(path.root);
     }
     if (hostCwd) path.cwd = hostCwd;
