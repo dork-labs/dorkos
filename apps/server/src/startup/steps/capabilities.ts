@@ -289,6 +289,16 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       workQueueDeps: workQueue.capabilityDeps,
       // A person's queue doors, served on the REST paths (DOR-4978).
       workQueuePersonDeps: workQueue.personDeps,
+      // The agent registry's doors on `/api/mesh/*` (DOR-4978): the same services
+      // the hand routes held, topology counts included.
+      ...(refs.meshCore && {
+        meshDeps: {
+          meshCore: refs.meshCore,
+          taskStore: refs.taskStore,
+          relayCore: refs.relayCore,
+          activity: activityService,
+        },
+      }),
       workClaimDeps: workClaims.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({

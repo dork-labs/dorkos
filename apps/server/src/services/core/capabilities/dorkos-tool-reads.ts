@@ -132,6 +132,10 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'marketplace.list_installed': anyInstalledFromOutside,
   mesh_list: anyFromPackage('agents'),
   mesh_inspect: anyFromPackage('agent'),
+  // The registry's doors on `/api/mesh/*` (DOR-4978): an agent a package brought marks, as
+  // `mesh_list` does. A scan reads folders anyone may have written.
+  'mesh.list_agents': anyFromPackage('agents'),
+  'mesh.discover': 'outside',
   list_extensions: anyFromPackage('extensions'),
   // ── Only what DorkOS, this computer or the team wrote ──────────────────────
   'operator.activity_list': 'local',
@@ -237,6 +241,16 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // A chat's run records: statuses, ids, endings and fixed DorkOS lines. A
   // turn's words stay in its queue row and its runtime's transcript (§4.1).
   'runs.chat_runs': 'local',
+  // The rest of the registry's doors: ids, health, counts, folders and a person's changes.
+  'mesh.status': 'local',
+  'mesh.topology': 'local',
+  'mesh.list_denied': 'local',
+  'mesh.register_agent': 'local',
+  'mesh.remove_agent': 'local',
+  'mesh.delete_agent_data': 'local',
+  'mesh.deny_folder': 'local',
+  'mesh.clear_denial': 'local',
+  'mesh.set_access_rule': 'local',
   // Folder names, workspaces and the template catalog: what is on this
   // computer, written by the team.
   'directory.browse': 'local',

@@ -80,7 +80,6 @@ export const AGENT_COMPUTER_WRITES: ReadonlyMap<string, string> = new Map([
   ['POST /api/agents/:agentId/pause', 'pauses an agent; anyone may stop any agent'],
   // Finding agents, and saying this one is alive.
   ['POST /api/agents/resolve', 'reads agents by path; a read sent as a POST'],
-  ['POST /api/mesh/discover', 'lists agents on disk without registering them'],
   ['POST /api/mesh/agents/:id/heartbeat', 'says an agent is alive'],
   // Capabilities run through `registry.invoke`, which refuses the hub's own.
   ['POST /api/capabilities/:id/invoke', 'runs a capability; the hub-owned ones refuse'],

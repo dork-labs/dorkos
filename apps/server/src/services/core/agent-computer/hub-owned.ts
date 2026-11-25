@@ -49,6 +49,15 @@ export const HUB_OWNED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ['mesh_register', 'agents'],
   ['mesh_unregister', 'agents'],
   ['mesh_deny', 'agents'],
+  // A person's registry doors on `/api/mesh/*` (DOR-4978): the invoke route is open on an
+  // agent computer, so the same changes the hand routes refused there are named here.
+  ['mesh.discover', 'agents'],
+  ['mesh.register_agent', 'agents'],
+  ['mesh.remove_agent', 'agents'],
+  ['mesh.delete_agent_data', 'agents'],
+  ['mesh.deny_folder', 'agents'],
+  ['mesh.clear_denial', 'agents'],
+  ['mesh.set_access_rule', 'agents'],
   ['tasks_create', 'schedules'],
   ['tasks_update', 'schedules'],
   ['tasks_delete', 'schedules'],
