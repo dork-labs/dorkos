@@ -31,6 +31,8 @@ import {
 } from '../../services/session/index.js';
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
 import { installWorkLinkStore } from '../../services/work-graph/index.js';
+import { installRunRecord } from '../../services/runs/index.js';
+import { ulid } from 'ulidx';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
 import { accountRuleRoots } from '../../services/core/usage/account-eligibility.js';
@@ -153,6 +155,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // that accepted it, a second window, a failed turn and a restart.
   const messageQueueStore = new MessageQueueStore(db);
   setMessageQueueStore(messageQueueStore);
+
+  // The run record, and this boot's epoch: the owner of every run this process
+  // starts (spec `turns-survive-restarts` §6.1). Before anything can launch a turn.
+  installRunRecord(db, { epoch: ulid() });
 
   // The durable hold for staged words, on the same beat again: the server tells
   // the person "Added context for the next reply" on a stream that survives a

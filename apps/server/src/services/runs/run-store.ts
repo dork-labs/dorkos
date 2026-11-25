@@ -1,0 +1,523 @@
+/**
+ * The run record's store: the only code that reads or writes `turn_runs`
+ * (spec `turns-survive-restarts` §4, DOR-5159).
+ *
+ * One row per attempt of a turn. The store answers in the port's own types
+ * (`@dorkos/shared/turn-port`), never in Drizzle rows (§4.2), and it checks
+ * every status change against {@link canTransition}: an illegal pair throws
+ * {@link IllegalRunTransitionError} and writes nothing. Every write is one
+ * synchronous `better-sqlite3` transaction (`immediate`); one made while
+ * another transaction is open on the same connection joins it as a savepoint,
+ * which is how a queue row and its run change together (§5, item 1).
+ *
+ * Who calls which method, and when, is {@link createRunFactsSink} (the
+ * dispatcher's facts) and `run-stops.ts` (stop requests). This file only
+ * keeps the record honest.
+ *
+ * @module services/runs/run-store
+ */
+import { ulid } from 'ulidx';
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  lt,
+  max,
+  ne,
+  turnRuns,
+  LIVE_TURN_RUN_STATUSES,
+  type Db,
+  type TurnRunRow,
+} from '@dorkos/db';
+import {
+  canTransition,
+  TurnOriginSchema,
+  type AttemptReason,
+  type RunEnding,
+  type RunStatus,
+  type TurnOrigin,
+  type WaitReason,
+} from '@dorkos/shared/turn-port';
+import type { InterruptReceipt } from '@dorkos/shared/schemas';
+
+/** How long a live run's lease lasts after each renewal (§4.1, §7.1). */
+export const RUN_LEASE_MS = 60_000;
+
+/** How often the owner renews the leases of its live runs (§4.1). */
+export const RUN_LEASE_RENEW_MS = 20_000;
+
+/** One stop asked of a run, written when it is asked (§4.4). */
+export interface RunStopRequest {
+  /** When it was asked, ISO 8601. */
+  at: string;
+  /** Who asked, as a `dork:` reference, when the asker is known. */
+  by?: string;
+  /** Which door asked: the Stop button or a pause. */
+  via: 'stop' | 'pause';
+  /** What its receipt said, once it came. */
+  outcome?: InterruptReceipt['outcome'];
+}
+
+/**
+ * What `ending_detail` holds (§4.1): never transcript text, only what DorkOS
+ * observed about how the run ended or why it never started.
+ */
+export interface RunEndingDetail {
+  /** Every stop asked of the run, in order. */
+  stopRequests?: RunStopRequest[];
+  /** The runtime's own words when it refused the turn (DOR-2994). */
+  refusal?: string;
+  /** The run ended before the runtime read its words, so nobody knows if it did. */
+  delivery?: 'unknown';
+  /** Why a run that never started was cancelled. */
+  cancelledBecause?: string;
+  /** A private message's attempt whose outcome nobody can know (§4.7). */
+  outcomeUnknown?: true;
+}
+
+/** A run as the store answers it: the record's fields, in the port's types. */
+export interface TurnRun {
+  id: string;
+  /** The chat, by the id its queue rows are kept under. */
+  sessionId: string;
+  chatSeq: number;
+  chainId: string;
+  agentId: string | null;
+  /** What started it; `null` for a runtime's own turn or an unrecorded caller. */
+  origin: TurnOrigin | null;
+  openedBy: 'caller' | 'runtime' | 'recovery';
+  status: RunStatus;
+  waitReason: WaitReason | null;
+  attempt: number;
+  attemptReason: AttemptReason;
+  queueMessageId: string | null;
+  runtime: string | null;
+  runtimeTurnRef: number | null;
+  turnBindingId: string | null;
+  ownerEpoch: string | null;
+  leaseUntil: number | null;
+  waitingOnPerson: boolean;
+  ending: RunEnding | null;
+  endingDetail: RunEndingDetail;
+  createdAt: string;
+  startedAt: string | null;
+  deliveredAt: string | null;
+  endedAt: string | null;
+}
+
+/** Thrown for a status change the transition table does not hold. */
+export class IllegalRunTransitionError extends Error {
+  /**
+   * Name the run and the pair refused.
+   *
+   * @param runId - The run.
+   * @param from - Its status, or `null` for a run being created.
+   * @param to - The status asked for.
+   */
+  constructor(
+    readonly runId: string,
+    readonly from: RunStatus | null,
+    readonly to: RunStatus
+  ) {
+    super(`Run ${runId} may not move from ${from ?? '(none)'} to ${to}`);
+    this.name = 'IllegalRunTransitionError';
+  }
+}
+
+/** What {@link RunStore.create} needs. */
+export interface NewRun {
+  /** The id, when the computer side minted it (a runtime's own turn); else minted here. */
+  id?: string;
+  chatKey: string;
+  /** `queued` (transition 1) or `running` (transition 2, a runtime's own turn). */
+  status: 'queued' | 'running';
+  openedBy: TurnRun['openedBy'];
+  origin: TurnOrigin | null;
+  queueMessageId?: string;
+  agentId?: string;
+  runtime?: string;
+  runtimeTurnRef?: number;
+}
+
+/** The columns a status change may also set. */
+export type RunPatch = Partial<
+  Pick<
+    TurnRunRow,
+    | 'waitReason'
+    | 'runtime'
+    | 'runtimeTurnRef'
+    | 'turnBindingId'
+    | 'ownerEpoch'
+    | 'leaseUntil'
+    | 'waitingOnPerson'
+    | 'ending'
+    | 'startedAt'
+    | 'deliveredAt'
+    | 'endedAt'
+    | 'settledAt'
+    | 'agentId'
+  >
+> & { endingDetail?: RunEndingDetail };
+
+/**
+ * Whether an error is SQLite refusing a unique index, through any wrapper
+ * Drizzle adds around it.
+ *
+ * @param error - What was thrown.
+ */
+export function isUniqueViolation(error: unknown): boolean {
+  for (let e: unknown = error; e instanceof Error; e = (e as { cause?: unknown }).cause) {
+    const code = (e as { code?: unknown }).code;
+    if (code === 'SQLITE_CONSTRAINT_UNIQUE' || /UNIQUE constraint failed/.test(e.message)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Read a stored origin, degrading an unreadable one to "not recorded". */
+function parseOrigin(json: string | null): TurnOrigin | null {
+  if (json === null) return null;
+  try {
+    const parsed = TurnOriginSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read a stored `ending_detail`, degrading an unreadable one to empty. */
+function parseDetail(json: string | null): RunEndingDetail {
+  if (json === null) return {};
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return parsed !== null && typeof parsed === 'object' ? (parsed as RunEndingDetail) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** A stored row as the store answers it. */
+function toRun(row: TurnRunRow): TurnRun {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    chatSeq: row.chatSeq,
+    chainId: row.chainId,
+    agentId: row.agentId,
+    origin: parseOrigin(row.originJson),
+    openedBy: row.openedBy,
+    status: row.status,
+    waitReason: row.waitReason,
+    attempt: row.attempt,
+    attemptReason: row.attemptReason,
+    queueMessageId: row.queueMessageId,
+    runtime: row.runtime,
+    runtimeTurnRef: row.runtimeTurnRef,
+    turnBindingId: row.turnBindingId,
+    ownerEpoch: row.ownerEpoch,
+    leaseUntil: row.leaseUntil,
+    waitingOnPerson: row.waitingOnPerson,
+    ending: row.ending,
+    endingDetail: parseDetail(row.endingDetail),
+    createdAt: row.createdAt,
+    startedAt: row.startedAt,
+    deliveredAt: row.deliveredAt,
+    endedAt: row.endedAt,
+  };
+}
+
+/** The column values a {@link RunPatch} writes. */
+function patchColumns(patch: RunPatch): Partial<TurnRunRow> {
+  const { endingDetail, ...rest } = patch;
+  return {
+    ...rest,
+    ...(endingDetail !== undefined
+      ? { endingDetail: Object.keys(endingDetail).length > 0 ? JSON.stringify(endingDetail) : null }
+      : {}),
+  };
+}
+
+/** Options for {@link RunStore}. */
+export interface RunStoreOptions {
+  /** This process's boot epoch (§6.1): the owner of every run it starts. */
+  epoch: string;
+  /** The clock, epoch ms. Injected by tests. */
+  now?: () => number;
+}
+
+/** The run record over the machine store's `turn_runs` table. */
+export class RunStore {
+  private readonly now: () => number;
+
+  /**
+   * Open the store over the machine store.
+   *
+   * @param db - The machine store.
+   * @param opts - The boot epoch and, in tests, the clock.
+   */
+  constructor(
+    private readonly db: Db,
+    private readonly opts: RunStoreOptions
+  ) {
+    this.now = opts.now ?? Date.now;
+  }
+
+  /** This process's boot epoch. */
+  get epoch(): string {
+    return this.opts.epoch;
+  }
+
+  /**
+   * Run `fn` as one immediate transaction, or inside the one already open.
+   *
+   * @param fn - The reads and writes.
+   */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(() => fn(), { behavior: 'immediate' });
+  }
+
+  /**
+   * One run by id.
+   *
+   * @param runId - The run.
+   */
+  get(runId: string): TurnRun | undefined {
+    const row = this.db.select().from(turnRuns).where(eq(turnRuns.id, runId)).get();
+    return row ? toRun(row) : undefined;
+  }
+
+  /**
+   * A chat's runs, oldest first.
+   *
+   * @param chatKey - The chat.
+   */
+  listForChat(chatKey: string): TurnRun[] {
+    return this.db
+      .select()
+      .from(turnRuns)
+      .where(eq(turnRuns.sessionId, chatKey))
+      .orderBy(turnRuns.chatSeq)
+      .all()
+      .map(toRun);
+  }
+
+  /**
+   * The chat's live run (`starting`, `started` or `running`), if it has one.
+   *
+   * @param chatKey - The chat.
+   */
+  liveRunOf(chatKey: string): TurnRun | undefined {
+    const row = this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(eq(turnRuns.sessionId, chatKey), inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES]))
+      )
+      .get();
+    return row ? toRun(row) : undefined;
+  }
+
+  /**
+   * The newest run that waits on a queue row, whatever its status.
+   *
+   * @param queueMessageId - The row.
+   */
+  findByQueueMessage(queueMessageId: string): TurnRun | undefined {
+    const rows = this.db
+      .select()
+      .from(turnRuns)
+      .where(eq(turnRuns.queueMessageId, queueMessageId))
+      .orderBy(turnRuns.chatSeq)
+      .all();
+    const row = rows.at(-1);
+    return row ? toRun(row) : undefined;
+  }
+
+  /**
+   * Create a run: `queued` (transition 1) or a runtime's own `running` turn
+   * (transition 2). Its `chat_seq` is allocated in the same transaction.
+   *
+   * @param input - The run.
+   * @returns The run as stored.
+   */
+  create(input: NewRun): TurnRun {
+    if (!canTransition(null, input.status)) {
+      throw new IllegalRunTransitionError(input.id ?? '(new)', null, input.status);
+    }
+    return this.transaction(() => {
+      const id = input.id ?? ulid();
+      const seq =
+        (this.db
+          .select({ value: max(turnRuns.chatSeq) })
+          .from(turnRuns)
+          .where(eq(turnRuns.sessionId, input.chatKey))
+          .get()?.value ?? 0) + 1;
+      const at = new Date(this.now()).toISOString();
+      const live = input.status === 'running';
+      this.db
+        .insert(turnRuns)
+        .values({
+          id,
+          sessionId: input.chatKey,
+          chatSeq: seq,
+          chainId: id,
+          agentId: input.agentId ?? null,
+          originJson: input.origin ? JSON.stringify(input.origin) : null,
+          openedBy: input.openedBy,
+          status: input.status,
+          queueMessageId: input.queueMessageId ?? null,
+          runtime: input.runtime ?? null,
+          runtimeTurnRef: input.runtimeTurnRef ?? null,
+          ...(live ? this.lease() : {}),
+          createdAt: at,
+          ...(live ? { startedAt: at, deliveredAt: at } : {}),
+        })
+        .run();
+      return this.get(id)!;
+    });
+  }
+
+  /**
+   * Move a run to a new status, checked against the transition table, with
+   * the columns that change beside it. Writes only if the run is still in the
+   * status it was read in, so two writers can never both move it.
+   *
+   * @param run - The run, as just read.
+   * @param to - The status to move it to.
+   * @param patch - Columns to set in the same write.
+   * @returns The run as stored after the move.
+   * @throws {IllegalRunTransitionError} When the pair is not one of the fifteen.
+   */
+  move(run: TurnRun, to: RunStatus, patch: RunPatch = {}): TurnRun {
+    if (!canTransition(run.status, to)) throw new IllegalRunTransitionError(run.id, run.status, to);
+    const changed = this.db
+      .update(turnRuns)
+      .set({ status: to, ...patchColumns(patch) })
+      .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, run.status)))
+      .run().changes;
+    if (changed === 0) throw new IllegalRunTransitionError(run.id, run.status, to);
+    return this.get(run.id)!;
+  }
+
+  /**
+   * Set columns without moving the status: an ending observed at `turn_end`, a
+   * stop request, a person's ask opening.
+   *
+   * @param runId - The run.
+   * @param patch - The columns.
+   */
+  annotate(runId: string, patch: RunPatch): void {
+    this.db.update(turnRuns).set(patchColumns(patch)).where(eq(turnRuns.id, runId)).run();
+  }
+
+  /** The owner columns a run gets when it goes live: this boot, leased from now. */
+  lease(): { ownerEpoch: string; leaseUntil: number } {
+    return { ownerEpoch: this.opts.epoch, leaseUntil: this.now() + RUN_LEASE_MS };
+  }
+
+  /** Now, as the ISO 8601 text the record's times use. */
+  stamp(): string {
+    return new Date(this.now()).toISOString();
+  }
+
+  /**
+   * Renew the lease of every live run this boot owns (§4.1).
+   *
+   * @returns How many leases were renewed.
+   */
+  renewLeases(): number {
+    return this.db
+      .update(turnRuns)
+      .set({ leaseUntil: this.now() + RUN_LEASE_MS })
+      .where(
+        and(
+          eq(turnRuns.ownerEpoch, this.opts.epoch),
+          inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES])
+        )
+      )
+      .run().changes;
+  }
+
+  /**
+   * Whether a live run's owner is gone: another boot owned it and its lease
+   * ran out (§7.1). A run this boot owns is never dead, however late its
+   * lease, which is what keeps a laptop's sleep from killing its own turns.
+   *
+   * @param run - A live run.
+   */
+  ownerIsGone(run: TurnRun): boolean {
+    return (
+      run.ownerEpoch !== this.opts.epoch && (run.leaseUntil === null || run.leaseUntil < this.now())
+    );
+  }
+
+  /**
+   * Every live run another boot owned whose lease ran out (§7.1).
+   *
+   * @param chatKey - Only this chat's, when given.
+   */
+  deadLiveRuns(chatKey?: string): TurnRun[] {
+    return this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(
+          inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES]),
+          ne(turnRuns.ownerEpoch, this.opts.epoch),
+          lt(turnRuns.leaseUntil, this.now()),
+          ...(chatKey !== undefined ? [eq(turnRuns.sessionId, chatKey)] : [])
+        )
+      )
+      .all()
+      .map(toRun);
+  }
+
+  /**
+   * This boot's runs that are `started` or `running`: what a graceful
+   * shutdown ends.
+   */
+  ownTurnsRunning(): TurnRun[] {
+    return this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(
+          eq(turnRuns.ownerEpoch, this.opts.epoch),
+          inArray(turnRuns.status, ['started', 'running']),
+          isNotNull(turnRuns.ownerEpoch)
+        )
+      )
+      .all()
+      .map(toRun);
+  }
+
+  /**
+   * Move a chat's runs to a new id, after any runs already there, so
+   * `chat_seq` stays unique and in order.
+   *
+   * @param fromChatKey - The id they are kept under.
+   * @param toChatKey - The id they move to.
+   */
+  rekeyChat(fromChatKey: string, toChatKey: string): void {
+    if (fromChatKey === toChatKey) return;
+    this.transaction(() => {
+      const moving = this.listForChat(fromChatKey);
+      if (moving.length === 0) return;
+      const tail =
+        this.db
+          .select({ value: max(turnRuns.chatSeq) })
+          .from(turnRuns)
+          .where(eq(turnRuns.sessionId, toChatKey))
+          .get()?.value ?? 0;
+      moving.forEach((run, index) => {
+        this.db
+          .update(turnRuns)
+          .set({ sessionId: toChatKey, chatSeq: tail + index + 1 })
+          .where(eq(turnRuns.id, run.id))
+          .run();
+      });
+    });
+  }
+}

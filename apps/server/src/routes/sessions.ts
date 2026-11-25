@@ -43,6 +43,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { forkPlace } from './session-launcher.js';
 import { invalidSessionId, ownerRefusalReply, sessionNotFound } from './session-route-replies.js';
 import { recordChatFork } from '../services/work-graph/index.js';
+import { recordStopReceipt, recordStopRequest } from '../services/runs/index.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -762,12 +763,16 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     // returns to their composer. That promise holds on EVERY outcome, `failed`
     // included.
     const cancelledQueued = clearQueuedMessages(sessionId);
+    // The request is on the turn's run before the runtime is asked, so a crash
+    // between the two still shows somebody asked (spec `turns-survive-restarts` §4.4).
+    const stoppedRun = recordStopRequest(sessionId, { via: 'stop' });
     try {
       // A receipt, not an `ok` (spec `runtime-interrupt-receipts` D3). The boolean
       // this replaced was wrong on `not-running` in both directions at once —
       // nothing failed, yet `ok` was `false` — and it told the person nothing
       // about the one ending where pressing Stop again is the only move they have.
       const receipt = await runtime.interruptQuery(sessionId);
+      recordStopReceipt(stoppedRun, receipt);
       return c.json({ receipt, cancelledQueued });
     } catch (err) {
       // Adapters are contractually forbidden from throwing for an ordinary refusal
@@ -786,6 +791,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
         reason: 'delivery-failed',
         runtime: runtime.type,
       };
+      recordStopReceipt(stoppedRun, receipt);
       return c.json({ receipt, cancelledQueued });
     }
   });

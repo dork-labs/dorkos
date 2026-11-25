@@ -430,6 +430,8 @@ apps/server/src/
 │   │   │                         #   unified-scanner for filesystem scanning; Mesh is always-on)
 │   ├── memory/                   # MemoryProvider capabilities and provider registry
 │   ├── search/                   # FTS5 message search index (indexer, jsonl-frontier, per-runtime discovery)
+│   ├── runs/                     # The run record: one row per attempt of a turn (turn_runs), fed by
+│   │                             #   the turn code's facts sink (session/turn-port); space side
 │   ├── session/                  # Session aggregation, activity, asks, attachments, browser-seat
 │   ├── identity/                 # Avatars, display names, operator profile, team aggregation
 │   ├── notifications/            # Notification center (channels/, emitters/, escalation-service)
