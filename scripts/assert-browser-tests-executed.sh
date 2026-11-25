@@ -272,6 +272,10 @@ FILTERED_SPECS=(
 #     live and after a durable replay, on phone and desktop (DOR-4534). Registered
 #     into chat-mock-session.spec.ts: its `codex-git-refusal` scenario exists only
 #     behind DORKOS_TEST_RUNTIME, and the same `tests/chat/` extension rule applies.
+#   chat/ref-link-chip.ts — a `/r/dork:chat:` link in a reply draws the chat's
+#     live chip (DOR-5202, #4334). Registered into chat-mock-session.spec.ts: the
+#     test-mode runtime echoes the link back, which exists only behind
+#     DORKOS_TEST_RUNTIME, and the same `tests/chat/` extension rule applies.
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
@@ -280,6 +284,7 @@ REGISTERED_MODULES=(
   'chat/interactive-prompts.ts'
   'chat/live-turn-visibility.ts'
   'chat/project-addons-notice.ts'
+  'chat/ref-link-chip.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
   'connections/chat-connect-card.ts'
