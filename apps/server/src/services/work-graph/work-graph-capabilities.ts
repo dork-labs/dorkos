@@ -10,9 +10,9 @@
  * ## The chat comes from the caller's own token, never from the request
  *
  * The input holds no chat, and an unknown field is refused. The chat is the one
- * the presented identity token was minted for (`AgentIdentity.chatId`,
- * `core/agent-identity/token-chats.ts`), which only that chat's own process
- * carries. A session or runtime principal id the surface set beside it must
+ * a live process holding the presented identity token runs
+ * (`AgentIdentity.chatId`, `core/agent-identity/token-chats.ts`), and only that
+ * chat's own processes carry the token. A session or runtime principal id the surface set beside it must
  * agree with it, or the call is refused rather than one of them picked.
  *
  * ## Only a chat's own turn, right now

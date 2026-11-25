@@ -43,7 +43,7 @@ afterEach(() => {
 function boot(token: string): SpawnedProcess {
   const options = { env: { DORKOS_AGENT_TOKEN: token } } as unknown as Options;
   const child = createTrackedSpawn(new WarmProcessLedger(dorkHome), () =>
-    startLaunchedProcess(options)
+    startLaunchedProcess(options, CHAT)
   )({
     command: process.execPath,
     args: ['-e', 'setTimeout(() => {}, 30000)'],
@@ -55,7 +55,14 @@ function boot(token: string): SpawnedProcess {
   return child;
 }
 
-const mint = () => identities.mint({ agentPath: '/agents/ana', displayName: 'Ana', chatId: CHAT });
+const mint = () => identities.mint({ agentPath: '/agents/ana', displayName: 'Ana' });
+
+/** Kill one child and wait for its exit to land. */
+async function end(child: SpawnedProcess): Promise<void> {
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  child.kill('SIGKILL');
+  await exited;
+}
 
 describe('a launched process and the chat its token names', () => {
   it('an old process exiting after its replacement booted forgets only its own token', async () => {
@@ -64,10 +71,42 @@ describe('a launched process and the chat its token names', () => {
     const newToken = await mint();
     boot(newToken);
 
-    old.kill('SIGKILL');
-    await vi.waitFor(async () =>
-      expect((await identities.resolve(oldToken))?.chatId).toBeUndefined()
-    );
+    expect((await identities.resolve(oldToken))?.chatId).toBe(CHAT);
+
+    await end(old);
+    expect((await identities.resolve(oldToken))?.chatId).toBeUndefined();
     expect((await identities.resolve(newToken))?.chatId).toBe(CHAT);
+  });
+
+  it('a minted token names nothing until a process holds it', async () => {
+    expect((await identities.resolve(await mint()))?.chatId).toBeUndefined();
+    expect(identities.chats.size).toBe(0);
+  });
+
+  it('a crash recovery on the same token keeps it named until the last process ends', async () => {
+    const token = await mint();
+    const crashed = boot(token);
+    const recovered = boot(token);
+    await end(crashed);
+    expect((await identities.resolve(token))?.chatId).toBe(CHAT);
+    await end(recovered);
+    expect((await identities.resolve(token))?.chatId).toBeUndefined();
+  });
+
+  it('a spawn that never starts gives its hold back', async () => {
+    const token = await mint();
+    const options = { env: { DORKOS_AGENT_TOKEN: token } } as unknown as Options;
+    const child = createTrackedSpawn(new WarmProcessLedger(dorkHome), () =>
+      startLaunchedProcess(options, CHAT)
+    )({
+      command: path.join(dorkHome, 'no-such-binary'),
+      args: [],
+      cwd: dorkHome,
+      env: { ...process.env },
+      signal: new AbortController().signal,
+    });
+    expect(identities.chats.size).toBe(1);
+    await new Promise((resolve) => child.once('error', resolve));
+    await vi.waitFor(() => expect(identities.chats.size).toBe(0));
   });
 });

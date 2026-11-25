@@ -304,8 +304,7 @@ export async function resolveLaunch(args: {
   const agentDisplayName = meshAgent?.displayName ?? meshAgent?.name;
   const agentTokenEnv = await resolveAgentTokenEnv(
     meshAgent ? turnAgentPath : undefined,
-    agentDisplayName,
-    sessionId
+    agentDisplayName
   );
 
   // Which Claude Code account this turn runs and BILLS on (spec

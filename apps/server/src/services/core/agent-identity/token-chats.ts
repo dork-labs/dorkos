@@ -1,46 +1,48 @@
 /**
- * Which chat each minted identity token was minted for (DOR-5264), so a script
- * a chat runs can say what that chat did without ever naming the chat: the
- * server reads it off the token the chat's own process carries.
+ * Which chat each identity token's process runs (DOR-5264), so a script a chat
+ * runs can say what that chat did without ever naming the chat: the server
+ * reads it off the token the chat's own process carries.
  *
  * ## In memory only, and why that is enough
  *
- * The map holds a token's digest and the chat it was minted for, never the
+ * The map holds a token's digest and the chat its process runs, never the
  * token. A restart empties it, and so does nothing worse than refuse: a token
  * with no entry names no chat, and a capability that needs one refuses the
  * call. It never falls back to another chat.
  *
  * ## How long an entry lives
  *
- * A launch mints a token per dispatch, but a warm Claude Code process keeps the
- * one from its first launch for every later turn (the launch fingerprint pins
- * the identity, not the token). So an entry lives while the process that holds
- * the token can: until THAT process ends (forgotten by its own token, never by
- * chat, so a restart's new process keeps its entry however the old one's exit
- * lands), its agent's tokens are revoked, the server restarts, or the map is
- * full and it is the oldest. A chat that is deleted ends its process, and so
- * its entry. An entry is not a pass on its own: the one reader,
- * `work-graph.record-pr`, also needs a live run of that chat right now.
+ * A token is entered when a process that holds it starts (Claude Code at its
+ * spawn, Codex when a thread loads with it), never when it is minted: a launch
+ * mints one per dispatch, and a warm process keeps the one it started with, so
+ * a token minted for a turn that rode a warm process reaches no process and is
+ * never entered. Each process that holds a token counts once, because a crash
+ * recovery boots a new process on the same token, and the entry goes when the
+ * last of them ends: an old process's late exit never takes a newer one's
+ * entry. Past {@link TOKEN_CHAT_LIMIT} the least recently used entry goes
+ * first, and reading one counts as use. A restart empties the map.
  *
- * No launch knows its run id yet, so an entry names a chat. C18 (DOR-5278,
- * spec `computer-side-starts-alone` §5.3) makes it a token per run, gone when
- * the run ends, for every runtime.
+ * An entry is not a pass on its own: the one reader, `work-graph.record-pr`,
+ * also needs a live run of that chat right now, and a revoked token names no
+ * chat at all. No launch knows its run id yet, so an entry names a chat. C18
+ * (DOR-5278, spec `computer-side-starts-alone` §5.3) makes it a token per run,
+ * gone when the run ends, for every runtime.
  *
  * @module services/core/agent-identity/token-chats
  */
 
-/** The most entries kept; past it the oldest goes first. */
+/** The most entries kept; past it the least recently used goes first. */
 export const TOKEN_CHAT_LIMIT = 4096;
 
 /** What one entry says. */
 interface TokenChat {
-  /** The chat the token was minted for. */
+  /** The chat the token's processes run. */
   chatId: string;
-  /** The agent it was minted for, so revoking the agent drops it. */
-  agentPath: string;
+  /** How many live processes hold the token. */
+  holders: number;
 }
 
-/** Token digest → the chat it was minted for, oldest first. */
+/** Token digest → the chat its processes run, least recently used first. */
 export class TokenChats {
   private readonly entries = new Map<string, TokenChat>();
 
@@ -51,16 +53,24 @@ export class TokenChats {
    */
   constructor(private readonly limit = TOKEN_CHAT_LIMIT) {}
 
+  /** How many tokens name a chat right now. */
+  get size(): number {
+    return this.entries.size;
+  }
+
   /**
-   * Remember the chat a token was minted for.
+   * A process holding the token has started, for this chat.
    *
    * @param tokenHash - The token's stored digest.
-   * @param chatId - The chat its process runs.
-   * @param agentPath - The agent it names.
+   * @param chatId - The chat the process runs.
    */
-  bind(tokenHash: string, chatId: string, agentPath: string): void {
+  hold(tokenHash: string, chatId: string): void {
+    const held = this.entries.get(tokenHash);
     this.entries.delete(tokenHash);
-    this.entries.set(tokenHash, { chatId, agentPath });
+    this.entries.set(tokenHash, {
+      chatId,
+      holders: held?.chatId === chatId ? held.holders + 1 : 1,
+    });
     while (this.entries.size > this.limit) {
       const oldest = this.entries.keys().next().value;
       if (oldest === undefined) break;
@@ -69,30 +79,30 @@ export class TokenChats {
   }
 
   /**
-   * The chat a token was minted for, or `undefined` when no entry holds it.
+   * The chat a token's processes run, or `undefined` when no entry holds it.
+   * A read counts as use, so live tokens are the last to go.
    *
    * @param tokenHash - The presented token's digest.
    */
   chatOf(tokenHash: string): string | undefined {
-    return this.entries.get(tokenHash)?.chatId;
+    const entry = this.entries.get(tokenHash);
+    if (entry === undefined) return undefined;
+    this.entries.delete(tokenHash);
+    this.entries.set(tokenHash, entry);
+    return entry.chatId;
   }
 
   /**
-   * Drop the entries for these tokens: the process that held them has ended.
+   * A process holding each of these tokens has ended; an entry goes with its last holder.
    *
    * @param tokenHashes - The tokens' stored digests.
    */
-  forgetTokens(tokenHashes: readonly string[]): void {
-    for (const hash of tokenHashes) this.entries.delete(hash);
-  }
-
-  /**
-   * Drop every entry for an agent whose tokens were revoked.
-   *
-   * @param agentPath - The agent.
-   */
-  forgetAgent(agentPath: string): void {
-    for (const [hash, entry] of this.entries)
-      if (entry.agentPath === agentPath) this.entries.delete(hash);
+  release(tokenHashes: readonly string[]): void {
+    for (const hash of tokenHashes) {
+      const entry = this.entries.get(hash);
+      if (entry === undefined) continue;
+      if (entry.holders > 1) entry.holders -= 1;
+      else this.entries.delete(hash);
+    }
   }
 }

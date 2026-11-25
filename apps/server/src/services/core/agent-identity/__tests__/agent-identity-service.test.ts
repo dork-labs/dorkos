@@ -8,6 +8,7 @@ import {
   TOKEN_ABSOLUTE_TTL_MS,
   TOKEN_IDLE_TTL_MS,
 } from '../agent-identity-service.js';
+import { TokenChats } from '../token-chats.js';
 
 const AGENT_PATH = '/projects/researcher';
 
@@ -43,6 +44,19 @@ describe('AgentIdentityService', () => {
       await service.revoke(AGENT_PATH);
       expect(await service.resolve(token)).toMatchObject({ inactive: 'revoked' });
       expect((await service.resolve(token))?.chatId).toBeUndefined();
+    });
+
+    it('lets the least recently read entry go first when full', () => {
+      const chats = new TokenChats(2);
+      chats.hold('a', 'chat-a');
+      chats.hold('b', 'chat-b');
+      expect(chats.chatOf('a')).toBe('chat-a');
+      chats.hold('c', 'chat-c');
+      expect([chats.chatOf('a'), chats.chatOf('b'), chats.chatOf('c')]).toEqual([
+        'chat-a',
+        undefined,
+        'chat-c',
+      ]);
     });
 
     it('is gone in a fresh process', async () => {

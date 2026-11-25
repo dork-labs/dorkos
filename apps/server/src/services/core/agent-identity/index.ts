@@ -8,6 +8,7 @@ export {
   AgentIdentityService,
   agentTokenDigestPrefix,
   forgetAgentTokens,
+  holdTokenChat,
   initAgentIdentityService,
   getAgentIdentityService,
   resetAgentIdentityService,
@@ -19,6 +20,7 @@ export {
 export {
   resolveAgentTokenEnv,
   forgetTokenChatOf,
+  holdTokenChatOf,
   ensureInSessionAgentIdentity,
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,

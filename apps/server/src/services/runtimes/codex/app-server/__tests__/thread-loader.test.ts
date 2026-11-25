@@ -406,6 +406,25 @@ describe('DOR-5264: the token a load mints names its chat until the thread goes'
     }
   );
 
+  it('a load that failed names no chat with the token it minted', async () => {
+    const identities = initAgentIdentityService(createTestDb());
+    const { loader, input, host } = await setup();
+    const minted: string[] = [];
+    const tools: CodexTurnTools = {
+      ...NO_TOOLS,
+      mintAgentToken: async (chatId) => {
+        const env = await resolveAgentTokenEnv('/agents/ana', 'Ana', chatId);
+        minted.push(env.DORKOS_AGENT_TOKEN!);
+        return env;
+      },
+    };
+    host.home(HOME).threadStartError = 'refused';
+    await expect(loader.ensureLoaded(input({ tools }))).rejects.toBeDefined();
+    expect(minted).toHaveLength(1);
+    expect((await identities.resolve(minted[0]!))?.chatId).toBeUndefined();
+    expect(identities.chats.size).toBe(0);
+  });
+
   it('an old process exiting after a new one loaded the chat forgets only its own token', async () => {
     const identities = initAgentIdentityService(createTestDb());
     const { loader, input, pool, host } = await setup();

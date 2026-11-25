@@ -40,7 +40,10 @@ import { fireLaunchProbes } from '../messaging/launch-probes.js';
 import { noteLaunchedAppend } from '../messaging/turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
 import { startHeavyJobsProcess } from '../tool-gate/load-gate-hook.js';
-import { forgetTokenChatOf } from '../../../core/agent-identity/agent-token-env.js';
+import {
+  forgetTokenChatOf,
+  holdTokenChatOf,
+} from '../../../core/agent-identity/agent-token-env.js';
 import type { MessageSenderOpts, ResolvedLaunch } from '../messaging/message-sender-shared.js';
 import { captureLaunchFingerprint } from './launch-fingerprint.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
@@ -150,17 +153,24 @@ export function pumpLaunchCallbacks(slot: LiveProcessSlot): PumpLaunchCallbacks 
 }
 
 /**
- * A persistent process is starting with `options`. What it holds is given back
- * when THIS process exits, never when another process of its chat does: its
- * heavy-job slots (DOR-4209), and the chat its identity token names (DOR-5264),
- * so a restart's new process keeps its own token's chat however late the old
- * process's exit lands. Never throws.
+ * A persistent process is starting with `options`, for `chatId`. Its identity
+ * token names that chat from now (DOR-5264): a token minted for a turn that
+ * rode a warm process reaches no process and names nothing. What it holds is
+ * given back when THIS process exits, never when another process of its chat
+ * does: its heavy-job slots (DOR-4209) and its hold on the token's chat, so a
+ * restart's new process keeps its own however late the old one's exit lands.
+ * Never throws.
  *
  * @param options - The options the process is launched with.
+ * @param chatId - The chat it runs.
  * @returns What to call when this process exits.
  */
-export function startLaunchedProcess(options: Pick<Options, 'hooks' | 'env'>): () => void {
+export function startLaunchedProcess(
+  options: Pick<Options, 'hooks' | 'env'>,
+  chatId: string
+): () => void {
   const releaseHeavyJobs = startHeavyJobsProcess(options);
+  holdTokenChatOf(options.env, chatId);
   return () => {
     releaseHeavyJobs();
     forgetTokenChatOf(options.env);
@@ -212,7 +222,7 @@ export function createPumpLauncher(
       options: {
         ...plan.sdkOptions,
         spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger(), () =>
-          startLaunchedProcess(plan.sdkOptions)
+          startLaunchedProcess(plan.sdkOptions, sessionId)
         ),
       },
       session,

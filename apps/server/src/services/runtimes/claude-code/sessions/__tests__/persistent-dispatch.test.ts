@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, SDKMessage, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -218,6 +218,7 @@ import { resolveAgentTokenEnv as realTokenEnv } from '../../../../core/agent-ide
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
+  type AgentIdentityService,
 } from '../../../../core/agent-identity/agent-identity-service.js';
 import { setTurnContextStore } from '../../../../session/turn-context/record-turn-context.js';
 import { TurnContextStore } from '../../../../session/turn-context/turn-context-store.js';
@@ -1187,34 +1188,6 @@ describe('what a warm process must be re-checked for', () => {
     expect(cli.launches).toBe(2);
     expect(cli.processes[0]!.ended).toBe(true);
     expect(cli.processes[1]!.options.systemPrompt).toMatchObject({ append: '<env>MOVED</env>' });
-  });
-
-  it('keeps the new process\u2019s token on its chat through a restart (DOR-5264)', async () => {
-    // The real mint, so the new process's token is bound to the chat as in
-    // production; the old one's teardown must not take that binding with it.
-    const identities = initAgentIdentityService(createTestDb());
-    vi.mocked(resolveAgentTokenEnv).mockImplementation((_path, name, chatId) =>
-      realTokenEnv('/agents/pump', name ?? 'Pump', chatId)
-    );
-    try {
-      const sessionId = nextSession();
-      await turn(sessionId);
-      const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
-      vi.mocked(buildSystemPromptAppend).mockResolvedValue({
-        text: '<env>MOVED AGAIN</env>',
-        stable: '<env>MOVED AGAIN</env>',
-      });
-      await turn(sessionId, 'after the change');
-
-      expect(cli.launches).toBe(2);
-      expect(cli.processes[0]!.ended).toBe(true);
-      const token = cli.processes[1]!.options.env?.DORKOS_AGENT_TOKEN;
-      expect(token).toEqual(expect.any(String));
-      expect((await identities.resolve(token!))?.chatId).toBe(sessionId);
-    } finally {
-      vi.mocked(resolveAgentTokenEnv).mockResolvedValue({});
-      resetAgentIdentityService();
-    }
   });
 
   it('moves a live pin on the running process instead of replacing it', async () => {
@@ -3232,3 +3205,79 @@ it.each([
     }
   }
 );
+
+describe('the chat a process\u2019s identity token names (DOR-5264)', () => {
+  let identities: AgentIdentityService;
+  const children: SpawnedProcess[] = [];
+
+  beforeEach(() => {
+    identities = initAgentIdentityService(createTestDb());
+    // The real mint, which names no chat: a token names one once a process holds it.
+    vi.mocked(resolveAgentTokenEnv).mockImplementation((_path, name) =>
+      realTokenEnv('/agents/pump', name ?? 'Pump')
+    );
+    // Each process boots through the spawn the pump hands the SDK, as the real
+    // SDK does, here as a real child that lives until this case kills it.
+    mockedQuery.mockImplementation(((args: {
+      prompt: AsyncIterable<unknown>;
+      options: Options;
+    }) => {
+      const child = args.options.spawnClaudeCodeProcess?.({
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 60000)'],
+        cwd: dorkHome,
+        env: { ...process.env },
+        signal: new AbortController().signal,
+      });
+      if (child) children.push(child);
+      return cli.query(args);
+    }) as unknown as typeof query);
+  });
+
+  afterEach(() => {
+    // Only ever the children this case started, through their own handles.
+    for (const child of children.splice(0))
+      if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
+    vi.mocked(resolveAgentTokenEnv).mockResolvedValue({});
+    resetAgentIdentityService();
+  });
+
+  const tokenOf = (index: number) => cli.processes[index]!.options.env!.DORKOS_AGENT_TOKEN!;
+
+  it('adds no entry for the turns that ride a warm process', async () => {
+    optIn.persistentSession = true;
+    const sessionId = nextSession();
+    for (let i = 0; i < 10; i += 1) await turn(sessionId, `turn ${i}`);
+
+    expect(cli.launches).toBe(1);
+    expect(identities.chats.size).toBe(1);
+    expect((await identities.resolve(tokenOf(0)))?.chatId).toBe(sessionId);
+  });
+
+  it('keeps a restarted process\u2019s token on its chat when the old exit lands late', async () => {
+    optIn.persistentSession = true;
+    const sessionId = nextSession();
+    await turn(sessionId);
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>MOVED AGAIN</env>',
+      stable: '<env>MOVED AGAIN</env>',
+    });
+    await turn(sessionId, 'after the change');
+    expect(cli.launches).toBe(2);
+
+    const exited = new Promise((resolve) => children[0]!.once('exit', resolve));
+    children[0]!.kill('SIGKILL');
+    await exited;
+    expect((await identities.resolve(tokenOf(0)))?.chatId).toBeUndefined();
+    expect((await identities.resolve(tokenOf(1)))?.chatId).toBe(sessionId);
+    expect(identities.chats.size).toBe(1);
+  });
+
+  it('names the chat only for the turn on the per-message path', async () => {
+    const sessionId = nextSession();
+    for (let i = 0; i < 3; i += 1) await turn(sessionId, `turn ${i}`);
+
+    expect(cli.launches).toBe(3);
+    expect(identities.chats.size).toBe(0);
+  });
+});

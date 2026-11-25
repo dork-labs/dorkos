@@ -120,8 +120,8 @@ export interface AgentIdentity {
    */
   inactive?: 'revoked' | 'expired';
   /**
-   * The chat the presented token was minted for (DOR-5264), from this
-   * process's memory (`token-chats.ts`). Set only by {@link AgentIdentityService.resolve},
+   * The chat a live process holding the presented token runs (DOR-5264),
+   * from this server's memory (`token-chats.ts`). Set only by {@link AgentIdentityService.resolve},
    * only for a live token, and only while its entry lasts. Absent means the
    * token names no chat; it never names another one.
    */
@@ -134,7 +134,12 @@ export interface MintAgentTokenInput {
   agentPath: string;
   /** Human-readable agent name. */
   displayName: string;
-  /** The chat whose process the token is for, when the launch knows it. */
+  /**
+   * The chat of the process this token goes to now, when the minter hands it
+   * straight to one (Codex at thread load). It counts as that process holding
+   * it (`token-chats.ts`); a minter that may never use the token leaves it out
+   * and calls {@link holdTokenChat} when a process starts with it.
+   */
   chatId?: string;
 }
 
@@ -220,7 +225,7 @@ export class AgentIdentityService {
       lastUsedAt: null,
       revokedAt: null,
     });
-    if (input.chatId) this.chats.bind(tokenHash, input.chatId, input.agentPath);
+    if (input.chatId) this.chats.hold(tokenHash, input.chatId);
     return token;
   }
 
@@ -375,7 +380,6 @@ export class AgentIdentityService {
    */
   async revoke(agentPath: string): Promise<number> {
     const revokedAt = new Date().toISOString();
-    this.chats.forgetAgent(agentPath);
     const live = await this.db
       .select({ tokenHash: agentIdentityTokens.tokenHash })
       .from(agentIdentityTokens)
@@ -428,15 +432,26 @@ export function getAgentIdentityService(): AgentIdentityService | undefined {
 }
 
 /**
- * Forget which chat these tokens were minted for: the process that held them
- * has ended (DOR-5264, `token-chats.ts`). Only these tokens, never every token
- * of their chat, so a process that replaced them keeps its own. The tokens
- * themselves stay valid; they just name no chat any more.
+ * A process holding `token` has started, for `chatId` (DOR-5264,
+ * `token-chats.ts`): until it ends, the token names that chat.
+ *
+ * @param token - The token the process holds.
+ * @param chatId - The chat it runs.
+ */
+export function holdTokenChat(token: string, chatId: string): void {
+  service?.chats.hold(hashToken(token), chatId);
+}
+
+/**
+ * A process holding each of these tokens has ended (DOR-5264,
+ * `token-chats.ts`). Only these tokens, never every token of their chat, and
+ * each names its chat until the last process holding it ends, so a process
+ * that replaced this one keeps its own. The tokens themselves stay valid.
  *
  * @param tokens - The tokens the ended process held.
  */
 export function forgetAgentTokens(...tokens: string[]): void {
-  service?.chats.forgetTokens(tokens.map(hashToken));
+  service?.chats.release(tokens.map(hashToken));
 }
 
 /**

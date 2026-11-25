@@ -119,9 +119,21 @@ interface LoadedRecord {
   /** Digest of the credential VALUES it loaded with (see `credentialsOf`). */
   readonly credentials: string;
   readonly keyId: string | undefined;
+  /** The identity token this load minted: it names its chat while this thread is loaded (DOR-5264). */
+  readonly agentToken?: string;
   /** Not yet persisted (no turn has started on it). */
   unbound: boolean;
   replaces: string | undefined;
+}
+
+/** The identity token one load minted, once it has (DOR-5264). */
+interface LoadToken {
+  token?: string;
+}
+
+/** A load that failed never reached a thread: its token names no chat. */
+function forgetLoadToken(load: LoadToken): void {
+  if (load.token) forgetAgentTokens(load.token);
 }
 
 /** Dependencies of {@link CodexThreadLoader}. */
@@ -137,13 +149,6 @@ export interface CodexThreadLoaderOptions {
 /** Loads threads, one record per (process, thread). */
 export class CodexThreadLoader {
   private readonly byProcess = new Map<string, Map<string, LoadedRecord>>();
-  /**
-   * The identity tokens loads minted, by process and then chat, so each names
-   * its chat only while its thread is loaded in that process (DOR-5264). Keyed
-   * by the process itself, not its pool key, which a replacement reuses, so an
-   * old process's late exit never forgets a new one's.
-   */
-  private readonly loadTokens = new WeakMap<CodexAppServerProcess, Map<string, string[]>>();
   private readonly realpath: (path: string) => string;
 
   /**
@@ -254,13 +259,15 @@ export class CodexThreadLoader {
     }
     const threadId = input.boundThreadId;
     if (threadId === undefined) return 'empty';
+    const load: LoadToken = {};
     try {
-      const { params } = await this.overrides(input, undefined);
+      const { params } = await this.overrides(input, undefined, load);
       await loadWithProtectedProfile(input.process.client, 'thread/resume', {
         threadId,
         ...params,
       });
     } catch (err) {
+      forgetLoadToken(load);
       if (isCodexRpcError(err, 'no-rollout', 'thread-not-found', 'archived')) return 'gone';
       throw err;
     }
@@ -270,6 +277,7 @@ export class CodexThreadLoader {
       compactionOnly: true,
       credentials: credentialsOf(input.tools),
       keyId: undefined,
+      agentToken: load.token,
       unbound: false,
       replaces: undefined,
     });
@@ -340,10 +348,11 @@ export class CodexThreadLoader {
       void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
     };
     const key = this.mintKey(input, 'fork');
+    const load: LoadToken = {};
     let forked: string;
     let modelNote: string | undefined;
     try {
-      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key, load);
       modelNote = note;
       forked = (
         await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
@@ -352,6 +361,7 @@ export class CodexThreadLoader {
       ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      forgetLoadToken(load);
       if (!isCodexRpcError(err, 'no-rollout')) throw err;
       retire();
       const fresh = await this.start(
@@ -369,6 +379,7 @@ export class CodexThreadLoader {
       fingerprint: this.fingerprintOf(input),
       credentials: credentialsOf(input.tools),
       keyId: key?.keyId,
+      agentToken: load.token,
       unbound: true,
       replaces,
     });
@@ -418,15 +429,17 @@ export class CodexThreadLoader {
       // Anything else: the resume below has the final word.
     }
     const key = this.mintKey(input, 'resume');
+    const load: LoadToken = {};
     let modelNote: string | undefined;
     try {
-      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key, load);
       modelNote = note;
       await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
         loadWithProtectedProfile(input.process.client, 'thread/resume', { threadId, ...params })
       );
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      forgetLoadToken(load);
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
       if (isCodexRpcError(err, 'no-rollout', 'thread-not-found'))
         return freshWith(THREAD_STARTS_FRESH_NOTICE);
@@ -438,6 +451,7 @@ export class CodexThreadLoader {
       fingerprint,
       credentials,
       keyId: key?.keyId,
+      agentToken: load.token,
       unbound: false,
       replaces: undefined,
     });
@@ -459,10 +473,11 @@ export class CodexThreadLoader {
     replaces: string | undefined
   ): Promise<LoadedThread> {
     const key = this.mintKey(input, 'start');
+    const load: LoadToken = {};
     let threadId: string;
     let modelNote: string | undefined;
     try {
-      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key, load);
       modelNote = note;
       threadId = (
         await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
@@ -471,6 +486,7 @@ export class CodexThreadLoader {
       ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      forgetLoadToken(load);
       throw err;
     }
     records.set(threadId, {
@@ -478,6 +494,7 @@ export class CodexThreadLoader {
       fingerprint,
       credentials,
       keyId: key?.keyId,
+      agentToken: load.token,
       unbound: true,
       replaces,
     });
@@ -530,9 +547,7 @@ export class CodexThreadLoader {
     if (!record) return;
     records!.delete(threadId);
     if (record.keyId) this.options.threadKeys()?.revoke(record.keyId, 'thread_unloaded');
-    const tokens = this.loadTokens.get(process);
-    forgetAgentTokens(...(tokens?.get(record.sessionId) ?? []));
-    tokens?.delete(record.sessionId);
+    if (record.agentToken) forgetAgentTokens(record.agentToken);
   }
 
   /**
@@ -593,8 +608,7 @@ export class CodexThreadLoader {
       process.onExit(() => {
         if (this.byProcess.get(process.key) === created) this.byProcess.delete(process.key);
         this.options.threadKeys()?.revokeProcess(process.key, 'process_exited');
-        forgetAgentTokens(...[...(this.loadTokens.get(process)?.values() ?? [])].flat());
-        this.loadTokens.delete(process);
+        forgetAgentTokens(...[...created.values()].flatMap((r) => r.agentToken ?? []));
       });
     }
     return records;
@@ -614,31 +628,24 @@ export class CodexThreadLoader {
     });
   }
 
-  /** Mint this load's identity token, naming its chat, and remember it for its thread's end. */
-  private async mintForLoad(input: ThreadLoadInput): Promise<Record<string, string>> {
-    const env = await input.tools.mintAgentToken!(input.sessionId);
-    const token = env[AGENT_TOKEN_ENV_VAR];
-    if (token) {
-      const byChat = this.loadTokens.get(input.process) ?? new Map<string, string[]>();
-      this.loadTokens.set(input.process, byChat);
-      byChat.set(input.sessionId, [...(byChat.get(input.sessionId) ?? []), token]);
-    }
-    return env;
-  }
-
   /** The load params, with real secrets, for the wire, and the load's line for the model. */
   private async overrides(
     input: ThreadLoadInput,
-    threadKey: string | undefined
+    threadKey: string | undefined,
+    load: LoadToken = {}
   ): Promise<{ params: ThreadLoadOverrides; modelNote: string | undefined }> {
     const realCwd = this.realpath(input.cwd);
     const { trust, modelNote } = await trustForLoad(input, realCwd);
     // The identity token is minted here, when a thread actually loads, not on
     // every turn: a loaded thread keeps the one it loaded with (spec §9).
+    // It names this chat from the mint (DOR-5264); `load` carries it to the
+    // thread's record, or to a failed load's catch, which forgets it.
     const agentTokenEnv =
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
-        ? await this.mintForLoad(input)
+        ? await input.tools.mintAgentToken(input.sessionId)
         : input.tools.agentTokenEnv;
+    if (agentTokenEnv !== input.tools.agentTokenEnv)
+      load.token = agentTokenEnv[AGENT_TOKEN_ENV_VAR];
     const params = buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {

@@ -211,7 +211,7 @@ describe('work-graph.record-pr', () => {
         'a chat whose process was disposed',
         async () => {
           const { token, identity } = await tokenFor(CHAT);
-          identities.chats.forgetTokens([createHash('sha256').update(token).digest('hex')]);
+          identities.chats.release([createHash('sha256').update(token).digest('hex')]);
           return contextOf(await identity());
         },
       ],

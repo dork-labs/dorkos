@@ -22,6 +22,7 @@ import { logger } from '../../../lib/logger.js';
 import {
   forgetAgentTokens,
   getAgentIdentityService,
+  holdTokenChat,
   type AgentIdentity,
 } from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
@@ -49,8 +50,8 @@ export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
  * @param agentPath - Absolute path to the agent's project directory, or
  *   `undefined` when the session's working directory hosts no registered agent.
  * @param displayName - Human-readable agent name for attribution labels.
- * @param chatId - The chat the spawned process runs, so a script it runs can
- *   act for that chat without naming it (DOR-5264, `token-chats.ts`).
+ * @param chatId - The chat of the process the token goes to now, when it goes
+ *   straight to one (Codex at thread load); see `MintAgentTokenInput.chatId`.
  * @returns `{ DORKOS_AGENT_TOKEN }`, or `{}` when no identity applies.
  */
 export async function resolveAgentTokenEnv(
@@ -96,9 +97,24 @@ export async function resolveAgentTokenEnv(
 }
 
 /**
- * The process launched with `env` has ended: its token names no chat any more
- * (DOR-5264). Only its own token, so a process that replaced it keeps its own.
+ * A process launched with `env` has started for `chatId`: its token names that
+ * chat until the process ends (DOR-5264). Pair it with {@link forgetTokenChatOf}.
  * Never throws.
+ *
+ * @param env - The environment the process is launched with.
+ * @param chatId - The chat it runs.
+ */
+export function holdTokenChatOf(
+  env: Readonly<Record<string, string | undefined>> | undefined,
+  chatId: string
+): void {
+  const token = env?.[AGENT_TOKEN_ENV_VAR];
+  if (token) holdTokenChat(token, chatId);
+}
+
+/**
+ * The process launched with `env` has ended: its token names its chat no more,
+ * unless another live process holds it too (DOR-5264). Never throws.
  *
  * @param env - The environment the ended process was launched with.
  */
