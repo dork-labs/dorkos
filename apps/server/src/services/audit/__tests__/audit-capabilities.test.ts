@@ -139,7 +139,7 @@ describe('the audit read capabilities', () => {
     const { registry, log } = setup();
     const admins = log.query({ action: 'auth.', limit: 1 }, { kind: 'owner' }).events[0]!;
     await expect(registry.invoke('audit.get', { id: admins.id }, ofAgent)).rejects.toMatchObject({
-      payload: { code: 'NOT_FOUND' },
+      payload: { code: 'AUDIT_EVENT_NOT_FOUND' },
     });
     await expect(registry.invoke('audit.get', { id: admins.id }, {})).resolves.toMatchObject({
       event: { action: 'auth.signed_in' },

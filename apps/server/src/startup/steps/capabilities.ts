@@ -205,6 +205,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // An agent's approved `change_permission` writes through the same owner
       // Settings does (spec `agent-permissions` D9).
       permissionService,
+      // The Activity feed is on every server, whatever runtimes started.
+      activityDeps: { activityService },
       ...(refs.mcpToolDeps && { operatorDeps: refs.mcpToolDeps }),
       ...(refs.marketplaceMcpDeps && { marketplaceDeps: refs.marketplaceMcpDeps }),
       // Ordinary MCP surfaces expose only provider-neutral discovery. Private
@@ -253,7 +255,11 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
-      auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
+      auditDeps: {
+        ...auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
+        // `running_chats` lists every agent, zero included, whatever runtimes started.
+        roster: () => refs.meshCore,
+      },
       // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
       agentPauseDeps: { pauses: agentPauses },
       // `approvals.withdraw`: an agent takes back its own waiting request (DOR-4586).

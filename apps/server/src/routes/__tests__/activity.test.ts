@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createActivityRoutes } from '../activity.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { createCapabilityHttpRoutes } from '../capability-http.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { operatorActivityDomain } from '../../services/activity/activity-capability.js';
+import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -20,6 +24,7 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+/** `GET /api/activity`, served by the capability mount from `operator.activity_list`. */
 describe('Activity routes', () => {
   let activityService: ActivityService;
   let db: Db;
@@ -27,8 +32,18 @@ describe('Activity routes', () => {
   beforeEach(() => {
     db = createTestDb();
     activityService = new ActivityService(db);
+    const registry = composeRegistry([operatorActivityDomain], {
+      logger: noopLogger,
+      activityDeps: { activityService },
+    });
     fixtureTarget.mount(
-      honoGroupListener({ path: '/api/activity', routes: createActivityRoutes(activityService) })
+      honoGroupListener({
+        path: '/',
+        routes: createCapabilityHttpRoutes({
+          registry: () => registry,
+          capabilities: operatorActivityDomain.capabilities,
+        }),
+      })
     );
   });
 
@@ -82,6 +97,37 @@ describe('Activity routes', () => {
       const res = await request(fixtureServer).get('/api/activity?limit=-1');
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('invalid_request');
+    });
+
+    it('answers exactly what the feed lists', async () => {
+      await activityService.emit({
+        actorType: 'user',
+        actorLabel: 'You',
+        category: 'tasks',
+        eventType: 'tasks.run_success',
+        summary: 'Tasks ran',
+      });
+      const res = await request(fixtureServer).get('/api/activity?limit=10');
+      expect(res.status).toBe(200);
+      const listed = await activityService.list({ limit: 10 });
+      expect(res.body).toEqual(JSON.parse(JSON.stringify(listed)));
+    });
+
+    it('answers 500 internal_error when the feed cannot be read', async () => {
+      vi.spyOn(activityService, 'list').mockRejectedValueOnce(new Error('disk gone'));
+      const res = await request(fixtureServer).get('/api/activity');
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe('internal_error');
+      expect(JSON.stringify(res.body)).not.toContain('disk gone');
+    });
+
+    it('is served on a server where the operator tools did not start', () => {
+      const bare = composeDorkOsCapabilityRegistry({
+        logger: noopLogger,
+        activityDeps: { activityService },
+      });
+      expect(bare.get('operator.activity_list')).toBeDefined();
+      expect(bare.get('operator.config_get')).toBeUndefined();
     });
 
     it('applies default limit of 50', async () => {

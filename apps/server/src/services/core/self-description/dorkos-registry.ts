@@ -30,6 +30,7 @@ import {
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
+import { operatorActivityDomain } from '../../activity/activity-capability.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { connectorExecutionDomain } from '../../connectors/execution/execution-capabilities.js';
@@ -74,7 +75,9 @@ export function composeDorkOsCapabilityRegistry(
   onInvocation?: CapabilityInvocationObserver
 ): CapabilityRegistry {
   const domains: CapabilityDomain[] = [];
+  // The feed is on every server; `operatorDomain` carries it when it starts.
   if (deps.operatorDeps) domains.push(operatorDomain);
+  else if (deps.activityDeps) domains.push(operatorActivityDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain, connectorHoldDomain);

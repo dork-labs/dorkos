@@ -61,15 +61,22 @@ import { readQuery } from '../http/request-query.js';
  * may join it.
  */
 export const HAND_SERVED_CAPABILITIES: Readonly<Record<string, string>> = Object.freeze({
-  'operator.activity_list': 'routes/activity.ts; moves onto the mount with the activity domain',
-  'audit.verify': 'routes/audit.ts; moves onto the mount with the audit domain',
-  'audit.query': 'routes/audit.ts; moves onto the mount with the audit domain',
-  'audit.get': 'routes/audit.ts; moves onto the mount with the audit domain',
-  'audit.account_timeline': 'routes/audit.ts; moves onto the mount with the audit domain',
-  'audit.running_chats': 'routes/running-chats.ts; moves onto the mount with the audit domain',
   'rooms.reseat_options': 'routes/room-reseat.ts; moves onto the mount with the rooms domain',
   'rooms.reseat': 'routes/room-reseat.ts; moves onto the mount with the rooms domain',
   'capabilities.list': 'routes/capabilities-catalog.ts; moves onto the mount with its page shape',
+});
+
+/**
+ * Hand middleware a capability path may skip, keyed `METHOD /path skips ALL
+ * /pattern` (Hono paths), each with why it has nothing to do there. Every
+ * other middleware registered after the mount on a capability path refuses the
+ * app ({@link assertNoCapabilityRouteCollisions}). Add one only when the
+ * middleware could never act on the path; otherwise fold its check into the
+ * capability.
+ */
+export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.freeze({
+  'GET /api/sessions/running skips ALL /api/sessions/:id/*':
+    'The session read guard acts only on a session id, and `running` is not one.',
 });
 
 /** What a declared path answers when its capability did not start on this server. */
@@ -270,9 +277,10 @@ export function compareRouteSpecificity(a: string, b: string): number {
  * registered before it that matches any of its requests; a hand route
  * registered after it that is more specific on a request both match (the
  * capability would take it); and hand middleware (`ALL`) registered after it
- * on a path it covers, which would never run for the capability. Middleware
+ * on a path it covers, which would never run for the capability, unless
+ * {@link SKIPPABLE_MIDDLEWARE} says why it has nothing to do there. Middleware
  * registered before the mount runs first, as for every route, and is not a
- * claim.
+ * claim. The mount's own routes are never counted against each other.
  *
  * @param app - The built app, every route group mounted.
  * @param capabilities - What the mount serves.
@@ -290,21 +298,34 @@ export function assertNoCapabilityRouteCollisions(
     shape: routeKey(route.method, route.path),
     segments: patternSegments(route.path),
   }));
-  const conflicts: string[] = [];
-  for (const capability of capabilities) {
+  const served = capabilities.flatMap((capability) => {
     const surface = capability.surfaces.http;
-    if (!surface) continue;
+    if (!surface) return [];
     const method = surface.method.toUpperCase();
     const path = honoPath(surface.path);
     const shape = routeKey(method, path);
-    const segments = patternSegments(path);
+    // The first route on its METHOD + path is the mount's own: the mount is
+    // registered before every hand route.
     const own = routes.find((route) => route.shape === shape);
+    return [{ capability, method, path, shape, own }];
+  });
+  // The mount orders its own routes itself (static before param), so one of
+  // them never shadows another.
+  const mounted = new Set(served.map(({ own }) => own));
+  const conflicts: string[] = [];
+  for (const { capability, method, path, shape, own } of served) {
+    const segments = patternSegments(path);
     const at = own?.index ?? -1;
     const name = `${shape} (${capability.id})`;
     for (const route of routes) {
-      if (route === own) continue;
+      if (mounted.has(route)) continue;
       if (route.method === 'ALL') {
-        if (route.index > at && patternsOverlap(segments, route.segments)) {
+        const skip = `${method} ${path} skips ${route.label}`;
+        if (
+          route.index > at &&
+          patternsOverlap(segments, route.segments) &&
+          !(skip in SKIPPABLE_MIDDLEWARE)
+        ) {
           conflicts.push(`${name} skips middleware ${route.label}`);
         }
         continue;
