@@ -2,6 +2,7 @@
 covers:
   - 'feat(api): community, cloud, hub and tunnel routes answer errors as problem documents (DOR-4979)'
   - 'fix(api): review round 1 on the community, cloud and hub problems (DOR-4979)'
+  - "fix(api): a taken space name answers space_name_taken, so it doesn't capture other refusals (DOR-4979)"
 ---
 
 ### Changed

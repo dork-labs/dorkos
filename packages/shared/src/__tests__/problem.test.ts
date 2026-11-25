@@ -167,7 +167,7 @@ describe('the space, account, tunnel, hub and computer codes', () => {
       ['space_rules_not_accepted', 403],
       ['space_limit_reached', 409],
       ['space_unsupported', 409],
-      ['name_taken', 409],
+      ['space_name_taken', 409],
       ['report_not_allowed', 409],
       ['reply_on_top_level_only', 409],
       ['move_pending', 409],

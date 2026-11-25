@@ -387,7 +387,7 @@ export const PROBLEM_CODE_LIST = [
   /** One of the space's caps: agents, members or storage. */
   { code: 'space_limit_reached', status: 409, title: 'This space’s limit was reached.' },
   { code: 'space_unsupported', status: 409, title: 'This space doesn’t support that.' },
-  { code: 'name_taken', status: 409, title: 'That name is taken in this space.' },
+  { code: 'space_name_taken', status: 409, title: 'That name is taken in this space.' },
   { code: 'report_not_allowed', status: 409, title: 'You can’t report this message.' },
   {
     code: 'reply_on_top_level_only',

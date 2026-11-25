@@ -217,7 +217,7 @@ describe('a person’s own conduct in a space, through this computer', () => {
       .send({ displayName: 'Olive Owner' });
     expect(taken.status).toBe(409);
     expect(taken.body.detail).toBe('That name is taken in this space. Try another.');
-    expect(taken.body.code).toBe('name_taken');
+    expect(taken.body.code).toBe('space_name_taken');
 
     fixture.adapter.acceptRules.mockRejectedValueOnce(new PinnedHttpError(409, 'STATE_CONFLICT'));
     const stale = await request(server).post(`${base}/rules/accept`).send({ version: 2 });

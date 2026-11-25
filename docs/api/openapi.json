@@ -333,7 +333,7 @@
           "space_rules_not_accepted",
           "space_limit_reached",
           "space_unsupported",
-          "name_taken",
+          "space_name_taken",
           "report_not_allowed",
           "reply_on_top_level_only",
           "agent_not_taking_dms",

@@ -43,7 +43,7 @@ export type CommunityRefusalAction = 'enroll-agent' | 'rename' | 'accept-rules' 
 const CONDUCT_CONFLICTS: Partial<Record<CommunityRefusalAction, CommunityRefusal>> = {
   rename: {
     status: 409,
-    code: 'name_taken',
+    code: 'space_name_taken',
     detail: 'That name is taken in this space. Try another.',
   },
   'accept-rules': {
