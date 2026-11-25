@@ -9,11 +9,20 @@ import { describe, expect, it } from 'vitest';
 
 import { toolRefusalProblem } from '../../../routes/capability-refusals.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
-import { TodoPromiseError, type TodoPromiseErrorCode } from '../todo-promise-types.js';
+import {
+  HELD_DEVICE_REFUSAL,
+  TodoPromiseError,
+  type TodoPromiseErrorCode,
+} from '../todo-promise-types.js';
 import { throwTodoRefusal } from '../todo-refusals.js';
 
 /** The services a person's writes reach. */
-const SOURCES = ['../todo-service.ts', '../todo-promise-service.ts', '../notice/todo-confirm.ts'];
+const SOURCES = [
+  '../todo-service.ts',
+  '../todo-promise-service.ts',
+  '../notice/todo-confirm.ts',
+  '../todo-policy.ts',
+];
 
 /** Every plain sentence a source refuses with, and its code; templates are checked below. */
 function refusalsIn(file: string): Array<[TodoPromiseErrorCode, string]> {
@@ -56,6 +65,20 @@ describe('a person’s to-do refusals over HTTP', () => {
     expect(detailOf('NOTHING_TO_CHANGE', 'That promise is already dropped.')).toBe(
       'That promise is already dropped.'
     );
+  });
+
+  it('says the held-device sentence, named once, as person_only', () => {
+    // The services throw the shared constant, which the source scan above cannot see.
+    expect(detailOf('HELD_DEVICE', HELD_DEVICE_REFUSAL)).toBe(HELD_DEVICE_REFUSAL);
+    expect(() =>
+      throwTodoRefusal(new TodoPromiseError('HELD_DEVICE', HELD_DEVICE_REFUSAL))
+    ).toThrow(
+      expect.objectContaining({ payload: expect.objectContaining({ code: 'TODO_HELD_DEVICE' }) })
+    );
+    expect(toolRefusalProblem({ code: 'TODO_HELD_DEVICE', error: 'other words' })).toMatchObject({
+      code: 'person_only',
+      detail: HELD_DEVICE_REFUSAL,
+    });
   });
 
   it('never sends a sentence the table does not list', () => {

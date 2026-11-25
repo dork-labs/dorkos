@@ -74,7 +74,9 @@ export function personProof(
  * authority. The capability mount hands it to a `person-held` capability as a request fact
  * (`context.request.heldWifiOwner`), and a person's to-do writes treat it as an unproven person
  * with the no-owner allowance: it may also finish, reopen, note or reorder a to-do assigned to the
- * person (`todo-policy`). Like any unproven person it can still make a to-do, at the lowest power.
+ * person (`todo-policy`). It may make a to-do for the person, at the lowest power, but never give
+ * an agent work: a to-do for an agent, or a change or answer on an agent's promise, is refused
+ * `person_only` (`mayGiveAgentWork`, Security 2026-11-25), or anyone on the network could.
  *
  * @param facts - The request's facts.
  */

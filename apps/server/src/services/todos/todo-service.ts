@@ -37,6 +37,8 @@ import {
   readAuthority,
   writeAuthority,
   writeAuthorityMarks,
+  actorLabel,
+  chargeOf,
   type TodoActor,
   type WritableTodoAuthority,
 } from './todo-authority.js';
@@ -48,7 +50,13 @@ import {
 } from './todo-promise-service.js';
 import { isOverdue } from './todo-promise-view.js';
 import { listTodoRows } from './todo-list.js';
-import { mayChangeState, mayEdit, mayRank, mayReassign } from './todo-policy.js';
+import {
+  mayChangeState,
+  mayEdit,
+  mayRank,
+  mayReassign,
+  requireMayGiveAgentWork,
+} from './todo-policy.js';
 import type { TodoPatch, TodoStore } from './todo-store.js';
 import { isLateMove, nextDueHistory } from './timing/due-history.js';
 
@@ -300,9 +308,11 @@ export class TodoService {
    * @param input - What it is and who it is for.
    * @param parent - The to-do whose turn the actor is in, when the turns layer recorded one.
    * @throws {TodoPromiseError} `UNKNOWN_AGENT`, `NOT_YOURS` (another space, or an agent already in
-   *   the chain), `NOTHING_TO_CHANGE` (an empty title) or `PAST_DUE`.
+   *   the chain), `NOTHING_TO_CHANGE` (an empty title), `PAST_DUE`, or `HELD_DEVICE` (an agent's
+   *   to-do from a held Wi-Fi device).
    */
   create(actor: TodoActor, input: NewTodo, parent?: TodoParent): Todo {
+    if (input.assignee.kind === 'agent') requireMayGiveAgentWork(actor);
     const what = this.title(input.what);
     this.checkAssignee(input.assignee);
     if (actor.kind === 'agent' && input.assignee.kind === 'person') {
@@ -485,6 +495,7 @@ export class TodoService {
       }
     }
     if (change.assignee !== undefined && assigneeLabel(row) !== labelOf(change.assignee)) {
+      if (change.assignee.kind === 'agent') requireMayGiveAgentWork(actor);
       this.require(
         mayReassign(row, actor),
         'Only the person, or the agent that made it, can reassign it.'
@@ -665,16 +676,6 @@ export class TodoService {
   }
 }
 
-/**
- * Whose spend a turn an actor asked for counts against. Only a proven person is never charged; a
- * request that did not prove the person could be any program here, so it shares one capped charge.
- */
-function chargeOf(actor: TodoActor): string | null {
-  if (actor.kind === 'agent') return actor.agentId;
-  if (actor.kind === 'outsider') return `outsider:${actor.id}`;
-  return actor.proven ? null : 'unproven-person';
-}
-
 /** `agent:<id>` or `person:<account>`, for a row's assignee. */
 function assigneeLabel(row: Pick<TodoRow, 'agentId' | 'ownerAccount'>): string {
   return row.agentId ? `agent:${row.agentId}` : `person:${row.ownerAccount}`;
@@ -683,11 +684,4 @@ function assigneeLabel(row: Pick<TodoRow, 'agentId' | 'ownerAccount'>): string {
 /** The same label for an assignee. */
 function labelOf(assignee: TodoAssignee): string {
   return assignee.kind === 'agent' ? `agent:${assignee.agentId}` : `person:${assignee.account}`;
-}
-
-/** Who acted, for the audit row. */
-function actorLabel(actor: TodoActor): string {
-  if (actor.kind === 'agent') return `agent:${actor.agentId}`;
-  if (actor.kind === 'outsider') return `outsider:${actor.id}`;
-  return actor.proven ? 'person' : 'person:unproven';
 }

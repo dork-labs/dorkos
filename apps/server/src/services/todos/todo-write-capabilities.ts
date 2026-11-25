@@ -21,7 +21,9 @@
  * purpose (DOR-5070), and the mount holds them to the Wi-Fi hold. What the handler reads is only
  * the mount's yes/no answers (`context.request`): a held device never proves the owner, and is
  * named as the owner's held sign-in, which gets the no-owner allowance and nothing more: finish,
- * reopen, note or reorder a to-do assigned to the person (`todo-policy`).
+ * reopen, note or reorder a to-do assigned to the person (`todo-policy`). It may make a to-do for
+ * the person, but never give an agent work: an agent's to-do, or a change or answer on an agent's
+ * promise, is refused `person_only` (`mayGiveAgentWork`, Security 2026-11-25).
  *
  * Refusals keep the hand routes' codes and sentences (`todo-refusals.ts`).
  *
@@ -116,8 +118,8 @@ function personActorOf(
 ): TodoActor {
   const request = context.request;
   if (request?.ownerProven) return { kind: 'person', proven: true };
-  const ownerless = !deps.ownerExists() || request?.heldWifiOwner === true;
-  return { kind: 'person', proven: false, ownerless };
+  const held = request?.heldWifiOwner === true;
+  return { kind: 'person', proven: false, ownerless: !deps.ownerExists() || held, held };
 }
 
 /**
