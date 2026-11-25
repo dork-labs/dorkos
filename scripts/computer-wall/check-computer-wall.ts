@@ -107,13 +107,14 @@ const COMMENT =
 const ZERO: Counts = { space: 0, frontDoor: 0, tables: 0 };
 
 /**
- * Count one computer-side file's three columns.
+ * Count one computer-side file's three columns; a file on another side counts nothing.
  *
  * @param absolutePath - The file, absolute, so its specifiers resolve against it.
  * @param text - Its source.
  */
 export function countFile(absolutePath: string, text: string): Counts {
   const counts: Counts = { ...ZERO };
+  if (sideOf(absolutePath) !== 'computer') return counts;
   const { importedFiles } = ts.preProcessFile(text, true, false);
   for (const ref of importedFiles) {
     const column = crossing(absolutePath, ref.fileName);
