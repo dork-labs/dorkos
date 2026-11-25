@@ -21,8 +21,20 @@ function live<T extends object>(current: () => T): T {
   });
 }
 
-/** Reads the overview slowly when `slow.on`, so two requests both read before either writes. */
-const slow = { on: false };
+/**
+ * When `race.on`, the first two overview reads wait for each other, so both requests
+ * judge the same settings before either can write. No timer: the order is forced.
+ */
+const race = { on: false, reads: [] as Array<() => void> };
+
+/** Holds one judging read until the second arrives; later reads pass straight through. */
+async function meetTheOtherRead(): Promise<void> {
+  if (race.reads.length >= 2) return;
+  await new Promise<void>((resolve) => {
+    race.reads.push(resolve);
+    if (race.reads.length === 2) race.reads.forEach((release) => release());
+  });
+}
 
 describe('permission raise confirmation', () => {
   let world = createPermissionWorld({ preset: 'careful', agents: TWO_AGENTS });
@@ -32,13 +44,18 @@ describe('permission raise confirmation', () => {
       routes: createPermissionsRoutes({
         permissions: live(() => {
           const service = world.service;
-          if (!slow.on) return service;
-          return Object.assign(Object.create(service) as typeof service, {
-            getOverview: async () => {
-              const overview = await service.getOverview();
-              await new Promise((resolve) => setTimeout(resolve, 30));
-              return overview;
-            },
+          if (!race.on) return service;
+          // A Proxy, not Object.create: writes to `this` must reach the real service,
+          // or each request gets its own write queue and both moves land.
+          return new Proxy(service, {
+            get: (target, key) =>
+              key === 'getOverview'
+                ? async () => {
+                    const overview = await target.getOverview();
+                    await meetTheOtherRead();
+                    return overview;
+                  }
+                : Reflect.get(target, key),
           });
         }),
         activity: live(() => world.activity),
@@ -47,7 +64,8 @@ describe('permission raise confirmation', () => {
     },
   ]);
   beforeEach(() => {
-    slow.on = false;
+    race.on = false;
+    race.reads = [];
     world = createPermissionWorld({ preset: 'careful', agents: TWO_AGENTS });
   });
 
@@ -60,7 +78,7 @@ describe('permission raise confirmation', () => {
         defaults: { areas: { messages: 'blocked' }, actions: {} },
         agents: TWO_AGENTS,
       });
-      slow.on = true;
+      race.on = true;
       const body = { preset: 'careful', surface: 'settings' };
       const answers = await Promise.all([
         owner.call('put', '/api/permissions/preset', via).send(body),
