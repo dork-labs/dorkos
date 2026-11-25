@@ -344,7 +344,7 @@ A new process is allowed only for a **different lifetime** or a **different trus
 
 ## 12. Build order
 
-One ordered list, by what each step needs and unlocks. No dates. Steps 1 to 18 are the product order in `meta/ROADMAP.md`; the engineering tracks that run around them follow. The architecture spine inside it (turn port, tool server, computer entry, own-process test, wire, wake, send) is the one in the [evidence report](../research/20261124_architecture-direction-review.md#build-order-no-dates).
+One ordered list, by what each step needs and unlocks. No dates. Steps 1 to 19 are the product order in `meta/ROADMAP.md`; the engineering tracks that run around them follow. The architecture spine inside it (turn port, tool server, computer entry, own-process test, wire, wake, send) is the one in the [evidence report](../research/20261124_architecture-direction-review.md#build-order-no-dates).
 
 **Now (in flight).**
 
@@ -369,6 +369,7 @@ One ordered list, by what each step needs and unlocks. No dates. Steps 1 to 18 a
 16. **The private space becomes a tenant** ([the space side](#3-the-space-side), steps 3 to 5). Needs 12. `work_links` moves with it (DOR-5139).
 17. **One message system** ([Conversations](#6-conversations-and-delivery)). Needs 5, for delivery records.
 18. **Playbooks** ([Conversations](#6-conversations-and-delivery)): a person picks how a team of agents works, and DorkOS holds the rules (epic DOR-5156; the spec is DOR-5181). Needs 4 and 6 (every act of working together is a capability on every runtime, behind one gate), 5 (the turn port and the run record) and 17 (every chat is a conversation, so work can move). The first three playbooks are DorkOS's own.
+19. **Publish and share** ([Publish and share](#14-publish-and-share)): a mini app or a doc published as a page, on an always-on home; a published mini app is a live app. Needs 1 and 2 (capabilities and a reference kind) and 13 (an always-on home); sharing with a space's members also needs 12 and a space with more than one person (11 or 15). Beside 14 to 18.
 
 **Engineering tracks around the list.**
 
@@ -404,16 +405,47 @@ If you see one of these stated as the plan, it is out of date.
 | A second gate for hand-registered tools; holding how agents work together in one runtime's hooks or in a sentence of code            | ADR `261124-152801`                                                          |
 | The November 21 report's wave plan (Wave 0 to Wave 3) and its dates                                                                  | ADR `261124-150515`; the build order above replaces it                       |
 
+## 14. Publish and share
+
+**Today.** What agents make stays inside the DorkOS that made it. A mini app opens only in the app that installed it; its server half, when it has one, runs there in the server's own process by default, or as a limited process of its own when its manifest asks for one (`services/extensions/`, `services/extensions/isolation/`). The canvas shows a doc in a room to the room's members, and in a person's own chat to that person (`services/canvas/`); nothing serves either one to a person outside. Remote access is the owner's own way in to their app, not a way to publish.
+
+**Target.** A person or an agent publishes a mini app or a doc as a **published page**: a saved, versioned copy with a link. A published mini app is a live app that anyone it is shared with can use, with no DorkOS of their own.
+
+- **A copy, with versions.** Publishing saves a version; publishing again saves a new one under the same link. A viewer sees the newest unless the owner pinned one. The original is not synced to the page; live shared docs are their own item.
+- **One always-on home.** A page lives on the person's DorkOS in the cloud, or on any DorkOS server where they may publish. It has no second copy that drifts, and its owner can move it on purpose, download it or take it down. A home may sleep when idle, as long as opening a page wakes it or the page is served apart from it.
+- **Private first.** A new page opens for its owner alone. The audience widens a step at a time: named people, a space's members, anyone with the link, listed in public.
+- **An agent may publish; an agent needs a yes to widen.** Publish, update, list and take down are capabilities, so the command line, the HTTP API and agent tools come from one definition. Widening who can open a page gives new access, so an agent needs a yes from the Owner or its manager.
+- **A live app, in a sealed box.** A published mini app's page half runs in the viewer's browser, in a sandbox, served from a web address apart from the app. Its server half, when it has one, runs on the page's home in a sealed box of its own, with its own data and its own limits. A published doc has no code.
+- **None of the publisher's power.** From its box a published mini app cannot reach the publisher's private space, agents, connections, sign-ins or secrets. The publisher may grant it one named thing at a time when publishing. Whatever arrives through a grant is words from outside.
+- **The viewer's own account for the viewer's own things.** A page that shows a viewer's own live data, or acts for them, uses the viewer's DorkOS and connections, with the viewer's yes.
+- **A viewer can take a copy** into their own space. Code from someone else still needs a yes.
+
+**How we get there.**
+
+1. The specification: what a page's copy holds for each kind of thing, who owns a page, the audience steps and how each is checked, how a page is served from a home that sleeps, the sealed box and its limits, the named grants, and the page's reference kind (an amendment to ADR `261122-124821`).
+2. The capabilities and the store for pages and versions, on a home.
+3. Serving: the separate web address, the sandbox, and the page's own load rules. With this, docs and mini apps that run fully in the browser can be published.
+4. The audience steps: the owner and named people first, then a space's members on the member checks (item 12), then anyone with the link.
+5. The sealed box: a published mini app's server half runs on the page's home, with its own data and limits.
+6. Named grants: a published mini app reaches its publisher through one thing the publisher granted.
+7. The viewer's side: the viewer's own account for the viewer's own things, and taking a copy.
+8. Abuse controls, then listing in public. On DorkOS Cloud, the box, the limits and the listing need Cloud's half through `packages/cloud-api`, contract first; a server a person runs needs no hosted service.
+
+**Open:** who owns a page an agent published or one made from a team space's doc; how a page is served from a home that sleeps; what the sealed box is built from and what it may reach. The specification settles each, and the operator decides.
+
+**Decided by.** ADR `261125-183122`. It amends `261015-042933`, `261124-194115` and `261125-113808` (the cloud may also hold the pages a person published, and runs a published mini app's server half) and builds on `261006-235238`, `261122-173853` and `261124-150519`.
+
 ## Open questions
 
-| Question                                                                | Who decides                                                     |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------- |
-| The permission gate across the wire                                     | The architect's design note, Security's read, then the operator |
-| Whether the computer side runs as its own process on a Mac              | The own-process spike                                           |
-| The send capability's shapes                                            | A spec, then the operator                                       |
-| Whether an owner-approved subscription may wake a beat                  | Security                                                        |
-| Internal folder names: "space" or "community"                           | The operator (DOR-4957)                                         |
-| Server domains as packages, or a lint ratchet only                      | The operator, once the ratchet shows the cost                   |
-| Recovery cap values                                                     | The turns owner, from real use                                  |
-| The playbook's rule kinds, and how space, room and agent levels combine | A spec, then the operator (ADR `261124-152801`)                 |
-| The server's domain grouping under the two sides                        | DOR-4921, then the operator                                     |
+| Question                                                                                                                   | Who decides                                                     |
+| -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| The permission gate across the wire                                                                                        | The architect's design note, Security's read, then the operator |
+| Whether the computer side runs as its own process on a Mac                                                                 | The own-process spike                                           |
+| The send capability's shapes                                                                                               | A spec, then the operator                                       |
+| Whether an owner-approved subscription may wake a beat                                                                     | Security                                                        |
+| Internal folder names: "space" or "community"                                                                              | The operator (DOR-4957)                                         |
+| Server domains as packages, or a lint ratchet only                                                                         | The operator, once the ratchet shows the cost                   |
+| Recovery cap values                                                                                                        | The turns owner, from real use                                  |
+| The playbook's rule kinds, and how space, room and agent levels combine                                                    | A spec, then the operator (ADR `261124-152801`)                 |
+| The server's domain grouping under the two sides                                                                           | DOR-4921, then the operator                                     |
+| Who owns a published page, how one is served from a home that sleeps, and what a published mini app's sealed box may reach | A spec, then the operator (ADR `261125-183122`)                 |

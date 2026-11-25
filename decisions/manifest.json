@@ -8243,6 +8243,23 @@
         "apps/server/src/http/hand-routes/**",
         "packages/shared/src/capabilities.ts"
       ]
+    },
+    {
+      "id": "261125-183122",
+      "slug": "a-published-page-is-a-saved-copy-on-an-always-on-home",
+      "title": "A published page is a saved, versioned copy on an always-on home, and a published mini app is a live app that runs there in a sealed box of its own",
+      "status": "accepted",
+      "created": "2026-11-25",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["261015-042933", "261124-194115", "261125-113808"],
+      "affects": [
+        "apps/server/src/services/extensions/**",
+        "apps/server/src/services/canvas/**",
+        "apps/server/src/services/core/capabilities/**",
+        "packages/cloud-api/**"
+      ]
     }
   ]
 }
