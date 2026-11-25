@@ -73,7 +73,17 @@ function noteObjects(text: string): { body: string; at: number }[] {
       if (depth === 0 && c === '{') open = i;
       depth++;
     } else if (c === '}' || c === ']') {
-      if (depth === 0 && c === ']') return objects;
+      if (depth === 0 && c === ']') {
+        // Only notes, commas and comments: a spread or a name would hide notes.
+        const start = head.index + head[0].length;
+        let rest = text.slice(start, i);
+        for (const o of [...objects].reverse())
+          rest = rest.slice(0, o.at - start) + rest.slice(o.at - start + o.body.length);
+        if (/[^\s,]/.test(rest.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ''))) {
+          throw new ReleaseCommitError('AGENT_RELEASE_NOTES must hold only { … } notes.');
+        }
+        return objects;
+      }
       depth--;
       if (depth === 0 && c === '}') objects.push({ body: text.slice(open, i + 1), at: open });
     }

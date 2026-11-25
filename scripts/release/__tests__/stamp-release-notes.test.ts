@@ -60,6 +60,7 @@ describe('stampReleaseNotes', () => {
     ],
     ['a bad version', file(['A', 'soon']), /not 'next' or X.Y.Z/],
     ['a repeated name', file(['A', 'next'], ['A', '0.1.0']), /Two release notes/],
+    ['a spread', file(['A', 'next']).replace('\n];', '\n  ...MORE,\n];'), /only \{ … \} notes/],
   ])('refuses a file with %s', (_label, text, message) => {
     expect(() => stampReleaseNotes(text, text, '0.142.0')).toThrow(message);
   });
