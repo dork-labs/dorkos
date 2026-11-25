@@ -171,3 +171,95 @@ describe('a paused message in the composer', () => {
     expect(result.current.input).toBe('Keep these words');
   });
 });
+
+describe('a restored draft in the composer (spec `turns-survive-restarts` §7.3)', () => {
+  /** Words a restart handed back, typed in another window. */
+  const draft: QueuedMessage = {
+    id: 'restored',
+    content: 'Words a restart handed back',
+    disposition: 'queue',
+    enqueuedBy: 'web-another-window',
+    canRestoreToComposer: true,
+    restored: true,
+    enqueuedAt: 1,
+  };
+
+  function setup(initial = '', remove = vi.fn(async () => undefined)) {
+    const send = vi.fn(async (_text: string) => undefined);
+    const view = renderHook(
+      ({ restored }: { restored: QueuedMessage[] }) => {
+        const [input, setInput] = useState(initial);
+        const held = usePausedComposerDraft({
+          sessionId: 'demo',
+          paused: false,
+          queue: [],
+          restored,
+          personClientIds: ['web-window'],
+          input,
+          setInput,
+          send,
+          remove,
+        });
+        return { ...held, input, setInput };
+      },
+      { initialProps: { restored: [draft] } }
+    );
+    return { ...view, send, remove };
+  }
+
+  it('shows on every window, not only the one that typed it, and Send uses the row up', async () => {
+    const { result, send, remove } = setup();
+    await waitFor(() => expect(result.current.input).toBe('Words a restart handed back'));
+    expect(result.current.restoredDraft).toBe(true);
+
+    await act(() => result.current.submit());
+
+    expect(remove).toHaveBeenCalledExactlyOnceWith('demo', 'restored');
+    expect(send).toHaveBeenCalledExactlyOnceWith('Words a restart handed back');
+    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]!);
+  });
+
+  it('Discard removes the row and the words, and sends nothing', async () => {
+    const { result, send, remove } = setup();
+    await waitFor(() => expect(result.current.restoredDraft).toBe(true));
+
+    await act(() => result.current.discard());
+
+    expect(remove).toHaveBeenCalledExactlyOnceWith('demo', 'restored');
+    expect(send).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('');
+    expect(result.current.restoredDraft).toBe(false);
+  });
+
+  it('leaves the box when another window used it up, keeping any edit', async () => {
+    const { result, rerender } = setup();
+    await waitFor(() => expect(result.current.restoredDraft).toBe(true));
+
+    rerender({ restored: [] });
+
+    await waitFor(() => expect(result.current.input).toBe(''));
+    expect(result.current.restoredDraft).toBe(false);
+  });
+
+  it.each([
+    ['another chat’s words', { ...draft, fromChats: [] }],
+    ['words held to the default level', { ...draft, canRestoreToComposer: undefined }],
+  ])('never fills a box with %s, nor one that already holds a draft', (_case, row) => {
+    expect(setup('A newer draft').result.current.input).toBe('A newer draft');
+    const { result } = renderHook(() => {
+      const [input, setInput] = useState('');
+      return usePausedComposerDraft({
+        sessionId: 'other',
+        paused: false,
+        queue: [],
+        restored: [row],
+        personClientIds: ['web-window'],
+        input,
+        setInput,
+        send: async () => undefined,
+        remove: async () => undefined,
+      });
+    });
+    expect(result.current.restoredDraft).toBe(false);
+  });
+});

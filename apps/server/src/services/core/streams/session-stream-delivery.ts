@@ -38,6 +38,7 @@ import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import { askEntitlement } from '../../session/asks/ask-entitlement.js';
 import { logger } from '../../../lib/logger.js';
 import { peekCanvasService, sessionScope } from '../../canvas/index.js';
+import { chatRuns } from '../../runs/index.js';
 import { openSessionStream, openSessionStreamCount } from './session-stream-watch.js';
 
 /** Everything a caller must resolve before a session stream can be delivered. */
@@ -192,6 +193,9 @@ export async function deliverSessionStream(
       // which is ADR-0310's reasoning in the other direction. A process with no
       // canvas service answers the empty table rather than failing the stream.
       snap.canvas = peekCanvasService()?.list(sessionScope(sessionId)) ?? [];
+      // The chat's runs, from the run record, decorated here for the same reason
+      // (spec `turns-survive-restarts` §4.6): `run_update` keeps them fresh after.
+      snap.runs = chatRuns(sessionId);
       // The snapshot is the hydration frame and carries `cursor`, not a seq, so
       // it gets no frame id — the first live event after it carries the next.
       await sink.send({ event: 'snapshot', data: snap });

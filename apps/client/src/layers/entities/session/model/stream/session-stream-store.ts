@@ -46,6 +46,8 @@ import {
   isUnrequestedAbortFailure,
 } from '@dorkos/shared/run-outcome';
 import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
+import type { ChatRun } from '@dorkos/shared/run-schemas';
+import { applyQueue, applyRuns } from './chat-runs';
 import {
   ageSigninCards,
   boundLiveTurn,
@@ -89,6 +91,18 @@ export interface SessionStreamState {
    * server is the one holding it (ADR-0104 superseded).
    */
   queuedMessages: QueuedMessage[];
+  /**
+   * Restored drafts (spec `turns-survive-restarts` §7.3): rows the server
+   * lists flagged `restored`, kept apart from {@link queuedMessages} because
+   * they never run by themselves. Replaced with the queue, never written here.
+   */
+  restoredDrafts: QueuedMessage[];
+  /**
+   * The chat's runs from the run record (§4.6), replaced wholesale by the
+   * snapshot and every `run_update`. What says a turn whose process died has
+   * ended, and the line a person sees about it.
+   */
+  runs: ChatRun[];
   /**
    * Bumped by every `chat_activity` event (spec `spin-off-chats` §6): what this
    * chat sent other chats, or another chat did to it, changed. A nudge, not
@@ -269,6 +283,8 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   messages: [],
   optimisticUserMessage: null,
   queuedMessages: [],
+  restoredDrafts: [],
+  runs: [],
   chatActivityVersion: 0,
   queueOutcomes: {},
   inProgressTurn: [],
@@ -730,25 +746,16 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       session.pendingInteractions = session.pendingInteractions.filter((i) => i.id !== event.id);
       session.inProgressTurn.push(event);
       break;
-    case 'queue_update': {
+    case 'queue_update':
       // The whole queue, every time — never a diff. A window that missed an
       // update is corrected by the next one instead of drifting, which is why
       // there is no merge to get wrong here.
-      session.queuedMessages = event.queue;
-      const outcomes: Record<string, MessageDeliveryOutcome> = {};
-      for (const queued of event.queue) {
-        const kept = session.queueOutcomes[queued.id];
-        if (kept) outcomes[queued.id] = kept;
-      }
-      // An outcome only rides an update an accepted message caused, so it names
-      // a message that just joined the queue — or one that ran straight away and
-      // is therefore already absent from it.
-      if (event.outcome && event.queue.some((queued) => queued.id === event.outcome?.messageId)) {
-        outcomes[event.outcome.messageId] = event.outcome;
-      }
-      session.queueOutcomes = outcomes;
+      applyQueue(session, event.queue, event.outcome);
       break;
-    }
+    case 'run_update':
+      // The chat's runs, whole, from the record (spec `turns-survive-restarts` §4.6).
+      applyRuns(session, event.runs);
+      break;
     case 'chat_activity':
       session.chatActivityVersion += 1;
       break;
@@ -821,8 +828,9 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // survive a refresh and show up in a window that just opened. The
             // receipts do not survive: they belong to an acceptance this window
             // was not necessarily present for, and the queue is what matters.
-            session.queuedMessages = snapshot.queuedMessages;
+            applyQueue(session, snapshot.queuedMessages);
             session.queueOutcomes = {};
+            applyRuns(session, snapshot.runs ?? []);
             // The server sends only the sign-in cards it is still carrying, so its
             // answer replaces this projection's grace bookkeeping wholesale
             // (DOR-1004). Keeping stale marks would retire a card the server just

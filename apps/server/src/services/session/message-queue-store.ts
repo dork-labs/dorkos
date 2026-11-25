@@ -119,6 +119,14 @@ export interface QueuedMessageRecord extends QueuedMessage {
    * clear, move and edits never see it. Never exposed on the wire.
    */
   inTurn: boolean;
+  /**
+   * A restored draft (spec `turns-survive-restarts` §4.6, §7.3): a turn
+   * started with these words and DorkOS restarted before the runtime read
+   * them. Listed for every window and flagged, so the composer shows it as a
+   * draft; never waiting, so the pump, adoption, clear, move and edits never
+   * see it. Sending it uses the row up; removing it discards the draft.
+   */
+  restored: boolean;
 }
 
 /**
@@ -224,6 +232,7 @@ export function toQueuedMessage(record: QueuedMessageRecord): QueuedMessage {
   const base = { id, content, disposition, enqueuedAt, enqueuedBy };
   return {
     ...base,
+    ...(record.restored ? { restored: true } : {}),
     ...(isPersonWindowClientId(enqueuedBy) && !record.heldToDefault
       ? { canRestoreToComposer: true }
       : {}),
@@ -347,6 +356,7 @@ function toRecord(row: SessionMessageQueueRow): QueuedMessageRecord {
     heldToDefault: row.heldToDefault,
     carriedLimits: parseQueuedLimits(row.carriedLimitsJson, row.id),
     inTurn: row.state === 'in_turn',
+    restored: row.state === 'restored',
   };
 }
 
@@ -411,6 +421,17 @@ export class MessageQueueStore {
   }
 
   /**
+   * What every window is shown of a session's queue: the rows waiting in line
+   * and the restored drafts ({@link QueuedMessageRecord.restored}), in place
+   * order. The dispatcher reads {@link list}; only the views read this.
+   *
+   * @param sessionId - The session whose queue to read
+   */
+  listShown(sessionId: string): QueuedMessageRecord[] {
+    return this.rows(sessionId, this.db, ['waiting', 'restored']).map(toRecord);
+  }
+
+  /**
    * One queued message by id, or `undefined` when no such message is queued.
    * Unlike {@link list}, this finds a row a turn started with too.
    *
@@ -429,7 +450,7 @@ export class MessageQueueStore {
    */
   getWaiting(messageId: string): QueuedMessageRecord | undefined {
     const record = this.get(messageId);
-    return record && !record.inTurn ? record : undefined;
+    return record && !record.inTurn && !record.restored ? record : undefined;
   }
 
   /**
@@ -747,16 +768,20 @@ export class MessageQueueStore {
       .map((row) => row.sessionId);
   }
 
-  /** One session's waiting rows, ordered head-first. */
+  /** One session's rows in these states (waiting, unless said), ordered head-first. */
   private rows(
     sessionId: string,
-    executor: Db | DbTransaction = this.db
+    executor: Db | DbTransaction = this.db,
+    states: SessionMessageQueueRow['state'][] = ['waiting']
   ): SessionMessageQueueRow[] {
     return executor
       .select()
       .from(sessionMessageQueue)
       .where(
-        and(eq(sessionMessageQueue.sessionId, sessionId), eq(sessionMessageQueue.state, 'waiting'))
+        and(
+          eq(sessionMessageQueue.sessionId, sessionId),
+          inArray(sessionMessageQueue.state, states)
+        )
       )
       .orderBy(sessionMessageQueue.position)
       .all();

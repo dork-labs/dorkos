@@ -35,6 +35,7 @@
  */
 import type { ZodError, ZodType } from 'zod';
 import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
+import { ChatRunSchema } from '@dorkos/shared/run-schemas';
 import {
   HistoryMessageSchema,
   MessagePartSchema,
@@ -258,6 +259,7 @@ export function parseSessionSnapshot(data: unknown): SnapshotParseResult {
       unreadable
     ),
     canvas: keepValidItems(shape.canvas.element, data.canvas, 'canvas', unreadable),
+    runs: keepValidItems(ChatRunSchema, data.runs, 'runs', unreadable),
   };
   const retry = SessionSnapshotSchema.safeParse(candidate);
   return retry.success

@@ -12,6 +12,7 @@
  * @module services/runs
  */
 import type { Db } from '@dorkos/db';
+import type { ChatRun } from '@dorkos/shared/run-schemas';
 import {
   chatKeyOf,
   getComputerTurnPort,
@@ -34,6 +35,7 @@ import { StartTurns } from './effects/start-turns.js';
 import { startTurnHandler, type StartTurnDeps } from './effects/handlers/start-turn.js';
 import { admit } from './admission.js';
 import { SpaceTurnPort } from './turn-port.js';
+import { chatRunsOf, RunAnnouncer } from './run-view.js';
 
 export {
   IllegalRunTransitionError,
@@ -45,6 +47,7 @@ export {
   type TurnRun,
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
+export { chatRunsOf, noticeOf } from './run-view.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
   RUN_ENDS,
@@ -66,6 +69,8 @@ export interface RunRecord {
   port: SpaceTurnPort;
   /** What a run's moves do to its `start_turn` (§6.2). */
   starts: StartTurns;
+  /** A chat's runs as every device reads them (§4.6), by any id the chat answers to. */
+  view: (chatId: string) => ChatRun[];
 }
 
 let installed:
@@ -121,15 +126,22 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
   } = opts;
   const now = opts.now ?? Date.now;
   const effects = new EffectStore(db, { now });
+  // Every created or moved run puts its chat's runs on the chat's stream (§4.6).
+  const view = (chatId: string): ChatRun[] => chatRunsOf(store, effects, chatId);
+  const announcer = new RunAnnouncer(view);
   // Renewed, and kept from retirement, only while this process holds the run.
-  const store = new RunStore(db, {
+  const store: RunStore = new RunStore(db, {
     ownerHolds: isRunHeld,
     ...storeOpts,
     // A run with nothing to follow it settles on the worker's next pass.
     onEnded: () => effects.announceWork(),
     // Its `start_turn` settles, goes back to `pending`, or wakes the waiting.
     // Read at call time: nothing moves a run before the record is built.
-    onMoved: (run, from) => starts.onRunMoved(run, from),
+    onMoved: (run, from) => {
+      starts.onRunMoved(run, from);
+      announcer.changed(run);
+    },
+    onCreated: (run) => announcer.changed(run),
   });
   // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
   const admissionSources = admission?.admission ?? {
@@ -180,6 +192,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     notices: new TurnNotices(store, effects, now),
     port,
     starts,
+    view,
   };
 }
 
@@ -232,6 +245,29 @@ export function turnPort(): SpaceTurnPort | undefined {
 /** The installed run record and its outbox, or `undefined` before startup wired them. */
 export function getRunRecord(): RunRecord | undefined {
   return installed;
+}
+
+/**
+ * A chat's runs as every device reads them (spec §4.6): what the session
+ * snapshot and `GET /api/sessions/:id/runs` carry, and `run_update` repeats.
+ * Whatever a gone boot left live in the chat is retired first, as every
+ * reader of a chat's live run does. Empty before startup wired the record,
+ * and when the record cannot be read: a snapshot must still go out.
+ *
+ * @param sessionId - The chat, by any id it answers to.
+ */
+export function chatRuns(sessionId: string): ChatRun[] {
+  if (!installed) return [];
+  try {
+    installed.store.liveRunOf(sessionId);
+    return installed.view(sessionId);
+  } catch (err) {
+    logger.warn('[runs] could not read a chat’s runs', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
 }
 
 /**

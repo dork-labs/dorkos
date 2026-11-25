@@ -193,12 +193,13 @@ export async function rearmChatQueues(opts: {
 }
 
 /**
- * A session's queue as every client sees it — the head first.
+ * A session's queue as every client sees it — the head first, restored
+ * drafts included and flagged (spec `turns-survive-restarts` §4.6).
  *
  * @param sessionId - The session to read
  */
 export function listQueuedMessages(sessionId: string): QueuedMessage[] {
-  return (getMessageQueueStore()?.list(queueKeyOf(sessionId)) ?? []).map(toQueuedMessage);
+  return (getMessageQueueStore()?.listShown(queueKeyOf(sessionId)) ?? []).map(toQueuedMessage);
 }
 
 /** Drop only a stopped host lane's timers; its accepted receipts and queue rows remain durable. */

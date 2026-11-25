@@ -1,5 +1,5 @@
 import type { QueuedMessage } from '@dorkos/shared/schemas';
-import { useSessionQueue } from '@/layers/entities/session';
+import { useSessionQueue, useSessionRestoredDrafts } from '@/layers/entities/session';
 import { useConversation } from '@/layers/features/conversation';
 import { useTransport } from '@/layers/shared/model';
 import { usePausedComposerDraft } from './use-paused-composer-draft';
@@ -14,7 +14,8 @@ interface SessionPausedComposerOptions {
 }
 
 /**
- * Keep a restored pause draft on the session's ordinary delivery paths.
+ * Keep a restored pause draft on the session's ordinary delivery paths, and a
+ * restored draft after a restart too (spec `turns-survive-restarts` §7.3).
  *
  * @param options - The session draft and its visible queue selection
  */
@@ -29,10 +30,12 @@ export function useSessionPausedComposer({
   const transport = useTransport();
   const { target } = useConversation();
   const queue = useSessionQueue(sessionId);
+  const restored = useSessionRestoredDrafts(sessionId);
   const draft = usePausedComposerDraft({
     sessionId,
     paused,
     queue,
+    restored,
     personClientIds: transport.clientId ? [transport.clientId] : [],
     input,
     setInput,
@@ -45,6 +48,8 @@ export function useSessionPausedComposer({
   return {
     waiting: waiting.filter((row) => row.id !== draft.restoredMessageId),
     blocked: draft.pending || (paused && draft.restored),
+    /** Present while the composer shows a restored draft: its line offers Discard. */
+    restoredDraft: draft.restoredDraft ? { discard: () => void draft.discard() } : undefined,
     submit: () => {
       dismissPalettes();
       if (target?.canSend) void draft.submit();
