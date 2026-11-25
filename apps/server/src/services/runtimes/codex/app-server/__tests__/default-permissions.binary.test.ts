@@ -580,7 +580,7 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           const codex = await macCodex(fx);
           const made = path.join(fx.project, 'app', '.env');
           fs.mkdirSync(path.dirname(made));
-          // Turn 1 makes the file. Security accepts that this turn could read it.
+          // Turn 1 makes the file; the next render must cover it.
           await codex.run(await threadConfig(fx, mode), `printf CANARY-turn-one > ${quote(made)}`);
           expect(fs.readFileSync(made, 'utf8')).toBe('CANARY-turn-one');
           expect(lines).toEqual([]);

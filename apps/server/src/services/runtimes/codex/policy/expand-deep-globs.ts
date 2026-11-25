@@ -12,10 +12,9 @@
  * the parent or a grandparent, renaming the file and hard-linking it are all
  * refused), so every other folder stays free.
  *
- * The profile renders on every turn, so a file that appears is named from the
- * next turn on. Security accepts the window inside one turn (DOR-4358): a file
- * that appears while a turn runs can be read in that turn, and the next render
- * writes an Activity line naming it (`secret-file-activity.ts`).
+ * The profile renders on every turn, so a file that appears is named exactly
+ * from the next render on (DOR-4358), and that render writes an Activity line
+ * naming it (`secret-file-activity.ts`).
  *
  * The folders the agent works in are scanned on every render (a repo takes
  * well under a second). Every other base (the home, data and account folders)

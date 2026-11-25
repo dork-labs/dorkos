@@ -3,10 +3,9 @@
  * one Codex chat's macOS profile (DOR-4358).
  *
  * On macOS the profile names each secret file exactly (`expand-deep-globs.ts`)
- * and renders again on every turn. A file that appears while a turn runs is
- * not named until the next render, so that turn could read it. Security
- * accepts that window; this line makes it visible. Names only: the path,
- * never what the file holds.
+ * and renders again on every turn. A file that appears between renders is
+ * named exactly from the next render on; this line records that it appeared.
+ * Names only: the path, never what the file holds.
  *
  * A base counts only when it was named exactly at the last render too: a base
  * that kept its globs then covered every file in it, so nothing new was open.
