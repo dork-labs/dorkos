@@ -40,7 +40,7 @@
     "src/services/notifications/emitters/account-signin-review.ts": 1,
     "src/services/notifications/emitters/ask-resolution.ts": 1,
     "src/services/notifications/emitters/session-lifecycle.ts": 2,
-    "src/services/relay/adapter-factory.ts": 3,
+    "src/services/relay/adapter-factory.ts": 4,
     "src/services/relay/adapter-manager.ts": 1,
     "src/services/relay/binding-subsystem.ts": 1,
     "src/services/relay/chat-bridge/ask-card.ts": 2,
