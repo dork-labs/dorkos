@@ -47,6 +47,14 @@ describe('createComputerRuntime', () => {
     });
   });
 
+  it('claims neither restart capability, whatever host OpenCode declares', () => {
+    const { runtime } = factory();
+    expect(runtime.getCapabilities()).toMatchObject({
+      wakesForLostBackgroundWork: false,
+      continuesInterruptedTurn: false,
+    });
+  });
+
   it('keeps host identity intact and uses actual computer policy identity', async () => {
     const host = new OpenCodeRuntime({ provider: { getClient: vi.fn(), peekClient: () => null } });
     const { runtime } = factory();

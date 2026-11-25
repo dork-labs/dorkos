@@ -41,6 +41,21 @@ runtimeGuardConformance(() => new TestModeRuntime());
 
 runtimeConformance(() => new TestModeRuntime(), {
   name: 'TestModeRuntime — AgentRuntime conformance',
+  // Spec `turns-survive-restarts` §7.2: test-mode declares
+  // `continuesInterruptedTurn`, so it drives the case. `tool-call` gives the
+  // turn to cut its one tool; the fresh instance answers the continuation with
+  // the `simple-text` echo. Nothing of a turn lives in the runtime, so a fresh
+  // instance on the same chat is all a restart means here.
+  restartContinueTurn: {
+    start: (sessionId) => {
+      scenarioStore.setForSession(sessionId, 'tool-call');
+      return new TestModeRuntime();
+    },
+    restart: (sessionId) => {
+      scenarioStore.setForSession(sessionId, 'simple-text');
+      return new TestModeRuntime();
+    },
+  },
   // Stateless by design: native history is [] — completed messages live in the
   // DorkOS-owned EventLog, not the runtime (ADR-0263).
   expectHistory: false,

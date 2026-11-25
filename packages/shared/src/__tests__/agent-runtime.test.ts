@@ -46,6 +46,8 @@ describe('RuntimeCapabilities shape', () => {
       supportsPersistentSession: false,
       supportsSteer: false,
       supportsContextStaging: false,
+      wakesForLostBackgroundWork: false,
+      continuesInterruptedTurn: false,
       mediaOutput: 'none',
       permissionModes: { supported: false, values: [] },
       features: {},
@@ -74,6 +76,8 @@ describe('RuntimeCapabilities shape', () => {
       supportsQuestionPrompt: false,
       supportsPlugins: false,
       supportsAccounts: false,
+      wakesForLostBackgroundWork: false,
+      continuesInterruptedTurn: false,
       permissionModes: { supported: false, values: [] },
       settings: { configSection: null, supportsEffort: false, sections: [] },
       features: {},
@@ -107,12 +111,45 @@ describe('RuntimeCapabilities shape', () => {
       supportsPersistentSession: false,
       supportsSteer: false,
       supportsContextStaging: false,
+      wakesForLostBackgroundWork: false,
+      continuesInterruptedTurn: false,
       permissionModes: { supported: false, values: [] },
       settings: { configSection: null, supportsEffort: false, sections: [] },
       features: {},
     };
 
     expect(undeclared.type).toBe('undeclared-media-runtime');
+  });
+
+  it('requires every runtime to declare both restart capabilities', () => {
+    // The same compile-time forcing, for what restart recovery reads (spec
+    // `turns-survive-restarts` §7.2): a runtime that never said whether a turn
+    // cut mid-way can be continued must not be read as "it can" or "it cannot"
+    // by accident. If either becomes optional, the `@ts-expect-error` turns
+    // into an unused-directive error, and that red is the point.
+    // @ts-expect-error wakesForLostBackgroundWork / continuesInterruptedTurn are required
+    const undeclared: RuntimeCapabilities = {
+      type: 'undeclared-restart-runtime',
+      commandIntents: { compact: { supported: false } },
+      nativeContext: [],
+      supportsResume: false,
+      supportsMcp: false,
+      supportsManagedMcpServers: false,
+      supportsCostTracking: false,
+      supportsToolApproval: false,
+      supportsQuestionPrompt: false,
+      supportsPlugins: false,
+      supportsAccounts: false,
+      supportsPersistentSession: false,
+      supportsSteer: false,
+      supportsContextStaging: false,
+      mediaOutput: 'none',
+      permissionModes: { supported: false, values: [] },
+      settings: { configSection: null, supportsEffort: false, sections: [] },
+      features: {},
+    };
+
+    expect(undeclared.type).toBe('undeclared-restart-runtime');
   });
 
   it('requires a PermissionModeDescriptor to say what its mode does', () => {

@@ -15,6 +15,11 @@ export const DOE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: true,
   supportsContextStaging: false,
+  // Builder work stays owned by its turn (RT-LIFE-03), so none outlives one.
+  wakesForLostBackgroundWork: false,
+  // Messages restore from the store, but a tool call cut before its result is
+  // left without one; T19c repairs that and flips this after a measured run.
+  continuesInterruptedTurn: false,
   nativeContext: [],
   logBackedHistory: true,
   mediaOutput: 'none',
