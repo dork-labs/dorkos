@@ -1,0 +1,1350 @@
+{
+  "$comment": "The computer wall (apps/server/eslint-rules/computer-wall.js, spec computer-side-starts-alone §4, DOR-5158). For each computer-side file: space, its imports of space-side code; frontDoor, its imports of front-door code; tables, the space tables it names from @dorkos/db. Each may only fall. Run `pnpm check:computer-wall -- --update` after removing some; never raise a number by hand.",
+  "files": {
+    "src/services/browser/agent-browser-guard.ts": {
+      "space": 1,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/browser/egress/broker/live/live-authority.ts": {
+      "space": 0,
+      "frontDoor": 3,
+      "tables": 1
+    },
+    "src/services/browser/egress/broker/live/private-composition.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/core/agent-computer/agent-gate.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/agent-computer/hub-owned.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/browser-registry/owner-scope.ts": {
+      "space": 2,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/core/browser-registry/registry-store.ts": {
+      "space": 0,
+      "frontDoor": 0,
+      "tables": 1
+    },
+    "src/services/core/file-lister.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/git-status.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/keep-awake/keep-awake-service.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/runtime-registry.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/runtime-seam/bind-session-write.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 1
+    },
+    "src/services/core/runtime-seam/decorate-runtime.ts": {
+      "space": 5,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/runtime-seam/person-draft-settings.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 3
+    },
+    "src/services/core/runtime-seam/recovery-birth-source.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 2
+    },
+    "src/services/core/runtime-seam/session-birth-write.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 5
+    },
+    "src/services/core/runtime-seam/session-metadata-columns.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/secret-file-scan/secret-file-scan-service.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/session-relay/approval-challenges.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/session-relay/approval-proof.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/session-relay/index.ts": {
+      "space": 3,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/core/session-relay/live-deps.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/session-relay/pin-store.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/session-relay/relay-audit.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/session-relay/relay-link.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/core/session-relay/relay-serves.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/streams/document-stream-delivery.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/streams/live-change-broadcasts.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/streams/room-stream-delivery.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/streams/session-stream-delivery.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/core/streams/stream-upgrade-auth.ts": {
+      "space": 1,
+      "frontDoor": 3,
+      "tables": 0
+    },
+    "src/services/core/streams/upgrade-router.ts": {
+      "space": 0,
+      "frontDoor": 6,
+      "tables": 0
+    },
+    "src/services/diff/diff-capabilities.ts": {
+      "space": 5,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/diff/git-baseline.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/claude-enabled-plugins.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/dorkos-installed.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/global-scope.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/hook-approval.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/hook-card.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/hook-consent.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/project-with-consent.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/harness/skills-watcher.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/accounts/account-probe.ts": {
+      "space": 0,
+      "frontDoor": 3,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/accounts/account-usage-feed.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/accounts/found-claude-folders.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/accounts/session-limit.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/accounts/signin-credential-watch.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/audit-tool-hooks.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/claude-code-runtime.ts": {
+      "space": 11,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/claude-config-dir.ts": {
+      "space": 0,
+      "frontDoor": 4,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/connector-turn-context.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/credits-root.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/agent-extensions-deny.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/dev-link-deny.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/folder-allow-approval.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/folder-allow-consent.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/folder-allow-notice.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/folder-config-approval.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/folder-config-consent.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/launch-folder-allows.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/launch-folder-config.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/own-folder-open.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/folder-settings/own-folder-watch.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/history/turn-cutoff-overlay.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/launch-account-check.ts": {
+      "space": 1,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/account-tools.ts": {
+      "space": 2,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/adapter-tools.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/agent-tools.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/binding-tools.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/capability-mcp-tools.ts": {
+      "space": 6,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/core-tools.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/extension-create-tool.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/extension-tools.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/index.ts": {
+      "space": 8,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/relay-helpers.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/relay-notify-tools.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/session-start-facts.ts": {
+      "space": 6,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/session-start-reserve.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/session-start-setup.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/session-start/input.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/session-tools.ts": {
+      "space": 8,
+      "frontDoor": 4,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-create-deps.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-delete-tool.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-allow-list.ts": {
+      "space": 13,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-copy.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-cross-agent.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-file-cap.ts": {
+      "space": 12,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-mode.ts": {
+      "space": 15,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-narrow-bypass.ts": {
+      "space": 8,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-parts.ts": {
+      "space": 10,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-run-refusals.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts": {
+      "space": 20,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tasks/tasks-tools-context.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/tool-timeout.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/mcp-tools/types.ts": {
+      "space": 12,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/classifier-context.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/context-builder.ts": {
+      "space": 7,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/credits-launch.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/interactive-handlers.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/launch-resolver.ts": {
+      "space": 3,
+      "frontDoor": 3,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/launch/required-launch.ts": {
+      "space": 2,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/message-sender-shared.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/messaging/tool-doc-gates.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/migrate-room-transcripts.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/repo-settings/launch-repo-config.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/repo-settings/repo-config-activity.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/repo-settings/repo-config-approval.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/repo-settings/repo-config-consent.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/sdk/server-failure-witness.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/sessions/identity/failed-seat-authority.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/sessions/identity/sdk-session-rebind.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/sessions/launch-fingerprint.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/sessions/session-crash-recovery.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/sessions/transcript-parser.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/shell-guard/guard-child-file.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/shell-guard/guard-host.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/shell-guard/guard-service.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-gate/auto-allow.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-gate/extension-write-note.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-gate/never-ask-hook.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-gate/outside-text-hook.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-gate/protected-file-hook.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-turn/live-tool-turn.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tool-turn/pump-tool-turn.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/tooling/mcp-auth-report.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/turn-bounds.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/claude-code/turn-permission.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/account-usage.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/agent-context.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/app-server/project-config-activity.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/app-server/thread-load-binding.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/app-server/thread-loader.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/app-server/trusted-folders-notice.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/codex-runtime.ts": {
+      "space": 2,
+      "frontDoor": 5,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/credits-launch.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/mcp-server-config.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/native-session-reader.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/tool-turn/prepared-turn-settings.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/tool-turn/tool-turn-context.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/transport/acquire-codex-process.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/transport/app-server-transport.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/transport/app-server-turn-failures.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/transport/codex-transport.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/transport/thread-key-turn.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/turn-input.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connect/doe-credentials.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connect/resolve-session-account.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connector-mcp/agent-identity-snapshots.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connector-mcp/agent-runtime-server.ts": {
+      "space": 5,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connector-mcp/auth.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connector-mcp/listener.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connector-mcp/router.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connector-tools.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connectors/connector-turn-lease-supervisor.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/connectors/open-connector-turn.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/context-preview/instructions-capability.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/context-preview/preview.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/context-preview/variables.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/auto-model.ts": {
+      "space": 0,
+      "frontDoor": 6,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/context.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/credentials.ts": {
+      "space": 0,
+      "frontDoor": 4,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/doe-runtime.ts": {
+      "space": 2,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/execute-turn.ts": {
+      "space": 3,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/resources.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/tool-turn/context.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/doe/tools.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/credits-mode.ts": {
+      "space": 0,
+      "frontDoor": 3,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/credits-sidecar.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/events/account-usage.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/messaging/project-plugin-recheck.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/messaging/turn-context.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/messaging/turn-input.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/opencode-runtime.ts": {
+      "space": 3,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/runtime-options.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/server-manager.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/tool-turn/context.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/opencode/tool-turn/prompt.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/accounts-access-context.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/agent-context.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/home-skills-block.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/permission-tool-filter.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/policy/managed-config.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/prose/context-warning-block.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/source/agent-context-source.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/shared/tools/outside-file-places.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/browser-driving-scenarios.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/compose-test-cloud.ts": {
+      "space": 0,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/demo-scenarios.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/demo-team-room-scenario.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/demo-workspace-scenarios.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/fake-cloud-link.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/local-browser-driving-scenario.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/room-reply-scenarios.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/scenarios/room-post-to-scenario.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/test-mode/test-mode-runtime.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/agent-compaction/compaction-capabilities.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/agent-compaction/compaction-permission.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-seat/devtools-reads.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-seat/protected-file-checks.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-seat/read-canvas-document.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-seat/ui-capabilities.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-seat/ui-control.ts": {
+      "space": 5,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-viewers/viewer-person.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/browser-viewers/viewer-registry.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/catalog/session-list-broadcaster.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/fleet/auto-handoff.ts": {
+      "space": 2,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/fleet/carry-over-summary.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/fleet/carry-over.ts": {
+      "space": 5,
+      "frontDoor": 3,
+      "tables": 0
+    },
+    "src/services/session/fleet/continue-service.ts": {
+      "space": 1,
+      "frontDoor": 6,
+      "tables": 0
+    },
+    "src/services/session/fleet/flow-run-link.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/fleet/limit-plans.ts": {
+      "space": 0,
+      "frontDoor": 4,
+      "tables": 0
+    },
+    "src/services/session/fleet/resume-service.ts": {
+      "space": 2,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/fleet/session-account.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/fleet/session-fleet-overlay.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/fleet/session-status-hydration.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/history/history-window.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/index.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/dispatch-options.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/launch-audit.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/launch-caller.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/launch-session.ts": {
+      "space": 5,
+      "frontDoor": 2,
+      "tables": 0
+    },
+    "src/services/session/launch/resolve-chat-place.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/session-start-pre-gate.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/session-tool-warnings.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/launch/verify-chat-agent.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/local-browser/capabilities.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/local-browser/leases/page-session.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/local-browser/outside-turn.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/local-browser/profile-removal/index.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/local-browser/service.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/adopt.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/held-to-default.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/join-chat-rows.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/launch.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/owner-send.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/park.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/pause-hold.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/queue-upkeep.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/run-turn.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/state.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-dispatcher/turn-deps.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/message-queue-store.ts": {
+      "space": 0,
+      "frontDoor": 0,
+      "tables": 1
+    },
+    "src/services/session/new-since/turn-note.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/origin/active-turn-starter.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/origin/rekey-moves.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/origin/session-origin-overlays.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/origin/session-started-by-store.ts": {
+      "space": 0,
+      "frontDoor": 0,
+      "tables": 1
+    },
+    "src/services/session/origin/session-touch-store.ts": {
+      "space": 0,
+      "frontDoor": 0,
+      "tables": 1
+    },
+    "src/services/session/queued-message-edits.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/recovery/rekey-metadata.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 7
+    },
+    "src/services/session/resolution/resolve-session-defaults.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/running-chats/running-chats.ts": {
+      "space": 5,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/runtime-turns/wake-cut-short-work.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/session-event-normalizer.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/session-state-projector.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/trigger-turn.ts": {
+      "space": 5,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/session/turn-context/index.ts": {
+      "space": 0,
+      "frontDoor": 1,
+      "tables": 0
+    },
+    "src/services/session/turn-context/turn-context-redaction.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workbench-serve/frame-inject.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/index.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/providers/git.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/room-session-place.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/workspace-capabilities.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/workspace-gate.ts": {
+      "space": 4,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/workspace-reconciler.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/workspace/worktree-scan.ts": {
+      "space": 2,
+      "frontDoor": 0,
+      "tables": 0
+    }
+  }
+}
