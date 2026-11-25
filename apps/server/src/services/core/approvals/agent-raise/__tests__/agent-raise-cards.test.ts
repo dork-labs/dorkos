@@ -51,7 +51,7 @@ describe('committing an agent-raise card', () => {
     });
     const again = await commitAgentRaise(approvalId, 'Dorian');
     expect(again.status).toBe(409);
-    expect(again.body).toMatchObject({ code: 'agent_raise_gone' });
+    expect(again.body).toMatchObject({ code: 'already_resolved' });
     expect(run).toHaveBeenCalledTimes(1);
   });
 });

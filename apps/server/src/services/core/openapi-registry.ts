@@ -1434,10 +1434,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Unknown runtime',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: no agent program by that name runs here'),
   },
 });
 
@@ -1874,10 +1871,11 @@ registry.registerPath({
       description: 'Command registry',
       content: { 'application/json': { schema: CommandRegistrySchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: the query failed its checks, or names no known runtime'
+    ),
+    403: problemResponse('`outside_boundary`: `cwd` is outside the folders DorkOS may use'),
+    500: problemResponse('`internal_error`: the commands could not be listed'),
   },
 });
 
@@ -2874,6 +2872,7 @@ registry.registerPath({
         },
       },
     },
+    500: problemResponse('`internal_error`: the sources could not be listed'),
   },
 });
 
@@ -5259,23 +5258,19 @@ const PermissionWriteResponseSchema = (view: z.ZodTypeAny) =>
 
 /** The refusals every mutating permission route shares. */
 const PERMISSION_WRITE_REFUSALS = {
-  400: {
-    description:
-      'Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no ' +
-      'area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  401: {
-    description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  403: {
-    description:
-      'Refused: only a person can change permissions. A caller presenting an agent identity ' +
-      '(`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in ' +
-      'every posture, and with login on a per-user API key is refused (`person_only`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  400: problemResponse(
+    '`invalid_request`: an unknown area or action, an action with no area, or Allowed on a ' +
+      'floor area'
+  ),
+  401: problemResponse('`unauthenticated`: login is enabled and the caller is not signed in'),
+  403: problemResponse(
+    '`person_only`: only a person can change permissions; an agent, the caller holding an ' +
+      'approval token, and with login on a per-user API key are refused. `not_from_wifi`: a ' +
+      'raise from Wi-Fi'
+  ),
+  412: problemResponse(
+    '`precondition_failed`: permissions changed while the person was choosing; look again'
+  ),
 } as const;
 
 registry.registerPath({
@@ -5456,15 +5451,12 @@ registry.registerPath({
       content: { 'application/json': { schema: UndoPermissionChangeResponseSchema } },
     },
     ...PERMISSION_WRITE_REFUSALS,
-    404: {
-      description: 'No such permission change (`UNKNOWN_EVENT`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
+    404: problemResponse('`not_found`: no such permission change'),
+    409: problemResponse('`conflict`: the history line is not a change Undo can put back'),
+    412: {
       description:
-        'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
-        'change, such as an answer on a request card (`NOT_UNDOABLE`)',
-      content: { 'application/json': { schema: UndoConflictResponseSchema } },
+        '`precondition_failed`, with `conflicts`: a key changed since; send `force` to set it back',
+      content: { [PROBLEM_CONTENT_TYPE]: { schema: UndoConflictResponseSchema } },
     },
   },
 });
@@ -5483,7 +5475,7 @@ registry.registerPath({
       description: "The agent's permissions",
       content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
     },
-    404: problemResponse('No such agent (`not_found`)'),
+    404: problemResponse('`agent_not_found`: no such agent'),
   },
 });
 
@@ -5501,7 +5493,7 @@ registry.registerPath({
       description: "The agent's level",
       content: { 'application/json': { schema: AgentLevelResponseSchema } },
     },
-    404: problemResponse('No such agent (`not_found`)'),
+    404: problemResponse('`agent_not_found`: no such agent'),
   },
 });
 
@@ -5526,7 +5518,7 @@ registry.registerPath({
         },
       },
     },
-    404: problemResponse('No such agent (`not_found`)'),
+    404: problemResponse('`agent_not_found`: no such agent'),
     ...PERMISSION_WRITE_REFUSALS,
   },
 });
@@ -7422,27 +7414,19 @@ registry.registerPath({
         'states an HTTP caller can see',
       content: { 'application/json': { schema: HarnessStatusResponseRef } },
     },
-    400: {
-      description:
-        '`projectPath` was missing, blank or relative, or it named something that is not a ' +
-        'directory',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description:
-        '`projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description:
-        'No directory there. Separated from `not-set-up` on purpose: a typo would otherwise ' +
-        'read as a real folder that simply has nothing set up in it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description: 'The read failed unexpectedly. The reason is logged, never echoed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: `projectPath` was missing, blank or relative. `not_a_folder`: it named ' +
+        'something that is not a directory'
+    ),
+    403: problemResponse(
+      '`outside_boundary`: `projectPath` resolves outside the directory boundary and outside ' +
+        '`{dorkHome}/agents`'
+    ),
+    404: problemResponse(
+      '`not_found`: no directory there. Separated from `not-set-up` on purpose: a typo would ' +
+        'otherwise read as a real folder that simply has nothing set up in it'
+    ),
+    500: problemResponse('`internal_error`: the read failed. The reason is logged, never echoed'),
   },
 });
 
@@ -7481,32 +7465,20 @@ registry.registerPath({
       description: 'What the sync did, and the status recomputed after it',
       content: { 'application/json': { schema: HarnessSyncResponseSchema } },
     },
-    400: {
-      description:
-        '`projectPath` was missing, blank or relative, or it named something that is not a ' +
-        'directory',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description:
-        'The caller named itself an agent or held an approval token, or `projectPath` resolves ' +
-        'outside the directory boundary and outside `{dorkHome}/agents`',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No directory there',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        '`code: "harness_not_set_up"` — this project has no `.agents/harness.manifest.json`, so ' +
-        'there is nothing to share yet. `dorkos harness sync --fix` in the folder sets it up',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description: 'The sync failed unexpectedly. The reason is logged, never echoed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: `projectPath` was missing, blank or relative. `not_a_folder`: it named ' +
+        'something that is not a directory'
+    ),
+    403: problemResponse(
+      '`person_only`: the caller named itself an agent or held an approval token. ' +
+        '`outside_boundary`: `projectPath` resolves outside the boundary and `{dorkHome}/agents`'
+    ),
+    404: problemResponse('`not_found`: no directory there'),
+    409: problemResponse(
+      '`conflict`: this project has no `.agents/harness.manifest.json`, so ' +
+        'there is nothing to share yet. `dorkos harness sync --fix` in the folder sets it up'
+    ),
+    500: problemResponse('`internal_error`: the sync failed. The reason is logged, never echoed'),
   },
 });
 
@@ -7543,34 +7515,22 @@ registry.registerPath({
         'recomputed after it',
       content: { 'application/json': { schema: HarnessAdoptResponseSchema } },
     },
-    400: {
-      description:
-        '`projectPath` was missing, blank or relative, `name` was missing or blank, or ' +
-        '`projectPath` named something that is not a directory',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description:
-        '`code: "operator_only_harness_adopt"` — the caller named itself an agent or held an ' +
-        'approval token — or `projectPath` resolves outside the directory boundary and outside ' +
-        '`{dorkHome}/agents`',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No directory there',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        '`code: "harness_not_set_up"` — this project has no `.agents/harness.manifest.json`, so ' +
+    400: problemResponse(
+      '`invalid_request`: `projectPath` was missing, blank or relative, or `name` was missing. ' +
+        '`not_a_folder`: `projectPath` named something that is not a directory'
+    ),
+    403: problemResponse(
+      '`person_only`: the caller named itself an agent or held an approval token. ' +
+        '`outside_boundary`: `projectPath` resolves outside the directory boundary and outside ' +
+        '`{dorkHome}/agents`'
+    ),
+    404: problemResponse('`not_found`: no directory there'),
+    409: problemResponse(
+      '`conflict`: this project has no `.agents/harness.manifest.json`, so ' +
         'there is nothing to move a skill within. `dorkos harness sync --fix` in the folder sets ' +
-        'it up',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description: 'The adopt failed unexpectedly. The reason is logged, never echoed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+        'it up'
+    ),
+    500: problemResponse('`internal_error`: the adopt failed. The reason is logged, never echoed'),
   },
 });
 
@@ -7644,10 +7604,7 @@ registry.registerPath({
       description: 'The public key, or null',
       content: { 'application/json': { schema: VapidPublicKeyResponseSchema } },
     },
-    403: {
-      description: 'Only the operator may see this install’s push setup',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('`operator_only`: only the operator may see this install’s push setup'),
   },
 });
 
@@ -7662,10 +7619,7 @@ registry.registerPath({
       description: 'Every subscribed browser, newest first',
       content: { 'application/json': { schema: ListPushSubscriptionsResponseSchema } },
     },
-    403: {
-      description: 'Only the operator may list push devices',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('`operator_only`: only the operator may list push devices'),
   },
 });
 
@@ -7687,14 +7641,8 @@ registry.registerPath({
       description: 'The subscription as it now stands',
       content: { 'application/json': { schema: RegisterPushSubscriptionResponseSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Only the operator may subscribe a device',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
+    403: problemResponse('`operator_only`: only the operator may subscribe a device'),
   },
 });
 
@@ -7709,10 +7657,7 @@ registry.registerPath({
       description: 'How many rows went away — 0 when it was already gone',
       content: { 'application/json': { schema: DeletePushSubscriptionResponseSchema } },
     },
-    403: {
-      description: 'Only the operator may remove a push device',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('`operator_only`: only the operator may remove a push device'),
   },
 });
 

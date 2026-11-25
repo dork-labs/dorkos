@@ -353,7 +353,7 @@ describe('front door', () => {
       const base = await serveThroughFrontDoor(app);
       const raw = await rawRequest(base, 'GET /api/no-such-route HTTP/1.0\r\n\r\n');
       expect(raw.split('\r\n')[0]).toMatch(/ 403 /);
-      expect(raw).toContain('HOST_NOT_ALLOWED');
+      expect(raw).toContain('host_not_allowed');
     });
   });
 });

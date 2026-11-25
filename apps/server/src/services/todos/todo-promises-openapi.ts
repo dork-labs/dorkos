@@ -14,11 +14,7 @@ import {
   UpdateTodoPromiseRequestSchema,
   ConfirmTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
-
-/** A refusal: plain words and a stable code. */
-const TodoPromiseErrorSchema = z
-  .object({ error: z.string(), code: z.string() })
-  .openapi('TodoPromiseError');
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
  * Register the to-do routes.
@@ -60,18 +56,9 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
         description: 'The new promise',
         content: { 'application/json': { schema: TodoPromiseSchema } },
       },
-      400: {
-        description: 'Invalid body, or a past date (`PAST_DUE`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      403: {
-        description: 'The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      404: {
-        description: 'No agent has that id (`UNKNOWN_AGENT`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
+      400: problemResponse('`invalid_request`: invalid body. `past_due`: a past date'),
+      403: problemResponse('`person_only`: the caller is an agent. `owner_only`: not the owner'),
+      404: problemResponse('`not_found`: no agent has that id'),
     },
   });
 
@@ -93,23 +80,14 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
         description: 'The promise, changed',
         content: { 'application/json': { schema: TodoPromiseSchema } },
       },
-      400: {
-        description:
-          'Invalid body, nothing to change (`NOTHING_TO_CHANGE`), or a past date (`PAST_DUE`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      403: {
-        description: 'The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      404: {
-        description: 'No promise has that id (`NOT_FOUND`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      409: {
-        description: 'It is no longer in the `from` state the caller named (`CONFLICT`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
+      400: problemResponse(
+        '`invalid_request`: invalid body, or nothing to change. `past_due`: a past date'
+      ),
+      403: problemResponse('`person_only`: the caller is an agent. `owner_only`: not the owner'),
+      404: problemResponse('`not_found`: no promise has that id'),
+      412: problemResponse(
+        '`precondition_failed`: it is no longer in the `from` state the caller named'
+      ),
     },
   });
 
@@ -131,18 +109,9 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
         description: 'The promise, confirmed or reopened',
         content: { 'application/json': { schema: TodoPromiseSchema } },
       },
-      400: {
-        description: 'Invalid body, or no answer is waiting (`NOTHING_TO_CHANGE`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      403: {
-        description: 'The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
-      404: {
-        description: 'No promise has that id (`NOT_FOUND`)',
-        content: { 'application/json': { schema: TodoPromiseErrorSchema } },
-      },
+      400: problemResponse('`invalid_request`: invalid body, or no answer is waiting'),
+      403: problemResponse('`person_only`: the caller is an agent. `owner_only`: not the owner'),
+      404: problemResponse('`not_found`: no promise has that id'),
     },
   });
 }

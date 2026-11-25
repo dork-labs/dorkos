@@ -84,7 +84,7 @@ describe('owner-only watch routes', () => {
     const response = await f.call(method, suffix);
     expect(response.status).toBe(403);
     expect(f.resolve).not.toHaveBeenCalled();
-    expect((await response.json()).code).toBe('viewer_person_only');
+    expect((await response.json()).code).toBe('person_only');
     await f.registry.close();
   });
 
@@ -117,7 +117,7 @@ describe('owner-only watch routes', () => {
   it('reaches only the selected chat resolver for a proven owner', async () => {
     const f = fixture();
     const response = await f.call('POST', '', {}, { chatId: 'chat-a' });
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(503);
     expect(f.resolve).toHaveBeenCalledExactlyOnceWith(
       'chat-a',
       { ownerId: 'viewer-owner', sessionId: 'signed-in-session', clientId: 'owner-window' },
@@ -131,7 +131,7 @@ describe('owner-only watch routes', () => {
   it('keeps the feature off without touching the page resolver', async () => {
     const f = fixture();
     f.disable();
-    expect((await f.call('POST', '', {}, { chatId: 'chat-a' })).status).toBe(404);
+    expect((await f.call('POST', '', {}, { chatId: 'chat-a' })).status).toBe(503);
     expect(f.resolve).not.toHaveBeenCalled();
     await f.registry.close();
   });

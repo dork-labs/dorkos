@@ -13,11 +13,11 @@
  */
 import path from 'node:path';
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { MeshCore } from '@dorkos/mesh';
-import { FirstRunRequestSchema } from '@dorkos/shared/onboarding-schemas';
+import { FirstRunRequestSchema, type FirstRunRefusalCode } from '@dorkos/shared/onboarding-schemas';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
@@ -56,7 +56,25 @@ export interface OnboardingRouterDeps {
 function refuseUnlessOwner(c: Context<ApiEnv>): Response | undefined {
   const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
   if (!refusal) return undefined;
-  return c.json({ error: 'Only the owner can set up DorkOS.', code: refusal }, 403);
+  return problem(c, refusal === 'not-a-person' ? 'person_only' : 'owner_only', {
+    detail: 'Only the owner can set up DorkOS.',
+  });
+}
+
+/**
+ * The problem code for each first-run refusal. The sentence is the service's
+ * own: each is written there, never an upstream service's text.
+ */
+const FIRST_RUN_PROBLEM: Record<FirstRunRefusalCode, ProblemCode> = {
+  onboarding_complete: 'already_resolved',
+  invalid_key: 'invalid_request',
+  invalid_setup: 'invalid_request',
+  models_unreachable: 'upstream_unavailable',
+};
+
+/** Answer a first-run refusal as a problem document. */
+function firstRunProblem(c: Context<ApiEnv>, error: FirstRunError): Response {
+  return problem(c, FIRST_RUN_PROBLEM[error.code], { detail: error.message });
 }
 
 /** DorkBot's directory. */
@@ -128,23 +146,20 @@ export function createOnboardingRoutes(deps: OnboardingRouterDeps): Hono<ApiEnv>
     // Where the owner is changes nothing over an encrypted connection (DOR-3172).
     const facts = honoRequestFacts(c);
     if (!isAtThisComputer(facts) && !isOnEncryptedConnection(facts)) {
-      return c.json({ error: 'Setup is only available on this computer.' }, 403);
+      return problem(c, 'operator_only', { detail: 'Setup is only available on this computer.' });
     }
     const refused = refuseUnlessOwner(c);
     if (refused) return refused;
     const parsed = FirstRunRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Choose how your agents run.' }, 400);
+    if (!parsed.success) {
+      return problem(c, 'invalid_request', { detail: 'Choose how your agents run.' });
+    }
     try {
       return c.json(await applyFirstRun(parsed.data, deps.firstRun()));
     } catch (error) {
-      if (error instanceof FirstRunError) {
-        return c.json(
-          { error: error.message, code: error.code },
-          error.status as ContentfulStatusCode
-        );
-      }
+      if (error instanceof FirstRunError) return firstRunProblem(c, error);
       logger.warn('[Onboarding] first-run setup failed', logError(error));
-      return c.json({ error: "Couldn't finish setup. Try again." }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t finish setup. Try again.' });
     }
   });
 
@@ -154,12 +169,16 @@ export function createOnboardingRoutes(deps: OnboardingRouterDeps): Hono<ApiEnv>
     try {
       return c.json(postFirstRunWelcome(deps.welcome()));
     } catch (error) {
-      if (error instanceof FirstRunError || error instanceof WelcomeUnavailableError) {
-        const code = error instanceof FirstRunError ? error.code : 'team_unavailable';
-        return c.json({ error: error.message, code }, error.status as ContentfulStatusCode);
+      if (error instanceof FirstRunError) return firstRunProblem(c, error);
+      if (error instanceof WelcomeUnavailableError) {
+        return problem(c, 'temporarily_unavailable', {
+          detail: '#team or DorkBot isn’t ready yet. Try again.',
+        });
       }
       logger.warn('[Onboarding] welcome failed', logError(error));
-      return c.json({ error: "Couldn't post DorkBot's welcome. Try again." }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Couldn’t post DorkBot’s welcome. Try again.',
+      });
     }
   });
 

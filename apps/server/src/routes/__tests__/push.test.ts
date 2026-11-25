@@ -86,7 +86,7 @@ describe('GET /api/push/vapid-public-key', () => {
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PUSH_OPERATOR_ONLY');
+    expect(res.body.code).toBe('operator_only');
     // Reading the key GENERATES it on first call, so a refusal that had already
     // touched the disk would be a refusal with a side effect.
     expect(fs.existsSync(path.join(dorkHome, 'push', 'vapid.json'))).toBe(false);

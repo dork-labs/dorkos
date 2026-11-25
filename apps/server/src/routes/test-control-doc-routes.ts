@@ -22,8 +22,9 @@ import { z } from 'zod';
 import { agents, sessionMetadata, eq, type Db } from '@dorkos/db';
 import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { logger } from '../lib/logger.js';
 import type { DocChannelHttp } from './canvas-doc-events.js';
 import type { DocChannelGrants } from '../services/canvas/doc-channel/grants.js';
 
@@ -63,11 +64,11 @@ export function createTestDocRouteGroup(
   const router = new Hono<ApiEnv>();
   router.post('/configure', (c) => {
     const parsed = ConfigureSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Invalid declaration.' }, 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { documentId, declaration, openerSession } = parsed.data;
     const openerAgentId = openerSession ? openerOf(db, openerSession) : undefined;
     if (openerSession && !openerAgentId)
-      return c.json({ error: 'No registered agent runs that session.' }, 404);
+      return problem(c, 'not_found', { detail: 'No registered agent runs that chat.' });
     try {
       http.grants.configure(
         documentId,
@@ -76,8 +77,8 @@ export function createTestDocRouteGroup(
         openerAgentId
       );
     } catch (error) {
-      const code = (error as { code?: unknown }).code;
-      return c.json({ error: 'Declaration refused.', code: String(code ?? 'UNKNOWN') }, 409);
+      logger.warn('[TestDocRoutes] declaration refused', { error });
+      return problem(c, 'conflict', { detail: 'Declaration refused.' });
     }
     return c.json({ configured: true, ...(openerAgentId ? { openerAgentId } : {}) });
   });

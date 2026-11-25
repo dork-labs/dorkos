@@ -311,8 +311,8 @@ describe('Undo in the history', () => {
 
   it('asks before overwriting a change made since, with the value it would write', async () => {
     const conflict = Object.assign(new Error('This has changed since. Set it back anyway?'), {
-      code: 'UNDO_CONFLICT',
-      status: 409,
+      code: 'precondition_failed',
+      status: 412,
       body: {
         conflicts: [
           {

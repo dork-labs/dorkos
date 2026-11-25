@@ -443,7 +443,7 @@ describe('signed Relay JSON through the finalized application', () => {
       expect(result.status).toBe(gate === 'admission' ? 503 : 403);
       expect(result.body.code).toBe(
         gate === 'host'
-          ? 'HOST_NOT_ALLOWED'
+          ? 'host_not_allowed'
           : gate === 'admission'
             ? 'SERVER_STOPPING'
             : 'origin_not_allowed'

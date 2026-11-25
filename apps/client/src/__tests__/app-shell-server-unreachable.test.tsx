@@ -619,7 +619,7 @@ describe('AppShell, when the server answers with an error', () => {
       'This instance does not answer to the address "phone.ngrok.app". ' +
       'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
     vi.mocked(transport.getConfig).mockRejectedValue(
-      answeredWith(403, refusal, 'HOST_NOT_ALLOWED')
+      answeredWith(403, refusal, 'host_not_allowed')
     );
 
     renderAppShell();

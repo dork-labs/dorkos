@@ -102,7 +102,7 @@ describe('the API on an agent computer', () => {
       .set(AS_AGENT)
       .send({ value: 'x' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('AGENT_COMPUTER_HUB_OWNED');
+    expect(res.body.code).toBe('forbidden');
   });
 
   it('refuses the app`s event stream to an agent', async () => {
@@ -124,7 +124,7 @@ describe('the API on an agent computer', () => {
     for (const path of ['/api/relay/adapters', '/api/connectors/connections', '/api/workspaces']) {
       const res = await request(target.server).post(path).set(AS_AGENT).send({});
       expect(res.status, path).toBe(403);
-      expect(res.body.code, path).toBe('AGENT_COMPUTER_HUB_OWNED');
+      expect(res.body.code, path).toBe('forbidden');
     }
   });
 
@@ -159,7 +159,7 @@ describe('the API on an agent computer', () => {
     boot('agent-computer');
     const res = await request(target.server).put(path).set(AS_AGENT).send({ value: 'x' });
     expect(res.status, path).toBe(403);
-    expect(res.body.code, path).toBe('AGENT_COMPUTER_HUB_OWNED');
+    expect(res.body.code, path).toBe('forbidden');
   });
 
   // Two of those spellings reach the real settings route on a person's own

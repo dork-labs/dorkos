@@ -128,10 +128,14 @@ export type DecisionAuthorityResult =
       /** HTTP status to answer with. */
       status: number;
       /** Machine-readable refusal code. */
-      code: string;
+      code: DecisionRefusalCode;
       /** One plain sentence explaining the refusal. */
       error: string;
     };
+
+/** Why a caller may not decide: an agent, the requester, or nobody signed in. */
+export type DecisionRefusalCode =
+  'AGENT_CANNOT_DECIDE' | 'REQUESTER_CANNOT_DECIDE' | 'AUTH_REQUIRED';
 
 /**
  * Read `auth.enabled` from the live user config, exactly as the session gate does.

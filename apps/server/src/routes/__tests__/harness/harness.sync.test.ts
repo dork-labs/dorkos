@@ -58,7 +58,7 @@ vi.mock('../../../services/core/config-manager.js', () => ({
 const servers = useHarnessRoutes();
 
 describe('POST /api/harness/sync', () => {
-  it('answers 409 harness_not_set_up on a project with no manifest, and writes nothing', async () => {
+  it('answers 409 conflict on a project with no manifest, and writes nothing', async () => {
     // Seeded defect: let `loadManifest` throw out of the seam and this reds with
     // a 500 and a stack in the log — for a project in a state the status model
     // has a name for and the page draws its own copy for. The snapshot is the
@@ -71,9 +71,8 @@ describe('POST /api/harness/sync', () => {
     const res = await syncProject(repo);
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('harness_not_set_up');
-    expect(res.body.error).toContain('agent files');
-    expect(res.body.message).toContain('dorkos harness sync --fix');
+    expect(res.body.code).toBe('conflict');
+    expect(res.body.detail).toContain('dorkos harness sync --fix');
     expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
   });
 
@@ -90,7 +89,7 @@ describe('POST /api/harness/sync', () => {
       .send({ projectPath: repo });
 
     expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('operator_only_harness_sync');
+    expect(refused.body.code).toBe('person_only');
     // The refusal is ahead of validation, so it is the same answer whatever was
     // sent: a caller that may not do this at all does not get to probe a schema.
     const probed = await request(servers.testServer)
@@ -117,7 +116,7 @@ describe('POST /api/harness/sync', () => {
       .send({ projectPath: repo });
 
     expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('operator_only_harness_sync');
+    expect(refused.body.code).toBe('person_only');
     expect((await syncProject(repo)).status).toBe(200);
   });
 

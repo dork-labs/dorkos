@@ -84,7 +84,7 @@ describe('permission raise confirmation', () => {
         owner.call('put', '/api/permissions/preset', via).send(body),
         owner.call('put', '/api/permissions/preset', via).send(body),
       ]);
-      expect(answers.map((answer) => answer.status).sort()).toEqual([200, 409]);
+      expect(answers.map((answer) => answer.status).sort()).toEqual([200, 412]);
       const overview = await world.service.getOverview();
       expect(overview.areas.find((area) => area.id === 'messages')!.resolved.state).toBe('blocked');
     }

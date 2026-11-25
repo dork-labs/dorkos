@@ -640,7 +640,7 @@ describe('PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick (DOR-5033)'
     for (const id of ['ghost', 'default']) {
       const res = await put(id).send({ agentsMayPick: true });
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('unknown_account');
+      expect(res.body.code).toBe('not_found');
     }
     expect(state.sets).toBe(0);
     expect(emit).not.toHaveBeenCalled();

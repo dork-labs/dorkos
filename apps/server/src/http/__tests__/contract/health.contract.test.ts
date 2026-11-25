@@ -74,11 +74,10 @@ contractSuite('health', [
     headers: { host: 'evil.example' },
     expect: {
       status: 403,
-      body: {
-        error:
-          'This instance does not answer to the address "evil.example". If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.',
-        code: 'HOST_NOT_ALLOWED',
-      },
+      body: problemBody('host_not_allowed', {
+        detail:
+          'DorkOS doesn’t answer to "evil.example". Add it to DORKOS_TRUSTED_HOSTS, or turn on login.',
+      }),
     },
   },
   {

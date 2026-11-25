@@ -48,6 +48,7 @@ import {
   type ContractCase,
 } from './harness.js';
 import { problemBody } from '@dorkos/http-kit';
+import { EXECUTION_NEEDS_APPROVAL_DETAIL } from '../../../services/core/operator/agent-execution.js';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -78,7 +79,7 @@ const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
 const VALIDATION_FAILED = z
   .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
-const NEEDS_APPROVAL = z.object({ error: z.string(), code: z.literal('NEEDS_APPROVAL') }).strict();
+const NEEDS_APPROVAL = problemBody('needs_approval', { detail: EXECUTION_NEEDS_APPROVAL_DETAIL });
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const AGENT_LIST = z.object({ agents: z.array(z.object({ id: z.string() }).loose()) }).strict();
 const EVENT_STREAM = {
@@ -281,7 +282,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: `/api/mesh/agents/${UNKNOWN_ULID}`,
     headers: AGENT,
     body: { model: 'some-model' },
-    expect: { status: 403, schema: NEEDS_APPROVAL },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: NEEDS_APPROVAL },
   },
   {
     name: 'POST /api/mesh/agents/:id/heartbeat answers 404 for an unknown agent',
@@ -452,7 +453,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: '/api/agents/current',
     headers: AGENT,
     body: { runtime: 'codex' },
-    expect: { status: 403, schema: NEEDS_APPROVAL },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: NEEDS_APPROVAL },
   },
   {
     name: 'PATCH /api/agents/current answers 404 for a folder with no agent',
@@ -551,10 +552,10 @@ contractSuite('mesh, agent and discovery groups', [
     body: {},
     expect: {
       status: 403,
-      body: {
-        error: 'Agents record their own promises with todo_promise_add.',
-        code: 'NOT_A_PERSON',
-      },
+      headers: PROBLEM_TYPE,
+      body: problemBody('person_only', {
+        detail: 'Agents record their own promises with todo_promise_add.',
+      }),
     },
   },
   {
@@ -645,10 +646,10 @@ contractSuite('mesh, agent and discovery groups', [
     body: { state: 'kept' },
     expect: {
       status: 403,
-      body: {
-        error: 'Agents change their own promises with todo_promise_update.',
-        code: 'NOT_A_PERSON',
-      },
+      headers: PROBLEM_TYPE,
+      body: problemBody('person_only', {
+        detail: 'Agents change their own promises with todo_promise_update.',
+      }),
     },
   },
   {
@@ -656,7 +657,7 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'PATCH',
     path: '/api/todo-promises/no-such-promise',
     body: { state: 'kept' },
-    expect: { status: 404, schema: z.object({ code: z.literal('NOT_FOUND') }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('not_found') }).loose() },
   },
   {
     name: 'GET /api/todo-promises/:id is the /api 404',
@@ -679,8 +680,10 @@ contractSuite('mesh, agent and discovery groups', [
     body: { roots: [REPO_ROOT, '/'] },
     expect: {
       status: 403,
-      headers: JSON_TYPE,
-      body: { error: 'Root path outside directory boundary' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('outside_boundary', {
+        detail: 'Pick a folder inside the ones DorkOS may use.',
+      }),
     },
   },
   {
@@ -694,7 +697,7 @@ contractSuite('mesh, agent and discovery groups', [
     name: 'GET /api/mesh/agents refuses a foreign Host',
     path: '/api/mesh/agents',
     headers: { host: 'evil.example.com' },
-    expect: { status: 403, schema: z.object({ error: z.string() }).loose() },
+    expect: { status: 403, schema: z.object({ code: z.literal('host_not_allowed') }).loose() },
   },
   {
     name: 'GET /api/mesh/status answers a same-origin browser with its CORS headers',
@@ -879,14 +882,14 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
       path: `/api/mesh/agents/${id}`,
       headers: asAgent,
       body: { effort: 'high' },
-      expect: { status: 403, schema: NEEDS_APPROVAL },
+      expect: { status: 403, headers: PROBLEM_TYPE, body: NEEDS_APPROVAL },
     });
     await check(server, {
       method: 'POST',
       path: `/api/agents/${id}/todo-promises`,
       headers: asAgent,
       body: { text: 'a promise' },
-      expect: { status: 403, schema: z.object({ code: z.literal('NOT_A_PERSON') }).loose() },
+      expect: { status: 403, schema: z.object({ code: z.literal('person_only') }).loose() },
     });
     await check(server, {
       method: 'POST',
@@ -933,7 +936,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
       body: { what: 'For nobody' },
       expect: {
         status: 404,
-        body: { error: 'No agent on the team has that id.', code: 'UNKNOWN_AGENT' },
+        body: problemBody('not_found', { detail: 'No agent on the team has that id.' }),
       },
     });
 

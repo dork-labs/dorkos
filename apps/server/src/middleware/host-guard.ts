@@ -47,12 +47,8 @@ import { getTunnelHosts, isLoopbackHost, parseHostname } from '../lib/trusted-or
 import { getLanAccessHosts } from '../services/core/lan-access/lan-trust.js';
 import { configManager } from '../services/core/config-manager.js';
 import { redactLogPath } from './request-logger.js';
-
-/**
- * Error code returned with the 403. Stable contract: clients and support docs
- * match on it.
- */
-export const HOST_NOT_ALLOWED_CODE = 'HOST_NOT_ALLOWED';
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
 
 /** No allocation on the common path, where `DORKOS_TRUSTED_HOSTS` is unset. */
 const NO_TRUSTED_HOSTS: readonly string[] = [];
@@ -104,7 +100,7 @@ export function isHostAllowed(policy: HostPolicy): boolean {
 }
 
 /**
- * The operator-facing 403 body. It names `DORKOS_TRUSTED_HOSTS` so someone
+ * The operator-facing 403 sentence. It names `DORKOS_TRUSTED_HOSTS` so someone
  * running a login-off reverse proxy reads the fix once and is done, and it never
  * lists the allowlist back (that would hand a scanner the map).
  *
@@ -112,16 +108,9 @@ export function isHostAllowed(policy: HostPolicy): boolean {
  */
 function refusalMessage(hostname: string | null): string {
   if (!hostname) {
-    return (
-      'Every request needs a Host header naming the address you used. ' +
-      'If you reach DorkOS through a proxy, list that address in DORKOS_TRUSTED_HOSTS, ' +
-      'or turn on login.'
-    );
+    return 'Send a Host header. Behind a proxy, add it to DORKOS_TRUSTED_HOSTS, or turn on login.';
   }
-  return (
-    `This instance does not answer to the address "${hostname}". ` +
-    'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.'
-  );
+  return `DorkOS doesn’t answer to "${hostname}". Add it to DORKOS_TRUSTED_HOSTS, or turn on login.`;
 }
 
 /**
@@ -136,13 +125,14 @@ function refusalMessage(hostname: string | null): string {
  * @param host - The RAW `Host` header, never a framework's parsed host name.
  * @param method - The request method, for the log line.
  * @param url - The request URL as sent (path and query), for the log line.
- * @returns The 403 body to answer with, or `null` when the request may pass.
+ * @returns The `403 host_not_allowed` problem to answer with, or `null` when
+ *   the request may pass.
  */
 export function refuseUntrustedHost(
   host: string | undefined,
   method: string,
   url: string
-): { error: string; code: typeof HOST_NOT_ALLOWED_CODE } | null {
+): Problem | null {
   // Login on: Better Auth cookies are origin-scoped, so a rebound origin never
   // presents one and the session gate already turns it away. Read per request
   // so enabling login takes effect immediately.
@@ -166,5 +156,5 @@ export function refuseUntrustedHost(
     // No query string, and no video link ticket in any spelling (DOR-4321, DOR-4736).
     path: redactLogPath(url),
   });
-  return { error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE };
+  return problemBody('host_not_allowed', { detail: refusalMessage(hostname) });
 }

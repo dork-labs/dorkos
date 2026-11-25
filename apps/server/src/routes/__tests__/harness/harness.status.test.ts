@@ -96,7 +96,7 @@ describe('GET /api/harness/status', () => {
     const res = await readStatus(paths.outside);
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   // Seeded defects, one per row: drop the query schema (a bare call resolves
@@ -118,7 +118,7 @@ describe('GET /api/harness/status', () => {
       'a folder that does not exist',
       404,
       (): string | undefined => join(paths.boundaryRoot, 'no-such-project'),
-      'Project directory not found',
+      'That folder doesn’t exist.',
     ],
     [
       'a path that is a file',
@@ -128,7 +128,7 @@ describe('GET /api/harness/status', () => {
         writeAt(file, '# not a project\n');
         return file;
       },
-      'Not a directory',
+      'Pick a folder, not a file.',
     ],
   ] as const)('answers %s with %i', async (_case, status, target, words) => {
     const projectPath = target();
@@ -198,7 +198,10 @@ describe('GET /api/harness/status', () => {
       .query({ projectPath: repo });
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(res.body).toMatchObject({
+      code: 'internal_error',
+      detail: 'Couldn’t read this folder’s agent files.',
+    });
     // Not just the message: nothing the failure carried, in any field.
     expect(JSON.stringify(res.body)).not.toContain('private-notes');
     expect(JSON.stringify(res.body)).not.toContain('config store');

@@ -1,5 +1,11 @@
 import type { MiddlewareHandler } from 'hono';
-import { jsonBodyParser, parseRequestBody, underMount, type BodyRule } from '@dorkos/http-kit';
+import {
+  jsonBodyParser,
+  parseRequestBody,
+  problemBody,
+  underMount,
+  type BodyRule,
+} from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 
 const bounded: BodyRule = {
@@ -7,7 +13,7 @@ const bounded: BodyRule = {
   parse: jsonBodyParser('16kb'),
   answerFailure: () => ({
     status: 400,
-    body: { code: 'viewer_bad_request', error: 'Reopen the browser view and try again.' },
+    body: problemBody('invalid_request', { detail: 'Reopen the browser view and try again.' }),
   }),
 };
 /** Defer this group's body until after its strict local-person ingress, including multipart. */

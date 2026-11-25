@@ -81,7 +81,7 @@ const NO_SUCH_DOCUMENT = problemBody('not_found', { detail: 'No such document on
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
-const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
+const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const OUTSIDE_BOUNDARY = problemBody('outside_boundary', {
   detail: 'This chat is outside the allowed directory.',

@@ -29,7 +29,7 @@ import type { LoadGateJobAction, LoadGateWaitingLine } from '@dorkos/shared/load
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit, type RecordAuditInput } from '../services/audit/audit-trail.js';
 import type { JobActionResult } from '../services/core/load-gate/job-actions.js';
@@ -94,7 +94,7 @@ function refusedNotHere(c: Context<ApiEnv>): Response | undefined {
   const refused = refusedNotAPerson(c, COPY);
   if (refused) return refused;
   if (classifyRequest(honoRequestFacts(c), currentServerRole()).kind !== 'this-computer') {
-    return c.json(errorBody('Do this at the computer running DorkOS.', 'local_only'), 403);
+    return problem(c, 'operator_only', { detail: 'Do this at the computer running DorkOS.' });
   }
   return undefined;
 }
@@ -122,7 +122,7 @@ export function mountLoadGateRoutes(router: Hono<ApiEnv>, deps: LoadGateRouteDep
       if (refused) return refused;
       const id = c.req.param('id');
       const invalidId = () =>
-        c.json(errorBody('That isn’t a waiting job’s id.', 'invalid_id'), 400);
+        problem(c, 'invalid_request', { detail: 'That isn’t a waiting job’s id.' });
       // Checked first, so an id that cannot be a job's never costs a read of the folder.
       if (!isTicketId(id)) return invalidId();
       // Read before the action, from this server's memory only: the job leaves the line once it starts.
@@ -130,10 +130,12 @@ export function mountLoadGateRoutes(router: Hono<ApiEnv>, deps: LoadGateRouteDep
       const result = spec.run(gate(), id);
       if (result === 'invalid-id') return invalidId();
       if (result === 'not-found') {
-        return c.json(errorBody('That job isn’t waiting anymore.', 'not_found'), 404);
+        return problem(c, 'not_found', { detail: 'That job isn’t waiting anymore.' });
       }
       if (result === 'unavailable') {
-        return c.json(errorBody('Couldn’t reach the waiting jobs. Try again.', 'unavailable'), 503);
+        return problem(c, 'temporarily_unavailable', {
+          detail: 'Couldn’t reach the waiting jobs. Try again.',
+        });
       }
       audit({
         action: spec.auditAction,

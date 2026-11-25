@@ -18,7 +18,7 @@ import type { ShellCheckStatus } from '@dorkos/shared/notification-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import {
@@ -46,13 +46,12 @@ export function mountShellCheckRoutes(router: Hono<ApiEnv>): void {
     const refused = refusedNotAPerson(c, COPY);
     if (refused) return refused;
     if (classifyRequest(honoRequestFacts(c), currentServerRole()).kind !== 'this-computer') {
-      return c.json(errorBody('Do this at the computer running DorkOS.', 'local_only'), 403);
+      return problem(c, 'operator_only', { detail: 'Do this at the computer running DorkOS.' });
     }
     if (!continueWithoutCheck()) {
-      return c.json(
-        errorBody('The check isn’t down, or a restart hasn’t been tried.', 'conflict'),
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'The check isn’t down, or a restart hasn’t been tried.',
+      });
     }
     recordAudit({
       action: 'shell-check.continue-without',

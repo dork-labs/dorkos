@@ -31,7 +31,13 @@ import {
 } from '@dorkos/shared/telemetry-events';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody, underMount, type BodyRule } from '@dorkos/http-kit';
+import {
+  problem,
+  readJsonBody,
+  underMount,
+  validationProblem,
+  type BodyRule,
+} from '@dorkos/http-kit';
 import {
   sendFeedback,
   resolveFeedbackIdentity,
@@ -205,7 +211,7 @@ function stripServerAuthoredFields(submission: FeedbackSubmission): FeedbackSubm
  * POST /api/feedback — validate the submission and forward it to the ingest.
  *
  * **Only a person sends a report (DOR-3506).** A caller presenting an agent
- * token, whether or not it verifies, is refused 403 `PERSON_REQUIRED` before
+ * token, whether or not it verifies, is refused 403 `person_only` before
  * anything else runs. Pressing Send is the consent this route rests on, and an
  * agent pressing it would attach a room it is in, or a chat's transcript, with
  * no person involved: the room's other members never agreed to that. Agents
@@ -217,16 +223,13 @@ function stripServerAuthoredFields(submission: FeedbackSubmission): FeedbackSubm
  */
 router.post('/', async (c) => {
   if (presentsAgentIdentity(honoRequestFacts(c))) {
-    return c.json(
-      { error: 'Only a person can send feedback. Ask them to send it.', code: 'PERSON_REQUIRED' },
-      403
-    );
+    return problem(c, 'person_only', {
+      detail: 'Only a person can send feedback. Ask them to send it.',
+    });
   }
 
   const parsed = FeedbackSubmissionSchema.safeParse(readJsonBody(c));
-  if (!parsed.success) {
-    return c.json({ error: 'Invalid feedback', code: 'INVALID_FEEDBACK' }, 400);
-  }
+  if (!parsed.success) return validationProblem(c, parsed.error);
 
   // Identity is resolved from the verified session ONLY — `c.var.user` is
   // set by the session gate (never by anything in the request body), so a client
@@ -274,7 +277,7 @@ router.get('/mine', async (c) => {
     return c.json(items);
   } catch (err) {
     logger.warn('[Feedback] Failed to read feedback history', logError(err));
-    return c.json({ error: 'Could not reach the feedback service' }, 502);
+    return problem(c, 'upstream_unavailable', { detail: 'Couldn’t reach the feedback service.' });
   }
 });
 /**
@@ -290,7 +293,7 @@ router.get('/mine', async (c) => {
 router.get('/room-transcript', async (c) => {
   const roomId = c.req.query('roomId');
   if (!roomId || roomId.length > MAX_FEEDBACK_ROOM_ID_LEN) {
-    return c.json({ error: 'roomId is required', code: 'INVALID_ROOM_ID' }, 400);
+    return problem(c, 'invalid_request', { detail: 'Send the room as `roomId`.' });
   }
   const excerpt = await roomExcerptFor(c, roomId);
   return c.json({ text: excerpt?.text ?? '', throughSeq: excerpt?.throughSeq ?? null });

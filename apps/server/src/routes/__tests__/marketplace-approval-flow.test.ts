@@ -211,7 +211,7 @@ describe('marketplace install → cockpit approval → retry', () => {
 
     const selfGrant = await request(agentServer).post(`/api/approvals/${approvalId}/grant`).send();
     expect(selfGrant.status).toBe(403);
-    expect(selfGrant.body.code).toBe('AGENT_CANNOT_DECIDE');
+    expect(selfGrant.body.code).toBe('person_only');
 
     const selfDeny = await request(agentServer).post(`/api/approvals/${approvalId}/deny`).send();
     expect(selfDeny.status).toBe(403);

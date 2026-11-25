@@ -108,7 +108,7 @@ describe('to-do routes', () => {
       .set(AGENT_IDENTITY_HEADER, '/agents/ana')
       .send({ state: 'kept' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NOT_A_PERSON');
+    expect(res.body.code).toBe('person_only');
     expect(service.get(made.id)).toEqual(before);
   });
 
@@ -200,7 +200,7 @@ describe('to-do routes', () => {
         .set(VIA_WIFI, '1')
         .send({ state: 'dropped' });
       expect(drop.status).toBe(400);
-      expect(drop.body.code).toBe('NOTHING_TO_CHANGE');
+      expect(drop.body.code).toBe('invalid_request');
       expect(service.get(given.id)!.state).toBe('open');
       expect(power(given.id)).toEqual({ authority: 'person', marks: '{}' });
     });
@@ -245,7 +245,7 @@ describe('to-do routes', () => {
         .set(FORWARDED_AFTER_GATE, '203.0.113.7')
         .send({ state: 'dropped' });
       expect(drop.status).toBe(400);
-      expect(drop.body.code).toBe('NOTHING_TO_CHANGE');
+      expect(drop.body.code).toBe('invalid_request');
       expect(service.get(given.id)!.state).toBe('open');
     });
 
@@ -282,13 +282,13 @@ describe('to-do routes', () => {
           .set(AGENT_IDENTITY_HEADER, header)
           .send({ what: 'Reply' });
         expect(add.status, header).toBe(403);
-        expect(add.body.code, header).toBe('NOT_A_PERSON');
+        expect(add.body.code, header).toBe('person_only');
         const drop = await request(fixtureServer)
           .patch(`/api/todo-promises/${made.id}`)
           .set(AGENT_IDENTITY_HEADER, header)
           .send({ state: 'dropped' });
         expect(drop.status, header).toBe(403);
-        expect(drop.body.code, header).toBe('NOT_A_PERSON');
+        expect(drop.body.code, header).toBe('person_only');
       }
       expect(service.list()).toHaveLength(1);
       expect(service.get(made.id)!.state).toBe('open');
@@ -313,7 +313,7 @@ describe('to-do routes', () => {
         .patch(`/api/todo-promises/${given.id}`)
         .send({ state: 'dropped' });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('NOTHING_TO_CHANGE');
+      expect(res.body.code).toBe('invalid_request');
       expect(service.get(given.id)!.state).toBe('open');
       expect(power(given.id)).toEqual({ authority: 'person', marks: '{}' });
     });
@@ -333,7 +333,7 @@ describe('to-do routes', () => {
         .patch(`/api/todo-promises/${given.id}`)
         .send({ state: 'dropped' });
       expect(drop.status).toBe(403);
-      expect(drop.body.code).toBe('NOT_YOURS');
+      expect(drop.body.code).toBe('owner_only');
       expect(service.list()).toHaveLength(1);
       expect(service.get(given.id)!.state).toBe('open');
     });
@@ -360,7 +360,7 @@ describe('to-do routes', () => {
       .set(AGENT_IDENTITY_HEADER, '/agents/ana')
       .send({ what: 'Reply' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NOT_A_PERSON');
+    expect(res.body.code).toBe('person_only');
     expect(service.list()).toEqual([]);
   });
 
@@ -382,7 +382,7 @@ describe('to-do routes', () => {
         .set(AGENT_IDENTITY_HEADER, header)
         .send({ state: 'open', dueAt: '2099-10-12T09:00:00Z' });
       expect(res.status, header).toBe(403);
-      expect(res.body.code, header).toBe('NOT_A_PERSON');
+      expect(res.body.code, header).toBe('person_only');
     }
     expect(service.get(made.id)!.state).toBe('open');
     expect(service.get(made.id)!.dueAt).toBeNull();
@@ -397,7 +397,7 @@ describe('to-do routes', () => {
       .patch(`/api/todo-promises/${made.id}`)
       .send({ state: 'kept' });
     expect(again.status).toBe(400);
-    expect(again.body.code).toBe('NOTHING_TO_CHANGE');
+    expect(again.body.code).toBe('invalid_request');
 
     const reopened = await request(fixtureServer)
       .patch(`/api/todo-promises/${made.id}`)
@@ -430,7 +430,7 @@ describe('to-do routes', () => {
     const twice = await request(fixtureServer)
       .post(`/api/todo-promises/${yes.id}/confirm`)
       .send({ answer: 'not-yet' });
-    expect(twice.body.code).toBe('NOTHING_TO_CHANGE');
+    expect(twice.body.code).toBe('invalid_request');
 
     const notYet = service.create('agent-ana', { what: 'Send the deck', to: 'owner' });
     service.update({ kind: 'agent', agentId: 'agent-ana' }, notYet.id, { state: 'kept' });
@@ -449,23 +449,23 @@ describe('to-do routes', () => {
       .post('/api/agents/agent-ana/todo-promises')
       .send({ what: 'Reply' });
     expect(add.status).toBe(403);
-    expect(add.body.code).toBe('NOT_YOURS');
+    expect(add.body.code).toBe('owner_only');
     const change = await request(fixtureServer)
       .patch(`/api/todo-promises/${made.id}`)
       .send({ state: 'kept' });
     expect(change.status).toBe(403);
-    expect(change.body.code).toBe('NOT_YOURS');
+    expect(change.body.code).toBe('owner_only');
     expect(service.get(made.id)!.state).toBe('open');
     expect(service.list({})).toHaveLength(1);
   });
 
-  it('answers 409 CONFLICT when `from` no longer matches', async () => {
+  it('answers 412 precondition_failed when `from` no longer matches', async () => {
     const made = service.create('agent-ana', { what: 'Ship it' });
     const res = await request(fixtureServer)
       .patch(`/api/todo-promises/${made.id}`)
       .send({ state: 'open', from: 'kept' });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('CONFLICT');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
   });
 
   it('shows the source chat to the owner only', async () => {
@@ -483,7 +483,7 @@ describe('to-do routes', () => {
       .post('/api/agents/agent-ana/todo-promises')
       .send({ what: 'Reply', dueAt: '2020-01-01T00:00:00Z' });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('PAST_DUE');
+    expect(res.body.code).toBe('past_due');
   });
 
   it('answers 404 for an unknown to-do', async () => {

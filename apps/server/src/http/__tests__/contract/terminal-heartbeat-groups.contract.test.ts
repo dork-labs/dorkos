@@ -30,11 +30,10 @@ const BAD_DAYS = problemBody('invalid_request', {
 const API_NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const HOST_NOT_ALLOWED = {
-  error:
-    'This instance does not answer to the address "evil.example". If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.',
-  code: 'HOST_NOT_ALLOWED',
-};
+const HOST_NOT_ALLOWED = problemBody('host_not_allowed', {
+  detail:
+    'DorkOS doesn’t answer to "evil.example". Add it to DORKOS_TRUSTED_HOSTS, or turn on login.',
+});
 const VALIDATION_FAILED = z
   .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
@@ -180,7 +179,7 @@ describe('contract: the terminal and heartbeat routes', () => {
       path: '/api/heartbeats/triage-credits',
       headers: { 'x-dorkos-agent': 'some-agent-token' },
       body: { useCredits: true },
-      expect: { status: 403, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+      expect: { status: 403, schema: z.object({ code: z.literal('person_only') }).loose() },
     },
     {
       name: 'GET /api/heartbeats/triage-credits is the API 404',

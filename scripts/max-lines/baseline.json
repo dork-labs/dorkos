@@ -31,7 +31,7 @@
     "apps/client/src/space/components/Manage.tsx": 905,
     "apps/desktop/scripts/smoke-packaged.ts": 595,
     "apps/e2e/capture/config.ts": 562,
-    "apps/server/src/routes/test-control.ts": 649,
+    "apps/server/src/routes/test-control.ts": 638,
     "apps/server/src/services/browser/egress/broker/broker.ts": 660,
     "apps/server/src/services/browser/egress/broker/issuer.ts": 595,
     "apps/server/src/services/canvas/canvas-service.ts": 613,

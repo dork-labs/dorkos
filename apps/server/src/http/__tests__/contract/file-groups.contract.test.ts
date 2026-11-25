@@ -281,7 +281,7 @@ contractSuite('file, diff, upload and profile groups', [
     name: 'GET /api/files/raw refuses a foreign Host',
     path: `/api/files/raw?${at('pic.svg')}`,
     headers: { host: 'evil.example' },
-    expect: { status: 403, headers: JSON_TYPE },
+    expect: { status: 403, headers: { 'content-type': /^application\/problem\+json\b/ } },
   },
   {
     name: 'GET /api/files lists the working directory',

@@ -213,6 +213,7 @@
           "request_too_large",
           "unsupported_media_type",
           "not_found",
+          "agent_not_found",
           "session_not_found",
           "unknown_capability",
           "conflict",
@@ -336,6 +337,8 @@
           "held_by_another_browser",
           "signin_no_retry",
           "sign_in_needs_https",
+          "managed_by_desktop",
+          "always_not_offered",
           "schedule_package_owned",
           "past_due",
           "owner_changed",
@@ -2212,21 +2215,6 @@
           "kept",
           "missed",
           "dropped"
-        ]
-      },
-      "TodoPromiseError": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "error",
-          "code"
         ]
       },
       "CreateTodoPromiseRequest": {
@@ -4332,18 +4320,6 @@
             ],
             "additionalProperties": false
           }
-        ]
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "details": {}
-        },
-        "required": [
-          "error"
         ]
       },
       "PasskeyCheckRequired": {
@@ -13552,6 +13528,18 @@
           "observation_lost"
         ]
       },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "details": {}
+        },
+        "required": [
+          "error"
+        ]
+      },
       "RelaySendMessageRequest": {
         "type": "object",
         "properties": {
@@ -17464,29 +17452,32 @@
         ]
       },
       "UndoConflictResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Problem"
           },
-          "code": {
-            "type": "string",
-            "enum": [
-              "UNDO_CONFLICT"
+          {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "precondition_failed"
+                ]
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PermissionUndoSkip"
+                }
+              }
+            },
+            "required": [
+              "conflicts"
             ]
-          },
-          "conflicts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PermissionUndoSkip"
-            }
           }
-        },
-        "required": [
-          "error",
-          "code",
-          "conflicts"
-        ]
+        ],
+        "description": "The error document every failed API request is answered with (RFC 9457)."
       },
       "UndoPermissionChangeBody": {
         "type": "object",
@@ -26592,31 +26583,31 @@
             }
           },
           "400": {
-            "description": "Invalid body, or a past date (`PAST_DUE`)",
+            "description": "`invalid_request`: invalid body. `past_due`: a past date",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "description": "`person_only`: the caller is an agent. `owner_only`: not the owner",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No agent has that id (`UNKNOWN_AGENT`)",
+            "description": "`not_found`: no agent has that id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -26663,41 +26654,41 @@
             }
           },
           "400": {
-            "description": "Invalid body, nothing to change (`NOTHING_TO_CHANGE`), or a past date (`PAST_DUE`)",
+            "description": "`invalid_request`: invalid body, or nothing to change. `past_due`: a past date",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "description": "`person_only`: the caller is an agent. `owner_only`: not the owner",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No promise has that id (`NOT_FOUND`)",
+            "description": "`not_found`: no promise has that id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
-          "409": {
-            "description": "It is no longer in the `from` state the caller named (`CONFLICT`)",
+          "412": {
+            "description": "`precondition_failed`: it is no longer in the `from` state the caller named",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -26744,31 +26735,31 @@
             }
           },
           "400": {
-            "description": "Invalid body, or no answer is waiting (`NOTHING_TO_CHANGE`)",
+            "description": "`invalid_request`: invalid body, or no answer is waiting",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "description": "`person_only`: the caller is an agent. `owner_only`: not the owner",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No promise has that id (`NOT_FOUND`)",
+            "description": "`not_found`: no promise has that id",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoPromiseError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -27728,85 +27719,41 @@
             }
           },
           "400": {
-            "description": "Not a known path, or the key or setup was refused (`invalid_key`, `invalid_setup`)",
+            "description": "`invalid_request`: not a known path, or the key or setup was refused",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not this computer, or not the owner",
+            "description": "`operator_only`: not this computer. `person_only` or `owner_only`: not the owner",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The first run is finished or dismissed (`onboarding_complete`)",
+            "description": "`already_resolved`: the first run is finished or dismissed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "A model on this computer did not answer; nothing was saved",
+            "description": "`upstream_unavailable`: a model on this computer did not answer; nothing was saved",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -27846,64 +27793,31 @@
             }
           },
           "403": {
-            "description": "Not the owner",
+            "description": "`person_only` or `owner_only`: not the owner",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "The first run finished or was dismissed without a welcome (`onboarding_complete`)",
+            "description": "`already_resolved`: the first run finished or was dismissed without a welcome",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "#team, or DorkBot in it, is not ready yet (`team_unavailable`)",
+            "description": "`temporarily_unavailable`: #team, or DorkBot in it, is not ready yet",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -38552,29 +38466,24 @@
             }
           },
           "403": {
-            "description": "The caller is not the owner in the app",
+            "description": "`person_only`: the caller is not the owner in the app",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Browser discovery is disabled"
+            "description": "`not_found`: browser discovery is disabled",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "yourBrowser.scan"
@@ -41718,41 +41627,41 @@
             }
           },
           "400": {
-            "description": "`cwd` is missing, not absolute, or not an existing folder",
+            "description": "`invalid_request`: `cwd` is missing, not absolute, or not an existing folder",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "`cwd` is outside the directory boundary",
+            "description": "`outside_boundary`: `cwd` is outside the directory boundary",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "The `docs.enabled` experiment is off",
+            "description": "`not_found`: the `docs.enabled` experiment is off",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "The docs could not be listed",
+            "description": "`internal_error`: the docs could not be listed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -41842,41 +41751,41 @@
             }
           },
           "400": {
-            "description": "`cwd` or `target` is missing, or `cwd` is not an existing folder",
+            "description": "`invalid_request`: `cwd` or `target` is missing, or `cwd` is not an existing folder",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "`cwd` is outside the directory boundary",
+            "description": "`outside_boundary`: `cwd` is outside the directory boundary",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "The `docs.enabled` experiment is off",
+            "description": "`not_found`: the `docs.enabled` experiment is off",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "The docs could not be looked through",
+            "description": "`internal_error`: the docs could not be looked through",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -47842,11 +47751,11 @@
             }
           },
           "400": {
-            "description": "Unknown runtime",
+            "description": "`invalid_request`: no agent program by that name runs here",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -48673,11 +48582,31 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "`invalid_request`: the query failed its checks, or names no known runtime",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`outside_boundary`: `cwd` is outside the folders DorkOS may use",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the commands could not be listed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -50843,6 +50772,16 @@
                   "required": [
                     "sources"
                   ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the sources could not be listed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92183,7 +92122,14 @@
             }
           },
           "404": {
-            "description": "No pending card with a full list"
+            "description": "`not_found`: no pending card with a full list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "approvals.getFullDetail"
@@ -92195,7 +92141,7 @@
           "Approvals"
         ],
         "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\n`answer: 'always'` also sets this action to Allowed for the agent that asked, written through the same permission service Settings uses, before the agent is told the answer, so the resumed call and the new setting agree. It records its own `permission.changed` event beside the `permission.answered` event every answer records. It is refused (409 `ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach & secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before anything is granted. Away from this computer, a yes needs fresh confirmation for this request. Denying does not ask for confirmation.",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\n`answer: 'always'` also sets this action to Allowed for the agent that asked, written through the same permission service Settings uses, before the agent is told the answer, so the resumed call and the new setting agree. It records its own `permission.changed` event beside the `permission.answered` event every answer records. It is refused (409 `always_not_offered`) when DorkOS does not know which agent asked, the action has no permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach & secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before anything is granted. Away from this computer, a yes needs fresh confirmation for this request. Denying does not ask for confirmation.",
         "parameters": [
           {
             "schema": {
@@ -92226,52 +92172,72 @@
               }
             }
           },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+          "400": {
+            "description": "`invalid_request`: the body failed its checks, or the permission service refused the setting `answer: 'always'` would write (an unknown action, or one never Allowed)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person signed in to the DorkOS app can decide (`person_only`)",
+            "description": "`person_only`: an agent cannot decide, nor can the caller holding the approval token, and with login on only a person signed in to the DorkOS app can. `owner_only`: a paid run, and the caller is not the owner. `not_from_wifi`: a yes from Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such approval",
+            "description": "`not_found`: no such approval",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Already decided; or `answer: 'always'` on an approval that does not offer it (`ALWAYS_NOT_OFFERED`). Nothing is granted in that case",
+            "description": "`already_resolved`: already decided. `always_not_offered`: `answer: 'always'` on an approval that does not offer it, or a paid run. `spend_limit_reached`: the monthly limit stopped a paid run. `conflict`: a card that can only be declined. Nothing is granted",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "410": {
-            "description": "Expired before it was decided",
+            "description": "`expired`: it expired before it was decided",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: an agent-raise card no longer counts, because the agent read outside words since it asked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92282,6 +92248,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: Always allow couldn't be saved, so nothing was allowed; or another answer won and the saved Always allow couldn't be taken back",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92328,61 +92304,61 @@
             }
           },
           "400": {
-            "description": "Invalid body",
+            "description": "`invalid_request`: the body failed its checks",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "description": "`person_only`: an agent cannot decide, nor can the caller holding the approval token",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such approval",
+            "description": "`not_found`: no such approval",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Already decided",
+            "description": "`already_resolved`: already decided",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "410": {
-            "description": "Expired before it was decided",
+            "description": "`expired`: it expired before it was decided",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92435,41 +92411,41 @@
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "description": "`person_only`: an agent cannot decide, nor can the caller holding the approval token",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such approval",
+            "description": "`not_found`: no such approval",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)",
+            "description": "`always_not_offered`: this request never suggests Always allow",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -92536,10 +92512,24 @@
             }
           },
           "401": {
-            "description": "Sign-in required"
+            "description": "`unauthenticated`: sign-in required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "A person must read this history"
+            "description": "`person_only`: a person must read this history",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "approvals.getDeclinedHooks"
@@ -92589,13 +92579,34 @@
             }
           },
           "401": {
-            "description": "Sign-in required"
+            "description": "`unauthenticated`: sign-in required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Only a person may ask again"
+            "description": "`person_only`: only a person may ask again",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Already asked again, or the request cannot be rebuilt"
+            "description": "`already_resolved`: already asked again. `conflict`: the request cannot be rebuilt",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "approvals.createAskAgain"
@@ -93078,31 +93089,41 @@
             }
           },
           "400": {
-            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "description": "`invalid_request`: an unknown area or action, an action with no area, or Allowed on a floor area",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`person_only`)",
+            "description": "`person_only`: only a person can change permissions; an agent, the caller holding an approval token, and with login on a per-user API key are refused. `not_from_wifi`: a raise from Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: permissions changed while the person was choosing; look again",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -93176,31 +93197,41 @@
             }
           },
           "400": {
-            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "description": "`invalid_request`: an unknown area or action, an action with no area, or Allowed on a floor area",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`person_only`)",
+            "description": "`person_only`: only a person can change permissions; an agent, the caller holding an approval token, and with login on a per-user API key are refused. `not_from_wifi`: a raise from Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: permissions changed while the person was choosing; look again",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -94061,49 +94092,59 @@
             }
           },
           "400": {
-            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "description": "`invalid_request`: an unknown area or action, an action with no area, or Allowed on a floor area",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`person_only`)",
+            "description": "`person_only`: only a person can change permissions; an agent, the caller holding an approval token, and with login on a per-user API key are refused. `not_from_wifi`: a raise from Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such permission change (`UNKNOWN_EVENT`)",
+            "description": "`not_found`: no such permission change",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a change, such as an answer on a request card (`NOT_UNDOABLE`)",
+            "description": "`conflict`: the history line is not a change Undo can put back",
             "content": {
-              "application/json": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`, with `conflicts`: a key changed since; send `force` to set it back",
+            "content": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/UndoConflictResponse"
                 }
@@ -94164,7 +94205,7 @@
             }
           },
           "404": {
-            "description": "No such agent (`not_found`)",
+            "description": "`agent_not_found`: no such agent",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -94229,37 +94270,47 @@
             }
           },
           "400": {
-            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "description": "`invalid_request`: an unknown area or action, an action with no area, or Allowed on a floor area",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "description": "`unauthenticated`: login is enabled and the caller is not signed in",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`person_only`)",
+            "description": "`person_only`: only a person can change permissions; an agent, the caller holding an approval token, and with login on a per-user API key are refused. `not_from_wifi`: a raise from Wi-Fi",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such agent (`not_found`)",
+            "description": "`agent_not_found`: no such agent",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: permissions changed while the person was choosing; look again",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -94322,7 +94373,7 @@
             }
           },
           "404": {
-            "description": "No such agent (`not_found`)",
+            "description": "`agent_not_found`: no such agent",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -100731,41 +100782,41 @@
             }
           },
           "400": {
-            "description": "`projectPath` was missing, blank or relative, or it named something that is not a directory",
+            "description": "`invalid_request`: `projectPath` was missing, blank or relative. `not_a_folder`: it named something that is not a directory",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "`projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`",
+            "description": "`outside_boundary`: `projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No directory there. Separated from `not-set-up` on purpose: a typo would otherwise read as a real folder that simply has nothing set up in it",
+            "description": "`not_found`: no directory there. Separated from `not-set-up` on purpose: a typo would otherwise read as a real folder that simply has nothing set up in it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "The read failed unexpectedly. The reason is logged, never echoed",
+            "description": "`internal_error`: the read failed. The reason is logged, never echoed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -101438,51 +101489,51 @@
             }
           },
           "400": {
-            "description": "`projectPath` was missing, blank or relative, or it named something that is not a directory",
+            "description": "`invalid_request`: `projectPath` was missing, blank or relative. `not_a_folder`: it named something that is not a directory",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller named itself an agent or held an approval token, or `projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`",
+            "description": "`person_only`: the caller named itself an agent or held an approval token. `outside_boundary`: `projectPath` resolves outside the boundary and `{dorkHome}/agents`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No directory there",
+            "description": "`not_found`: no directory there",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "`code: \"harness_not_set_up\"` — this project has no `.agents/harness.manifest.json`, so there is nothing to share yet. `dorkos harness sync --fix` in the folder sets it up",
+            "description": "`conflict`: this project has no `.agents/harness.manifest.json`, so there is nothing to share yet. `dorkos harness sync --fix` in the folder sets it up",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "The sync failed unexpectedly. The reason is logged, never echoed",
+            "description": "`internal_error`: the sync failed. The reason is logged, never echoed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -102219,51 +102270,51 @@
             }
           },
           "400": {
-            "description": "`projectPath` was missing, blank or relative, `name` was missing or blank, or `projectPath` named something that is not a directory",
+            "description": "`invalid_request`: `projectPath` was missing, blank or relative, or `name` was missing. `not_a_folder`: `projectPath` named something that is not a directory",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "`code: \"operator_only_harness_adopt\"` — the caller named itself an agent or held an approval token — or `projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`",
+            "description": "`person_only`: the caller named itself an agent or held an approval token. `outside_boundary`: `projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No directory there",
+            "description": "`not_found`: no directory there",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "`code: \"harness_not_set_up\"` — this project has no `.agents/harness.manifest.json`, so there is nothing to move a skill within. `dorkos harness sync --fix` in the folder sets it up",
+            "description": "`conflict`: this project has no `.agents/harness.manifest.json`, so there is nothing to move a skill within. `dorkos harness sync --fix` in the folder sets it up",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "The adopt failed unexpectedly. The reason is logged, never echoed",
+            "description": "`internal_error`: the adopt failed. The reason is logged, never echoed",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -102453,11 +102504,11 @@
             }
           },
           "403": {
-            "description": "Only the operator may see this install’s push setup",
+            "description": "`operator_only`: only the operator may see this install’s push setup",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -102485,11 +102536,11 @@
             }
           },
           "403": {
-            "description": "Only the operator may list push devices",
+            "description": "`operator_only`: only the operator may list push devices",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -102526,19 +102577,19 @@
           "400": {
             "description": "Validation error",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Only the operator may subscribe a device",
+            "description": "`operator_only`: only the operator may subscribe a device",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -102575,11 +102626,11 @@
             }
           },
           "403": {
-            "description": "Only the operator may remove a push device",
+            "description": "`operator_only`: only the operator may remove a push device",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }

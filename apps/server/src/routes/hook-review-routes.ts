@@ -1,5 +1,6 @@
 /** Individual hook review history and person-only re-asks. */
 import type { Hono, Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { DecisionAuthorityResult } from '../services/core/approvals/decision-authority.js';
 import type { ApprovalService } from '../services/core/approvals/approval-service.js';
@@ -33,24 +34,16 @@ export function registerHookReviewRoutes(
     const id = c.req.param('id');
     const original = approvals.declinedHookRequest(id);
     if (!original || !dorkHome)
-      return c.json(
-        {
-          error: 'This request cannot be asked again. Sync its folder.',
-          code: 'HOOK_REASK_UNAVAILABLE',
-        },
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'This request can’t be asked again. Sync its folder.',
+      });
     const request = scanHookRequests(original.projectPath, dorkHome).find(
       (candidate) => candidate.packageName === original.packageName
     );
     if (!request)
-      return c.json(
-        {
-          error: 'This package no longer has hooks in this folder.',
-          code: 'HOOK_REASK_UNAVAILABLE',
-        },
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'This package no longer has hooks in this folder.',
+      });
     const result = approvals.reaskHook(id, {
       ...hookProjectionBinding(request, true),
       summary: summariseHookProjection(request),
@@ -64,10 +57,9 @@ export function registerHookReviewRoutes(
       requestedBy: 'DorkOS',
     });
     if (typeof result === 'string')
-      return c.json(
-        { error: 'This request has already been asked again.', code: 'HOOK_REASK_UNAVAILABLE' },
-        409
-      );
+      return problem(c, 'already_resolved', {
+        detail: 'This request has already been asked again.',
+      });
     followReaskedHookRow(request, {
       projectPath: request.projectPath,
       approvals,

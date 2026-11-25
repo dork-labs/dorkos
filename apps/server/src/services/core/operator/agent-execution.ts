@@ -128,13 +128,13 @@ export function describeExecutionChange(
   return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
-/** A refusal a route answers with. */
-export interface AgentExecutionRefusal {
-  /** The HTTP status. */
-  status: 403;
-  /** The body. */
-  body: { error: string; code: string };
-}
+/**
+ * What the route half of the gate refuses an agent with: `403 needs_approval`,
+ * naming the tool that asks a person (the long sentence above is the MCP
+ * tool's, whose reader is the agent itself).
+ */
+export const EXECUTION_NEEDS_APPROVAL_DETAIL =
+  'Change runtime, model and effort with update_agent_execution. Nothing here was changed.';
 
 /**
  * The route half of the gate: refuse a request that names an execution field
@@ -152,15 +152,11 @@ export interface AgentExecutionRefusal {
  * @param body - The request body, as it arrived.
  * @param clearsTheAgentBar - Whether the caller is a person, asked only when
  *   the body names a gated field.
- * @returns The refusal to answer with, or `undefined` to carry on.
+ * @returns Whether to refuse it.
  */
 export function refuseAgentExecutionWrite(
   body: unknown,
   clearsTheAgentBar: () => boolean
-): AgentExecutionRefusal | undefined {
-  if (!requestNamesExecutionField(body) || clearsTheAgentBar()) return undefined;
-  return {
-    status: 403,
-    body: { error: EXECUTION_NEEDS_APPROVAL_MESSAGE, code: EXECUTION_NEEDS_APPROVAL_CODE },
-  };
+): boolean {
+  return requestNamesExecutionField(body) && !clearsTheAgentBar();
 }

@@ -19,7 +19,7 @@ describe('toolRefusalProblem', () => {
     ['OPERATOR_ONLY', 'operator_only', 403],
     ['outside_turn', 'outside_turn', 403],
     ['SPEND_LIMIT', 'spend_limit_reached', 409],
-    ['AGENT_NOT_FOUND', 'not_found', 404],
+    ['AGENT_NOT_FOUND', 'agent_not_found', 404],
     ['NOT_FOUND', 'not_found', 404],
     ['UNKNOWN_ACTION', 'not_found', 404],
     ['CONNECTOR_PRINCIPAL_CHANGED', 'precondition_failed', 412],

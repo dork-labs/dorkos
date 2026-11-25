@@ -1,6 +1,6 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { z } from 'zod';
 import { YourBrowserScanSchema } from '@dorkos/shared/your-browser';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /** Person-only discovery is documented as HTTP only, never an agent capability. */
 export function registerBrowserScanOpenApi(registry: OpenAPIRegistry): void {
@@ -16,13 +16,8 @@ export function registerBrowserScanOpenApi(registry: OpenAPIRegistry): void {
         description: 'Browser profile metadata for the picker',
         content: { 'application/json': { schema: YourBrowserScanSchema } },
       },
-      403: {
-        description: 'The caller is not the owner in the app',
-        content: {
-          'application/json': { schema: z.object({ error: z.string(), code: z.string() }) },
-        },
-      },
-      404: { description: 'Browser discovery is disabled' },
+      403: problemResponse('`person_only`: the caller is not the owner in the app'),
+      404: problemResponse('`not_found`: browser discovery is disabled'),
     },
   });
 }

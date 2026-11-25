@@ -133,7 +133,11 @@ describe('POST /api/onboarding/first-run', () => {
     config.onboarding.completedAt = '2026-10-01T00:00:00.000Z';
     const res = await request(server).post('/api/onboarding/first-run').send({ path: 'none' });
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: 'Setup is already finished.', code: 'onboarding_complete' });
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body).toMatchObject({
+      code: 'already_resolved',
+      detail: 'Setup is already finished.',
+    });
   });
 });
 
@@ -147,6 +151,6 @@ describe('POST /api/onboarding/welcome', () => {
   it('answers 503 while #team is not there yet', async () => {
     const res = await request(server).post('/api/onboarding/welcome');
     expect(res.status).toBe(503);
-    expect(res.body.code).toBe('team_unavailable');
+    expect(res.body.code).toBe('temporarily_unavailable');
   });
 });

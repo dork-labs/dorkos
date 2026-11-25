@@ -98,6 +98,8 @@ export const PROBLEM_CODE_LIST = [
   { code: 'request_too_large', status: 413, title: 'The request is over the size limit.' },
   { code: 'unsupported_media_type', status: 415, title: 'DorkOS can’t read that kind of content.' },
   { code: 'not_found', status: 404, title: 'That doesn’t exist here.' },
+  /** No agent on the team has that id: a different way out than a missing card or route. */
+  { code: 'agent_not_found', status: 404, title: 'No agent has that id.' },
   { code: 'session_not_found', status: 404, title: 'That chat wasn’t found.' },
   { code: 'unknown_capability', status: 404, title: 'That action doesn’t exist.' },
   // The state it met.
@@ -406,6 +408,19 @@ export const PROBLEM_CODE_LIST = [
   { code: 'signin_no_retry', status: 409, title: 'This sign-in can’t start again here.' },
   /** The browser won't keep a sign-in cookie over plain http at this address. */
   { code: 'sign_in_needs_https', status: 409, title: 'Open DorkOS over https to stay signed in.' },
+  /** The DorkOS desktop app starts and stops this server: restart or reset it there. */
+  {
+    code: 'managed_by_desktop',
+    status: 409,
+    title: 'The DorkOS app runs this server, so do this there.',
+  },
+  // Approvals.
+  /** Always allow isn't offered for this request: answer it once instead. */
+  {
+    code: 'always_not_offered',
+    status: 409,
+    title: 'Always allow isn’t offered for this request.',
+  },
   // Tasks, to-dos, the work queue and settings.
   {
     code: 'schedule_package_owned',

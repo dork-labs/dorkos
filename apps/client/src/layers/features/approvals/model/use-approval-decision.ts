@@ -61,7 +61,7 @@ export function useGrantApproval() {
         return;
       }
       // A paid run the monthly limit stopped says so on its own card (DOR-4204).
-      if (code === 'SPEND_LIMIT') return;
+      if (code === 'spend_limit_reached') return;
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
     onSettled: (_data, _error, variables) => {

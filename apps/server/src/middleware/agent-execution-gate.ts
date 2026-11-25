@@ -11,28 +11,30 @@
  * @module middleware/agent-execution-gate
  */
 import type { MiddlewareHandler } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { refuseAgentExecutionWrite } from '../services/core/operator/agent-execution.js';
+import {
+  EXECUTION_NEEDS_APPROVAL_DETAIL,
+  refuseAgentExecutionWrite,
+} from '../services/core/operator/agent-execution.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import { namedInstructionFields } from '../services/core/operator/agent-file-inputs.js';
 
 /**
  * Refuse a request that names `runtime`, `model` or `effort` unless its caller
- * is a person, with `403 NEEDS_APPROVAL`; every other request passes through
+ * is a person, with `403 needs_approval`; every other request passes through
  * untouched.
  *
  * @param c - The Hono context.
  * @param next - The route's handler.
  */
 export const refuseAgentExecutionWrites: MiddlewareHandler<ApiEnv> = async (c, next) => {
-  const refusal = refuseAgentExecutionWrite(readJsonBody(c), () =>
+  const refused = refuseAgentExecutionWrite(readJsonBody(c), () =>
     clearsTheAgentBar(honoRequestFacts(c))
   );
-  if (refusal) return c.json(refusal.body, refusal.status as ContentfulStatusCode);
+  if (refused) return problem(c, 'needs_approval', { detail: EXECUTION_NEEDS_APPROVAL_DETAIL });
   await next();
 };
 
@@ -53,7 +55,7 @@ export const WIFI_AGENT_FILES_REFUSAL = "Change an agent's instructions at this 
 export const refuseAgentSelfFilesFromWifi: MiddlewareHandler<ApiEnv> = async (c, next) => {
   const named = namedInstructionFields(readJsonBody(c)).length > 0;
   if (named && isFromWifi(honoRequestFacts(c))) {
-    return c.json({ error: WIFI_AGENT_FILES_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    return problem(c, 'not_from_wifi', { detail: WIFI_AGENT_FILES_REFUSAL });
   }
   await next();
 };

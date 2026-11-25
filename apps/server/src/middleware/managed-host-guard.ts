@@ -16,12 +16,13 @@
  * @module middleware/managed-host-guard
  */
 import type { IncomingMessage } from 'node:http';
+import { problemBody } from '@dorkos/http-kit';
 import { parseHostname } from '../lib/trusted-origins.js';
 import { isManagedIngress } from '../services/core/remote/ingress-mark.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 
-/** The refusal. */
-export const MANAGED_HOST_REFUSAL_BODY = { error: 'Forbidden.' } as const;
+/** The refusal: a bare `403 forbidden`, saying nothing about why. */
+export const MANAGED_HOST_REFUSAL_BODY = problemBody('forbidden');
 
 /**
  * Whether a request names a managed hostname without having come through the

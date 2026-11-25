@@ -135,7 +135,7 @@ describe('a paid-run card', () => {
     const card = spendCard();
     const res = await grant(card.approvalId, { answer: 'always' });
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'SPEND_ONCE_ONLY' });
+    expect(res.body).toMatchObject({ code: 'always_not_offered' });
     expect(approvals.answerScope(card.approvalId)).toBeDefined();
   });
 
@@ -153,7 +153,7 @@ describe('a paid-run card', () => {
     tapRefusal = LIMIT_RECEIPT;
     const res = await grant(card.approvalId);
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ code: 'SPEND_LIMIT', error: LIMIT_RECEIPT });
+    expect(res.body).toMatchObject({ code: 'spend_limit_reached', detail: LIMIT_RECEIPT });
     expect(
       approvals.consume(card.token, {
         capabilityId: 'connectors.execute_read',
@@ -181,7 +181,7 @@ describe('a paid-run card', () => {
       .post(`/api/approvals/${card.approvalId}/grant`)
       .send({});
     expect(teammate.status).toBe(403);
-    expect(teammate.body).toMatchObject({ code: 'SPEND_OWNER_ONLY' });
+    expect(teammate.body).toMatchObject({ code: 'owner_only' });
     expect(approvals.answerScope(card.approvalId)?.state).toBe('pending');
     const owner = await request(asUser('owner'))
       .post(`/api/approvals/${card.approvalId}/grant`)
@@ -253,7 +253,7 @@ describe('a paid-run card', () => {
       expect(held.status).toBe(428);
       tapRefusal = LIMIT_RECEIPT;
       const done = await confirm(server, held.body.heldActionId);
-      expect(done.body).toMatchObject({ status: 409, result: { code: 'SPEND_LIMIT' } });
+      expect(done.body).toMatchObject({ status: 409, result: { code: 'spend_limit_reached' } });
       expect(approvals.answerScope(card.approvalId)?.state).not.toBe('granted');
     });
   });

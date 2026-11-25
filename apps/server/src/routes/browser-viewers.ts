@@ -6,7 +6,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { parseViewerJson } from './browser-viewer-body.js';
 export { browserViewerBodyRule } from './browser-viewer-body.js';
 import { mountViewerControls } from './browser-viewer-controls.js';
@@ -29,10 +30,17 @@ const frameSchema = z
   })
   .strict();
 const closeSchema = z.object({ nonce: nonceSchema }).strict();
-const personRefusal = {
-  code: 'viewer_person_only',
-  error: 'Turn on sign-in to watch the agent’s browser.',
-} as const;
+/** The problem code for each refusal the viewer services throw. */
+const VIEWER_PROBLEM: Record<BrowserViewerError['code'], ProblemCode> = {
+  // The view stopped or changed: the app reconnects.
+  viewer_unavailable: 'temporarily_unavailable',
+  viewer_denied: 'owner_only',
+  viewer_busy: 'conflict',
+  viewer_limit: 'rate_limited',
+  viewer_stale: 'precondition_failed',
+  viewer_uncertain: 'conflict',
+  file_picker_stuck: 'conflict',
+};
 
 /** Mount subscriptions and finite person controls behind the existing app-session and local-owner bars. */
 export function createBrowserViewerRoutes(
@@ -47,50 +55,40 @@ export function createBrowserViewerRoutes(
     c.header('Referrer-Policy', 'no-referrer');
     if (!enabled()) {
       registry.disableInput();
-      return c.json({ code: 'viewer_unavailable', error: 'Browser viewing is off.' }, 404);
+      return problem(c, 'temporarily_unavailable', { detail: 'Browser viewing is off.' });
     }
     const facts = honoRequestFacts(c);
     // Remote viewing is a separate reviewed stage. Do not widen /api/local-browser.
     if (!isAtThisComputer(facts))
-      return c.json(
-        { code: 'viewer_local_only', error: 'Watch from DorkOS on this computer.' },
-        403
-      );
+      return problem(c, 'operator_only', { detail: 'Watch from DorkOS on this computer.' });
     if (
       !facts.user?.sessionId ||
       !browserViewerPrincipal(facts, requirePersonAtThisComputer(facts) === undefined)
     )
-      return c.json(personRefusal, 403);
+      return problem(c, 'person_only', {
+        detail: 'Turn on sign-in to watch the agent’s browser.',
+      });
     if (/\/(take-over|input|hand-back|copy|paste|files)$/.test(c.req.path) && !inputEnabled()) {
       registry.disableInput();
-      return c.json({ code: 'viewer_unavailable', error: 'Browser controls are off.' }, 404);
+      return problem(c, 'temporarily_unavailable', { detail: 'Browser controls are off.' });
     }
     return next();
   });
   router.use('*', parseViewerJson);
   router.onError((error, c) => {
     if (error instanceof z.ZodError)
-      return c.json(
-        { code: 'viewer_bad_request', error: 'Reopen the browser view and try again.' },
-        400
-      );
+      return problem(c, 'invalid_request', { detail: 'Reopen the browser view and try again.' });
     if (
       (error instanceof LocalBrowserError || error instanceof BrowserViewerError) &&
       error.code === 'file_picker_stuck'
     )
-      return c.json(
-        {
-          code: 'file_picker_stuck',
-          tone: 'status',
-          error: 'The file picker got stuck. Close this page in Chrome to hand back.',
-        },
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'The file picker got stuck. Close this page in Chrome to hand back.',
+      });
     const code = error instanceof BrowserViewerError ? error.code : 'viewer_unavailable';
-    return c.json(
-      { code, error: 'The browser view changed. Open it again.' },
-      code === 'viewer_limit' ? 429 : code === 'viewer_denied' ? 403 : 409
-    );
+    return problem(c, VIEWER_PROBLEM[code], {
+      detail: 'The browser view changed. Open it again.',
+    });
   });
   const principal = (c: Parameters<typeof honoRequestFacts>[0]) => {
     const facts = honoRequestFacts(c);

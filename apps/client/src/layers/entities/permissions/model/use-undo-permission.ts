@@ -13,16 +13,16 @@ export interface UndoPermissionInput {
 }
 
 /**
- * The conflicts a refused Undo named (`409 UNDO_CONFLICT`): what changed since,
- * so the person can decide whether to set it back anyway. `null` for any other
- * failure.
+ * The conflicts a refused Undo named (`412 precondition_failed`, with
+ * `conflicts`): what changed since, so the person can decide whether to set it
+ * back anyway. `null` for any other failure.
  *
  * @param err - What the Undo threw.
  */
 export function undoConflictsOf(err: unknown): PermissionUndoSkip[] | null {
   const failure = err as { code?: string; body?: { conflicts?: PermissionUndoSkip[] } } | null;
-  if (failure?.code !== 'UNDO_CONFLICT') return null;
-  return failure.body?.conflicts ?? [];
+  if (failure?.code !== 'precondition_failed' || !failure.body?.conflicts) return null;
+  return failure.body.conflicts;
 }
 
 /**

@@ -410,7 +410,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
         .set('X-DorkOS-Approval', approvalToken)
         .send();
       expect(selfGrant.status).toBe(403);
-      expect(selfGrant.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+      expect(selfGrant.body.code).toBe('person_only');
 
       // Step 3: retry. Still waiting on a person, and nothing was destroyed.
       const retried = await request(fixtureServer)
@@ -433,7 +433,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
         .post(`/api/approvals/${asked.body.approvalId}/grant`)
         .send();
       expect(selfGrant.status).toBe(403);
-      expect(selfGrant.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(selfGrant.body.code).toBe('person_only');
       expect(destroyed).toEqual([]);
     });
   });
@@ -537,7 +537,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     ] as const) {
       const refused = await request(server).post(`/api/approvals/${id}/grant`).send(body);
       expect(refused.status).toBe(403);
-      expect(refused.body).toEqual({ error: WIFI_APPROVAL_REFUSAL, code: NOT_FROM_WIFI });
+      expect(refused.body).toMatchObject({ code: 'not_from_wifi', detail: WIFI_APPROVAL_REFUSAL });
       expect(refused.body.heldActionId).toBeUndefined();
     }
     expect(approvals.answerScope(act.approvalId)?.state).toBe('pending');
@@ -558,7 +558,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
       .post(`/api/approvals/${fromTeammate.approvalId}/deny`)
       .send({ reason: 'do the other thing instead' });
     expect(typed.status).toBe(403);
-    expect(typed.body).toEqual({ error: WIFI_DENY_REASON_REFUSAL, code: NOT_FROM_WIFI });
+    expect(typed.body).toMatchObject({ code: 'not_from_wifi', detail: WIFI_DENY_REASON_REFUSAL });
     const bare = await request(teammate).post(`/api/approvals/${fromTeammate.approvalId}/deny`);
     expect(bare.status).toBe(200);
     // The owner's own reason is their words (DOR-3242).
@@ -579,7 +579,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     const server = fixtureTarget.mount(wifiApp());
     const once = await request(server).post(`/api/approvals/${raising.approvalId}/grant`);
     expect(once.status).toBe(403);
-    expect(once.body).toEqual({ error: WIFI_APPROVAL_REFUSAL, code: NOT_FROM_WIFI });
+    expect(once.body).toMatchObject({ code: 'not_from_wifi', detail: WIFI_APPROVAL_REFUSAL });
     expect(approvals.answerScope(raising.approvalId)?.state).toBe('pending');
     const denied = await request(server).post(`/api/approvals/${raising.approvalId}/deny`);
     expect(denied.status).toBe(200);

@@ -10,6 +10,7 @@ import {
   FirstRunResultSchema,
   OnboardingWelcomeResultSchema,
 } from '@dorkos/shared/onboarding-schemas';
+import { problemResponse } from '../openapi/problem-openapi.js';
 
 /**
  * The request body as documented. The route parses `FirstRunRequestSchema`,
@@ -30,14 +31,6 @@ const FirstRunRequestDocSchema = z.object({
     .optional()
     .describe('For `own`: what was picked in the Own AI list'),
 });
-
-/** A refusal: the sentence a person reads, and a code the client acts on. */
-const RefusalSchema = z.object({ error: z.string(), code: z.string().optional() });
-
-/** A refusal response, described. */
-function refusal(description: string) {
-  return { description, content: { 'application/json': { schema: RefusalSchema } } };
-}
 
 /**
  * Register the first-run routes.
@@ -69,12 +62,14 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
         description: 'What the pick set up',
         content: { 'application/json': { schema: FirstRunResultSchema } },
       },
-      400: refusal(
-        'Not a known path, or the key or setup was refused (`invalid_key`, `invalid_setup`)'
+      400: problemResponse('`invalid_request`: not a known path, or the key or setup was refused'),
+      403: problemResponse(
+        '`operator_only`: not this computer. `person_only` or `owner_only`: not the owner'
       ),
-      403: refusal('Not this computer, or not the owner'),
-      409: refusal('The first run is finished or dismissed (`onboarding_complete`)'),
-      502: refusal('A model on this computer did not answer; nothing was saved'),
+      409: problemResponse('`already_resolved`: the first run is finished or dismissed'),
+      502: problemResponse(
+        '`upstream_unavailable`: a model on this computer did not answer; nothing was saved'
+      ),
     },
   });
 
@@ -92,11 +87,11 @@ export function registerOnboardingOpenApi(registry: OpenAPIRegistry): void {
         description: 'The welcome entry',
         content: { 'application/json': { schema: OnboardingWelcomeResultSchema } },
       },
-      403: refusal('Not the owner'),
-      409: refusal(
-        'The first run finished or was dismissed without a welcome (`onboarding_complete`)'
+      403: problemResponse('`person_only` or `owner_only`: not the owner'),
+      409: problemResponse(
+        '`already_resolved`: the first run finished or was dismissed without a welcome'
       ),
-      503: refusal('#team, or DorkBot in it, is not ready yet (`team_unavailable`)'),
+      503: problemResponse('`temporarily_unavailable`: #team, or DorkBot in it, is not ready yet'),
     },
   });
 }

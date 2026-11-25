@@ -102,16 +102,19 @@ describe('GET /api/documents/index', () => {
     for (const cwd of ['space', path.join(space, 'missing'), path.join(space, 'README.md')]) {
       const res = await getIndex(app(), cwd);
       expect(res.status).toBe(400);
-      await expect(res.json()).resolves.toMatchObject({ code: 'INVALID_DOC_SPACE' });
+      await expect(res.json()).resolves.toMatchObject({
+        code: 'invalid_request',
+        detail: 'Docs need an existing folder. Pick another one.',
+      });
     }
   });
 
   it('refuses a cwd outside the directory boundary', async () => {
     const res = await getIndex(app(), base);
     expect(res.status).toBe(403);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Access denied: path outside directory boundary',
-      code: 'OUTSIDE_BOUNDARY',
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'outside_boundary',
+      detail: 'Pick a folder inside the ones DorkOS may use.',
     });
   });
 
@@ -119,9 +122,10 @@ describe('GET /api/documents/index', () => {
     const index = vi.fn().mockRejectedValue(new Error('disk gone'));
     const res = await getIndex(app({ enabled: () => true, index, resolve: vi.fn() }), space);
     expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Couldn’t list the docs here.',
-      code: 'DOC_INDEX_FAILED',
+    expect(res.headers.get('content-type')).toMatch(/^application\/problem\+json/);
+    await expect(res.json()).resolves.toMatchObject({
+      code: 'internal_error',
+      detail: 'Couldn’t list the docs here.',
     });
   });
 

@@ -19,7 +19,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { runningHeartbeats } from '../services/heartbeats/heartbeats-wiring.js';
 
 const BeatRequestSchema = z.object({ agentId: z.string().min(1) });
@@ -36,7 +36,9 @@ export function createTestHeartbeatRoutes(): Hono<ApiEnv> {
     if (!parsed.success) return validationProblem(c, parsed.error);
     const heartbeats = runningHeartbeats();
     if (!heartbeats) {
-      return c.json({ error: 'Heartbeats are not running on this server.' }, 503);
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'Heartbeats aren’t running on this server.',
+      });
     }
     // The wake the runner's own timer sends. It answers when the beat,
     // including any turn, has finished; a paused agent, one whose runtime is

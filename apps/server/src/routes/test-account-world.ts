@@ -17,8 +17,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { env } from '../env.js';
+import { logger } from '../lib/logger.js';
 import { setTestAccountWorld } from '../services/rooms/reseat/test-account-world.js';
 
 const WorldSchema = z.object({
@@ -54,18 +55,18 @@ export function createTestAccountWorldRoutes(
   router.put('/', (c) => {
     // Refused before anything is read: outside the test runtime there is no world to set.
     if (!testMode) {
-      return c.json(
-        { error: 'The test account world is only available to the test runtime.' },
-        403
-      );
+      return problem(c, 'forbidden', {
+        detail: 'The test account world is only for the test runtime.',
+      });
     }
     const parsed = WorldSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Invalid account world' }, 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { force, ...rest } = parsed.data;
     try {
       setTestAccountWorld({ ...rest, ...(force ? { force } : {}) }, testMode);
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 403);
+      logger.warn('[TestAccountWorld] refused', { err });
+      return problem(c, 'forbidden', { detail: 'That account world can’t be set here.' });
     }
     return c.json({ ok: true });
   });

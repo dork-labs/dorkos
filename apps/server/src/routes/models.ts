@@ -1,5 +1,6 @@
 import { creditsCapabilitiesFor } from '../services/core/cloud/credits-protocols.js';
 import { Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
@@ -70,7 +71,7 @@ router.get('/', async (c) => {
   let runtime: AgentRuntime;
   if (runtimeParam !== undefined) {
     if (!runtimeRegistry.has(runtimeParam)) {
-      return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
+      return problem(c, 'invalid_request', { detail: 'No agent program by that name runs here.' });
     }
     runtime = runtimeRegistry.get(runtimeParam);
   } else if (sessionId) {

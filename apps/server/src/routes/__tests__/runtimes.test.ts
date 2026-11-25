@@ -161,7 +161,7 @@ describe('POST /api/runtimes/opencode/provision', () => {
       .set('Host', 'evil.example.com');
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('HOST_NOT_ALLOWED');
+    expect(res.body.code).toBe('host_not_allowed');
     expect(provisionOpenCode).not.toHaveBeenCalled();
   });
 });

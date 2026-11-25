@@ -617,7 +617,7 @@ describe('agent pause, served by the mount', () => {
     const res = await request(mount(registry, agentPauseDomain.capabilities))
       .post('/api/agents/nobody/pause')
       .expect(404);
-    expect(res.body.code).toBe('not_found');
+    expect(res.body.code).toBe('agent_not_found');
   });
 
   it('answers 403 when the paused agent tries to resume itself', async () => {
@@ -788,6 +788,6 @@ describe('an agent’s MCP servers, served by the mount', () => {
       '/api/agents/nobody/mcp-servers'
     );
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('not_found');
+    expect(res.body.code).toBe('agent_not_found');
   });
 });

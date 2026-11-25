@@ -93,7 +93,7 @@ describe('the host guard in the chain', () => {
         .get('/api/health')
         .set('Host', 'studio.local:4242');
       expect(closed.status).toBe(403);
-      expect(closed.body.code).toBe('HOST_NOT_ALLOWED');
+      expect(closed.body.code).toBe('host_not_allowed');
     });
   });
 
@@ -105,19 +105,19 @@ describe('the host guard in the chain', () => {
         .send({ prompt: 'rm -rf /', cwd: '/' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('HOST_NOT_ALLOWED');
+      expect(res.body.code).toBe('host_not_allowed');
     });
 
     it('names DORKOS_TRUSTED_HOSTS in the error so the fix reads in one line', async () => {
       const res = await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
-      expect(res.body.error).toContain('DORKOS_TRUSTED_HOSTS');
+      expect(res.body.detail).toContain('DORKOS_TRUSTED_HOSTS');
     });
 
     it('does not echo the allowlist back to the caller', async () => {
       mockEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
       const res = await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
-      expect(res.body.error).not.toContain('dorkos.example.com');
-      expect(res.body.error).not.toContain('localhost');
+      expect(res.body.detail).not.toContain('dorkos.example.com');
+      expect(res.body.detail).not.toContain('localhost');
     });
 
     it('logs the offending host at warn', async () => {
@@ -140,7 +140,7 @@ describe('the host guard in the chain', () => {
     it('rejects a request with no Host header (HTTP/1.1 requires one)', async () => {
       // supertest always sets Host, so ask the guard's decision directly.
       expect(refuseUntrustedHost(undefined, 'GET', '/api/health')).toMatchObject({
-        code: 'HOST_NOT_ALLOWED',
+        code: 'host_not_allowed',
       });
     });
   });

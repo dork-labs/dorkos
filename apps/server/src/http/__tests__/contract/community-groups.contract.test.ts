@@ -325,7 +325,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       path: '/api/community-connections',
       headers: { host: 'evil.example.com' },
-      expect: { status: 403, headers: JSON_TYPE },
+      expect: { status: 403, headers: { 'content-type': /^application\/problem\+json\b/ } },
     });
   });
 

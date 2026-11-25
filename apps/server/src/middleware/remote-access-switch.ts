@@ -38,6 +38,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 import type { MiddlewareHandler } from 'hono';
+import { problemBody, sendProblem } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
 import { ingressOf } from '../services/core/remote/ingress-mark.js';
 import { classifyRequest, type ClassifierFacts } from '../lib/request-classifier.js';
@@ -46,14 +47,10 @@ import { isContainerPortClass } from '../services/core/auth/gate-policy.js';
 import { configManager } from '../services/core/config-manager.js';
 import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
 
-/** The code a refused request carries, so a client can say why. */
-export const REMOTE_ACCESS_OFF_CODE = 'REMOTE_ACCESS_OFF';
-
-/** The body every refused request gets. */
-export const REMOTE_ACCESS_OFF_BODY = {
-  error: 'Remote access is off. Only this computer can reach DorkOS.',
-  code: REMOTE_ACCESS_OFF_CODE,
-} as const;
+/** The `403 forbidden` problem every refused request gets. */
+export const REMOTE_ACCESS_OFF_BODY = problemBody('forbidden', {
+  detail: 'Remote access is off. Only this computer can reach DorkOS.',
+});
 
 /** Whether the Remote Access switch is on. Anything but an explicit `false` reads as on. */
 export function remoteAccessOn(): boolean {
@@ -169,7 +166,7 @@ export function resetRemoteStreamsForTests(): void {
 /** The chain step: answer 403 with {@link REMOTE_ACCESS_OFF_BODY} for a refused request. */
 export const refuseWhileRemoteAccessOff: MiddlewareHandler<RequestFactsEnv> = async (c, next) => {
   if (refusedByRemoteAccessSwitch(honoRequestFacts(c))) {
-    return c.json(REMOTE_ACCESS_OFF_BODY, 403);
+    return sendProblem(c, REMOTE_ACCESS_OFF_BODY);
   }
   await next();
 };

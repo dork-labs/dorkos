@@ -231,7 +231,8 @@ describe('Models Routes', () => {
   it('GET /api/models?runtime=<unknown> returns 400', async () => {
     const res = await request(testServer).get('/api/models?runtime=bogus-runtime');
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/unknown runtime/i);
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toBe('No agent program by that name runs here.');
     expect(runtimeRegistry.get).not.toHaveBeenCalled();
   });
 

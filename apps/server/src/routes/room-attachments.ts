@@ -29,7 +29,7 @@ import { configManager } from '../services/core/config-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { parseUploads, type UploadedFile } from '../http/uploads.js';
-import { discardStream, errorBody } from '../lib/route-utils.js';
+import { discardStream } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { roomRoute } from './room-route.js';
 import { problem, problemBody } from '@dorkos/http-kit';

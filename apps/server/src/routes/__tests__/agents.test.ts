@@ -613,8 +613,8 @@ describe('Agents Routes', () => {
           .send({ displayName: 'Also this', [field]: value });
 
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('NEEDS_APPROVAL');
-        expect(res.body.error).toContain('update_agent_execution');
+        expect(res.body.code).toBe('needs_approval');
+        expect(res.body.detail).toContain('update_agent_execution');
         expect(mockWriteManifest).not.toHaveBeenCalled();
       }
     );

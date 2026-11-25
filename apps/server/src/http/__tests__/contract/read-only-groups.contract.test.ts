@@ -59,7 +59,10 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/models refuses an unknown runtime',
     path: '/api/models?runtime=nope',
-    expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'No agent program by that name runs here.' }),
+    },
   },
 
   // commands
@@ -82,14 +85,19 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/commands refuses an unknown runtime',
     path: '/api/commands?runtime=nope',
-    expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'No agent program by that name runs here.' }),
+    },
   },
   {
     name: 'GET /api/commands refuses a directory outside the boundary',
     path: '/api/commands?cwd=/etc',
     expect: {
       status: 403,
-      body: { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
+      body: problemBody('outside_boundary', {
+        detail: 'Pick a folder inside the ones DorkOS may use.',
+      }),
     },
   },
 
@@ -150,7 +158,9 @@ contractSuite('read-only and system groups', [
     path: '/api/capabilities/catalog?cursor=zzz',
     expect: {
       status: 400,
-      body: { error: 'Invalid cursor "zzz"; use the nextCursor from a previous response.' },
+      body: problemBody('invalid_request', {
+        detail: 'That cursor isn’t valid. Use nextCursor from a previous page.',
+      }),
     },
   },
   {

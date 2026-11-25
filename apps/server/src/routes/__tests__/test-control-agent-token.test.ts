@@ -104,7 +104,9 @@ describe('POST /api/test/agent-token', () => {
     expect(res.status).toBe(404);
     // The message names the path, and — unlike the version this replaced —
     // describes a check that actually ran.
-    expect(res.body.error).toContain(UNREGISTERED);
+    expect(res.body.code).toBe('not_found');
+    // A detail never names the path.
+    expect(res.body.detail).not.toContain(UNREGISTERED);
 
     // The half that matters. A 404 with a row behind it would still have
     // created a usable forged identity, because nothing downstream re-checks

@@ -71,7 +71,7 @@ import {
 } from '../services/core/auth/oauth-callback-arrival.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
-import { sendProblem, underMount, type BodyRule } from '@dorkos/http-kit';
+import { problem, sendProblem, underMount, type BodyRule } from '@dorkos/http-kit';
 import { apiRequestBody } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
@@ -171,7 +171,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   // any route sees it (`middleware/managed-host-guard.ts`), and logged like any
   // other refusal.
   app.use(async (c, next) => {
-    if (bypassesManagedIngress(c.env.incoming)) return c.json(MANAGED_HOST_REFUSAL_BODY, 403);
+    if (bypassesManagedIngress(c.env.incoming)) return sendProblem(c, MANAGED_HOST_REFUSAL_BODY);
     await next();
   });
   // With Remote Access off, another device is refused here, ahead of sign-in,
@@ -204,7 +204,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
   app.use(async (c, next) => {
     if (!underMount(c.req.path, '/api')) return next();
     const refusal = refuseUntrustedHost(c.env.incoming.headers.host, c.req.method, rawUrl(c));
-    if (refusal) return c.json(refusal, 403);
+    if (refusal) return sendProblem(c, refusal);
     await next();
   });
 
@@ -232,8 +232,10 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
         : decideGateAccess(requestClass, readGatePosture());
     const decision = await decideSessionGate(c.req.method, c.req.path, facts, access);
     if (!decision.allowed) {
+      // An agent computer's hub-owned write is `403 forbidden`. The 401 keeps the
+      // login gate's own `AUTH_REQUIRED` body, which every sign-in surface reads.
       return decision.refusal
-        ? c.json(decision.refusal, 403)
+        ? problem(c, 'forbidden', { detail: decision.refusal.error })
         : c.json(authRequiredBody(facts.ingress), 401);
     }
     if (decision.user) c.set('user', decision.user);

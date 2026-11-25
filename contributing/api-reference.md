@@ -147,7 +147,7 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 
 **Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
 
-**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Older routes still answer `{ error, code, details }`; they move to problem documents folder by folder under DOR-4979, and the readers keep reading both shapes until the last folder moves, when the old branch and the old shape are removed and a lint rule bans `c.json({ error })`.
+**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Each route moved to problem documents together with every caller that reads it (DOR-4979): there is no compatibility window, and a lint rule will ban `c.json({ error })`.
 
 ### Codes that changed: Relay and connected apps
 
@@ -199,6 +199,22 @@ The space connections (`/api/community-connections/*`), the spaces they reach (`
   - `rate_limited` (429): `COMMUNITY_RATE_LIMITED` (with `retryAfterMs`, was `retryAfterSeconds`), `TOO_MANY_ATTEMPTS`, a busy space, a hub with too many requests open to one computer.
   - `temporarily_unavailable` (503): `HUB_NOT_READY`, `HUB_NOT_SERVING`, an agent computer not ready or unavailable. `upstream_unavailable` (502): a space or the DorkOS account that can't be reached (was `{ error }` only), a linked computer's own failure, and an answer from it the hub couldn't read. `internal_error` (500): any other failure, which used to echo the error's message on `/api/tunnel/start` and `/api/tunnel/stop`.
 - **Kept as they were:** the DorkOS account writes' `200` refusal envelopes (`{ ok: false, problem }` with the service's own problem, or `{ ok: false, message }`), which are answers, not errors, and the `428` "Confirm it's you" body.
+
+### Codes that changed: the last route groups
+
+Approvals, permissions, to-do promises, onboarding, the harness, feedback, push, admin, commands, models, docs links, the browser viewer, the system load gate and shell check, the address and remote-access checks, and the test-only routes moved to problem documents together (DOR-4979). No `detail` carries an error's own text, a path or a field value: the cause is in the server log.
+
+- **New codes:** `ALWAYS_NOT_OFFERED`, `SUGGESTION_NOT_OFFERED` and `SPEND_ONCE_ONLY` → `always_not_offered` (409); `SPEND_LIMIT` → `spend_limit_reached` (409); `MANAGED_BY_DESKTOP` → `managed_by_desktop` (409, and the reset sentence no longer names the data folder); `UNKNOWN_AGENT` on the permission routes → `agent_not_found` (404). A capability's own `AGENT_NOT_FOUND` (agent pause and resume, an agent's MCP servers) now answers `agent_not_found` too, not `not_found`.
+- **Folded into a shared code** (`detail` still says which):
+  - `person_only` (403): `AGENT_CANNOT_DECIDE`, `REQUESTER_CANNOT_DECIDE`, `operator_cookie_required` and `not-a-person` on approvals and permissions, `NOT_A_PERSON` on to-do promises, `PERSON_REQUIRED` on feedback, `operator_only_harness_sync`, `operator_only_harness_adopt`, `viewer_person_only`, and onboarding's `not-a-person`. `owner_only` (403): `SPEND_OWNER_ONLY`, `NOT_YOURS` on to-do promises, onboarding's `not-the-owner`, `viewer_denied`.
+  - `operator_only` (403): `PUSH_OPERATOR_ONLY`, `local_only` on the load gate and shell check, `viewer_local_only`, a reset from away (`NEEDS_PERSON_AT_THIS_COMPUTER`), and first-run setup from another device.
+  - `not_from_wifi` (403): `NOT_FROM_WIFI` on approvals, permissions and agent files. `needs_approval` (403): `NEEDS_APPROVAL` on the agent edit routes. `host_not_allowed` (403): `HOST_NOT_ALLOWED`. `forbidden` (403): `RESET_TOKEN_REQUIRED`, `REMOTE_ACCESS_OFF`, `AGENT_COMPUTER_HUB_OWNED`, and the managed-hostname refusal.
+  - `not_found` (404): `UNKNOWN_APPROVAL`, `UNKNOWN_EVENT`, `unknown_account`, `browser_discovery_disabled`. `already_resolved` (409): `APPROVAL_NOT_PENDING`, `onboarding_complete`, `agent_raise_gone`, an already re-asked hook. `expired` (410): `APPROVAL_EXPIRED`, `agent_raise_expired`.
+  - `precondition_failed` (412, was 409): `UNDO_CONFLICT` (still with `conflicts`), `PERMISSIONS_CHANGED`, `agent_raise_marked`, `viewer_stale`.
+  - `conflict` (409): `APPROVAL_INCOMPLETE`, `NOT_UNDOABLE`, `harness_not_set_up`, `HOOK_REASK_UNAVAILABLE`, `file_picker_stuck`, `viewer_busy`, `viewer_uncertain`.
+  - `invalid_request` (400): `INVALID_GRANT_BODY`, `INVALID_DENY_BODY`, `INVALID_FEEDBACK`, `INVALID_ROOM_ID`, `INVALID_DOC_SPACE`, `invalid_id`, `invalid_key`, `invalid_setup`, `viewer_bad_request`, `UNKNOWN_AREA`, `UNKNOWN_ACTION`, `ACTION_HAS_NO_AREA`, `FLOOR_NEVER_ALLOWED`, `ALWAYS_ASKS`, `INVALID_STATE`, `INVALID_STOP` (an Always allow refused this way is now 400, was 409), and an unknown runtime on `/api/commands` and `/api/models`. `not_a_folder` (400): a harness path that is a file.
+  - `temporarily_unavailable` (503): `unavailable` on the load gate, `team_unavailable`, and `viewer_unavailable` (it was 404 or 409). `rate_limited` (429): `viewer_limit` and the admin limiter. `upstream_unavailable` (502): `models_unreachable` and the feedback history. `internal_error` (500): `DOC_INDEX_FAILED`, `ALWAYS_ALLOW_NOT_RECORDED`, `ALWAYS_ALLOW_NOT_UNDONE`, and every other failure, which used to echo the error's message.
+- **Kept as they were:** the login gate's `401 AUTH_REQUIRED` body, the `428` step-up and agent-card (`agent_raise_card`) bodies, and `200` answers that carry `{ ok: false }` by design.
 
 ## Regenerating the published API docs (two steps, not one)
 

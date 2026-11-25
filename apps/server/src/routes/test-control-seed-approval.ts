@@ -19,7 +19,7 @@ import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { hashApprovalInput } from '../services/core/approvals/index.js';
 import { isRepoPinCapabilityId } from '../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import type { TestControlDeps } from './test-control.js';
 
 /** What `POST /api/test/seed-approval` needs to raise one request card. */
@@ -65,17 +65,21 @@ export function registerSeedApprovalRoute(
     const { capabilityId, agentPath, area, summary } = parsed.data;
     const agent = deps.meshCore?.()?.getByPath(agentPath);
     if (!agent) {
-      return c.json({ error: `No agent is registered at ${agentPath}.` }, 404);
+      return problem(c, 'not_found', { detail: 'No agent is registered at that path.' });
     }
     const approvals = deps.approvals?.();
     if (!approvals) {
-      return c.json({ error: 'The approval service is not running on this server.' }, 503);
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'The approval service isn’t running on this server.',
+      });
     }
     const hook =
       parsed.data.hookProject && capabilityId === 'harness.project_hooks'
         ? scanHookRequests(parsed.data.hookProject, env.DORK_HOME ?? '').at(0)
         : undefined;
-    if (parsed.data.hookProject && !hook) return c.json({ error: 'No test hooks found.' }, 400);
+    if (parsed.data.hookProject && !hook) {
+      return problem(c, 'invalid_request', { detail: 'No test hooks found.' });
+    }
     const ticket = approvals.request({
       capabilityId,
       inputHash: hashApprovalInput({ seeded: summary }),

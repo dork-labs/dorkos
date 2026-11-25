@@ -337,8 +337,8 @@ describe('package approvals require a whole card', () => {
         .send({ answer });
       expect(response.status).toBe(409);
       expect(response.body).toMatchObject({
-        error: INCOMPLETE_APPROVAL_MESSAGE,
-        code: 'APPROVAL_INCOMPLETE',
+        detail: INCOMPLETE_APPROVAL_MESSAGE,
+        code: 'conflict',
       });
     }
     const response = await request(app).post(`/api/approvals/${ticket.approvalId}/deny`);

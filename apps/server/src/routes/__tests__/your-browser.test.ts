@@ -69,7 +69,7 @@ describe('Your browser metadata route', () => {
       .set('Host', 'localhost')
       .send({});
     expect(result.status).toBe(404);
-    expect(result.body.code).toBe('browser_discovery_disabled');
+    expect(result.body.code).toBe('not_found');
     expect(result.headers['cache-control']).toBe('no-store');
     expect(scan).not.toHaveBeenCalled();
   });

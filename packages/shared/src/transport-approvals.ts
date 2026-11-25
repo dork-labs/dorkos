@@ -43,7 +43,7 @@ export interface ApprovalTransport {
    * With `answer: 'always'` it also sets that action to Allowed for the agent
    * that asked (spec `agent-permissions` D7), written through the permission
    * service before the agent is told, so the resumed call and the new setting
-   * agree. Refused outright (409 `ALWAYS_NOT_OFFERED`) where the card's
+   * agree. Refused outright (409 `always_not_offered`) where the card's
    * `alwaysOffered` is false, rather than quietly downgraded to a one-time yes.
    *
    * @param approvalId - The approval's id, from {@link listPendingApprovals}.

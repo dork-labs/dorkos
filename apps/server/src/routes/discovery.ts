@@ -14,7 +14,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
@@ -56,7 +56,9 @@ export function createDiscoveryRoutes(meshCore: MeshCore): Hono<ApiEnv> {
       const withinBoundary = await isWithinBoundary(root);
       if (!withinBoundary) {
         logger.warn('[Discovery] Root rejected — outside boundary', { root });
-        return c.json({ error: `Root path outside directory boundary` }, 403);
+        return problem(c, 'outside_boundary', {
+          detail: 'Pick a folder inside the ones DorkOS may use.',
+        });
       }
     }
 
@@ -132,11 +134,11 @@ async function streamScan(
       res.write(`data: ${JSON.stringify(event.data)}\n\n`);
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Scan failed';
-    logger.error('[Discovery] Scan error', { error: message });
+    logger.error('[Discovery] Scan error', { err });
     if (!res.writableEnded) {
+      // A fixed sentence: the error's own text stays in the log.
       res.write(`event: error\n`);
-      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: 'The scan stopped early. Try again.' })}\n\n`);
     }
   } finally {
     const elapsedMs = Date.now() - startMs;

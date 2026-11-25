@@ -2,7 +2,7 @@
  * From Wi-Fi a permission write may lower what agents may do, never raise it
  * (DOR-3037): Careful, Ask and Blocked land; Trusted, Allowed, putting a
  * setting back to a looser default, bringing agents along and Undo are
- * refused with `NOT_FROM_WIFI`. At this computer nothing changes.
+ * refused with `not_from_wifi`. At this computer nothing changes.
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:http';
@@ -11,7 +11,6 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createPermissionsRoutes } from '../permissions.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import {
   WIFI_RAISE_REFUSAL,
   WIFI_UNDO_REFUSAL,
@@ -26,7 +25,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 const target = swappableServer();
-const REFUSED = { error: WIFI_RAISE_REFUSAL, code: NOT_FROM_WIFI };
+const REFUSED = expect.objectContaining({ code: 'not_from_wifi', detail: WIFI_RAISE_REFUSAL });
 
 /** The real routes over an in-memory world on Full power, reached from Wi-Fi on `x-test-via`. */
 function build(options: Parameters<typeof createPermissionWorld>[0] = { preset: 'full' }): {
@@ -167,6 +166,6 @@ describe('Undo from Wi-Fi', () => {
       .set('x-test-via', 'wifi')
       .send({});
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: WIFI_UNDO_REFUSAL, code: NOT_FROM_WIFI });
+    expect(res.body).toMatchObject({ code: 'not_from_wifi', detail: WIFI_UNDO_REFUSAL });
   });
 });
