@@ -48,6 +48,12 @@ const ROOM: Room = {
   lastActivityAt: '2026-09-26T12:00:00.000Z',
 };
 
+/** Removes a probe marker left by the fixture's own setup. */
+async function rmMarker(file: string): Promise<void> {
+  const { rm } = await import('node:fs/promises');
+  await rm(file, { force: true });
+}
+
 /** Plain git, as a person's or an agent's own shell runs it. */
 async function git(cwd: string, ...args: string[]): Promise<string> {
   const { execFile } = await import('node:child_process');
@@ -271,6 +277,38 @@ describe('the turn-start refresh', () => {
         expect(await headOf(copy)).toBe(before);
       });
     }
+
+    it('holds a submodule in the copy and never runs anything inside it', async () => {
+      await onMain({ 'PLAN.md': 'v1\n' }, 'Plan v1');
+      await refreshRoomWorktree(target, deps());
+      const marker = path.join(scratch, 'filter-ran');
+      const sub = path.join(copy, 'sub');
+      await mkdir(sub, { recursive: true });
+      await git(sub, 'init', '-q', '-b', 'main');
+      await git(sub, 'config', 'filter.probe.clean', `sh -c 'touch "${marker}"; cat'`);
+      await writeFile(path.join(sub, '.gitattributes'), '* filter=probe\n', 'utf-8');
+      await writeFile(path.join(sub, 'a.txt'), 'one\n', 'utf-8');
+      await git(sub, 'add', '.');
+      await git(sub, 'commit', '-q', '-m', 'sub');
+      await rmMarker(marker);
+      await writeFile(
+        path.join(copy, '.gitmodules'),
+        '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n\tignore = none\n',
+        'utf-8'
+      );
+      await git(copy, 'add', '.gitmodules', 'sub');
+      await git(copy, 'commit', '-q', '-m', 'add sub');
+      await git(copy, 'reset', '-q', '--soft', 'HEAD~1');
+      await writeFile(path.join(sub, 'a.txt'), 'two\n', 'utf-8');
+      await onMain({ 'PLAN.md': 'v2\n' }, 'Plan v2');
+      const before = await headOf(copy);
+
+      const { outcome } = await refreshRoomWorktree(target, deps());
+
+      expect(outcome).toMatchObject({ kind: 'held', reason: 'changes' });
+      expect(existsSync(marker)).toBe(false);
+      expect(await headOf(copy)).toBe(before);
+    });
 
     it('its HEAD is detached', async () => {
       await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
