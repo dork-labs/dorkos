@@ -23,6 +23,7 @@ import {
   resumeChatQueue,
 } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
+import { startRunEffects } from '../../services/runs/index.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -173,6 +174,10 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
         ]),
     });
   }
+
+  // The outbox's worker: the follow-ups runs saved, carried out from here on,
+  // before any chat's queue resumes (spec `turns-survive-restarts` §7.3).
+  startRunEffects();
 
   // Messages other chats queued survive a restart, but nothing ran them until a
   // newer message reached the same chat, sometimes days later (DOR-3287). Resume

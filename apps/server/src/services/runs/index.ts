@@ -16,6 +16,10 @@ import { logger } from '../../lib/logger.js';
 import { createRunFactsSink } from './run-facts-sink.js';
 import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
 import { writeStopReceipt, writeStopRequest, type StopRequestRef } from './run-stops.js';
+import { EffectStore } from './effects/effect-store.js';
+import { writeFollowUpsOfEnded } from './effects/follow-ups.js';
+import { effectHandlers, type EffectHandlerDeps } from './effects/handlers/index.js';
+import { EffectWorker } from './effects/worker.js';
 
 export {
   IllegalRunTransitionError,
@@ -29,27 +33,84 @@ export {
 export { createRunFactsSink } from './run-facts-sink.js';
 export type { StopRequestRef } from './run-stops.js';
 
-let installed: { store: RunStore; renew: ReturnType<typeof setInterval> } | undefined;
+/**
+ * How long after a run ends the projector's "finished" status change is still
+ * that run's (the two arrive in either order, as `chat-started-turns.ts` says
+ * of its own linger).
+ */
+export const RUN_FINISHED_LINGER_MS = 10_000;
+
+/** The run record and its outbox, as one boot holds them. */
+export interface RunRecord {
+  store: RunStore;
+  effects: EffectStore;
+  worker: EffectWorker;
+}
+
+let installed: (RunRecord & { renew: ReturnType<typeof setInterval> }) | undefined;
+
+/** What {@link createRunRecord} and {@link installRunRecord} need. */
+export interface RunRecordOptions {
+  /** This boot's epoch, minted once at startup (§6.1). */
+  epoch: string;
+  /** The clock, epoch ms. Injected by tests. */
+  now?: () => number;
+  /**
+   * Whether this process holds a run's owner; defaults to the turn code's own
+   * record of it (`isRunHeld`).
+   */
+  ownerHolds?: (runId: string) => boolean;
+  /** What the outbox's handlers need from the rest of the server. */
+  handlers?: EffectHandlerDeps;
+}
 
 /**
- * Open the run record over the machine store and register it as the turn
- * code's facts sink. Live runs this boot owns renew their lease every
- * {@link RUN_LEASE_RENEW_MS} from here on.
+ * Build the run record and its outbox over the machine store, with nothing
+ * registered or started: every move to `ended` writes its follow-up effects
+ * in the same transaction (§6.1) and wakes the worker, which runs the
+ * registry's handlers once started.
  *
  * @param db - The machine store.
- * @param opts.epoch - This boot's epoch, minted once at startup (§6.1).
- * @param opts.now - The clock, in tests.
- * @param opts.ownerHolds - Whether this process holds a run's owner; defaults
- *   to the turn code's own record of it (`isRunHeld`).
+ * @param opts - This boot's epoch (§6.1), what the handlers need, and in tests the clock.
+ */
+export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
+  const { handlers: handlerDeps, ...storeOpts } = opts;
+  const now = opts.now ?? Date.now;
+  const effects = new EffectStore(db, { now });
+  // Renewed, and kept from retirement, only while this process holds the run.
+  const store = new RunStore(db, {
+    ownerHolds: isRunHeld,
+    ...storeOpts,
+    onEnded: (run) => {
+      writeFollowUpsOfEnded(effects, run, now());
+      // A run with nothing to follow it settles on the worker's next pass.
+      effects.announceWork();
+    },
+  });
+  const worker = new EffectWorker({
+    effects,
+    runs: store,
+    handlers: effectHandlers(handlerDeps),
+    epoch: opts.epoch,
+    now,
+  });
+  return { store, effects, worker };
+}
+
+/**
+ * Open the run record and its outbox over the machine store and register the
+ * record as the turn code's facts sink. Live runs this boot owns renew their
+ * lease every {@link RUN_LEASE_RENEW_MS} from here on. The worker that carries
+ * out the follow-ups waits for {@link startRunEffects}.
+ *
+ * @param db - The machine store.
+ * @param opts - This boot's epoch, what the handlers need, and in tests the clock.
  * @returns The store.
  */
-export function installRunRecord(
-  db: Db,
-  opts: { epoch: string; now?: () => number; ownerHolds?: (runId: string) => boolean }
-): RunStore {
+export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
   uninstallRunRecord();
-  // Renewed, and kept from retirement, only while this process holds the run.
-  const store = new RunStore(db, { ownerHolds: isRunHeld, ...opts });
+  const record = createRunRecord(db, opts);
+  const { store } = record;
   setTurnFactsSink(createRunFactsSink(store));
   const renew = setInterval(() => {
     try {
@@ -61,13 +122,51 @@ export function installRunRecord(
     }
   }, RUN_LEASE_RENEW_MS);
   renew.unref?.();
-  installed = { store, renew };
+  installed = { ...record, renew };
   return store;
 }
 
-/** Unregister the run record and stop renewing leases (shutdown, and test isolation). */
+/**
+ * Start the outbox's worker. Called once the server is listening and the
+ * notification pipeline exists (`startup/steps/after-listen.ts`), before any
+ * chat's queue resumes (§7.3, step 8).
+ */
+export function startRunEffects(): void {
+  installed?.worker.start();
+}
+
+/** The installed run record and its outbox, or `undefined` before startup wired them. */
+export function getRunRecord(): RunRecord | undefined {
+  return installed;
+}
+
+/**
+ * Whether a chat's turn that just settled to idle is a run's, whose "finished"
+ * row its `notify_person` effect writes (§6.2): the chat has a `started` or
+ * `running` run, or one that ended in the last {@link RUN_FINISHED_LINGER_MS}.
+ * The projector's emitter then leaves the row to the outbox, so the person is
+ * told once. Never throws: an unreadable record means "no", and today's row.
+ *
+ * @param sessionId - The chat, by any id it answers to.
+ */
+export function runTellsTurnFinished(sessionId: string): boolean {
+  const store = installed?.store;
+  if (!store) return false;
+  try {
+    return store.hasTurnLiveOrEndedWithin(chatKeyOf(sessionId), RUN_FINISHED_LINGER_MS);
+  } catch (err) {
+    logger.warn('[runs] could not read whether a run tells its turn finished', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/** Unregister the run record, stop the worker and stop renewing leases (test isolation). */
 export function uninstallRunRecord(): void {
   if (!installed) return;
+  installed.worker.stop();
   clearInterval(installed.renew);
   setTurnFactsSink(undefined);
   installed = undefined;
@@ -133,6 +232,8 @@ export function recordStopReceipt(
 export function markRunsShutdown(): number {
   const store = installed?.store;
   if (!store) return 0;
+  // No new pass starts; what the endings below write waits for the next boot.
+  installed!.worker.stop();
   let ended = 0;
   try {
     store.transaction(() => {

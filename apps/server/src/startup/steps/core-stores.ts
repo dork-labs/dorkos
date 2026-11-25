@@ -32,6 +32,8 @@ import {
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
 import { installWorkLinkStore } from '../../services/work-graph/index.js';
 import { installRunRecord } from '../../services/runs/index.js';
+import { liveRuntimeCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
+import { resolveAgentIdForPath } from '../../services/mesh/agent-path-lookup.js';
 import { ulid } from 'ulidx';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
@@ -158,7 +160,17 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
 
   // The run record, and this boot's epoch: the owner of every run this process
   // starts (spec `turns-survive-restarts` §6.1). Before anything can launch a turn.
-  installRunRecord(db, { epoch: ulid() });
+  // Its outbox names a chat by the folder its runtime runs it in.
+  installRunRecord(db, {
+    epoch: ulid(),
+    handlers: {
+      placeOf: (sessionId) => {
+        const cwd = liveRuntimeCwd(db, sessionId);
+        const agentId = resolveAgentIdForPath(cwd);
+        return { ...(cwd ? { cwd } : {}), ...(agentId ? { agentId } : {}) };
+      },
+    },
+  });
 
   // The durable hold for staged words, on the same beat again: the server tells
   // the person "Added context for the next reply" on a stream that survives a
