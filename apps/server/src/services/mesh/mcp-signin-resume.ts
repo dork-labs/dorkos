@@ -184,6 +184,8 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
 
     const result = await dispatchMessage({
       turnStarter: 'agent',
+      // A person finished signing in, and this carries their turn on.
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: `mcp-signin-${event.flowId}`,
       content,

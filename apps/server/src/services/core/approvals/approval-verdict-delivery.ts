@@ -214,6 +214,8 @@ export async function deliverApprovalVerdict(
 
     await dispatchMessage({
       turnStarter: 'agent',
+      // A person answered the approval this session asked for.
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: `approval-verdict-${approvalId}`,
       content: TRIGGER_CONTENT[verdict.outcome],

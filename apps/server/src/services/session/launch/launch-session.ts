@@ -758,6 +758,7 @@ async function launchSessionMessage(
         : origin.kind === 'chat-message'
           ? 'agent-message'
           : 'agent',
+      origin,
       sessionId,
       clientId,
       content,

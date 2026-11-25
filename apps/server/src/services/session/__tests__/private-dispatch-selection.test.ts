@@ -321,6 +321,7 @@ it('ordinary message recovery runs Connections and leaves Docs for the later sel
   h.runtime.withScenarios([done, done, done]);
   noteRuntimeTurnOpen('session-1');
   const ordinary = await dispatchMessage({
+    origin: { kind: 'interactive' },
     ...h.options,
     clientId: 'person',
     content: 'Ordinary message',

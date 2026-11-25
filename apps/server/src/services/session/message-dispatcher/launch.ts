@@ -38,7 +38,13 @@ import {
   sweptWhileLaunching,
   buildTurnDeps,
 } from './state.js';
-import { holdInQueue, parkDispatch, returnToQueue, unwatchedSettle } from './park.js';
+import {
+  holdInQueue,
+  parkDispatch,
+  reparkBehindLiveRun,
+  returnToQueue,
+  unwatchedSettle,
+} from './park.js';
 import { rearmLockWaiters, schedulePump } from './pump.js';
 import {
   forgetRecordedHolds,
@@ -54,6 +60,13 @@ import type { DispatchPlan, InFlightTurn } from './types.js';
 import { joinWaitingChatRows } from './join-chat-rows.js';
 import { isOwnersCleanSend } from './owner-send.js';
 import { withKeptCeiling } from './carried-limits.js';
+import { feedRun, launchVerdictOf } from './run-feed.js';
+import {
+  putBackForPause,
+  recordTurnDelivered,
+  recordTurnSettled,
+  recordTurnStart,
+} from './run-turn.js';
 
 /** How many times a recovered row may fail to start before it is given up (DOR-3287). */
 export const RECOVERED_START_TRIES = 3;
@@ -99,7 +112,10 @@ function giveUpIfSpent(plan: DispatchPlan): boolean {
   recoveryFailures.delete(plan.messageId);
   pending.delete(plan.messageId);
   setQueuedWaitingOn(plan.messageId, undefined);
-  if (getMessageQueueStore()?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
+  // Its run is cancelled with the row: from `queued` before a launch, from `starting` after one.
+  if (getMessageQueueStore()?.remove(plan.messageId, undefined, 'cancelled')) {
+    emitQueueUpdate(plan.sessionKey);
+  }
   logger.warn('[MessageDispatcher] gave up on a recovered message that kept failing to start', {
     sessionId: plan.sessionKey,
     messageId: plan.messageId,
@@ -166,10 +182,21 @@ export function launchDispatchInner(
   // a turn the pause refuses and lose it at that turn's start (DOR-4327).
   const paused = pausedAgentOfPlan(plan);
   if (paused) {
+    feedRun(plan, 'pause hold', (feed, runId) => feed.waiting(runId, 'paused'));
     holdForPause(plan, paused);
     // The messages behind it meet the same check and are held too, so none is
     // left armed in memory where a resume could not reach it.
     schedulePump(plan.sessionKey);
+    return Promise.resolve({ accepted: false });
+  }
+  // One writer per chat (spec `turns-survive-restarts` §4.7, §5): a launch that
+  // finds another run of its chat `started` or `running` in the record waits
+  // for that run to settle, whichever path launched it. The in-memory slot
+  // cannot say this alone: a runtime's own turn, a turn whose write-lock went
+  // quiet past its timeout, or a launch still in `SessionTurnQueue` may hold
+  // the chat with no slot. Otherwise the run is `starting` now (transition 4).
+  if (launchVerdictOf(plan) === 'busy') {
+    reparkBehindLiveRun(plan, opts.budgetExhausted);
     return Promise.resolve({ accepted: false });
   }
   const { sessionKey, clientId, messageId } = plan;
@@ -194,6 +221,9 @@ export function launchDispatchInner(
   launching.add(messageId);
   joinWaitingChatRows(sessionKey, messageId);
   const clearIfOurs = (): void => {
+    // A launch that started no turn: its words go back in line (transition 8),
+    // unless something on the way out already cancelled its run.
+    if (!turnStarted) feedRun(plan, 'back in line', (feed, runId) => feed.backInLine(runId));
     launching.delete(messageId);
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
     schedulePump(sessionKey);
@@ -283,18 +313,21 @@ export function launchDispatchInner(
       // the message it stands for is a lie about what is still waiting.
       onTurnStart: (seq) => {
         turnStarted = true;
+        // The run is `started` and the row out of line FIRST, before the pause
+        // check below (§4.7): whatever a pause then does to this turn starts
+        // from a turn the record knows started.
+        recordTurnStart(plan, seq);
         // Paused while this launch was under way: the pause refuses the turn, so
-        // the row is not taken off the queue and nobody is told it started.
+        // the row is kept and nobody is told it started.
         heldByPause = pausedAgentOfPlan(plan);
         if (heldByPause) return;
         recoveryFailures.delete(messageId);
         if (turn.privateReceiptId !== undefined) {
-          getPrivateSessionMessageAcceptanceService()?.markTurnStarted(turn.privateReceiptId, seq);
           emitQueueUpdate(sessionKey);
         } else {
           // Kept, so a pause that cuts the turn before the agent reads it can
-          // put the row back (DOR-4353).
-          startedRow = getMessageQueueStore()?.remove(messageId);
+          // put the row back (DOR-4353), even once delivery deleted it.
+          startedRow = getMessageQueueStore()?.get(messageId);
           forgetRuntimeMessageId(messageId);
           if (startedRow) emitQueueUpdate(sessionKey);
         }
@@ -322,6 +355,9 @@ export function launchDispatchInner(
       queueWaitMs: remainingMs,
       // A fresh id after a pause cut this row's turn; the row keeps its own (DOR-4353).
       messageId: runtimeMessageIdFor(messageId),
+      // The runtime has the words: the row goes, except while a pause may
+      // still put it back (§4.7, transition 10).
+      onDelivered: () => recordTurnDelivered(plan, heldByPause === undefined),
       onError: turn.onError,
       onSettled: (turnOutcome, reason, agentActed) => {
         // This turn has let go of the write-lock, so whatever the lock refused
@@ -335,12 +371,14 @@ export function launchDispatchInner(
         if (turnOutcome === 'failed' && !turnStarted) countRecoveredFailure(plan);
         if (heldByPause) {
           if (turnOutcome === 'failed') {
+            // Back in line, held: transition 14, or 15 once delivered (§4.7).
+            putBackForPause(plan);
             holdForPause(plan, heldByPause);
             clearIfOurs();
             return;
           }
-          // Lifted again before the turn spoke, so it ran: the row goes now.
-          if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+          // Lifted again before the turn spoke, so it ran: the row goes now,
+          // with the run's end below.
         } else if (startedRow && agentActed === false && holdStartedForPause(plan, startedRow)) {
           // Paused after the turn started but before the agent did anything:
           // its row is back on the queue, held, and its sender hears `held`.
@@ -351,6 +389,8 @@ export function launchDispatchInner(
         if (turn.privateReceiptId !== undefined) {
           getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
         }
+        // The status moves now, at settle, never at `turn_end` (§4.7).
+        if (turnStarted) recordTurnSettled(plan, turnOutcome, reason);
         emitLifecycle({
           phase: 'settled',
           messageId,
@@ -364,18 +404,10 @@ export function launchDispatchInner(
       },
     });
   } catch (err) {
+    // What becomes of the words is decided before the slot goes back, so a
+    // cancel writes 9 and only a run going back in line writes 8.
+    endFailedStart(plan, err);
     clearIfOurs();
-    if (
-      turn.privateReceiptId !== undefined &&
-      err instanceof PrivateSessionMessageRefusalError &&
-      getPrivateSessionMessageAcceptanceService()?.isPreclaimRefusal(turn.privateReceiptId, err)
-    ) {
-      getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
-      emitQueueUpdate(sessionKey);
-    } else {
-      countRecoveredFailure(plan);
-      if (!giveUpIfSpent(plan)) returnToQueue(plan);
-    }
     // Rejected with what was thrown, unchanged: `triggerTurn` throws typed
     // errors its callers narrow on, and re-wrapping would cost them that.
     return Promise.reject(err as Error);
@@ -433,25 +465,39 @@ export function launchDispatchInner(
       }
       // A refused turn never settles, so nothing else will hand the slot back.
       if (!result.accepted) {
-        clearIfOurs();
         returnToQueue(plan);
+        clearIfOurs();
       }
       return result;
     },
     (err: unknown) => {
+      endFailedStart(plan, err);
       clearIfOurs();
-      if (
-        turn.privateReceiptId !== undefined &&
-        err instanceof PrivateSessionMessageRefusalError &&
-        getPrivateSessionMessageAcceptanceService()?.isPreclaimRefusal(turn.privateReceiptId, err)
-      ) {
-        getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
-        emitQueueUpdate(sessionKey);
-      } else {
-        countRecoveredFailure(plan);
-        if (!giveUpIfSpent(plan)) returnToQueue(plan);
-      }
       throw err;
     }
   );
+}
+
+/**
+ * A launch threw before any turn started: a protected message its final check
+ * refused is cancelled, anything else counts as a failed start and goes back
+ * in line, or is given up once a recovered row has failed enough.
+ *
+ * @param plan - The message whose launch threw
+ * @param err - What was thrown
+ */
+function endFailedStart(plan: DispatchPlan, err: unknown): void {
+  const receiptId = plan.turn.privateReceiptId;
+  const service = getPrivateSessionMessageAcceptanceService();
+  if (
+    receiptId !== undefined &&
+    err instanceof PrivateSessionMessageRefusalError &&
+    service?.isPreclaimRefusal(receiptId, err)
+  ) {
+    service.cancel(receiptId, err.code);
+    emitQueueUpdate(plan.sessionKey);
+    return;
+  }
+  countRecoveredFailure(plan);
+  if (!giveUpIfSpent(plan)) returnToQueue(plan);
 }

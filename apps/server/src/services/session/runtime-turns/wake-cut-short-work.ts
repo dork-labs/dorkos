@@ -111,6 +111,9 @@ export async function wakeCutShortChat(
     projector.cwd = cwd;
     const result = await dispatchMessage({
       turnStarter: 'agent',
+      // Nobody asked: core carries the same chat on by itself after a restart,
+      // as it does when an account's limit resets.
+      origin: { kind: 'account-resume' },
       sessionId,
       clientId: 'background-work-wake',
       content: CUT_SHORT_WAKE_MESSAGE,

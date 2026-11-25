@@ -50,6 +50,7 @@ beforeEach(() => {
     isBusy: async () => getOrCreateProjector(session).getStatus().lifecycle === 'streaming',
     dispatch: async (opts) =>
       dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
         clientId: opts.clientId,
         content: opts.request.content,
@@ -80,6 +81,7 @@ afterEach(async () => {
 
 function send(content: string) {
   return dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId: 'chat:sender',
     content,

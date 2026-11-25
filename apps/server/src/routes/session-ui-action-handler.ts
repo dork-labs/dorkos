@@ -33,6 +33,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isPersonTurn } from '../lib/caller-authority.js';
+import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
 import { personTurnBound } from './room-post-bound.js';
@@ -109,6 +110,7 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
 
   const result = await dispatchMessage({
     turnStarter: isPersonTurn(honoRequestFacts(c)) ? 'person' : 'agent',
+    origin: httpTurnOrigin(!isPersonTurn(honoRequestFacts(c))),
     sessionId,
     clientId,
     content,

@@ -25,6 +25,7 @@ import { launching, pending } from './state.js';
 import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';
 import { awaitsPersonSend } from './pause-hold.js';
+import { adoptRun } from './run-feed.js';
 import type { DispatchMessageOpts, DispatchPlan, MessageDispatchResult } from './types.js';
 
 /** Inputs for {@link adoptQueuedMessages}. */
@@ -166,12 +167,15 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
     // under nothing at all.
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
+    // The run its acceptance wrote, or one for a row an earlier build queued.
+    const runId = adoptRun(opts.sessionId, row.id);
     const plan: DispatchPlan = {
       sessionId: opts.sessionId,
       sessionKey,
       clientId: row.enqueuedBy,
       content: row.content,
       messageId: row.id,
+      ...(runId !== undefined ? { runId } : {}),
       projector: opts.projector,
       runtime: opts.runtime,
       budgetMs: SESSIONS.LOCK_TTL_MS,
@@ -258,12 +262,14 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
     }
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
+    const runId = adoptRun(opts.sessionId, row.id);
     const plan: DispatchPlan = {
       sessionId: receipt.sessionId,
       sessionKey,
       clientId: service.sender(receipt) ?? `system:${receipt.sourceKind}:${receipt.sourceId}`,
       content: row.content,
       messageId: row.id,
+      ...(runId !== undefined ? { runId } : {}),
       projector: opts.projector,
       runtime: opts.runtime,
       budgetMs: SESSIONS.LOCK_TTL_MS,

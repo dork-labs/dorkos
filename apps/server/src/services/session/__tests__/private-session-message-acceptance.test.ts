@@ -176,7 +176,7 @@ describe('PrivateSessionMessageAcceptanceService', () => {
     ).toBe('resumed');
   });
 
-  it('claims once, removes the queue row at turn start, and keeps the settled receipt', async () => {
+  it('claims once, takes the queue row out of line at turn start, and keeps the settled receipt', async () => {
     const service = new PrivateSessionMessageAcceptanceService(
       db,
       queue,
@@ -193,6 +193,9 @@ describe('PrivateSessionMessageAcceptanceService', () => {
     expect(queue.list('session-1')).toHaveLength(1);
 
     service.markTurnStarted(accepted.receipt.id, 42);
+    // Kept until the runtime reads it, out of line (spec `turns-survive-restarts` §4.3).
+    expect(queue.list('session-1')).toEqual([]);
+    expect(queue.get(accepted.receipt.queueMessageId)?.inTurn).toBe(true);
     service.settle(accepted.receipt.id, 'ok');
 
     expect(queue.list('session-1')).toEqual([]);

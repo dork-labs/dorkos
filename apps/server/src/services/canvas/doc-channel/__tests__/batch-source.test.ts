@@ -66,7 +66,8 @@ describe('fixed owning-session document source', () => {
     f.admission.acceptance.markTurnStarted(accepted.receipt.id, 42);
     f.admission.acceptance.settle(accepted.receipt.id, 'ok');
     expect(f.store.getBatch(batch)?.status).toBe('turn_done');
-    expect(f.queue.get(accepted.receipt.queueMessageId)).toBeUndefined();
+    // Out of line once its turn started; the dispatcher deletes it when the runtime reads it.
+    expect(f.queue.getWaiting(accepted.receipt.queueMessageId)).toBeUndefined();
   });
   it('refuses revoked authority after prepare with zero claim effects', async () => {
     const f = fixture();

@@ -530,6 +530,7 @@ describe('a row this process ADOPTED after a restart (task 2.5)', () => {
     // entry left armed would fire before the witness instead of slipping past a
     // timing sample.
     const witness = await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: SESSION_ID,
       clientId: 'client-a',
       content: QUIESCENCE_WITNESS,

@@ -305,7 +305,14 @@ describe('event source through real durable private acceptance', () => {
       state: 'completed',
       normalizedPayload: '',
     });
-    expect(f.db.select().from(sessionMessageQueue).all()).toHaveLength(0);
+    // Out of line, kept only until the runtime reads it (spec `turns-survive-restarts` §4.3).
+    expect(
+      f.db
+        .select()
+        .from(sessionMessageQueue)
+        .all()
+        .filter((row) => row.state === 'waiting')
+    ).toHaveLength(0);
   });
 
   it('posts every event from one notification into the same chat, each naming the notification', async () => {
@@ -409,11 +416,13 @@ describe('event source through real durable private acceptance', () => {
       )
       .run(first.receipt.sessionId);
     expect(() => f.adapter.acceptPrepared(f.acceptance, second)).toThrow();
+    // The first's row is out of line once its turn started (spec `turns-survive-restarts` §4.3).
     expect(
       f.db
         .select()
         .from(sessionMessageQueue)
         .all()
+        .filter((row) => row.state === 'waiting')
         .map((row) => row.sessionId)
     ).not.toContain(first.receipt.sessionId);
     expect(

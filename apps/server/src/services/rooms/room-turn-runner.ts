@@ -66,7 +66,7 @@ import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
 // import there would load the dispatcher to raise a refusal it hands back to it.
-import { conventionsRoomOf, RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
+import { conventionsRoomOf, roomDispatchOf, RoomTurnRuntimeGoneError } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import {
   dispatchMessage,
@@ -903,7 +903,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           return launched.files ? { roomContext: { ...roomContext, files: launched.files } } : {};
         },
         roomContext,
-        ...seatLaunchOf(request),
+        ...roomDispatchOf(request),
         // Routing metadata, never prompt context: the room, the acting member and
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
         // shared canvas rather than on this agent's private session stream

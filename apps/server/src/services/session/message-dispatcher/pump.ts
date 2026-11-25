@@ -20,6 +20,7 @@ import {
   withDispatchMutex,
 } from './state.js';
 import { launchDueCompaction } from './agent-compaction.js';
+import { toRuns } from './run-feed.js';
 import type { PendingDispatch } from './types.js';
 
 /**
@@ -80,7 +81,14 @@ export function finishSteer(sessionId: string, messageId: string): void {
   if (entry) clearTimeout(entry.timer);
   pending.delete(messageId);
   setQueuedWaitingOn(messageId, undefined);
-  if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionId);
+  // Its words joined the running turn: its run is `superseded` with the row
+  // (transition 6), never cancelled.
+  const store = getMessageQueueStore();
+  const removed = store?.atomically(() => {
+    toRuns('send now', (feed) => feed.supersedeRow(messageId), undefined);
+    return store.remove(messageId);
+  });
+  if (removed) emitQueueUpdate(sessionId);
   entry?.folded();
   steering.delete(messageId);
   schedulePump(sessionId);

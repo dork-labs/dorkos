@@ -244,6 +244,7 @@ describe('the dispatcher announces its own mutations', () => {
 
     const projector = getOrCreateProjector(session);
     void dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: TAB,
       content: 'long turn',
@@ -254,6 +255,7 @@ describe('the dispatcher announces its own mutations', () => {
 
     const seen = watch(session);
     const queued = dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: TAB,
       content: 'queued behind it',
@@ -329,6 +331,7 @@ describe('a restart adopts the rows it finds — it never re-offers them', () =>
     resetMessageDispatcher();
 
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: 'a-window-opened-after-the-restart',
       content: 'typed after the restart',
@@ -384,6 +387,7 @@ describe('the queue survives the canonical-id rename as ONE queue', () => {
     const projector = getOrCreateProjector(session);
 
     void dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: TAB,
       content: 'long turn',
@@ -392,6 +396,7 @@ describe('the queue survives the canonical-id rename as ONE queue', () => {
     });
     await settle();
     const before = dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: TAB,
       content: 'typed before the rename',
@@ -404,6 +409,7 @@ describe('the queue survives the canonical-id rename as ONE queue', () => {
     runtime.getInternalSessionId.mockReturnValue(canonical);
 
     const after = dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: canonical,
       clientId: TAB,
       content: 'typed after the rename',
