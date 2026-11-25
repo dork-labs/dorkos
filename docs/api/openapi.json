@@ -109607,7 +109607,7 @@
           "Work-graph"
         ],
         "summary": "See a chat’s tree",
-        "description": "A chat’s place in the tree of chats that started each other: the chats above it, nearest first, and every chat below it, depth first, each with whether it ran, is still launching, or never started and why. `depth` limits how many levels down, 1 to 64; all of them when left out. A chat you may not read is left out; when a chat you may read hangs below it, it shows as a private joint with no id. States and ids only, never what was said. Page the chats below it with `limit` and the returned `nextCursor`. chatId is the chat’s id or its dork:chat: reference.",
+        "description": "A chat’s place in the tree of chats that started each other: the chats above it, nearest first, and every chat below it, depth first, each with whether it ran, is still launching, or never started and why. `depth` limits how many levels down, 1 to 64; all of them when left out. A chat you may not read is left out; when a chat you may read hangs below it, it shows as a private joint with no id. States and ids only, never what was said. Page the chats below it with `limit` and the returned `nextCursor`; the chats above it repeat on every page, so count them once. chatId is the chat’s id or its dork:chat: reference.",
         "parameters": [
           {
             "schema": {
@@ -110182,7 +110182,7 @@
           "Work-graph"
         ],
         "summary": "List an agent’s pull requests and tickets",
-        "description": "Every pull request and ticket the chats this DorkOS knows for one agent opened, claimed or work on, newest first by the day each was first linked, with each link: the relation, the chat and when. A link from a chat you may not read shows only its relation and the day. Page with `limit` and the returned `nextCursor`. agentId is the agent’s id or its dork:agent: reference.",
+        "description": "Every pull request and ticket the chats this DorkOS knows for one agent opened, claimed or worked on, newest first by the day each was first linked, with each link: the relation, the chat and when. A link from a chat you may not read shows only its relation and the day. Page with `limit` and the returned `nextCursor`. agentId is the agent’s id or its dork:agent: reference.",
         "parameters": [
           {
             "schema": {
@@ -110453,7 +110453,7 @@
           "Work-graph"
         ],
         "summary": "List a chat’s pull requests and tickets",
-        "description": "Every pull request and ticket a chat and the chats below it opened, claimed or work on, newest first by the day each was first linked, with each link: the relation, the chat and when. Set `children` to `false` for the chat alone. A link from a chat you may not read shows only its relation and the day. Page with `limit` and the returned `nextCursor`. chatId is the chat’s id or its dork:chat: reference.",
+        "description": "Every pull request and ticket a chat and the chats below it opened, claimed or worked on, newest first by the day each was first linked, with each link: the relation, the chat and when. Set `children` to `false` for the chat alone. A link from a chat you may not read shows only its relation and the day. Page with `limit` and the returned `nextCursor`. chatId is the chat’s id or its dork:chat: reference.",
         "parameters": [
           {
             "schema": {
@@ -110469,10 +110469,17 @@
           },
           {
             "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
               ],
               "description": "Include the chats below it (`true`, the default) or not (`false`)."
             },

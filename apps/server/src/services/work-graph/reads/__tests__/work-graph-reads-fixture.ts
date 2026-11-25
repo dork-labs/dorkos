@@ -3,24 +3,30 @@
  * stores (`../../__tests__/lineage-fixture.ts`), the real visibility resolver
  * over the same database (`wireSessionVisibility`, rooms included), real
  * account ids, and the four reads served by the real capability mount behind
- * the `/api` chain. A chat is "bound" with the origin that decides who may
- * read it, as its first turn's binding writes it.
+ * the `/api` chain, and over the in-session MCP server. A program key is a
+ * real Better Auth API key the session gate verifies, with "Ask for a
+ * password on this computer too" on for its request. A chat is "bound" with
+ * the origin that decides who may read it, as its first turn's binding writes
+ * it.
  */
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach } from 'vitest';
 import type { MiddlewareHandler } from 'hono';
-import request from '@dorkos/test-utils/supertest';
+import request, { type Response } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { authors, roomMembers, roomSessions, rooms, sessionMetadata } from '@dorkos/db';
+import { authors, roomMembers, roomSessions, rooms, sessionMetadata, user } from '@dorkos/db';
+import { noopLogger } from '@dorkos/shared/logger';
 import { entityRef, type EntityKind } from '@dorkos/shared/entity-ref';
 import { capabilityGroup } from '../../../../http/__tests__/capability-group.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../http/api-chain.js';
-import { initConfigManager } from '../../../core/config-manager.js';
+import { configManager, initConfigManager } from '../../../core/config-manager.js';
+import { initAuth } from '../../../core/auth/index.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
-import type { CapabilityDeps } from '../../../core/capabilities/index.js';
+import { composeRegistry, type CapabilityDeps } from '../../../core/capabilities/index.js';
+import { createCapabilityMcpClient } from '../../../runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { resetSessionVisibility } from '../../../audit/session-visibility.js';
 import { wireSessionVisibility } from '../../../audit/wire-session-visibility.js';
@@ -35,14 +41,26 @@ export { start, stores } from '../../__tests__/lineage-fixture.js';
 export const SCOUT = { id: '01JSCVTAGENT00000000000000', home: '/agents/scout' } as const;
 export const RANGER = { id: '01JRANGERAGENT000000000000', home: '/agents/ranger' } as const;
 
-/** Who reads, as the request arrives at the mount. */
-export type Reader = 'owner' | 'scout' | 'ranger' | 'unidentified' | 'api-key';
+/**
+ * Who reads, as the request arrives at the mount. `bad-key` presents a key
+ * Better Auth never issued; it is refused before any read.
+ */
+export type Reader = 'owner' | 'scout' | 'ranger' | 'unidentified' | 'api-key' | 'bad-key';
 
-/** Every reader in the conformance table. */
-export const READERS: readonly Reader[] = ['owner', 'scout', 'ranger', 'unidentified', 'api-key'];
+/** Every reader in the conformance table that reaches a read. */
+export const READERS: readonly Exclude<Reader, 'bad-key'>[] = [
+  'owner',
+  'scout',
+  'ranger',
+  'unidentified',
+  'api-key',
+];
 
 const target = swappableServer();
 let createdAt = Date.parse('2026-11-20T09:00:00.000Z');
+let auditDeps: NonNullable<CapabilityDeps['auditDeps']>;
+let mintKey: () => Promise<string>;
+let issuedKey: string | null = null;
 
 /** The identity the chain resolved for an agent reader. */
 function identityOf(reader: Reader): AgentIdentity | undefined {
@@ -69,7 +87,20 @@ export function useWorkGraphReads(): void {
       readOwnerAccount: () => null,
     });
     wireSessionVisibility({ db: stores.db, accounts });
-    const auditDeps = {
+    const auth = initAuth(stores.db, home);
+    issuedKey = null;
+    mintKey = async () => {
+      await auth.api.signUpEmail({
+        body: {
+          email: 'owner' + '@' + 'dork.test',
+          password: 'made-up-pass-phrase',
+          name: 'Owner',
+        },
+      });
+      const ownerId = stores.db.select().from(user).get()!.id;
+      return (await auth.api.createApiKey({ body: { userId: ownerId, name: 'work-graph' } })).key;
+    };
+    auditDeps = {
       log: {} as NonNullable<CapabilityDeps['auditDeps']>['log'],
       accounts,
       roster: () => ({
@@ -94,16 +125,48 @@ export function useWorkGraphReads(): void {
 
 /**
  * GET a path as `reader`. An agent presents its header (and the chain resolved
- * its identity); `unidentified` presents a header nobody could resolve; the
- * API key presents a key and no agent.
+ * its identity); `unidentified` presents a header nobody could resolve. A key
+ * reader asks with the session gate on, so the key is what lets it in: a real
+ * one for `api-key`, one nobody issued for `bad-key`.
  */
-export function get(url: string, reader: Reader = 'owner') {
+export async function get(url: string, reader: Reader = 'owner'): Promise<Response> {
   const req = request(target.server).get(url).set('x-test-reader', reader);
   if (reader === 'scout' || reader === 'ranger' || reader === 'unidentified') {
     req.set('X-DorkOS-Agent', `${reader}-token`);
   }
-  if (reader === 'api-key') req.set('Authorization', 'Bearer dork_made_up_key');
-  return req;
+  if (reader !== 'api-key' && reader !== 'bad-key') return req;
+  issuedKey ??= await mintKey();
+  const key = reader === 'api-key' ? issuedKey : 'dork_never_issued_key';
+  configManager.set('auth', { enabled: true });
+  try {
+    return await req.set('Authorization', `Bearer ${key}`);
+  } finally {
+    configManager.set('auth', { enabled: false });
+  }
+}
+
+/**
+ * Call a read's tool over the in-session MCP server, with no turn bound to the
+ * call: the caller `readerFor` reads as an agent nobody could name.
+ *
+ * @returns Whether the tool answered an error, and the JSON it carried.
+ */
+export async function callInSession(
+  name: string,
+  args: Record<string, unknown>
+): Promise<{ isError: boolean; body: Record<string, unknown> }> {
+  const registry = composeRegistry([workGraphReadDomain], { logger: noopLogger, auditDeps });
+  const { client } = await createCapabilityMcpClient(registry, 'in-session');
+  const result = (await client.callTool({ name, arguments: args })) as {
+    isError?: boolean;
+    structuredContent?: Record<string, unknown>;
+    content?: { type: string; text?: string }[];
+  };
+  const text = result.content?.find((part) => part.type === 'text')?.text ?? '{}';
+  return {
+    isError: result.isError === true,
+    body: result.structuredContent ?? (JSON.parse(text) as Record<string, unknown>),
+  };
 }
 
 /** Who may read a bound chat: decided by its origin, as its binding stores it. */

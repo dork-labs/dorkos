@@ -6,8 +6,13 @@
  * A reader gets only the chats it may read (spec `audit-trail` §3.4): an
  * agent never gets a person's own chat, not its id, not its title, and not a
  * count of them. Chats it may not read are left out before the page is cut,
- * so every page is full but the last, and the cursor never hints that more
- * private chats follow.
+ * and a cursor is given only when a chat it may read follows.
+ *
+ * **Bounded.** One page scans at most {@link AGENT_CHATS_SCAN_LIMIT} bindings,
+ * so a reader whose agent has mostly private chats can't make one call read
+ * them all. A page that stops at the bound with bindings left holds what it
+ * found and a cursor to go on. The cursor is sealed (`./page-cursor.ts`): the
+ * binding it stops at may be one the reader may not read.
  *
  * @module services/work-graph/reads/agent-chats
  */
@@ -23,6 +28,9 @@ import type { Db } from '@dorkos/db';
 
 /** How many bindings one scan step reads while it fills a page. */
 const SCAN_STEP = 200;
+
+/** The most bindings one page scans, readable or not. */
+export const AGENT_CHATS_SCAN_LIMIT = 10 * SCAN_STEP;
 
 /** What {@link readAgentChats} reads. */
 export interface AgentChatsSources {
@@ -59,11 +67,15 @@ export async function readAgentChats(
   const kept: ChatBinding[] = [];
   let after: BindingCursor | null = null;
   if (query.cursor !== undefined) {
-    const [createdAt, chatId] = decodePageCursor(query.cursor);
+    const [createdAt, chatId] = decodePageCursor(query.cursor, 2) as [string, string];
     after = { createdAt, chatId };
   }
-  for (;;) {
-    const scanned = agentBindingsPage(sources.db, query.agentPath, after, SCAN_STEP);
+  // Where a page that stops at the scan bound goes on from: the last binding it scanned.
+  let stoppedAt: BindingCursor | null = null;
+  for (let scannedSoFar = 0; ;) {
+    const step = Math.min(SCAN_STEP, AGENT_CHATS_SCAN_LIMIT - scannedSoFar);
+    const scanned = agentBindingsPage(sources.db, query.agentPath, after, step);
+    scannedSoFar += scanned.length;
     const readable = readableSessionIds(
       reader,
       scanned.map((binding) => binding.chatId)
@@ -72,15 +84,19 @@ export async function readAgentChats(
       if (readable.has(binding.chatId)) kept.push(binding);
       if (kept.length === wanted) break;
     }
-    if (kept.length === wanted || scanned.length < SCAN_STEP) break;
+    if (kept.length === wanted || scanned.length < step) break;
     after = scanned.at(-1)!;
+    if (scannedSoFar >= AGENT_CHATS_SCAN_LIMIT) {
+      stoppedAt = after;
+      break;
+    }
   }
   const page = kept.slice(0, query.limit);
   const last = page.at(-1);
+  const goOnFrom = kept.length > page.length ? last : stoppedAt;
   return {
     chats: await describeChats(page, reader, sources),
-    nextCursor:
-      kept.length > page.length && last ? encodePageCursor([last.createdAt, last.chatId]) : null,
+    nextCursor: goOnFrom ? encodePageCursor([goOnFrom.createdAt, goOnFrom.chatId]) : null,
   };
 }
 

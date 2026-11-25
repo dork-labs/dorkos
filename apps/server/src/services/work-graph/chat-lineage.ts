@@ -37,7 +37,10 @@
  * ends it. It goes at most {@link LINEAGE_MAX_DEPTH} levels and visits at
  * most {@link LINEAGE_MAX_VISITED} chats, and an answer holds at most
  * {@link LINEAGE_MAX_CHATS} shown chats. `truncated` says when a bound left
- * chats out.
+ * chats out. A read for one reader (`readable`, the W4 tree) leaves out the
+ * chats that reader may not read before it counts, keeping one only as a
+ * joint above a chat it may read, so the cap and `truncated` say nothing of
+ * the rest.
  *
  * @module services/work-graph/chat-lineage
  */
@@ -118,10 +121,18 @@ export interface ChatLineage {
 /** What {@link ChatLineageReader} reads. */
 export type ChatLineageDeps = LineageReadsDeps;
 
-/** How far a lineage read goes. */
+/** How far a lineage read goes, and for whom. */
 export interface ChatLineageOptions {
   /** How many levels of descendants: 1 for the chats it started itself. Default: all of them. */
   depth?: number;
+  /**
+   * The chats among these the reader may read. Given, a chat below the asked
+   * one that the reader may not read is kept only when one it may read hangs
+   * below it (a joint), and the cap and `truncated` count only the chats kept,
+   * so neither says anything of the ones left out (Security, DOR-4970). Left
+   * out, every chat counts as readable: the answer is the unfiltered one.
+   */
+  readable?: (chatIds: readonly string[]) => ReadonlySet<string>;
 }
 
 /** One chat found walking down, before the join. */
@@ -153,20 +164,26 @@ export class ChatLineageReader {
    * A chat's ancestors and its subtree, with depth.
    *
    * @param chatId - The chat, by any id it has had.
-   * @param opts - How many levels of descendants; all by default.
+   * @param opts - How many levels of descendants (all by default), and for whom.
    * @returns The lineage, or `null` when the chat has neither a binding nor a
    *   run, and nothing it started is shown.
    */
   read(chatId: string, opts: ChatLineageOptions = {}): ChatLineage | null {
     const id = this.reads.current([chatId]).get(chatId) ?? chatId;
-    const { visited, states, stopped } = this.walkDown(id, opts.depth ?? Infinity);
-    // Children before parents: a chat the join leaves out, with a shown child, is unknown.
+    const { visited, states, stopped, open } = this.walkDown(
+      id,
+      opts.depth ?? Infinity,
+      opts.readable
+    );
+    // Children before parents: a chat the join leaves out, with a shown child, is
+    // unknown; one the reader may not read is kept only with a shown child.
     const shown = new Map<string, LineageState>();
     const hasShownChild = new Set<string>();
     for (const chat of [...visited].reverse()) {
       const state =
         states.get(chat.chatId) ?? (hasShownChild.has(chat.chatId) ? UNKNOWN : undefined);
       if (!state) continue;
+      if (open && !open.has(chat.chatId) && !hasShownChild.has(chat.chatId)) continue;
       shown.set(chat.chatId, state);
       hasShownChild.add(chat.parentId);
     }
@@ -197,19 +214,27 @@ export class ChatLineageReader {
    * {@link LINEAGE_MAX_VISITED}, or once every level but the last one walked
    * already holds {@link LINEAGE_MAX_CHATS} shown chats between them, so
    * nothing deeper could take a place. That last level is still walked, so its
-   * shown chats can show the hidden ones above them.
+   * shown chats can show the hidden ones above them. With `readable`, only the
+   * chats the reader may read count toward that, and `open` holds them.
    */
   private walkDown(
     root: string,
-    asked: number
-  ): { visited: Visited[]; states: Map<string, LineageState | null>; stopped: boolean } {
+    asked: number,
+    readable: ChatLineageOptions['readable']
+  ): {
+    visited: Visited[];
+    states: Map<string, LineageState | null>;
+    stopped: boolean;
+    open: Set<string> | null;
+  } {
     const visited: Visited[] = [];
     const states = new Map<string, LineageState | null>();
+    const open = readable ? new Set<string>() : null;
     const seen = new Set([root]);
     let frontier = [root];
     let shownAbove = 0;
     let shownInLast = 0;
-    const done = (stopped: boolean) => ({ visited, states, stopped });
+    const done = (stopped: boolean) => ({ visited, states, stopped, open });
     for (let depth = 1; frontier.length > 0 && depth <= asked; depth += 1) {
       const inFrontier = new Set(frontier);
       const candidates = this.reads.candidatesUnder(frontier).filter((id) => !seen.has(id));
@@ -227,13 +252,17 @@ export class ChatLineageReader {
       if (depth > LINEAGE_MAX_DEPTH || shownAbove >= LINEAGE_MAX_CHATS) return done(true);
       const taken = level.slice(0, LINEAGE_MAX_VISITED - visited.length);
       const joined = this.reads.statesOf(taken.map((chat) => chat.chatId));
+      const openHere = readable?.(taken.map((chat) => chat.chatId));
+      for (const id of openHere ?? []) open?.add(id);
       for (const chat of taken) {
         seen.add(chat.chatId);
         visited.push(chat);
         states.set(chat.chatId, joined.get(chat.chatId) ?? null);
       }
       shownAbove += shownInLast;
-      shownInLast = taken.filter((chat) => joined.get(chat.chatId)).length;
+      shownInLast = taken.filter(
+        (chat) => joined.get(chat.chatId) && (!openHere || openHere.has(chat.chatId))
+      ).length;
       if (taken.length < level.length) return done(true);
       frontier = taken.map((chat) => chat.chatId);
     }

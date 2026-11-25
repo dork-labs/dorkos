@@ -140,11 +140,21 @@ function chatNotFound(): CapabilityToolError {
 
 /**
  * A chat's lineage, when the reader may read the chat, with the chats in it
- * the reader may read.
+ * the reader may read. `forReader` reads it with the reader's filter, so the
+ * chats the reader may not read are left out before the cap counts (the
+ * tree); without it every chat below is kept (the work reads, which list a
+ * private chat's work with the chat left off).
  */
-function readableLineage(chatInput: string, reader: AuditReader, depth?: number) {
+function readableLineage(
+  chatInput: string,
+  reader: AuditReader,
+  opts: { depth?: number | undefined; forReader: boolean }
+) {
   workGraphDb();
-  const lineage = readChatLineage(idOf(chatInput, 'chat'), depth === undefined ? {} : { depth });
+  const lineage = readChatLineage(idOf(chatInput, 'chat'), {
+    ...(opts.depth === undefined ? {} : { depth: opts.depth }),
+    ...(opts.forReader ? { readable: (ids) => readableSessionIds(reader, ids) } : {}),
+  });
   if (!lineage) throw chatNotFound();
   const readable = readableSessionIds(reader, chatIdsOf(lineage));
   if (!readable.has(lineage.chatId)) throw chatNotFound();
@@ -218,7 +228,8 @@ export const workGraphReadDomain: CapabilityDomain = {
         `${LINEAGE_MAX_DEPTH}; all of them when left out. A chat you may not read is left out; ` +
         'when a chat you may read hangs below it, it shows as a private joint with no id. ' +
         'States and ids only, never what was said. Page the chats below it with `limit` and ' +
-        'the returned `nextCursor`. chatId is the chat’s id or its dork:chat: reference.',
+        'the returned `nextCursor`; the chats above it repeat on every page, so count them ' +
+        'once. chatId is the chat’s id or its dork:chat: reference.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
@@ -249,7 +260,10 @@ export const workGraphReadDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) => {
         const reader = readerFor(requireAuditDeps(deps), context);
-        const { lineage, readable } = readableLineage(input.chatId, reader, input.depth);
+        const { lineage, readable } = readableLineage(input.chatId, reader, {
+          depth: input.depth,
+          forReader: true,
+        });
         return filterChatTree(lineage, readable, input);
       },
     }),
@@ -258,7 +272,7 @@ export const workGraphReadDomain: CapabilityDomain = {
       title: 'List an agent’s pull requests and tickets',
       description:
         'Every pull request and ticket the chats this DorkOS knows for one agent opened, ' +
-        'claimed or work on, newest first by the day each was first linked, with each link: ' +
+        'claimed or worked on, newest first by the day each was first linked, with each link: ' +
         'the relation, the chat and when. A link from a chat you may not read shows only its ' +
         'relation and the day. Page with `limit` and the returned `nextCursor`. agentId is the ' +
         'agent’s id or its dork:agent: reference.',
@@ -292,7 +306,7 @@ export const workGraphReadDomain: CapabilityDomain = {
       id: 'work-graph.chat_work',
       title: 'List a chat’s pull requests and tickets',
       description:
-        'Every pull request and ticket a chat and the chats below it opened, claimed or work ' +
+        'Every pull request and ticket a chat and the chats below it opened, claimed or worked ' +
         'on, newest first by the day each was first linked, with each link: the relation, the ' +
         'chat and when. Set `children` to `false` for the chat alone. A link from a chat you ' +
         'may not read shows only its relation and the day. Page with `limit` and the returned ' +
@@ -302,8 +316,10 @@ export const workGraphReadDomain: CapabilityDomain = {
       areaNote: 'reading',
       input: z.object({
         chatId: idInput('chat'),
+        // A boolean from an MCP agent, or its spelling in a query string; never
+        // z.coerce.boolean, which reads the string 'false' as true.
         children: z
-          .enum(['true', 'false'])
+          .union([z.boolean(), z.enum(['true', 'false'])])
           .optional()
           .describe('Include the chats below it (`true`, the default) or not (`false`).'),
         kind: kindInput,
@@ -317,11 +333,11 @@ export const workGraphReadDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) => {
         const reader = readerFor(requireAuditDeps(deps), context);
-        const { lineage, readable } = readableLineage(
-          input.chatId,
-          reader,
-          input.children === 'false' ? 0 : undefined
-        );
+        const alone = input.children === false || input.children === 'false';
+        const { lineage, readable } = readableLineage(input.chatId, reader, {
+          depth: alone ? 0 : undefined,
+          forReader: false,
+        });
         const { db, links } = workGraphDb();
         const chatIds = [lineage.chatId, ...lineage.descendants.map((d) => d.chatId)];
         return readWork(

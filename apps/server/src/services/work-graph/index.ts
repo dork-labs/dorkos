@@ -157,7 +157,7 @@ export function getWorkGraphDb(): Db | null {
  * See {@link ChatLineageReader} for what is shown and what is left out.
  *
  * @param chatId - The chat, by any id it has had.
- * @param opts - How many levels of descendants; all by default.
+ * @param opts - How many levels of descendants (all by default), and for whom.
  * @returns The lineage; `null` before startup installs the store, or when the
  *   chat has neither a binding nor a run, and nothing it started is shown.
  */

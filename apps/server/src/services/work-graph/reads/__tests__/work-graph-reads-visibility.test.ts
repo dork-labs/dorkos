@@ -1,7 +1,8 @@
 /**
  * Who may read what through the work graph's reads (W4, DOR-4970), as a
  * conformance table: every reader (the owner, a named agent, another agent,
- * an agent nobody could name, a program key) against every kind of chat (an
+ * an agent nobody could name, a program key the session gate verifies, and an
+ * in-session MCP caller with no turn bound) against every kind of chat (an
  * agent's work, a person's own chat, a room chat with Scout its one agent
  * member), on all four reads, through the real mount, the real visibility
  * resolver and the real stores. The rule is the audit read side's (spec
@@ -10,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bind,
+  callInSession,
   get,
   link,
   RANGER,
@@ -93,6 +95,42 @@ describe.each(READERS)('read as %s', (reader) => {
     // The work itself is the space's to read; which chat did it is not.
     expect(item.links).toHaveLength(1);
     expect(item.links[0].chatId).toBe(mayRead(reader, kind) ? `c-${kind}` : null);
+  });
+});
+
+describe('a key the session gate never issued', () => {
+  it('is refused before any read', async () => {
+    plant();
+    for (const url of [`/api/agents/${SCOUT.id}/chats`, '/api/sessions/root/tree']) {
+      expect((await get(url, 'bad-key')).status).toBe(401);
+    }
+  });
+});
+
+describe('read in session, with no turn bound to the call (an agent nobody could name)', () => {
+  it('agent_chats leaves out a person’s own chat and a room chat', async () => {
+    plant();
+    const { body } = await callInSession('agent_chats', { agentId: SCOUT.id });
+    expect((body.chats as { id: string }[]).map((c) => c.id).sort()).toEqual(['c-space', 'root']);
+  });
+
+  it('chat_tree and work_for_chat answer a private chat as one that does not exist', async () => {
+    plant();
+    for (const tool of ['chat_tree', 'work_for_chat']) {
+      const hidden = await callInSession(tool, { chatId: 'c-private' });
+      expect(hidden.isError).toBe(true);
+      expect(JSON.stringify(hidden.body)).toContain('SESSION_NOT_FOUND');
+    }
+    expect((await callInSession('chat_tree', { chatId: 'c-space' })).isError).toBe(false);
+  });
+
+  it('work_for_agent keeps a private chat’s work and leaves the chat off', async () => {
+    plant();
+    const { body } = await callInSession('work_for_agent', { agentId: SCOUT.id });
+    const item = (body.items as { text: string; links: { chatId: string | null }[] }[]).find(
+      (entry) => entry.text === 'acme/app#2'
+    );
+    expect(item?.links).toEqual([expect.objectContaining({ chatId: null })]);
   });
 });
 

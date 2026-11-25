@@ -6,10 +6,44 @@
  * private chat's links scrubbed to their relation and day.
  */
 import { describe, expect, it } from 'vitest';
-import { recordChatRekey } from '../../index.js';
-import { bind, get, link, SCOUT, start, useWorkGraphReads } from './work-graph-reads-fixture.js';
+import { LINEAGE_MAX_CHATS, recordChatRekey } from '../../index.js';
+import { AGENT_CHATS_SCAN_LIMIT } from '../agent-chats.js';
+import {
+  bind,
+  callInSession,
+  get,
+  link,
+  SCOUT,
+  start,
+  stores,
+  useWorkGraphReads,
+  type ChatKind,
+} from './work-graph-reads-fixture.js';
 
 useWorkGraphReads();
+
+/** Start `count` chats of one kind under `parent`, as start records, oldest first. */
+function startMany(parent: string, prefix: string, count: number, kind: ChatKind): string[] {
+  const ids = Array.from({ length: count }, (_, i) => `${prefix}-${String(i).padStart(4, '0')}`);
+  for (const sessionId of ids) {
+    stores.starts.insert({
+      sessionId,
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: parent,
+      originExtensionId: null,
+      reason: null,
+      createdAt: new Date(
+        Date.parse('2026-11-20T08:00:00.000Z') + ids.indexOf(sessionId)
+      ).toISOString(),
+    });
+    bind(sessionId, kind);
+  }
+  return ids;
+}
+
+/** A cursor's bytes as text, to show it holds no id in the clear. */
+const cursorText = (cursor: string) => Buffer.from(cursor, 'base64url').toString('latin1');
 
 describe('chat_tree, for a reader who may not read every chat in it', () => {
   /**
@@ -76,6 +110,48 @@ describe('chat_tree, for a reader who may not read every chat in it', () => {
     expect(other.body.code).toBe('invalid_request');
   });
 
+  it('goes on after the chat a page ended on, so a chat started meanwhile moves nothing', async () => {
+    plant();
+    const first = await get('/api/sessions/root/tree?limit=3');
+    expect(first.body.descendants.map((d: { chatId: string }) => d.chatId)).toEqual([
+      'joint',
+      'kept',
+      'pruned',
+    ]);
+    expect(cursorText(first.body.nextCursor)).not.toContain('pruned');
+    // Lands before the cursor in depth-first order: after its older sibling `kept`.
+    start('joint', 'late');
+    bind('late', 'space');
+    const rest = await get(`/api/sessions/root/tree?limit=3&cursor=${first.body.nextCursor}`);
+    expect(rest.body.descendants.map((d: { chatId: string }) => d.chatId)).toEqual([
+      'deeper',
+      'open',
+    ]);
+    expect(rest.body.ancestors).toEqual(first.body.ancestors);
+  });
+
+  it('counts only the chats it keeps toward the cap and `truncated`', async () => {
+    bind('root', 'space');
+    const shown = startMany('root', 'open', LINEAGE_MAX_CHATS - 1, 'space');
+    const alone = await get('/api/sessions/root/tree', 'ranger');
+    startMany('root', 'hidden', 2, 'private');
+    const withHidden = await get('/api/sessions/root/tree', 'ranger');
+    expect(withHidden.body.truncated).toBe(alone.body.truncated);
+    expect(withHidden.body.truncated).toBe(false);
+    expect(withHidden.body.descendants.map((d: { chatId: string }) => d.chatId)).toEqual(shown);
+    // The owner reads the same tree unfiltered: 501 chats, one past the cap.
+    expect((await get('/api/sessions/root/tree')).body.truncated).toBe(true);
+  });
+
+  it('gives no place to a chat it leaves out, so private chats push no readable one out', async () => {
+    bind('root', 'space');
+    startMany('root', 'hidden', 2, 'private');
+    const shown = startMany('root', 'open', LINEAGE_MAX_CHATS, 'space');
+    const res = await get('/api/sessions/root/tree', 'ranger');
+    expect(res.body.descendants.map((d: { chatId: string }) => d.chatId)).toEqual(shown);
+    expect(res.body.truncated).toBe(false);
+  });
+
   it('caps depth, and refuses one past the cap', async () => {
     plant();
     const one = await get('/api/sessions/root/tree?depth=1');
@@ -132,6 +208,23 @@ describe('agent_chats', () => {
     expect(asOwner.body.chats[0].startedBy).toEqual({ id: 'mine', title: null });
   });
 
+  it(`scans at most ${AGENT_CHATS_SCAN_LIMIT} chats a page, and gives a cursor to go on`, async () => {
+    bind('old-open', 'space');
+    for (let i = 0; i <= AGENT_CHATS_SCAN_LIMIT; i += 1) bind(`p-${i}`, 'private');
+    const first = await get(`/api/agents/${SCOUT.id}/chats`, 'ranger');
+    expect(first.body.chats).toEqual([]);
+    expect(first.body.nextCursor).toEqual(expect.any(String));
+    expect(cursorText(first.body.nextCursor)).not.toContain('p-');
+    const rest = await get(
+      `/api/agents/${SCOUT.id}/chats?cursor=${first.body.nextCursor}`,
+      'ranger'
+    );
+    expect(rest.body).toEqual({
+      chats: [expect.objectContaining({ id: 'old-open' })],
+      nextCursor: null,
+    });
+  });
+
   it('refuses a cursor it did not give', async () => {
     const res = await get(`/api/agents/${SCOUT.id}/chats?cursor=not-a-cursor`);
     expect(res.status).toBe(400);
@@ -177,12 +270,30 @@ describe('chat_work', () => {
       text: 'DOR-2',
       firstRecordedOn: day,
       links: [
-        { relation: 'works_on', chatId: null, recordedOn: day },
         { relation: 'claims', chatId: null, recordedOn: day },
+        { relation: 'works_on', chatId: null, recordedOn: day },
       ],
     });
     const pr = res.body.items.find((i: { text: string }) => i.text === 'acme/app#7');
     expect(pr.links[1]).toEqual({ relation: 'opened', chatId: null, recordedOn: day });
+  });
+
+  it('lists readable links in time order, then private ones by day and relation only', async () => {
+    plant();
+    link('hidden', 'works_on', 'ticket', 'DOR-9');
+    link('hidden', 'claims', 'ticket', 'DOR-9');
+    link('root', 'works_on', 'ticket', 'DOR-9');
+    link('root', 'claims', 'ticket', 'DOR-9');
+    const res = await get('/api/sessions/root/work?kind=ticket', 'ranger');
+    const dor9 = res.body.items.find((i: { text: string }) => i.text === 'DOR-9');
+    expect(
+      dor9.links.map((l: { relation: string; chatId: string | null }) => [l.relation, l.chatId])
+    ).toEqual([
+      ['works_on', 'root'],
+      ['claims', 'root'],
+      ['claims', null],
+      ['works_on', null],
+    ]);
   });
 
   it('reads two private links of one relation on one day as one', async () => {
@@ -203,6 +314,9 @@ describe('chat_work', () => {
     recordChatRekey('old-id', 'renamed');
     const own = await get('/api/sessions/root/work?children=false');
     expect(own.body.items.map((i: { text: string }) => i.text)).toEqual(['acme/app#7']);
+    // An MCP agent sends a boolean, and `false` means false.
+    const overMcp = await callInSession('work_for_chat', { chatId: 'root', children: false });
+    expect((overMcp.body.items as { text: string }[]).map((i) => i.text)).toEqual(['acme/app#7']);
     const renamed = await get('/api/sessions/renamed/work');
     expect(renamed.body.items[0].links[0]).toMatchObject({ relation: 'opened', chatId: 'renamed' });
   });

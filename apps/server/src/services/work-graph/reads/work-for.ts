@@ -19,6 +19,8 @@
  * and the day it was recorded: no chat, no time finer than the day, no
  * source label and no turn marks, and two such links of one relation on one
  * day read as one, so nothing on the item counts or points back at the chat.
+ * An item lists its readable links in the order they were recorded, then
+ * those private ones by day and relation, so their place says no finer time.
  * Nothing on an item is copied from a chat's words: an item is its reference.
  *
  * @module services/work-graph/reads/work-for
@@ -58,6 +60,8 @@ interface Gathered {
   text: string;
   firstRecordedOn: string;
   links: WorkItemLink[];
+  /** The private links, ordered by day and relation once all are gathered. */
+  hidden: Extract<WorkItemLink, { chatId: null }>[];
 }
 
 /**
@@ -94,6 +98,7 @@ export function readWork(
       text,
       firstRecordedOn: day,
       links: [],
+      hidden: [],
     };
     items.set(text, item);
     const chatId = owner.get(link.from.id) ?? link.from.id;
@@ -104,16 +109,29 @@ export function readWork(
     const key = `${text}\n${link.relation}\n${day}`;
     if (privateSeen.has(key)) continue;
     privateSeen.add(key);
-    item.links.push({ relation: link.relation, chatId: null, recordedOn: day });
+    item.hidden.push({ relation: link.relation, chatId: null, recordedOn: day });
   }
 
   const ordered = [...items.values()].sort(newestFirst);
-  const after = query.cursor === undefined ? null : keyOf(decodePageCursor(query.cursor));
+  const after =
+    query.cursor === undefined
+      ? null
+      : keyOf(decodePageCursor(query.cursor, 2) as [string, string]);
   const rest = after ? ordered.filter((item) => newestFirst(item, after) > 0) : ordered;
   const page = rest.slice(0, query.limit);
   const last = page.at(-1);
   return {
-    items: page.map((item): WorkItem => ({ ...item })),
+    items: page.map(({ ref, text, firstRecordedOn, links, hidden }): WorkItem => ({
+      ref,
+      text,
+      firstRecordedOn,
+      links: [
+        ...links,
+        ...hidden.sort(
+          (a, b) => compare(a.recordedOn, b.recordedOn) || compare(a.relation, b.relation)
+        ),
+      ],
+    })),
     nextCursor:
       rest.length > page.length && last
         ? encodePageCursor([last.firstRecordedOn, last.text])
