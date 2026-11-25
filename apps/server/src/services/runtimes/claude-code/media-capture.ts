@@ -123,7 +123,7 @@ async function* captureClaudeCodeMedia(
  * (`messaging/message-sender.ts`) on the resume-per-message path and
  * `streamTurnWindow` (`sessions/pump-turn-stream.ts`) on the persistent pump.
  * Wrapping the mapper rather than editing both loops is what keeps the two
- * paths from drifting — the same reason `empty-stream-guard.ts` exists.
+ * paths from drifting — the same reason `shared/empty-stream-guard.ts` exists.
  *
  * **The drain after the loop is the only one that fires for a message that maps
  * to no events at all**, and such messages exist — the in-loop drain runs after

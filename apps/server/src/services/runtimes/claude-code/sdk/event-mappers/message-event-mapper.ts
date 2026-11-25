@@ -240,7 +240,7 @@ export async function* mapMessageEvent(
   // block array, so the guard below skips them all without a special case. None
   // is the proof that a `/compact` succeeded — the `compact_boundary` system
   // event is, and the empty-stream guard counts it
-  // (`messaging/empty-stream-guard.ts`, DOR-1235). Surfacing these four as
+  // (`shared/empty-stream-guard.ts`, DOR-1235). Surfacing these four as
   // transcript content would only put CLI plumbing in front of a person.
   if (message.type === 'user') {
     // Skip replay messages during session resume

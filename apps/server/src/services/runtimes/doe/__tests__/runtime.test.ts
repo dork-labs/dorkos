@@ -10,6 +10,8 @@ import {
   inference,
   model,
 } from './runtime-fixture.js';
+import { RUNTIME_STOP_ACK_TIMEOUT_MS } from '../../shared/timing/stop-ack.js';
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 
 it('constructs and lists metadata without resolving model authentication', async () => {
   const resolveModel = vi.fn();
@@ -97,6 +99,62 @@ it('reports unconfirmed stop while an engine still owns work and drains after re
   await pending;
   await stream.return(undefined);
   expect(runtime.isTurnOpen(id)).toBe(false);
+});
+it('waits the shared three seconds on Stop before calling it unconfirmed (DOR-3606)', async () => {
+  let release!: () => void;
+  let entered = false;
+  const runtime = makeRuntime({
+    engineFactory: () =>
+      engine(async (request) => {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { messages: [], scope: request.context.scope, stopReason: 'aborted' };
+      }),
+  });
+  const id = randomUUID();
+  runtime.ensureSession(id, { cwd: projectDir, permissionMode: 'default' });
+  const stream = runtime.sendMessage(id, 'Wait');
+  const pending = stream.next();
+  await vi.waitFor(() => expect(entered).toBe(true));
+  expect(RUNTIME_STOP_ACK_TIMEOUT_MS).toBe(3_000);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    let receipt: unknown;
+    void runtime.interruptQuery(id).then((answer) => (receipt = answer));
+    await vi.advanceTimersByTimeAsync(RUNTIME_STOP_ACK_TIMEOUT_MS - 1);
+    expect(receipt, 'Doe gave up on the Stop before the shared bound').toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(receipt).toEqual({ outcome: 'unconfirmed', reason: 'ack-timeout', runtime: 'doe' });
+  } finally {
+    vi.useRealTimers();
+  }
+  release();
+  await pending;
+  await stream.return(undefined);
+});
+it('an empty Doe reply says so once registered, as every runtime’s does (DOR-3606)', async () => {
+  const runtime = makeRuntime({
+    engineFactory: () =>
+      engine(async (request) => ({
+        messages: [],
+        scope: request.context.scope,
+        stopReason: 'stop',
+      })),
+  });
+  const registry = new RuntimeRegistry();
+  registry.register(runtime);
+  const id = randomUUID();
+  runtime.ensureSession(id, { cwd: projectDir, permissionMode: 'default' });
+  const events = await collect(registry.get('doe').sendMessage(id, 'Hello', { cwd: projectDir }));
+  expect(events.filter((e) => e.type === 'error').map((e) => e.data)).toEqual([
+    {
+      message: 'The agent did not respond. The service may be temporarily unavailable.',
+      category: 'execution_error',
+    },
+  ]);
+  expect(events.at(-1)?.type).toBe('done');
 });
 it('refreshes system context each turn without mutating the person’s message', async () => {
   const runtime = makeRuntime();

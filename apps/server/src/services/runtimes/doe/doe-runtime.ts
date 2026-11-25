@@ -45,6 +45,7 @@ import { homeOf, resolveAgentHome, readHomeManifest } from '../../core/agent-ide
 import { peekProjector } from '../../session/session-state-projector.js';
 import { dorkosToolsPosture } from '../shared/dorkos-mcp-injection.js';
 import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
+import { RUNTIME_STOP_ACK_TIMEOUT_MS } from '../shared/timing/stop-ack.js';
 import { type ConnectorRuntimeTools } from '../connector-tools.js';
 import { executeDoeTurn, type ActiveTurn } from './execute-turn.js';
 import { DoeSessionRuntime } from './session-runtime.js';
@@ -75,6 +76,7 @@ export interface DoeRuntimeOptions {
   defaultModel?: () => string | null;
   assembleHost?: (options: DoeHostOptions) => Promise<DoeHostAssembly>;
   engineFactory?: EngineFactory;
+  /** How long Stop waits for the turn to end (tests); the shared runtime bound otherwise. */
   interruptWaitMs?: number;
 }
 /** In-process business runtime with independent model records and durable app display events. */
@@ -250,7 +252,10 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
       return await Promise.race([
         turn.done.then(() => true),
         new Promise<boolean>((resolve) => {
-          timer = setTimeout(() => resolve(false), this.options.interruptWaitMs ?? 1000);
+          timer = setTimeout(
+            () => resolve(false),
+            this.options.interruptWaitMs ?? RUNTIME_STOP_ACK_TIMEOUT_MS
+          );
         }),
       ]);
     } finally {

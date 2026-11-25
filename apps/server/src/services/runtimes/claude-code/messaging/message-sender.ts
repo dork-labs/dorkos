@@ -18,7 +18,7 @@ import {
   isContentEvent,
   isInteractiveEvent,
   isReportedFailure,
-} from './empty-stream-guard.js';
+} from '../../shared/empty-stream-guard.js';
 import { fireLaunchProbes } from './launch-probes.js';
 import { recordClaudeTurnContext, systemAppendOf } from './turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';

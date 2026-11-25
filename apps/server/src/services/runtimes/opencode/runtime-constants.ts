@@ -9,6 +9,7 @@
  * @module services/runtimes/opencode/runtime-constants
  */
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import { RUNTIME_STOP_ACK_TIMEOUT_MS } from '../shared/timing/stop-ack.js';
 
 /**
  * Static OpenCode capabilities (NOTES.md §2).
@@ -171,8 +172,8 @@ export const STREAM_LIVE_TIMEOUT_MS = 2_000;
  * `STOP_ACK_TIMEOUT_MS` (`sessions/bounded-control.ts`, DOR-1244): a promise
  * that only a backend ack settles, raced against nothing, on a wire that can
  * drop a request in silence with a sidecar that never crashes and never
- * answers. 3s to match — the same person-facing complaint applies (a Stop
- * that visibly does nothing reads as broken) and `POST /session/{id}/abort`
+ * answers. The same bound (`shared/timing/stop-ack.ts`), because the same
+ * person-facing complaint applies (a Stop that visibly does nothing reads as broken) and `POST /session/{id}/abort`
  * is a control call a healthy sidecar acks in milliseconds, so this is
  * budget for a genuinely stuck one, not for a slow one.
  *
@@ -188,7 +189,7 @@ export const STREAM_LIVE_TIMEOUT_MS = 2_000;
  * therefore a plain, honest `false` — the same answer a refused interrupt
  * gets — rather than an escalation with no session-scoped target to aim at.
  */
-export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
+export const INTERRUPT_ACK_TIMEOUT_MS = RUNTIME_STOP_ACK_TIMEOUT_MS;
 
 /**
  * How often a turn waiting on its model tells DorkOS it is still alive

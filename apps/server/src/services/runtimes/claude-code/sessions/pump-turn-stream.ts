@@ -21,7 +21,7 @@
  * So what is left here is the mapping itself, and it is deliberately the SAME
  * mapping: `mapSdkMessageWithMedia`, the same canonical-id rebind ordering, the
  * content-event accounting and empty-stream guard (both imported from
- * `messaging/empty-stream-guard.ts`, so they cannot drift), the same terminal
+ * `shared/empty-stream-guard.ts`, so they cannot drift), the same terminal
  * `done`. A person must not be able to tell which path answered them.
  *
  * ## The event queue is raced, not polled
@@ -70,7 +70,7 @@ import {
   isContentEvent,
   isInteractiveEvent,
   isReportedFailure,
-} from '../messaging/empty-stream-guard.js';
+} from '../../shared/empty-stream-guard.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
 import { mapSdkMessageWithMedia } from '../media-capture.js';

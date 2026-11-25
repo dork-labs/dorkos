@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { isTurnContentEvent } from '@dorkos/relay';
 import { StreamEventTypeSchema } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { isContentEvent } from '../../runtimes/claude-code/messaging/empty-stream-guard.js';
+import { isContentEvent } from '../../runtimes/shared/empty-stream-guard.js';
 
 describe('the relay mirrors the server’s content-event rule', () => {
   it('agrees on every stream event type, and counts what a person can see', () => {
