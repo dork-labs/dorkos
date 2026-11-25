@@ -1,15 +1,8 @@
 /**
- * What may, and may not, cost a person their config file.
- *
- * The defect these cover: `conf` rethrows every load failure the same way, and
- * the recovery branch used to read any throw as proof of corruption — back the
- * file up, delete it, start again on defaults. A valid config was destroyed
- * that way during a burst of file-descriptor pressure, taking a person's
- * status-bar pins with it. The `.bak` it left behind parsed and validated
- * cleanly.
- *
- * Three claims are tested as one set, because a fix for any one of them can
- * break another:
+ * What may, and may not, cost a person their config file. Recovery used to read
+ * any throw as corruption and replace the file; a valid config was destroyed that
+ * way under file-descriptor pressure. Three claims, tested as one set because a
+ * fix for one can break another:
  *
  * 1. A genuinely bad FILE is still replaced, and still salvaged from.
  * 2. A file the OS refused is never touched, however long the refusal lasts.
@@ -28,12 +21,8 @@ import {
 } from '../config-manager.js';
 
 /**
- * The retry staircase, with the waiting taken out.
- *
- * Same number of attempts, no real seconds spent. `sleepSync` parks the worker
- * thread, and at the shipped delays this suite held one for around thirty
- * seconds, which was enough to make timing-sensitive tests in other files
- * flake. The one test below that must prove the shipped schedule says so.
+ * The retry staircase with the waiting taken out: at the shipped delays `sleepSync`
+ * parked the worker ~30s and flaked other files. One test below runs the real one.
  */
 const FAST_RETRIES = { retryDelaysMs: [0, 0, 0] } as const;
 
@@ -58,13 +47,8 @@ function makeDir(slug: string): string {
 }
 
 /**
- * Every backup of the config file in a data directory, oldest first.
- *
- * Matched by suffix rather than by the production module's own pattern, so a
- * change to the naming shows up here as a real result rather than being agreed
- * with. Backups are timestamped now (DOR-1221): a fixed `config.json.bak` was
- * overwritten by the NEXT recovery, so a machine that recovered twice kept only
- * the second wipe's evidence.
+ * Every backup of the config file in a data directory, oldest first. Matched by
+ * suffix, not the production pattern, so a naming change shows up here (DOR-1221).
  */
 function backupsIn(dir: string): string[] {
   return fs
@@ -82,12 +66,8 @@ function errnoError(code: string, message: string): NodeJS.ErrnoException {
 }
 
 /**
- * Make reads of one path fail with an errno error.
- *
- * Spies on the shared `fs` object that `conf` itself calls through, which is
- * the only way to stage `EMFILE`: a test cannot exhaust the process's file
- * descriptors on purpose. Every other path reads normally, so the temp dir and
- * the rest of the suite are unaffected.
+ * Make reads of one path fail with an errno error, through the shared `fs` that
+ * `conf` calls (the only way to stage `EMFILE`). Every other path reads normally.
  *
  * @param configPath - The path whose reads should fail.
  * @param code - The errno code to raise.
@@ -112,6 +92,16 @@ function failReadsOf(
   };
   vi.spyOn(fs, 'readFileSync').mockImplementation(fake as unknown as typeof fs.readFileSync);
   return state;
+}
+
+/** Whatever constructing a manager over `dir` throws, or undefined. */
+function thrownBy(dir: string): unknown {
+  try {
+    new ConfigManager(dir, FAST_RETRIES);
+  } catch (error) {
+    return error;
+  }
+  return undefined;
 }
 
 describe('classifyConfigLoadFailure', () => {
@@ -174,10 +164,8 @@ describe('classifyConfigLoadFailure', () => {
 
 describe('the shipped retry policy', () => {
   it('is a real staircase, not one a test quietly flattened', () => {
-    // Every case below injects its own delays so the suite does not spend the
-    // schedule in real time, which means NOTHING else would notice this being
-    // set to [0, 0, 0]. The wall-clock assertion that used to cover it was
-    // removed for being flaky under load; this is the non-flaky replacement.
+    // Every other case injects its own delays, so nothing else would notice this
+    // flattened to [0, 0, 0] (the wall-clock check it replaces was flaky).
     expect([...CONFIG_LOAD_RETRY_DELAYS_MS]).toEqual([50, 200, 500]);
   });
 });
@@ -196,12 +184,8 @@ describe('a genuinely damaged config is still replaced', () => {
   });
 
   it('does not let a second recovery overwrite what the first one saved', () => {
-    // DOR-1221, and the seam the defect actually lived at: the manager's own
-    // backup call. Everything else here asserts "a backup exists", which the old
-    // single fixed `config.json.bak` satisfied identically — it just held the
-    // WRONG settings by the time anyone looked. Five recoveries were logged on
-    // one machine and one backup survived them, holding a config that had
-    // already been replaced with defaults.
+    // DOR-1221: one fixed `config.json.bak` passed every "a backup exists" check
+    // while the next recovery overwrote it with an already-defaulted config.
     const dir = makeDir('load-two-wipes');
     const configPath = path.join(dir, 'config.json');
     fs.writeFileSync(
@@ -224,10 +208,8 @@ describe('a genuinely damaged config is still replaced', () => {
     );
     new ConfigManager(dir, FAST_RETRIES);
 
-    // Two backups, two names, and — the point — the FIRST one still holds the
-    // settings from before the FIRST wipe. Compared by value, not by bytes:
-    // conf merges its defaults into the file before any of this code gets a
-    // verdict, so the backup is the person's settings, not their file.
+    // The FIRST backup still holds the settings from before the FIRST wipe (by
+    // value: conf merges its defaults in before this code gets a verdict).
     const backups = backupsIn(dir);
     expect(backups).toHaveLength(2);
     expect(new Set(backups).size).toBe(2);
@@ -240,10 +222,8 @@ describe('a genuinely damaged config is still replaced', () => {
   });
 
   it('salvages nothing from a truncated file, and lands on the safe defaults anyway', () => {
-    // Salvage reads the doomed file with `JSON.parse`, so a file that fails to
-    // parse has nothing to give. The protections still hold because a fresh
-    // config already sits on the protective side; the carry-across is proved on
-    // the schema-violation case below, where the file really is readable.
+    // An unparseable file has nothing to salvage; a fresh config is already on the
+    // protective side (carry-across is proved on the schema case below).
     const dir = makeDir('load-syntax-salvage');
     fs.writeFileSync(path.join(dir, 'config.json'), '{ truncated');
 
@@ -294,26 +274,19 @@ describe('a genuinely damaged config is still replaced', () => {
 });
 
 /**
- * `conf` runs the migration chain inside its constructor, and feeds the file's
- * own `__internal__.migrations.version` straight into `semver`
- * (`_shouldPerformMigration`). The release upgrade guard validates it first
- * and refuses an unreadable stamp without changing the file (DOR-4341).
- *
- * This suite uses the raw dev-tree version, 0.0.0, which skips that guard.
- * The 0.115 intermediate release skips it too. In those cases, the stamp sits
- * outside Ajv validation and an unreadable one reaches Conf's semver check,
- * throwing a bare `TypeError`. The fallback still backs up and recovers these
- * files; this is not the policy for a current release above 0.115.
+ * `conf` feeds the file's `__internal__.migrations.version` straight into `semver`.
+ * A release refuses an unreadable stamp first (DOR-4341); the dev-tree version
+ * 0.0.0 used here (and 0.115) skips that guard, so a bare `TypeError` reaches the
+ * fallback, which backs up and recovers.
  */
 describe('dev-tree migration recovery when the release upgrade guard is skipped', () => {
-  const BROKEN_VERSIONS: Array<[string, unknown]> = [
+  it.each([
     ['one flipped byte', '0.5@.0'],
     ['a number instead of a version', 57],
     ['a null', null],
-  ];
-
-  for (const [name, version] of BROKEN_VERSIONS) {
-    it(`recovers from ${name} in __internal__.migrations.version`, () => {
+  ] as Array<[string, unknown]>)(
+    'recovers from %s in __internal__.migrations.version',
+    (_name, version) => {
       const dir = makeDir('load-migration');
       const configPath = path.join(dir, 'config.json');
       fs.writeFileSync(
@@ -333,8 +306,8 @@ describe('dev-tree migration recovery when the release upgrade guard is skipped'
       expect(manager.get('auth').enabled).toBe(true);
       // And the next boot is an ordinary one, rather than repeating this.
       expect(new ConfigManager(dir, FAST_RETRIES).get('auth').enabled).toBe(true);
-    });
-  }
+    }
+  );
 
   it('still loads a healthy migration version through a read failure that clears', () => {
     // The other side of the same file: nothing wrong with it, and a burst of
@@ -371,16 +344,10 @@ describe('a config the OS refused is left alone', () => {
     expect(() => new ConfigManager(dir)).toThrow(ConfigUnreadableError);
     vi.restoreAllMocks();
 
-    // Untouched: same bytes, no backup, no replacement. This is the claim a
-    // plain "it failed every time, so the file must be bad" rule would break.
-    // The storm behind the real incident outlasted any boot-time backoff.
-    //
-    // Byte equality holds HERE only because `ConfigManager` wrote this fixture,
-    // so it is already default-shaped and conf's `assert.deepEqual` skips the
-    // write it would otherwise do. Do not read this as a general guarantee: on
-    // an upgrade boot conf rewrites the file with its defaults merged in before
-    // any of this code gets a verdict. What DorkOS promises is that it does not
-    // replace or delete the file, which is what the message now says.
+    // Untouched: same bytes, no backup, no replacement, however long the storm.
+    // Byte equality holds only because `ConfigManager` wrote this default-shaped
+    // fixture; on an upgrade boot conf rewrites the file first. The promise is
+    // "not replaced or deleted", which is what the message says.
     expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
     expect(backupsIn(dir)).toEqual([]);
     expect(new ConfigManager(dir, FAST_RETRIES).getDot('ui.statusBar.pins')).toEqual([
@@ -390,34 +357,13 @@ describe('a config the OS refused is left alone', () => {
     expect(injected.failed).toBe(4);
   });
 
-  it.skipIf(process.getuid?.() === 0)('preserves the file when the read fails with EACCES', () => {
-    const dir = makeDir('load-eacces');
-    const configPath = path.join(dir, 'config.json');
-    new ConfigManager(dir, FAST_RETRIES).setDot('server.port', 5123);
-    const before = fs.readFileSync(configPath, 'utf-8');
-
-    // A real permission failure, no mock involved.
-    fs.chmodSync(configPath, 0o000);
-    expect(() => new ConfigManager(dir, FAST_RETRIES)).toThrow(ConfigUnreadableError);
-    fs.chmodSync(configPath, 0o600);
-
-    expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
-    expect(backupsIn(dir)).toEqual([]);
-    expect(new ConfigManager(dir, FAST_RETRIES).getDot('server.port')).toBe(5123);
-  });
-
   it('names the file and the real reason instead of throwing them away', () => {
     const dir = makeDir('load-message');
     const configPath = path.join(dir, 'config.json');
     new ConfigManager(dir, FAST_RETRIES);
     failReadsOf(configPath, 'EMFILE');
 
-    let thrown: unknown;
-    try {
-      new ConfigManager(dir, FAST_RETRIES);
-    } catch (error) {
-      thrown = error;
-    }
+    const thrown = thrownBy(dir);
 
     expect(thrown).toBeInstanceOf(ConfigUnreadableError);
     const error = thrown as ConfigUnreadableError;
@@ -443,12 +389,7 @@ describe('a config the OS refused is left alone', () => {
       when: () => new Error().stack?.includes('announceUnreadableSettings') === true,
     });
 
-    let thrown: unknown;
-    try {
-      new ConfigManager(dir, FAST_RETRIES);
-    } catch (error) {
-      thrown = error;
-    }
+    const thrown = thrownBy(dir);
     vi.restoreAllMocks();
 
     expect(injected.failed).toBeGreaterThan(0);
@@ -461,55 +402,34 @@ describe('a config the OS refused is left alone', () => {
   });
 
   it.skipIf(process.getuid?.() === 0)(
-    'does not tell someone to retry a permission they lack',
+    'preserves an EACCES file and does not tell someone to retry a permission they lack',
     () => {
-      // The one errno that never clears. "Both pass on their own, so start
-      // DorkOS again" is a false diagnosis here and an instruction to loop, so
-      // the advice branches on what the operating system actually said.
-      const dir = makeDir('load-advice-eacces');
+      const dir = makeDir('load-eacces');
       const configPath = path.join(dir, 'config.json');
-      new ConfigManager(dir, FAST_RETRIES);
+      new ConfigManager(dir, FAST_RETRIES).setDot('server.port', 5123);
+      const before = fs.readFileSync(configPath, 'utf-8');
+      // A real permission failure, no mock involved.
       fs.chmodSync(configPath, 0o000);
-
-      let thrown: unknown;
-      try {
-        new ConfigManager(dir, FAST_RETRIES);
-      } catch (error) {
-        thrown = error;
-      }
+      const thrown = thrownBy(dir);
       fs.chmodSync(configPath, 0o600);
 
+      expect(thrown).toBeInstanceOf(ConfigUnreadableError);
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
+      expect(backupsIn(dir)).toEqual([]);
+      expect(new ConfigManager(dir, FAST_RETRIES).getDot('server.port')).toBe(5123);
+      // The one errno that never clears, so "start DorkOS again" would be an
+      // instruction to loop; both real ways out are named instead.
       const advice = (thrown as ConfigUnreadableError).advice;
       expect(advice).not.toContain('pass on their own');
       expect(advice).not.toContain('start DorkOS again');
-      // Both real ways out are named: fix the permission, or start fresh without
-      // losing the old file.
       expect(advice).toContain('chmod u+rw');
       expect(advice).toContain('rename');
     }
   );
 
-  it('rides out a read failure that clears, and loads the real settings', () => {
-    const dir = makeDir('load-retry');
-    const configPath = path.join(dir, 'config.json');
-    new ConfigManager(dir, FAST_RETRIES).setDot('server.port', 5199);
-
-    // One bad read, then the descriptors come back — the common shape of the
-    // failure, and the reason a retry is worth the wait.
-    const injected = failReadsOf(configPath, 'EMFILE', { times: 1 });
-    const manager = new ConfigManager(dir, FAST_RETRIES);
-
-    expect(injected.failed).toBe(1);
-    expect(manager.getDot('server.port')).toBe(5199);
-    expect(backupsIn(dir)).toEqual([]);
-  });
-
   it('never replaces a file it could not read, even one it just condemned', () => {
-    // The general guarantee, and the backstop behind the errno classification.
-    // The file really is damaged, so every rule so far says replace it — but
-    // the read that salvage depends on keeps failing, which means the machine
-    // is in trouble too. Replacing now would destroy a file with no protection
-    // carried across, on a verdict that could not be checked.
+    // The backstop behind the errno classification: the file really is damaged,
+    // but the salvage read keeps failing, so replacing would carry nothing across.
     const dir = makeDir('load-salvage-gate');
     const configPath = path.join(dir, 'config.json');
     fs.writeFileSync(configPath, '{ truncated');
@@ -528,11 +448,8 @@ describe('a config the OS refused is left alone', () => {
   });
 
   it('recovers a damaged file even when the salvage read blips once', () => {
-    // The other side of the gate. Refusing to replace an unreadable file is
-    // right; refusing over one unlucky read would block boot on a file that
-    // really is broken and really is readable. So the salvage read gets the
-    // same staircase the load does. A truncated file makes conf throw on its
-    // very first read, so the read after it is the salvage read.
+    // The other side of the gate: one unlucky salvage read (the read after conf's
+    // first) must not block boot on a file that really is broken and readable.
     const dir = makeDir('load-salvage-retry');
     const configPath = path.join(dir, 'config.json');
     fs.writeFileSync(configPath, '{ truncated');
@@ -577,12 +494,7 @@ describe('a config the OS refused is left alone', () => {
       throw errnoError('ENOSPC', `no space left on device, copyfile '${configPath}'`);
     });
 
-    let thrown: unknown;
-    try {
-      new ConfigManager(dir, FAST_RETRIES);
-    } catch (error) {
-      thrown = error;
-    }
+    const thrown = thrownBy(dir);
     vi.restoreAllMocks();
 
     expect(thrown).toBeInstanceOf(ConfigUnreadableError);
@@ -610,29 +522,17 @@ describe('a config the OS refused is left alone', () => {
       return (real as (f: unknown, o?: unknown) => unknown)(file, options);
     }) as unknown as typeof fs.readFileSync);
 
-    let thrown: unknown;
-    try {
-      new ConfigManager(dir, FAST_RETRIES);
-    } catch (error) {
-      thrown = error;
-    }
+    const thrown = thrownBy(dir);
     vi.restoreAllMocks();
 
     expect(thrown).toBeInstanceOf(ConfigUnreadableError);
     const error = thrown as ConfigUnreadableError;
-    // Guarded: `toContain(undefined)` would throw rather than fail cleanly, and
-    // "no backup was written" is itself a result worth naming.
     const [backup] = backupsIn(dir);
     expect(backup).toBeDefined();
     expect(error.message).toContain(backup);
-    // This is the one branch that reaches the fallback advice with a backup in
-    // play: the condemning error carries no errno, so no errno branch fires.
-    // The rename hatch must NOT be offered here. The person's settings are in
-    // the `.bak` the message names three lines above, and renaming the failed
-    // replacement would keep nothing at all.
+    // The settings are in the named `.bak`, so renaming the failed replacement
+    // would keep nothing: no rename hatch, and the folder it could not write named.
     expect(error.advice).not.toContain('rename');
-    // And it names the folder it could not write to, rather than gesturing at
-    // one, so the advice is as actionable as the permission branch it mirrors.
     expect(error.advice).toContain('could not create a file in this folder');
     expect(error.advice).toContain(dir);
     expect(error.advice).toContain('start DorkOS again');
@@ -651,12 +551,7 @@ describe('a config the OS refused is left alone', () => {
     // Fires only once the original is gone, which is exactly the second leg.
     failReadsOf(configPath, 'EMFILE', { when: () => !fs.existsSync(configPath) });
 
-    let thrown: unknown;
-    try {
-      new ConfigManager(dir, FAST_RETRIES);
-    } catch (error) {
-      thrown = error;
-    }
+    const thrown = thrownBy(dir);
     vi.restoreAllMocks();
 
     expect(thrown).toBeInstanceOf(ConfigUnreadableError);

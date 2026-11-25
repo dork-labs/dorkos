@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import Conf, { type Schema } from 'conf';
 import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   initConfigManager,
-  CONF_JSON_SCHEMA,
-  CONFIG_MIGRATIONS,
   seedRoomRepoDefaults,
   dropRetiredDorkosTools,
   seedMaxConcurrentTurnsPerAgent,
@@ -14,7 +11,11 @@ import { applyConfigPatch } from '../../operator/config-patch.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { RUNTIMES_DEFAULTS, createMockStore } from './config-manager.fixtures.js';
+import {
+  RUNTIMES_DEFAULTS,
+  createMockStore,
+  upgradeConfigFile,
+} from './config-manager.fixtures.js';
 
 describe('seedRoomRepoDefaults migration (project-rooms §3.12, DOR-1591)', () => {
   it('reserves rooms.repo on a `rooms` block that predates it', () => {
@@ -54,52 +55,27 @@ describe('seedRoomRepoDefaults migration (project-rooms §3.12, DOR-1591)', () =
     // comes from (DOR-1496). `rooms` is a nested-leaf case, so this body is the
     // ONLY thing that puts `repo` on the file: suppress it and this goes red
     // while `store.get('rooms').repo` still answers from Ajv's discarded copy.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-room-repo-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          rooms: { turnLimitsEnabled: true, maxAgentDepth: 12, replyWaitMinutes: 25 },
-          __internal__: { migrations: { version: '0.69.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.70.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        rooms: Record<string, unknown>;
-      };
-      expect(onDisk.rooms.repo).toEqual({
-        enabled: true,
-        worktreeReapDays: 14,
-        maxFileBytes: 5 * 1024 * 1024,
-        maxRepoBytes: 500 * 1024 * 1024,
-        maxRoomMdBytes: 24 * 1024,
-        mergeQueueWaitMs: 30_000,
-      });
-      // The upgrade adds a section; it changes nothing the person had set.
-      expect(onDisk.rooms.maxAgentDepth).toBe(12);
-      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      rooms: Record<string, unknown>;
+    }>(
+      {
+        rooms: { turnLimitsEnabled: true, maxAgentDepth: 12, replyWaitMinutes: 25 },
+      },
+      '0.69.0',
+      '0.70.0'
+    );
+    expect(onDisk.rooms.repo).toEqual({
+      enabled: true,
+      worktreeReapDays: 14,
+      maxFileBytes: 5 * 1024 * 1024,
+      maxRepoBytes: 500 * 1024 * 1024,
+      maxRoomMdBytes: 24 * 1024,
+      mergeQueueWaitMs: 30_000,
+    });
+    // The upgrade adds a section; it changes nothing the person had set.
+    expect(onDisk.rooms.maxAgentDepth).toBe(12);
+    expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });
 
@@ -133,45 +109,20 @@ describe('dropRetiredDorkosTools migration (tool-only-room-replies §A1, DOR-209
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
     // from). Suppress the body and this goes red.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-dorkos-tools-retire-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          runtimes: { default: 'codex', defaultTrustStop: 'act', dorkosTools: true },
-          __internal__: { migrations: { version: '0.79.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.80.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        runtimes: Record<string, unknown>;
-      };
-      expect('dorkosTools' in onDisk.runtimes).toBe(false);
-      // The upgrade removes one leaf; it changes nothing the person had set.
-      expect(onDisk.runtimes.default).toBe('codex');
-      expect(onDisk.runtimes.defaultTrustStop).toBe('act');
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      runtimes: Record<string, unknown>;
+    }>(
+      {
+        runtimes: { default: 'codex', defaultTrustStop: 'act', dorkosTools: true },
+      },
+      '0.79.0',
+      '0.80.0'
+    );
+    expect('dorkosTools' in onDisk.runtimes).toBe(false);
+    // The upgrade removes one leaf; it changes nothing the person had set.
+    expect(onDisk.runtimes.default).toBe('codex');
+    expect(onDisk.runtimes.defaultTrustStop).toBe('act');
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 
   /** A config file stamped past `'0.80.0'` but still carrying the retired leaf. */
@@ -307,47 +258,22 @@ describe('retireToolOnlyReplies migration (tool-only-room-replies §A2, DOR-2099
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
     // from). Suppress the body and this goes red.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-tool-only-retire-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          rooms: { maxAgentDepth: 12, replyWaitMinutes: 25, toolOnlyReplies: true },
-          __internal__: { migrations: { version: '0.80.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.81.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        rooms: Record<string, unknown>;
-      };
-      expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
-      // The ceiling it once seeded is retired (DOR-2739), so nothing is added.
-      expect('maxPostsPerTurn' in onDisk.rooms).toBe(false);
-      // It changes nothing the person had set.
-      expect(onDisk.rooms.maxAgentDepth).toBe(12);
-      expect(onDisk.rooms.replyWaitMinutes).toBe(25);
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      rooms: Record<string, unknown>;
+    }>(
+      {
+        rooms: { maxAgentDepth: 12, replyWaitMinutes: 25, toolOnlyReplies: true },
+      },
+      '0.80.0',
+      '0.81.0'
+    );
+    expect('toolOnlyReplies' in onDisk.rooms).toBe(false);
+    // The ceiling it once seeded is retired (DOR-2739), so nothing is added.
+    expect('maxPostsPerTurn' in onDisk.rooms).toBe(false);
+    // It changes nothing the person had set.
+    expect(onDisk.rooms.maxAgentDepth).toBe(12);
+    expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 
   it('an install the migration never reached loses the leaf on a Zod-parsed write', () => {
@@ -417,43 +343,21 @@ describe('seedMaxConcurrentTurnsPerAgent migration (DOR-2104)', () => {
     // filled the default into, so a `getDot` assertion passes with the body
     // deleted (DOR-1496). `projectVersion` is explicit because `SERVER_VERSION`
     // is `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-turns-per-agent-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1, maxCanvasOpsPerTurn: 2 },
-          __internal__: { migrations: { version: '0.83.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.84.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        rooms: Record<string, unknown>;
-      };
-      expect(onDisk.rooms.maxConcurrentTurnsPerAgent).toBe(3);
-      // The upgrade adds one leaf; it changes nothing the person had set.
-      expect(onDisk.rooms.maxAgentDepth).toBe(12);
-      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
-      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(2);
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      rooms: Record<string, unknown>;
+    }>(
+      {
+        rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1, maxCanvasOpsPerTurn: 2 },
+      },
+      '0.83.0',
+      '0.84.0'
+    );
+    expect(onDisk.rooms.maxConcurrentTurnsPerAgent).toBe(3);
+    // The upgrade adds one leaf; it changes nothing the person had set.
+    expect(onDisk.rooms.maxAgentDepth).toBe(12);
+    expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
+    expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(2);
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 
   it('a fresh install gets the same value from both default declarations', () => {

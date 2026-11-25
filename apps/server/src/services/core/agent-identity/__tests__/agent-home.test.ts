@@ -498,17 +498,12 @@ describe('assertOwnDesk — the desk guard (spec §3.4, DOR-2356)', () => {
     // In a DorkOS dev checkout DEFAULT_CWD falls back to the repo root, which is
     // the `dorkos` agent's own home. Step 2 wins over step 4, on purpose.
     registerTestHomes([ana, ben], { roomsDir });
-    let caught: unknown;
-    try {
-      assertOwnDesk(ana, ben, 'none', ben);
-    } catch (err) {
-      caught = err;
-    }
 
-    expect(caught).toBeInstanceOf(DeskNotOwnError);
-    expect((caught as DeskNotOwnError).code).toBe('DESK_NOT_OWN');
-    expect((caught as Error).message).toContain('belongs to another agent');
-    expect((caught as Error).message).toContain('Set a default folder that belongs to no agent');
+    expect(verdict(ana, ben, 'none', ben)).toBe('DESK_NOT_OWN');
+    expect(() => assertOwnDesk(ana, ben, 'none', ben)).toThrow(/belongs to another agent/);
+    expect(() => assertOwnDesk(ana, ben, 'none', ben)).toThrow(
+      /Set a default folder that belongs to no agent/
+    );
   });
 
   it('refuses a `none` agent whose default folder is a SUBFOLDER of another agent`s home', () => {
@@ -518,15 +513,8 @@ describe('assertOwnDesk — the desk guard (spec §3.4, DOR-2356)', () => {
     registerTestHomes([ana, ben], { roomsDir });
     const inside = path.join(ben, 'src');
     fs.mkdirSync(inside, { recursive: true });
-    let caught: unknown;
-    try {
-      assertOwnDesk(ana, inside, 'none', inside);
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toBeInstanceOf(DeskNotOwnError);
-    expect((caught as Error).message).toContain('inside another agent');
+    expect(verdict(ana, inside, 'none', inside)).toBe('DESK_NOT_OWN');
+    expect(() => assertOwnDesk(ana, inside, 'none', inside)).toThrow(/inside another agent/);
     // Inside the agent's OWN home is its own business, and still passes.
     const ownInside = path.join(ana, 'shared');
     fs.mkdirSync(ownInside, { recursive: true });

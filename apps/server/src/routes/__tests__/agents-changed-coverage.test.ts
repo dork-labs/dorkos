@@ -16,7 +16,7 @@
  * subscribing to `onAgentsChanged` directly — which would prove the seam and
  * not the wire, the same gap `unregister-cascade.integration.test.ts` was
  * written to close for `onUnregister`. The payload decisions that wiring makes
- * are probed next door in `services/core/__tests__/live-change-broadcasts.test.ts`;
+ * are probed next door in `services/core/streams/__tests__/live-change-broadcasts.test.ts`;
  * this file is about which WRITES reach it. That `index.ts` really calls it is
  * held by `services/core/__tests__/sse-event-allowlist.test.ts`, which scans the
  * server tree for the literal names and fails if `GENERIC_EVENTS` lists one

@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import Conf, { type Schema } from 'conf';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
@@ -9,15 +8,13 @@ import {
   ConfigManager,
   initConfigManager,
   backfillClaudeCodeRuntimeDefaults,
-  CONF_JSON_SCHEMA,
-  CONFIG_MIGRATIONS,
   migrateClaudeAccountRegistry,
 } from '../../config-manager.js';
 import { applyConfigPatch } from '../../operator/config-patch.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { wasBackedUp, createMockStore } from './config-manager.fixtures.js';
+import { wasBackedUp, createMockStore, upgradeConfigFile } from './config-manager.fixtures.js';
 
 describe('migrateClaudeAccountRegistry migration (billing-account-ladder, DOR-1407)', () => {
   it('carries the chosen account across the rename and drops the old key', () => {
@@ -179,60 +176,37 @@ describe('migrateClaudeAccountRegistry migration (billing-account-ladder, DOR-14
     // REJECTS a config the schema no longer admits. This is the only check that
     // an install carrying the old shape survives the upgrade with its billing
     // choice intact rather than being condemned and replaced.
-    const dir = path.join(os.tmpdir(), 'test-dork-account-ladder-' + Date.now());
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      const cfgPath = path.join(dir, 'config.json');
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          ...USER_CONFIG_DEFAULTS,
-          runtimes: {
-            ...USER_CONFIG_DEFAULTS.runtimes,
-            claudeCode: {
-              activeAccount: '/Users/me/.claude2',
-              accounts: [
-                { path: '/Users/me/.claude2', label: 'Acme Corp' },
-                { path: '/Users/me/.claude3', label: null },
-              ],
-            },
+    // Through the SHIPPED schema: `conf` only runs Ajv when it is given one, so
+    // a construction without it would prove nothing about validation.
+    const onDisk = upgradeConfigFile<{ runtimes: { claudeCode: Record<string, unknown> } }>(
+      {
+        ...USER_CONFIG_DEFAULTS,
+        runtimes: {
+          ...USER_CONFIG_DEFAULTS.runtimes,
+          claudeCode: {
+            activeAccount: '/Users/me/.claude2',
+            accounts: [
+              { path: '/Users/me/.claude2', label: 'Acme Corp' },
+              { path: '/Users/me/.claude3', label: null },
+            ],
           },
-          __internal__: { migrations: { version: '0.64.0' } },
-        })
-      );
+        },
+      },
+      '0.64.0',
+      '0.65.0'
+    );
+    expect(onDisk.runtimes.claudeCode).toMatchObject({
+      defaultAccount: '/Users/me/.claude2',
+      accounts: [
+        { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
+        { id: 'claude3', path: '/Users/me/.claude3', label: null },
+      ],
+    });
+    expect(onDisk.runtimes.claudeCode).not.toHaveProperty('activeAccount');
 
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // The SHIPPED schema, tolerances included. Constructing without one was
-        // the defect this test had on review: `conf` only runs Ajv when it is
-        // given a schema, so the test that claimed to prove the migrated file
-        // validates was proving nothing at all.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.65.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        runtimes: { claudeCode: Record<string, unknown> };
-      };
-      expect(onDisk.runtimes.claudeCode).toMatchObject({
-        defaultAccount: '/Users/me/.claude2',
-        accounts: [
-          { id: 'acme-corp', path: '/Users/me/.claude2', label: 'Acme Corp' },
-          { id: 'claude3', path: '/Users/me/.claude3', label: null },
-        ],
-      });
-      expect(onDisk.runtimes.claudeCode).not.toHaveProperty('activeAccount');
-
-      // And the migrated file is one the live schema accepts, which is the whole
-      // point of doing it through conf.
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    // And the migrated file is one the live schema accepts, which is the whole
+    // point of doing it through conf.
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });
 
@@ -286,53 +260,25 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
     // The assertion reads the FILE, not the store: Ajv fills the missing section
     // in on every READ, so `store.get('runtimes')` would look right even with the
     // migration deleted. What only the migration does is write it through.
-    const dir = path.join(os.tmpdir(), 'test-dork-claudecode-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      const priorRuntimes = {
-        default: 'claude-code',
-        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-        codex: { enabled: true, binaryPath: null, credentialRef: null },
-      };
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          server: { port: 5000, cwd: null, boundary: null, open: true },
-          runtimes: priorRuntimes,
-          __internal__: { migrations: { version: '0.56.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        // The shipped schema, tolerances included — never rebuilt here (see CONF_JSON_SCHEMA).
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.57.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        runtimes: Record<string, unknown>;
-      };
-      expect(onDisk.runtimes.claudeCode).toEqual({
-        activeAccount: null,
-        accounts: [],
-        defaultModel: null,
-        defaultEffort: null,
-        defaultTrustStop: null,
-      });
-      // The upgrade adds a section; it changes no runtime the person configured.
-      expect(onDisk.runtimes).toMatchObject(priorRuntimes);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const priorRuntimes = {
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
+    };
+    const onDisk = upgradeConfigFile(
+      { server: { port: 5000, cwd: null, boundary: null, open: true }, runtimes: priorRuntimes },
+      '0.56.0',
+      '0.57.0'
+    );
+    expect(onDisk.runtimes.claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+      defaultModel: null,
+      defaultEffort: null,
+      defaultTrustStop: null,
+    });
+    // The upgrade adds a section; it changes no runtime the person configured.
+    expect(onDisk.runtimes).toMatchObject(priorRuntimes);
   });
 
   it('accepts a real config file that already names an account, through Ajv', () => {
