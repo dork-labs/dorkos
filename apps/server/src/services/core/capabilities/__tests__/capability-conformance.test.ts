@@ -129,6 +129,7 @@ const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-secur
 const { createDorkLinkLookups } = await import('../../links/link-lookups.js');
 const { callerAuthor } = await import('../../../rooms/service/room-caller-author.js');
 import type { CapabilityDeps } from '../capability-definition.js';
+import { CHAT_READ_SAMPLE_INPUTS } from './chat-read-sample-inputs.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
@@ -771,11 +772,6 @@ capabilityConformance(registry, {
     'todos.confirm_promise': { id: 'conformance-no-such-promise', answer: 'yes' },
     // A folder that is not there, so the handler answers its own `FOLDER_MISSING`.
     'directory.browse': { path: '/conformance-no-such-folder' },
-    // Paths outside the boundary, so each answers its own path refusal.
-    'diff.baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
-    'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
-    'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
-    'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
     // The agents' queue tools, parseable so the gate or the handler answers:
     // with no identity each refuses `NO_AGENT`; the destructive ones meet the gate.
     'work-queue.add': { title: 'Conformance', prompt: 'A conformance probe.' },
@@ -802,15 +798,8 @@ capabilityConformance(registry, {
       agentId: 'conformance-agent',
       rule: 'mcp__conformance-srv',
     },
-    // A chat id is required, so `{}` would be a ZodError. With no run record
-    // wired here, the handler answers its own `NOT_READY` refusal.
-    'runs.chat_runs': { id: '00000000-0000-4000-8000-0000000c0a55' },
-    // An agent or chat is required. No agent is registered and no work graph is
-    // installed here, so each answers its own `WORK_GRAPH_AGENT_NOT_FOUND` or `NOT_READY`.
-    'work-graph.agent_chats': { agentId: '01JCONFORMANCEAGENT0000000' },
-    'work-graph.agent_work': { agentId: '01JCONFORMANCEAGENT0000000' },
-    'work-graph.chat_tree': { chatId: 'conformance-chat' },
-    'work-graph.chat_work': { chatId: 'conformance-chat' },
+    // A chat's reads: its change review, its runs and the work graph's reads.
+    ...CHAT_READ_SAMPLE_INPUTS,
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

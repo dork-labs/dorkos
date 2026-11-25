@@ -105,7 +105,7 @@
     "apps/server/src/routes/__tests__/browser-viewers-session.test.ts": 756,
     "apps/server/src/routes/__tests__/canvas-doc-events.test.ts": 501,
     "apps/server/src/routes/__tests__/canvas-doc-route-controls.test.ts": 736,
-    "apps/server/src/routes/__tests__/capability-http.test.ts": 753,
+    "apps/server/src/routes/__tests__/capability-http.test.ts": 750,
     "apps/server/src/routes/__tests__/cloud-billing.test.ts": 516,
     "apps/server/src/routes/__tests__/cloud-communities.test.ts": 993,
     "apps/server/src/routes/__tests__/cloud-owner-bar.test.ts": 690,

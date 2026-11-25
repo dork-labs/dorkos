@@ -53,6 +53,7 @@ import {
   mountedCapabilities,
 } from '../capability-http.js';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
+import { AUDIT_READ_SIDE_MOUNTED } from './audit-read-side-mounted.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -134,15 +135,7 @@ describe('the mount', () => {
       'mesh.deny_folder',
       'mesh.clear_denial',
       'mesh.set_access_rule',
-      'audit.verify',
-      'audit.query',
-      'audit.get',
-      'audit.account_timeline',
-      'audit.running_chats',
-      'work-graph.agent_chats',
-      'work-graph.chat_tree',
-      'work-graph.agent_work',
-      'work-graph.chat_work',
+      ...AUDIT_READ_SIDE_MOUNTED,
       'agent.pause',
       'agent.resume',
       'agent.list_paused',
