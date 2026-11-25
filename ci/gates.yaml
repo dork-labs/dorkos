@@ -39,9 +39,18 @@ gates:
     purpose: Checks that the Linux CLI build accepts the exact attested Mac browser assets from the same source commit.
 
   # --- codex-binary-macos.yml ---
+  - id: wf.codex-binary-macos.scope
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: Decides from scripts/codex-macos-scope.sh, read from the base commit, whether a PR, queue entry or merge to main can reach the Codex binary suites, so only those pay for a macOS runner; any doubt runs them.
+  - id: wf.codex-binary-macos.attest
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: In a merge group with a Codex change only, checks whether codex-sandbox-macos already succeeded on the entry PR's current head, so the queue can skip the macOS run (DOR-5130); any doubt runs it.
   - id: wf.codex-binary-macos.codex-binary-macos
     source: .github/workflows/codex-binary-macos.yml
-    purpose: Runs the real Codex binary suites and protected-file probes on macOS, on Codex or release PRs and on request, so a release gets a macOS result.
+    purpose: Runs the real Codex binary suites and protected-file probes on macOS with no secrets, for every change that can reach them, every merge to main that does, and on request.
+  - id: wf.codex-binary-macos.codex-sandbox-macos
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: Reports on every PR and queue build that the macOS Codex suites passed, were out of scope, or already passed on the PR head, and fails closed on anything else (DOR-4402).
 
   # --- mac-browser-reading.yml ---
   - id: wf.mac-browser-reading.read
