@@ -83,7 +83,15 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   // `PATCH /api/mesh/agents/:id` moved out of routes/mesh.ts with its bar (DOR-4355).
   'routes/mesh-agent-patch-http.ts': ['clearsTheAgentBar'],
   // A server for every agent runs in every session (DOR-3213, Security's M1).
+  // Its two lists and its writes stay hand routes; the arguments check, removal, tool
+  // check and Undo are person-only capabilities (DOR-4978): the mount's person bar, then
+  // the front-door bar as a request fact the dispatcher works out.
   'routes/mcp-servers.ts': ['refuseFrontDoorChange', 'clearsTheAgentBar'],
+  'services/mesh/global-mcp/global-mcp-person-capabilities.ts': [
+    "audience: 'person'",
+    'frontDoorOwner',
+  ],
+  'routes/capability-dispatch.ts': ['frontDoorRefusal(facts)'],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],
 };
 

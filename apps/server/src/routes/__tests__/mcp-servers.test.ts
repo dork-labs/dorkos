@@ -1,6 +1,10 @@
 /**
  * `/api/mcp-servers` is person-only (DOR-3213): an agent can neither read nor
  * change the servers every agent gets, and no answer carries a secret value.
+ *
+ * The arguments check, removing a server, the tool check and an Undo are served
+ * by the capability mount (DOR-4978); the two lists, adding, replacing and
+ * widening stay hand routes. Both are mounted here, as the app mounts them.
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,6 +53,11 @@ import {
   GlobalMcpToolLedger,
 } from '../../services/mesh/global-mcp/global-mcp-tools.js';
 import { createMcpServerRoutes } from '../mcp-servers.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import {
+  globalMcpPersonDomain,
+  type GlobalMcpPersonDeps,
+} from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
 
 const target = swappableServer();
 const mockConfigGet = vi.mocked(configManager.get) as unknown as ReturnType<typeof vi.fn>;
@@ -76,17 +85,31 @@ function secrets(): CredentialStore {
   };
 }
 
+/** The person's doors on the mount, then the hand routes, in the app's order. */
+function groups(sheet: Partial<GlobalMcpPersonDeps> = {}) {
+  const deps: GlobalMcpPersonDeps = {
+    store,
+    ledger: new GlobalMcpToolLedger(home),
+    agents: () => [],
+    ...sheet,
+  };
+  return [
+    capabilityGroup(globalMcpPersonDomain, { globalMcpPersonDeps: deps }),
+    {
+      path: '/api/mcp-servers',
+      routes: createMcpServerRoutes(store, undefined, undefined, deps.agents),
+    },
+  ];
+}
+
 function app() {
   return target.mount(
-    honoGroupListener(
-      { path: '/api/mcp-servers', routes: createMcpServerRoutes(store) },
-      {
-        before: async (c, next) => {
-          if (state.user) c.set('user', state.user);
-          await next();
-        },
-      }
-    )
+    honoGroupListener(groups(), {
+      before: async (c, next) => {
+        if (state.user) c.set('user', state.user);
+        await next();
+      },
+    })
   );
 }
 
@@ -216,12 +239,15 @@ describe('/api/mcp-servers', () => {
           .send({ ...SERVER, name: 'planted' }),
         request(app()).put('/api/mcp-servers/github').send(SERVER),
         request(app()).patch('/api/mcp-servers/github').send({ enabled: false }),
-        request(app()).delete('/api/mcp-servers/github'),
       ];
       for (const res of await Promise.all(writes)) {
         expect(res.status).toBe(403);
         expect(res.body.code).toBe('operator_only');
       }
+      // Removing is a person-only capability now (DOR-4978): no session is no person.
+      const remove = await request(app()).delete('/api/mcp-servers/github');
+      expect(remove.status).toBe(403);
+      expect(remove.body.code).toBe('person_only');
       expect(store.list().map((s) => [s.name, s.enabled])).toEqual([['github', true]]);
       expect(readFileSync(file).equals(before)).toBe(true);
     });
@@ -321,22 +347,18 @@ describe('the server sheet (DOR-4118)', () => {
   function sheetApp() {
     return target.mount(
       honoGroupListener(
-        {
-          path: '/api/mcp-servers',
-          routes: createMcpServerRoutes(store, undefined, undefined, {
-            agents: () => [{ id: 'agent-quill', name: 'Quill', home: agentHome }],
-            ledger: new GlobalMcpToolLedger(home),
-            onToolsAdded: (server, names, agents) => added.push([server, names, agents]),
-            check: (connection, name, ledger) => {
-              checked.push(connection);
-              return checkServerTools(connection, name, ledger, async () => ({
-                kind: 'ok',
-                toolCount: toolsListed.length,
-                tools: toolsListed.map((tool) => ({ name: tool, description: `Does ${tool}.` })),
-              }));
-            },
-          }),
-        },
+        groups({
+          agents: () => [{ id: 'agent-quill', name: 'Quill', home: agentHome }],
+          onToolsAdded: (server, names, agents) => added.push([server, names, agents]),
+          check: (connection, name, ledger) => {
+            checked.push(connection);
+            return checkServerTools(connection, name, ledger, async () => ({
+              kind: 'ok',
+              toolCount: toolsListed.length,
+              tools: toolsListed.map((tool) => ({ name: tool, description: `Does ${tool}.` })),
+            }));
+          },
+        }),
         {
           before: async (c, next) => {
             if (state.user) c.set('user', state.user);
@@ -462,14 +484,14 @@ describe('the server sheet (DOR-4118)', () => {
   it('undoes one standing yes in the folder the registry names', async () => {
     const res = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
-      .send({ agentId: 'agent-quill', rule: 'mcp__github', home: '/somewhere/else' });
+      .query({ agentId: 'agent-quill', rule: 'mcp__github', home: '/somewhere/else' });
     expect(res.status).toBe(204);
     expect(JSON.parse(readFileSync(localFile(), 'utf8')).permissions.allow).toEqual([
       'Bash(npm test)',
     ]);
     const again = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
-      .send({ agentId: 'agent-quill', rule: 'mcp__github' });
+      .query({ agentId: 'agent-quill', rule: 'mcp__github' });
     expect(again.status).toBe(404);
   });
 
@@ -479,7 +501,7 @@ describe('the server sheet (DOR-4118)', () => {
     ['an agent the registry does not know', { agentId: 'agent-nobody', rule: 'mcp__github' }, 404],
   ])('refuses %s, writing nothing', async (_name, body, status) => {
     const before = readFileSync(localFile(), 'utf8');
-    const res = await request(sheetApp()).delete('/api/mcp-servers/github/allows').send(body);
+    const res = await request(sheetApp()).delete('/api/mcp-servers/github/allows').query(body);
     expect(res.status).toBe(status);
     expect(readFileSync(localFile(), 'utf8')).toBe(before);
   });
@@ -497,14 +519,15 @@ describe('the server sheet (DOR-4118)', () => {
     const asAgent = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
       .set('x-dorkos-agent', 'agent-token')
-      .send({ agentId: 'agent-quill', rule: 'mcp__github' });
+      .query({ agentId: 'agent-quill', rule: 'mcp__github' });
     expect(asAgent.status).toBe(403);
     const remote = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
       .set('Host', 'box.ngrok.app')
-      .send({ agentId: 'agent-quill', rule: 'mcp__github' });
+      .query({ agentId: 'agent-quill', rule: 'mcp__github' });
+    // With no session, a device elsewhere is no person (DOR-4978: person-only capability).
     expect(remote.status).toBe(403);
-    expect(remote.body.code).toBe('operator_only');
+    expect(remote.body.code).toBe('person_only');
     expect(checked).toEqual([]);
     expect(readFileSync(localFile(), 'utf8')).toBe(before);
   });
@@ -558,7 +581,7 @@ describe('the server sheet (DOR-4118)', () => {
     expect(eu.body.allows).toMatchObject([{ rule: 'mcp__github__eu', breadth: 'server' }]);
     const wrongSheet = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
-      .send({ agentId: 'agent-quill', rule: 'mcp__github__eu' });
+      .query({ agentId: 'agent-quill', rule: 'mcp__github__eu' });
     expect(wrongSheet.status).toBe(400);
   });
 
@@ -573,7 +596,7 @@ describe('the server sheet (DOR-4118)', () => {
     expect(added).toEqual([['github', ['export_all'], ['Quill']]]);
     const undo = await request(sheetApp())
       .delete('/api/mcp-servers/github/allows')
-      .send({ agentId: 'agent-quill', rule: 'mcp__github__*' });
+      .query({ agentId: 'agent-quill', rule: 'mcp__github__*' });
     expect(undo.status).toBe(204);
     expect(JSON.parse(readFileSync(localFile(), 'utf8')).permissions.allow).toEqual([]);
   });
@@ -581,5 +604,67 @@ describe('the server sheet (DOR-4118)', () => {
   it('answers 404 for a server that does not exist', async () => {
     const res = await request(sheetApp()).get('/api/mcp-servers/nope/allows');
     expect(res.status).toBe(404);
+  });
+});
+
+// DOR-4978: the doors the capability mount serves keep agents and programs out,
+// and changing anything still takes the owner at this computer.
+describe("the person's doors on the capability mount", () => {
+  // The two lists stay hand routes until they page; their agent bar is tested above.
+  const doors = () => [
+    request(app())
+      .post('/api/mcp-servers/check-args')
+      .send({ args: ['-y'] }),
+    request(app()).delete('/api/mcp-servers/github'),
+    request(app()).post('/api/mcp-servers/github/tools'),
+    request(app())
+      .delete('/api/mcp-servers/github/allows')
+      .query({ agentId: 'agent-quill', rule: 'mcp__github' }),
+  ];
+
+  beforeEach(async () => {
+    await store.add({ ...SERVER, secretNames: [], excludedAgents: [] } as never);
+  });
+
+  it('refuses an agent on every door with person_only, changing nothing', async () => {
+    for (const call of doors()) {
+      const res = await call.set('x-dorkos-agent', 'agent-token');
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+    }
+    expect(store.list().map((server) => server.name)).toEqual(['github']);
+  });
+
+  it('refuses any Authorization header on every door with person_only', async () => {
+    for (const call of doors()) {
+      const res = await call.set('Authorization', 'Bearer made-up');
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+    }
+    expect(store.list().map((server) => server.name)).toEqual(['github']);
+  });
+
+  it('refuses a signed-in person who is not the owner a removal, in the hand route’s words', async () => {
+    state.owner = { id: 'owner' };
+    state.user = { userId: 'someone-else', credential: 'cookie' };
+    const res = await request(app()).delete('/api/mcp-servers/github');
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      code: 'operator_only',
+      detail: 'Only the owner can change MCP servers for every agent, in the app.',
+    });
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it('lets the owner remove a server, and says a missing one is missing', async () => {
+    state.owner = { id: 'owner' };
+    state.user = { userId: 'owner', credential: 'cookie' };
+    expect((await request(app()).delete('/api/mcp-servers/github')).status).toBe(204);
+    const again = await request(app()).delete('/api/mcp-servers/github');
+    expect(again.status).toBe(404);
+    expect(again.body).toMatchObject({
+      code: 'not_found',
+      detail: 'There is no MCP server by that name.',
+    });
   });
 });

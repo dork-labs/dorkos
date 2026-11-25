@@ -21,6 +21,7 @@ import { WORK_QUEUE_MAX_QUEUED } from '@dorkos/shared/work-queue-schemas';
 import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
 import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
+import { GLOBAL_MCP_TOOL_REFUSALS } from '../services/mesh/global-mcp/global-mcp-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -253,6 +254,9 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // sentences when they moved onto the mount (`services/todos/todo-http-capabilities.ts`,
   // `services/todos/todo-write-capabilities.ts`).
   ...TODO_TOOL_REFUSALS,
+  // The MCP servers a person adds for every agent keep their hand routes' codes and
+  // sentences (`services/mesh/global-mcp/global-mcp-person-capabilities.ts`).
+  ...GLOBAL_MCP_TOOL_REFUSALS,
   TODO_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
   TODO_PROMISE_OWNER_ONLY: {
     code: 'owner_only',

@@ -124,6 +124,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // The block is at its size budget, so the mini app story (DOR-4854) is not repeated here:
     // `create_extension` and `get_extension_api` carry all of it (`mini-app-story.ts`).
     can: 'add or remove MCP servers and packages; build mini apps a person approves. A change reaches you next turn, in this chat: no restart.',
+    // `mcp.` also covers a person's doors for servers every agent gets
+    // (`mcp.remove_global_server` and the rest, DOR-4978), which refuse agents.
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',

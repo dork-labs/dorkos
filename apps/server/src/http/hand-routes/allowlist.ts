@@ -436,4 +436,31 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     category: 'invoke',
     reason: 'Runs any capability by id, through the same dispatcher as its own path.',
   },
+
+  // Reachable from your network on purpose. Security's ruling on DOR-4978: they
+  // stay by hand until the API-key audience (A5) lands (DOR-5267).
+  {
+    method: 'PATCH',
+    path: '/api/agents/:id/permissions',
+    category: 'network-reachable',
+    reason: 'network-reachable to lower only, wifi-raise-guard; waits for A5, DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/mesh/agents/:id/heartbeat',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/agents/resolve',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'PATCH',
+    path: '/api/agents/current',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
 ];

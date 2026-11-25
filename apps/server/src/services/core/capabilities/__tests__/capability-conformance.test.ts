@@ -455,6 +455,13 @@ const registry = composeDorkOsCapabilityRegistry({
       getTopology: () => ({ callerNamespace: '*', namespaces: [], accessRules: [] }),
     } as unknown as NonNullable<CapabilityDeps['meshDeps']>['meshCore'],
   },
+  // A person's doors on the MCP servers every agent gets (`/api/mcp-servers`, DOR-4978):
+  // person-only, so the anonymous probe is refused before any of these run.
+  globalMcpPersonDeps: {
+    store: {} as NonNullable<CapabilityDeps['globalMcpPersonDeps']>['store'],
+    ledger: {} as NonNullable<CapabilityDeps['globalMcpPersonDeps']>['ledger'],
+    agents: () => [],
+  },
   // The link domain serves `GET /api/links/target` (DOR-5046), over the
   // harness's real rooms; it holds no chats and no agents.
   linkDeps: {
@@ -794,6 +801,15 @@ capabilityConformance(registry, {
     'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // A valid answer; the person-only door refuses the anonymous call before it runs.
     'heartbeat.choose_triage_credits': { useCredits: false },
+    // Valid input; each person-only door refuses the anonymous call before it runs.
+    'mcp.check_global_args': { args: ['--verbose'] },
+    'mcp.remove_global_server': { name: 'conformance-srv' },
+    'mcp.check_global_tools': { name: 'conformance-srv' },
+    'mcp.undo_global_allow': {
+      name: 'conformance-srv',
+      agentId: 'conformance-agent',
+      rule: 'mcp__conformance-srv',
+    },
     // A chat id is required, so `{}` would be a ZodError. With no run record
     // wired here, the handler answers its own `NOT_READY` refusal.
     'runs.chat_runs': { id: '00000000-0000-4000-8000-0000000c0a55' },

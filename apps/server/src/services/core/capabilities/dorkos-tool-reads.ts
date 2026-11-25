@@ -85,6 +85,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'connectors.execute_write': 'outside',
   'connectors.execute_destructive': 'outside',
   'mcp.test': 'outside',
+  // A server's own tool names and descriptions, which its publisher wrote.
+  'mcp.check_global_tools': 'outside',
   mesh_discover: 'outside',
   test_extension: 'outside',
   // ── What other turns read or said ──────────────────────────────────────────
@@ -179,6 +181,11 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'mcp.poll_signin': 'local',
   'mcp.set_client': 'local',
   'mcp.browser_preset': 'local',
+  // A person's MCP servers for every agent: agents are refused, and all but the tool check
+  // return what the person typed or the team's own settings.
+  'mcp.check_global_args': 'local',
+  'mcp.remove_global_server': 'local',
+  'mcp.undo_global_allow': 'local',
   'rooms.post': 'local',
   'rooms.react': 'local',
   'rooms.merge': 'local',
