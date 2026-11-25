@@ -27,7 +27,7 @@ import os from 'node:os';
 import * as childProcess from 'node:child_process';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { PROJECT_PLUGINS_CODE } from '../messaging/project-plugin-guard.js';
@@ -91,12 +91,20 @@ function project(root: string, name: string): string {
   return dir;
 }
 
-/** Drop a plugin into `dir` that writes `marker` on import and beats into `beat`. */
+/**
+ * Drop a plugin into `dir` that writes `marker` on import and beats into `beat`.
+ * It also ignores SIGTERM and starts a child of its own, whose pid it writes to
+ * `<marker>.child`, so a restart must SIGKILL the whole process group.
+ */
 function dropPlugin(dir: string, marker: string, beat: string): void {
   fs.mkdirSync(path.join(dir, '.opencode', 'plugin'), { recursive: true });
   fs.writeFileSync(
     path.join(dir, '.opencode', 'plugin', 'x.js'),
     `import { writeFileSync } from 'node:fs';\n` +
+      `import { spawn } from 'node:child_process';\n` +
+      `process.on('SIGTERM', () => {});\n` +
+      `const kid = spawn('sleep', ['600'], { stdio: 'ignore' });\n` +
+      `writeFileSync(${JSON.stringify(`${marker}.child`)}, String(kid.pid));\n` +
       `writeFileSync(${JSON.stringify(marker)}, String(process.pid));\n` +
       `setInterval(() => writeFileSync(${JSON.stringify(beat)}, String(Date.now())), 100);\n` +
       `export const Marker = async () => ({});\n`
@@ -255,6 +263,10 @@ describe.skipIf(BINARY === null)('a plugin that appears during an OpenCode turn 
     // The row's premise: the plugin's code ran during the turn.
     expect(fs.existsSync(marker)).toBe(true);
     const importer = Number(fs.readFileSync(marker, 'utf8'));
+    const spawned = Number(fs.readFileSync(`${marker}.child`, 'utf8'));
+    onTestFinished(() => {
+      if (alive(spawned)) process.kill(spawned, 'SIGKILL');
+    });
 
     // Another chat in a clean folder. When its prompt reaches the model, the
     // process that imported the plugin must already be gone.
@@ -272,12 +284,14 @@ describe.skipIf(BINARY === null)('a plugin that appears during an OpenCode turn 
       nextTurnRan: !second.some((event) => event.type === 'error'),
       importerAliveAtNextTurn,
       importerAliveNow: alive(importer),
+      pluginChildAliveNow: alive(spawned),
       heartbeatStillRunning: fs.readFileSync(beat, 'utf8') !== beatAfter,
       activity: lines.map((line) => line.folder),
     }).toEqual({
       nextTurnRan: true,
       importerAliveAtNextTurn: false,
       importerAliveNow: false,
+      pluginChildAliveNow: false,
       heartbeatStillRunning: false,
       activity: [race],
     });

@@ -26,6 +26,7 @@
  * @module services/runtimes/opencode/messaging/project-plugin-recheck
  */
 import path from 'node:path';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ActivityService } from '../../../activity/activity-service.js';
 import { logger, logError } from '../../../../lib/logger.js';
@@ -100,6 +101,16 @@ export interface PluginTurnPass {
 }
 
 /** Said when a turn was setting up as OpenCode restarted. */
+/**
+ * Restart the sidecar for a folder that gained plugins: its whole process
+ * group, SIGKILL at once, with no grace window a loaded plugin could use.
+ *
+ * @param provider - The sidecar client source.
+ */
+export function killNow(provider: OpenCodeClientProvider): Promise<void> | undefined {
+  return provider.recycle?.({ immediate: true });
+}
+
 export const PLUGIN_RESTART_MESSAGE = 'OpenCode restarted. Send your message again.';
 
 /** Said when OpenCode needed a restart and it did not finish. */

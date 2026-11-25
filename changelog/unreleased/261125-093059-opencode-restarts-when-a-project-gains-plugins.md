@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(runtimes): OpenCode restarts its background process when a project gains its own plugins during a chat (DOR-4412)'
+  - "fix(runtimes): a plugin restart kills OpenCode's whole process group at once (DOR-4412)"
 ---
 
 ### Fixed

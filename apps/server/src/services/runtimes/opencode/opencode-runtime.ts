@@ -118,7 +118,7 @@ import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import { ProjectPluginsRefusedError } from './messaging/project-plugin-guard.js';
-import { ProjectPluginRecheck } from './messaging/project-plugin-recheck.js';
+import { ProjectPluginRecheck, killNow } from './messaging/project-plugin-recheck.js';
 import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
@@ -196,7 +196,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly locks = new SessionLockManager();
   private readonly approvals = new PendingApprovalStore();
   /** Looks again for a project's own plugins after each turn, and restarts the sidecar (DOR-4412). */
-  private readonly pluginRecheck = new ProjectPluginRecheck(() => this.provider.recycle?.());
+  private readonly pluginRecheck = new ProjectPluginRecheck(() => killNow(this.provider));
   /** What {@link enforceApprovals} reaches into on every mapped turn event. */
   private readonly approvalGate: ApprovalGateDeps;
   /** Each model's context window from the sidecar's catalog, read once and cached. */
