@@ -236,7 +236,8 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       403: error('`person_only`: not a person'),
       404: error('`not_found`: the folder is not inside a project'),
       409: error(
-        '`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there'
+        '`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there; ' +
+          '`agent_paused`: the agent is paused, and nothing was kept'
       ),
       429: error('`rate_limited`: too many starts or working chats'),
       503: error('`temporarily_unavailable`: chats cannot be started yet'),

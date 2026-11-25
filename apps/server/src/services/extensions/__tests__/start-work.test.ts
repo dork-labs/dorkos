@@ -107,6 +107,8 @@ let launches: Array<StartTurnInput & { runId: string }>;
 let renameHook: StartWorkDeps['rename'] | undefined;
 /** Admission's launch cap, as a switch. */
 let machineFull: boolean;
+/** The folder whose agent the pause service says is paused, when one is. */
+let pausedFolder: string | undefined;
 
 /** Let the record's watchers hear what just moved. */
 async function flush(): Promise<void> {
@@ -152,9 +154,15 @@ async function refusal(promise: Promise<unknown>): Promise<StartWorkError> {
 beforeEach(() => {
   db = createTestDb();
   machineFull = false;
+  pausedFolder = undefined;
   record = createRunRecord(db, {
     epoch: '01BOOTEPOCHSTARTWORK000000',
-    admission: { admission: { pausedAgent: () => undefined, machineFull: () => machineFull } },
+    admission: {
+      admission: {
+        pausedAgent: (_agentId, cwd) => (cwd === pausedFolder ? { name: 'Ana' } : undefined),
+        machineFull: () => machineFull,
+      },
+    },
   });
   launches = [];
   const start = record.port.start.bind(record.port);
@@ -318,6 +326,19 @@ describe('refusals launch nothing', () => {
     expect(eligibility).toHaveBeenCalledWith({ project: DORKOS, runtime: 'test-mode' });
     expect(launches).toHaveLength(0);
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
+  });
+
+  it('refuses a start to a paused agent with agent_paused, naming it, and keeps nothing', async () => {
+    pausedFolder = DORKOS.root;
+    const err = await refusal(service.start('flow', INPUT, 'ctx'));
+    expect(err.code).toBe('agent_paused');
+    expect(err.message).toBe('Ana is paused. Resume it, then try again.');
+    // Refused at the door: no run saved, and the start's row is gone, so it
+    // counts against no limit and nothing hands it over later.
+    expect(record.port.start).toHaveBeenCalledTimes(1);
+    expect(launches).toHaveLength(0);
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
+    expect(store.withPrompt()).toEqual([]);
   });
 
   it('refuses the eleventh start in an hour', async () => {

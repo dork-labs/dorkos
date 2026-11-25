@@ -110670,7 +110670,7 @@
             }
           },
           "409": {
-            "description": "`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there",
+            "description": "`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there; `agent_paused`: the agent is paused, and nothing was kept",
             "content": {
               "application/problem+json": {
                 "schema": {
