@@ -11,7 +11,11 @@
  *
  * `.cjs`, not `.js`: the CLI package is `"type": "module"`, and a child is CommonJS.
  *
- * @module services/extensions/isolation/child-bundle
+ * Kernel: both an extension's isolated host (space side) and the shell guard (computer side) fork
+ * one, so the lookup and the per-process cache of development bundles sit where both may import
+ * them. One module, so the two share one cache.
+ *
+ * @module services/core/child-bundle/child-bundle
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';

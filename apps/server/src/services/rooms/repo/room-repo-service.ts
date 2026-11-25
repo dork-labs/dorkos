@@ -51,7 +51,7 @@ import {
   type GitIdentity,
   type StrayChange,
 } from './room-repo-git.js';
-import { RoomWorktreeManager } from './room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../core/room-worktree-name/room-worktree-name.js';
 import { readMainCheckoutState } from './room-main-checkout.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 import { RoomConventions } from './room-conventions.js';
@@ -499,7 +499,7 @@ export class RoomRepoService {
     const checked = gitAuthorName(sanitizeIdentity(author?.displayName ?? ''));
     const usable = checked === FALLBACK_OPERATOR_GIT_NAME ? null : checked;
     if (author?.kind === 'agent') {
-      const slug = RoomWorktreeManager.slugFor(author.displayName, author.naturalKey);
+      const slug = roomWorktreeSlug(author.displayName, author.naturalKey);
       return { name: usable ?? 'an agent', email: `${slug}@dorkos.local` };
     }
     return { name: usable ?? 'a room member', email: personGitEmail(callerAuthorId) };

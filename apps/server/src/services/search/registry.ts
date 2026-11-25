@@ -32,10 +32,10 @@ import {
 } from '../runtimes/codex/codex-home.js';
 import { resolveOpenCodeStorePath } from '../runtimes/opencode/opencode-data-dir.js';
 import { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
-import { discoverCodexRollouts } from './codex-discovery.js';
+import { discoverCodexRollouts } from '../core/codex-rollouts/codex-discovery.js';
 import { openOpenCodeSnapshot } from './opencode-store.js';
 import { projectClaudeCodeLines } from './projections/claude-code.js';
-import { projectCodexLines } from './projections/codex.js';
+import { projectCodexLines } from '../core/codex-rollouts/codex-projection.js';
 import { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
 import type { FileSource, RowContainer, RowSource, SearchSource, SnapshotSource } from './types.js';
 

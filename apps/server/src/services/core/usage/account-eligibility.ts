@@ -36,7 +36,7 @@ import { readProjectRootList } from '@dorkos/shared/config-schema';
 import { ACCOUNT_NOT_ALLOWED_CODE, type ProjectRef } from '@dorkos/shared/project-schemas';
 
 import { projectRegistry } from '../../projects/project-registry.js';
-import { lookupProjectRoot } from '../../projects/resolve-project-root.js';
+import { lookupProjectRoot } from '../project-root/resolve-project-root.js';
 import { configManager } from '../config-manager.js';
 
 /** The runtimes that have account rules. */

@@ -107,17 +107,20 @@
  *
  * @module server/services/rooms/repo/room-worktree-manager
  */
-import { createHash } from 'node:crypto';
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
-import { slugifyAgentName } from '@dorkos/shared/validation';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 import { isUnmodifiedSeededSkill, OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { CLAUDE_INSTRUCTION_CONTENT } from '@dorkos/harness';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
 import { AGENT_WORKSPACE_HARNESSES } from '../../harness/project-agent-workspace.js';
+import {
+  ROOM_WORKTREE_DIGEST_CHARS,
+  roomWorktreeDigest,
+  roomWorktreeSlug,
+} from '../../core/room-worktree-name/room-worktree-name.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import type { RoomWorktreeRefreshTarget } from './room-worktree-refresh.js';
 import {
@@ -133,26 +136,6 @@ import {
   removeWorktree,
   runGit,
 } from './room-repo-git.js';
-
-/**
- * How many hex characters of the workspace-path digest ride in a worktree name.
- *
- * Eight — 32 bits. These are not adversarial inputs (an agent cannot choose
- * another agent's workspace path) and the population is the agents of one room,
- * so this is about accidents, not attacks: eight characters keeps the directory
- * name readable in `git worktree list` and in the explorer while making an
- * accidental clash between two agents in one room a non-event.
- */
-const SLUG_DIGEST_CHARS = 8;
-
-/**
- * How much of the agent's name survives into the directory name.
- *
- * `slugifyAgentName` allows 64, which with the digest would make some worktree
- * paths longer than the rest of the room home put together. Forty is still a
- * name a person recognizes at a glance.
- */
-const SLUG_NAME_CHARS = 40;
 
 /**
  * The branch a room worktree checks out, given its slug.
@@ -351,39 +334,6 @@ export class RoomWorktreeManager {
   }
 
   /**
-   * The directory name one agent's worktree takes in any room.
-   *
-   * Stable for an agent across rooms, restarts and other agents coming and
-   * going — see the module doc for why the digest is unconditional rather than
-   * a tiebreak.
-   *
-   * @param agentName - The agent's display name, or its registry name.
-   * @param agentPath - The agent's workspace path, its identity anchor.
-   * @returns A filesystem-safe, per-agent-stable directory name.
-   */
-  static slugFor(agentName: string, agentPath: string): string {
-    const name = slugifyAgentName(agentName).slice(0, SLUG_NAME_CHARS).replace(/-+$/, '');
-    return `${name || 'agent'}-${RoomWorktreeManager.digestFor(agentPath)}`;
-  }
-
-  /**
-   * The identity half of a worktree name — the part that survives a rename.
-   *
-   * Its own method because the reap needs it without the agent's NAME: it holds
-   * directory names and a set of busy agent paths, and matching on this suffix
-   * is the only join available between the two.
-   *
-   * @param agentPath - The agent's workspace path.
-   * @returns The digest that ends every worktree name for that agent.
-   */
-  static digestFor(agentPath: string): string {
-    return createHash('sha256')
-      .update(path.resolve(agentPath))
-      .digest('hex')
-      .slice(0, SLUG_DIGEST_CHARS);
-  }
-
-  /**
    * Give an agent its standing working copy in this room, making it if it is
    * not there yet.
    *
@@ -439,7 +389,7 @@ export class RoomWorktreeManager {
       throw new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.');
     }
 
-    const slug = RoomWorktreeManager.slugFor(agentName, agentPath);
+    const slug = roomWorktreeSlug(agentName, agentPath);
     const dir = path.join(this.deps.store.worktreesPath(roomId), slug);
     const branch = roomWorktreeBranch(slug);
 
@@ -489,10 +439,7 @@ export class RoomWorktreeManager {
    * @param agentName - The agent's display name.
    */
   pathFor(roomId: string, agentPath: string, agentName: string): string {
-    return path.join(
-      this.deps.store.worktreesPath(roomId),
-      RoomWorktreeManager.slugFor(agentName, agentPath)
-    );
+    return path.join(this.deps.store.worktreesPath(roomId), roomWorktreeSlug(agentName, agentPath));
   }
 
   /**
@@ -556,7 +503,7 @@ export class RoomWorktreeManager {
    *
    * @param roomId - The room.
    * @param slug - The worktree's directory name
-   *   ({@link RoomWorktreeManager.slugFor}).
+   *   ({@link roomWorktreeSlug}).
    * @returns The status, or `null` when there is no such worktree.
    * @throws When the directory is there and git cannot read it — the caller
    *   decides what an unreadable tree means, and the reap decides it is work.
@@ -624,7 +571,7 @@ export class RoomWorktreeManager {
     worktreePath: string
   ): Promise<RoomContextFiles | null> {
     if (!this.deps.hasRepo(roomId)) return null;
-    const branch = roomWorktreeBranch(RoomWorktreeManager.slugFor(agentName, agentPath));
+    const branch = roomWorktreeBranch(roomWorktreeSlug(agentName, agentPath));
 
     let repoDir: string;
     let ceiling: string;
@@ -719,7 +666,7 @@ export class RoomWorktreeManager {
     // Agents that are mid-turn. A live turn is granted its worktree and works on
     // it by path, and a turn that only reads leaves no mark on any date above.
     const busy = new Set(
-      this.deps.busyAgentPaths().map((agentPath) => RoomWorktreeManager.digestFor(agentPath))
+      this.deps.busyAgentPaths().map((agentPath) => roomWorktreeDigest(agentPath))
     );
     const idleCutoff = this.nowMs() - this.deps.reapAfterDays() * 24 * 60 * 60 * 1000;
 
@@ -728,7 +675,7 @@ export class RoomWorktreeManager {
         result.stranded.push(slug);
         continue;
       }
-      if (busy.has(slug.slice(-SLUG_DIGEST_CHARS))) {
+      if (busy.has(slug.slice(-ROOM_WORKTREE_DIGEST_CHARS))) {
         logger.debug('[rooms] not tidying a room worktree its agent is working in', {
           roomId,
           worktree: slug,
@@ -1073,8 +1020,8 @@ export class RoomWorktreeManager {
    * @returns Whether the tree must be left alone after all.
    */
   private async claimedSince(slug: string, idleCutoff: number, dir: string): Promise<boolean> {
-    const digest = slug.slice(-SLUG_DIGEST_CHARS);
-    if (this.deps.busyAgentPaths().some((p) => RoomWorktreeManager.digestFor(p) === digest)) {
+    const digest = slug.slice(-ROOM_WORKTREE_DIGEST_CHARS);
+    if (this.deps.busyAgentPaths().some((p) => roomWorktreeDigest(p) === digest)) {
       logger.debug('[rooms] a turn claimed a room worktree mid-sweep; leaving it alone', {
         worktree: slug,
       });

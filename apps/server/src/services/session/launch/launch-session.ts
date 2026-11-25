@@ -51,7 +51,7 @@ import type {
   LaunchAccountResolution,
 } from '../../core/usage/account-eligibility.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
-import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { agentLaunchCapMessage, claimCappedLaunch, isAgentLaunchCapFull } from './launch-cap.js';
 import {
   launchedByOf,

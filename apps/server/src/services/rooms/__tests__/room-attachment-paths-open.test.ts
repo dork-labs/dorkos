@@ -30,7 +30,7 @@ import type { AuthorRegistry } from '../author-registry.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import { LocalRoomAttachmentStore } from '../attachments/local-room-attachment-store.js';
 import { projectRoomAttachments } from '../attachments/attachment-projection.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 import type { ProjectableAttachment } from '../room-context.js';
 import type { RoomService } from '../room-service.js';
 import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';

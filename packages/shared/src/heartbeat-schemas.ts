@@ -16,6 +16,9 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
 
+/** The label the chat list shows for a beat chat (`Session.originLabel`). */
+export const HEARTBEAT_ORIGIN_LABEL = 'Heartbeat';
+
 /** How an agent wakes: on a timer and on events, on events only, or never. */
 export const HEARTBEAT_WAKES = ['timed', 'events', 'off'] as const;
 

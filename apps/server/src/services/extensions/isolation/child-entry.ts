@@ -19,9 +19,7 @@
  * @module services/extensions/isolation/child-entry
  */
 import path from 'node:path';
-import { resolveChildBundle } from './child-bundle.js';
-
-export { unpackedPath } from './child-bundle.js';
+import { resolveChildBundle } from '../../core/child-bundle/child-bundle.js';
 
 /** The file name the production builds emit beside the server bundle. */
 export const CHILD_ENTRY_FILE = 'extension-child.cjs';

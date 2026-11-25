@@ -8,7 +8,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { OPERATING_SKILLS_PACK, seedOperatingSkills } from '@dorkos/operating-skills';
 import { projectAgentWorkspace } from '../../../harness/project-agent-workspace.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '../../attachments/attachment-paths.js';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 import { commitAll } from '../room-repo-git.js';
 
 import {

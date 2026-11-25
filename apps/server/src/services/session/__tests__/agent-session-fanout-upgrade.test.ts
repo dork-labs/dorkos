@@ -20,7 +20,7 @@ import path from 'path';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import { fanOutAgentSessions, setAgentSessionSources } from '../agent-session-fanout.js';
-import { RoomWorktreeManager } from '../../rooms/repo/room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../core/room-worktree-name/room-worktree-name.js';
 import { projectSlug } from '../../runtimes/claude-code/sessions/project-slug.js';
 import {
   frozenRoomWorktrees,
@@ -43,13 +43,7 @@ describe('an agent’s room sessions across the upgrade', () => {
     claudeRoot = path.join(base, 'claude');
     ana = path.join(base, 'agents', 'ana');
     await mkdir(ana, { recursive: true });
-    worktree = path.join(
-      dorkHome,
-      'rooms',
-      ROOM,
-      'worktrees',
-      RoomWorktreeManager.slugFor('Ana', ana)
-    );
+    worktree = path.join(dorkHome, 'rooms', ROOM, 'worktrees', roomWorktreeSlug('Ana', ana));
     await mkdir(worktree, { recursive: true });
     // A room conversation from before the upgrade, filed under the worktree's
     // slug, settled an hour ago.

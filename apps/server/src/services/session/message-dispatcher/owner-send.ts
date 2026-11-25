@@ -10,7 +10,7 @@
  *
  * @module services/session/message-dispatcher/owner-send
  */
-import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { RELAY_CLIENT_PREFIX } from '../../core/session-relay/relay-client-id.js';
 import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import { HAND_BACK_CLIENT_ID } from '../local-browser/hand-back-wake/client-id.js';

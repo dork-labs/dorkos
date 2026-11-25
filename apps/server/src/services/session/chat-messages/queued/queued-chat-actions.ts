@@ -20,7 +20,7 @@ import { finishSteer, holdForSteer, releaseSteerHold } from '../../message-dispa
 import { isQueuedMessageLaunching } from '../../message-dispatcher/state.js';
 import { getMessageQueueStore } from '../../message-queue-store.js';
 import { queueKeyOf } from '../../resolution/session-key-registry.js';
-import { isChatClientId } from '../chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { mayChatSteer, rowsCarryWords, rowsCeiling } from '../chat-message-ceiling.js';
 import type { ChatMessageStore } from '../chat-message-store.js';
 import { noteSteeredInto } from '../chat-started-turns.js';

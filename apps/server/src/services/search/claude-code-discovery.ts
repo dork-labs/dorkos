@@ -30,7 +30,11 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { collapseRoots, walkJsonlFiles, type WalkedFile } from './jsonl-walk.js';
+import {
+  collapseRoots,
+  walkJsonlFiles,
+  type WalkedFile,
+} from '../core/codex-rollouts/jsonl-walk.js';
 import type {
   DiscoveryFailure,
   FileContainer,

@@ -693,6 +693,14 @@
       "types": "./src/chat-messages.ts",
       "default": "./dist/chat-messages.js"
     },
+    "./chat-client-id": {
+      "types": "./src/chat-client-id.ts",
+      "default": "./dist/chat-client-id.js"
+    },
+    "./room-attachment-paths": {
+      "types": "./src/room-attachment-paths.ts",
+      "default": "./dist/room-attachment-paths.js"
+    },
     "./todo-promise-schemas": {
       "types": "./src/todo-promise-schemas.ts",
       "default": "./dist/todo-promise-schemas.js"

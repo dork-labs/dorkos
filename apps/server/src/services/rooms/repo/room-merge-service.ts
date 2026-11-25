@@ -77,7 +77,8 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomRepoStore } from './room-repo-store.js';
-import { RoomWorktreeManager, roomWorktreeBranch } from './room-worktree-manager.js';
+import { roomWorktreeBranch } from './room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../core/room-worktree-name/room-worktree-name.js';
 import type { RoomRepoMutex } from './room-repo-mutex.js';
 import {
   assertMainCheckoutReady,
@@ -401,7 +402,7 @@ export class RoomMergeService {
 
     const branches: RoomBranchStatus[] = [];
     for (const member of this.deps.listAgentMembers(roomId)) {
-      const slug = RoomWorktreeManager.slugFor(member.displayName, member.agentPath);
+      const slug = roomWorktreeSlug(member.displayName, member.agentPath);
       const branch = roomWorktreeBranch(slug);
       if (!(await hasLocalBranch(repoDir, branch, ceiling))) continue;
       const { ahead, behind } = await aheadBehind(repoDir, 'main', branch, ceiling);
@@ -521,7 +522,7 @@ export class RoomMergeService {
   ): { slug: string; branch: string; authorId: string; agentName: string } {
     const members = this.deps.listAgentMembers(roomId).map((member) => ({
       ...member,
-      slug: RoomWorktreeManager.slugFor(member.displayName, member.agentPath),
+      slug: roomWorktreeSlug(member.displayName, member.agentPath),
     }));
 
     if (worktree !== undefined) {

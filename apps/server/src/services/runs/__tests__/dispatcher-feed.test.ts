@@ -40,7 +40,7 @@ import {
 import { inFlight, setQueuedChatJoiner } from '../../session/message-dispatcher/state.js';
 import { rearmChatQueues } from '../../session/message-dispatcher/queue-upkeep.js';
 import { subscribeRuntimeTurns } from '../../session/runtime-turns/runtime-turn.js';
-import { chatClientId } from '../../session/chat-messages/chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { cancelQueuedMessage, clearQueuedMessages } from '../../session/queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
 import {

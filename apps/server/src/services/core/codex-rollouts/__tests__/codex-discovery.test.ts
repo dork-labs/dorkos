@@ -3,12 +3,12 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 
-vi.mock('../../../lib/logger.js', () => ({
+vi.mock('../../../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 import { discoverCodexRollouts } from '../codex-discovery.js';
-import { logger } from '../../../lib/logger.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * Codex discovery has one job Claude Code's does not: it takes the container id

@@ -78,7 +78,7 @@ export class RoomTurnControl {
    * member of a room. `RoomRoster.list` drops the natural key on purpose, so
    * this is the deliberate second door — narrow, unexported over any surface,
    * and used by one caller: the room-repo verbs, which need the path to work out
-   * which standing worktree belongs to whom (`RoomWorktreeManager.slugFor`).
+   * which standing worktree belongs to whom (`roomWorktreeSlug`).
    * Anything derived from it that a caller sees is the SLUG, never the path.
    *
    * A ghost — an agent whose directory no longer holds one — is included, and

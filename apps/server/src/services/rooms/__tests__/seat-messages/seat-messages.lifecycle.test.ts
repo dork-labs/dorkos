@@ -186,7 +186,7 @@ it('M9: ordinary queue actions never adopt private seat receipt IDs after DOR-30
     await import('../../../session/chat-messages/queued/queued-chat-actions.js');
   const { joinWaitingChatRows } =
     await import('../../../session/message-dispatcher/join-chat-rows.js');
-  const { chatClientId } = await import('../../../session/chat-messages/chat-client-id.js');
+  const { chatClientId } = await import('@dorkos/shared/chat-client-id');
   const queue = new MessageQueueStore(harness.db);
   setMessageQueueStore(queue);
   const steer = vi.fn(async () => true);

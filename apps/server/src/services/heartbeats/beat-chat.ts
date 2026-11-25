@@ -12,11 +12,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Session } from '@dorkos/shared/types';
+import { HEARTBEAT_ORIGIN_LABEL } from '@dorkos/shared/heartbeat-schemas';
 import { zonedDay } from '@dorkos/shared/working-hours';
 import { dropUserLastMessageAtWithoutOperator } from '../session/origin/user-last-message-origin.js';
-
-/** The label the chat list shows for a beat chat. */
-export const HEARTBEAT_ORIGIN_LABEL = 'Heartbeat';
 
 /** Today's beat chat for an agent. */
 export interface BeatChat {

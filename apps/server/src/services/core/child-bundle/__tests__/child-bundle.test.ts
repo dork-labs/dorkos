@@ -1,9 +1,10 @@
 /** Development child caches never supply executable bytes from a previous server unchecked. */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { unpackedPath } from '../child-bundle.js';
 
 it('replaces an overwritten dev bundle left by an earlier server process', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'child-bundle-'));
@@ -28,4 +29,28 @@ it('replaces an overwritten dev bundle left by an earlier server process', async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+describe('unpackedPath', () => {
+  // Purpose: a path inside app.asar maps to its unpacked twin when it exists
+  // (the permission model grants real files, not archive entries)...
+  it('maps into app.asar.unpacked when the twin exists', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'asar-'));
+    try {
+      const twin = path.join(root, 'app.asar.unpacked', 'dist', 'server', 'x.cjs');
+      await mkdir(path.dirname(twin), { recursive: true });
+      await writeFile(twin, '');
+      expect(unpackedPath(path.join(root, 'app.asar', 'dist', 'server', 'x.cjs'))).toBe(twin);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // ...and only then.
+  it('leaves paths alone when no unpacked twin exists', () => {
+    expect(unpackedPath('/Applications/X.app/Contents/Resources/app.asar/dist/server/x.cjs')).toBe(
+      '/Applications/X.app/Contents/Resources/app.asar/dist/server/x.cjs'
+    );
+    expect(unpackedPath('/tmp/not-asar/x.cjs')).toBe('/tmp/not-asar/x.cjs');
+  });
 });

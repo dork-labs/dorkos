@@ -13,7 +13,7 @@ import fsp, {
 import { tmpdir } from 'os';
 import path from 'path';
 import { logger } from '../../../../lib/logger.js';
-import { RoomWorktreeManager } from '../../../rooms/repo/room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
 import { discoverClaudeCodeTranscripts } from '../../../search/claude-code-discovery.js';
 import { projectSlug } from '../sessions/project-slug.js';
 import {
@@ -80,8 +80,8 @@ describe('migrateRoomTranscripts', () => {
     await mkdir(aliceHome, { recursive: true });
     await mkdir(bobHome, { recursive: true });
 
-    aliceName = RoomWorktreeManager.slugFor('Alice', aliceHome);
-    const bobName = RoomWorktreeManager.slugFor('Bob', bobHome);
+    aliceName = roomWorktreeSlug('Alice', aliceHome);
+    const bobName = roomWorktreeSlug('Bob', bobHome);
     aliceWorktree = path.join(dorkHome, 'rooms', ROOM_1, 'worktrees', aliceName);
     aliceWorktree2 = path.join(dorkHome, 'rooms', ROOM_2, 'worktrees', aliceName);
     bobWorktree = path.join(dorkHome, 'rooms', ROOM_1, 'worktrees', bobName);
@@ -230,7 +230,7 @@ describe('migrateRoomTranscripts', () => {
   });
 
   it('finds a reaped worktree of an agent with the longest name', async () => {
-    const longName = RoomWorktreeManager.slugFor('x'.repeat(100), aliceHome);
+    const longName = roomWorktreeSlug('x'.repeat(100), aliceHome);
     const reaped = path.join(dorkHome, 'rooms', ROOM_3, 'worktrees', longName);
     await put(path.join(projectsDir(rootA, reaped), 's1.jsonl'), transcript(reaped, 'long'));
 
@@ -240,7 +240,7 @@ describe('migrateRoomTranscripts', () => {
   });
 
   it('finds a reaped worktree of an agent whose name holds an 8-hex word', async () => {
-    const dated = RoomWorktreeManager.slugFor('Release 20260926', aliceHome);
+    const dated = roomWorktreeSlug('Release 20260926', aliceHome);
     const reaped = path.join(dorkHome, 'rooms', ROOM_3, 'worktrees', dated);
     await put(path.join(projectsDir(rootA, reaped), 's1.jsonl'), transcript(reaped, 'dated'));
 

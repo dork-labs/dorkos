@@ -11,7 +11,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { resolveGuardChild } from '../guard-child-file.js';
 import { GuardHost, type GuardHostOptions } from '../guard-host.js';
 import type { ShellGuardRoots } from '../shell-check.js';
-import { resolveChildBundle } from '../../../../extensions/isolation/child-bundle.js';
+import { resolveChildBundle } from '../../../../core/child-bundle/child-bundle.js';
 import { pathToFileURL } from 'node:url';
 
 let root: string;

@@ -1,6 +1,6 @@
 /** Private peer messages are fenced/defused data; room traces never contain their words. */
 import { defuseUntrustedPrompt, sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { CHAT_MESSAGE_MAX } from '../../session/chat-messages/chat-client-id.js';
+import { CHAT_MESSAGE_MAX } from '@dorkos/shared/chat-client-id';
 import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';
 import { renderChatMessage } from '../../session/chat-messages/chat-message-fence.js';
 import type { NewChatMessage } from '../../session/chat-messages/chat-message-store.js';

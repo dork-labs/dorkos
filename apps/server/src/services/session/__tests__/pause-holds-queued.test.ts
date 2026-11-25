@@ -37,7 +37,7 @@ import {
   type DispatchLifecycleEvent,
 } from '../message-dispatcher.js';
 import { rearmChatQueues } from '../message-dispatcher/queue-upkeep.js';
-import { chatClientId } from '../chat-messages/chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
 

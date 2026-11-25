@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WORKBENCH } from '../../../config/constants.js';
 import { injectFrameScripts } from '../frame-inject.js';
-import { DOC_FRAME_SHIM_SCRIPT } from '../../canvas/doc-frame-shim.js';
+import { DOC_FRAME_SHIM_SCRIPT } from '../../core/doc-frame-shim/doc-frame-shim.js';
 import { DEVTOOLS_AGENT_SCRIPT } from '../devtools-shim.js';
 
 const html =

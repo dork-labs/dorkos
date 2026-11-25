@@ -22,7 +22,7 @@ import { rearmChatQueues } from '../message-dispatcher/queue-upkeep.js';
 import { RECOVERED_START_TRIES } from '../message-dispatcher/launch.js';
 import { ChatMessageService } from '../chat-messages/chat-message-service.js';
 import { ChatMessageStore } from '../chat-messages/chat-message-store.js';
-import { chatClientId } from '../chat-messages/chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { SESSIONS } from '../../../config/constants.js';

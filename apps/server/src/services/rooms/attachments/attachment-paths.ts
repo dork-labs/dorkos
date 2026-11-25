@@ -14,14 +14,7 @@
  * @module server/services/rooms/attachments/attachment-paths
  */
 import path from 'path';
-
-/**
- * The root the 24-hour sweep walks, relative to the agent's working directory.
- *
- * Under `.dork/.temp/` because a projection is a copy of something durable held
- * somewhere else: losing the whole tree costs one re-projection.
- */
-export const PROJECTED_ATTACHMENTS_ROOT = '.dork/.temp/room-attachments';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 
 /**
  * The suffix a stored file is filed under, without its dot, or `''`.

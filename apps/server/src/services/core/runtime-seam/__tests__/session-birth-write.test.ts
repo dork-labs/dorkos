@@ -19,7 +19,7 @@ import {
   type SessionBirthWriteContext,
 } from '../session-birth-write.js';
 import { MessageQueueStore } from '../../../session/message-queue-store.js';
-import { chatClientId } from '../../../session/chat-messages/chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 
 let db: Db;
 const stamp = '2026-11-19T00:00:00.000Z';
