@@ -216,6 +216,12 @@ function checkVitest(args, fed = false, cwd = process.cwd()) {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--') continue;
+    // A redirection is the shell's, not vitest's: `2>&1`, `>out.txt`, `&> log`,
+    // `2> err.txt`. A bare operator takes the next word as its target.
+    if (/^(\d*[<>]|&>)/.test(arg)) {
+      if (/^(\d*[<>]+|&>>?|\d*>&)$/.test(arg)) index++;
+      continue;
+    }
     if (arg.startsWith('-')) {
       if (VITEST_FLAGS_WITH_VALUE.has(arg)) index++;
       continue;

@@ -207,6 +207,15 @@ allow HOME=/tmp/h git status
 allow env HOME=/tmp/h node scripts/x.mjs
 allow git commit -m "set HOME=x before pnpm"
 allow DORKOS_HOME=/tmp/d pnpm vitest run a.test.ts
+# --- a redirection is the shell's, not a vitest path. ---
+allow pnpm vitest run a.test.ts 2>&1
+allow pnpm vitest run a.test.ts > /tmp/out.txt
+allow pnpm vitest run a.test.ts 2> /tmp/err.txt
+allow pnpm vitest run a.test.ts &> /tmp/all.txt
+allow pnpm vitest run a.test.ts >/tmp/out.txt 2>&1
+block pnpm vitest run 2>&1
+block pnpm vitest run > /tmp/out.txt
+block pnpm vitest run apps/server/src/routes 2>&1
 # --- the wrappers that already join the gate. ---
 allow pnpm heavy pnpm vitest run
 allow pnpm heavy turbo build
