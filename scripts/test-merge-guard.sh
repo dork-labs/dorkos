@@ -239,6 +239,49 @@ case_check 'heredoc marker inside a comment' block \
 case_check 'multi-line single-quoted mergePullRequest' block \
   $'gh api graphql -f query=\'\nmutation {\n  mergePullRequest(input: {pullRequestId: "PR_x"}) { clientMutationId }\n}\''
 
+# --- `bash <script file>` runs a file, so a quoted heredoc beside it stays data (Nov 25, as #4436). ---
+case_check 'a PR-body heredoc naming an admin merge, beside bash <script>' allow \
+  $'cat > /tmp/b.md <<\'EOF\'\nnever run gh pr merge 12 --admin\ngh api -X PUT repos/o/r/pulls/12/merge is refused too\nEOF\nbash scripts/open-pr.sh --body-file /tmp/b.md'
+case_check 'a heredoc beside bash -o pipefail <script>' allow \
+  $'cat > /tmp/b.md <<\'EOF\'\ngh pr merge 12 --admin\nEOF\nbash -o pipefail scripts/open-pr.sh --body-file /tmp/b.md'
+case_check 'a heredoc beside source <script>' allow \
+  $'cat > /tmp/b.md <<\'EOF\'\ngh pr merge 12 --admin\nEOF\nsource scripts/env.sh'
+case_check 'bash <script> does not hide an admin merge beside it' block \
+  'bash scripts/x.sh && gh pr merge 12 --admin'
+case_check 'bash <script> does not hide an admin merge on the next line' block \
+  $'bash scripts/x.sh\ngh pr merge 12 --admin'
+# ...while every form that feeds the text to a shell still reads it as commands.
+case_check 'bash <<EOF unquoted-space delimiter' block \
+  $'bash << \'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'a heredoc piped into bash -o pipefail' block \
+  $'cat <<\'EOF\' | bash -o pipefail\ngh pr merge 12 --admin\nEOF'
+case_check 'a heredoc piped into bash -O extglob' block \
+  $'cat <<\'EOF\' | bash -O extglob\ngh pr merge 12 --admin\nEOF'
+case_check 'a heredoc piped into bash --rcfile f' block \
+  $'cat <<\'EOF\' | bash --rcfile /tmp/rc\ngh pr merge 12 --admin\nEOF'
+case_check 'bash -s <<EOF' block \
+  $'bash -s <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'bash /dev/stdin <<EOF' block \
+  $'bash /dev/stdin <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'source /dev/stdin <<EOF' block \
+  $'source /dev/stdin <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'a script written by a heredoc and run on the same line' block \
+  $'cat > /tmp/m.sh <<\'EOF\'\ngh pr merge 12 --admin\nEOF\nbash /tmp/m.sh'
+case_check 'a script written by echo and run on the same line' block \
+  "echo 'gh pr merge 12 --admin' > /tmp/m.sh && bash /tmp/m.sh"
+case_check 'a script written by tee and run on the same line' block \
+  "echo 'gh pr merge 12 --admin' | tee ./m.sh && sh m.sh"
+case_check 'sh -lc runs its argument' block "sh -lc 'gh pr merge 12 --admin'"
+case_check 'eval runs its argument' block "eval 'gh pr merge 12 --admin'"
+# shellcheck disable=SC2016 # the $( ) is text for the guard to read
+case_check 'a double-quoted substitution beside bash <script>' block \
+  'bash scripts/x.sh "$(gh pr merge 12 --admin)"'
+# The substitution reader is unchanged here (not #4436's masked read): a
+# single-quoted substitution on a line that is not all text-takers still counts.
+# shellcheck disable=SC2016 # the $( ) is text for the guard to read
+case_check 'a single-quoted substitution behind git rebase -x' block \
+  "git rebase -x 'echo \$(gh pr merge 12 --admin)' main"
+
 # --- the refusal says where the sanctioned path is. ---
 message=$(MERGE_GUARD_FIXTURE_COMMAND='gh pr merge 1 --admin' node -e '
   require("fs").writeFileSync(process.env.MERGE_GUARD_FIXTURE_PAYLOAD,

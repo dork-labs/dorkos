@@ -16,8 +16,10 @@
  *   `npm exec`, `bun x`), `pip download`, `pipx run`, `go run module@version`;
  * - an interpreter whose arguments or script hold a web address, or whose script or module flags
  *   (`perl -M`, `ruby -r`) make a common network call;
- * - an `alias` for any of these, or any of these behind a wrapper (`watch`, `busybox`) or
- *   `find -exec`.
+ * - an `alias` for any of these, or any of these behind a wrapper (`watch`, `busybox`, `xargs`)
+ *   or `find -exec`;
+ * - a redirection to or from `/dev/tcp` or `/dev/udp`, `openssl s_client`, or `osascript` whose
+ *   script opens a web address or runs one of these through `do shell script`.
  *
  * @module services/runtimes/shared/tools/shell-network-commands
  */
@@ -55,6 +57,8 @@ const NETWORK_PROGRAMS: ReadonlySet<string> = new Set([
   'dig',
   'host',
   'nslookup',
+  'yt-dlp',
+  'youtube-dl',
 ]);
 
 /** Programs that fetch a package and run it: any use of one marks. */
@@ -118,7 +122,13 @@ const URL_WORD = /(?:^|=)(?:https?|ftp|wss?):\/\//i;
  * PowerShell's web cmdlets.
  */
 const NETWORK_CALL =
-  /\b(?:urllib|requests|httpx|aiohttp|http\.client|socket|axios|LWP|Net::HTTP|open-uri|curl_exec|Invoke-WebRequest|Invoke-RestMethod|iwr|irm|WebClient)\b|net\/http|\bfetch\s*\(|\bhttps?\.(?:get|request)\s*\(|['"](?:node:)?(?:https?|net|dgram|tls)['"]/i;
+  /\b(?:urllib|requests|httpx|aiohttp|http\.client|socket|axios|LWP|Net::HTTP|open-uri|curl_exec|curl_init|file_get_contents|fsockopen|stream_socket_client|Invoke-WebRequest|Invoke-RestMethod|iwr|irm|WebClient)\b|net\/http|\bfetch\s*\(|\bhttps?\.(?:get|request)\s*\(|['"](?:node:)?(?:https?|net|dgram|tls)['"]/i;
+/** A shell's own network files: `exec 3<>/dev/tcp/host/80`. */
+const SOCKET_FILE = /\/dev\/(?:tcp|udp)\//;
+/** `openssl`'s commands that open a connection. */
+const OPENSSL_CONNECTS: ReadonlySet<string> = new Set(['s_client', 's_time']);
+/** AppleScript's `do shell script`, and the string it runs when that is written in place. */
+const DO_SHELL_SCRIPT = /\bdo\s+shell\s+script\s*(?:"((?:[^"\\]|\\.)*)")?/gi;
 
 /** Programs that run the command after them, with their own flags first. */
 const WRAPPERS: ReadonlySet<string> = new Set([
@@ -189,19 +199,43 @@ function scriptFetches(verb: string, segment: ShellSegment, args: readonly strin
   if ([...args, ...segment.scripts].some((text) => URL.test(text))) return true;
   // `perl -MLWP::Simple`, `ruby -rnet/http`: a module loaded by a flag.
   const modules = args.filter((arg) => /^-[Mr]./.test(arg)).map((arg) => arg.slice(2));
+  // `python3 -m urllib.request`: a module run as the program.
+  if (verb === 'python') {
+    modules.push(...args.flatMap((arg, at) => (arg === '-m' ? [args[at + 1] ?? ''] : [])));
+    modules.push(...args.filter((arg) => /^-m./.test(arg)).map((arg) => arg.slice(2)));
+  }
   // PowerShell's script is its arguments; the shell guard's reader does not know it.
   const scripts = POWERSHELLS.has(verb) ? args : scriptTexts(segment);
   return [...scripts, ...modules].some((text) => NETWORK_CALL.test(text));
 }
 
-/** Whether any command a wrapper or `find -exec` runs reaches the network. */
-function runsAFetch(verb: string, segment: ShellSegment, args: string[], depth: number): boolean {
-  if (WRAPPERS.has(verb)) {
-    for (let at = 0; at < Math.min(args.length, MAX_WRAPPER_SCAN); at += 1) {
-      const inner = { words: args.slice(at), redirects: [], scripts: segment.scripts };
-      if (segmentFetches(inner, depth + 1)) return true;
+/** Whether a command that a wrapper runs, somewhere in its first words, reaches the network. */
+function wrappedFetches(words: readonly string[], scripts: string[], depth: number): boolean {
+  for (let at = 0; at < Math.min(words.length, MAX_WRAPPER_SCAN); at += 1) {
+    if (segmentFetches({ words: words.slice(at), redirects: [], scripts }, depth + 1)) return true;
+  }
+  return false;
+}
+
+/** Whether an AppleScript opens a web address, or runs a fetching command through the shell. */
+function appleScriptFetches(texts: readonly string[], depth: number): boolean {
+  for (const text of texts) {
+    if (URL.test(text)) return true;
+    for (const match of text.matchAll(DO_SHELL_SCRIPT)) {
+      // A command built from a variable could be any command.
+      if (match[1] === undefined) return true;
+      if (lineFetches(match[1].replace(/\\(.)/g, '$1'), depth + 1)) return true;
     }
   }
+  return false;
+}
+
+/** Whether any command a wrapper or `find -exec` runs reaches the network. */
+function runsAFetch(verb: string, segment: ShellSegment, args: string[], depth: number): boolean {
+  if (WRAPPERS.has(verb) && wrappedFetches(args, segment.scripts, depth)) return true;
+  // `xargs -a urls.txt curl`: the prefix's own flags hide the program from `commandOf`.
+  const xargs = segment.words.findIndex((word) => path.basename(word) === 'xargs');
+  if (xargs !== -1 && wrappedFetches(segment.words.slice(xargs + 1), [], depth)) return true;
   if (verb === 'find') {
     for (let at = 0; at < args.length; at += 1) {
       if (!FIND_RUNS.has(args[at]!)) continue;
@@ -249,6 +283,9 @@ export function segmentFetches(segment: ShellSegment, depth = 0): boolean {
   if (/[$`]/.test(verb)) return true;
   if (NETWORK_PROGRAMS.has(verb) || PACKAGE_RUNNERS.has(verb)) return true;
   if (namesAWebAddress(verb, segment, args)) return true;
+  if ([...segment.words, ...segment.redirects].some((word) => SOCKET_FILE.test(word))) return true;
+  if (verb === 'openssl') return OPENSSL_CONNECTS.has(positionals(args, NO_VALUE_FLAGS)[0] ?? '');
+  if (verb === 'osascript' && appleScriptFetches([...args, ...segment.scripts], depth)) return true;
   if (verb === 'git') return gitFetches(args, depth);
   if (verb === 'rsync') {
     return args.some((arg) => !arg.startsWith('-') && /^(?:rsync:\/\/|[^/\\]+:)/.test(arg));
@@ -267,4 +304,14 @@ export function segmentFetches(segment: ShellSegment, depth = 0): boolean {
 /** Whether a command line, read on its own, reaches the network. */
 function lineFetches(line: string, depth: number): boolean {
   return withNested(parseShell(line)).some((segment) => segmentFetches(segment, depth));
+}
+
+/**
+ * Whether a program's script text holds a web address or a common network call: what is typed
+ * into an interpreter that is running.
+ *
+ * @param text - The script.
+ */
+export function scriptTextFetches(text: string): boolean {
+  return URL.test(text) || NETWORK_CALL.test(text);
 }

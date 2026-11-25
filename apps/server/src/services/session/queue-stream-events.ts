@@ -59,7 +59,8 @@ export function emitQueueUpdate(sessionId: string, outcome?: MessageDeliveryOutc
   if (!projector) return;
   const event: RawQueueUpdate = {
     type: 'queue_update',
-    queue: store.list(sessionKey).map(toQueuedMessage),
+    // Restored drafts ride it too, flagged, so every window shows them (§4.6).
+    queue: store.listShown(sessionKey).map(toQueuedMessage),
     ...(outcome !== undefined ? { outcome } : {}),
   };
   projector.ingest(event);

@@ -125,9 +125,10 @@ export function protectedProbe(
       'cat readable.txt',
       `cat ${quote(path.join(root, 'data', 'agents', 'probe', '.agents', 'skills', 'probe', 'SKILL.md'))}`,
     ].join('; '),
-    resetLate() {
+    /** Reset the late files; `keepSecret` leaves the late secret for the next turn's render. */
+    resetLate(keepSecret = false) {
       fs.writeFileSync(gitWrite, 'original-git-control');
-      fs.rmSync(lateSecret, { force: true });
+      if (!keepSecret) fs.rmSync(lateSecret, { force: true });
       fs.rmSync(latePlugin, { force: true });
     },
     createLate() {

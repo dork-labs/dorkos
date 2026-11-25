@@ -43,7 +43,6 @@ import { codexPermissionProfile, codexProtectedConfig } from '../policy/protecte
 import { loadWithProtectedProfile } from './profile-load.js';
 import { withThreadLoadBinding } from './thread-load-binding.js';
 import { trustForLoad } from './thread-trust.js';
-export { trustLevelFor } from './thread-trust.js';
 import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
@@ -718,7 +717,8 @@ export function buildLoadOverrides(
     input.cwd,
     input.tools.filePolicy,
     input.settings,
-    guardedMountTargetRecorder(input.settings, secrets.onMissingTargets, input.tools.filePolicy)
+    guardedMountTargetRecorder(input.settings, secrets.onMissingTargets, input.tools.filePolicy),
+    input.sessionId
   );
   const servers: Record<string, unknown> = { ...withLiteralHeaders(input.tools.managed) };
   if (secrets.threadKey !== undefined) {

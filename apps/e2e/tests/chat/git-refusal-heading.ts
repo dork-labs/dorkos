@@ -32,9 +32,12 @@ export function registerGitRefusalHeadingTests(options: {
         await expect(card).toHaveCount(1);
         await expect(card.getByText('Choose another folder', { exact: true })).toBeVisible();
         await expect(
-          card.getByText('Codex can’t protect this folder’s Git files. Choose another folder.', {
-            exact: true,
-          })
+          card.getByText(
+            'Codex can’t work inside a Git folder. Choose the project folder instead.',
+            {
+              exact: true,
+            }
+          )
         ).toBeVisible();
         await expect(
           card.getByRole('button', { name: /retry|sign in|choose.*model/i })

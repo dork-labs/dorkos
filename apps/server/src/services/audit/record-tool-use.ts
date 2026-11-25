@@ -518,6 +518,7 @@ async function* recordDuring(
       yield event;
     }
   } finally {
+    markOutsideText.end();
     for (const [toolCallId, call] of pending) {
       if (!call.inputDone) continue;
       try {

@@ -11,8 +11,9 @@
  * DorkOS's own tools, its connected-app tools included, are never answered here: the server marks
  * those itself when they return outside text (`core/capabilities/dorkos-tool-reads.ts`).
  *
- * Local tools mark by what they are handed (DOR-5236): a shell command that fetches from the network
- * or names a file in a folder of outside files (`shell-outside-text.ts`), a file read in one of those
+ * Local tools mark by what they are handed (DOR-5236, DOR-5240): a shell command that fetches from
+ * the network, runs a script file that does, or names a file in a folder of outside files
+ * (`shell-outside-text.ts`), a file read in one of those
  * folders, and a search that reaches one (`outside-file-places.ts`). An input that cannot be read
  * counts as reading outside text. Everything else they do stays unmarked.
  *

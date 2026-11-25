@@ -207,6 +207,15 @@ allow HOME=/tmp/h git status
 allow env HOME=/tmp/h node scripts/x.mjs
 allow git commit -m "set HOME=x before pnpm"
 allow DORKOS_HOME=/tmp/d pnpm vitest run a.test.ts
+# --- a redirection is the shell's, not a vitest path. ---
+allow pnpm vitest run a.test.ts 2>&1
+allow pnpm vitest run a.test.ts > /tmp/out.txt
+allow pnpm vitest run a.test.ts 2> /tmp/err.txt
+allow pnpm vitest run a.test.ts &> /tmp/all.txt
+allow pnpm vitest run a.test.ts >/tmp/out.txt 2>&1
+block pnpm vitest run 2>&1
+block pnpm vitest run > /tmp/out.txt
+block pnpm vitest run apps/server/src/routes 2>&1
 # --- the wrappers that already join the gate. ---
 allow pnpm heavy pnpm vitest run
 allow pnpm heavy turbo build
@@ -229,6 +238,33 @@ allow echo "run turbo build later"
 allow grep -rn "vitest run" scripts
 allow git commit -m "ci: stop raw turbo build"
 CASES
+
+# --- `bash <script file>` beside a quoted heredoc: the heredoc stays text (Nov 25 false positive). ---
+check 'a PR-body heredoc mentioning vitest, beside bash <script>, is allowed' allow \
+  "$(verdict $'cat > /tmp/b.md <<\'EOF\'\nrun pnpm vitest run later\nand npx tsc --noEmit\nEOF\nbash scripts/open-pr.sh --body-file /tmp/b.md')"
+check 'a python heredoc with a backticked tsc, beside bash <script>, is allowed' allow \
+  "$(verdict $'python3 - <<\'EOF\'\nx = "the `tsc` hook"\nEOF\nbash scripts/test-in-project-hook.sh')"
+check 'bash <script> alone is allowed' allow "$(verdict 'bash scripts/test-heavy-command-guard.sh')"
+check 'bash <script> does not hide a heavy command beside it' block "$(verdict 'bash scripts/x.sh && turbo build')"
+# --- the forms that DO feed text to a shell still unmask it. ---
+check 'bash <<EOF runs the heredoc' block "$(verdict $'bash <<\'EOF\'\nturbo build\nEOF')"
+check 'a heredoc piped into bash runs it' block "$(verdict $'cat <<\'EOF\' | bash\nturbo build\nEOF')"
+check 'bash -s <<EOF runs the heredoc' block "$(verdict $'bash -s <<\'EOF\'\nnpx tsc --noEmit\nEOF')"
+check 'a heredoc piped into bash -o pipefail runs it' block "$(verdict $'cat <<\'EOF\' | bash -o pipefail\nturbo build\nEOF')"
+check 'a heredoc piped into bash -O extglob runs it' block "$(verdict $'cat <<\'EOF\' | bash -O extglob\nturbo build\nEOF')"
+check 'a heredoc piped into bash --rcfile f runs it' block "$(verdict $'cat <<\'EOF\' | bash --rcfile /tmp/rc\nturbo build\nEOF')"
+check 'bash -o pipefail ./x.sh runs a file' allow "$(verdict 'bash -o pipefail ./x.sh')"
+check 'bash -o pipefail script beside a heredoc keeps the heredoc text' allow \
+  "$(verdict $'cat > /tmp/b.md <<\'EOF\'\nrun turbo build later\nEOF\nbash -o pipefail scripts/open-pr.sh --body-file /tmp/b.md')"
+check 'a script written on the same line then run is text' block "$(verdict $'cat > /tmp/m.sh <<\'EOF\'\nturbo build\nEOF\nbash /tmp/m.sh')"
+check 'a script written through tee then run is text' block "$(verdict $'cat <<\'EOF\' | tee /tmp/m.sh\nturbo build\nEOF\nbash /tmp/m.sh')"
+check 'bash /dev/stdin runs stdin' block "$(verdict $'cat <<\'EOF\' | bash /dev/stdin\nturbo build\nEOF')"
+check 'bash << EOF with a space runs the heredoc' block "$(verdict $'bash << \'EOF\'\nturbo build\nEOF')"
+check 'sh -lc runs its argument' block "$(verdict "sh -lc 'npx tsc --noEmit'")"
+# shellcheck disable=SC2016 # the $( ) is text for the guard to read
+check 'a double-quoted substitution still runs' block "$(verdict 'echo "$(turbo build)"')"
+check 'a single-quoted substitution is text' allow "$(verdict "echo '\$(turbo build)'")"
+check 'eval runs its argument' block "$(verdict 'eval "turbo build"')"
 
 # In a DorkOS chat the server's own hook holds the command in the gate.
 check 'a DorkOS chat (DORKOS_SESSION_ID set) is left to the server gate' allow \

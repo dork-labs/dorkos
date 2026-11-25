@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+**Planned amendment** (`specs/space-computer-contract/02-specification.md` §17.5, with its step W22): one exception to "first write wins". A one-time upgrade rebinds chats bound to the local sealed computer to the same guest reached over the contract. Nothing else rewrites a binding.
+
 ## Context
 
 With a second runtime (Codex) coming, every session needs a stable `runtime` owner so production routes can dispatch correctly. The server's default runtime and the agent manifest's `runtime` field can both change over time, so the per-session owner cannot safely be recomputed on each request. Three candidates were considered: a Claude JSONL header field, a sidecar JSON file, or a row in the consolidated Drizzle DB (`packages/db`, spec #63). DB consolidation has already landed and the established DorkOS pattern is "primary data in files, operational metadata in SQLite" (see ADR 0003 for the file-primary rule for transcripts; relay index, mesh agent registry, and pulse runs all follow the SQLite-for-metadata half).

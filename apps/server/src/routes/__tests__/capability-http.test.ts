@@ -130,6 +130,7 @@ describe('the mount', () => {
       'link.resolve',
       'heartbeat.wakers_off',
       'heartbeat.choose_triage_credits',
+      'runs.chat_runs',
       'directory.browse',
       'directory.default',
       'diff.baseline',

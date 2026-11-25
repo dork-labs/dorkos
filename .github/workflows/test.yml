@@ -19,11 +19,18 @@ name: test
 # `--affected` so it stays fast and survivable, with the full-monorepo sweep
 # moved here where it can take its time.
 #
-# FULL MONOREPO, not affected-only — the same reasoning typecheck.yml spells
-# out. A per-PR affected diff cannot see an interaction between two PRs that
-# each branched from a base predating the other; only a full run against the
-# tip catches it. `--continue` so one red package still reports every other
-# package's result instead of hiding behind the first failure.
+# FULL MONOREPO ON MAIN, THE PLAN IN THE QUEUE (DOR-5130). Until Nov 24 the
+# queue ran every suite on the reasoning typecheck.yml spells out: a per-PR
+# affected diff cannot see an interaction between two PRs that each branched
+# from a base predating the other. The queue now runs the suites its entry's
+# own squash commit can reach (HEAD^1..HEAD, scripts/pr-test-plan.sh), computed
+# ON THE COMBINED TREE, so a change to a package still runs every suite that
+# builds on it with everything ahead in the queue in place; what it no longer
+# runs is suites the change cannot reach. The full sweep moved to main: the
+# rolling push run after every merge, the daily canary and release pull
+# requests (see THE ROLLING FULL RUN ON MAIN). `--continue` so one red package
+# still reports every other package's result instead of hiding behind the
+# first failure.
 #
 # SHARDED ACROSS TEN RUNNERS IN THE QUEUE (four since 2026-09-06; six-way
 # experiment 2026-10-16; ten-way in the queue and canary, DOR-5113, ledger
@@ -147,7 +154,10 @@ name: test
 # The env var rides globalPassThroughEnv and never forks that key. The queue leg
 # already carries --shard and the json reporter, so it has already forked that
 # key and pays nothing more — which is why the flag is free here and not there.
-# TWO EVENTS, TWO DEPTHS, ONE REQUIRED CONTEXT (2026-08-23/24). The full suite
+# TWO EVENTS, TWO DEPTHS, ONE REQUIRED CONTEXT (2026-08-23/24; since DOR-5130
+# the queue's depth is its plan, and "the full suite" below means the queue
+# leg's machinery: retries, quarantine, execution and union proofs over the
+# planned set). The full suite
 # runs on `merge_group`, where it is a REQUIRED check of the merge queue — the
 # ruleset toggle this file's `merge_group` trigger always anticipated. That
 # un-inverts the old shape where the cheapest policy checks gated `main` while
@@ -200,8 +210,11 @@ name: test
 # body that treats any event but `pull_request` as full. The jobs that left
 # the queue for it (community-pg and the packaged community proof) run here
 # and on the canary. after-merge-alert.yml (ROLLING=1: a failure names every
-# merge in the run's range) and auto-revert.yml read these push runs, and the
-# daily release ships only a commit whose full run is green (DOR-5123).
+# merge in the run's range) and rolling-bisect.yml read these push runs:
+# auto-revert.sh never re-runs a rolling run, and rolling-bisect.yml re-tests
+# a failing head and bisects its merges by dispatching this workflow with
+# `bisect_sha` (DOR-5254; see the dispatch inputs below). The daily release
+# ships only a commit whose full run is green (DOR-5123).
 # THE MAIN CANARY (DOR-2150, plan §4.9): `schedule` and `workflow_dispatch`.
 #
 # Nothing watched `main`. This workflow and browser-test gate on `merge_group`
@@ -331,6 +344,30 @@ on:
     # do not ask GitHub for runners in the same second.
     - cron: '37 0 * * *'
   workflow_dispatch:
+    inputs:
+      # ROLLING BISECT (DOR-5254, as browser-test.yml since DOR-5122):
+      # rolling-bisect.yml dispatches this workflow on main with one merge
+      # already on main, to find the merge that broke a rolling push run. Every
+      # checkout below takes this commit instead of main's head, and the run is
+      # titled "bisect <sha> for run <id>", which is how rolling-bisect.sh
+      # finds it and how the canary collector leaves it out. It is a dispatch,
+      # so it runs the full sweep on ten shards with no plan, like the canary.
+      # Its checks still post on main's head (a dispatch's head), so nothing
+      # may read a bisect run as a verdict on main: after-merge-alert,
+      # auto-revert and the release gate read push (and schedule) runs, and
+      # merge-queue check runs, only. Empty on every other run.
+      bisect_sha:
+        description: (rolling-bisect.yml) A merge on main to test instead of main's head
+        required: false
+        type: string
+        default: ''
+      bisect_of:
+        description: (rolling-bisect.yml) The failed push run this bisects
+        required: false
+        type: string
+        default: ''
+
+run-name: ${{ inputs.bisect_sha && format('bisect {0} for run {1}', inputs.bisect_sha, inputs.bisect_of) || '' }}
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -358,7 +395,11 @@ concurrency:
   # current tip, and a failure names every merge since the previous run. The
   # canary shares the group, so a waiting canary can be replaced by a push run
   # (the same suite on a newer main).
-  group: test-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
+  #
+  # A bisect run (inputs.bisect_sha) gets a group of its own per merge, so it
+  # never waits behind, cancels or replaces the rolling push run (`gate`) or a
+  # hand-dispatched canary (`dispatch`).
+  group: test-${{ github.ref }}-${{ inputs.bisect_sha && format('bisect-{0}', inputs.bisect_sha) || (github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate') }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -443,7 +484,41 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run (DOR-5254, as browser-test.yml) tests one merge that is
+      # already on main, or nothing: its checks post on main's head, so any
+      # other tree would be a verdict on a commit main never had. A no-op on
+      # every other run.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v7
+        with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7.1.0
         with:
@@ -565,6 +640,34 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: community-pg says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       # Depth 2 so a pull request's test-merge commit has its first parent (the
       # base it was merged onto) locally, which is all the scope step diffs
       # against. The queue and the canary only need the tree, and one extra
@@ -572,6 +675,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
 
       # Where the space server lives (ci/space-server.env, DOR-3007): its
       # KEY=value lines become this job's environment, read below as
@@ -666,8 +771,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
-  # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Ten in the queue
-  # and on the canary, always (DOR-5113); six on a pull request into a release
+  # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Ten on the push
+  # run on main and the canary, always (DOR-5113); in the queue, ten for every
+  # suite and fewer for a narrower plan (DOR-5130, see "Pick the shard count");
+  # six on a pull request into a release
   # branch, which runs the full sweep but is armed on a pull request's CI proof,
   # and that proof counts at most six shards. On a pull request, two, unless the change
   # touches apps/server/** or packages/shared/**: those make the affected sweep
@@ -687,12 +794,14 @@ jobs:
   # parent, for the reason community-packaged's scope step gives, with
   # `--no-renames` so a file moved out of apps/server still counts.
   #
-  # AND WHICH SUITES A PULL REQUEST RUNS (DOR-3518, ledger 261031-164008).
-  # "Plan this pull request's suites" runs scripts/pr-test-plan.sh, which keeps
-  # the `test` tasks whose turbo hash the change moved, and hands the shards the
-  # list. A plan of every suite, or one that reaches the server or shared, gets
-  # six shards like a wide diff does. The merge queue and the canary never
-  # plan: they run every suite on ten.
+  # AND WHICH SUITES A PULL REQUEST OR A QUEUE ENTRY RUNS (DOR-3518, ledger
+  # 261031-164008; the queue since DOR-5130). "Plan this change's suites" runs
+  # scripts/pr-test-plan.sh, which keeps the `test` tasks whose turbo hash the
+  # change moved, and hands the shards the list. On a pull request a plan of
+  # every suite, or one that reaches the server or shared, gets six shards like
+  # a wide diff does. A queue entry plans its own squash commit (HEAD^1..HEAD)
+  # on the combined tree. The push run on main and the canary never plan: they
+  # run every suite on ten.
   test-shard-count:
     runs-on: ubuntu-latest
     # Two turbo dry runs and a second checkout on a pull request.
@@ -746,9 +855,39 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: community-pg says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       # Depth 2 so the test-merge commit's first parent is here to diff against.
       - uses: actions/checkout@v7
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           fetch-depth: 2
           persist-credentials: false
       # THE TEXT-ONLY LANE (DOR-4834, ledger 261120-043306). Decides, from
@@ -785,7 +924,7 @@ jobs:
                 not_text_only 'no test-merge commit to diff'
               fi
               ;;
-            merge_group) not_text_only 'a merge queue build; the queue runs every suite' ;;
+            merge_group) not_text_only 'a merge queue build; the text-only lane is pull-request only' ;;
             *) not_text_only "a $EVENT run" ;;
           esac
           lane=$RUNNER_TEMP/text-only
@@ -851,7 +990,7 @@ jobs:
           elif [ "$verdict" != false ]; then
             verdict=true
           else
-            echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. The merge queue runs the full suite."
+            echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. Main runs the full suite after merge."
           fi
           echo "run=$verdict" >> "$GITHUB_OUTPUT"
       # TESTS CHOSEN BY IMPORT (DOR-5110, ledger 261123-195117). Decides, from
@@ -867,8 +1006,8 @@ jobs:
       # `vitest_files` output the text-only lane uses.
       #
       # No `if:`: every event but pull_request answers false without looking,
-      # a release pull request included, so the merge queue and the canary run
-      # every suite exactly as before. The script comes from the BASE commit,
+      # a release pull request included, so the merge queue (its planned suites,
+      # DOR-5130) and the canary run each suite whole. The script comes from the BASE commit,
       # never this checkout (Security, #3238). Every failure answers false.
       - name: Decide whether this change's tests can be chosen by import
         id: related
@@ -893,31 +1032,58 @@ jobs:
           reason=$(sed -n 's/^reason=//p' "$RUNNER_TEMP/related-outputs")
           grep -qx 'related=true' "$RUNNER_TEMP/related-outputs" || not_related "${reason:-no answer}"
           grep -q '^vitest_files=\[' "$RUNNER_TEMP/related-outputs" || not_related 'the decision printed no file list'
-          echo "::notice title=Tests chosen by import::$reason. Each planned suite runs the test files that import or name a changed file; the merge queue runs every suite."
+          echo "::notice title=Tests chosen by import::$reason. Each planned suite runs the test files that import or name a changed file; the merge queue runs every planned suite whole."
           grep -E '^(related|vitest_files)=' "$RUNNER_TEMP/related-outputs" >> "$GITHUB_OUTPUT"
       # Writes scope=full, or scope=selected with the chosen suites' package
-      # names and directories. No `if:`: on every event but pull_request it
-      # answers full without looking, and those legs never read it.
+      # names and directories. No `if:`: on every event but pull_request and
+      # merge_group it answers full without looking (the push run on main, the
+      # canary and a pull request into release/ run every suite).
+      #
+      # THE MERGE QUEUE RUNS ITS PLAN TOO (DOR-5130, Dorian Nov 24: "the merge
+      # queue runs what its batch changed plus everything that depends on it").
+      # A queue entry is ONE squash commit on the entry ahead of it (or main):
+      # `gh-readonly-queue/main/pr-<n>-<parent sha>`, whose head has exactly
+      # that parent. So its own change is HEAD^1..HEAD, and the plan is the
+      # suites whose turbo task hash that change moved, computed on the
+      # combined tree: a change to a package reaches every suite that builds on
+      # it, with everything ahead in the queue already in place. Root config,
+      # the lockfile and every control path still select every suite (the
+      # planner's own list). The shards, the execution proof and the union
+      # proof all read this one answer.
       #
       # The planner and the turbo version come from the BASE commit, never this
       # checkout, so a change cannot edit the rule that picks its own tests
       # (the same guard as no-code-scope.sh, Security #3238). A base without the
       # script, which includes the pull request that adds it, runs everything.
       # turbo is fetched by npx: a dry run reads the lockfile and the tree, so
-      # it needs no install. The base is the test-merge commit's first parent,
-      # which the depth-2 checkout above holds.
-      - name: Plan this pull request's suites
+      # it needs no install. The base is the test-merge commit's first parent
+      # on a pull request, the squash commit's parent in the queue; the depth-2
+      # checkout above holds either. EVERY DOUBT RUNS EVERYTHING: no parent,
+      # no planner, no turbo pin, a planner that fails or answers anything but
+      # a non-empty `selected` list.
+      - name: Plan this change's suites
         id: plan
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -uo pipefail
           scope=full
-          if [ "$EVENT" != 'pull_request' ]; then
-            echo "$EVENT run: no plan; every suite runs here"
-          elif ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null ||
-            ! BASE_SHA=$(git rev-parse --verify --quiet 'HEAD^1'); then
-            echo "::notice title=Test plan::HEAD is not a test-merge commit, so every suite runs."
+          BASE_SHA=
+          case "$EVENT" in
+            pull_request)
+              if git rev-parse --verify --quiet 'HEAD^2' >/dev/null; then
+                BASE_SHA=$(git rev-parse --verify --quiet 'HEAD^1') || BASE_SHA=
+              fi
+              [ -n "$BASE_SHA" ] || echo "::notice title=Test plan::HEAD is not a test-merge commit, so every suite runs."
+              ;;
+            merge_group)
+              BASE_SHA=$(git rev-parse --verify --quiet 'HEAD^1') || BASE_SHA=
+              [ -n "$BASE_SHA" ] || echo "::notice title=Test plan::this queue entry has no parent commit to diff, so every suite runs."
+              ;;
+            *) echo "$EVENT run: no plan; every suite runs here" ;;
+          esac
+          if [ -z "$BASE_SHA" ]; then
+            :
           elif ! git cat-file blob "$BASE_SHA:scripts/pr-test-plan.sh" > "$RUNNER_TEMP/pr-test-plan.sh" 2>/dev/null; then
             echo "::notice title=Test plan::the base commit has no scripts/pr-test-plan.sh, so every suite runs."
           elif ! version=$(git cat-file blob "$BASE_SHA:package.json" | jq -er '.devDependencies.turbo'); then
@@ -926,12 +1092,14 @@ jobs:
             echo "::notice title=Test plan::the planner failed, so every suite runs."
           elif [ "$(printf '%s\n' "$plan" | head -n 1)" != 'selected' ]; then
             echo "::notice title=Test plan::the planner chose every suite (its reason is in the log above)."
+          elif ! suites=$(printf '%s\n' "$plan" | tail -n +2 | grep -E '^[^ ]+ (apps|packages)/[^ /]+$') ||
+            [ "$(printf '%s\n' "$suites" | wc -l | tr -d ' ')" -ne "$(printf '%s\n' "$plan" | tail -n +2 | grep -c .)" ]; then
+            echo "::notice title=Test plan::the planner's list is empty or not one '<package> <apps|packages>/<dir>' per line, so every suite runs."
           else
             scope=selected
-            suites=$(printf '%s\n' "$plan" | tail -n +2)
             echo "packages=$(printf '%s\n' "$suites" | cut -d' ' -f1 | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
             echo "dirs=$(printf '%s\n' "$suites" | cut -d' ' -f2 | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
-            printf 'This pull request runs these suites:\n%s\n' "$suites"
+            printf 'This change runs these suites:\n%s\n' "$suites"
           fi
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
       - name: Pick the shard count
@@ -948,6 +1116,27 @@ jobs:
           matrix=$six
           if [ "$EVENT" = 'release_pull_request' ]; then
             echo "$EVENT run: six shards, always (a pull request's CI proof counts at most six)"
+          elif [ "$EVENT" = 'merge_group' ]; then
+            # The queue's plan (DOR-5130): ten for every suite, as before; ten
+            # for a plan that reaches packages/shared, which nearly every suite
+            # builds on, so it is the whole sweep in all but name and six would
+            # lengthen the queue build; six for one that reaches apps/server
+            # (about 60% of the sweep: six of those match ten of the whole);
+            # two for anything narrower. Any doubt keeps ten.
+            matrix=$ten
+            if [ "${SCOPE:-}" != 'selected' ]; then
+              echo "merge queue build, every suite: ten shards"
+            elif grep <<<" ${DIRS:-} " -qE ' packages/shared '; then
+              echo "merge queue build, the plan reaches packages/shared: ten shards"
+            elif grep <<<" ${DIRS:-} " -qE ' apps/server '; then
+              matrix=$six
+              echo "merge queue build, the plan reaches apps/server: six shards"
+            elif grep <<<"${DIRS:-}" -qE '[^[:space:]]'; then
+              matrix='[1, 2]'
+              echo "merge queue build, the plan reaches neither apps/server nor packages/shared: two shards"
+            else
+              echo "merge queue build, a selected plan with no directories: ten shards"
+            fi
           elif [ "$EVENT" != 'pull_request' ]; then
             matrix=$ten
             echo "$EVENT run: ten shards, always"
@@ -975,7 +1164,7 @@ jobs:
             fi
           fi
           # A text-only pull request runs `vitest related` on one shard; the queue
-          # never gets here (its decision is always false) and keeps ten.
+          # never gets here (its decision is always false).
           if [ "${TEXT_ONLY:-}" = true ]; then
             matrix='[1]'
             echo "a text-only change: one shard, for vitest related"
@@ -1074,6 +1263,34 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: community-pg says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       # One commit, not all history. A shard reads nothing older than HEAD but
       # the newest release tag (next step). `fetch-depth: 0` fetched every branch
       # and tag, and on 2026-11-03 that took up to 15.6 minutes (DOR-3769).
@@ -1084,6 +1301,8 @@ jobs:
       # saves its credential (DOR-3343).
       - uses: actions/checkout@v7
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -1304,24 +1523,55 @@ jobs:
       # Gated in the script, not with a step `if:`, so a skipped build can
       # never look like a passed one: the pull request leg builds its own set
       # further down.
+      #
+      # A queue entry with a selected plan (DOR-5130) builds only what its
+      # planned suites import, the same filters the sweep below runs with.
       - name: Build what the suites import, once, with no test arguments
         id: deps
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
+          SCOPE: ${{ needs.test-shard-count.outputs.scope }}
+          PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
         run: |
           if [ "$EVENT" = 'pull_request' ] || [ "${TEXT_ONLY:-}" = true ]; then
             echo 'the pull request leg and the text-only lane build their own set, inside their steps below.'
             exit 0
           fi
-          bash scripts/build-test-deps.sh
+          filters=()
+          if [ "$EVENT" = 'merge_group' ] && [ "${SCOPE:-}" = 'selected' ]; then
+            for package in $PACKAGES; do filters+=("--filter=$package"); done
+            [ ${#filters[@]} -gt 0 ] || { echo '::error::the queue plan is selected but names no package; refusing to build (and test) everything under a plan that says otherwise.'; exit 1; }
+          fi
+          bash scripts/build-test-deps.sh "${filters[@]}"
 
+      # THE QUEUE RUNS ITS PLAN (DOR-5130). On `merge_group` with a `selected`
+      # plan the same line runs with one `--filter` per planned suite: the
+      # retry budget, the reporters, the quarantine gate and both execution
+      # proofs stay, and the proofs check the planned set instead of every
+      # package. Every other full-sweep event (the push run on main, the
+      # canary, a pull request into release/) has no plan and runs everything.
       - name: Run every package's test suite (shard ${{ matrix.shard }}/${{ strategy.job-total }})
         id: sweep
         if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          SCOPE: ${{ needs.test-shard-count.outputs.scope }}
+          PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 --only -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          filters=()
+          if [ "$EVENT" = 'merge_group' ] && [ "${SCOPE:-}" = 'selected' ]; then
+            for package in $PACKAGES; do filters+=("--filter=$package"); done
+            if [ ${#filters[@]} -eq 0 ]; then
+              echo '::error::the queue plan is selected but names no package; refusing to run everything under a plan that says otherwise.'
+              exit 1
+            fi
+            echo "queue plan: running the ${#filters[@]} suite(s) this entry can reach: $PACKAGES"
+          else
+            echo "$EVENT run: every package's suite"
+          fi
+          pnpm exec turbo test --summarize --continue --concurrency=1 --only "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -1389,7 +1639,7 @@ jobs:
             echo "A text-only change, so the affected suites did not run here; vitest related runs below instead."
             run=false
           elif [ "${TESTS:-}" = false ]; then
-            echo "Only changelog, docs or version lines changed, so the shards did not run here. The merge queue runs the full suite."
+            echo "Only changelog, docs or version lines changed, so the shards did not run here. Main runs the full suite after merge."
             run=false
           else
             echo "test-shard-count answered '${TESTS:-}' (anything but 'false' runs): running the shards"
@@ -1502,9 +1752,24 @@ jobs:
       # on an absent summary, and "loosen it until the affected sweep passes"
       # is exactly the weakening its header refuses. The PR leg gets no
       # execution proof because it never had one.
+      #
+      # The queue's planned set (DOR-5130): on `merge_group` with a `selected`
+      # plan, --packages names the planned directories and the proof requires
+      # exactly those, no fewer and no others. Every other run proves the
+      # whole monorepo, as before.
       - name: Prove the suite actually executed
         if: ${{ success() && (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) }}
-        run: bash scripts/assert-tests-executed.sh
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          SCOPE: ${{ needs.test-shard-count.outputs.scope }}
+          DIRS: ${{ needs.test-shard-count.outputs.dirs }}
+        run: |
+          if [ "$EVENT" = 'merge_group' ] && [ "${SCOPE:-}" = 'selected' ]; then
+            tr -s ' ' '\n' <<<"${DIRS:-}" > "$RUNNER_TEMP/planned-packages.txt"
+            bash scripts/assert-tests-executed.sh --packages "$RUNNER_TEMP/planned-packages.txt"
+          else
+            bash scripts/assert-tests-executed.sh
+          fi
 
       # The price of the retry on the suite line above: every test it absorbed
       # is named here, in the log, in the job summary, and as a `::warning`
@@ -1661,7 +1926,8 @@ jobs:
       # which under `--only` holds no build task (DOR-4625).
       - name: Keep only this run's build entries in the turbo cache
         id: trim
-        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'push' && matrix.shard == 1 }}
+        # Never from a bisect run: its tree is not main's head, whose sha keys the save.
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'push' && matrix.shard == 1 && !inputs.bisect_sha }}
         env:
           BUILD_SUMMARY: ${{ steps.deps.outputs.summary }}
         run: |
@@ -1761,8 +2027,38 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: community-pg says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           fetch-depth: 1
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
@@ -1803,8 +2099,9 @@ jobs:
             turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
 
       # Writes the file list and the packages holding them, and run=true|false.
-      # No `if:`, so it decides on every event; only a pull request whose plan
-      # leaves those packages out, or that changes no code, can say false.
+      # No `if:`, so it decides on every event; only a pull request or a queue
+      # entry (DOR-5130) whose plan leaves those packages out, or a pull request
+      # that changes no code, can say false.
       - name: Decide which binary suites run
         id: plan
         env:
@@ -1835,14 +2132,14 @@ jobs:
           elif [ "$EVENT" = 'pull_request' ] && [ "${TESTS:-}" = false ]; then
             run=false
             echo "only changelog, docs or version lines changed, so the shards run no suite here and neither does this job."
-          elif [ "$EVENT" = 'pull_request' ] && [ "$SCOPE" = 'selected' ]; then
+          elif { [ "$EVENT" = 'pull_request' ] || [ "$EVENT" = 'merge_group' ]; } && [ "$SCOPE" = 'selected' ]; then
             reach=false
             while IFS= read -r name; do
               case " $PACKAGES " in *" $name "*) reach=true ;; esac
             done < "$RUNNER_TEMP/binary-packages.txt"
             if [ "$reach" = false ]; then
               run=false
-              echo "this pull request's test plan reaches none of those packages, so the shards would not have run these either."
+              echo "this $EVENT's test plan reaches none of those packages, so the shards would not have run these either."
             fi
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -1914,9 +2211,17 @@ jobs:
           fi
           exit 0
 
+      # A queue entry whose plan reaches no binary suite (DOR-5130) ran
+      # nothing, so there is no report to read and nothing to excuse.
       - name: Refuse any failure the quarantine lane does not cover
         if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        env:
+          RUN: ${{ steps.plan.outputs.run }}
         run: |
+          if [ "$RUN" != true ]; then
+            echo 'nothing ran here (see "Decide which binary suites run"), so there is nothing to gate.'
+            exit 0
+          fi
           args=()
           while IFS= read -r report; do args+=(--reports "$report"); done < <(
             find apps packages -mindepth 2 -maxdepth 2 \
@@ -2036,8 +2341,38 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: community-pg says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v7
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7.1.0
@@ -2276,8 +2611,41 @@ jobs:
       # Shallow: this job reads scripts/ and the package manifests, nothing
       # that needs history or tags. (The DOR-884/DOR-339 tag reasoning lives on
       # the shard job's checkout, which is where the suites run.)
+      # The fan-in runs scripts from the tree it checks out, so it validates a
+      # bisect sha itself rather than trusting the legs (Security, #4442). No if:
+      # it runs on every event and is a no-op unless bisect_sha is set.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v7
         if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
 
       # ---- merge_group leg: the union check ----
       - uses: actions/download-artifact@v8
@@ -2361,10 +2729,34 @@ jobs:
       # (DOR-4190): the shards exclude them, so the per-package check above
       # them cannot see one go missing; test-binary and codex-sandbox upload
       # what they collected as shard-files-binary and shard-files-codex.
+      #
+      # THE QUEUE'S PLANNED SET (DOR-5130). On `merge_group` with a `selected`
+      # plan, the union must cover every PLANNED package (--packages, the
+      # directories test-shard-count planned), and the binary files it requires
+      # by name are those inside planned packages. The push run on main, the
+      # canary and a pull request into release/ have no plan and still prove
+      # every package and every binary suite.
       - name: Prove the shards' union covers every package
         if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          SCOPE: ${{ needs.test-shard-count.outputs.scope }}
+          DIRS: ${{ needs.test-shard-count.outputs.dirs }}
         run: |
+          set -o pipefail
           git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts' > "$RUNNER_TEMP/binary-test-files.txt"
+          planned=()
+          if [ "$EVENT" = 'merge_group' ] && [ "${SCOPE:-}" = 'selected' ]; then
+            tr -s ' ' '\n' <<<"${DIRS:-}" | { grep -v '^$' || true; } > "$RUNNER_TEMP/planned-packages.txt"
+            echo "queue plan: proving the union over the planned packages: ${DIRS:-}"
+            : > "$RUNNER_TEMP/binary-planned.txt"
+            while IFS= read -r dir; do
+              awk -v d="$dir/" 'index($0, d) == 1' "$RUNNER_TEMP/binary-test-files.txt" >> "$RUNNER_TEMP/binary-planned.txt"
+            done < "$RUNNER_TEMP/planned-packages.txt"
+            mv "$RUNNER_TEMP/binary-planned.txt" "$RUNNER_TEMP/binary-test-files.txt"
+            planned=(--packages "$RUNNER_TEMP/planned-packages.txt")
+          fi
           bash scripts/assert-shard-union.sh \
+            "${planned[@]}" \
             --quarantined "$RUNNER_TEMP/quarantine.txt" \
             --require-files "$RUNNER_TEMP/binary-test-files.txt" shard-files

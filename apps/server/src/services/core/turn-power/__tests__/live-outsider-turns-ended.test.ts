@@ -13,6 +13,7 @@ import {
   marksEndedSince,
   noteReadMark,
   resetLiveOutsiderTurns,
+  runningMarksOf,
 } from '../live-outsider-turns.js';
 import {
   clearTestHomes,
@@ -30,6 +31,17 @@ describe('marksEndedSince', () => {
   afterEach(() => {
     resetLiveOutsiderTurns();
     clearTestHomes();
+  });
+
+  it('a read with no agent takes the agent a later read in the turn names', () => {
+    noteReadMark('chat-3', undefined);
+    expect(runningMarksOf(WREN)).toEqual([]);
+    noteReadMark('chat-3', WREN);
+    expect(runningMarksOf(WREN).some((m) => m.outsider === true)).toBe(true);
+    noteReadMark('chat-3', WREN);
+    expect(runningMarksOf(WREN)).toHaveLength(1);
+    endReadMark('chat-3');
+    expect(runningMarksOf(WREN)).toEqual([]);
   });
 
   it('counts a tool-read mark once its turn has ended', () => {

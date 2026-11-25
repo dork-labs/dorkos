@@ -320,11 +320,10 @@ describe('a turn', () => {
 
   it('puts the required folder change in the metadata refusal headline', async () => {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-metadata-error-')));
-    const cwd = path.join(root, 'project');
+    const cwd = path.join(root, 'project', '.git', 'modules', 'side');
     const data = path.join(root, 'data');
     const home = path.join(root, 'home');
-    for (const folder of [cwd, data, home]) fs.mkdirSync(folder);
-    fs.writeFileSync(path.join(cwd, '.git'), 'not a Git pointer');
+    for (const folder of [cwd, data, home]) fs.mkdirSync(folder, { recursive: true });
     try {
       const h = harness();
       const events = await h.run(
@@ -347,7 +346,7 @@ describe('a turn', () => {
       expect(events[0]).toMatchObject({
         data: {
           code: 'codex_git_metadata_unavailable',
-          message: 'Codex can’t protect this folder’s Git files. Choose another folder.',
+          message: 'Codex can’t work inside a Git folder. Choose the project folder instead.',
         },
       });
       expect(

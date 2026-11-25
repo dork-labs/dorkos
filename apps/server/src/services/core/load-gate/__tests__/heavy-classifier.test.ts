@@ -144,6 +144,15 @@ describe('classifyCommand, through prefixes and shells', () => {
   });
 });
 
+describe('a command after a heredoc', () => {
+  it('is classified on its own', () => {
+    expect(classifyCommand("cat > notes.md <<'EOF'\nhi\nEOF\npnpm verify")).toEqual({
+      heavy: true,
+      reason: 'pnpm',
+    });
+  });
+});
+
 describe('a reason names the program only', () => {
   it('never carries an argument, a path or a message', () => {
     const { reason } = classifyCommand('git commit -m "fix the made-up secret thing" --author x');

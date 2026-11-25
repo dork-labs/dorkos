@@ -1741,7 +1741,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     });
   });
 
-  it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
+  // Full applies no Git rules, so it starts there (DOR-4542).
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits'] as const)(
     'refuses a writable Git repository inside a protected folder before acquisition at %s',
     async (permissionMode) => {
       const turn = request('protected-git-grant', undefined, {
@@ -1767,7 +1768,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         expect(events[0]).toMatchObject({
           data: {
             code: 'codex_git_metadata_unavailable',
-            message: 'Codex can’t protect this folder’s Git files. Choose another folder.',
+            message: expect.stringContaining('inside a protected folder on Linux'),
           },
         });
         expect(spawned).toHaveLength(count);
@@ -1943,8 +1944,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         NO_PROXY: '127.0.0.1,localhost',
       }));
       try {
+        // On macOS the profile names each secret file exactly at render (DOR-4358),
+        // so this row skips its first-turn check there by design. The secret stays
+        // for the next turn, whose render must cover it.
+        const firstTurnUnchecked = process.platform === 'darwin';
         for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
-          probe.resetLate();
+          const firstTurn = mode === 'default';
+          probe.resetLate(firstTurnUnchecked && !firstTurn);
           const snapshot = () =>
             [...protectedFiles].sort().map((file) => ({
               file,
@@ -1991,7 +1997,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
             expect(result).toContain(control);
             expect(result).toContain(skillControl);
             for (const marker of probe.attemptMarkers) expect(result).toContain(marker);
-            for (const canary of probe.canaries) expect(result).not.toContain(canary);
+            for (const canary of probe.canaries)
+              if (!(firstTurnUnchecked && firstTurn && canary === probe.lateCanary))
+                expect(result, canary).not.toContain(canary);
             expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
             expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
             expect(snapshot()).toEqual(before);

@@ -67,6 +67,15 @@ describe('resolvePermission precedence', () => {
     expect(r).toMatchObject({ state: 'ask', source: 'preset', layer: 'default' });
   });
 
+  it('marks an action-level answer, and only that, as action-level', () => {
+    expect(resolvePermission(input({ config })).actionLevel).toBe(true);
+    expect(resolvePermission(input({ agent, config })).actionLevel).toBe(true);
+    const area = { ...config, defaults: { areas: defaults.areas, actions: {} } };
+    expect(resolvePermission(input({ config: area })).actionLevel).toBeUndefined();
+    const preset = { preset: 'careful' as const, defaults: EMPTY };
+    expect(resolvePermission(input({ config: preset })).actionLevel).toBeUndefined();
+  });
+
   it('inside the agent layer, the action beats the area', () => {
     const r = resolvePermission(
       input({ agent: { areas: { rooms: 'blocked' }, actions: { 'rooms.create': 'allowed' } } })

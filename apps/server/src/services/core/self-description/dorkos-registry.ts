@@ -49,6 +49,7 @@ import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
+import { runsDomain } from '../../runs/run-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
@@ -129,6 +130,9 @@ export function composeDorkOsCapabilityRegistry(
   // Unconditional too: `end_beat` needs no service handle, and outside a beat
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
+  // Unconditional too: a chat's runs are read from the run record every server
+  // keeps, and before startup wires it the read says DorkOS is still starting.
+  domains.push(runsDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
   // reads read the filesystem and process-wide stores every server has, so
   // their paths answer wherever the hand routes used to.
@@ -205,6 +209,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     instructionsDomain,
     permissionsDomain,
     heartbeatDomain,
+    runsDomain,
     directoryDomain,
     diffDomain,
     workspacesDomain,

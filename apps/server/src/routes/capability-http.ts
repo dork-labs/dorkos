@@ -77,6 +77,8 @@ export const HAND_SERVED_CAPABILITIES: Readonly<Record<string, string>> = Object
 export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.freeze({
   'GET /api/sessions/running skips ALL /api/sessions/:id/*':
     'The session read guard acts only on a session id, and `running` is not one.',
+  'GET /api/sessions/:id/runs skips ALL /api/sessions/:id/*':
+    '`runs.chat_runs` folds the session read guard in: an agent gets 404 for a chat it may not read.',
 });
 
 /** What a declared path answers when its capability did not start on this server. */
@@ -205,6 +207,7 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
         id: served.id,
         input: requestInput(c, surface),
         ...(surface.success ? { success: surface.success } : {}),
+        rest: true,
       });
     };
     MOUNT_HANDLERS.add(handler);

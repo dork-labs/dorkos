@@ -17,6 +17,10 @@ import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.j
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
 import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
 import { gitMetadataReadRules } from './git-metadata.js';
+import { codexExactKeys, codexGlobLiteral, type CodexFilesystemValue } from './codex-path-keys.js';
+import { expandDeepGlobs } from './expand-deep-globs.js';
+import { withMacKnownSecrets } from './mac-known-secrets.js';
+import { noteRenderedSecrets } from './secret-file-activity.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -33,9 +37,13 @@ export interface CodexFilePolicy {
 function protectedEntries(
   { roots, writable }: CodexFilePolicy,
   onMissingTargets?: (targets: string[]) => void,
-  metadataFolders: readonly string[] = []
-): Record<string, 'read' | 'deny'> {
+  metadataFolders: readonly string[] = [],
+  linuxBelowFull = false,
+  sessionId?: string
+): Record<string, CodexFilesystemValue> {
   const entries: Record<string, 'read' | 'deny'> = {};
+  // The keys built as globs; any other key is an exact path, whatever it holds.
+  const globs = new Set<string>();
   // Codex's rg and internal walkers disagree on fixed-depth glob suffixes.
   // Capture existing homes literally; a new home is protected on next render.
   // Only directory Dirents are included; symlink entries are not followed.
@@ -95,7 +103,13 @@ function protectedEntries(
       // provable blocking literal here, preserving the stronger rule on the
       // file itself. Active-home failures become the same typed refusal.
       const [target] = Object.keys(
-        collapseProtectedPaths({ [file]: 'read' }, collapseBases, undefined, canProtectBlocking)
+        collapseProtectedPaths(
+          { [file]: 'read' },
+          collapseBases,
+          undefined,
+          canProtectBlocking,
+          () => false
+        )
       );
       return isProtectedPath(target!, 'read', roots);
     }
@@ -134,22 +148,27 @@ function protectedEntries(
             'Codex cannot protect files from a filesystem root. Choose a folder inside it.'
           );
         const nested = entry.root === 'anywhere' || entry.root === 'agent-folder';
-        const file = path
-          .join(spelling, ...(nested ? ['**'] : []), entry.path)
-          .split(path.sep)
-          .join('/');
+        const glob = nested || /[*?[\]{}]/.test(entry.path);
+        const slashed = spelling.split(path.sep).join('/');
+        // A glob's fixed part is escaped, so a folder like `site [old]` is matched as written.
+        const file = glob
+          ? [codexGlobLiteral(slashed, linuxBelowFull), ...(nested ? ['**'] : []), entry.path].join(
+              '/'
+            )
+          : path.join(spelling, entry.path).split(path.sep).join('/');
         // The pinned binary only supports deny access on wildcard paths.
         // Broader refusal preserves the shared policy where read-only cannot be expressed.
         const access =
-          entry.deny === 'read' ||
-          file.includes('*') ||
-          protectedRead(file) ||
-          entries[file] === 'deny'
+          entry.deny === 'read' || glob || protectedRead(file) || entries[file] === 'deny'
             ? 'deny'
             : 'read';
         entries[file] = access;
+        if (glob) globs.add(file);
         // A glob matching the folder itself does not cover files already inside it.
-        if (entry.kind === 'folder' && file.includes('*')) entries[`${file}/**`] = 'deny';
+        if (entry.kind === 'folder' && glob) {
+          entries[`${file}/**`] = 'deny';
+          globs.add(`${file}/**`);
+        }
       }
   }
   const missing = new Set<string>();
@@ -162,17 +181,38 @@ function protectedEntries(
     (target) => missing.add(target),
     // No rule is dropped: foreign or live listed blockers become exact
     // protected files. The current home/cwd keeps the folder refusal.
-    canProtectBlocking
+    canProtectBlocking,
+    (key) => globs.has(key)
   );
   onMissingTargets?.([...missing]);
   // `:workspace` also opens /tmp and $TMPDIR (what os.tmpdir() reads) for
   // writes, so they count as opened too.
   const tmp = [...new Set(['/tmp', os.tmpdir()])];
-  return keepScansOutOfHiddenFolders(collapsed, [
+  const scanned = keepScansOutOfHiddenFolders(collapsed, [
     ...activeFolders,
     ...writable.flatMap(spellings),
     ...tmp.flatMap(spellings),
   ]);
+  // macOS only: a deep glob would stop every folder under its base being
+  // removed or renamed (DOR-4358), so name the matches instead, each as a glob
+  // for that one path. The working folders are scanned now; every other base in
+  // the background. A file that appeared since the chat's last render gets an
+  // Activity line.
+  const platform = process.platform;
+  const exact = new Map<string, ReadonlySet<string>>();
+  const expanded = expandDeepGlobs(scanned, {
+    platform,
+    working: [...activeFolders, ...writable.flatMap(spellings)],
+    onExact: (base, keys) => exact.set(base, keys),
+  });
+  if (platform === 'darwin' && sessionId !== undefined) noteRenderedSecrets(sessionId, exact);
+  const finished = withMacKnownSecrets(expanded, {
+    homes: spellings(roots.home),
+    data: roots.data,
+    platform,
+  });
+  // The scan, expansion and sign-in steps add only glob keys.
+  return codexExactKeys(finished, (key) => globs.has(key) || !(key in collapsed));
 }
 
 /**
@@ -188,16 +228,29 @@ export function codexProtectedConfig(
   cwd: string,
   policy: CodexFilePolicy = { roots: turnProtectedRoots(cwd), writable: [] },
   settings: Pick<SessionSettings, 'permissionMode'> = {},
-  onMissingTargets?: (targets: string[]) => void
+  onMissingTargets?: (targets: string[]) => void,
+  sessionId?: string
 ): NonNullable<CodexOptions['config']> {
-  const metadataRules = gitMetadataReadRules([cwd, ...policy.writable], policy.roots);
+  const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
+  const metadataRules = gitMetadataReadRules([cwd, ...policy.writable], policy.roots, {
+    enforced: mode !== 'danger-full-access',
+    // `:workspace` writes: the cwd, the writable folders, /tmp and $TMPDIR.
+    writable: mode === 'workspace-write' ? [cwd, ...policy.writable, '/tmp', os.tmpdir()] : [],
+  });
   // Linked worktree metadata can sit outside every active folder. Reuse the
   // shared anywhere-secret rules there too, without granting directory writes.
   const metadataFolders = Object.keys(metadataRules).filter((file) =>
     fs.statSync(file).isDirectory()
   );
-  const protectedFiles = protectedEntries(policy, onMissingTargets, metadataFolders);
-  const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
+  // Measured in CI: bubblewrap below Full misses an escaped glob over such a path.
+  const linuxBelowFull = process.platform === 'linux' && mode !== 'danger-full-access';
+  const protectedFiles = protectedEntries(
+    policy,
+    onMissingTargets,
+    metadataFolders,
+    linuxBelowFull,
+    sessionId
+  );
   const profile = codexPermissionProfile(settings);
   return {
     // Codex rebuilds this layer without the request's selection (ChatGPT
@@ -223,7 +276,7 @@ export function codexProtectedConfig(
               )
             : {}),
           // Explicit restrictions also hold when /tmp is a broader writable root.
-          ...(mode !== 'danger-full-access' ? metadataRules : {}),
+          ...(mode !== 'danger-full-access' ? codexExactKeys(metadataRules) : {}),
           ...protectedFiles,
         },
         ...(mode === 'workspace-write'

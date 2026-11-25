@@ -21,6 +21,7 @@ import type { ComposerInputHandle } from '@/layers/features/composer';
 import { Conversation, useConversation } from '@/layers/features/conversation';
 import { SessionAsks } from './SessionAsks';
 import { SessionPausedQueueNotice } from './SessionPausedQueueNotice';
+import { RestoredDraftNotice } from './RestoredDraftNotice';
 import { useSessionPausedComposer } from '../model/use-session-paused-composer';
 import {
   BackgroundTaskBar,
@@ -706,6 +707,10 @@ export function SessionComposer({
       }
       aboveInput={
         <>
+          {/* Words a restart handed back sit in the box below; this says so (§7.4). */}
+          {pausedComposer.restoredDraft && (
+            <RestoredDraftNotice onDiscard={pausedComposer.restoredDraft.discard} />
+          )}
           {currentAgent && (
             <SessionPausedQueueNotice
               sessionId={sessionId}

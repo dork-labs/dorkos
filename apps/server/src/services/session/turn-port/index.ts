@@ -11,7 +11,11 @@
  *
  * @module services/session/turn-port
  */
+import type { ChatRun } from '@dorkos/shared/run-schemas';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { getMessageQueueStore } from '../message-queue-store.js';
+import { peekProjector } from '../session-state-projector.js';
+import { queueKeyOf } from '../resolution/session-key-registry.js';
 
 export {
   isRunHeld,
@@ -39,4 +43,34 @@ export { isAgentLaunchCapFull } from '../launch/launch-cap.js';
  */
 export function queueRowExists(queueMessageId: string): boolean {
   return getMessageQueueStore()?.get(queueMessageId) !== undefined;
+}
+
+/**
+ * The ids of a chat's rows waiting in line, head first: what a waiting run's
+ * place in line is read from (spec §4.6), never stored twice.
+ *
+ * @param chatKey - The chat, by any id it answers to.
+ */
+export function waitingRowOrder(chatKey: string): string[] {
+  return (getMessageQueueStore()?.list(queueKeyOf(chatKey)) ?? []).map((row) => row.id);
+}
+
+/**
+ * Put a chat's runs on its durable stream as one `run_update` (spec §4.6).
+ * Only the run record calls this, after the write that changed a run: the
+ * computer face carries the event to the chat's stream and decides nothing.
+ * A no-op when nobody watches the chat; the next snapshot reads the record.
+ *
+ * @param chatKey - The chat, by any id it answers to.
+ * @param runs - The chat's runs as every device reads them, read only when someone watches.
+ */
+export function emitRunUpdate(chatKey: string, runs: () => ChatRun[]): void {
+  const projector = peekProjector(queueKeyOf(chatKey));
+  if (!projector) return;
+  // Narrowed member by member: `Omit<SessionEvent, 'seq'>` keeps only the union's shared keys.
+  const event: Omit<Extract<SessionEvent, { type: 'run_update' }>, 'seq'> = {
+    type: 'run_update',
+    runs: runs(),
+  };
+  projector.ingest(event);
 }

@@ -150,6 +150,18 @@ const RUNNERS = new Set([
   'parallel',
 ]);
 
+/** A redirection operator written on its own; the next word is its target. */
+const BARE_REDIRECTION = /^(\d*[<>]+[-|&]?|&>>?)$/;
+
+/** A write redirection with its target attached (`>f`, `2>>f`, `&>f`). */
+const ATTACHED_WRITE = /^(?:\d*>>?\|?|&>>?)([^&].*)$/;
+
+/** A "script file" that is really stdin. */
+const STDIN_DEVICE = /^\/dev\/(stdin|fd\/\d+)$|^\/proc\/self\/fd\/\d+$/;
+
+/** Shell options that take the next word as their value (not a script file). */
+const SHELL_FLAGS_WITH_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
+
 /** Commands that execute text fed to them on stdin or as their argument. */
 const STDIN_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish', 'eval', 'source', '.']);
 
@@ -216,6 +228,12 @@ function checkVitest(args, fed = false, cwd = process.cwd()) {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--') continue;
+    // A redirection is the shell's, not vitest's: `2>&1`, `>out.txt`, `&> log`,
+    // `2> err.txt`. A bare operator takes the next word as its target.
+    if (/^(\d*[<>]|&>)/.test(arg)) {
+      if (/^(\d*[<>]+|&>>?|\d*>&)$/.test(arg)) index++;
+      continue;
+    }
     if (arg.startsWith('-')) {
       if (VITEST_FLAGS_WITH_VALUE.has(arg)) index++;
       continue;
@@ -495,13 +513,76 @@ function cdTarget(from, target) {
 }
 
 /**
- * Whether a segment hands text to a shell (a shell word is one of its tokens).
+ * Whether a segment hands TEXT to a shell: `bash -c`, `bash -s`, `eval`, or a
+ * shell reading stdin (piped into, `bash <<EOF`). `bash <script file>` runs a
+ * file and does not count (Nov 25: it unmasked quoted heredoc bodies on the
+ * same line, so a PR body that mentioned `pnpm vitest run` was refused).
  *
  * @param {string} segment - One command segment.
  * @returns {boolean} True when the segment runs text through a shell.
  */
-function feedsAShell(segment) {
-  return tokenize(segment).some((token) => STDIN_SHELLS.has(basename(token)));
+function feedsAShell(segment, written = new Set()) {
+  const tokens = tokenize(segment);
+  return tokens.some((token, index) => {
+    const name = basename(token);
+    if (!STDIN_SHELLS.has(name)) return false;
+    // `eval` always runs text; `source`/`.` run a file named next, or stdin.
+    if (name === 'eval') return true;
+    const rest = tokens.slice(index + 1);
+    // `bash -c …`, `bash -lc …`, `bash -s`: text from an argument or stdin.
+    if (rest.some((arg) => /^-[a-zA-Z]*[cs][a-zA-Z]*$/.test(arg))) return true;
+    // The first word that is not a flag, a flag's value (`-o pipefail`, `-O
+    // extglob`, `+o`, `+O`, `--rcfile f`, `--init-file f`) or a redirection and
+    // its target is the script file. It still counts as text when it is stdin
+    // (`/dev/stdin`, `/dev/fd/0`), a process substitution (`<(…)`), or a file
+    // this same line writes (`cat > m.sh <<'EOF' … bash m.sh`). No file at all:
+    // the shell reads stdin (piped into, `bash <<EOF`).
+    for (let k = 0; k < rest.length; k++) {
+      const arg = rest[k];
+      if (arg.startsWith('<(')) return true;
+      if (SHELL_FLAGS_WITH_VALUE.has(arg) || BARE_REDIRECTION.test(arg)) {
+        k++;
+        continue;
+      }
+      if (/^[-+]/.test(arg) || /^(\d*[<>]|&>)/.test(arg)) continue;
+      return STDIN_DEVICE.test(arg) || written.has(path.normalize(arg));
+    }
+    return true;
+  });
+}
+
+/**
+ * The files a line writes through a redirection (`> f`, `>>f`, `&> f`) or
+ * `tee`, so `bash f` on the same line counts as running text from the line.
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {Set<string>} Normalized paths the line writes.
+ */
+function writtenFiles(segments) {
+  const written = new Set();
+  for (const segment of segments) {
+    const tokens = tokenize(segment);
+    const tee = tokens.findIndex((token) => basename(token) === 'tee');
+    tokens.forEach((token, index) => {
+      let target = /^(\d*>>?\|?|&>>?)$/.test(token)
+        ? tokens[index + 1]
+        : (ATTACHED_WRITE.exec(token)?.[1] ?? null);
+      if (tee !== -1 && index > tee && !token.startsWith('-')) target = token;
+      if (target) written.add(path.normalize(target));
+    });
+  }
+  return written;
+}
+
+/**
+ * Whether any segment of a line hands text to a shell (`feedsAShell`).
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {boolean} True when the line runs text through a shell.
+ */
+function lineFeedsAShell(segments) {
+  const written = writtenFiles(segments);
+  return segments.some((segment) => feedsAShell(segment, written));
 }
 
 /** Shell operators that end one command, longest first. */
@@ -550,7 +631,7 @@ function commandSegments(command, strict) {
     }
   }
   keep(start, masked.length);
-  return segments.some(feedsAShell) ? splitSegments(command) : segments;
+  return lineFeedsAShell(segments) ? splitSegments(command) : segments;
 }
 
 /**
@@ -580,12 +661,28 @@ function inspectCommand(command, depth = 0, strict = false, ctx = {}) {
     if (found) return found;
   }
   if (depth < 2) {
-    for (const body of extractSubstitutions(command)) {
+    for (const body of extractSubstitutions(substitutionText(command, strict))) {
       const found = inspectCommand(body, depth + 1, strict, ctx);
       if (found) return found;
     }
   }
   return null;
+}
+
+/**
+ * The text to read `$(…)` and backtick substitutions from: the line with its
+ * quoted heredoc bodies and single-quoted text masked, unless a shell will
+ * execute that text (then every substitution in it is live).
+ *
+ * @param {string} command - Raw command line.
+ * @param {boolean} strict - True when a shell will execute this text.
+ * @returns {string} The text to scan.
+ */
+function substitutionText(command, strict) {
+  if (strict) return command;
+  const masked = maskUnexpandedText(command);
+  if (masked === null) return command;
+  return lineFeedsAShell(splitSegments(command)) ? command : masked;
 }
 
 /**

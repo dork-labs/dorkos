@@ -27,6 +27,7 @@
 import { ulid } from 'ulidx';
 import {
   and,
+  desc,
   isNull,
   eq,
   inArray,
@@ -42,93 +43,19 @@ import {
   type Db,
   type TurnRunRow,
 } from '@dorkos/db';
-import {
-  canTransition,
-  type AttemptReason,
-  type RunEnding,
-  type RunStatus,
-  type TurnOrigin,
-  type WaitReason,
-} from '@dorkos/shared/turn-port';
-import type { InterruptReceipt, SessionLaunchWarning } from '@dorkos/shared/schemas';
+import { canTransition, type RunStatus, type TurnOrigin } from '@dorkos/shared/turn-port';
 import { chatKeyOf } from '../session/turn-port/index.js';
 import { patchColumns, toRun } from './run-rows.js';
+import type { RunEndingDetail, TurnRun } from './run-types.js';
 
 export { isUniqueViolation } from './run-rows.js';
+export type { RunEndingDetail, RunStopRequest, TurnRun } from './run-types.js';
 
 /** How long a live run's lease lasts after each renewal (§4.1, §7.1). */
 export const RUN_LEASE_MS = 60_000;
 
 /** How often the owner renews the leases of its live runs (§4.1). */
 export const RUN_LEASE_RENEW_MS = 20_000;
-
-/** One stop asked of a run, written when it is asked (§4.4). */
-export interface RunStopRequest {
-  /** When it was asked, ISO 8601. */
-  at: string;
-  /** Who asked, as a `dork:` reference, when the asker is known. */
-  by?: string;
-  /** Which door asked: the Stop button or a pause. */
-  via: 'stop' | 'pause';
-  /** What its receipt said, once it came. */
-  outcome?: InterruptReceipt['outcome'];
-}
-
-/**
- * What `ending_detail` holds (§4.1): never transcript text, only what DorkOS
- * observed about how the run ended or why it never started.
- */
-export interface RunEndingDetail {
-  /** Every stop asked of the run, in order. */
-  stopRequests?: RunStopRequest[];
-  /** The runtime's own words when it refused the turn (DOR-2994). */
-  refusal?: string;
-  /** The run ended before the runtime read its words, so nobody knows if it did. */
-  delivery?: 'unknown';
-  /** Why a run that never started was cancelled. */
-  cancelledBecause?: string;
-  /** A private message's attempt whose outcome nobody can know (§4.7). */
-  outcomeUnknown?: true;
-}
-
-/** A run as the store answers it: the record's fields, in the port's types. */
-export interface TurnRun {
-  id: string;
-  /** The chat, by the id its queue rows are kept under. */
-  sessionId: string;
-  chatSeq: number;
-  chainId: string;
-  agentId: string | null;
-  /** What started it; `null` for a runtime's own turn or an unrecorded caller. */
-  origin: TurnOrigin | null;
-  openedBy: 'caller' | 'runtime' | 'recovery';
-  status: RunStatus;
-  waitReason: WaitReason | null;
-  attempt: number;
-  attemptReason: AttemptReason;
-  queueMessageId: string | null;
-  /** Where the words wait when they are not in the queue (`<kind>:<id>`, §4.1). */
-  sourceRef: string | null;
-  /** Epoch ms: a run still waiting past this is cancelled as `expired`. */
-  notAfter: number | null;
-  /** What the launch owed a person to know, from its `started` fact (T3 shows them). */
-  warnings: SessionLaunchWarning[];
-  runtime: string | null;
-  runtimeTurnRef: number | null;
-  turnBindingId: string | null;
-  ownerEpoch: string | null;
-  leaseUntil: number | null;
-  waitingOnPerson: boolean;
-  ending: RunEnding | null;
-  endingDetail: RunEndingDetail;
-  createdAt: string;
-  startedAt: string | null;
-  deliveredAt: string | null;
-  endedAt: string | null;
-  /** When recovery decided what follows this run; empty until it has. */
-  recoveryDecidedAt: string | null;
-  settledAt: string | null;
-}
 
 /**
  * Whether a run's ending waits on recovery before anything may follow it: a
@@ -229,6 +156,13 @@ export interface RunStoreOptions {
    * settles, goes back to `pending`, or wakes its chat's waiting starts (§6.2).
    */
   onMoved?: (run: TurnRun, from: RunStatus) => void;
+  /**
+   * Called when a chat's runs read differently without a status move (§4.6,
+   * `run_update`): a run created, a column annotated, runs moved to another
+   * chat, or {@link noteChatChanged}. Inside the write's transaction; with the
+   * chat, by the id its queue rows are kept under.
+   */
+  onChanged?: (chatKey: string) => void;
 }
 
 /** The run record over the machine store's `turn_runs` table. */
@@ -320,6 +254,35 @@ export class RunStore {
     return this.rawListForChat(chatKeyOf(chatKey));
   }
 
+  /**
+   * Many chats' runs in one read, oldest first, each list under the id it was
+   * asked by: what a reader of a whole tree of chats asks.
+   *
+   * @param chatKeys - The chats.
+   */
+  listForChats(chatKeys: readonly string[]): Map<string, TurnRun[]> {
+    const askedBy = new Map<string, string[]>();
+    for (const id of new Set(chatKeys)) {
+      const key = chatKeyOf(id);
+      askedBy.set(key, [...(askedBy.get(key) ?? []), id]);
+    }
+    const found = new Map<string, TurnRun[]>(chatKeys.map((id) => [id, []]));
+    const keys = [...askedBy.keys()];
+    for (let i = 0; i < keys.length; i += 500) {
+      const rows = this.db
+        .select()
+        .from(turnRuns)
+        .where(inArray(turnRuns.sessionId, keys.slice(i, i + 500)))
+        .orderBy(turnRuns.chatSeq)
+        .all();
+      for (const row of rows) {
+        const run = toRun(row);
+        for (const id of askedBy.get(row.sessionId) ?? []) found.get(id)!.push(run);
+      }
+    }
+    return found;
+  }
+
   /** A chat's runs under exactly this id, oldest first. */
   private rawListForChat(chatKey: string): TurnRun[] {
     return this.db
@@ -329,6 +292,42 @@ export class RunStore {
       .orderBy(turnRuns.chatSeq)
       .all()
       .map(toRun);
+  }
+
+  /**
+   * What every device is shown of a chat (§4.6), as the record stands: its
+   * waiting and live runs, oldest first, and the run that ended last with
+   * whether a later run continues it. Reads only; {@link liveRunOf} retires.
+   *
+   * @param chatId - The chat, by any id it has had.
+   */
+  shownRunsOf(chatId: string): { open: TurnRun[]; lastEnded?: TurnRun; continued: boolean } {
+    const chatKey = chatKeyOf(chatId);
+    const open = this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(
+          eq(turnRuns.sessionId, chatKey),
+          inArray(turnRuns.status, ['queued', ...LIVE_TURN_RUN_STATUSES])
+        )
+      )
+      .orderBy(turnRuns.chatSeq)
+      .all()
+      .map(toRun);
+    const ended = this.db
+      .select()
+      .from(turnRuns)
+      .where(and(eq(turnRuns.sessionId, chatKey), inArray(turnRuns.status, ['ended', 'settled'])))
+      .orderBy(desc(turnRuns.chatSeq))
+      .get();
+    if (!ended) return { open, continued: false };
+    const next = this.db
+      .select({ id: turnRuns.id })
+      .from(turnRuns)
+      .where(eq(turnRuns.continuesRunId, ended.id))
+      .get();
+    return { open, lastEnded: toRun(ended), continued: next !== undefined };
   }
 
   /**
@@ -519,6 +518,7 @@ export class RunStore {
         })
         .run();
       if (input.status === 'queued' && input.queueMessageId === undefined) this.heldWords.add(id);
+      this.opts.onChanged?.(chatKey);
       return this.get(id)!;
     });
   }
@@ -588,6 +588,18 @@ export class RunStore {
    */
   annotate(runId: string, patch: RunPatch): void {
     this.db.update(turnRuns).set(patchColumns(patch)).where(eq(turnRuns.id, runId)).run();
+    const chatKey = this.opts.onChanged && this.get(runId)?.sessionId;
+    if (chatKey) this.opts.onChanged?.(chatKey);
+  }
+
+  /**
+   * A chat's runs read differently though no run was written: its queue was
+   * reordered, so a waiting run's place changed (§4.6, `queuePosition`).
+   *
+   * @param chatId - The chat, by any id it has had.
+   */
+  noteChatChanged(chatId: string): void {
+    this.opts.onChanged?.(chatKeyOf(chatId));
   }
 
   /** The owner columns a run gets when it goes live: this boot, leased from now. */
@@ -705,6 +717,8 @@ export class RunStore {
         .set({ sessionId: toChatKey, chatSeq: tail + 1 })
         .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, 'queued')))
         .run();
+      this.opts.onChanged?.(run.sessionId);
+      this.opts.onChanged?.(toChatKey);
     });
   }
 
@@ -741,6 +755,8 @@ export class RunStore {
           .where(eq(turnRuns.id, run.id))
           .run();
       });
+      this.opts.onChanged?.(fromChatKey);
+      this.opts.onChanged?.(toChatKey);
     });
   }
 }

@@ -57,7 +57,7 @@ describe('release-publish.yml gates npm on release-gate.sh', () => {
   it("takes P from prove's proven output and ships only on the exact line SHIP", () => {
     expect(gate).toContain('      P: ${{ needs.prove.outputs.p }}\n');
     expect(jobs.prove).toContain('      p: ${{ steps.proven.outputs.p }}\n');
-    expect(gate).toContain('      FULL_RUN_WORKFLOWS: browser-test.yml\n');
+    expect(gate).toContain('      FULL_RUN_WORKFLOWS: browser-test.yml test.yml\n');
     expect(gate).toContain('bash scripts/release-gate.sh facts "$RELEASE_VERSION" "$P" >"$facts"');
     expect(gate).toContain('decision=$(bash scripts/release-gate.sh decide "$facts")');
     expect(gate).toMatch(/if \[\[ "\$decision" != SHIP \]\]; then\n.*\n\s+exit 1\n/);
