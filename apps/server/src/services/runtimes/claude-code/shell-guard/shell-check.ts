@@ -403,13 +403,35 @@ interface WrittenWord {
   takes?: boolean;
 }
 
-/** The words of a `find` that would change files: its starting folders and what it looks for. */
-function findTargets(args: readonly string[]): string[] {
+/** The folders a `find` starts in, past the options that may come before them. */
+function findStarts(args: readonly string[]): string[] {
+  const starts: string[] = [];
+  let i = 0;
+  // Options that come before the paths: -H -L -P -E -X -s -x, `-D x`, `-O n` or `-On`, BSD's `-f path`.
+  for (; i < args.length; i++) {
+    const arg = args[i]!;
+    if (/^-[HLPEXsx]+$/.test(arg) || /^-O\d+$/.test(arg)) continue;
+    if (arg === '-D' || arg === '-O') i++;
+    else if (arg === '-f') starts.push(args[++i] ?? '');
+    else break;
+  }
+  for (; i < args.length && !args[i]!.startsWith('-') && args[i] !== '!' && args[i] !== '('; i++) {
+    starts.push(args[i]!);
+  }
+  return starts;
+}
+
+/** Whether a `find` removes what it matches: `-delete`, or an `-exec` that writes. */
+function findDeletes(args: readonly string[]): boolean {
   const execAt = args.findIndex((arg) => /^-(exec|execdir|ok|okdir)$/.test(arg));
   const execVerb = execAt === -1 ? '' : path.basename(args[execAt + 1] ?? '');
-  if (!args.includes('-delete') && !WRITERS.has(execVerb) && !INTERPRETERS.has(execVerb)) return [];
-  const firstFlag = args.findIndex((arg) => arg.startsWith('-'));
-  const starts = args.slice(0, firstFlag === -1 ? args.length : firstFlag);
+  return args.includes('-delete') || WRITERS.has(execVerb) || INTERPRETERS.has(execVerb);
+}
+
+/** The words of a `find` that would change files: its starting folders and what it looks for. */
+function findTargets(args: readonly string[]): string[] {
+  if (!findDeletes(args)) return [];
+  const starts = findStarts(args);
   const names = args.filter((_, i) => /^-i?name$/.test(args[i - 1] ?? ''));
   return [...starts, ...starts.flatMap((start) => names.map((name) => `${start}/${name}`))];
 }
@@ -437,8 +459,10 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
   const written: WrittenWord[] = segment.redirects.map((word) => plain(word));
   if (WRITERS.has(verb)) {
     written.push(...operands.map((word) => plain(word, verb === 'rm' && recursive)));
-    // `echo x | xargs rm`: the names come down the pipe.
-    if (viaXargs && previous) written.push(...previous.words.map((word) => plain(word)));
+    // `echo x | xargs rm`: the names come down the pipe; `rm -r` takes each whole (DOR-5252).
+    const piped = verb === 'rm' && recursive;
+    if (viaXargs && previous)
+      written.push(...previous.words.map((w) => ({ ...plain(w), takes: piped })));
   }
   if (COPIERS.has(verb) || verb === 'mv') {
     const last = operands.at(-1);
@@ -450,7 +474,26 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
       written.push({ ...plain(word), takes: moved.includes(word) });
     }
   }
-  if (verb === 'find') written.push(...findTargets(args).map((word) => plain(word)));
+  if (verb === 'find') {
+    written.push(...findTargets(args).map((word) => plain(word)));
+    // A delete or a writing `-exec` can take anything below each folder it starts in, `.`
+    // when it names none.
+    const starts = findStarts(args);
+    if (findDeletes(args)) {
+      written.push(...(starts.length ? starts : ['.']).map((w) => ({ ...plain(w), takes: true })));
+    }
+  }
+  if (verb === 'rsync') {
+    // `--delete` takes from where it lands, `--remove-source-files` from what it copies.
+    const landing = operands.slice(-1);
+    const taken = [
+      ...(args.some((arg) => arg.startsWith('--delete') || arg === '--del') ? landing : []),
+      ...(args.some((arg) => /^--remove-(source|sent)-files$/.test(arg))
+        ? operands.slice(0, -1)
+        : []),
+    ];
+    written.push(...taken.map((word) => ({ ...plain(word), takes: true })));
+  }
   const inPlace = /^(-[A-Za-z]*i[A-Za-z]*|--in-place(=.*)?)$/;
   if ((verb === 'sed' || verb === 'perl') && args.some((arg) => inPlace.test(arg))) {
     written.push(...operands.map((word) => plain(word)));
@@ -470,8 +513,17 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
       !rest.some((arg) => /^(--worktree|-W)$/.test(arg));
     if (sub !== undefined && GIT_WRITERS.has(sub) && !indexOnly) {
       const words = rest.filter((arg) => !arg.startsWith('-'));
+      // `git clean` takes from the folders it names, or the working folder (DOR-5252).
+      const cleaned = words.length > 1 ? words.slice(1) : ['.'];
       const taken =
-        sub === 'mv' ? words.slice(1, -1) : sub === 'rm' && recursive ? words.slice(1) : [];
+        sub === 'mv'
+          ? words.slice(1, -1)
+          : sub === 'rm' && recursive
+            ? words.slice(1)
+            : sub === 'clean'
+              ? cleaned
+              : [];
+      if (sub === 'clean' && words.length === 1) words.push('.');
       written.push(...words.map((word) => ({ ...plain(word), takes: taken.includes(word) })));
     }
   }
