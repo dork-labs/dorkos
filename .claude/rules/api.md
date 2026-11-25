@@ -30,7 +30,7 @@ router.post('/', async (c) => {
 
 ### Error Handling
 
-Every failure is an RFC 9457 problem document (`application/problem+json`), sent with `problem()` from `@dorkos/http-kit` and a code from `PROBLEM_CODE_LIST` (`packages/shared/src/problem.ts`). The full contract is the Errors section of `contributing/api-reference.md`.
+Every failure is an RFC 9457 problem document (`application/problem+json`), sent with `problem()` from `@dorkos/http-kit` and a code from `PROBLEM_CODE_LIST` (`packages/shared/src/problem.ts`; the codes live in `packages/shared/src/problem-codes/`). The full contract is the Errors section of `contributing/api-reference.md`.
 
 ```typescript
 import { problem } from '@dorkos/http-kit';

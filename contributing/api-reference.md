@@ -126,7 +126,7 @@ Every failed request on the API is answered with one shape: an [RFC 9457](https:
 | `retryAfterMs` | A transient failure only: how long to wait. Also sent as `Retry-After`.             |
 | `instance`     | Optional: an id for this occurrence, to quote in a report.                          |
 
-**The code list** is `PROBLEM_CODE_LIST` in `packages/shared/src/problem.ts`, each code with its default status and title. A code that is not on the list cannot be sent. Add one there (lower_snake, small and meaningful, never a rename) before you use it. The OpenAPI document carries the `Problem` schema, `ProblemCode`, and the answers the chain gives every route (`components.responses`: `ValidationProblem`, `MalformedRequestProblem`, `NotFoundProblem`, `RequestTooLargeProblem`, `InternalErrorProblem`).
+**The code list** is `PROBLEM_CODE_LIST`, exported from `packages/shared/src/problem.ts` (import it as `@dorkos/shared/problem`), each code with its default status and title. A code that is not on the list cannot be sent. The codes themselves live in `packages/shared/src/problem-codes/`, one file per group (general, chats and apps, workspace and access, spaces and computers). Add one at the end of the group it belongs to (lower_snake, small and meaningful, never a rename) before you use it; the order there is the order of the `ProblemCode` enum in the API document. The OpenAPI document carries the `Problem` schema, `ProblemCode`, and the answers the chain gives every route (`components.responses`: `ValidationProblem`, `MalformedRequestProblem`, `NotFoundProblem`, `RequestTooLargeProblem`, `InternalErrorProblem`).
 
 **Sending one** (`@dorkos/http-kit`):
 
