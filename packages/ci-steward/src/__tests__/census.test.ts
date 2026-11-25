@@ -172,54 +172,20 @@ describe('census: the main canary is a registry, not a convention', () => {
 });
 
 describe('census: the deadlock invariant', () => {
-  it('fails on a paths: filter on a required workflow', () => {
+  const pr = (filter: Record<string, unknown>) => ({ pull_request: filter, merge_group: null });
+  it.each<[string, Record<string, unknown>, string | null]>([
+    ['a paths: filter', pr({ paths: ['src/**'] }), 'deadlock/paths-filter'],
+    ['paths-ignore too', pr({ 'paths-ignore': ['docs/**'] }), 'deadlock/paths-filter'],
+    ['no merge_group trigger', { pull_request: null }, 'deadlock/missing-trigger'],
+    ['types: but no synchronize', pr({ types: ['opened'] }), 'deadlock/types-no-synchronize'],
+    ['types: with synchronize (passes)', pr({ types: ['opened', 'synchronize'] }), null],
+    ['branches: without main', pr({ branches: ['release/**'] }), 'deadlock/branches-filter'],
+  ])('required lint.yml with %s', (_label, on, code) => {
     const spec = baseSpec();
-    spec.workflows['lint.yml']!.on = { pull_request: { paths: ['src/**'] }, merge_group: null };
+    spec.workflows['lint.yml']!.on = on;
     const { findings } = census(spec);
-    expect(findings.map((f) => f.code)).toEqual(['deadlock/paths-filter']);
-    expect(findings[0]!.where).toBe('job lint, required context "lint"');
-  });
-
-  it('fails on paths-ignore too', () => {
-    const spec = baseSpec();
-    spec.workflows['lint.yml']!.on = {
-      pull_request: { 'paths-ignore': ['docs/**'] },
-      merge_group: null,
-    };
-    expect(codes(spec)).toEqual(['deadlock/paths-filter']);
-  });
-
-  it('fails when a required workflow lacks the merge_group trigger', () => {
-    const spec = baseSpec();
-    spec.workflows['lint.yml']!.on = { pull_request: null };
-    expect(codes(spec)).toEqual(['deadlock/missing-trigger']);
-  });
-
-  it('fails on pull_request.types without synchronize', () => {
-    const spec = baseSpec();
-    spec.workflows['lint.yml']!.on = {
-      pull_request: { types: ['opened', 'labeled'] },
-      merge_group: null,
-    };
-    expect(codes(spec)).toEqual(['deadlock/types-no-synchronize']);
-  });
-
-  it('accepts pull_request.types that include synchronize', () => {
-    const spec = baseSpec();
-    spec.workflows['lint.yml']!.on = {
-      pull_request: { types: ['opened', 'synchronize', 'labeled'] },
-      merge_group: null,
-    };
-    expect(codes(spec)).toEqual([]);
-  });
-
-  it('fails on a branches filter that excludes the default branch', () => {
-    const spec = baseSpec();
-    spec.workflows['lint.yml']!.on = {
-      pull_request: { branches: ['release/**'] },
-      merge_group: null,
-    };
-    expect(codes(spec)).toEqual(['deadlock/branches-filter']);
+    expect(findings.map((f) => f.code)).toEqual(code ? [code] : []);
+    if (code) expect(findings[0]!.where).toBe('job lint, required context "lint"');
   });
 
   it('fails on a required context that no job reports', () => {
@@ -259,17 +225,11 @@ describe('census: the deadlock invariant', () => {
     expect(findings[0]!.message).toContain('passes');
   });
 
-  it('fails on a label-only job condition: undecidable on pull_request, false on merge_group', () => {
+  it('fails on a label-only job condition (undecidable on pull_request, false on merge_group) until excepted', () => {
     const spec = baseSpec();
     job(spec, 'lint.yml', 'lint').if =
       "${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}";
     expect(codes(spec)).toEqual(['deadlock/job-if-undecidable', 'deadlock/job-if-false']);
-  });
-
-  it('accepts that label-only condition with a job-if exception', () => {
-    const spec = baseSpec();
-    job(spec, 'lint.yml', 'lint').if =
-      "${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}";
     spec.allowlist.entries.push({
       workflow: 'lint.yml',
       job: 'lint',
@@ -373,15 +333,6 @@ describe('census: required jobs cannot hide a failure', () => {
     expect(codes(spec)).toEqual(['required/step-if']);
   });
 
-  it('accepts a step if: that is true on both events on a green run', () => {
-    // `!cancelled()` on the base fixture's Census step already proves this;
-    // `success() && always()` is a second shape of the same fact.
-    const spec = baseSpec();
-    const steps = job(spec, 'lint.yml', 'lint').steps as Record<string, unknown>[];
-    steps[2]!.if = '${{ success() && always() }}';
-    expect(codes(spec)).toEqual([]);
-  });
-
   it('accepts an allowlisted step if:, and a continue-on-error until its expiry', () => {
     const spec = baseSpec();
     const steps = job(spec, 'lint.yml', 'lint').steps as Record<string, unknown>[];
@@ -442,17 +393,12 @@ describe('census: the allowlist itself', () => {
 });
 
 describe('census: generated doc blocks', () => {
-  it('fails when a block drifts from required-checks.json', () => {
+  it('fails when a block drifts from required-checks.json; --fix rewrites only the block', () => {
     const spec = baseSpec();
     spec.requiredChecks.contexts = ['test', 'lint'];
-    const { findings } = census(spec);
-    expect(findings.map((f) => f.code)).toEqual(['docs/drift']);
-    expect(findings[0]!.fix).toContain('pnpm ci:census --fix');
-  });
-
-  it('--fix rewrites only the block, and the tree is then clean', () => {
-    const spec = baseSpec();
-    spec.requiredChecks.contexts = ['test', 'lint'];
+    const drift = census(spec).findings;
+    expect(drift.map((f) => f.code)).toEqual(['docs/drift']);
+    expect(drift[0]!.fix).toContain('pnpm ci:census --fix');
     const { root, findings, fixed } = census(spec, { fix: true });
     expect(findings).toEqual([]);
     expect(fixed).toEqual(['docs/ci.md']);

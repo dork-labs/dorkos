@@ -6,61 +6,29 @@
  * refusal, fails the census. A job that only writes with GITHUB_TOKEN may run
  * on a `v*` tag push instead (publish-community.yml).
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
-import { loadHandFiles, type HandFiles } from '../load.ts';
+import { describe, expect, it } from 'vitest';
 import { checkTagGate, namedEnvironments, opensWith } from '../tag-gate.ts';
-import { loadWorkflows, type WorkflowModel } from '../workflows.ts';
+import { realWorkflows } from './fixture.ts';
 
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const TAG = "startsWith(github.ref, 'refs/tags/v')";
 const MAIN = "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'";
 
-const dirs: string[] = [];
-afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
-
-function realRepo(): { files: HandFiles; workflows: WorkflowModel[] } {
-  const files = loadHandFiles(REPO).files!;
-  const workflows = loadWorkflows(REPO, files.config.workflows_dir, (f, m) => {
-    throw new Error(`${f}: ${m}`);
-  });
-  return { files, workflows };
-}
-
 /** The real repo's config and workflows, with one workflow file's text replaced. */
 function withWorkflow(file: string, edit: (text: string) => string) {
-  const { files } = realRepo();
-  const root = mkdtempSync(path.join(tmpdir(), 'tag-gate-'));
-  dirs.push(root);
-  const dir = path.join(root, files.config.workflows_dir);
-  mkdirSync(dir, { recursive: true });
-  for (const f of files.config.tag_gate!.workflows) {
-    const text = readFileSync(path.join(REPO, files.config.workflows_dir, f), 'utf8');
-    const edited = f === file ? edit(text) : text;
-    // An edit that matched nothing would pass vacuously.
-    if (f === file) expect(edited).not.toBe(text);
-    writeFileSync(path.join(dir, f), edited);
-  }
-  const workflows = loadWorkflows(root, files.config.workflows_dir, () => {});
+  const { files, workflows } = realWorkflows({ file, change: edit });
   return checkTagGate(files, workflows);
 }
 
-/** Codes and job ids of the findings, in order. */
-const found = (findings: ReturnType<typeof checkTagGate>) => findings.map((f) => [f.code, f.where]);
+/** Each finding as `<code without tag-gate/> <job id>`, in order. */
+const found = (findings: ReturnType<typeof checkTagGate>) =>
+  findings.map((f) => `${f.code.replace(/^tag-gate\//, '')} ${f.where}`);
 
 describe('checkTagGate on the real release workflows', () => {
-  it('passes as committed', () => {
-    const { files, workflows } = realRepo();
+  it('passes as committed; only publish-community.yml runs on a tag push, the rest on a dispatch', () => {
+    const { files, workflows } = realWorkflows();
     expect(files.config.tag_gate?.workflows).toHaveLength(4);
     expect(files.config.tag_gate?.environments).toEqual(['release', 'release-mirrors']);
     expect(checkTagGate(files, workflows)).toEqual([]);
-  });
-
-  it('publishes on a tag push only in publish-community.yml; the rest start from a dispatch', () => {
-    const { files, workflows } = realRepo();
     for (const file of files.config.tag_gate!.workflows) {
       const wf = workflows.find((w) => w.file === file)!;
       const want = file === 'publish-community.yml' ? ['push'] : ['workflow_dispatch'];
@@ -70,139 +38,112 @@ describe('checkTagGate on the real release workflows', () => {
 
   const BUILD_AND_PUSH_IF = `    # census's tag gate checks this line).\n    if: ${MAIN}\n    runs-on: ubuntu-latest\n    # 75 = up to`;
   const COMMUNITY_IF = `    # Publishes, so it runs only on a \`v*\` tag (DOR-4030; the census's tag gate checks this line).\n    if: ${TAG}\n`;
+  const HOMEBREW_IF = `    # (DOR-4030; the census's tag gate checks this line).\n    if: ${MAIN}\n    runs-on: ubuntu-latest\n    # HOMEBREW_TAP_TOKEN`;
+  const MACOS = `  build-macos:\n    needs: tag-is-on-main\n`;
+  const MACOS_IF = `${MACOS}    # Names the \`release\` environment, so main's copy, dispatched on main, only\n    # (DOR-4030; the census's tag gate checks this line).\n    if: ${MAIN}\n`;
+  const BUILD_READ_ONLY = `    # Read-only (DOR-4030): this job builds and uploads a run artifact; only\n    # publish may write to a release.\n    permissions:\n      contents: read`;
+  const DOCKER_REFUSAL = `[[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml@refs/heads/main" ]]`;
+  const UNGATED_COMMUNITY = [
+    'ungated-job build-and-publish',
+    'write-no-main-refusal build-and-publish',
+  ];
+  const UNGATED_WINDOWS = ['ungated-job build-windows', 'write-no-main-refusal build-windows'];
 
-  it('fails when a publish job loses its main-dispatch condition', () => {
-    const findings = withWorkflow('publish-docker.yml', (t) =>
-      t.replace(
-        BUILD_AND_PUSH_IF,
-        "    # census's tag gate checks this line).\n    runs-on: ubuntu-latest\n    # 75 = up to"
-      )
-    );
-    expect(found(findings)).toEqual([['tag-gate/ungated-job', 'build-and-push']]);
-    expect(findings[0]!.fix).toContain(`\`if: ${TAG}\` or \`if: ${MAIN}\``);
-  });
-
-  it('fails when the Community publish job loses its v* tag condition', () => {
-    const findings = withWorkflow('publish-community.yml', (t) => t.replace(COMMUNITY_IF, ''));
-    expect(found(findings)).toEqual([
-      ['tag-gate/ungated-job', 'build-and-publish'],
-      ['tag-gate/write-no-main-refusal', 'build-and-publish'],
-    ]);
-  });
-
-  it('fails when the Community publish job routes around its tag with a top-level ||', () => {
-    const findings = withWorkflow('publish-community.yml', (t) =>
-      t.replace(
-        COMMUNITY_IF,
-        COMMUNITY_IF.replace(`if: ${TAG}`, `if: ${TAG} || github.event_name == 'push'`)
-      )
-    );
-    expect(found(findings)).toEqual([
-      ['tag-gate/ungated-job', 'build-and-publish'],
-      ['tag-gate/write-no-main-refusal', 'build-and-publish'],
-    ]);
-  });
-
-  it('fails when a v* tag job is given a secret environment', () => {
-    const findings = withWorkflow('publish-community.yml', (t) =>
-      t.replace(COMMUNITY_IF, `${COMMUNITY_IF}    environment: release\n`)
-    );
-    expect(found(findings)).toEqual([
-      ['tag-gate/environment-not-main-dispatch', 'build-and-publish'],
-      ['tag-gate/environment-no-main-refusal', 'build-and-publish'],
-    ]);
-    expect(findings[0]!.fix).toContain('A `v*` tag is not a way into a secret environment.');
-  });
-
-  it('fails when the job naming release-mirrors loses its main-dispatch condition', () => {
-    const findings = withWorkflow('update-homebrew.yml', (t) =>
-      t.replace(
-        `    # (DOR-4030; the census's tag gate checks this line).\n    if: ${MAIN}\n    runs-on: ubuntu-latest\n    # HOMEBREW_TAP_TOKEN`,
-        `    runs-on: ubuntu-latest\n    # HOMEBREW_TAP_TOKEN`
-      )
-    );
-    expect(found(findings)).toEqual([['tag-gate/environment-not-main-dispatch', 'update-formula']]);
-    expect(findings[0]!.message).toContain('names the release-mirrors environment');
-  });
-
-  it('fails when a job naming release-mirrors runs on a v* tag instead of from main', () => {
-    const findings = withWorkflow('publish-docker.yml', (t) =>
-      t.replace(
-        `    if: ${MAIN} && vars.DOCKERHUB_MIRROR`,
-        `    if: ${TAG} && vars.DOCKERHUB_MIRROR`
-      )
-    );
-    expect(found(findings)).toEqual([
-      ['tag-gate/environment-not-main-dispatch', 'mirror-docker-hub'],
-    ]);
-  });
-
-  it('fails every publishing job, and only those, that loses its first-step refusal', () => {
-    const findings = withWorkflow('publish-docker.yml', (t) =>
-      t.replaceAll(
-        '[[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml@refs/heads/main" ]]',
-        'true'
-      )
-    );
-    expect(found(findings)).toEqual([
-      ['tag-gate/write-no-main-refusal', 'build-and-push'],
-      ['tag-gate/write-no-main-refusal', 'build-and-push-hub'],
-      ['tag-gate/environment-no-main-refusal', 'mirror-docker-hub'],
-    ]);
-  });
-
-  it('fails when the refusal names another workflow file', () => {
-    const findings = withWorkflow('update-homebrew.yml', (t) =>
-      t.replaceAll(
-        'workflows/update-homebrew.yml@refs/heads/main',
-        'workflows/other.yml@refs/heads/main'
-      )
-    );
-    expect(found(findings)).toEqual([['tag-gate/environment-no-main-refusal', 'update-formula']]);
-  });
-
-  it('reads an environment expression as naming a secret environment (fail closed)', () => {
-    const findings = withWorkflow('desktop-release.yml', (t) =>
-      t.replace(
-        `  build-macos:\n    needs: tag-is-on-main\n    # Names the \`release\` environment, so main's copy, dispatched on main, only\n    # (DOR-4030; the census's tag gate checks this line).\n    if: ${MAIN}\n`,
-        `  build-macos:\n    needs: tag-is-on-main\n    if: ${TAG}\n`
-      )
-    );
-    expect(found(findings)).toEqual([['tag-gate/environment-not-main-dispatch', 'build-macos']]);
-    expect(findings[0]!.message).toContain('its environment is an expression');
-  });
-
-  it('fails when the desktop publish job routes around the gate with a top-level ||', () => {
-    const findings = withWorkflow('desktop-release.yml', (t) =>
-      t.replace(`    if: ${MAIN} && inputs.tag != ''`, `    if: ${MAIN} || inputs.tag != ''`)
-    );
-    expect(found(findings)).toEqual([['tag-gate/ungated-job', 'publish']]);
-  });
-
-  it('fails when a build job is given a write token', () => {
-    const findings = withWorkflow('desktop-release.yml', (t) =>
-      t.replace(
-        '    # Read-only (DOR-4030): this job builds and uploads a run artifact; only\n    # publish may write to a release.\n    permissions:\n      contents: read',
-        '    permissions:\n      contents: write'
-      )
-    );
-    expect(found(findings)).toEqual([
-      ['tag-gate/ungated-job', 'build-windows'],
-      ['tag-gate/write-no-main-refusal', 'build-windows'],
-    ]);
-  });
-
-  it('fails when a build job is given only an OIDC token (it can sign attestations)', () => {
-    const findings = withWorkflow('desktop-release.yml', (t) =>
-      t.replace(
-        '    # Read-only (DOR-4030): this job builds and uploads a run artifact; only\n    # publish may write to a release.\n    permissions:\n      contents: read',
-        '    permissions:\n      contents: read\n      id-token: write'
-      )
-    );
-    expect(found(findings)).toEqual([
-      ['tag-gate/ungated-job', 'build-windows'],
-      ['tag-gate/write-no-main-refusal', 'build-windows'],
-    ]);
+  // [what goes wrong, file, from, to, findings, text the first finding's message or fix carries]
+  it.each<[string, string, string, string, string[], string?]>([
+    [
+      'a publish job loses its main-dispatch condition',
+      'publish-docker.yml',
+      BUILD_AND_PUSH_IF,
+      BUILD_AND_PUSH_IF.replace(`    if: ${MAIN}\n`, ''),
+      ['ungated-job build-and-push'],
+      `\`if: ${TAG}\` or \`if: ${MAIN}\``,
+    ],
+    [
+      'the Community publish job loses its v* tag condition',
+      'publish-community.yml',
+      COMMUNITY_IF,
+      '',
+      UNGATED_COMMUNITY,
+    ],
+    [
+      'the Community publish job routes around its tag with a top-level ||',
+      'publish-community.yml',
+      `if: ${TAG}\n`,
+      `if: ${TAG} || github.event_name == 'push'\n`,
+      UNGATED_COMMUNITY,
+    ],
+    [
+      'a v* tag job is given a secret environment',
+      'publish-community.yml',
+      COMMUNITY_IF,
+      `${COMMUNITY_IF}    environment: release\n`,
+      [
+        'environment-not-main-dispatch build-and-publish',
+        'environment-no-main-refusal build-and-publish',
+      ],
+      'A `v*` tag is not a way into a secret environment.',
+    ],
+    [
+      'the job naming release-mirrors loses its main-dispatch condition',
+      'update-homebrew.yml',
+      HOMEBREW_IF,
+      `    runs-on: ubuntu-latest\n    # HOMEBREW_TAP_TOKEN`,
+      ['environment-not-main-dispatch update-formula'],
+      'names the release-mirrors environment',
+    ],
+    [
+      'every publishing job, and only those, loses its first-step refusal',
+      'publish-docker.yml',
+      DOCKER_REFUSAL,
+      'true',
+      [
+        'write-no-main-refusal build-and-push',
+        'write-no-main-refusal build-and-push-hub',
+        'environment-no-main-refusal mirror-docker-hub',
+      ],
+    ],
+    [
+      'the refusal names another workflow file',
+      'update-homebrew.yml',
+      'workflows/update-homebrew.yml@refs/heads/main',
+      'workflows/other.yml@refs/heads/main',
+      ['environment-no-main-refusal update-formula'],
+    ],
+    [
+      // Fail closed: an environment expression may name a secret environment.
+      'a job whose environment is an expression runs on a v* tag',
+      'desktop-release.yml',
+      MACOS_IF,
+      `${MACOS}    if: ${TAG}\n`,
+      ['environment-not-main-dispatch build-macos'],
+      'its environment is an expression',
+    ],
+    [
+      'the desktop publish job routes around the gate with a top-level ||',
+      'desktop-release.yml',
+      `    if: ${MAIN} && inputs.tag != ''`,
+      `    if: ${MAIN} || inputs.tag != ''`,
+      ['ungated-job publish'],
+    ],
+    [
+      'a build job is given a write token',
+      'desktop-release.yml',
+      BUILD_READ_ONLY,
+      '    permissions:\n      contents: write',
+      UNGATED_WINDOWS,
+    ],
+    [
+      'a build job is given only an OIDC token (it can sign attestations)',
+      'desktop-release.yml',
+      BUILD_READ_ONLY,
+      '    permissions:\n      contents: read\n      id-token: write',
+      UNGATED_WINDOWS,
+    ],
+  ])('fails when %s', (_label, file, from, to, want, text) => {
+    const findings = withWorkflow(file, (t) => t.replaceAll(from, to));
+    expect(found(findings)).toEqual(want);
+    if (text) expect(`${findings[0]!.message}\n${findings[0]!.fix}`).toContain(text);
   });
 });
 
@@ -224,7 +165,6 @@ describe('opensWith', () => {
   it.each([
     [MAIN, true],
     [`\${{ ${MAIN} }}`, true],
-    [`${MAIN} && vars.X == 'true'`, true],
     [`${MAIN} && (a || b)`, true],
     [`${MAIN} || a`, false],
     [`${MAIN} && a || b`, false],

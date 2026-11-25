@@ -6,10 +6,13 @@
  * tree that is proven clean is what makes "the census fails on X" mean X, not
  * some unrelated gap in the fixture.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { stringify } from 'yaml';
+import { loadHandFiles } from '../load.ts';
+import { loadWorkflows } from '../workflows.ts';
 
 type Json = Record<string, unknown>;
 
@@ -385,4 +388,33 @@ export function ledgerEntry(
     ...overrides,
   };
   return `---\n${stringify(fm)}---\n\n${body}\n`;
+}
+
+/** This checkout's root, for tests that read the real ci/ files and workflows. */
+export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+
+/**
+ * The real ci/ hand files and every real workflow, with one workflow file's
+ * text edited on the way through a temp directory. An edit that changes
+ * nothing throws, since the test would then pass vacuously.
+ */
+export function realWorkflows(edit?: { file: string; change: (text: string) => string }) {
+  const files = loadHandFiles(REPO).files!;
+  const root = mkdtempSync(path.join(tmpdir(), 'real-workflows-'));
+  try {
+    const dir = files.config.workflows_dir;
+    mkdirSync(path.join(root, dir), { recursive: true });
+    for (const f of readdirSync(path.join(REPO, dir)).filter((n) => /\.ya?ml$/.test(n))) {
+      const text = readFileSync(path.join(REPO, dir, f), 'utf8');
+      const out = f === edit?.file ? edit.change(text) : text;
+      if (f === edit?.file && out === text) throw new Error(`The edit to ${f} changed nothing`);
+      writeFileSync(path.join(root, dir, f), out);
+    }
+    const workflows = loadWorkflows(root, dir, (f, m) => {
+      throw new Error(`${f}: ${m}`);
+    });
+    return { files, workflows };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
