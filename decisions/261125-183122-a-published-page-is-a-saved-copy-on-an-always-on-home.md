@@ -37,6 +37,8 @@ Agents in DorkOS make two kinds of thing a person wants to show someone else: mi
 
 Three things changed since that research. A person's own computer is the home of their private space, and an agent that runs in the cloud has its home in the cloud, with no sync between the two. Every action is now defined once as a capability, so the command line, the HTTP API and agent tools come from one definition. And other products have shown the shape people expect: a page made by an agent that is private until its owner shares it, has versions, and uses the viewer's own account for anything of the viewer's.
 
+A first plan is already in the tracker (DOR-4841, DOR-4842, DOR-4843): an agent publishes a folder of web files it wrote, such as a deck, as a link, with each page on a web address of its own and secret files never copied. This record is the decision that plan follows. Where the two differ, this record wins and the tickets are updated: a new page is private, and an agent needs a yes to widen who can open it.
+
 A mini app has two halves. Its page half runs in a browser. Its server half, when it has one, keeps data, runs on a timer and talks to other things; inside DorkOS it runs in the server's own process by default, or as a limited process of its own when its manifest asks for one (`runtime: "subprocess"`, `apps/server/src/services/extensions/isolation/`).
 
 ## Decision
@@ -51,7 +53,7 @@ We will let a person or an agent publish a mini app or a doc as a **published pa
 4. **A new page is private.** Its owner alone can open it. From there the audience widens one step at a time: named people, the members of a space, anyone with the link, and listed in public where a search engine can find it.
 5. **An agent may publish. An agent needs a yes to widen who can open a page.** Publishing and updating a page are ordinary actions an agent takes at its level. Widening the audience gives new access, so when an agent does it, it needs a yes from the Owner or the agent's manager, as `meta/PRINCIPLES.md` already says. Narrowing the audience, or taking a page down, needs no yes.
 6. **Publishing is defined once, as capabilities.** Publish, update, list and take down are capabilities in the one registry, so the command line, the HTTP API and agent tools all get them. The specification adds a reference kind for a page by amending ADR `261122-124821`, so a link to a page is written the same way everywhere.
-7. **A published mini app is a live app.** Anyone it is shared with can use it on the web, with no DorkOS of their own. Its page half runs in the viewer's browser, in a sandbox, served from a web address apart from the app. Its server half, when it has one, runs on the page's home in a sealed box of its own, with its own data and its own limits. A published doc has no code.
+7. **A published mini app is a live app.** Anyone it is shared with can use it on the web, with no DorkOS of their own. Its page half runs in the viewer's browser, in a sandbox, served from a web address apart from the app, and each page has an address of its own. Its server half, when it has one, runs on the page's home in a sealed box of its own, with its own data and its own limits. A published doc has no code.
 8. **A published mini app holds none of its publisher's power.** From its box it cannot reach the publisher's private space, agents, connections, sign-ins or secrets. The publisher may grant it one named thing at a time when publishing, shown in plain words, for example "this form may send my agent a message". Such a message takes the one path for sending to an agent (ADR `261124-150518`), and whatever arrives through a grant is marked as words from outside.
 9. **Anything of the viewer's uses the viewer's own account.** A page that shows a viewer's own live data, or acts for them, does it through the viewer's own DorkOS and connections, with the viewer's yes, and asks again when a new version asks for more. A viewer with no DorkOS still gets everything the app does by itself.
 10. **A viewer can take a copy.** "Open in your DorkOS" copies a page into the viewer's own space as their own mini app or doc. Code from someone else still needs a yes before it runs, as the trust model says.
@@ -61,7 +63,7 @@ We will let a person or an agent publish a mini app or a doc as a **published pa
 
 In three stages, each useful by itself:
 
-1. **Docs, and mini apps that run fully in the browser.** A game, a calculator, a dashboard built from saved data. These need no server half, so anyone with the link can use them at once.
+1. **Docs, mini apps that run fully in the browser, and plain web files an agent wrote.** A game, a calculator, a dashboard built from saved data, a deck, a report. These need no server half, so anyone a page is shared with can use it at once.
 2. **Mini apps with a server half, in the sealed box.** A leaderboard, a sign-up sheet, a shared tracker.
 3. **Mini apps that reach their publisher, by a grant.** A customer form that sends the founder's agent a message.
 
@@ -99,6 +101,9 @@ In three stages, each useful by itself:
 - How a page is served from a home that sleeps when idle: the home wakes, or pages are served apart from it.
 - Who owns a page an agent published, and who owns a page made from a doc in a team space, given that a space holds its members' data.
 - Whether an agent may publish a new version of a page that is already shared widely without a new yes.
+- How rule 5 sits with Security's requirements recorded on DOR-4843: the one who asks never gives the yes, and a turn that read words from outside is treated with more care.
+- How a named person with no DorkOS account opens a private page: a password, or a code sent to them.
+- Whether a folder of plain web files is published as a doc or as a mini app with no server half.
 - How "the members of a space" is checked when the page's home is not the space's server, and which roadmap item that step waits for.
 - What a page's copy contains for each kind of thing, and how it is checked to hold no secret.
 - The limits on size, storage, use and how long a page stays up, and what happens to a link after a takedown.
