@@ -118,6 +118,14 @@ export interface OpenCodeClientProvider {
   turnSettled?(): Promise<void>;
 
   /**
+   * Stop the running sidecar now, so the next use starts a fresh process.
+   * Called when a folder gains its own plugins during a turn (DOR-4412).
+   * Optional for test providers; without it a needed restart counts as failed
+   * and OpenCode turns are held.
+   */
+  recycle?(): Promise<void>;
+
+  /**
    * Bind server-owned chat metadata before dispatch; never used as authentication.
    * `agentId` is the chat's agent's Mesh ULID, or `undefined` when it has none.
    */

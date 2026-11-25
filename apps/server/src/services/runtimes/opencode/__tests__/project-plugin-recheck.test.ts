@@ -1,0 +1,275 @@
+/**
+ * After every OpenCode turn, DorkOS looks again for a project's own plugins in
+ * the folders the turn used, and restarts the shared sidecar when one has
+ * appeared, before any other turn is sent (DOR-4412). Real folders, the real
+ * runtime, a scripted sidecar client; only the provider's restart is a stub.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { OpencodeClient } from '@opencode-ai/sdk';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { OpenCodeRuntime } from '../opencode-runtime.js';
+import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
+import {
+  PLUGIN_RESTART_FAILED_MESSAGE,
+  PLUGIN_RESTART_MESSAGE,
+  setPluginRestartActivity,
+  type PluginRestartActivityEntry,
+} from '../messaging/project-plugin-recheck.js';
+import { makeConformanceClient } from './conformance-client.js';
+import {
+  OC_SESSION_A,
+  OC_SESSION_B,
+  opencodeSimpleTurn,
+  sessionInfo,
+} from './opencode-sse-fixtures.js';
+
+const roots: string[] = [];
+let lines: PluginRestartActivityEntry[];
+
+beforeEach(() => {
+  lines = [];
+  setPluginRestartActivity((entry) => lines.push(entry));
+});
+
+afterEach(() => {
+  setPluginRestartActivity(undefined);
+  for (const root of roots.splice(0)) {
+    chmodSync(root, 0o700);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A made-up repo in a throwaway folder. */
+function repo(name: string): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'oc-plugin-recheck-')));
+  roots.push(root);
+  const dir = join(root, name);
+  mkdirSync(join(dir, '.git'), { recursive: true });
+  return dir;
+}
+
+/** What a clone of a repo with its own plugin leaves in `dir`. */
+function dropPlugin(dir: string): void {
+  mkdirSync(join(dir, '.opencode', 'plugin'), { recursive: true });
+  writeFileSync(join(dir, '.opencode', 'plugin', 'x.js'), 'export default {}\n');
+}
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (err: Error) => void;
+  const promise = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  // A restart that fails is awaited later; it must not count as unhandled now.
+  promise.catch(() => undefined);
+  return { promise, resolve, reject };
+}
+
+const STOP = 'stop here: the turn got past the gate';
+
+/**
+ * A provider whose sidecar runs one scripted turn per folder in `clients`; a
+ * folder it has no client for stops right after the gate. `recycle` is the
+ * restart under test.
+ */
+function harness(clients: Record<string, ReturnType<typeof makeConformanceClient>>) {
+  const restart = { next: deferred() };
+  const recycle = vi.fn(() => restart.next.promise);
+  const prepareTurn = vi.fn(async () => ({
+    mode: 'own' as const,
+    fingerprint: 'own',
+    launch: null,
+    models: [],
+  }));
+  const getClient = vi.fn(async (cwd: string) => {
+    const client = clients[cwd];
+    if (!client) throw new Error(STOP);
+    return client as unknown as OpencodeClient;
+  });
+  const provider: OpenCodeClientProvider = {
+    getClient,
+    peekClient: () => null,
+    prepareTurn,
+    setBusyProbe: vi.fn(),
+    turnSettled: vi.fn(async () => {}),
+    recycle,
+  };
+  return { provider, recycle, prepareTurn, getClient, restart };
+}
+
+/** A sidecar client for one folder's turn; `stored` is the folder OpenCode keeps. */
+function clientFor(stored: string) {
+  return makeConformanceClient(opencodeSimpleTurn(OC_SESSION_A, 'pong'), stored);
+}
+
+async function drain(stream: AsyncIterable<StreamEvent>): Promise<StreamEvent[] | string> {
+  const events: StreamEvent[] = [];
+  try {
+    for await (const event of stream) events.push(event);
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  return events;
+}
+
+/** Let every queued promise continuation run. */
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+describe('after an OpenCode turn, a folder that gained its own plugins', () => {
+  it('restarts the sidecar, says so in Activity, and holds the next turn until it is done', async () => {
+    const dir = repo('northwind-widgets');
+    const other = repo('clean-elsewhere');
+    const client = clientFor(dir);
+    // The turn clones a repo with its own plugin into its folder.
+    client.session.promptAsync.mockImplementation(async () => {
+      dropPlugin(dir);
+      return {};
+    });
+    const { provider, recycle, prepareTurn, restart } = harness({ [dir]: client });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const first = await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    expect(first).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'done' })]));
+    expect(recycle).toHaveBeenCalledTimes(1);
+    expect(lines).toEqual([
+      {
+        folder: dir,
+        folders: [dir],
+        summary: 'OpenCode restarted because northwind-widgets gained its own plugins.',
+      },
+    ]);
+
+    // Another chat, another clean folder: it waits for the restart.
+    const prepared = prepareTurn.mock.calls.length;
+    runtime.ensureSession('b', { permissionMode: 'default', cwd: other });
+    const second = drain(runtime.sendMessage('b', 'hello', { cwd: other }));
+    await settle();
+    expect(prepareTurn.mock.calls.length).toBe(prepared);
+    restart.next.resolve();
+    expect(await second).toBe(STOP);
+    expect(prepareTurn.mock.calls.length).toBe(prepared + 1);
+    expect(recycle).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts when only the session's stored folder gained them", async () => {
+    const cwd = repo('chat-folder');
+    const stored = repo('stored-folder');
+    const client = clientFor(stored);
+    client.session.create.mockResolvedValue({ data: sessionInfo(OC_SESSION_A, stored) });
+    client.session.get.mockResolvedValue({ data: sessionInfo(OC_SESSION_A, stored) });
+    client.session.promptAsync.mockImplementation(async () => {
+      dropPlugin(stored);
+      return {};
+    });
+    const { provider, recycle, restart } = harness({ [cwd]: client });
+    restart.next.resolve();
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('s', { permissionMode: 'default', cwd });
+
+    await drain(runtime.sendMessage('s', 'pull it', { cwd }));
+    expect(recycle).toHaveBeenCalledTimes(1);
+    expect(lines.map((line) => line.folder)).toEqual([stored]);
+  });
+
+  it('does nothing when no folder gained plugins', async () => {
+    const dir = repo('plain-repo');
+    const { provider, recycle, prepareTurn } = harness({ [dir]: clientFor(dir) });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    await drain(runtime.sendMessage('a', 'hello', { cwd: dir }));
+    await drain(runtime.sendMessage('a', 'again', { cwd: dir }));
+    expect(prepareTurn).toHaveBeenCalledTimes(2);
+    expect(recycle).not.toHaveBeenCalled();
+    expect(lines).toEqual([]);
+  });
+
+  it('fails closed on a plugin folder it cannot read, as the pre-turn guard does', async () => {
+    const dir = repo('locked-repo');
+    const client = clientFor(dir);
+    client.session.promptAsync.mockImplementation(async () => {
+      mkdirSync(join(dir, '.opencode', 'plugin'), { recursive: true });
+      chmodSync(join(dir, '.opencode', 'plugin'), 0o000);
+      return {};
+    });
+    const { provider, recycle, restart } = harness({ [dir]: client });
+    restart.next.resolve();
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    await drain(runtime.sendMessage('a', 'hello', { cwd: dir }));
+    chmodSync(join(dir, '.opencode', 'plugin'), 0o700);
+    expect(recycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a turn that was setting up on the old sidecar before it sends', async () => {
+    const dir = repo('northwind-widgets');
+    const other = repo('busy-elsewhere');
+    const first = clientFor(dir);
+    first.session.promptAsync.mockImplementation(async () => {
+      dropPlugin(dir);
+      return {};
+    });
+    const second = clientFor(other);
+    // Its own OpenCode session, so its stored folder is its own.
+    second.session.create.mockResolvedValue({ data: sessionInfo(OC_SESSION_B, other) });
+    second.session.get.mockResolvedValue({ data: sessionInfo(OC_SESSION_B, other) });
+    const held = deferred();
+    const { provider, recycle, getClient, restart } = harness({ [dir]: first });
+    restart.next.resolve();
+    // The other chat's turn is past the gate, waiting on the old sidecar.
+    getClient.mockImplementation(async (cwd: string) => {
+      if (cwd === other) {
+        await held.promise;
+        return second as unknown as OpencodeClient;
+      }
+      return first as unknown as OpencodeClient;
+    });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+    runtime.ensureSession('b', { permissionMode: 'default', cwd: other });
+    await settle();
+
+    const waiting = drain(runtime.sendMessage('b', 'hello', { cwd: other }));
+    await settle();
+    await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    expect(recycle).toHaveBeenCalledTimes(1);
+    held.resolve();
+
+    expect(await waiting).toBe(PLUGIN_RESTART_MESSAGE);
+    expect(second.session.promptAsync).not.toHaveBeenCalled();
+  });
+
+  it('holds every turn while the restart fails, and tries it again first', async () => {
+    const dir = repo('northwind-widgets');
+    const other = repo('clean-elsewhere');
+    const client = clientFor(dir);
+    client.session.promptAsync.mockImplementation(async () => {
+      dropPlugin(dir);
+      return {};
+    });
+    const { provider, recycle, prepareTurn, restart } = harness({ [dir]: client });
+    restart.next.reject(new Error('cleanup could not be confirmed'));
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+    await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    const prepared = prepareTurn.mock.calls.length;
+
+    runtime.ensureSession('b', { permissionMode: 'default', cwd: other });
+    expect(await drain(runtime.sendMessage('b', 'hello', { cwd: other }))).toBe(
+      PLUGIN_RESTART_FAILED_MESSAGE
+    );
+    expect(recycle).toHaveBeenCalledTimes(2);
+    expect(prepareTurn.mock.calls.length).toBe(prepared);
+
+    restart.next = deferred();
+    restart.next.resolve();
+    expect(await drain(runtime.sendMessage('b', 'hello', { cwd: other }))).toBe(STOP);
+    expect(recycle).toHaveBeenCalledTimes(3);
+  });
+});

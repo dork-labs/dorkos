@@ -117,11 +117,8 @@ import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
-import {
-  assertNoProjectPlugins,
-  projectPluginRefusal,
-  ProjectPluginsRefusedError,
-} from './messaging/project-plugin-guard.js';
+import { ProjectPluginsRefusedError } from './messaging/project-plugin-guard.js';
+import { ProjectPluginRecheck } from './messaging/project-plugin-recheck.js';
 import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
@@ -198,6 +195,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly registry = new OpenCodeSessionRegistry();
   private readonly locks = new SessionLockManager();
   private readonly approvals = new PendingApprovalStore();
+  /** Looks again for a project's own plugins after each turn, and restarts the sidecar (DOR-4412). */
+  private readonly pluginRecheck = new ProjectPluginRecheck(() => this.provider.recycle?.());
   /** What {@link enforceApprovals} reaches into on every mapped turn event. */
   private readonly approvalGate: ApprovalGateDeps;
   /** Each model's context window from the sidecar's catalog, read once and cached. */
@@ -591,9 +590,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
     // A project's own plugins would run in the shared sidecar, flag or not
-    // (DOR-4394): asked on every turn, before the sidecar sees the folder.
-    const pluginRefusal = projectPluginRefusal(cwd);
-    if (pluginRefusal) return yield pluginRefusal;
+    // (DOR-4394): asked on every turn, before the sidecar sees the folder, once
+    // any restart a folder's new plugins started has finished (DOR-4412).
+    const pluginTurn = await this.pluginRecheck.admit(cwd);
+    if (pluginTurn.refusal) return yield pluginTurn.refusal;
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
     // that credits cannot pay for is REFUSED here, with nothing sent.
@@ -630,7 +630,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId, registeredAgent()?.id);
       directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
       // The prompt goes to the session's STORED folder (Security M2, #3764).
-      assertNoProjectPlugins(cwd, directory);
+      pluginTurn.assertNoPlugins(directory);
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
@@ -765,7 +765,8 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Trigger only once the stream is observably live (or the bounded wait
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
-
+      // Nothing is sent on a sidecar a plugin restart has begun to stop.
+      pluginTurn.assertCurrent();
       await trigger(client, ocSessionId, mcpResult, plan, () => {
         if (mcpResult.connectorApplied && turn.connectorBinding)
           toolTurn.attach((event) => queue.push(event));
@@ -805,6 +806,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
+      // First, before anything here waits: a folder this turn used may have
+      // gained plugins while it ran, and the restart must begin before any
+      // other turn can be sent (DOR-4412).
+      this.pluginRecheck.afterTurn(cwd, directory);
       toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       turn.connectorSupervisor?.stop();

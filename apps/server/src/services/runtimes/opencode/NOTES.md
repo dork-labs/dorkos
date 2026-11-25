@@ -225,6 +225,16 @@ stops OpenCode reading the project's `AGENTS.md`, so DorkOS reads it (project to
 (`messaging/project-instructions.ts`). A project's own plugins and MCP servers no longer load;
 DOR-4399 brings them back behind a person's yes.
 
+### A folder that gains plugins during a turn: the sidecar restarts (DOR-4412, live 2026-11-25)
+
+The plugin guard asks before each turn, but a turn can change its own folder (`git clone`,
+`git pull`). After every turn, `messaging/project-plugin-recheck.ts` asks again about the
+turn's `cwd` and the session's stored folder. When either has plugins now, the sidecar is
+recycled at once, every new OpenCode turn waits for it, a turn that was already setting up is
+stopped before it sends, and the Activity feed gets one `opencode_project_plugins.restarted`
+line. A restart, not an instance dispose: a plugin that already loaded leaves its effects in the
+process. Live proof: `__tests__/project-plugin-recheck.binary.test.ts`.
+
 ### A project's config cannot switch the asks off: session rules (DOR-4394, live 2026-11-15)
 
 The injected ruleset above is TOP-LEVEL `permission`. OpenCode decides an ask from
