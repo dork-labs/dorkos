@@ -54,7 +54,9 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
       }).toEqual({
         // +7 total for the person work-queue controls (no MCP surface, DOR-4978).
         // +5 total for the to-do and promise doors and what cannot wake (no MCP surface, DOR-4978).
-        total: 156,
+        // +4 total for a person's to-do writes and promise changes (person-only, no MCP surface,
+        // DOR-4978).
+        total: 160,
         relevant: 132,
         ordinary: 120,
         inSession: 119,

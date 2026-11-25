@@ -18,6 +18,7 @@
  * @module services/core/capabilities/registry
  */
 import { assertNarrowDeclarations } from './declarations/narrow-declarations.js';
+import type { CapabilityRequestFacts } from './context/request-facts.js';
 import { assertHttpSurface } from './input-projection.js';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
@@ -289,32 +290,6 @@ export interface HandToolReach {
     args: Record<string, unknown>,
     options: { identity: AgentIdentity; reason: string; approvalToken?: string }
   ): Promise<unknown>;
-}
-
-/**
- * What a capability handler may learn about the HTTP request it was called on
- * (DOR-4978): a few answers the server worked out from the request, never the
- * request itself. A handler never sees a header, so a session cookie, an API
- * key or an `Authorization` value cannot reach it, its logs or its answer.
- * Worked out by `capabilityRequestFacts` (`routes/capability-dispatch.ts`).
- */
-export interface CapabilityRequestFacts {
-  /**
-   * Whether the caller clears the account owner bar: a person, never an
-   * agent, and with a person's session required, the install's owner
-   * (`refuseUnlessAccountOwner`).
-   */
-  readonly accountOwner: boolean;
-  /**
-   * Whether the request proves the owner in person: their own session
-   * cookie, and not a Wi-Fi request the Wi-Fi hold holds (`personProof`).
-   */
-  readonly ownerProven: boolean;
-  /**
-   * Whether the request comes from this computer (`isAtThisComputer`) and
-   * carries no program credential (a key, token or bearer).
-   */
-  readonly atThisComputerWithoutProgramKey: boolean;
 }
 
 /**

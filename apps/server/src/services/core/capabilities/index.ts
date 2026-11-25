@@ -10,6 +10,7 @@ export {
   type CapabilityDefinition,
   type CapabilityDeps,
   type CapabilityDomain,
+  type CapabilityWifiMode,
 } from './capability-definition.js';
 export {
   composeRegistry,
@@ -18,12 +19,12 @@ export {
   type CapabilityRegistry,
   type ContributeResult,
   type CapabilityHandlerContext,
-  type CapabilityRequestFacts,
   type HandToolReach,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
   type CapabilityPreflightResult,
 } from './registry.js';
+export type { CapabilityRequestFacts } from './context/request-facts.js';
 export {
   isPersonCaller,
   isTrustedCaller,

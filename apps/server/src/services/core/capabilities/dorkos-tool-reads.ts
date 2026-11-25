@@ -123,6 +123,10 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'todos.view_card': 'self',
   'todos.view_promises': 'self',
   'todos.add_promise_for_agent': 'self',
+  'todos.add_as_person': 'self',
+  'todos.change_as_person': 'self',
+  'todos.change_promise': 'self',
+  'todos.confirm_promise': 'self',
   'connectors.execute_read': 'self',
   // ── Marks when a listed entry came from a third-party package ──────────────
   'marketplace.list_installed': anyInstalledFromOutside,

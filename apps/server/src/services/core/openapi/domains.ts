@@ -10,9 +10,6 @@ import { registerSessionLocationsOpenApi } from '../../session/resolution/sessio
 import { registerProjectsOpenApi } from '../../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from '../usage/account-eligibility-openapi.js';
 import { registerKeepAwakeOpenApi } from '../keep-awake/keep-awake-openapi.js';
-import { registerTodoPromisesOpenApi } from '../../todos/todo-promises-openapi.js';
-import { registerTodosOpenApi } from '../../todos/todos-openapi.js';
-import { env } from '../../../env.js';
 import { registerHeartbeatsOpenApi } from '../../heartbeats/heartbeats-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
@@ -41,9 +38,6 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerProjectsOpenApi(registry);
   registerAccountEligibilityOpenApi(registry);
   registerKeepAwakeOpenApi(registry);
-  registerTodoPromisesOpenApi(registry);
-  // To-dos (DOR-3088): documented only where they are mounted, behind their flag.
-  if (env.DORKOS_TODOS_ENABLED) registerTodosOpenApi(registry);
   registerHeartbeatsOpenApi(registry);
   registerOnboardingOpenApi(registry);
   registerComputerOpenApi(registry);

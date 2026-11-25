@@ -258,8 +258,7 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/session-locations');
     // 70 -> 72: `/api/todo-promises` and `/api/agents/:id/todo-promises` (spec
-    // `heartbeats` §12).
-    expect(mounts).toContain('/api/todo-promises');
+    // `heartbeats` §12); both are capabilities the mount serves now (DOR-4978).
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
     // `http/client-files.ts`, and is asked for by hand below.
     // 71 -> 72: `/api/remote-access`, the remote access report and actions (DOR-2086).
@@ -322,8 +321,7 @@ describe('main HTTP admission through the real app', () => {
     // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
     // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462);
     // both are capabilities the mount serves now (DOR-4978).
-    // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
-    expect(mounts).toContain('/api/todos');
+    // 86 -> 87: to-dos (DOR-3088); a capability the mount serves now (DOR-4978).
     // The off-by-default discovery route remains mounted and must meet admission too.
     expect(mounts).toContain('/api/your-browser');
     // 88 -> 89: the empty, sandboxed document every app's screens run in (DOR-3293).
@@ -339,8 +337,9 @@ describe('main HTTP admission through the real app', () => {
     // are capabilities the mount serves (DOR-4978), so they are asked for by
     // hand below. 90 -> 88: a person's work queue doors moved there too.
     // 88 -> 86: what cannot wake and a person's "add a promise" moved there
-    // too (DOR-4978).
-    expect(mounts).toHaveLength(86);
+    // too (DOR-4978). 86 -> 84: a person's to-do writes and promise changes
+    // moved there too, so `/api/todos` and `/api/todo-promises` are asked for by hand.
+    expect(mounts).toHaveLength(84);
     const byHand = [
       '/',
       '/x/fixture',
@@ -359,6 +358,8 @@ describe('main HTTP admission through the real app', () => {
       '/api/work-queues/stop',
       '/api/heartbeats/wakers-off',
       '/api/agents/admission-fixture/todo-promises',
+      '/api/todos',
+      '/api/todo-promises',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

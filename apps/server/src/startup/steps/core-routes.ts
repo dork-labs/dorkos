@@ -8,7 +8,6 @@
  * @module startup/steps/core-routes
  */
 import { setInstructionsReader } from '../../services/runtimes/context-preview/instructions-capability.js';
-import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { approvedByField } from '../../services/connectors/access/access-change-ledger.js';
 import path from 'node:path';
@@ -696,12 +695,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   };
   mountedRouters.push('permissions');
 
-  // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
-  // app: the list at `/api/todo-promises`, a person's new one per agent at
-  // `/api/agents/:id/todo-promises`.
-  deps.todoPromises = todoPromises.routeDeps;
-  // To-dos (DOR-3088) at `/api/todos`, behind their flag until v1 is complete.
-  if (env.DORKOS_TODOS_ENABLED) deps.todos = todoPromises.todoRouteDeps;
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.
   deps.agentInstructions = {

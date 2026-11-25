@@ -185,10 +185,16 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   ],
   // The generic capability mount (`routes/capability-http.ts`) runs the
   // capability dispatcher, which refuses every act and destructive capability
-  // from Wi-Fi before it runs; only `allowFromWifi` (agent.pause) gets through.
-  'Capability paths: the dispatcher refuses act and destructive tiers; pausing is allowed (allowFromWifi)':
+  // from Wi-Fi before it runs, unless it declares a network mode (ADR
+  // 261125-114705): pausing lowers power (`lowers-power`), and a person's own
+  // to-do writes are held to the Wi-Fi hold (`person-held`, DOR-5070).
+  'Capability paths: the dispatcher refuses act and destructive tiers; pausing and a person’s to-do writes declare a network mode':
     [
       'POST /api/agents/:agentId/pause',
+      'POST /api/todos',
+      'PATCH /api/todos/:id',
+      'PATCH /api/todo-promises/:id',
+      'POST /api/todo-promises/:id/confirm',
       'POST /api/agents/:agentId/resume',
       'POST /api/agents/:agentId/mcp-servers',
       'PATCH /api/agents/:agentId/mcp-servers/:name',
@@ -202,11 +208,6 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Work and agents at the chat level: tasks, to-dos, agent settings': [
     'DELETE /api/tasks/:id',
     'POST /api/tasks/runs/:id/cancel',
-    'PATCH /api/todo-promises/:id',
-    'POST /api/todo-promises/:id/confirm',
-    // A to-do made or changed from Wi-Fi follows the Wi-Fi hold (DOR-5070).
-    'POST /api/todos',
-    'PATCH /api/todos/:id',
     'PATCH /api/agents/current',
     'PUT /api/config/agents/defaultAgent',
   ],

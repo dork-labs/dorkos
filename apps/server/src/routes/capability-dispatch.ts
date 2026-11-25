@@ -16,7 +16,7 @@
  * | A person must approve first | `202`, the approval payload (not an error) |
  * | A caller that is not a person called a person-only capability (`http.audience: 'person'`) | `403` problem, `person_only` (from `registry.invoke`) |
  * | The gate refused for good | `403` problem, {@link gateRefusalProblem} |
- * | A network sign-in asked for an `act` or `destructive` one without `allowFromWifi` | `403` problem, `not_from_wifi` |
+ * | A network sign-in asked for an `act` or `destructive` one that declares no network mode (`wifi`) | `403` problem, `not_from_wifi` |
  * | The input failed the capability's schema | `400` problem, `invalid_request` |
  * | The capability refused (`CapabilityToolError`) | problem, {@link toolRefusalProblem} |
  * | Unknown id | `404` problem, `unknown_capability` |
@@ -53,7 +53,7 @@ import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner, presentsProgramCredential } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
-import { personProof } from '../services/todos/caller.js';
+import { heldWifiOwner, personProof } from '../services/todos/caller.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
 
@@ -111,8 +111,14 @@ export async function dispatchCapability(
   const facts = honoRequestFacts(c);
   // A Wi-Fi sign-in reads through capabilities, but acts at the computer
   // (DOR-2969): an `act` or `destructive` one is refused before it runs,
-  // unless it only lowers an agent's power (`allowFromWifi`, e.g. a pause).
-  if (isFromWifi(facts) && capability.tier !== 'observe' && !capability.allowFromWifi) {
+  // unless it declares a network mode (ADR 261125-114705, decision 3): it only
+  // lowers an agent's power (`lowers-power`, a pause), or it is a person's own
+  // write (`person-held`), which only a person reaches (`audience: 'person'`,
+  // asserted at compose) and which the request facts below hold to the Wi-Fi
+  // hold: a held device never proves the owner, and is named as held. The
+  // person bar does not depend on this line: `registry.invoke` re-checks the
+  // audience on every call, whatever door or network it came through.
+  if (isFromWifi(facts) && capability.tier !== 'observe' && capability.wifi === undefined) {
     return problem(c, 'not_from_wifi', { detail: WIFI_ACTION_REFUSAL });
   }
 
@@ -186,6 +192,7 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
   let accountOwner: boolean | undefined;
   let ownerProven: boolean | undefined;
   let local: boolean | undefined;
+  let held: boolean | undefined;
   return {
     get accountOwner() {
       return (accountOwner ??= refuseUnlessAccountOwner(facts) === undefined);
@@ -195,6 +202,9 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
     },
     get atThisComputerWithoutProgramKey() {
       return (local ??= isAtThisComputer(facts) && !presentsProgramCredential(facts));
+    },
+    get heldWifiOwner() {
+      return (held ??= heldWifiOwner(facts));
     },
   };
 }
