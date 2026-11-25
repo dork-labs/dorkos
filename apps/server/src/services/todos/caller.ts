@@ -71,8 +71,10 @@ export function personProof(
  * Whether a request is the owner's own sign-in on a Wi-Fi device the Wi-Fi hold holds (DOR-5070,
  * Security's option 1): their cookie, from the app's own page, on a device not let run agents.
  * It never proves the person ({@link personProof} stays false), so it mints no `person`
- * authority. The to-do routes give it only the no-owner allowance: finish, reopen, note or reorder
- * a to-do assigned to the person, which starts no agent turn (`todo-policy`).
+ * authority. The capability mount hands it to a `person-held` capability as a request fact
+ * (`context.request.heldWifiOwner`), and a person's to-do writes treat it as an unproven person
+ * with the no-owner allowance: it may also finish, reopen, note or reorder a to-do assigned to the
+ * person (`todo-policy`). Like any unproven person it can still make a to-do, at the lowest power.
  *
  * @param facts - The request's facts.
  */

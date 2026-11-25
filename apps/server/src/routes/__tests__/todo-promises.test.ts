@@ -1,14 +1,15 @@
 /**
- * The to-do routes (spec `heartbeats` §12): anyone lists, a person adds
- * one for an agent, and only the promising agent or a person changes one.
+ * The promise doors (spec `heartbeats` §12), served by the capability mount (DOR-4978): anyone
+ * lists, a person adds one for an agent, and only a person changes or confirms one here; the
+ * promising agent changes its own with `todo_promise_update`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { createTodoPromisesRoutes } from '../todo-promises.js';
 import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { todoPromiseHttpDomain } from '../../services/todos/todo-http-capabilities.js';
+import { todoPromiseWriteDomain } from '../../services/todos/todo-write-capabilities.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TodoPromiseService, TodoPromiseStore } from '../../services/todos/index.js';
 import { TodoConfirm } from '../../services/todos/notice/todo-confirm.js';
@@ -32,9 +33,10 @@ const fixtureServer = fixtureTarget.server;
 const AGENTS: Record<string, string> = { '/agents/ana': 'agent-ana', '/agents/bo': 'agent-bo' };
 
 /**
- * Test-only headers, read after the `/api` chain: mark the request as arriving over Wi-Fi (as
- * the Wi-Fi listener does), or as forwarded from another device. Both reach the route past the
- * gate, so the route's own check is what's tested.
+ * Test-only headers, read after the `/api` chain: mark the request as the owner's sign-in arriving
+ * over Wi-Fi on a device not let run agents (as the Wi-Fi listener and the session gate would), or
+ * as forwarded from another device. Both reach the doors past the gate, so their own checks are
+ * what's tested.
  */
 const VIA_WIFI = 'x-test-via-wifi';
 const FORWARDED_AFTER_GATE = 'x-test-forwarded-for';
@@ -78,15 +80,23 @@ describe('to-do routes', () => {
     };
     const app = honoGroupListener(
       [
-        // The list and "add a promise" are capabilities the mount serves (DOR-4978).
+        // Every promise door is a capability the mount serves (DOR-4978).
         capabilityGroup(todoPromiseHttpDomain, { todoPromiseHttpDeps: deps }),
-        { path: '/api/todo-promises', routes: createTodoPromisesRoutes(deps) },
+        capabilityGroup(todoPromiseWriteDomain, { todoPromiseWriteDeps: deps }),
       ],
       {
         // Stand in for the agent-identity step: the header names a home folder,
         // and an unknown one resolves to nothing (a token that did not verify).
         before: (c, next) => {
-          if (c.req.header(VIA_WIFI)) markIngress(c.env.incoming, 'wifi');
+          if (c.req.header(VIA_WIFI)) {
+            markIngress(c.env.incoming, 'wifi');
+            c.set('user', {
+              userId: 'user_owner',
+              credential: 'cookie',
+              sessionId: 'phone',
+              route: 'wifi',
+            });
+          }
           const forwarded = c.req.header(FORWARDED_AFTER_GATE);
           if (forwarded) c.env.incoming.headers['x-forwarded-for'] = forwarded;
           const home = c.req.header(AGENT_IDENTITY_HEADER);
@@ -113,6 +123,7 @@ describe('to-do routes', () => {
       .send({ state: 'kept' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('person_only');
+    expect(res.body.detail).toBe('Agents change their own promises with todo_promise_update.');
     expect(service.get(made.id)).toEqual(before);
   });
 
@@ -206,6 +217,7 @@ describe('to-do routes', () => {
         .send({ state: 'dropped' });
       expect(drop.status).toBe(400);
       expect(drop.body.code).toBe('invalid_request');
+      expect(drop.body.detail).toBe('Say why in a note when declining a to-do.');
       expect(service.get(given.id)!.state).toBe('open');
       expect(power(given.id)).toEqual({ authority: 'person', marks: '{}' });
     });
@@ -236,7 +248,7 @@ describe('to-do routes', () => {
         { what: 'Ship it' },
         { kind: 'person', proven: true }
       );
-      // The person bar asks another device for a session, so its add never runs.
+      // The person bar asks another device for a session, so neither runs.
       const add = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .set(FORWARDED_AFTER_GATE, '203.0.113.7')
@@ -248,13 +260,13 @@ describe('to-do routes', () => {
         .patch(`/api/todo-promises/${given.id}`)
         .set(FORWARDED_AFTER_GATE, '203.0.113.7')
         .send({ state: 'dropped' });
-      expect(drop.status).toBe(400);
-      expect(drop.body.code).toBe('invalid_request');
+      expect(drop.status).toBe(403);
+      expect(drop.body.code).toBe('person_only');
       expect(service.get(given.id)!.state).toBe('open');
     });
 
     it('never counts a program sending a credential as the person, even at this computer', async () => {
-      // A bearer is a program, not a person: the person-only door refuses it.
+      // A bearer is a program, not a person: every person-only door refuses it.
       const add = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .set('authorization', 'Bearer made-up-token')
@@ -262,6 +274,21 @@ describe('to-do routes', () => {
       expect(add.status).toBe(403);
       expect(add.body.code).toBe('person_only');
       expect(service.list()).toEqual([]);
+      const kept = service.create('agent-ana', { what: 'Ship it', to: 'owner' });
+      service.update({ kind: 'agent', agentId: 'agent-ana' }, kept.id, { state: 'kept' });
+      const change = await request(fixtureServer)
+        .patch(`/api/todo-promises/${kept.id}`)
+        .set('authorization', 'Bearer made-up-token')
+        .send({ state: 'open' });
+      expect(change.status).toBe(403);
+      expect(change.body.code).toBe('person_only');
+      const confirm = await request(fixtureServer)
+        .post(`/api/todo-promises/${kept.id}/confirm`)
+        .set('authorization', 'Bearer made-up-token')
+        .send({ answer: 'yes' });
+      expect(confirm.status).toBe(403);
+      expect(confirm.body.code).toBe('person_only');
+      expect(service.get(kept.id)!.state).toBe('kept');
     });
 
     it('lets the /api host guard refuse a request naming another host on the network', async () => {
@@ -424,6 +451,8 @@ describe('to-do routes', () => {
       .set(AGENT_IDENTITY_HEADER, '/agents/ana')
       .send({ answer: 'yes' });
     expect(agent.status).toBe(403);
+    expect(agent.body.code).toBe('person_only');
+    expect(agent.body.detail).toBe('Agents change their own promises with todo_promise_update.');
 
     const confirmed = await request(fixtureServer)
       .post(`/api/todo-promises/${yes.id}/confirm`)
@@ -469,6 +498,8 @@ describe('to-do routes', () => {
       .send({ state: 'open', from: 'kept' });
     expect(res.status).toBe(412);
     expect(res.body.code).toBe('precondition_failed');
+    // The service's own sentence, kept from the hand route (`todo-refusals.ts`).
+    expect(res.body.detail).toBe('That promise is open now, not kept. Nothing changed.');
   });
 
   it('shows the source chat to the owner only', async () => {

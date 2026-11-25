@@ -144,6 +144,19 @@ export const PERSON_ONLY_CODE = 'PERSON_ONLY';
 export const PERSON_ONLY_MESSAGE = 'Only a person can do this, not an agent.';
 
 /**
+ * The fixed sentences a person-only capability may refuse an agent with instead of
+ * {@link PERSON_ONLY_MESSAGE}, each naming the tool the agent uses for the same job
+ * ({@link HttpSurface.agentsUse}). Only these are ever sent, so a new one is an edit here.
+ */
+export const PERSON_ONLY_AGENT_HINTS = [
+  'Agents make and change to-dos with todo_add and todo_update.',
+  'Agents change their own promises with todo_promise_update.',
+] as const;
+
+/** One of {@link PERSON_ONLY_AGENT_HINTS}. */
+export type PersonOnlyAgentHint = (typeof PERSON_ONLY_AGENT_HINTS)[number];
+
+/**
  * The HTTP projection of a capability: a route the server serves (the generic
  * capability mount, `routes/capability-http.ts`) and the OpenAPI document
  * describes, both from this one declaration (ADR 261123-170830).
@@ -185,6 +198,12 @@ export interface HttpSurface {
    * `POST /api/capabilities/{id}/invoke` alike. See {@link HttpAudience}.
    */
   audience?: HttpAudience;
+  /**
+   * For a person-only capability, the sentence its `person_only` refusal says
+   * instead of the generic one: the tool an agent uses for the same job. One of
+   * a fixed list ({@link PERSON_ONLY_AGENT_HINTS}).
+   */
+  agentsUse?: PersonOnlyAgentHint;
 }
 
 /**

@@ -195,7 +195,13 @@ describe('permission-area census', () => {
    * A person's own to-do doors (`http.audience: 'person'`): no agent can call them, so no
    * agent's To-dos setting is theirs to decide (DOR-4978).
    */
-  const PERSON_ONLY_DOORS = new Set(['todos.add_promise_for_agent']);
+  const PERSON_ONLY_DOORS = new Set([
+    'todos.add_promise_for_agent',
+    'todos.add_as_person',
+    'todos.change_as_person',
+    'todos.change_promise',
+    'todos.confirm_promise',
+  ]);
 
   it('puts every to-do tool in the To-dos area, so a new one cannot land outside it', () => {
     const outside = actions
