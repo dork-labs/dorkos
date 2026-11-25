@@ -71,38 +71,97 @@ const scripted: Array<(res: http.ServerResponse, body: string) => void> = [];
 let networkHits = 0;
 const roots: string[] = [];
 
-/** Every process under `pid`, by PID only (no command lines are read). */
-function descendants(pid: number): number[] {
-  const found: number[] = [];
+/** One process: its PID, its parent's, and its program name (never a command line). */
+interface Proc {
+  pid: number;
+  parent: number;
+  name: string;
+}
+
+/** Every process under `pid`, named as `pgrep -l` finds it, in the same call. */
+function namedDescendants(pid: number): Proc[] {
+  const found: Proc[] = [];
   const queue = [pid];
   while (queue.length > 0) {
-    let children: number[] = [];
+    const parent = queue.pop()!;
+    let rows: string[] = [];
     try {
-      children = execFileSync('pgrep', ['-P', String(queue.pop())], { encoding: 'utf8' })
+      rows = execFileSync('pgrep', ['-l', '-P', String(parent)], { encoding: 'utf8' })
         .split('\n')
-        .filter(Boolean)
-        .map(Number);
+        .filter(Boolean);
     } catch {
       // pgrep exits 1 when there are none.
     }
-    found.push(...children);
-    queue.push(...children);
+    for (const row of rows) {
+      const [id, ...name] = row.trim().split(/\s+/);
+      const child = { pid: Number(id), parent, name: path.basename(name.join(' ')) };
+      found.push(child);
+      queue.push(child.pid);
+    }
   }
   return found;
 }
 
+/** Every process under `pid`, by PID only. */
+function descendants(pid: number): number[] {
+  return namedDescendants(pid).map((proc) => proc.pid);
+}
+
 /**
- * Count the processes the app-server starts from now on, and kill them all by
- * PID once `limitMs` passes or more than 40 are running at once.
+ * The sandboxed command's own processes among `procs`: the command's shell,
+ * a child of the app-server (sandboxed in place on macOS), and everything under
+ * it. Codex starts its own helpers beside it (`codex`, and `sandbox-exec` for
+ * its own tools), which a whole-tree count would add in.
+ *
+ * @param procs - The app-server's new descendants, named.
+ * @param rootPid - The app-server's PID.
+ */
+const COMMAND_SHELLS = new Set(['zsh', 'bash', 'sh']);
+
+function commandProcesses(procs: Proc[], rootPid: number): Proc[] {
+  const inside = new Set(
+    procs.filter((p) => p.parent === rootPid && COMMAND_SHELLS.has(p.name)).map((p) => p.pid)
+  );
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const p of procs)
+      if (!inside.has(p.pid) && inside.has(p.parent)) {
+        inside.add(p.pid);
+        grew = true;
+      }
+  }
+  return procs.filter((p) => inside.has(p.pid));
+}
+
+/**
+ * Count the processes the app-server starts from now on (`peak`), and those of
+ * the sandboxed command alone (`commandPeak`), and kill them all by PID once
+ * `limitMs` passes or more than 40 are running at once (on the whole tree).
+ * `counted` is the command's peak, or the whole tree's when no poll saw the
+ * command's shell, so a missed command can never count as 0.
  */
 function watchChildren(rootPid: number, limitMs: number) {
   const before = new Set(descendants(rootPid));
   const started = Date.now();
   let peak = 0;
+  let commandPeak = 0;
+  let commandNames = '';
+  let polls = 0;
+  let sandboxPolls = 0;
   let killed = false;
   const timer = setInterval(() => {
-    const extra = descendants(rootPid).filter((pid) => !before.has(pid));
+    const procs = namedDescendants(rootPid).filter((p) => !before.has(p.pid));
+    const extra = procs.map((p) => p.pid);
     peak = Math.max(peak, extra.length);
+    const command = commandProcesses(procs, rootPid);
+    polls += 1;
+    if (command.length > 0) sandboxPolls += 1;
+    if (command.length > commandPeak) {
+      commandPeak = command.length;
+      // Program names at the peak, for the row's log line: never command lines.
+      commandNames = command.map((p) => p.name).join(' ');
+    }
     if (Date.now() - started <= limitMs && extra.length <= 40) return;
     killed = true;
     for (const pid of extra)
@@ -111,11 +170,13 @@ function watchChildren(rootPid: number, limitMs: number) {
       } catch {
         // Already gone.
       }
-  }, 100);
+  }, 25);
   return {
     stop() {
       clearInterval(timer);
-      return { peak, killed };
+      // A command never seen counts the whole tree, so a missed poll can't pass as 0.
+      const counted = sandboxPolls > 0 ? commandPeak : peak;
+      return { peak, commandPeak, commandNames, counted, polls, sandboxPolls, killed };
     },
   };
 }
@@ -731,7 +792,8 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           const probed = probeWatch.stop();
           console.info('DOR-4358 pnpm probe', { probe, own, ...probed });
           expect(probed.killed, 'the probe was killed').toBe(false);
-          expect(probed.peak, 'the probe started too many processes').toBeLessThanOrEqual(6);
+          // The command's own processes, not Codex's helpers beside it (11 once on CI).
+          expect(probed.counted, 'the probe started too many processes').toBeLessThanOrEqual(6);
           const version = /\b(\d+\.\d+\.\d+)\b/.exec(probe)?.[1];
           expect(version, 'the probe printed no version').toBeDefined();
           if (own) expect(version).toBe(own);
