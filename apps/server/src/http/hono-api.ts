@@ -221,7 +221,7 @@ export interface ComposedGroupDeps {
   localBrowserProfiles?: LocalBrowserProfileRouteDeps;
   /** The MCP servers a person added for every agent (`/api/mcp-servers`, DOR-3213). */
   mcpServers?: GlobalMcpStore;
-  /** First-seen tools for those servers' sheets (DOR-4118). */
+  /** First-seen tools for those servers' sheets (DOR-4118), read by their capabilities. */
   mcpServerTools?: GlobalMcpToolLedger;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
@@ -589,15 +589,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
         deps.mcpServers,
         (id) => deps.mesh?.meshCore.get(id),
         undefined,
-        deps.mcpServerTools && {
-          agents: () =>
-            (deps.mesh?.meshCore.listWithPaths() ?? []).map((agent) => ({
-              id: agent.id,
-              name: agent.displayName ?? agent.name,
-              home: agent.projectPath,
-            })),
-          ledger: deps.mcpServerTools,
-        }
+        () =>
+          (deps.mesh?.meshCore.listWithPaths() ?? []).map((agent) => ({
+            id: agent.id,
+            name: agent.displayName ?? agent.name,
+            home: agent.projectPath,
+          }))
       )
     );
   }

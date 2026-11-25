@@ -102,6 +102,24 @@ function ruleOf(entry: unknown): string | undefined {
 }
 
 /**
+ * Every standing yes any of `agents` holds for one of `store`'s servers, read
+ * against every server's name so a `__` name stays off a shorter one's sheet.
+ * The one way the server list and its sheet read them.
+ *
+ * @param store - The global servers; only their names are read.
+ * @param server - The global server's name.
+ * @param agents - The registered agents to look in.
+ */
+export function readServerStandingAllows(
+  store: { list(): ReadonlyArray<{ name: string }> },
+  server: string,
+  agents: readonly StandingAllowAgent[]
+): Promise<StandingAllow[]> {
+  const names = store.list().map((entry) => entry.name);
+  return readStandingAllows(server, agents, names);
+}
+
+/**
  * Every standing yes any of `agents` holds for `server`, in agent order.
  *
  * @param server - The global server's name.

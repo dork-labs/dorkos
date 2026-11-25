@@ -9,3 +9,15 @@ packages:
 # sandbox would stop to ask before wiping node_modules.
 publicHoistPattern:
   - 'fumadocs-*'
+
+# pnpm never switches itself to the `packageManager` pin (pnpm@10.28.2 in
+# package.json): whichever pnpm is on PATH runs. With switching on (pnpm 10's
+# default), a pnpm that differs from the pin fetches the pinned version into its
+# home and runs it; with HOME moved to an empty folder inside a worktree, that
+# child saw the same pin and fetched again, without end, and took the Mac down
+# (Nov 25: 399 node processes, 23 GB). CI is unchanged: pnpm/action-setup
+# installs exactly the pinned version from `packageManager`, so nothing there
+# switches. Locally the PATH pnpm runs (Homebrew 10.33.0 today). Use
+# `pnpm install --frozen-lockfile` locally so a newer pnpm never rewrites
+# pnpm-lock.yaml.
+managePackageManagerVersions: false

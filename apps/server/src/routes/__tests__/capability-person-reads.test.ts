@@ -280,6 +280,8 @@ describe('a person reads an area agents are Blocked in (DOR-4978)', () => {
       'accountOwner',
       'atThisComputerWithoutProgramKey',
       'clearsAgentBar',
+      'frontDoorElsewhere',
+      'frontDoorOwner',
       'heldWifiOwner',
       'ownerProven',
     ]);
