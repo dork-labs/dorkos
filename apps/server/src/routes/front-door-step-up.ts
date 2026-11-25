@@ -1,6 +1,6 @@
 /** Per-action confirmation for writes that leave lasting access or move account data. */
 import type { Context } from 'hono';
-import { problem, problemBody, type ProblemStatus } from '@dorkos/http-kit';
+import { problem, problemBody, sendProblem, type ProblemStatus } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { refuseFrontDoorChange, type OperatorCookieRefusal } from '../lib/caller-authority.js';
@@ -78,7 +78,7 @@ export async function runFrontDoorWrite(
       { identity: facts.agentIdentity, presentsAgent: true },
       { kind: held.kind, target: held.target, input: held.input, ...agentCard() }
     );
-    return c.json(card.body, card.status);
+    return card.refused ? sendProblem(c, card.body) : c.json(card.body, card.status);
   }
   if (refusal) return frontDoorProblem(c, refusal);
   if (readOwnerAccount() === null) return run(facts);

@@ -374,7 +374,7 @@ describe('an agent adding someone who may approve on a chat connection', () => {
   it('refuses a marked turn with no card', async () => {
     const res = await duringMarkedTurn(() => agentAddsApprover());
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('agent_raise_marked');
+    expect(res.body.code).toBe('forbidden');
     expect(approvals.listPending()).toEqual([]);
   });
 
@@ -383,7 +383,8 @@ describe('an agent adding someone who may approve on a chat connection', () => {
       .patch('/api/relay/adapters/sl/config')
       .set('X-DorkOS-Agent', 'made-up-unknown-token')
       .send({ config: ADD_APPROVER });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('agent_identity_unverified');
     expect(approvals.listPending()).toEqual([]);
   });
 
@@ -424,7 +425,7 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     expect((await raise(routes[1]!.id)).status).toBe(428);
     const capped = await raise(routes[2]!.id);
     expect(capped.status).toBe(429);
-    expect(capped.body.code).toBe('agent_raise_cap');
+    expect(capped.body.code).toBe('rate_limited');
   });
 
   it('still refuses a person who isn’t the owner', async () => {

@@ -1,4 +1,6 @@
 import type { Context, MiddlewareHandler } from 'hono';
+import { problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
 import { recordSignInRateLimited } from '../services/core/auth/auth-audit.js';
 import { createAccountRateLimiter, honoRateLimit } from '../http/rate-limiter.js';
 import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
@@ -73,23 +75,20 @@ const CREDENTIAL_PATHS: ReadonlySet<string> = new Set([
   '/api/owner-sign-in/passkey/finish',
 ]);
 
-/** What a refused attempt is answered with. */
-const RATE_LIMITED_BODY = {
-  error: 'Too many sign-in attempts. Try again in a few minutes.',
-  code: 'RATE_LIMITED',
-};
+/** What a refused attempt is answered with: one problem document. */
+const RATE_LIMITED_BODY = problemBody('rate_limited', {
+  detail: 'Too many sign-in attempts. Try again in a few minutes.',
+});
 
 /**
  * The one refusal both limiters answer with, recorded in the audit log. One
  * function, so the per-account refusal is byte for byte the per-address one
  * and never tells a guesser which limit, or which account, it met
- * (DOR-3172). The same bytes and type Express's `res.json` sent.
+ * (DOR-3172).
  */
 function refuseRateLimited(c: Context): Response {
   recordSignInRateLimited(c.req.header('user-agent'));
-  return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, {
-    'Content-Type': 'application/json; charset=utf-8',
-  });
+  return c.body(JSON.stringify(RATE_LIMITED_BODY), 429, { 'Content-Type': PROBLEM_CONTENT_TYPE });
 }
 
 /**

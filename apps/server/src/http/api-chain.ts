@@ -59,7 +59,10 @@ import {
   MANAGED_HOST_REFUSAL_BODY,
 } from '../middleware/managed-host-guard.js';
 import { logRequest } from '../middleware/request-logger.js';
-import { SERVER_STOPPING_BODY, SERVER_STOPPING_HEADERS } from '../middleware/terminal-admission.js';
+import {
+  SERVER_STOPPING_HEADERS,
+  SERVER_STOPPING_PROBLEM,
+} from '../middleware/terminal-admission.js';
 import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './cors-policy.js';
 import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
@@ -72,6 +75,7 @@ import {
 import { currentServerRole } from '../lib/server-role.js';
 import type { ClientFilesHandler } from './client-files.js';
 import { problem, sendProblem, underMount, type BodyRule } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
 import { apiRequestBody } from './request-body.js';
 import { answerUnclaimed } from './unclaimed.js';
 import { wifiLevelMiddleware } from '../services/core/auth/sessions/wifi-level.js';
@@ -315,7 +319,10 @@ const keepEachVaryFieldOnce: MiddlewareHandler<ApiEnv> = async (c, next) => {
 function admit(admission: MainRequestAdmission): MiddlewareHandler<ApiEnv> {
   return async (c, next) => {
     if (!admission.isClosed) return next();
-    return c.json(SERVER_STOPPING_BODY, 503, SERVER_STOPPING_HEADERS);
+    return c.body(JSON.stringify(SERVER_STOPPING_PROBLEM), 503, {
+      ...SERVER_STOPPING_HEADERS,
+      'Content-Type': PROBLEM_CONTENT_TYPE,
+    });
   };
 }
 

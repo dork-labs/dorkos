@@ -214,7 +214,7 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
         }
         result.textContent = answer.ok
           ? answer.body.message
-          : (answer.body && answer.body.error) || 'Nothing changed. Open the page again.';
+          : (answer.body && (answer.body.detail || answer.body.title)) || 'Nothing changed. Open the page again.';
         result.setAttribute('data-state', answer.ok ? 'done' : 'refused');
       })
       .catch(function () {
