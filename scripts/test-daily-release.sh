@@ -161,6 +161,7 @@ case "$*" in
   *"/releases?"*) f=releases ;;
   *"/commits?sha=main"*) f=commits ;;
   *"browser-test.yml/runs"*) f=fullruns ;;
+  *"/test.yml/runs"*) f=fullruns ;;
   *) exit 1 ;;
 esac
 [ -f "$FX/$f" ] || exit 1
