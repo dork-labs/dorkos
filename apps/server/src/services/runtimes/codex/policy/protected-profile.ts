@@ -190,7 +190,7 @@ function protectedEntries(
     ...tmp.flatMap(spellings),
   ]);
   // The scan step adds only glob exclusions.
-  return codexExactKeys(scanned, (key) => globs.has(key) || !(key in collapsed), linuxBelowFull);
+  return codexExactKeys(scanned, (key) => globs.has(key) || !(key in collapsed));
 }
 
 /**
@@ -219,7 +219,7 @@ export function codexProtectedConfig(
   const metadataFolders = Object.keys(metadataRules).filter((file) =>
     fs.statSync(file).isDirectory()
   );
-  // Measured in CI: bubblewrap below Full misses these paths however they are spelled.
+  // Measured in CI: bubblewrap below Full misses an escaped glob over such a path.
   const linuxBelowFull = process.platform === 'linux' && mode !== 'danger-full-access';
   const protectedFiles = protectedEntries(
     policy,
@@ -252,9 +252,7 @@ export function codexProtectedConfig(
               )
             : {}),
           // Explicit restrictions also hold when /tmp is a broader writable root.
-          ...(mode !== 'danger-full-access'
-            ? codexExactKeys(metadataRules, undefined, linuxBelowFull)
-            : {}),
+          ...(mode !== 'danger-full-access' ? codexExactKeys(metadataRules) : {}),
           ...protectedFiles,
         },
         ...(mode === 'workspace-write'

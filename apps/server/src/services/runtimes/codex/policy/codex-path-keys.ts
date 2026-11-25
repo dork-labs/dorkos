@@ -16,9 +16,10 @@
  *   and `a\\b` is no folder there; `[\\]` misses it on macOS. No spelling
  *   holds on both, so a glob over such a folder refuses instead.
  *
- * On Linux below Full, CI's bubblewrap run (DOR-4542) read the secret files
- * in `site [old]` through these spellings, though they hold at Full and on
- * macOS at every level. So there, a path with glob characters refuses too.
+ * On Linux below Full, CI's bubblewrap runs (DOR-4542) read a secret file
+ * through an escaped glob over `site [old]`, though the same key holds at
+ * Full and on macOS at every level. A scoped key held there. So on Linux
+ * below Full, a glob over a path with glob characters refuses.
  *
  * @module services/runtimes/codex/policy/codex-path-keys
  */
@@ -67,19 +68,15 @@ export function codexGlobLiteral(literal: string, linuxBelowFull = false): strin
  *
  * @param entries - Rendered entries, exact paths spelled as they are.
  * @param isGlob - Whether a key is a glob DorkOS built.
- * @param linuxBelowFull - Whether the profile is for Linux below Full.
- * @throws {CodexGitMetadataPolicyError} When such a path is rendered for Linux below Full.
  */
 export function codexExactKeys(
   entries: Readonly<Record<string, Access>>,
-  isGlob: (key: string) => boolean = () => false,
-  linuxBelowFull = false
+  isGlob: (key: string) => boolean = () => false
 ): Record<string, CodexFilesystemValue> {
   return Object.fromEntries(
-    Object.entries(entries).map(([key, access]) => {
-      if (isGlob(key) || !GLOB_CHARS.test(key)) return [key, access];
-      refuseOnLinuxBelowFull(key, linuxBelowFull);
-      return [key, { '.': access }];
-    })
+    Object.entries(entries).map(([key, access]) => [
+      key,
+      !isGlob(key) && GLOB_CHARS.test(key) ? { '.': access } : access,
+    ])
   );
 }

@@ -6,7 +6,6 @@ import path from 'node:path';
 import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { gitMetadataReadRules } from '../policy/git-metadata.js';
-import { codexExactKeys } from '../policy/codex-path-keys.js';
 
 const MODES = ['default', 'acceptEdits', 'bypassPermissions'];
 const INSIDE_GIT = 'Codex can’t work inside a Git folder. Choose the project folder instead.';
@@ -226,10 +225,6 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
       const bare = path.join(root, 'bare [old]');
       fs.mkdirSync(bare);
       expect(() => render(bare, 'default')).toThrow(/needs Full/);
-      // And an exact key alone refuses too, wherever it came from.
-      expect(() =>
-        codexExactKeys({ [key(path.join(cwd, '.git'))]: 'read' }, undefined, true)
-      ).toThrow(/needs Full/);
     } finally {
       Object.defineProperty(process, 'platform', platform);
     }

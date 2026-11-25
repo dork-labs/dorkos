@@ -235,6 +235,9 @@ async function probe(
     roots: { cwd, data: data!, home: home!, accounts: [], agentFolders: [cwd], agentHomes: [] },
     writable: [],
   };
+  // Every protected file in place, as production prepares them: a missing one
+  // is a mount bubblewrap cannot make at Full. No backups, so Linux Full starts.
+  completeHostFixture(policy, [home!, data!], { withoutClaudeBackups: true });
   const settings = { permissionMode: typeof mode === 'string' ? mode : 'acceptEdits' };
   const profile = codexPermissionProfile(settings);
   const config =
@@ -461,16 +464,20 @@ gitSuite('Codex Git files in folders it once refused', { timeout: 90_000 }, () =
       };
     }
     console.info('Codex backslash glob spellings', { platform: process.platform, denied });
-    // Measured on macOS (Seatbelt): a raw backslash escapes the next
-    // character, so the glob lands on `ab`; doubled, it matches `a\b`. Linux
-    // is logged above; its scanner starts from the text before the first
-    // glob character as a real folder, so the two platforms disagree.
-    if (process.platform === 'darwin')
-      expect(denied).toEqual({
-        raw: { slashed: false, lookalike: true },
-        doubled: { slashed: true, lookalike: false },
-      });
+    // macOS (Seatbelt): a raw backslash escapes the next character, so the
+    // glob lands on `ab`; doubled, it matches `a\b`. Linux searches from the
+    // text before the first glob character as a real folder: raw finds `a\b`,
+    // doubled finds no folder. No spelling holds on both, hence the refusal.
+    expect(denied).toEqual(
+      process.platform === 'linux'
+        ? {
+            raw: { slashed: true, lookalike: false },
+            doubled: { slashed: false, lookalike: false },
+          }
+        : { raw: { slashed: false, lookalike: true }, doubled: { slashed: true, lookalike: false } }
+    );
   });
+
   // Why Linux refuses below Full: an escaped glob, and a scoped exact key
   // beside a glob, each measured at Edit on this platform's binary.
   it('measures escaped and scoped keys below Full', async () => {
@@ -502,6 +509,8 @@ gitSuite('Codex Git files in folders it once refused', { timeout: 90_000 }, () =
       denied[name] = !output.includes(`CANARY-${path.basename(dir)}`);
     }
     console.info('Codex glob-character keys below Full', { platform: process.platform, denied });
-    if (process.platform === 'darwin') expect(denied).toEqual({ escaped: true, scoped: true });
+    // Linux below Full misses the escaped glob, hence its refusal there; the
+    // scoped key holds on both.
+    expect(denied).toEqual({ escaped: process.platform !== 'linux', scoped: true });
   });
 });
