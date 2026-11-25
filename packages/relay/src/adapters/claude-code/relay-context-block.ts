@@ -5,7 +5,11 @@
  *
  * @module relay/adapters/claude-code/relay-context-block
  */
-import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import {
+  A2A_CLIENT_NAME,
+  A2A_GATEWAY_SENDER,
+  type RelayEnvelope,
+} from '@dorkos/shared/relay-schemas';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
 import { extractSenderIdentity } from '../../lib/payload-utils.js';
@@ -21,14 +25,23 @@ import { isTurnShapingSender } from './turn-shaping-sender.js';
  */
 const SYSTEM_TAGS = [...Object.values(CONTEXT_TAG), 'system-reminder'];
 
+/** Who the `Sender:` and `Chat:` lines name: a chat bridge's own fields, or A2A's constant. */
+function senderLinesOf(envelope: RelayEnvelope): { sender?: string; chat?: string } {
+  if (envelope.from === A2A_GATEWAY_SENDER) return { sender: A2A_CLIENT_NAME };
+  // Only a chat bridge names who is talking (DOR-5201): any other sender's
+  // payload could put someone else's name on the Sender line.
+  return isTurnShapingSender(envelope.from) ? extractSenderIdentity(envelope.payload) : {};
+}
+
 /**
  * Format the user prompt with a <relay_context> XML block.
  *
  * When the envelope's payload carries a sender name and/or chat title
  * (Telegram/Slack inbound), a `Sender:`/`Chat:` line is inserted right after
  * `From:` so the agent knows who it is talking to. Only a sender that may shape
- * the turn ({@link isTurnShapingSender}) names them. Absent either field, the
- * block is byte-identical to the plain envelope-metadata format.
+ * the turn ({@link isTurnShapingSender}) names them; an A2A turn always reads
+ * `Sender: a2a-client`. Absent either field, the block is byte-identical to the
+ * plain envelope-metadata format.
  *
  * ## The message body is somebody else's words
  *
@@ -66,11 +79,7 @@ export function formatPromptWithContext(
   sdkSessionId: string,
   now: () => number
 ): string {
-  // Only a chat bridge names who is talking (DOR-5201): any other sender's
-  // payload could put someone else's name on the Sender line.
-  const { sender, chat } = isTurnShapingSender(envelope.from)
-    ? extractSenderIdentity(envelope.payload)
-    : {};
+  const { sender, chat } = senderLinesOf(envelope);
   const lines = [
     `Agent-ID: ${agentId}`,
     `Session-ID: ${sdkSessionId}`,

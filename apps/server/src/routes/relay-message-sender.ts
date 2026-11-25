@@ -30,15 +30,13 @@
  */
 import {
   CARRIED_TURN_LIMITS_FIELD,
+  HTTP_RELAY_SENDER,
   sealTurnLimits,
   TURN_SHAPING_PAYLOAD_FIELDS,
 } from '@dorkos/relay';
 import type { RelaySendMessageRequest } from '@dorkos/shared/relay-schemas';
 import type { RequestFacts } from '../http/request-facts.js';
 import { launcherTurnCeiling, sessionLauncherOf } from './session-launcher.js';
-
-/** The sender of a relay message from a caller DorkOS cannot name. */
-export const HTTP_RELAY_SENDER = 'relay.external.http';
 
 /** Why a caller other than the person may not send from a person's address. */
 export const PERSON_SENDER_REFUSAL =

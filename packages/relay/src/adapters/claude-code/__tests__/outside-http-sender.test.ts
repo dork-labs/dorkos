@@ -130,11 +130,32 @@ describe('who is talking, on the Sender line', () => {
     expect(prompt).toContain('Chat: Team chat');
   });
 
-  it.each(['relay.agent.default.porter', 'a2a-gateway', 'relay.webhook.hook-1'])(
+  it.each(['relay.agent.default.porter', 'relay.webhook.hook-1'])(
     'is never named by %s',
     async (from) => {
       const { prompt } = await run({ content: 'hi', senderName: 'Avery Example' }, from);
       expect(prompt).not.toContain('Sender:');
     }
   );
+
+  it('is always the A2A client on a turn the A2A gateway sends, whatever its payload names', async () => {
+    const { prompt } = await run(
+      { content: 'hi', senderName: 'Avery Example', channelName: 'Owners only' },
+      'a2a-gateway'
+    );
+    expect(prompt).toContain('Sender: a2a-client');
+    expect(prompt).not.toContain('Avery Example');
+    expect(prompt).not.toContain('Chat:');
+  });
+});
+
+describe('a message from the outside HTTP address with no stamp', () => {
+  it.each([
+    ['no carried limits at all', { content: 'hello' }],
+    ['a copy that names no mark', { content: 'hello', [CARRIED_TURN_LIMITS_FIELD]: {} }],
+  ])('still runs held and marked as an outsider’s, with %s', async (_name, payload) => {
+    const { opts } = await run(payload);
+    expect(opts.permissionCeiling).toBe('runtime-default');
+    expect(opts.carriedMarks).toEqual({ outsider: true });
+  });
 });

@@ -7,6 +7,8 @@
  * agent's set level (Dorian 2026-10-30, DOR-3440). It is refused before it starts when any space in
  * its chain is at its monthly limit, and counted against every one of them when it ends
  * (`teammate-turn-cost.ts`). Counting a turn two spaces reached against both errs toward the limit.
+ * A chain whose rooms nothing proves (`UNPROVEN_TEAMMATE_ORIGIN`) is held to, and counted against,
+ * every space with a limit, for the same reason.
  *
  * @module services/core/turn-power/teammate-mark
  */

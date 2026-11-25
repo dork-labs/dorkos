@@ -554,6 +554,18 @@ export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): T
 }
 
 /**
+ * The one origin a teammate's chain names when nothing proves which rooms it
+ * came from (a copy the server can no longer check, say, after a restart). The
+ * turn still reads as a teammate's, and it is held to, and counted against,
+ * every space's monthly limit at once, so it can't run free of the space it
+ * really came from. No room has this id.
+ */
+export const UNPROVEN_TEAMMATE_ORIGIN: TeammateOrigin = Object.freeze({
+  roomId: 'teammate-chain.unproven',
+  authorId: 'teammate-chain.unproven',
+});
+
+/**
  * Every teammate origin either list holds, once each; `undefined` when neither
  * is marked. Returns `a` itself when `b` adds nothing, so an unchanged level
  * stays the same object.
