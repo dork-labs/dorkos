@@ -24,7 +24,7 @@
  *
  * @module services/core/approvals/agent-raise/agent-raise-cards
  */
-import { problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CODES, problemType } from '@dorkos/shared/problem';
 import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import type { ApprovalService } from '../approval-service.js';
 import { logger } from '../../../../lib/logger.js';
@@ -258,8 +258,11 @@ export type AgentRaiseRefusal = { status: number; body: Problem };
 
 /** A refusal of a yes, as the grant route hands it back. */
 function raiseRefusal(code: ProblemCode, detail: string): AgentRaiseRefusal {
-  const body = problemBody(code, { detail });
-  return { status: body.status, body };
+  // Built from the shared code list, not @dorkos/http-kit: the space server's
+  // test image reaches this module and does not carry that package.
+  const { status, title } = PROBLEM_CODES[code];
+  const body: Problem = { type: problemType(code), title, status, code, detail };
+  return { status, body };
 }
 
 /**
