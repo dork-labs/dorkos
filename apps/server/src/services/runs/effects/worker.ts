@@ -8,9 +8,9 @@
  * boot let lapse, expires what is past its `not_after`, settles the runs whose
  * last effect is terminal (transition 13), then takes due effects one at a
  * time and runs each one's handler until none is due. It wakes on any insert
- * (an in-process signal), on a 1-second tick while anything is still open,
- * and once more when every lease of the boot before has run out; with nothing
- * open it sleeps until the next insert. What follows a dead run beyond its
+ * (an in-process signal), when the next open effect falls due (no sooner
+ * than a second, no later than 30), and once more when every lease of the
+ * boot before has run out; with nothing open it sleeps until the next insert. What follows a dead run beyond its
  * ending (a continuation, a person's line) stays recovery's to decide (T15).
  *
  * **Leases.** Taking an effect is one conditional update, so two workers never
@@ -55,8 +55,15 @@ export const EFFECT_LEASE_MS = 60_000;
 /** How often a held lease is renewed while its handler works (§6.1). */
 export const EFFECT_LEASE_RENEW_MS = 20_000;
 
-/** The tick while anything is open (§6.1). */
+/**
+ * The shortest wait between passes while something is open but not yet
+ * taken (§6.1): an effect behind an earlier one of its run, or held by a
+ * live boot, is looked at again no sooner than this.
+ */
 export const EFFECT_TICK_MS = 1_000;
+
+/** The longest wait between passes while anything is open. */
+export const EFFECT_MAX_IDLE_MS = 30_000;
 
 /** The waits between a `repeatable` effect's failed attempts; the last repeats. */
 export const EFFECT_RETRY_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000, 600_000] as const;
@@ -252,10 +259,32 @@ export class EffectWorker {
           });
         }
       } while (this.again && this.running);
-      if (this.running && this.opts.effects.hasOpen()) this.arm(EFFECT_TICK_MS);
+      if (this.running) this.armForNextWork();
     } finally {
       this.looping = false;
     }
+  }
+
+  /**
+   * Arm the next pass for when something falls due: the earliest
+   * `available_at`, `not_after` or lapsing lease, between
+   * {@link EFFECT_TICK_MS} and {@link EFFECT_MAX_IDLE_MS} from now. Nothing
+   * open, nothing armed. A store that cannot answer is asked again on the
+   * shortest tick, never left to throw out of the loop.
+   */
+  private armForNextWork(): void {
+    let at: number | undefined;
+    try {
+      at = this.opts.effects.nextWorkAt(this.opts.epoch);
+    } catch (err) {
+      logger.warn('[runs] could not read when the outbox next has work', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      this.arm(EFFECT_TICK_MS);
+      return;
+    }
+    if (at === undefined) return;
+    this.arm(Math.min(EFFECT_MAX_IDLE_MS, Math.max(EFFECT_TICK_MS, at - this.now())));
   }
 
   /** End dead boots' runs, take back lapsed leases, expire what is late, and settle what can. */

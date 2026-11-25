@@ -244,16 +244,24 @@ export class EffectStore {
     );
   }
 
-  /** Whether any effect at all still owes work: what keeps the worker's tick running. */
-  hasOpen(): boolean {
-    return (
-      this.db
-        .select({ id: turnEffects.id })
-        .from(turnEffects)
-        .where(inArray(turnEffects.state, OPEN_STATES))
-        .limit(1)
-        .get() !== undefined
-    );
+  /**
+   * When the worker next has something to do, epoch ms: the soonest a pending
+   * effect falls due or passes its `not_after`, or another boot's lease runs
+   * out. `undefined` when nothing is open.
+   *
+   * @param owner - This boot's epoch; its own leases end with their handlers.
+   */
+  nextWorkAt(owner: string): number | undefined {
+    const row = this.db
+      .select({
+        due: sql<number | null>`min(CASE WHEN ${turnEffects.state} = 'pending'
+          THEN min(${turnEffects.availableAt}, coalesce(${turnEffects.notAfter}, ${turnEffects.availableAt}))
+          WHEN ${turnEffects.leaseOwner} <> ${owner} THEN ${turnEffects.leaseUntil} END)`,
+      })
+      .from(turnEffects)
+      .where(inArray(turnEffects.state, OPEN_STATES))
+      .get();
+    return row?.due ?? undefined;
   }
 
   /**
