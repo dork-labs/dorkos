@@ -69,7 +69,7 @@ export const FAILURE_MESSAGE: Record<AgentDeliveryFailureReason, string> = {
   session_gone: 'The chat the message was waiting in no longer exists.',
   interrupted:
     'DorkOS restarted before the message finished. Check the chat to see how far it got.',
-  undeliverable: 'The message waited for room, and then the agent or chat could no longer take it.',
+  undeliverable: 'When its turn came, the agent or chat could not take the message.',
   stopped: 'The message was waiting for room when the extension stopped, so it was never sent.',
 };
 

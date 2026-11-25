@@ -18,15 +18,15 @@
  *    runs `defuseSystemTags` over them), labelled inside as coming from the
  *    named app and being data, not instructions. The fenced block is the
  *    message itself, so it survives the queue and a restart byte for byte.
- * 3. **How it is sent.** `dispatchSessionMessage` with the dispatcher's default
- *    `whenBusy: 'queue'`: a busy chat HOLDS the message in
- *    `session_message_queue`, under the receipt's own id, and runs it when the
- *    current turn ends. **That hold has no time limit** — the dispatcher's wait
- *    budget only forces a launch attempt, which a running turn's live lock
- *    refuses, and the message goes back in line (`queueWaitMs` in
- *    `message-dispatcher.ts`). So there is no `hold_expired`: a waiting message
- *    leaves the queue by running, or by a person removing it, and either way
- *    the extension hears.
+ * 3. **How it is sent.** Through the turn port (`services/runs`, spec
+ *    `turns-survive-restarts` §3): `start()` saves a run for it and answers at
+ *    once, and the run is handed to the chat when the chat is free. Its words
+ *    stay in this message's own row (the run's `sourceRef`) until its turn
+ *    starts, so a restart in between loses nothing and puts no prompt nobody
+ *    typed into a person's composer. A busy chat makes it wait for the turn
+ *    ahead of it to end, with **no time limit**, so there is no
+ *    `hold_expired`: a waiting message leaves by running, and the extension
+ *    hears either way.
  * 4. **What the extension can NOT say.** The input is strict: a `cwd`,
  *    `permissionMode`, `forAgent`, `runtime` or any other field is refused, so
  *    an extension cannot pick where the turn stands, who it acts as, or how
@@ -36,23 +36,23 @@
  *
  * ## Capacity
  *
- * A message into an idle chat counts toward the launch cap every turn nobody
- * typed into counts toward (`AGENT_LAUNCH_MAX_LIVE`); one into a busy chat
- * does not, since it adds no turn beside the running one. When there is no
- * room — the cap is full, or opening the agent's chat would break the
- * extension's start limits — the message is not refused: it is HELD here
- * (`status: 'held'`, words kept) and the receipt says `queued` with reason
- * `at_capacity`. Held messages are retried every {@link HELD_RETRY_MS}, oldest
- * first, and survive a restart.
+ * A message counts toward the launch cap every turn nobody typed into counts
+ * toward (`runtimes.maxAgentChats`). When the cap is full it is not refused:
+ * its run waits until there is room, and the receipt says `at_capacity`. Opening the agent's chat when that
+ * would break the extension's own start limits is the one wait kept here: the
+ * message is HELD (`status: 'held'`, words kept), retried every
+ * {@link HELD_RETRY_MS}, oldest first, and survives a restart.
  *
  * ## The receipt and the ack
  *
- * `send` answers at once with `{ messageId, status, reason?, sessionId }`. What
- * follows reaches the extension through `ctx.agent.subscribe`, read off the
- * dispatcher's {@link onDispatchLifecycle} by message id: `turn.started` (the
- * ack), then `turn.done`, or `turn.failed` with a reason when the message will
- * never run. These are server-side and not tied to which chat a person has
- * open, unlike the page's `api.events` stream.
+ * `send` answers at once with `{ messageId, status, reason?, sessionId }`:
+ * `queued` from the moment its run is saved, with `busy` when another turn
+ * holds the chat and `at_capacity` when the machine is full, as admission saw
+ * it then. What follows reaches the extension through
+ * `ctx.agent.subscribe`, read off the run (`agent-send-runs.ts`):
+ * `turn.started` (the ack), then `turn.done`, or `turn.failed` with a reason
+ * when the message will never run. These are server-side and not tied to
+ * which chat a person has open, unlike the page's `api.events` stream.
  *
  * ## Idempotency
  *
@@ -72,21 +72,17 @@ import {
   type AgentDeliveryEvent,
   type AgentDeliveryFailureReason,
   type AgentSendReceipt,
+  type AgentSendWaitReason,
 } from '@dorkos/extension-api/server';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logError, logger } from '../../../lib/logger.js';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import {
-  dispatchSessionMessage,
-  isSessionLaunchRefusal,
-  type DispatchSessionMessageOpts,
-  type DispatchSessionMessageResult,
-} from '../../session/launch/launch-session.js';
-import {
-  onDispatchLifecycle,
-  type DispatchLifecycleEvent,
-} from '../../session/message-dispatcher.js';
-import { getMessageQueueStore } from '../../session/message-queue-store.js';
-import { peekProjector } from '../../session/session-state-projector.js';
+  TurnStartRefusedError,
+  turnPort,
+  type SpaceTurnPort,
+  type TurnRun,
+} from '../../runs/index.js';
 import { mintFenceNonce } from '../../core/untrusted-text/untrusted-fence.js';
 import {
   AgentSendInputSchema,
@@ -102,13 +98,11 @@ import type { AgentSendRecord, AgentSendStore } from './agent-send-store.js';
 import type { StartReservation } from '../start-work.js';
 import {
   describeSessionFor,
-  isSessionBusy,
   liveSessionCwd,
   reserveKeptChat,
-  resumeChatQueueFor,
   type SessionFacts,
 } from './agent-send-defaults.js';
-import { extensionClientId } from './extension-client-id.js';
+import { messageOfRun, SEND_SOURCE, sendSourceRef, stepOf } from './agent-send-runs.js';
 
 export type { SessionFacts } from './agent-send-defaults.js';
 
@@ -135,21 +129,13 @@ export interface AgentSendDeps {
   describeSession?: (sessionId: string) => Promise<SessionFacts>;
   /** The folder a chat runs in, when a live projector or its runtime knows. */
   sessionCwd?: (sessionId: string) => Promise<string | undefined>;
-  /** Whether a chat has a turn running right now. */
-  isBusy?: (sessionId: string) => Promise<boolean>;
-  /** The send itself. */
-  dispatch?: (opts: DispatchSessionMessageOpts) => Promise<DispatchSessionMessageResult>;
   /** Claims a start slot for a new kept chat (the start-work seam's `reserve`). */
   reserveChat?: (
     extensionId: string,
     sessionId: string
   ) => { ok: true; reservation: StartReservation } | { ok: false; message: string } | null;
-  /** Whether the dispatcher still holds a queue row for a message. */
-  isQueued?: (messageId: string) => boolean;
-  /** Re-arm a chat's queued rows after a restart. */
-  resumeQueue?: (sessionId: string, cwd: string | undefined) => Promise<void>;
-  /** Subscribe to the dispatcher's lifecycle events. */
-  onLifecycle?: (listener: (event: DispatchLifecycleEvent) => void) => () => void;
+  /** The turn port's space face, read at call time; the server's own by default. */
+  port?: () => SpaceTurnPort | undefined;
   /** A fence nonce (tests pin it). */
   nonce?: () => string;
   /** How often held messages are retried. */
@@ -164,9 +150,9 @@ interface ResolvedTarget {
   agent?: { id: string; path: string };
 }
 
-/** How one attempt to hand a message to the dispatcher came out. */
+/** How one attempt to hand a message to the turn port came out. */
 type Attempt =
-  | { kind: 'sent'; sessionId: string; queued: boolean }
+  | { kind: 'sent'; sessionId: string; reason: AgentSendWaitReason | null }
   | { kind: 'held' }
   | { kind: 'refused'; code: 'not_found' | 'not_allowed' | 'unavailable'; message: string };
 
@@ -181,12 +167,13 @@ export class AgentSendService {
   private readonly nonce: () => string;
   private readonly describeSession: (sessionId: string) => Promise<SessionFacts>;
   private readonly sessionCwd: (sessionId: string) => Promise<string | undefined>;
-  private readonly isBusy: (sessionId: string) => Promise<boolean>;
-  private readonly dispatchSessionMessage: NonNullable<AgentSendDeps['dispatch']>;
   private readonly reserveChat: NonNullable<AgentSendDeps['reserveChat']>;
-  private readonly isQueued: (messageId: string) => boolean;
-  private readonly resumeQueue: NonNullable<AgentSendDeps['resumeQueue']>;
-  private readonly onLifecycle: NonNullable<AgentSendDeps['onLifecycle']>;
+  private readonly port: () => SpaceTurnPort | undefined;
+  /** The port this seam reads its runs from, once it has heard of one. */
+  private attachedTo: SpaceTurnPort | undefined;
+  private detach: (() => void) | null = null;
+  /** Start slots held for the kept chats messages are opening, by message, until their run ends. */
+  private readonly reservations = new Map<string, StartReservation>();
   /** Chat-opening sends, chained per (extension, agent), so two firsts open one chat. */
   private readonly agentLocks = new Map<string, Promise<unknown>>();
   /** Events for messages mid-dispatch, held until the chat's final id is known. */
@@ -199,14 +186,13 @@ export class AgentSendService {
   private readonly stoppedExtensions = new Set<string>();
   /** Messages this process wrote: never "left behind by a restart". */
   private readonly createdHere = new Set<string>();
-  private unsubscribeLifecycle: (() => void) | null = null;
   private started = false;
   private stopped = false;
   private retryTimer: ReturnType<typeof setInterval> | null = null;
   private draining: Promise<void> | null = null;
 
   /**
-   * Build the seam, already listening to the dispatcher: an extension may send
+   * Build the seam, already listening to the turn port: an extension may send
    * the moment it starts, which is before {@link AgentSendService.start}, and
    * those messages' turns must be heard. Call `start` once runtimes are
    * registered.
@@ -217,44 +203,57 @@ export class AgentSendService {
     this.nonce = deps.nonce ?? mintFenceNonce;
     this.describeSession = deps.describeSession ?? describeSessionFor(deps.roomSessionPlace);
     this.sessionCwd = deps.sessionCwd ?? liveSessionCwd;
-    this.isBusy = deps.isBusy ?? isSessionBusy;
-    this.dispatchSessionMessage = deps.dispatch ?? dispatchSessionMessage;
     this.reserveChat = deps.reserveChat ?? reserveKeptChat;
-    this.isQueued = deps.isQueued ?? ((id) => getMessageQueueStore()?.get(id) !== undefined);
-    this.resumeQueue = deps.resumeQueue ?? resumeChatQueueFor(deps.meshCore, deps.roomSessionPlace);
-    this.onLifecycle = deps.onLifecycle ?? onDispatchLifecycle;
-    this.unsubscribeLifecycle = this.onLifecycle((event) => this.onDispatch(event));
+    this.port = deps.port ?? turnPort;
+    this.attach();
+  }
+
+  /**
+   * The turn port, with this seam reading its messages' words for it and
+   * hearing their runs. Attached once, the first time there is a port.
+   */
+  private attach(): SpaceTurnPort | undefined {
+    const port = this.port();
+    if (!port || port === this.attachedTo || this.stopped) return port;
+    this.detach?.();
+    this.attachedTo = port;
+    // A message's words, until its turn starts: what the port hands over,
+    // again after a restart if it must.
+    const unregister = port.registerSource(SEND_SOURCE, {
+      read: (id) => this.deps.store.get(id)?.content ?? undefined,
+    });
+    const unwatch = port.watch((run) => this.onRun(run));
+    this.detach = () => {
+      unregister();
+      unwatch();
+    };
+    return port;
   }
 
   /**
    * Settle what a previous process left unfinished, and start retrying held
    * messages.
    *
-   * Left behind by a restart: a `started` message's turn died with the old
-   * process, and a `queued` one whose queue row is gone can no longer be told
-   * apart from one that ran, so both are reported `interrupted`. A `queued`
-   * message whose row survived is re-armed now, rather than waiting for the
-   * next message to that chat to adopt it. Only rows a PREVIOUS process wrote
-   * are judged: a message this process sent before `start` ran is live.
+   * A message an earlier process saved a run for reads its run now: still
+   * waiting, it goes on waiting and runs; started, it hears its run's end (a
+   * turn its process took with it reads `interrupted`). One with no run (an
+   * earlier build queued it in the chat itself) can no longer be told apart
+   * from one that ran, so it is reported `interrupted`. Only rows a PREVIOUS
+   * process wrote are judged: a message this process sent before `start` ran
+   * is live.
    */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
-    const resumed = new Set<string>();
+    const port = this.attach();
     for (const row of this.deps.store.listByStatus(['queued', 'started'])) {
       if (this.createdHere.has(row.id)) continue;
-      if (row.status === 'started' || !this.isQueued(row.id)) {
-        this.fail(row, 'interrupted');
-        continue;
-      }
-      if (!row.sessionId || resumed.has(row.sessionId)) continue;
-      resumed.add(row.sessionId);
-      await this.resumeQueue(row.sessionId, row.cwd ?? undefined).catch((err: unknown) =>
-        logger.warn('[agent-send] could not re-arm a chat’s queued messages', {
-          sessionId: row.sessionId,
-          ...logError(err),
-        })
-      );
+      const ref = sendSourceRef(row.id);
+      const run = row.sessionId
+        ? port?.list(row.sessionId).find((each) => each.sourceRef === ref)
+        : undefined;
+      if (run) this.onRun(run);
+      else this.fail(row, 'interrupted');
     }
     const retryMs = this.deps.retryMs ?? HELD_RETRY_MS;
     this.retryTimer = setInterval(
@@ -270,8 +269,8 @@ export class AgentSendService {
    */
   stop(): void {
     this.stopped = true;
-    this.unsubscribeLifecycle?.();
-    this.unsubscribeLifecycle = null;
+    this.detach?.();
+    this.detach = null;
     if (this.retryTimer) clearInterval(this.retryTimer);
     this.retryTimer = null;
   }
@@ -442,12 +441,8 @@ export class AgentSendService {
       this.deps.store.update(row.id, { receiptStatus: 'queued', receiptReason: 'at_capacity' });
       this.holdOrFail(row);
     } else {
-      // A turn that already started (or even ended) inside the dispatch keeps
-      // the status the lifecycle gave it; only the receipt is settled here.
-      this.deps.store.update(row.id, {
-        receiptStatus: attempt.queued ? 'queued' : 'started',
-        receiptReason: attempt.queued ? 'busy' : null,
-      });
+      // Saved, and waiting to start: the run says when it does.
+      this.deps.store.update(row.id, { receiptStatus: 'queued', receiptReason: attempt.reason });
     }
     return receiptOf(this.deps.store.get(row.id) ?? row);
   }
@@ -498,12 +493,12 @@ export class AgentSendService {
   }
 
   /**
-   * Hand one message to the dispatcher: now, or as a retry of a held one.
+   * Hand one message to the turn port: now, or as a retry of a held one.
    * Opens the agent's kept chat first when it has none.
    */
   private async attempt(row: AgentSendRecord, target: ResolvedTarget): Promise<Attempt> {
-    // Events for this message wait until the dispatch answers, so every one of
-    // them, and the receipt, carries the one id the chat settles on.
+    // Events for this message wait until the port answers, so the receipt
+    // always goes first.
     this.attempting.set(row.id, []);
     try {
       return await this.attemptBuffered(row, target);
@@ -529,71 +524,44 @@ export class AgentSendService {
       if (claimed && !claimed.ok) return { kind: 'held' };
       reservation = claimed?.reservation;
     }
-    // On the row before the dispatch, so nothing that happens inside it can
+    const door = this.attach();
+    if (!door) {
+      reservation?.cancel();
+      throw new Error('The turn port is not wired yet');
+    }
+    // On the row before the start, so nothing that happens after it can
     // report a chat id this message never had.
     this.deps.store.update(row.id, { sessionId });
-    const busy = target.sessionId !== null && (await this.isBusy(sessionId).catch(() => false));
     const name = sanitizeIdentity(this.deps.extensionName(row.extensionId)) ?? row.extensionId;
-    let result: DispatchSessionMessageResult;
+    let runId: string;
     try {
-      result = await this.dispatchSessionMessage({
-        origin: { kind: 'extension-message' },
+      ({ runId } = door.start({
         sessionId,
-        messageId: row.id,
-        request: {
-          content: row.content ?? '',
-          ...(row.cwd ? { cwd: row.cwd } : {}),
-          ...(target.agent ? { agentPath: target.agent.path } : {}),
-          ...(reservation
-            ? {
-                seedContext: `This chat was opened by the ${name} app so it can send this agent messages.`,
-              }
-            : {}),
-        },
-        clientId: extensionClientId(row.extensionId),
-        meshCore: this.deps.meshCore() as MeshCore | undefined,
-        // The real port, so the launch's own room guard still fires for a chat
-        // a room took over after the target was checked (ROOM_SESSION_MOVED).
-        roomSessionPlace: this.deps.roomSessionPlace?.(),
-        // A message into a busy chat adds no turn beside the running one.
-        countsTowardLaunchCap: !busy,
-        ...(reservation ? { onSettled: () => reservation.settle() } : {}),
-      });
+        ...(target.agent ? { agentId: target.agent.id } : {}),
+        // An existing chat runs in its own folder whatever this names.
+        cwd: row.cwd ?? target.agent?.path ?? DEFAULT_CWD,
+        content: row.content ?? '',
+        origin: { kind: 'extension-message' },
+        tier: 'owner',
+        sourceRef: sendSourceRef(row.id),
+        ...(reservation
+          ? {
+              seedContext: `This chat was opened by the ${name} app so it can send this agent messages.`,
+            }
+          : {}),
+      }));
     } catch (err) {
       reservation?.cancel();
       this.deps.store.update(row.id, { sessionId: target.sessionId });
-      throw err;
+      if (!(err instanceof TurnStartRefusedError)) throw err;
+      const code = err.reason === 'invalid_agent_path' ? 'not_found' : 'unavailable';
+      return { kind: 'refused', code, message: err.message };
     }
-    if (isSessionLaunchRefusal(result)) {
-      reservation?.cancel();
-      this.deps.store.update(row.id, { sessionId: target.sessionId });
-      if (result.refused === 'LAUNCH_CAP_FULL') return { kind: 'held' };
-      if (result.refused === 'ROOM_SESSION_MOVED' || result.refused === 'DESK_NOT_OWN') {
-        return { kind: 'refused', code: 'not_allowed', message: result.message };
-      }
-      if (result.refused === 'INVALID_AGENT_PATH') {
-        return { kind: 'refused', code: 'not_found', message: result.message };
-      }
-      return { kind: 'refused', code: 'unavailable', message: result.message };
-    }
-    if (!result.accepted) {
-      reservation?.cancel();
-      this.deps.store.update(row.id, { sessionId: target.sessionId });
-      return {
-        kind: 'refused',
-        code: 'unavailable',
-        message: 'The chat could not take the message. Try again.',
-      };
-    }
-    const canonical = result.canonicalId ?? sessionId;
-    if (reservation && canonical !== sessionId) reservation.rekey(canonical);
-    if (target.agent) this.deps.store.keepChat(row.extensionId, target.agent.id, canonical);
-    this.deps.store.update(row.id, {
-      sessionId: canonical,
-      cwd: peekProjector(sessionId)?.cwd ?? row.cwd,
-      content: null,
-    });
-    return { kind: 'sent', sessionId: canonical, queued: result.queued };
+    if (reservation) this.reservations.set(row.id, reservation);
+    if (target.agent) this.deps.store.keepChat(row.extensionId, target.agent.id, sessionId);
+    // Why it waits, as admission saw it when the run was saved.
+    const reason = stepOf(door.get(runId)!);
+    return { kind: 'sent', sessionId, reason: reason.kind === 'waiting' ? reason.reason : null };
   }
 
   /** Try every held message again, oldest first. One drain at a time. */
@@ -651,37 +619,47 @@ export class AgentSendService {
     else if (attempt.kind === 'held') this.holdOrFail(row);
   }
 
-  /** Translate a dispatcher lifecycle event into this extension's delivery event. */
-  private onDispatch(event: DispatchLifecycleEvent): void {
-    const row = this.deps.store.get(event.messageId);
-    if (!row) return;
-    if (event.phase === 'started') {
-      if (row.status !== 'queued') return;
-      // The row's id, written before the dispatch; the turn's filing id only
-      // for a row from before that rule.
-      const sessionId = row.sessionId ?? event.sessionId;
-      this.deps.store.update(row.id, { status: 'started' });
-      this.deliver(row.extensionId, { kind: 'turn.started', messageId: row.id, sessionId });
-      return;
-    }
-    if (event.phase === 'settled') {
-      if (row.status === 'done' || row.status === 'failed') return;
-      this.deps.store.update(row.id, { status: 'done' });
-      this.deliver(row.extensionId, {
-        kind: 'turn.done',
-        messageId: row.id,
-        sessionId: row.sessionId ?? event.sessionId,
-        outcome: event.outcome === 'ok' ? 'ok' : 'error',
-      });
-      return;
-    }
-    // A pause cut its turn before the agent read it: it waits in the queue again
-    // and starts afresh on resume (DOR-4353).
-    if (event.phase === 'held') {
+  /** Translate a change of a message's run into this extension's delivery event. */
+  private onRun(run: TurnRun): void {
+    const messageId = messageOfRun(run);
+    const row = messageId === undefined ? undefined : this.deps.store.get(messageId);
+    if (!row || row.status === 'done' || row.status === 'failed') return;
+    const step = stepOf(run);
+    const sessionId = row.sessionId ?? run.sessionId;
+    if (step.kind === 'waiting') {
+      // A pause cut its turn before the agent read it: it waits again and
+      // starts afresh (DOR-4353). The receipt stays the first one.
       if (row.status === 'started') this.deps.store.update(row.id, { status: 'queued' });
       return;
     }
-    if (row.status === 'queued' || row.status === 'held') this.fail(row, event.reason);
+    // A watcher reads the run as it stands, so a turn that started and ended
+    // between two reads still owes its ack, first.
+    if (row.status === 'queued' && (step.kind === 'started' || run.startedAt !== null)) {
+      // The runtime may have settled on another id for a chat this message opened.
+      const reservation = this.reservations.get(row.id);
+      if (reservation && run.sessionId !== row.sessionId) reservation.rekey(run.sessionId);
+      if (row.agentId) this.deps.store.keepChat(row.extensionId, row.agentId, run.sessionId);
+      this.deps.store.update(row.id, { status: 'started', content: null });
+      this.deliver(row.extensionId, { kind: 'turn.started', messageId: row.id, sessionId });
+    }
+    if (step.kind === 'started' || step.kind === 'none') return;
+    const reservation = this.reservations.get(row.id);
+    this.reservations.delete(row.id);
+    if (step.kind === 'failed') {
+      // A chat that never started is forgotten, so it counts against no limit.
+      if (run.startedAt === null) reservation?.cancel();
+      else reservation?.settle();
+      this.fail(row, step.reason);
+      return;
+    }
+    reservation?.settle();
+    this.deps.store.update(row.id, { status: 'done', content: null });
+    this.deliver(row.extensionId, {
+      kind: 'turn.done',
+      messageId: row.id,
+      sessionId,
+      outcome: step.outcome,
+    });
   }
 
   /** Mark a message failed for good, and tell its extension. */

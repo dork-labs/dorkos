@@ -32,6 +32,7 @@ import { effectHandlers, type EffectHandlerDeps } from './effects/handlers/index
 import { EffectWorker } from './effects/worker.js';
 import { StartTurns } from './effects/start-turns.js';
 import { startTurnHandler, type StartTurnDeps } from './effects/handlers/start-turn.js';
+import { admit } from './admission.js';
 import { SpaceTurnPort } from './turn-port.js';
 
 export {
@@ -129,7 +130,25 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     // Read at call time: nothing moves a run before the record is built.
     onMoved: (run, from) => starts.onRunMoved(run, from),
   });
-  const port = new SpaceTurnPort({ runs: store, effects, ...(agentHome ? { agentHome } : {}) });
+  // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
+  const admissionSources = admission?.admission ?? {
+    isPaused: () => false,
+    machineFull: isAgentLaunchCapFull,
+  };
+  const admitRun = admission?.admit ?? admit;
+  const port = new SpaceTurnPort({
+    runs: store,
+    effects,
+    ...(agentHome ? { agentHome } : {}),
+    preview: (run, start) => {
+      if (run.origin === null) return undefined;
+      const verdict = admitRun({ ...run, origin: run.origin }, start, {
+        runs: store,
+        ...admissionSources,
+      });
+      return 'wait' in verdict ? verdict.wait : undefined;
+    },
+  });
   const starts = new StartTurns(store, effects, () => port, now);
   const worker = new EffectWorker({
     effects,
@@ -142,12 +161,8 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
         port,
         computer: computer ?? getComputerTurnPort,
         queueRowExists,
-        // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
-        admission: admission?.admission ?? {
-          isPaused: () => false,
-          machineFull: isAgentLaunchCapFull,
-        },
-        ...(admission?.admit ? { admit: admission.admit } : {}),
+        admission: admissionSources,
+        admit: admitRun,
       }),
     },
     epoch: opts.epoch,

@@ -34,7 +34,8 @@ export interface AgentSendInput {
 }
 
 /**
- * Why a message is waiting rather than running:
+ * Why a message is waiting rather than running, as DorkOS saw it when it
+ * answered:
  *
  * - `busy`: the agent is in the middle of a turn. The message runs when it ends.
  * - `at_capacity`: too many chats nobody typed into are running right now, or
@@ -56,9 +57,11 @@ export interface AgentSendReceipt {
   /** The message's id. Delivery events carry it. */
   messageId: string;
   /**
-   * `started`: the agent is working on it now. `queued`: it is waiting; see
-   * `reason`. `failed`: only on a resend, for a message that will never run;
-   * see `failure`.
+   * `queued`: DorkOS has it and it is waiting to start, if only for a moment;
+   * see `reason`, and `turn.started` for the moment it begins. `started`: only
+   * on a resend of a message an earlier version of DorkOS started at once.
+   * `failed`: only on a resend, for a message that will never run; see
+   * `failure`.
    */
   status: 'started' | 'queued' | 'failed';
   /** Why it is waiting. Present only when `status` is `queued`. */
@@ -76,12 +79,14 @@ export interface AgentSendReceipt {
  * Why a message will never run. The message is gone; send it again (with a new
  * key) if it still matters.
  *
- * - `removed`: a person took it off the chat's queue, or pressed Stop.
- * - `session_gone`: the chat it was waiting in no longer exists.
+ * - `removed`: a person took it off the chat's queue, or pressed Stop. Only
+ *   said of a message an earlier version of DorkOS put in a chat's queue.
+ * - `session_gone`: the chat it was waiting in no longer exists. As `removed`.
  * - `interrupted`: DorkOS restarted while the message was running, or before
- *   it could tell whether it ran. Read the chat to see how far it got.
- * - `undeliverable`: it was waiting for room, and by the time there was room
- *   the agent or chat could no longer take it (removed, or not allowed there).
+ *   it could tell whether it ran, or its turn kept failing to start. Read the
+ *   chat to see how far it got.
+ * - `undeliverable`: when its turn came, the agent or chat could not take it
+ *   (removed, moved into a room, or not allowed there).
  * - `stopped`: it was waiting for room when the extension was stopped,
  *   reloaded, turned off or removed, so it was never sent.
  */

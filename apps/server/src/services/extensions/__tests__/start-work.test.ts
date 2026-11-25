@@ -7,8 +7,10 @@
  * refuse and launch nothing. The limits survive a restart and count chats
  * started from started chats.
  *
- * The launch service is the edge: it is replaced so a start can be observed
- * without a runtime. Everything else is real, down to the table.
+ * A start goes through the real turn port (spec `turns-survive-restarts` §3):
+ * the space face saves its run over the test database, and a case moves the
+ * run as the dispatcher would, so a start can be observed without a runtime.
+ * Everything else is real, down to the table.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,43 +25,8 @@ import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import { createMockSession } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-
-/** Every launch the seam asked for, and the settle callback of each. */
-const launches = vi.hoisted(
-  () =>
-    [] as Array<{
-      sessionId: string;
-      origin: { kind: string };
-      request: { content: string; cwd?: string; runtime?: string };
-      clientId: string;
-      permissionCeiling?: unknown;
-      countsTowardLaunchCap?: boolean;
-      onSettled?: (outcome: 'ok' | 'failed') => void;
-    }>
-);
-/** What the next launch answers: accepted under the same id unless a test says otherwise. */
-const nextLaunch = vi.hoisted(() => ({
-  warnings: undefined as undefined | Array<{ code: string; message: string }>,
-  refused: null as null | { refused: string; message: string },
-  canonical: null as null | ((id: string) => string),
-}));
-
-vi.mock('../../session/launch/launch-session.js', () => ({
-  agentLaunchCapMessage: () => 'Too many spin-off chats are running (8).',
-  isSessionLaunchRefusal: (result: object) => 'refused' in result,
-  dispatchSessionMessage: vi.fn(async (opts: (typeof launches)[number]) => {
-    launches.push(opts);
-    if (nextLaunch.refused) return nextLaunch.refused;
-    return {
-      accepted: true,
-      canonicalId: nextLaunch.canonical ? nextLaunch.canonical(opts.sessionId) : opts.sessionId,
-      outcome: { kind: 'started', messageId: 'm-1' },
-      queued: false,
-      queuePosition: 1,
-      ...(nextLaunch.warnings ? { warnings: nextLaunch.warnings } : {}),
-    };
-  }),
-}));
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
+import { createRunRecord, type RunRecord } from '../../runs/index.js';
 
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
@@ -109,6 +76,26 @@ let running: string[];
 let renamed: Array<{ runtime: string; sessionId: string; title: string; cwd: string }>;
 let service: StartWorkService;
 let projects: ReturnType<typeof fakeProjects>;
+let record: RunRecord;
+/** Every start the turn port saved, with its run's id, in order. */
+let launches: Array<StartTurnInput & { runId: string }>;
+/** Admission's launch cap, as a switch. */
+let machineFull: boolean;
+
+/** Let the record's watchers hear what just moved. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 4; i++) await Promise.resolve();
+}
+
+/** A start's turn ran and ended, as the dispatcher writes it. */
+async function finish(index: number): Promise<void> {
+  const { store } = record;
+  let run = store.get(launches[index]!.runId)!;
+  run = store.move(run, 'starting', store.lease());
+  run = store.move(run, 'started', { startedAt: store.stamp(), runtime: 'test-mode' });
+  store.endTurn(run, 'completed');
+  await flush();
+}
 
 function build(overrides: Partial<StartWorkDeps> = {}): StartWorkService {
   return new StartWorkService({
@@ -121,6 +108,7 @@ function build(overrides: Partial<StartWorkDeps> = {}): StartWorkService {
     rename: async (runtime, sessionId, title, cwd) => {
       renamed.push({ runtime, sessionId, title, cwd });
     },
+    port: () => record.port,
     ...overrides,
   });
 }
@@ -135,11 +123,19 @@ async function refusal(promise: Promise<unknown>): Promise<StartWorkError> {
 }
 
 beforeEach(() => {
-  nextLaunch.warnings = undefined;
-  launches.length = 0;
-  nextLaunch.refused = null;
-  nextLaunch.canonical = null;
   db = createTestDb();
+  machineFull = false;
+  record = createRunRecord(db, {
+    epoch: '01BOOTEPOCHSTARTWORK000000',
+    admission: { admission: { isPaused: () => false, machineFull: () => machineFull } },
+  });
+  launches = [];
+  const start = record.port.start.bind(record.port);
+  vi.spyOn(record.port, 'start').mockImplementation((input) => {
+    const answer = start(input);
+    launches.push({ ...input, runId: answer.runId });
+    return answer;
+  });
   store = new SessionStartedByStore(db);
   clock = Date.parse('2026-09-29T09:00:00.000Z');
   running = [];
@@ -154,7 +150,7 @@ afterEach(() => {
 });
 
 describe('a start', () => {
-  it('launches one chat in the project root, with its title and the prompt as its first message', async () => {
+  it('starts one chat in the project root, with its title and the prompt as its first message', async () => {
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
 
     expect(launches).toHaveLength(1);
@@ -162,17 +158,15 @@ describe('a start', () => {
     expect(launch).toMatchObject({
       sessionId,
       origin: { kind: 'extension-start' },
-      request: {
-        content: INPUT.prompt,
-        cwd: DORKOS.root,
-        runtime: 'test-mode',
-        // One honest line for the model; the prompt stays byte for byte.
-        seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
-      },
-      clientId: 'extension:flow',
-      countsTowardLaunchCap: true,
+      content: INPUT.prompt,
+      cwd: DORKOS.root,
+      tier: 'owner',
+      // One honest line for the model; the prompt stays byte for byte.
+      seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
     });
-    expect(launches[0]).not.toHaveProperty('permissionCeiling');
+    expect(launch).not.toHaveProperty('permissionCeiling');
+    // Saved as a run, waiting for its hand-over: the answer came at acceptance.
+    expect(record.store.get(launch!.runId)).toMatchObject({ status: 'queued', sessionId });
     expect(renamed).toEqual([
       { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
     ]);
@@ -188,6 +182,9 @@ describe('a start', () => {
   it('passes a Wi-Fi sign-in’s bound on (DOR-3037)', async () => {
     await service.start('flow', INPUT, 'ctx', { permissionCeiling: 'runtime-default' });
     expect(launches[0]!.permissionCeiling).toBe('runtime-default');
+    expect(record.effects.listForRun(launches[0]!.runId)[0]?.payload).toMatchObject({
+      permissionCeiling: 'runtime-default',
+    });
   });
 
   it('says who started it on the session list', async () => {
@@ -210,12 +207,12 @@ describe('a start', () => {
   });
 
   it('keeps who started it when the runtime settles on another id', async () => {
-    nextLaunch.canonical = (id) => `sdk-${id}`;
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
-    expect(sessionId).toMatch(/^sdk-/);
-    expect(store.get(sessionId)?.extensionId).toBe('flow');
-    expect(store.get(sessionId.slice('sdk-'.length))).toBeNull();
-    expect(renamed[0]!.sessionId).toBe(sessionId);
+    // The chat's runs move with its queue to the id the runtime settled on.
+    record.store.rekeyChat(sessionId, `sdk-${sessionId}`);
+    await finish(0);
+    expect(store.get(`sdk-${sessionId}`)?.extensionId).toBe('flow');
+    expect(store.get(sessionId)).toBeNull();
   });
 
   it('is reachable as ctx.sessions.start, scoped to the calling extension', async () => {
@@ -233,7 +230,7 @@ describe('a start', () => {
         extensionId: 'flow',
         reason: '12 new ideas were waiting to be sorted',
       });
-      expect(launches[0]!.request.cwd).toBe(DORKOS.root);
+      expect(launches[0]!.cwd).toBe(DORKOS.root);
     } finally {
       releaseListeners();
       fs.rmSync(dorkHome, { recursive: true, force: true });
@@ -297,7 +294,7 @@ describe('refusals launch nothing', () => {
     for (let i = 0; i < START_WORK_LIMITS.perHour; i++) {
       await service.start('flow', INPUT, 'ctx');
       // Each one finishes, so only the hourly limit is in play.
-      launches.at(-1)!.onSettled?.('ok');
+      await finish(launches.length - 1);
       clock += 60_000;
     }
     const err = await refusal(service.start('flow', INPUT, 'ctx'));
@@ -325,28 +322,32 @@ describe('refusals launch nothing', () => {
     });
     expect(launches).toHaveLength(START_WORK_LIMITS.running);
 
-    launches[0]!.onSettled?.('ok');
+    await finish(0);
     await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeTruthy();
   });
 
-  it('refuses as account_not_allowed_here when the launch’s own account check refuses', async () => {
-    nextLaunch.refused = {
-      refused: 'ACCOUNT_NOT_ALLOWED',
-      message: "dorkos isn't set to use Work. Pick another account.",
-    };
-    const err = await refusal(service.start('flow', INPUT, 'ctx'));
-    expect(err).toMatchObject({
-      code: 'account_not_allowed_here',
-      message: "dorkos isn't set to use Work. Pick another account.",
-    });
+  it('forgets a start the launch’s own account check refused at the door', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(1);
+    // The door refuses it after acceptance, and the run is cancelled with why.
+    record.starts.cancel(launches[0]!.runId, 'account_not_allowed');
+    await flush();
+    expect(record.store.get(launches[0]!.runId)?.endingDetail.cancelledBecause).toBe(
+      'account_not_allowed'
+    );
+    expect(store.get(sessionId)).toBeNull();
     expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
   });
 
-  it('refuses a launch the machine-wide cap refused, and forgets it', async () => {
-    nextLaunch.refused = { refused: 'LAUNCH_CAP_FULL', message: 'full' };
-    const err = await refusal(service.start('flow', INPUT, 'ctx'));
-    expect(err.code).toBe('start_limit');
-    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
+  it('waits, rather than refuses, when the machine-wide cap is full', async () => {
+    machineFull = true;
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(record.store.get(launches[0]!.runId)).toMatchObject({
+      status: 'queued',
+      waitReason: 'machine_full',
+    });
+    // Still a start: it counts until it runs or is cancelled.
+    expect(store.get(sessionId)?.extensionId).toBe('flow');
   });
 });
 
@@ -354,7 +355,7 @@ describe('the limits', () => {
   it('survive a restart: the hourly count is read from the table', async () => {
     for (let i = 0; i < START_WORK_LIMITS.perHour; i++) {
       await service.start('flow', INPUT, 'ctx');
-      launches.at(-1)!.onSettled?.('ok');
+      await finish(launches.length - 1);
     }
     // A new process: nothing in memory, the same database.
     const restarted = build();
@@ -363,7 +364,7 @@ describe('the limits', () => {
 
   it('count chats started from a started chat', async () => {
     const parent = await service.start('flow', INPUT, 'ctx');
-    launches.at(-1)!.onSettled?.('ok');
+    await finish(launches.length - 1);
     // The parent chat starts another (what `session_start` records).
     const child = service.reserve({
       sessionId: 'child-1',

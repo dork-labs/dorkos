@@ -5,10 +5,17 @@
  * counts against.
  *
  * An extension's button names an outcome ("Sort them"). One click starts the
- * work in a NEW chat in the project's root: the prompt is sent at once as the
- * chat's first message, the chat gets the extension's title, and who started
- * it and why is kept in `session_started_by`, which the chat draws as its first
- * line. The current chat is never touched and nothing navigates.
+ * work in a NEW chat in the project's root: the prompt goes through the turn
+ * port (`services/runs`, spec `turns-survive-restarts` §3) as the chat's first
+ * message, the chat gets the extension's title, and who started it and why is
+ * kept in `session_started_by`, which the chat draws as its first line. The
+ * current chat is never touched and nothing navigates.
+ *
+ * The answer comes at acceptance: the chat's id, before its turn starts. When
+ * every launch slot under `runtimes.maxAgentChats` is taken the start is not
+ * refused; its run waits for room (§3.5). The prompt is held in this process
+ * until the turn starts, so a restart in between cancels the run, and the
+ * chat stays empty, rather than run it twice.
  *
  * ## The limits
  *
@@ -44,18 +51,13 @@ import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { ProjectRegistry } from '../projects/project-registry.js';
-import {
-  agentLaunchCapMessage,
-  dispatchSessionMessage,
-  isSessionLaunchRefusal,
-} from '../session/launch/launch-session.js';
+import { turnPort, type SpaceTurnPort } from '../runs/index.js';
 import { listProjectorStatuses } from '../session/session-state-projector.js';
 import type {
   SessionStartedByStore,
   StartedByInsert,
 } from '../session/origin/session-started-by-store.js';
 import { checkStartWorkEligibility, type StartWorkEligibility } from './start-work-eligibility.js';
-import { extensionClientId } from './agent-send/extension-client-id.js';
 
 /** How long the hourly limit looks back. */
 const HOUR_MS = 60 * 60 * 1000;
@@ -99,6 +101,8 @@ export interface StartWorkDeps {
   defaultRuntime?: () => string;
   /** Set a chat's title through its runtime (tests replace it). */
   rename?: (runtimeType: string, sessionId: string, title: string, cwd: string) => Promise<void>;
+  /** The turn port's space face, read at call time; the server's own by default. */
+  port?: () => SpaceTurnPort | undefined;
 }
 
 /** A claimed start slot: the row is written and counts until cancelled. */
@@ -113,33 +117,6 @@ export interface StartReservation {
 
 /** The chats this process launched whose first turn has not settled, by origin extension. */
 type Launching = Map<string, string>;
-
-/**
- * Run `rename`, and when it fails (a runtime whose transcript does not exist
- * until the turn writes it), once more when the first turn settles.
- */
-async function renameNowOrLater(
-  rename: () => Promise<void>,
-  later: (retry: () => void) => void,
-  sessionId: string
-): Promise<void> {
-  try {
-    await rename();
-  } catch (first) {
-    logger.info('[start-work] title not set yet; retrying after the first turn', {
-      sessionId,
-      ...logError(first),
-    });
-    later(() => {
-      rename().catch((err: unknown) =>
-        logger.warn('[start-work] could not set the title of a started chat', {
-          sessionId,
-          ...logError(err),
-        })
-      );
-    });
-  }
-}
 
 /** The start-work seam. See the module documentation. */
 export class StartWorkService {
@@ -224,72 +201,71 @@ export class StartWorkService {
     if (!claimed.ok) throw claimed.error;
     const reservation = claimed.reservation;
 
-    let retryRename: (() => void) | null = null;
-    let settled = false;
-    let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
+    const door = (this.deps.port ?? turnPort)();
+    if (!door) {
+      reservation.cancel();
+      throw new Error('DorkOS is still starting. Try again in a moment.');
+    }
+    let runId: string;
     try {
-      result = await dispatchSessionMessage({
-        origin: { kind: 'extension-start' },
+      ({ runId } = door.start({
         sessionId,
-        request: {
-          content: request.prompt,
-          cwd: project.root,
-          runtime: runtimeType,
-          // One honest line for the model, so it does not take the prompt for
-          // the person's own words. It rides the context bag and is never drawn.
-          seedContext: `This chat was started by the ${name} extension: ${request.reason}`,
-        },
-        // The extension's lock identity, which also marks the chat's first turn (DOR-4594).
-        clientId: extensionClientId(extensionId),
-        // No agent is named: the chat runs in the project's root on the default
-        // runtime, like a new chat a person opens there.
-        meshCore: undefined,
-        // A chat minted here is in no room.
-        roomSessionPlace: undefined,
+        cwd: project.root,
+        content: request.prompt,
+        origin: { kind: 'extension-start' },
+        tier: 'owner',
+        // One honest line for the model, so it does not take the prompt for
+        // the person's own words. It rides the context bag and is never drawn.
+        seedContext: `This chat was started by the ${name} extension: ${request.reason}`,
         // A Wi-Fi sign-in's bound (DOR-3037), when a person asked from there.
         ...(opts.permissionCeiling !== undefined
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
-        countsTowardLaunchCap: true,
-        onSettled: () => {
-          settled = true;
-          reservation.settle();
-          retryRename?.();
-        },
-      });
+      }));
     } catch (err) {
       reservation.cancel();
       throw err;
     }
-    if (isSessionLaunchRefusal(result)) {
-      reservation.cancel();
-      if (result.refused === 'LAUNCH_CAP_FULL') {
-        throw new StartWorkError('start_limit', agentLaunchCapMessage());
-      }
-      // The launch asked the account rule again; one that changed since the
-      // check above is refused the same way.
-      if (result.refused === 'ACCOUNT_NOT_ALLOWED') {
-        throw new StartWorkError('account_not_allowed_here', result.message);
-      }
-      throw new Error(result.message);
-    }
-    if (!result.accepted) {
-      reservation.cancel();
-      throw new Error('The chat could not be started. Try again.');
-    }
-
-    const canonicalId = result.canonicalId ?? sessionId;
-    if (canonicalId !== sessionId) reservation.rekey(canonicalId);
-
-    await renameNowOrLater(
-      () => this.rename(runtimeType, canonicalId, request.title, project.root),
-      (retry) => {
-        if (settled) retry();
-        else retryRename = retry;
+    // The title goes on now when the chat can take it, else once its first
+    // turn ends (a runtime whose transcript does not exist until then).
+    let titled = false;
+    let chatId: string = sessionId;
+    const title = (id: string, runtime: string) =>
+      this.rename(runtime, id, request.title, project.root).then(() => {
+        titled = true;
+      });
+    const stop = door.watch(
+      (run) => {
+        if (run.status === 'starting' || run.status === 'queued') return;
+        // The runtime may have settled on another id for the new chat.
+        if (run.sessionId !== chatId) {
+          reservation.rekey(run.sessionId);
+          chatId = run.sessionId;
+        }
+        if (run.status === 'started' || run.status === 'running') return;
+        stop();
+        // A start that never reached its turn counts against no limit.
+        if (run.startedAt === null) {
+          reservation.cancel();
+          return;
+        }
+        reservation.settle();
+        if (titled) return;
+        title(run.sessionId, run.runtime ?? runtimeType).catch((err: unknown) =>
+          logger.warn('[start-work] could not set the title of a started chat', {
+            sessionId: run.sessionId,
+            ...logError(err),
+          })
+        );
       },
-      canonicalId
+      { runId }
     );
-
+    await title(sessionId, runtimeType).catch((err: unknown) =>
+      logger.info('[start-work] title not set yet; retrying after the first turn', {
+        sessionId,
+        ...logError(err),
+      })
+    );
     void this.deps.activity
       ?.emit({
         actorType: 'system',
@@ -298,17 +274,17 @@ export class StartWorkService {
         category: 'agent',
         eventType: 'extension.session_started',
         resourceType: 'session',
-        resourceId: canonicalId,
+        resourceId: sessionId,
         resourceLabel: request.title,
         summary: `${name} started a chat in ${project.name}: ${request.title}`,
-        linkPath: sessionPath({ session: canonicalId }),
+        linkPath: sessionPath({ session: sessionId }),
         metadata: { extensionId, project: project.root, via, reason: request.reason },
       })
       .catch((err: unknown) =>
         logger.warn('[start-work] could not record a started chat', logError(err))
       );
 
-    return { sessionId: canonicalId, ...(result.warnings ? { warnings: result.warnings } : {}) };
+    return { sessionId };
   }
 
   /**

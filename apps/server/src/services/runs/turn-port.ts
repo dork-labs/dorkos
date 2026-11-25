@@ -4,8 +4,8 @@
  * through.
  *
  * `start()` answers at acceptance, never at turn start: it saves the run
- * (`queued`, transition 1) and its `start_turn` effect in one transaction and
- * returns. The outbox's worker then hands the run over: the `start_turn`
+ * (`queued`, transition 1, with the reason it waits when admission would hold
+ * it now) and its `start_turn` effect in one transaction and returns. The outbox's worker then hands the run over: the `start_turn`
  * handler asks admission (`admission.ts`), and only then the computer face
  * (`services/session/turn-port`), which is the only turn code this domain
  * imports (§3.4). Waiting is decided here, on the space side; the computer
@@ -38,12 +38,13 @@ import {
   wordsWaitInComposer,
   type StartTurnInput,
   type StartTurnResult,
+  type WaitReason,
 } from '@dorkos/shared/turn-port';
 import { SESSION_RELAY_MAX_MESSAGE_LENGTH } from '@dorkos/shared/session-relay';
 import { logger } from '../../lib/logger.js';
 import { chatKeyOf } from '../session/turn-port/index.js';
 import type { EffectStore } from './effects/effect-store.js';
-import { startPayloadOf } from './effects/start-payload.js';
+import { startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 
 /** Why the space face refused a start before saving anything. */
@@ -88,6 +89,12 @@ export interface SpaceTurnPortDeps {
    * no agent answers to it. Absent (no Mesh yet), the computer face judges.
    */
   agentHome?: () => ((agentId: string) => string | undefined) | undefined;
+  /**
+   * Admission's answer for a run just saved, so it shows why it waits from
+   * its first moment (§4.6) and its caller can say so. The `start_turn`
+   * handler asks again before every hand-over; this decides nothing.
+   */
+  preview?: (run: TurnRun, start: StartPayload) => WaitReason | undefined;
 }
 
 /** The space face. See the module documentation. */
@@ -137,7 +144,7 @@ export class SpaceTurnPort {
     }
     const { runs, effects } = this.deps;
     const run = runs.transaction(() => {
-      const created = runs.create({
+      let created = runs.create({
         chatKey: start.sessionId,
         status: 'queued',
         openedBy: 'caller',
@@ -147,6 +154,8 @@ export class SpaceTurnPort {
         ...(start.sourceRef !== undefined ? { sourceRef: start.sourceRef } : {}),
         ...(start.notAfter !== undefined ? { notAfter: start.notAfter } : {}),
       });
+      const waits = this.deps.preview?.(created, startPayloadOf(start));
+      if (waits !== undefined) created = runs.move(created, 'queued', { waitReason: waits });
       effects.insert({
         kind: 'start_turn',
         key: `start:${created.id}:${created.attempt}`,
