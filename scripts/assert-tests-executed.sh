@@ -29,10 +29,21 @@
 # zero-tasks case at all. Asserting on the summary keeps the cache and still
 # fails loudly the day a cache replay reaches a gate.
 #
-# Usage:
-#   scripts/assert-tests-executed.sh [<summary.json>]
+# THE PLANNED SET (DOR-5130). A merge-queue build runs the suites its own
+# change can reach (scripts/pr-test-plan.sh on HEAD^1..HEAD), not every suite.
+# `--packages <file>` names that set, one repo-relative package directory per
+# line (`apps/server`), and then the second assertion becomes: the `test` tasks
+# that ran are EXACTLY those packages, no fewer and no others. Each named
+# directory must be a workspace package that declares a `test` script, and an
+# empty file is refused: the planner never selects nothing (it answers `full`),
+# so an empty list means something upstream broke. Without the flag the
+# expected set is every package that declares a `test` script, as before; the
+# push run on main, the canary and release pull requests never pass it.
 #
-# With no argument it reads the most recently written summary under
+# Usage:
+#   scripts/assert-tests-executed.sh [--packages <file>] [<summary.json>]
+#
+# With no summary argument it reads the most recently written summary under
 # .turbo/runs/, which is where `--summarize` puts one file per run.
 #
 # WORKSPACE_ROOT overrides where the workspace manifests and .turbo/runs are
@@ -51,6 +62,22 @@ fail() {
 }
 
 command -v jq >/dev/null 2>&1 || fail 'jq is required but was not found on PATH.'
+
+planned_file=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --packages)
+    planned_file=${2:-}
+    [ -n "$planned_file" ] || fail '--packages needs a file.'
+    [ -f "$planned_file" ] || fail "no planned-packages list at $planned_file.
+The workflow writes it from test-shard-count's plan just before this runs; a
+MISSING file means that did not happen, and this gate will not guess the set."
+    shift 2
+    ;;
+  --*) fail "unknown option: $1" ;;
+  *) break ;;
+  esac
+done
 
 summary=${1:-}
 if [ -z "$summary" ]; then
@@ -106,6 +133,39 @@ $(printf '%s\n' "$replayed" | sed 's/^/  /')
 A gate cannot certify a suite it did not execute. If this is CI, the runner is
 restoring a turbo cache it should not have (remote cache, or a cache action over
 .turbo/); if this is local, you are looking at a replay, not a result."
+fi
+
+if [ -n "$planned_file" ]; then
+  planned=$(grep -v '^[[:space:]]*$' "$planned_file" | sort -u)
+  [ -n "$planned" ] || fail "the planned-packages list $planned_file is empty.
+The planner never selects nothing (it answers \`full\` instead), so an empty
+plan means the plan was lost on the way here. This gate will not certify a run
+against an empty set."
+  while IFS= read -r dir; do
+    case "$dir" in
+    apps/*/* | packages/*/*) fail "planned package directory '$dir' is not a workspace package directory (apps/<name> or packages/<name>)." ;;
+    apps/* | packages/*) ;;
+    *) fail "planned package directory '$dir' is not a workspace package directory (apps/<name> or packages/<name>)." ;;
+    esac
+    [ "$(jq -r 'if .scripts.test == null then "no" else "yes" end' "$workspace_root/$dir/package.json" 2>/dev/null)" = 'yes' ] ||
+      fail "planned package '$dir' has no package.json declaring a \`test\` script, so the plan names a suite that cannot run."
+  done <<<"$planned"
+  ran=$(jq -r '.tasks[] | select(.task == "test") | .directory // "?"' "$summary" | sort -u)
+  not_run=$(comm -23 <(printf '%s\n' "$planned") <(printf '%s\n' "$ran"))
+  unplanned=$(comm -13 <(printf '%s\n' "$planned") <(printf '%s\n' "$ran"))
+  if [ -n "$not_run" ] || [ -n "$unplanned" ]; then
+    fail "the test tasks that ran are not the planned set.
+Planned but not run:
+$(printf '%s\n' "${not_run:-  (none)}" | sed 's/^/  /')
+Run but not planned:
+$(printf '%s\n' "${unplanned:-  (none)}" | sed 's/^/  /')
+Check the sweep's --filter list against test-shard-count's plan."
+  fi
+  count=$(printf '%s\n' "$planned" | wc -l | tr -d ' ')
+  [ "$executed" -eq "$count" ] || fail "ran $executed test task(s) for $count planned package(s); a package ran more than once."
+  printf 'assert-tests-executed: %s/%s planned package test suites executed (no cache replays); %s package(s) declare a test script.\n' \
+    "$executed" "$count" "$expected"
+  exit 0
 fi
 
 if [ "$executed" -ne "$expected" ]; then
