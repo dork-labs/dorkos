@@ -279,6 +279,7 @@ describe('a person reads an area agents are Blocked in (DOR-4978)', () => {
     expect(Object.keys(context.request).sort()).toEqual([
       'accountOwner',
       'atThisComputerWithoutProgramKey',
+      'clearsAgentBar',
       'heldWifiOwner',
       'ownerProven',
     ]);

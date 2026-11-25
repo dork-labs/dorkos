@@ -18,6 +18,7 @@ import { pulseSchedules, type Db } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
 import { createTasksRoutes } from '../tasks.js';
 import { personTaskApprover } from '../task-approval-actor.js';
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -148,10 +149,9 @@ describe('scheduled task approval receipts', () => {
     return response.body as { id: string };
   }
 
-  /** Read the revision the approval card would send. */
+  /** The revision the approval card would send, as the list (a capability, DOR-4978) gives it. */
   async function revision(id: string): Promise<string> {
-    const listed = await call('/');
-    return listed.body.find((task) => task.id === id)?.approvalRevision ?? '';
+    return taskReviewRevision(store.getTask(id)!);
   }
 
   it('names the owner only when login is off, never a signed-in account', () => {

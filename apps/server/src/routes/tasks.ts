@@ -1,7 +1,7 @@
 import { TASK_ON_CREDITS } from './task-credits-wording.js';
-import * as personReview from '../services/tasks/approvals/person-review.js';
 /**
- * Tasks scheduler routes — CRUD for schedules and runs.
+ * Tasks scheduler routes: the schedule and run writes. The reads moved onto the
+ * capability mount (DOR-4978).
  *
  * File-first architecture: API routes write SKILL.md files to disk,
  * then sync to the DB for immediate consistency. The watcher/reconciler
@@ -28,7 +28,7 @@ import * as personReview from '../services/tasks/approvals/person-review.js';
  * @module routes/tasks
  */
 import { Hono } from 'hono';
-import { ListTaskRunsQuerySchema, TriggerTaskRequestSchema } from '@dorkos/shared/schemas';
+import { TriggerTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/schemas';
 import { wifiRunNowRefusal } from './task-wifi-guard.js';
 import {
@@ -41,7 +41,6 @@ import {
   PROJECT_COPY_DELETE_REFUSAL,
 } from '../services/tasks/lifecycle/delete-task.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
-import { loadTemplates } from '../services/tasks/task-templates.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
@@ -49,18 +48,10 @@ import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readQuery } from '../http/request-query.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { TASK_NOT_FOUND, taskProblem } from './task-problem.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
-import { withTaskFolderRules } from './task-approval-rules.js';
-import { withTaskRunPlace } from '../services/tasks/execution/run-place-preview.js';
-import { withProposerNames } from '../services/tasks/task-provenance.js';
-import {
-  withTaskProjects,
-  withTaskRunTimes,
-} from '../services/tasks/approvals/task-presentation.js';
 import {
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
@@ -70,6 +61,8 @@ import { mountTaskModeUndo } from './task-mode-undo.js';
 import type { TasksRouterDeps } from './tasks-deps.js';
 import { createTaskHttp } from './tasks-create-http.js';
 import { updateTaskHttp } from './tasks-update-http.js';
+import { loadTemplates } from '../services/tasks/task-templates.js';
+import { presentTasks } from './task-view-reader.js';
 import { logger } from '../lib/logger.js';
 import type { UnconfirmedStop } from '../services/tasks/run-cancel.js';
 
@@ -98,49 +91,14 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
   /** One task, ready to send: run times attached, its proposer named, its project stamped. */
   async function present(task: Task): Promise<Task> {
-    const [presented] = await presentAll([task]);
+    const [presented] = await presentTasks(deps, [task]);
     return presented as Task;
   }
 
-  /**
-   * {@link present} for a whole list, with one identity lookup per distinct
-   * agent, and when each task last ran (one query for all of them, DOR-2914).
-   */
-  async function presentAll(tasks: Task[]): Promise<Task[]> {
-    // When each last ran, and whether its last finished run did its job.
-    const history = store.runHistory();
-    const named = await withProposerNames(tasks);
-    return withTaskProjects(
-      meshCore,
-      named.map((task) => ({
-        ...withTaskRunTimes(scheduler, task),
-        ...history(task.id),
-        approvalRevision: personReview.taskReviewRevision(task),
-      }))
-    );
-  }
+  // The list and the runs are capabilities the mount serves (DOR-4978,
+  // `services/tasks/view/task-view-capabilities.ts`).
 
-  // === Template endpoints ===
-
-  router.get('/templates', async (c) => {
-    const templates = await loadTemplates(dorkHome);
-    return c.json(templates);
-  });
-
-  // === Schedule endpoints ===
-
-  router.get('/', async (c) => {
-    const tasks = await presentAll(store.getTasks());
-    return c.json(
-      clearsTheAgentBar(honoRequestFacts(c))
-        ? await Promise.all(
-            tasks.map(async (task) =>
-              withTaskRunPlace(await withTaskFolderRules(task, meshCore), meshCore)
-            )
-          )
-        : tasks
-    );
-  });
+  router.get('/templates', async (c) => c.json(await loadTemplates(dorkHome)));
 
   router.post('/', (c) => createTaskHttp(c, deps, present));
 
@@ -261,28 +219,6 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         : await scheduler.triggerManualRun(id);
     if (!run) return problem(c, 'not_found', { detail: TASK_NOT_FOUND });
     return c.json({ runId: run.id }, 201);
-  });
-
-  // === Run endpoints ===
-
-  router.get('/runs', (c) => {
-    const parsed = ListTaskRunsQuerySchema.safeParse(readQuery(c));
-    if (!parsed.success) return validationProblem(c, parsed.error);
-    const data = parsed.data;
-
-    const runs = store.listRuns({
-      taskId: data.scheduleId,
-      status: data.status,
-      limit: data.limit,
-      offset: data.offset,
-    });
-    return c.json(runs);
-  });
-
-  router.get('/runs/:id', (c) => {
-    const run = store.getRun(c.req.param('id'));
-    if (!run) return problem(c, 'not_found', { detail: RUN_NOT_FOUND });
-    return c.json(run);
   });
 
   router.post('/runs/:id/cancel', async (c) => {

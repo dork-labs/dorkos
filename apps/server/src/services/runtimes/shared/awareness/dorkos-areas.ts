@@ -150,8 +150,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
     // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978), and the
     // owner's answer to the credits offer (`heartbeat.choose_triage_credits`), person-only, so no
-    // agent can call it.
-    covers: ['tasks_', 'heartbeat.'],
+    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978).
+    covers: ['tasks_', 'tasks.', 'heartbeat.'],
     areas: ['tasks'],
   },
   {

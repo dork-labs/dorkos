@@ -51,6 +51,7 @@ import { meshDomain } from '../../mesh/doors/mesh-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
+import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
@@ -136,6 +137,8 @@ export function composeDorkOsCapabilityRegistry(
   // Unconditional too: a chat's runs are read from the run record every server
   // keeps, and before startup wires it the read says DorkOS is still starting.
   domains.push(runsDomain);
+  // The app's task reads (DOR-4978); they say so themselves when Tasks is not running.
+  domains.push(taskViewDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
   // reads read the filesystem and process-wide stores every server has, so
   // their paths answer wherever the hand routes used to.
@@ -214,6 +217,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     permissionsDomain,
     heartbeatDomain,
     runsDomain,
+    taskViewDomain,
     directoryDomain,
     diffDomain,
     workspacesDomain,

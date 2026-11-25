@@ -66,6 +66,7 @@ describe('context.request', () => {
     expect(Object.keys(seen!.request!).sort()).toEqual([
       'accountOwner',
       'atThisComputerWithoutProgramKey',
+      'clearsAgentBar',
       'heldWifiOwner',
       'ownerProven',
     ]);

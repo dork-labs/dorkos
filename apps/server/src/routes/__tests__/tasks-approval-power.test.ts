@@ -84,6 +84,12 @@ vi.mock('../../lib/boundary.js', async (importOriginal) => ({
 import { writeManifest } from '@dorkos/mesh';
 import { folderAllowEntry } from '../../services/runtimes/claude-code/folder-settings/folder-allow-consent.js';
 import { createTasksRoutes } from '../tasks.js';
+import { taskViewReader } from '../task-view-reader.js';
+import {
+  setTaskViewReader,
+  taskViewDomain,
+} from '../../services/tasks/view/task-view-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { pickIsStricter } from '../task-trial-mode.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
@@ -169,22 +175,22 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
     scheduler = createMockScheduler();
 
+    const deps = {
+      store,
+      scheduler,
+      registrar: new TaskRegistrar({ store, scheduler }),
+      defaultTimezone: () => 'UTC',
+      dorkHome,
+      meshCore: {
+        getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
+      } as unknown as MeshCore,
+      activity: { emit } as unknown as ActivityService,
+    };
+    // The list is served by the capability mount (DOR-4978), the writes by hand.
+    setTaskViewReader(taskViewReader(deps));
     fixtureTarget.mount(
       honoGroupListener(
-        {
-          path: '/api/tasks',
-          routes: createTasksRoutes({
-            store,
-            scheduler,
-            registrar: new TaskRegistrar({ store, scheduler }),
-            defaultTimezone: () => 'UTC',
-            dorkHome,
-            meshCore: {
-              getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
-            } as unknown as MeshCore,
-            activity: { emit } as unknown as ActivityService,
-          }),
-        },
+        [capabilityGroup(taskViewDomain), { path: '/api/tasks', routes: createTasksRoutes(deps) }],
         {
           before: async (c, next) => {
             if (c.req.header('x-test-person'))
@@ -198,6 +204,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
   afterEach(() => {
     store.close();
+    setTaskViewReader(undefined);
     fs.rmSync(dorkHome, { recursive: true, force: true });
   });
 

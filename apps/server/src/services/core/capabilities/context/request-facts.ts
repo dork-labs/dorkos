@@ -13,6 +13,13 @@
  */
 export interface CapabilityRequestFacts {
   /**
+   * Whether the caller clears the agent bar: a person, never an agent or an
+   * approval token, and with a person's session required, that session
+   * (`clearsTheAgentBar`). Unlike {@link accountOwner}, it does not ask which
+   * account is signed in.
+   */
+  readonly clearsAgentBar: boolean;
+  /**
    * Whether the caller clears the account owner bar: a person, never an
    * agent, and with a person's session required, the install's owner
    * (`refuseUnlessAccountOwner`).
