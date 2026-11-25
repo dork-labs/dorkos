@@ -14,7 +14,7 @@ amends: [261124-194115]
 
 Accepted (operator decision, 2026-11-25). Asked what a cloud agent should do when its person's Mac is off, wait for the Mac or get a home in the cloud, he answered: "give cloud agents a cloud home when the mac is off. That said, some cloud agents should/could live in the cloud (not on the mac) permanently".
 
-What is his: a cloud agent gets a home in the cloud and does not wait for the Mac, and an agent may live in the cloud for good (rule 3). What is the architect's reading of that answer: that the home in the cloud is the agent's only home, with no hand-back when the Mac returns (rules 2 and 4), and rules 5 to 9.
+His first sentence could mean two things, so it was put to him as its own question the same day: does a cloud agent always live in the cloud, or does it live on the Mac and move to the cloud only while the Mac is off? He chose the first. So rules 1 to 4 are his: a cloud agent lives in the cloud, an agent may live there for good, and there is no hand-back when the Mac returns. Rules 5 to 9 are the architect's reading of that answer.
 
 **Amends** [261124-194115](261124-194115-your-mac-is-the-home-of-your-private-space.md), which stays Accepted:
 
@@ -81,5 +81,5 @@ An agent's **home** is the DorkOS that holds its space side: its record and rule
 ## Alternatives considered
 
 - **The cloud agent's work waits for the Mac.** Rejected by the operator. It makes a cloud agent only as available as a laptop, which defeats its purpose.
-- **A home in the cloud only while the Mac is off, handed back when it returns.** Rejected by the architect: a home that moves back and forth is two copies that have to be merged, which is the sync that the 2026-10-15 plan and ADR `261124-194115` both ruled out. The operator's first sentence can be read as asking for this, so it was put to him as its own question.
+- **A home in the cloud only while the Mac is off, handed back when it returns.** Rejected by the operator, when it was put to him as its own question. A home that moves back and forth is two copies that have to be merged, which is the sync that the 2026-10-15 plan and ADR `261124-194115` both ruled out.
 - **The cloud is the home of every agent.** Already rejected in ADR `261124-194115`: it makes a hosted service the keeper of every founder's private data.
