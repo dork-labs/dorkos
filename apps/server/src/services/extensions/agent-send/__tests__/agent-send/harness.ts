@@ -72,6 +72,8 @@ export const h = {
   dispatched: [] as DispatchSessionMessageOpts[],
   /** Every launch slot under `runtimes.maxAgentChats` taken: admission makes messages wait. */
   capFull: false,
+  /** The agent the pause service says is paused, when one is. */
+  pausedAgent: undefined as { name: string } | undefined,
   /** The extension's own start limits refuse a new kept chat: the message is held. */
   limitFull: false,
   /** Set to refuse the next launch at the door, as the real launch path can. */
@@ -180,7 +182,7 @@ export function bootTurnPort(opts: { epoch?: string; now?: () => number } = {}):
     epoch: opts.epoch ?? '01BOOTEPOCHAGENTSEND000000',
     ...(opts.now ? { now: opts.now } : {}),
     computer: () => computer,
-    admission: { admission: { isPaused: () => false, machineFull: () => h.capFull } },
+    admission: { admission: { pausedAgent: () => h.pausedAgent, machineFull: () => h.capFull } },
   });
   startRunEffects();
 }
@@ -237,6 +239,7 @@ beforeEach(async () => {
   h.dispatched = [];
   h.reserved = [];
   h.capFull = false;
+  h.pausedAgent = undefined;
   h.limitFull = false;
   h.refuse = undefined;
   h.agents = new Map();

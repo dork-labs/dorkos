@@ -174,12 +174,14 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
     },
     admission: {
       admission: {
-        isPaused: (agentId, cwd) => {
+        pausedAgent: (agentId, cwd) => {
           const pauses = agentPause();
-          if (!pauses) return false;
+          if (!pauses) return undefined;
           return agentId !== null
-            ? pauses.pausedAgent(agentId) !== undefined
-            : cwd !== undefined && pauses.isPaused(cwd) !== undefined;
+            ? pauses.pausedAgent(agentId)
+            : cwd !== undefined
+              ? pauses.pausedAgentOfTurn({ cwd })
+              : undefined;
         },
         machineFull: isAgentLaunchCapFull,
       },

@@ -194,7 +194,7 @@ function boot(epoch: string): RunRecord {
     agentHome: () => (id) => (id === AGENT.id ? AGENT.home : undefined),
     admission: {
       admission: {
-        isPaused: () => paused,
+        pausedAgent: () => (paused ? { name: 'Porter' } : undefined),
         machineFull: () => (realCap ? isAgentLaunchCapFull() : machineFull),
       },
       admit: (run, start, deps) => {
@@ -341,6 +341,17 @@ describe('the space face', () => {
     releaseLongTurn?.();
     await vi.waitFor(() => expect(record.store.get(messageId)?.status).toMatch(/ended|settled/u));
     expect(startEffect(messageId).state).toBe('done');
+  });
+
+  it('refuses a mini app’s send or start to a paused agent at start(), with today’s words, saving nothing', () => {
+    // Purpose: fails if a paused agent's mini app message were kept to run later.
+    paused = true;
+    for (const kind of ['extension-message', 'extension-start'] as const) {
+      expect(() => startFromApp('from the app: are you there?', { origin: { kind } })).toThrow(
+        expect.objectContaining({ reason: 'agent_paused', message: 'Porter is paused.' })
+      );
+    }
+    expect(record.store.listForChat(sessionId)).toEqual([]);
   });
 
   it('refuses at start() what it can judge itself, and saves nothing', () => {

@@ -151,7 +151,7 @@ beforeEach(() => {
   machineFull = false;
   record = createRunRecord(db, {
     epoch: '01BOOTEPOCHSTARTWORK000000',
-    admission: { admission: { isPaused: () => false, machineFull: () => machineFull } },
+    admission: { admission: { pausedAgent: () => undefined, machineFull: () => machineFull } },
   });
   launches = [];
   const start = record.port.start.bind(record.port);

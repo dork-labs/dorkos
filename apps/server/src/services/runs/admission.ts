@@ -9,7 +9,10 @@
  *
  * 1. **The agent is paused.** A person's own chat goes on, so the computer
  *    face refuses it as `agent_paused` and the person sees today's error.
- *    Any other run waits (`paused`) until the pause is lifted.
+ *    A mini app's send or start is refused at `start()` as today, nothing
+ *    saved (`SpaceTurnPort.start`), until a person can see a waiting run and
+ *    take it back. Any other run, and a mini app's run a pause reached after
+ *    it was accepted, waits (`paused`) until the pause is lifted.
  * 2. **The chat is busy.** A run whose words stay at their source waits
  *    (`chat_busy`) while the chat has a live run, and is woken when that run
  *    lets go. On a Mac a run whose words wait in the composer skips this: the
@@ -51,8 +54,8 @@ export type AdmissionVerdict =
 /** What admission reads. Each is today's source for its check (§3.5). */
 export interface AdmissionDeps {
   runs: RunStore;
-  /** Whether the agent a turn is for is paused: by Mesh id, else by its folder. */
-  isPaused: (agentId: string | null, cwd: string | undefined) => boolean;
+  /** The paused agent a turn is for, by Mesh id, else by its folder; `undefined` when not paused. */
+  pausedAgent: (agentId: string | null, cwd: string | undefined) => { name: string } | undefined;
   /** Whether every launch slot under `runtimes.maxAgentChats` is taken. */
   machineFull: () => boolean;
 }
@@ -80,7 +83,8 @@ export function admit(
   start: Pick<StartPayload, 'cwd' | 'accountHint'>,
   deps: AdmissionDeps
 ): AdmissionVerdict {
-  if (!personTyped(run.origin) && deps.isPaused(run.agentId, start.cwd)) return { wait: 'paused' };
+  if (!personTyped(run.origin) && deps.pausedAgent(run.agentId, start.cwd))
+    return { wait: 'paused' };
   const live = deps.runs.liveRunOf(run.sessionId);
   const chatBusy = live !== undefined && live.id !== run.id;
   const composer = wordsWaitInComposer(run.origin);

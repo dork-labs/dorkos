@@ -50,7 +50,8 @@ import { startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 
 /** Why the space face refused a start before saving anything. */
-export type SpaceRefusalReason = 'content_too_long' | 'invalid_input' | 'invalid_agent_path';
+export type SpaceRefusalReason =
+  'content_too_long' | 'invalid_input' | 'invalid_agent_path' | 'agent_paused';
 
 /** A start refused at `start()`: nothing was saved. */
 export class TurnStartRefusedError extends Error {
@@ -104,6 +105,12 @@ export interface SpaceTurnPortDeps {
    * handler asks again before every hand-over; this decides nothing.
    */
   preview?: (run: TurnRun, start: StartPayload) => WaitReason | undefined;
+  /**
+   * The paused agent a start is for, when it is paused (admission's own
+   * source): a mini app's send or start is refused then, as it always has
+   * been, because nobody can yet see a waiting run to take it back (§3.5).
+   */
+  pausedAgent?: (agentId: string | null, cwd: string | undefined) => { name: string } | undefined;
   /** The computer face, for taking back a run its caller no longer wants. */
   computer?: () => ComputerTurnPort | undefined;
   /** The record side of the hand-overs, for cancelling a run that never left here. */
@@ -164,6 +171,13 @@ export class SpaceTurnPort {
         'invalid_agent_path',
         'Choose a registered agent before starting this chat'
       );
+    }
+    const app =
+      start.origin.kind === 'extension-message' || start.origin.kind === 'extension-start';
+    const paused = app ? this.deps.pausedAgent?.(start.agentId ?? null, start.cwd) : undefined;
+    if (paused) {
+      // Today's words and today's rule: nothing is queued, nothing kept for later.
+      throw new TurnStartRefusedError('agent_paused', `${paused.name} is paused.`);
     }
     const { runs, effects } = this.deps;
     const run = runs.transaction(() => {

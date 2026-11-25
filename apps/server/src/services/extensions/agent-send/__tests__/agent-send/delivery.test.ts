@@ -233,6 +233,17 @@ it('has no hold limit: a message queued for 30 minutes still runs', async () => 
   expect(h.events[0]).toMatchObject({ messageId: receipt.messageId });
 });
 
+describe('ctx.agent.send — a paused agent', () => {
+  it('refuses the message as today, and keeps nothing to run later', async () => {
+    h.pausedAgent = { name: 'Beta' };
+    await expect(
+      h.service.send(EXT, { to: h.session, text: 'later', idempotencyKey: 'p' })
+    ).rejects.toMatchObject({ code: 'unavailable', message: 'Beta is paused.' });
+    expect(h.store.findByKey(EXT, 'p')).toBeNull();
+    expect(h.queue.list(h.session)).toEqual([]);
+  });
+});
+
 describe('ctx.agent.send — idempotency', () => {
   it('answers a resend with the same key with the first receipt, and sends nothing', async () => {
     const first = gate();

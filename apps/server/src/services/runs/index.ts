@@ -132,7 +132,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
   });
   // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
   const admissionSources = admission?.admission ?? {
-    isPaused: () => false,
+    pausedAgent: () => undefined,
     machineFull: isAgentLaunchCapFull,
   };
   const admitRun = admission?.admit ?? admit;
@@ -142,6 +142,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     ...(agentHome ? { agentHome } : {}),
     computer: computer ?? getComputerTurnPort,
     starts: (): StartTurns => starts,
+    pausedAgent: (agentId, cwd) => admissionSources.pausedAgent(agentId, cwd),
     preview: (run, start) => {
       if (run.origin === null) return undefined;
       const verdict = admitRun({ ...run, origin: run.origin }, start, {
