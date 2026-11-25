@@ -129,6 +129,7 @@ export function summarize(plan: ReleasePlan): string {
   return [
     `Release v${plan.version} (from ${plan.previous}, ${decision.bump}: ${decision.reason})`,
     `  breaking: ${decision.breaking ? 'yes' : 'no'}`,
+    `  config migration key: ${decision.migrationKey ?? 'none pending'}${decision.raisedFrom ? ` (raised from ${decision.raisedFrom})` : ''}`,
     `  fragments: ${plan.fragments.length}`,
     `  files: ${plan.changes.map((change) => `${change.status} ${change.path}`).join('\n         ')}`,
     `  commits with no fragment: ${plan.unfragmented.length}`,

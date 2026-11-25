@@ -12,7 +12,8 @@
  * The plan was built from a checkout, which can lag P. So before writing
  * anything, P's own tree is read through the same caller and every planned
  * file's `before` must hash to P's blob for that path (an added file must be
- * absent), and P's fragments must be exactly the ones the plan compiled.
+ * absent), every file the plan only read must too, and P's fragments must be
+ * exactly the ones the plan compiled.
  *
  * @module scripts/release/git-data
  */
@@ -55,7 +56,7 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * parent and no author (so GitHub signs it as the App), then the branch ref.
  */
 export async function commitViaGitData(
-  plan: Pick<ReleasePlan, 'version' | 'changes' | 'fragments'>,
+  plan: Pick<ReleasePlan, 'version' | 'changes' | 'fragments' | 'inputs'>,
   gh: GhCaller,
   target: GitDataTarget
 ): Promise<GitDataResult> {
@@ -158,7 +159,7 @@ async function readTree(
 }
 
 function assertPlanMatchesTree(
-  plan: Pick<ReleasePlan, 'changes' | 'fragments'>,
+  plan: Pick<ReleasePlan, 'changes' | 'fragments' | 'inputs'>,
   blobs: ReadonlyMap<string, TreeBlob>,
   parent: string
 ): void {
@@ -175,6 +176,12 @@ function assertPlanMatchesTree(
     if (!inP) throw lagging(`${change.path} is not there`);
     if (change.before === undefined || gitBlobSha(change.before) !== inP.sha)
       throw lagging(`${change.path} differs there`);
+  }
+  // A file the plan only read (the migrations table, which can raise the
+  // version) must be P's too, or the version was decided from another tree.
+  for (const input of plan.inputs) {
+    const inP = blobs.get(input.path);
+    if (!inP || gitBlobSha(input.before) !== inP.sha) throw lagging(`${input.path} differs there`);
   }
   const fragments = [...blobs.keys()]
     .filter((path) => /^changelog\/unreleased\/[^/]+\.md$/.test(path))

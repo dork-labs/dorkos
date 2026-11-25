@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { checkReleaseCherryPicks } from '../../../packages/cli/scripts/release-branch/rules.ts';
 import { BREAKING_CALLOUT, sectionBody } from '../changelog.ts';
 import { ReleaseCommitError } from '../errors.ts';
-import { selfCheck, type PlannedChange, type ReleasePlan } from '../plan.ts';
-import { fixtureRepo, FIXTURE_DATE, type FixtureRepo } from './fixture-repo.ts';
+import { MIGRATIONS_FILE } from '../migration-table.ts';
+import { planJson, selfCheck, type PlannedChange, type ReleasePlan } from '../plan.ts';
+import { fixtureRepo, FIXTURE_DATE, FIXTURE_MIGRATIONS, type FixtureRepo } from './fixture-repo.ts';
 
 let repo: FixtureRepo;
 beforeEach(() => {
@@ -106,6 +107,68 @@ describe('the version bump', () => {
     for (const file of ['VERSION', 'docs/api/openapi.json', 'package.json'])
       repo.write(file, repo.read(file).replaceAll('0.20.0', '1.0.0'));
     expect(() => repo.plan({ previous: '1.0.0' })).toThrow(/needs a person/);
+  });
+});
+
+describe('the config migration floor', () => {
+  const withKey = (key: string, table = FIXTURE_MIGRATIONS) =>
+    repo.write(MIGRATIONS_FILE, table.replace('} as const;', `  '${key}': later,\n} as const;`));
+
+  it('leaves the bump alone when every key has run, the leading 1.0.0 sentinel included', () => {
+    const plan = repo.plan();
+    expect(plan.decision).toMatchObject({ version: '0.20.1', bump: 'patch' });
+    expect(plan.decision.migrationKey).toBeUndefined();
+    expect(plan.prBody).not.toContain('Config migrations');
+  });
+
+  it('raises a patch to the newest key and says why in the plan and the PR body', () => {
+    withKey('0.21.0');
+    const plan = repo.plan();
+    expect(plan.decision).toMatchObject({
+      version: '0.21.0',
+      bump: 'minor',
+      migrationKey: '0.21.0',
+      raisedFrom: '0.20.1',
+    });
+    expect(plan.decision.reason).toContain("config migration key '0.21.0'");
+    expect(after(plan, 'VERSION')).toBe('0.21.0');
+    expect(JSON.parse(planJson(plan))).toMatchObject({
+      migrationKey: '0.21.0',
+      raisedFrom: '0.20.1',
+    });
+    expect(plan.prBody).toContain('raised from 0.20.1 to reach the key `0.21.0`');
+  });
+
+  it('keeps a bump that already reaches the key, and names the key', () => {
+    withKey('0.20.1');
+    const plan = repo.plan();
+    expect(plan.decision).toMatchObject({ version: '0.20.1', migrationKey: '0.20.1' });
+    expect(plan.decision.raisedFrom).toBeUndefined();
+    expect(plan.prBody).toContain('the newest key, `0.20.1`, runs in this release');
+  });
+
+  it('refuses a key that is neither the next patch nor the next minor, the sentinel moved included', () => {
+    for (const key of ['0.22.0', '0.20.2', '0.21.1']) {
+      withKey(key);
+      expect(() => repo.plan(), key).toThrow(`'${key}', which is neither the next patch`);
+    }
+    withKey('1.0.0', FIXTURE_MIGRATIONS.replace("'1.0.0'", "'0.18.0'"));
+    expect(() => repo.plan()).toThrow(/'1.0.0', which is neither/);
+  });
+
+  it('lets --version name any version at or above the newest key, and refuses one below it', () => {
+    withKey('0.21.0');
+    expect(() => repo.plan({ version: '0.20.5' })).toThrow(/below the newest config migration key/);
+    expect(repo.plan({ version: '0.21.0' }).version).toBe('0.21.0');
+    withKey('0.23.0');
+    expect(repo.plan({ version: '0.23.0' }).decision).toMatchObject({ migrationKey: '0.23.0' });
+  });
+
+  it('refuses a table it cannot read rather than planning past it', () => {
+    repo.write(MIGRATIONS_FILE, 'export const OTHER = {};\n');
+    expect(() => repo.plan()).toThrow(/cannot tell which migrations it must reach/);
+    repo.remove(MIGRATIONS_FILE);
+    expect(() => repo.plan()).toThrow(/has no file apps\/server/);
   });
 });
 

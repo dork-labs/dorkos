@@ -1,0 +1,76 @@
+{
+  "type": "object",
+  "required": ["pins", "ui"],
+  "properties": {
+    "ui": {
+      "default": {
+        "theme": "system"
+      },
+      "type": "object",
+      "required": ["theme"],
+      "properties": {
+        "theme": {
+          "default": "system",
+          "type": "string",
+          "enum": ["light", "dark", "system"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "color": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^#"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extra": {}
+      },
+      "additionalProperties": false
+    },
+    "pins": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["kind", "path"],
+            "properties": {
+              "kind": {
+                "const": "agent"
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["kind", "roomId"],
+            "properties": {
+              "kind": {
+                "const": "room"
+              },
+              "roomId": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["integer", "null"]
+      }
+    }
+  },
+  "additionalProperties": false
+}

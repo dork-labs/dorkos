@@ -46,6 +46,10 @@ export interface BumpDecision {
   breaking: boolean;
   /** The version this release gets. */
   version: string;
+  /** The newest config migration key above the last release, when there is one. */
+  migrationKey?: string;
+  /** The version the fragments alone called for, when that key raised it. */
+  raisedFrom?: string;
 }
 
 const SEEDED = 'dorkos-changelog:seeded';
