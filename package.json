@@ -41,6 +41,7 @@
     "check:boundary": "tsx scripts/check-boundary.ts",
     "check:max-lines": "node scripts/check-max-lines.ts",
     "check:own-mocks": "node scripts/check-own-mocks.ts",
+    "check:turn-port": "node scripts/turn-port/check-turn-port-boundary.ts",
     "check:api-lint": "node scripts/api-lint/check-api-lint.ts",
     "check:test-ratio": "node scripts/test-ratio/check-test-ratio.ts",
     "check:design-tokens": "node scripts/check-design-tokens.ts",

@@ -5,6 +5,7 @@ import spaces from './eslint-rules/space-boundary.js';
 import workGraph from './eslint-rules/work-graph-boundary.js';
 import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
 import problemOnly from './eslint-rules/problem-only.js';
+import turnPort from './eslint-rules/turn-port-boundary.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -441,6 +442,16 @@ export default defineConfig([
     ignores: ['src/**/__tests__/**', 'src/**/*.test.ts'],
     plugins: { 'problem-only': problemOnly },
     rules: { 'problem-only/no-error-body': 'error' },
+  },
+
+  // The turn port's ratchet (spec `turns-survive-restarts` §3.4): the space side reaches turn code
+  // only through the turn port, and the imports that do not yet may only go
+  // (`turn-port-boundary.baseline.json`). Tests are not checked.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
+    plugins: { 'turn-port': turnPort },
+    rules: { 'turn-port/boundary': 'error' },
   },
 
   ...testConfig,
