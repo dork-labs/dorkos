@@ -31,11 +31,15 @@ const root = join(import.meta.dirname, '../..');
 const read = (name: string) => readFileSync(join(root, '.github/workflows', name), 'utf8');
 
 const RELEASE = "startsWith(github.base_ref, 'release/')";
-/** Each file's full-sweep condition, before `|| RELEASE`. */
-const FULL: Record<string, string> = {
-  'test.yml': "github.event_name != 'pull_request'",
+/** "Neither a pull request nor a merge group": a leg that left the queue for main (DOR-5130). */
+const OFF_QUEUE = "(github.event_name != 'pull_request' && github.event_name != 'merge_group')";
+/** Each file's full-sweep conditions, before `|| RELEASE`. */
+const FULL: Record<string, string[]> = {
+  // test.yml: the full sweep runs in the queue; community-pg alone left it
+  // for the rolling run on main (DOR-5130).
+  'test.yml': ["github.event_name != 'pull_request'", OFF_QUEUE],
   // DOR-5130: the full browser suite runs on main after merge, not in the queue.
-  'browser-test.yml': "(github.event_name != 'pull_request' && github.event_name != 'merge_group')",
+  'browser-test.yml': [OFF_QUEUE],
 };
 const MAPPED =
   "EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}";
@@ -53,7 +57,11 @@ describe.each(['test.yml', 'browser-test.yml'])(
         (l) => /^\s*if:/.test(l) && l.includes("github.event_name != 'pull_request'")
       );
       expect(full.length).toBeGreaterThan(0);
-      for (const line of full) expect(line).toContain(`${FULL[file]} || ${RELEASE}`);
+      for (const line of full)
+        expect(
+          FULL[file]!.some((f) => line.includes(`${f} || ${RELEASE}`)),
+          `"${line.trim()}" spells neither full-sweep condition`
+        ).toBe(true);
     });
 
     it('every scoped pull-request condition excludes a pull request into release/', () => {
@@ -94,6 +102,15 @@ describe.each(['test.yml', 'docs-openapi-check.yml'])(
     });
   }
 );
+
+describe('test.yml keeps the full sweep in the queue', () => {
+  it('only community-pg leaves the merge queue for the run on main (DOR-5130)', () => {
+    const text = read('test.yml');
+    const off = code(text).filter((l) => /^\s*if:/.test(l) && l.includes(OFF_QUEUE));
+    expect(off).toHaveLength(1);
+    expect(text).toContain(`  community-pg:\n    if: \${{ ${OFF_QUEUE} || ${RELEASE} }}\n`);
+  });
+});
 
 describe('release-branch-contents.yml', () => {
   const text = read('release-branch-contents.yml');
