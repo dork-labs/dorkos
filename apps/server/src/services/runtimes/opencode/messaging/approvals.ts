@@ -263,6 +263,12 @@ export interface ApprovalRouting extends Pick<
   sessionId: string;
   ocSessionId: string;
   cwd: string;
+  /**
+   * The folder OpenCode stores the session under (`Session.directory`). A reply
+   * that names no session is routed by it (DOR-5248); a child session's asks
+   * live in the same folder.
+   */
+  directory: string;
   permissions: OpenCodePermissionState;
   /**
    * The folders THIS turn was granted (spec `agent-home-desk` §4.4). Consulted
@@ -301,9 +307,10 @@ export interface ApprovalGateDeps {
  * deny). `POST /session/{id}/permissions/{permissionID}` is the route the
  * SDK client exposes, and 1.18.15 still serves it: a live approve and a live
  * deny were both accepted (200) and both echoed back as `permission.replied`
- * (2026-08-11, DOR-1147). The sidecar has since grown a second spelling
- * (`POST /permission/{requestID}/reply`, also verified working) that the SDK
- * does not expose yet. Only a refusal that must tell the model why uses it
+ * (2026-08-11, DOR-1147). It names the session, so OpenCode routes it to the
+ * session's own folder. The sidecar has since grown a second spelling
+ * (`POST /permission/{requestID}/reply`) that the SDK does not expose yet and
+ * that names no session. Only a refusal that must tell the model why uses it
  * ({@link rejectPermissionWithReason}); everything else answers here.
  *
  * @param provider - Sidecar client source, routed by `target.cwd`
@@ -328,47 +335,79 @@ export async function respondPermission(
 }
 
 /**
+ * How long a refusal waits on the reason route before it rejects plainly
+ * (DOR-5248). The route answers in milliseconds when it is addressed right; the
+ * bound is for a sidecar that is slow or wedged, so a refusal never stalls.
+ */
+export const REASON_REPLY_TIMEOUT_MS = 2_000;
+
+/**
  * Refuse one permission request and tell the model why (DOR-4447), as the
  * DorkOS runtime does: a bare reject reaches the model only as OpenCode's
- * "The user rejected permission to use this specific tool call."
+ * "The user rejected permission to use this specific tool call.", and it ends
+ * OpenCode's loop, where a reason goes back to the model as the tool's error.
  *
  * The SDK's v1 route takes no message. The sidecar's own
- * `POST /permission/{requestID}/reply` takes `{reply, message}` (verified on
- * 1.18.15, typed in the pinned 1.19.3's v2 SDK), and OpenCode hands that
- * message to the model as the tool's error. The v1 client has no method for
- * it, so the route is named on the v1 method's request, whose options spread
- * over its own URL. If the sidecar will not take it, the plain reject still
- * lands: a refusal never turns into an approval or a hanging ask.
+ * `POST /permission/{requestID}/reply` takes `{reply, message}` (typed in the
+ * pinned 1.19.3's v2 SDK). The v1 client has no method for it, so the route is
+ * named on the v1 method's request, whose options spread over its own URL.
+ *
+ * That route names no session, so OpenCode finds the ask by `?directory=`:
+ * left out, it looks in the folder the sidecar was started in, boots that
+ * folder (about 70 s on the pinned binary, offline) and answers "not found"
+ * (DOR-5248). So the session's stored folder rides along, and the attempt is
+ * bounded by {@link REASON_REPLY_TIMEOUT_MS}. If the sidecar will not take it
+ * in time, the plain reject still lands: a refusal never turns into an
+ * approval or a hanging ask.
  *
  * @param provider - Sidecar client source, routed by `target.cwd`
- * @param target - The OpenCode session that RAISED the request, and its cwd
+ * @param target - The OpenCode session that RAISED the request, the turn's cwd,
+ *   and the folder OpenCode stores the session under (`Session.directory`)
  * @param permissionID - `Permission.id` to answer (the reply route's `requestID`)
  * @param message - Why it was refused, for the model
  */
 export async function rejectPermissionWithReason(
   provider: OpenCodeClientProvider,
-  target: { ocSessionId: string; cwd: string },
+  target: { ocSessionId: string; cwd: string; directory: string },
   permissionID: string,
   message: string
 ): Promise<void> {
   const client = await provider.getClient(target.cwd);
+  const stop = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<string>((resolve) => {
+    timer = setTimeout(() => {
+      stop.abort();
+      resolve('no answer in time');
+    }, REASON_REPLY_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  // Never rejects: the race below must not leave a failure nobody awaits.
+  const replied = (async (): Promise<true | string> => {
+    try {
+      const result = (await client.postSessionIdPermissionsPermissionId({
+        url: '/permission/{requestID}/reply',
+        path: { requestID: permissionID },
+        query: { directory: target.directory },
+        body: { reply: 'reject', message },
+        signal: stop.signal,
+      } as never)) as { data?: unknown; error?: unknown };
+      // The route answers `true` once it took the reply. Anything else (an
+      // error, a page some other route served) is not proof.
+      if (result.data === true) return true;
+      return JSON.stringify(result.error ?? result.data ?? null);
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  })();
   try {
-    const result = await client.postSessionIdPermissionsPermissionId({
-      url: '/permission/{requestID}/reply',
-      path: { requestID: permissionID },
-      body: { reply: 'reject', message },
-    } as never);
-    // The route answers `true` once it took the reply. Anything else (an
-    // error, a page some other route served) is not proof, so reject plainly.
-    if ((result as { data?: unknown }).data === true) return;
+    const outcome = await Promise.race([replied, expired]);
+    if (outcome === true) return;
     logger.warn('[OpenCodeRuntime] reject with a reason not confirmed; rejecting without one', {
-      error: JSON.stringify(result.error ?? (result as { data?: unknown }).data ?? null),
+      error: outcome,
     });
-  } catch (err) {
-    logger.warn(
-      '[OpenCodeRuntime] reject with a reason failed; rejecting without one',
-      logError(err)
-    );
+  } finally {
+    clearTimeout(timer);
   }
   await respondPermission(provider, target, permissionID, 'reject');
 }
@@ -492,7 +531,7 @@ async function* refuseStoppedAsk(
     turn.permissions.pendingPermissionSessions.get(approval.toolCallId) ?? turn.ocSessionId;
   await rejectPermissionWithReason(
     deps.provider,
-    { ocSessionId: askedIn, cwd: turn.cwd },
+    { ocSessionId: askedIn, cwd: turn.cwd, directory: turn.directory },
     approval.toolCallId,
     STOPPED_WHILE_WAITING_REASON
   );
@@ -589,7 +628,7 @@ async function* decideApproval(
         // the person sees them on the event below.
         await rejectPermissionWithReason(
           deps.provider,
-          { ocSessionId: askedIn, cwd },
+          { ocSessionId: askedIn, cwd, directory: turn.directory },
           approval.toolCallId,
           verdict.reason
         );

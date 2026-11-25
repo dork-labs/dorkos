@@ -18,6 +18,7 @@ const turn: ApprovalRouting = {
   sessionId: 'parent',
   ocSessionId: 'oc-parent',
   cwd: roots.cwd,
+  directory: roots.cwd,
   permissions: { pendingPermissionSessions: new Map([['ask', 'oc-child']]) },
   grants: [{ path: roots.data, access: 'write' }],
   protectedRoots: roots,

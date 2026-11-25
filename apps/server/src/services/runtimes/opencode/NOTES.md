@@ -130,12 +130,22 @@ path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "re
   `POST /session/{id}/permissions/{permissionID}`, answers `200 true` and publishes the echo. `"always"`
   persists a rule in OpenCode's own store; DorkOS only ever sends `once`/`reject` so the two approval
   models cannot diverge.
-  1.18.15 also serves `POST /permission/{requestID}/reply` with `{reply, message}` (verified working,
-  same effect) plus a v2 family under `/api/…`. The SDK client exposes none of those, and the route we
-  use still works, so approvals stay on it. The one exception is a package shell guard's refusal
-  (DOR-4447): it rides `/permission/{requestID}/reply` with the guard's reason as `message`, so the
-  model reads why, and falls back to the plain reject if the sidecar refuses that route
+  1.18.15 also serves `POST /permission/{requestID}/reply` with `{reply, message}` plus a v2 family
+  under `/api/…`. The SDK client exposes none of those, and the route we use still works, so approvals
+  stay on it. The one exception is a refusal that tells the model why (a shell guard's, DOR-4447, or a
+  stopped chat's): it rides `/permission/{requestID}/reply` with the reason as `message`, and falls back
+  to the plain reject if the sidecar refuses that route or has not answered within 2 s
   (`rejectPermissionWithReason` in `messaging/approvals.ts`).
+- **The reply route needs `?directory=` (DOR-5248, live on 1.19.3).** Its path names no session, so
+  `planRequest()` falls back to `x-opencode-directory`, then the sidecar's own `process.cwd()`. DorkOS's
+  client sets no directory, so the reply went to the sidecar's start folder: the first one booted that
+  folder as a new instance (70,107 ms, offline) and both it and every later one answered
+  `404 PermissionNotFoundError`, because pending asks live per instance (`permission/index.ts`). The
+  plain reject (session route, routed by `Session.directory`) then landed, so the model only ever got
+  OpenCode's generic words, and a bare reject ends OpenCode's loop where a reason
+  (`PermissionCorrectedError`) lets the model carry on. The fix passes the session's stored
+  `directory` as `?directory=`: the refusal answers in milliseconds and the model reads the reason
+  (`package-grants.binary.test.ts`).
 - **Denial semantics (live):** rejecting does NOT fail the turn. The tool part goes to
   `status: "error"` with `"The user rejected permission to use this specific tool call."`, the model
   carries on, and the session reaches `session.idle` normally. No `session.error` is published.
