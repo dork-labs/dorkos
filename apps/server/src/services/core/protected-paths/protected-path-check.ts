@@ -163,7 +163,8 @@ const MAX_WALK_ENTRIES = 50_000;
 function walkFinds(
   input: string,
   found: (entry: string) => boolean,
-  follow?: (entry: string) => string
+  follow?: (entry: string) => string,
+  skip?: (entry: string) => boolean
 ): boolean {
   const pending = [input];
   const seen = new Set<string>();
@@ -183,7 +184,9 @@ function walkFinds(
         if (follow || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         continue;
       }
-      if (folder) for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
+      if (folder && !skip?.(current)) {
+        for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
+      }
     }
     return false;
   } catch {
@@ -205,6 +208,13 @@ export function searchTouchesProtectedPath(input: string, roots: ProtectedPathRo
   }
   return walkFinds(input, protectedRead, (entry) => canonical(entry, roots.cwd));
 }
+
+/**
+ * Folders a whole-removal walk does not go into: DorkOS loads no plugin from
+ * either, and they are the trees that would pass the walk's limit. Their own
+ * name is still checked, as every entry's is.
+ */
+const NOT_WALKED = new Set(['node_modules', '.git']);
 
 /**
  * Whether removing or moving the whole of `input` takes with it a protected write that can sit at
@@ -236,5 +246,10 @@ export function wholeTakesProtectedWrite(input: string, full: boolean): boolean 
   const fromRoot = (entry: string): string =>
     path.relative(path.parse(entry).root, entry).split(path.sep).join('/');
   if (leading.some((test) => test.test(fromRoot(input)))) return true;
-  return walkFinds(input, (entry) => named.some((test) => test.test(fromRoot(entry))));
+  return walkFinds(
+    input,
+    (entry) => named.some((test) => test.test(fromRoot(entry))),
+    undefined,
+    (folder) => NOT_WALKED.has(path.basename(folder))
+  );
 }

@@ -933,12 +933,18 @@ describe('removing or moving a folder that holds a protected entry', () => {
     touch(path.join(site, '.dork', 'plugins', 'acme', 'hooks.json'));
     touch(path.join(fresh, '.dork', 'agent.json'));
     touch(path.join(base, 'plain', 'build', 'out.js'));
-    // Past the walk's limit of 50,000 entries, with nothing protected in it.
-    for (let i = 0; i < 100; i++) {
-      mkdirSync(path.join(base, 'big', `d${i}`), { recursive: true });
-      for (let j = 0; j < 500; j++) writeFileSync(path.join(base, 'big', `d${i}`, `f${j}`), '');
-    }
-  }, 60_000);
+    // Past the walk's limit of 50,000 entries, with nothing protected in it:
+    // once as a plain tree, once as a project's dependencies and git history.
+    const pastLimit = (folder: string) => {
+      for (let i = 0; i < 100; i++) {
+        mkdirSync(path.join(folder, `d${i}`), { recursive: true });
+        for (let j = 0; j < 500; j++) writeFileSync(path.join(folder, `d${i}`, `f${j}`), '');
+      }
+    };
+    pastLimit(path.join(base, 'big'));
+    pastLimit(path.join(base, 'app', 'node_modules'));
+    touch(path.join(base, 'app', '.git', 'HEAD'));
+  }, 120_000);
 
   afterAll(() => {
     rmSync(base, { recursive: true, force: true });
@@ -965,6 +971,8 @@ describe('removing or moving a folder that holds a protected entry', () => {
     ['removing a folder with nothing protected in it', () => `rm -rf ${base}/plain/build`],
     ['moving one', () => `mv ${base}/plain/build ${base}/plain/dist`],
     ['removing a folder that isn’t there', () => `rm -rf ${base}/plain/gone`],
+    ['removing a project’s dependencies', () => `rm -rf ${base}/app/node_modules`],
+    ['removing a project with big dependencies and git history', () => `rm -rf ${base}/app`],
     ['moving a file into a project', () => `mv ${base}/plain/build/out.js ${site}`],
   ])('still runs %s at Full', (_label, command) => {
     expect(shellWriteVerdict(command(), at(base, true))).toBe('none');
