@@ -269,7 +269,8 @@ describe('POST /api/extensions/:id/start-work', () => {
       code: 'agent_paused',
       detail: 'The agent is paused. Resume it, then try again.',
     });
-    // Refused at the door: no run, and no start row to count or hand over.
+    // Refused at the door: the spy records the one attempt, but no run is saved
+    // for the chat, and no start row is left to count or hand over.
     expect(launches).toHaveLength(1);
     expect(record.port.list(launches[0]!.sessionId)).toEqual([]);
     expect(store.countSince('hello', '1970-01-01T00:00:00.000Z')).toBe(0);
