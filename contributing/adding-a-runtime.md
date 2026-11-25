@@ -558,8 +558,11 @@ DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/confor
 
 **A live smoke that spends money needs its own second flag.** `DORKOS_<NAME>_LIVE`
 is the FREE smoke — a local model, nothing billed — and it must never be able to
-arm a paid one. OpenCode is the worked example: `DORKOS_OPENCODE_LIVE=1` runs the
-suite against a local Ollama model, and a separate `DORKOS_OPENCODE_LIVE_PAID=1`
+arm a paid one. OpenCode is the worked example: `DORKOS_OPENCODE_LIVE=1` with
+`DORKOS_OPENCODE_LOCAL_MODEL` runs the suite against a local Ollama model. "Free" is
+enforced, not hoped for: the run writes its own config enabling only a loopback
+provider, hides the person's OpenCode config and logins, and drops hosted keys
+(`free-local/free-local-run.ts`). A separate `DORKOS_OPENCODE_LIVE_PAID=1`
 runs it against a pinned cheap model on OpenRouter. The paid flag needs
 `OPENROUTER_API_KEY` as well, and a flag with no key fails collection loudly
 rather than falling back to the mocked run — a paid smoke that silently ran mocked
