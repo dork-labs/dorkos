@@ -35,6 +35,7 @@ import type {
   TurnFactsSink,
 } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
+import type { TurnNotices } from './effects/turn-notices.js';
 import {
   isUniqueViolation,
   type RunEndingDetail,
@@ -135,8 +136,15 @@ function recordRuntimeTurn(store: RunStore, fact: Extract<RunFact, { kind: 'star
   });
 }
 
-/** The turn ended: 11 or 12, with the ending recorded at `turn_end` if there is one. */
-function recordEnded(store: RunStore, fact: Extract<RunFact, { kind: 'ended' }>): void {
+/**
+ * The turn ended: 11 or 12, with the ending recorded at `turn_end` if there
+ * is one, and the person's "finished" notice it still owes in the same write.
+ */
+function recordEnded(
+  store: RunStore,
+  fact: Extract<RunFact, { kind: 'ended' }>,
+  notices: TurnNotices | undefined
+): void {
   store.transaction(() => {
     const run = store.get(fact.runId);
     if (!run || (run.status !== 'started' && run.status !== 'running')) return;
@@ -146,6 +154,7 @@ function recordEnded(store: RunStore, fact: Extract<RunFact, { kind: 'ended' }>)
     store.endTurn(refused ? { ...run, ending: null } : run, fact.ending, {
       ...(fact.refusal !== undefined ? { refusal: fact.refusal } : {}),
     });
+    notices?.atSettle(store.get(run.id)!);
   });
 }
 
@@ -154,8 +163,9 @@ function recordEnded(store: RunStore, fact: Extract<RunFact, { kind: 'ended' }>)
  *
  * @param store - The run store.
  * @param fact - What happened.
+ * @param notices - The runs that owe a "finished" notice, when the outbox is wired.
  */
-function report(store: RunStore, fact: RunFact): void {
+function report(store: RunStore, fact: RunFact, notices: TurnNotices | undefined): void {
   switch (fact.kind) {
     case 'started':
       if (fact.openedBy === 'runtime') recordRuntimeTurn(store, fact);
@@ -172,7 +182,7 @@ function report(store: RunStore, fact: RunFact): void {
       store.annotate(fact.runId, { waitingOnPerson: fact.kind === 'waiting_on_person' });
       return;
     case 'ended':
-      recordEnded(store, fact);
+      recordEnded(store, fact, notices);
       return;
     case 'accepted':
       if (fact.joinedRunId === undefined) return;
@@ -205,8 +215,9 @@ function observedEnding(run: TurnRun, observed: ObservedTurnEnd): NonNullable<Tu
  * The Mac dispatcher's moments, each written to the record (§4.7).
  *
  * @param store - The run store.
+ * @param notices - The runs that owe a "finished" notice, when the outbox is wired.
  */
-function dispatcherFeed(store: RunStore): DispatcherRunFeed {
+function dispatcherFeed(store: RunStore, notices: TurnNotices | undefined): DispatcherRunFeed {
   return {
     accept: ({ chatKey, origin, queueMessageId }) =>
       store.create({
@@ -324,17 +335,17 @@ function dispatcherFeed(store: RunStore): DispatcherRunFeed {
       store.transaction(() => {
         const live = store.liveRunOf(chatKey);
         // A stop a receipt already confirmed stays `stopped` (§4.4).
-        if (
-          live &&
-          (live.status === 'started' || live.status === 'running') &&
-          live.ending !== 'stopped'
-        ) {
+        if (!live || (live.status !== 'started' && live.status !== 'running')) return;
+        if (live.ending !== 'stopped') {
           store.annotate(live.id, { ending: observedEnding(live, observed) });
         }
+        // The agent acted, so no pause can put the turn back: told now (§4.7).
+        notices?.atTurnEnd(store.get(live.id)!, observed.acted === true);
       }),
 
     pauseCut: (runId) =>
       store.transaction(() => {
+        notices?.forget(runId);
         const run = store.get(runId);
         if (run?.status !== 'started' && run?.status !== 'running') return;
         const { stopRequests, ...rest } = run.endingDetail;
@@ -382,7 +393,11 @@ function rowLeaving(store: RunStore, queueMessageId: string, why: QueueRowExit):
  * The run record as the turn code's facts sink.
  *
  * @param store - The run store the facts are written to.
+ * @param notices - The runs that owe their person a "finished" notice, when the outbox is wired.
  */
-export function createRunFactsSink(store: RunStore): TurnFactsSink {
-  return { report: (fact) => report(store, fact), dispatcher: dispatcherFeed(store) };
+export function createRunFactsSink(store: RunStore, notices?: TurnNotices): TurnFactsSink {
+  return {
+    report: (fact) => report(store, fact, notices),
+    dispatcher: dispatcherFeed(store, notices),
+  };
 }

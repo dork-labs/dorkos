@@ -27,6 +27,12 @@
  * does that write and calls {@link EffectContext.markDone} inside the same
  * transaction (§6.4), which is what makes that write happen exactly once.
  *
+ * **One effect at a time.** A pass awaits each handler before it takes the
+ * next, so a handler that never settles stalls the whole outbox in this
+ * process until a restart (its lease then lapses and the next boot takes it
+ * back). `notify_person` always settles; T5 bounds every handler with a
+ * timeout before `start_turn`, which can wait long, joins.
+ *
  * **Shutdown** stops the wake-ups and nothing else: an effect still pending
  * stays pending, and one whose handler was cut short is taken back by the
  * next boot when its lease lapses.
@@ -132,7 +138,8 @@ export function retryDelayMs(attempts: number): number {
 export class EffectWorker {
   private readonly now: () => number;
   private running = false;
-  private passing: Promise<void> | undefined;
+  /** Set for the whole of {@link loop}, so a wake during it asks for one more pass, not a second loop. */
+  private looping = false;
   private again = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private afterLapse: ReturnType<typeof setTimeout> | undefined;
@@ -145,6 +152,11 @@ export class EffectWorker {
    */
   constructor(private readonly opts: EffectWorkerOptions) {
     this.now = opts.now ?? Date.now;
+  }
+
+  /** Whether the worker is started: what lets the emitter hand a turn to the outbox. */
+  get isRunning(): boolean {
+    return this.running;
   }
 
   /**
@@ -181,15 +193,20 @@ export class EffectWorker {
    */
   wake(): void {
     if (!this.running) return;
-    if (this.passing) {
+    if (this.looping) {
       this.again = true;
       return;
     }
+    this.arm(0);
+  }
+
+  /** Arm the one timer that starts the next loop, clearing any armed before it. */
+  private arm(delayMs: number): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = undefined;
       void this.loop();
-    }, 0);
+    }, delayMs);
     this.timer.unref?.();
   }
 
@@ -200,7 +217,14 @@ export class EffectWorker {
    * @returns How many effects it took.
    */
   async runOnce(): Promise<number> {
-    this.housekeep();
+    // Its own guard: a housekeeping failure must not keep due effects waiting.
+    try {
+      this.housekeep();
+    } catch (err) {
+      logger.error('[runs] the effects worker could not tidy up before its pass', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     let taken = 0;
     for (
       let effect = this.opts.effects.leaseNext(this.opts.epoch, EFFECT_LEASE_MS);
@@ -215,25 +239,22 @@ export class EffectWorker {
 
   /** Passes until no wake arrived during the last, then the tick if anything is open. */
   private async loop(): Promise<void> {
-    do {
-      this.again = false;
-      this.passing = this.runOnce().then(
-        () => undefined,
-        (err: unknown) => {
+    if (!this.running || this.looping) return;
+    this.looping = true;
+    try {
+      do {
+        this.again = false;
+        try {
+          await this.runOnce();
+        } catch (err) {
           logger.error('[runs] the effects worker pass failed', {
             error: err instanceof Error ? err.message : String(err),
           });
         }
-      );
-      await this.passing;
-      this.passing = undefined;
-    } while (this.again && this.running);
-    if (this.running && this.opts.effects.hasOpen()) {
-      this.timer = setTimeout(() => {
-        this.timer = undefined;
-        void this.loop();
-      }, EFFECT_TICK_MS);
-      this.timer.unref?.();
+      } while (this.again && this.running);
+      if (this.running && this.opts.effects.hasOpen()) this.arm(EFFECT_TICK_MS);
+    } finally {
+      this.looping = false;
     }
   }
 
@@ -296,7 +317,15 @@ export class EffectWorker {
       return;
     }
     const renew = setInterval(() => {
-      if (!this.opts.effects.renew(lease, EFFECT_LEASE_MS)) clearInterval(renew);
+      try {
+        if (!this.opts.effects.renew(lease, EFFECT_LEASE_MS)) clearInterval(renew);
+      } catch (err) {
+        // A busy or failing store: the next tick tries again before the lease ends.
+        logger.warn('[runs] could not renew an effect’s lease', {
+          effectId: effect.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }, EFFECT_LEASE_RENEW_MS);
     renew.unref?.();
     try {

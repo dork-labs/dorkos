@@ -37,7 +37,6 @@ import {
   notInArray,
   or,
   sql,
-  gte,
   turnRuns,
   LIVE_TURN_RUN_STATUSES,
   type Db,
@@ -632,32 +631,6 @@ export class RunStore {
       .limit(limit)
       .all()
       .map(toRun);
-  }
-
-  /**
-   * Whether the chat has a turn `started` or `running`, or one that ended (with
-   * an ending, so not a run cancelled before it started) in the last `withinMs`.
-   *
-   * @param chatKey - The chat.
-   * @param withinMs - How far back an ending still counts.
-   */
-  hasTurnLiveOrEndedWithin(chatKey: string, withinMs: number): boolean {
-    const since = new Date(this.now() - withinMs).toISOString();
-    const row = this.db
-      .select({ id: turnRuns.id })
-      .from(turnRuns)
-      .where(
-        and(
-          eq(turnRuns.sessionId, chatKey),
-          or(
-            inArray(turnRuns.status, ['started', 'running']),
-            and(isNotNull(turnRuns.ending), gte(turnRuns.endedAt, since))
-          )
-        )
-      )
-      .limit(1)
-      .get();
-    return row !== undefined;
   }
 
   /**

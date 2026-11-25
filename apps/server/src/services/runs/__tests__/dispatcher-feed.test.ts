@@ -11,7 +11,7 @@
  * is kept in `trail`, and a hit would be logged as an error.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { agents, sessionMetadata, type Db } from '@dorkos/db';
+import { agents, eq, notifications, sessionMetadata, type Db } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
@@ -54,9 +54,16 @@ import {
   markRunsShutdown,
   recordStopReceipt,
   recordStopRequest,
+  startRunEffects,
   uninstallRunRecord,
 } from '../index.js';
 import { RunStore, RUN_LEASE_MS, type TurnRun } from '../run-store.js';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
+import { watchSessionLifecycle } from '../../notifications/emitters/session-lifecycle.js';
 
 /** A made-up agent, the one being paused. */
 const BETA = { id: '01BETAAGENTULID00000000000', home: '/demo/agents/beta' } as const;
@@ -729,6 +736,37 @@ describe('the ending at turn_end, the status at settle (F9)', () => {
       'started→running',
       'running→ended',
     ]);
+  });
+
+  it('tells the person "finished" at turn_end, while background work still drains, and once', async () => {
+    setNotificationService(new NotificationService(new NotificationStore(db)));
+    const off = watchSessionLifecycle();
+    startRunEffects();
+    try {
+      const drain = gate();
+      inner.withScenarios([drainingTurn(drain.wait)]);
+      await send('person-window', 'start the build');
+      const [run] = runs.listForChat(sessionId);
+      const told = () =>
+        db
+          .select()
+          .from(notifications)
+          .where(eq(notifications.dedupeKey, `notify:${run!.id}:completed`))
+          .all();
+
+      await vi.waitFor(() => expect(told()).toHaveLength(1));
+      expect(runs.get(run!.id)).toMatchObject({ status: 'running', ending: 'completed' });
+
+      drain.open();
+      await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('settled'));
+      expect(told()).toHaveLength(1);
+      expect(
+        db.select().from(notifications).where(eq(notifications.kind, 'turn.completed')).all()
+      ).toHaveLength(1);
+    } finally {
+      off();
+      setNotificationService(null);
+    }
   });
 
   it('a kill in that window, seen by a later boot once the lease ran out, ends it with that ending', async () => {

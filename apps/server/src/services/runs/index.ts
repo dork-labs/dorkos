@@ -17,7 +17,7 @@ import { createRunFactsSink } from './run-facts-sink.js';
 import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
 import { writeStopReceipt, writeStopRequest, type StopRequestRef } from './run-stops.js';
 import { EffectStore } from './effects/effect-store.js';
-import { writeFollowUpsOfEnded } from './effects/follow-ups.js';
+import { TurnNotices } from './effects/turn-notices.js';
 import { effectHandlers, type EffectHandlerDeps } from './effects/handlers/index.js';
 import { EffectWorker } from './effects/worker.js';
 
@@ -33,18 +33,13 @@ export {
 export { createRunFactsSink } from './run-facts-sink.js';
 export type { StopRequestRef } from './run-stops.js';
 
-/**
- * How long after a run ends the projector's "finished" status change is still
- * that run's (the two arrive in either order, as `chat-started-turns.ts` says
- * of its own linger).
- */
-export const RUN_FINISHED_LINGER_MS = 10_000;
-
 /** The run record and its outbox, as one boot holds them. */
 export interface RunRecord {
   store: RunStore;
   effects: EffectStore;
   worker: EffectWorker;
+  /** The runs that owe their person a "finished" notice (§6.2). */
+  notices: TurnNotices;
 }
 
 let installed: (RunRecord & { renew: ReturnType<typeof setInterval> }) | undefined;
@@ -66,9 +61,8 @@ export interface RunRecordOptions {
 
 /**
  * Build the run record and its outbox over the machine store, with nothing
- * registered or started: every move to `ended` writes its follow-up effects
- * in the same transaction (§6.1) and wakes the worker, which runs the
- * registry's handlers once started.
+ * registered or started. Every move to `ended` wakes the worker, which runs
+ * the registry's handlers once started and settles the run.
  *
  * @param db - The machine store.
  * @param opts - This boot's epoch (§6.1), what the handlers need, and in tests the clock.
@@ -81,11 +75,8 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
   const store = new RunStore(db, {
     ownerHolds: isRunHeld,
     ...storeOpts,
-    onEnded: (run) => {
-      writeFollowUpsOfEnded(effects, run, now());
-      // A run with nothing to follow it settles on the worker's next pass.
-      effects.announceWork();
-    },
+    // A run with nothing to follow it settles on the worker's next pass.
+    onEnded: () => effects.announceWork(),
   });
   const worker = new EffectWorker({
     effects,
@@ -94,7 +85,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     epoch: opts.epoch,
     now,
   });
-  return { store, effects, worker };
+  return { store, effects, worker, notices: new TurnNotices(store, effects, now) };
 }
 
 /**
@@ -111,7 +102,7 @@ export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
   uninstallRunRecord();
   const record = createRunRecord(db, opts);
   const { store } = record;
-  setTurnFactsSink(createRunFactsSink(store));
+  setTurnFactsSink(createRunFactsSink(store, record.notices));
   const renew = setInterval(() => {
     try {
       store.renewLeases();
@@ -141,21 +132,21 @@ export function getRunRecord(): RunRecord | undefined {
 }
 
 /**
- * Whether a chat's turn that just settled to idle is a run's, whose "finished"
- * row its `notify_person` effect writes (§6.2): the chat has a `started` or
- * `running` run, or one that ended in the last {@link RUN_FINISHED_LINGER_MS}.
- * The projector's emitter then leaves the row to the outbox, so the person is
- * told once. Never throws: an unreadable record means "no", and today's row.
+ * The projector's emitter found a turn finished and worth telling (§6.2):
+ * when the turn is a run's, the run's `notify_person` effect tells it, and
+ * this answers `true` so the emitter writes nothing. A turn with no run (a
+ * task's or a relay's, until T12 and T13), or a boot whose worker never
+ * started, answers `false`, and the emitter tells it as before. Never throws.
  *
  * @param sessionId - The chat, by any id it answers to.
+ * @param turnRef - The turn, by its `turn_start` seq, as the status change carries it.
  */
-export function runTellsTurnFinished(sessionId: string): boolean {
-  const store = installed?.store;
-  if (!store) return false;
+export function claimTurnFinished(sessionId: string, turnRef: number | undefined): boolean {
+  if (!installed?.worker.isRunning || turnRef === undefined) return false;
   try {
-    return store.hasTurnLiveOrEndedWithin(chatKeyOf(sessionId), RUN_FINISHED_LINGER_MS);
+    return installed.notices.claim(sessionId, turnRef);
   } catch (err) {
-    logger.warn('[runs] could not read whether a run tells its turn finished', {
+    logger.warn('[runs] could not hand a finished turn to its run', {
       sessionId,
       error: err instanceof Error ? err.message : String(err),
     });

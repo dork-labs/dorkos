@@ -1,9 +1,10 @@
 /**
  * `notify_person` (spec `turns-survive-restarts` §6.2, §6.4, §8 K7 for this
- * kind): a run that ended `completed` tells its person once, through dead
- * boots on either side of the notification's write, and the projector's
- * emitter leaves a run's turn to it so the person is never told twice. Real
- * SQLite and the real notification pipeline throughout.
+ * kind): the projector's emitter hands a run's finished turn to the record,
+ * by the turn's own `turn_start` seq, and the record tells the person once,
+ * through dead boots on either side of the notification's write. A turn with
+ * no run, or a boot whose worker never started, is told by the emitter as
+ * before. Real SQLite and the real notification pipeline throughout.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq, notifications, type Db } from '@dorkos/db';
@@ -20,7 +21,14 @@ import {
 } from '../../session/chat-messages/chat-started-turns.js';
 import { registerBeatTurn, resetBeatTurns } from '../../heartbeats/beat-turns.js';
 import { SessionStateProjector } from '../../session/session-state-projector.js';
-import { createRunRecord, getRunRecord, installRunRecord, uninstallRunRecord } from '../index.js';
+import {
+  createRunRecord,
+  getRunRecord,
+  installRunRecord,
+  startRunEffects,
+  uninstallRunRecord,
+  type RunRecord,
+} from '../index.js';
 import { createRunFactsSink } from '../run-facts-sink.js';
 import type { RunStore, TurnRun } from '../run-store.js';
 import { EffectWorker, EFFECT_LEASE_MS, type EffectHandler } from '../effects/worker.js';
@@ -33,17 +41,31 @@ let db: Db;
 let now: number;
 const clock = () => now;
 
-/** A run of `chatKey`, `running`, by legal moves only. */
-function runningRun(store: RunStore, chatKey: string, origin: TurnRun['origin'] = null): TurnRun {
-  let run = store.create({ chatKey, status: 'queued', openedBy: 'caller', origin });
+/** A run of `chatKey`, `running` with turn `turnRef`, by legal moves only. */
+function runningRun(store: RunStore, chatKey: string, turnRef = 1): TurnRun {
+  let run = store.create({ chatKey, status: 'queued', openedBy: 'caller', origin: null });
   run = store.move(run, 'starting', store.lease());
-  run = store.move(run, 'started', { runtime: 'test-mode', runtimeTurnRef: 1 });
+  run = store.move(run, 'started', { runtime: 'test-mode', runtimeTurnRef: turnRef });
   return store.move(run, 'running');
 }
 
-/** End a run through the facts sink, as the dispatcher's settle does. */
-function endRun(store: RunStore, run: TurnRun, ending: 'completed' | 'failed' = 'completed') {
-  createRunFactsSink(store).report({ kind: 'ended', runId: run.id, ending });
+/** Boot A: this process, holding its turns as the dispatcher would. */
+function bootA(): RunRecord {
+  return createRunRecord(db, { epoch: BOOT_A, now: clock, ownerHolds: () => true });
+}
+
+/** Boot B: a fresh run record and worker on the same database, as after a restart. */
+function bootB(): RunRecord {
+  return createRunRecord(db, { epoch: BOOT_B, now: clock });
+}
+
+/** The emitter handed the turn over, and `turn_end` recorded it: as the dispatcher does. */
+function turnEndedAfterActing(record: RunRecord, chatKey: string, acted = true): void {
+  expect(record.notices.claim(chatKey, 1)).toBe(true);
+  createRunFactsSink(record.store, record.notices).dispatcher.turnEnded(chatKey, {
+    ending: 'completed',
+    ...(acted ? { acted: true } : {}),
+  });
 }
 
 /** Every "finished" row the outbox wrote for a run. */
@@ -58,11 +80,6 @@ function rowsFor(runId: string) {
 /** Every `turn.completed` row, whoever wrote it. */
 function finishedRows() {
   return db.select().from(notifications).where(eq(notifications.kind, 'turn.completed')).all();
-}
-
-/** Boot B: a fresh run record and worker on the same database, as after a restart. */
-function bootB() {
-  return createRunRecord(db, { epoch: BOOT_B, now: clock });
 }
 
 /** Let the fire-and-forget notify chain settle. */
@@ -83,15 +100,14 @@ afterEach(() => {
   resetBeatTurns();
 });
 
-describe('a run that finished tells its person once', () => {
-  it('writes one "finished" row under the run’s key, marks the effect done and settles the run', async () => {
-    const { store, effects, worker } = createRunRecord(db, { epoch: BOOT_A, now: clock });
-    const run = runningRun(store, 'chat-finished');
-    endRun(store, run);
+describe('a run’s finished turn tells its person once', () => {
+  it('is in the inbox while the run is still running, and the run settles after its end', async () => {
+    const a = bootA();
+    const run = runningRun(a.store, 'chat-finished');
+    turnEndedAfterActing(a, 'chat-finished');
 
-    expect(await worker.runOnce()).toBe(1);
-    expect(await worker.runOnce()).toBe(0);
-
+    expect(await a.worker.runOnce()).toBe(1);
+    expect(a.store.get(run.id)?.status).toBe('running'); // background work still drains
     expect(rowsFor(run.id)).toEqual([
       expect.objectContaining({
         kind: 'turn.completed',
@@ -99,42 +115,29 @@ describe('a run that finished tells its person once', () => {
         title: 'A chat finished',
       }),
     ]);
-    expect(effects.listForRun(run.id)).toEqual([
+    expect(a.effects.listForRun(run.id)).toEqual([
       expect.objectContaining({
         state: 'done',
         outcome: { notificationId: rowsFor(run.id)[0]!.id },
       }),
     ]);
-    expect(store.get(run.id)?.status).toBe('settled');
-  });
 
-  it('owes nothing for a turn that did not finish, or whose finishing is not news', () => {
-    const { store, effects } = createRunRecord(db, { epoch: BOOT_A, now: clock });
-    const failed = runningRun(store, 'chat-failed');
-    endRun(store, failed, 'failed');
-    const beat = runningRun(store, 'chat-beat-origin', { kind: 'heartbeat' });
-    endRun(store, beat);
-    const fromChat = runningRun(store, 'chat-from-chat', { kind: 'chat-message' });
-    endRun(store, fromChat);
-    noteChatTurnStarted('chat-live-chat', now);
-    const liveChat = runningRun(store, 'chat-live-chat');
-    endRun(store, liveChat);
-    registerBeatTurn('chat-live-beat', { agentId: 'agent-1', beatId: 'b1', messageId: 'm1' });
-    const liveBeat = runningRun(store, 'chat-live-beat');
-    endRun(store, liveBeat);
-
-    for (const run of [failed, beat, fromChat, liveChat, liveBeat]) {
-      expect(store.get(run.id)?.status).toBe('ended');
-      expect(effects.listForRun(run.id)).toEqual([]);
-    }
+    createRunFactsSink(a.store, a.notices).report({
+      kind: 'ended',
+      runId: run.id,
+      ending: 'completed',
+    });
+    expect(await a.worker.runOnce()).toBe(0);
+    expect(a.store.get(run.id)?.status).toBe('settled');
+    expect(rowsFor(run.id)).toHaveLength(1);
   });
 });
 
 describe('K7 for notify_person: a dead boot around the notification’s write', () => {
   it('a boot that dies inside the write leaves no row, and the next boot tells it once', async () => {
-    const a = createRunRecord(db, { epoch: BOOT_A, now: clock });
+    const a = bootA();
     const run = runningRun(a.store, 'chat-k7-inside');
-    endRun(a.store, run);
+    turnEndedAfterActing(a, 'chat-k7-inside');
     const real = notifyPersonHandler();
     const diesInside: EffectHandler = {
       async handle(effect, ctx) {
@@ -168,13 +171,12 @@ describe('K7 for notify_person: a dead boot around the notification’s write', 
 
     expect(rowsFor(run.id)).toHaveLength(1);
     expect(b.effects.listForRun(run.id)[0]).toMatchObject({ state: 'done', leaseOwner: BOOT_B });
-    expect(b.store.get(run.id)?.status).toBe('settled');
   });
 
   it('a boot that dies after the write committed leaves nothing for the next boot to redo', async () => {
-    const a = createRunRecord(db, { epoch: BOOT_A, now: clock });
+    const a = bootA();
     const run = runningRun(a.store, 'chat-k7-after');
-    endRun(a.store, run);
+    turnEndedAfterActing(a, 'chat-k7-after');
     const real = notifyPersonHandler();
     const diesAfter: EffectHandler = {
       async handle(effect, ctx) {
@@ -199,54 +201,116 @@ describe('K7 for notify_person: a dead boot around the notification’s write', 
     expect(b.effects.listForRun(run.id)[0]).toMatchObject({ state: 'done', leaseOwner: BOOT_A });
   });
 
-  it('a kill after `turn_end`, before the settle, ends the run with its ending, never `process_died`, and tells once', async () => {
-    const a = createRunRecord(db, { epoch: BOOT_A, now: clock });
+  it('a kill after `turn_end`, before the settle: the run ends with its ending, never `process_died`, and its notice goes out once', async () => {
+    const a = bootA();
     const run = runningRun(a.store, 'chat-k7-drain');
-    // `turn_end` was seen and recorded; the kill came while background work drained.
-    a.store.annotate(run.id, { ending: 'completed' });
+    turnEndedAfterActing(a, 'chat-k7-drain'); // the notice is saved; no worker ran yet
 
+    // The next boot tells it at once: the notice was saved, and no lease holds it.
     const b = bootB();
-    expect(await b.worker.runOnce()).toBe(0); // A's lease still stands: A may be alive
+    expect(await b.worker.runOnce()).toBe(1);
+    expect(rowsFor(run.id)).toHaveLength(1);
+    // A's run lease still stands (A may be alive), so the run is left running.
     expect(b.store.get(run.id)?.status).toBe('running');
 
     now += EFFECT_LEASE_MS + 1;
-    expect(await b.worker.runOnce()).toBe(1);
-    expect(b.store.get(run.id)).toMatchObject({ ending: 'completed' });
     expect(await b.worker.runOnce()).toBe(0);
+    expect(b.store.get(run.id)).toMatchObject({ status: 'settled', ending: 'completed' });
     expect(rowsFor(run.id)).toHaveLength(1);
-    expect(b.store.get(run.id)?.status).toBe('settled');
+  });
+
+  it('a run a later boot retires before its notice was written is never told', async () => {
+    const a = bootA();
+    const run = runningRun(a.store, 'chat-retired');
+    // The agent had not acted by `turn_end`: the notice waited for a settle that never came.
+    turnEndedAfterActing(a, 'chat-retired', false);
+
+    const b = bootB();
+    now += EFFECT_LEASE_MS + 1;
+    expect(await b.worker.runOnce()).toBe(0);
+    expect(b.store.get(run.id)).toMatchObject({ status: 'settled', ending: 'completed' });
+    expect(finishedRows()).toHaveLength(0);
   });
 });
 
-describe('the projector’s emitter leaves a run’s turn to the outbox', () => {
-  it('a turn the record holds is told once, by its run; a turn with no run, as before', async () => {
-    installRunRecord(db, { epoch: BOOT_A });
-    const { store, worker } = getRunRecord()!;
+describe('the projector’s emitter hands a run’s turn to the record, by the turn', () => {
+  /** A projector for `sessionId` whose turn opens now; answers that turn's seq. */
+  function openTurn(sessionId: string): { projector: SessionStateProjector; seq: number } {
+    const projector = new SessionStateProjector(sessionId);
+    const seq = projector.ingest({ type: 'turn_start' } as never).seq;
+    return { projector, seq };
+  }
+
+  it('a turn the record holds is not told by the emitter; the record tells it; a turn with no run is told as before', async () => {
+    installRunRecord(db, { epoch: BOOT_A, ownerHolds: () => true });
+    startRunEffects();
+    const { store, notices, worker } = getRunRecord()!;
     const off = watchSessionLifecycle();
     try {
-      const run = runningRun(store, 'sess-with-run');
-      const held = new SessionStateProjector('sess-with-run');
-      held.ingest({ type: 'turn_start' } as never);
-      held.ingest({ type: 'turn_end' } as never);
+      const { projector, seq } = openTurn('sess-with-run');
+      const run = runningRun(store, 'sess-with-run', seq);
+      projector.ingest({ type: 'turn_end' } as never);
       await flush();
-      expect(finishedRows()).toHaveLength(0); // the run is still live: its settle tells it
+      expect(finishedRows()).toHaveLength(0);
 
-      endRun(store, run);
-      // The status change may also come just after the settle; still the run's.
-      const late = new SessionStateProjector('sess-with-run');
-      late.ingest({ type: 'turn_start' } as never);
-      late.ingest({ type: 'turn_end' } as never);
-      await flush();
+      createRunFactsSink(store, notices).dispatcher.turnEnded('sess-with-run', {
+        ending: 'completed',
+        acted: true,
+      });
       await worker.runOnce();
       expect(finishedRows()).toEqual([
         expect.objectContaining({ dedupeKey: `notify:${run.id}:completed` }),
       ]);
 
-      const loose = new SessionStateProjector('sess-no-run');
-      loose.ingest({ type: 'turn_start' } as never);
-      loose.ingest({ type: 'turn_end' } as never);
+      const loose = openTurn('sess-no-run');
+      loose.projector.ingest({ type: 'turn_end' } as never);
       await flush();
       expect(finishedRows().filter((row) => row.sessionId === 'sess-no-run')).toHaveLength(1);
+    } finally {
+      off();
+    }
+  });
+
+  it('a turn the emitter keeps quiet (another chat’s message, a beat) is never handed over', async () => {
+    installRunRecord(db, { epoch: BOOT_A, ownerHolds: () => true });
+    startRunEffects();
+    const { store, notices, effects } = getRunRecord()!;
+    const off = watchSessionLifecycle();
+    try {
+      noteChatTurnStarted('sess-from-chat', now);
+      registerBeatTurn('sess-beat', { agentId: 'agent-1', beatId: 'b1', messageId: 'm1' });
+      for (const chat of ['sess-from-chat', 'sess-beat']) {
+        const { projector, seq } = openTurn(chat);
+        const run = runningRun(store, chat, seq);
+        projector.ingest({ type: 'turn_end' } as never);
+        await flush();
+        createRunFactsSink(store, notices).dispatcher.turnEnded(chat, {
+          ending: 'completed',
+          acted: true,
+        });
+        expect(effects.listForRun(run.id)).toEqual([]);
+      }
+      expect(finishedRows()).toHaveLength(0);
+    } finally {
+      off();
+    }
+  });
+
+  it('a boot whose worker never started leaves every turn to the emitter', async () => {
+    installRunRecord(db, { epoch: BOOT_A, ownerHolds: () => true });
+    const { store } = getRunRecord()!;
+    const off = watchSessionLifecycle();
+    try {
+      const { projector, seq } = openTurn('sess-no-worker');
+      runningRun(store, 'sess-no-worker', seq);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      expect(finishedRows()).toEqual([
+        expect.objectContaining({
+          sessionId: 'sess-no-worker',
+          dedupeKey: expect.stringMatching(/^turn:/),
+        }),
+      ]);
     } finally {
       off();
     }

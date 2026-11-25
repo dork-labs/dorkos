@@ -1,34 +1,35 @@
 /**
- * `notify_person` (spec `turns-survive-restarts` §6.2, DOR-5160): telling the
- * person a turn finished, as a follow-up of the run's `ended`, so the
- * "finished" row survives the process dying between the turn's end and the
- * row being written.
+ * `notify_person` (spec `turns-survive-restarts` §6.2, DOR-5160): the effect
+ * that tells the person a turn finished, so the "finished" row survives the
+ * process dying between the turn's end and the row being written.
  *
- * **When it is written.** In the transaction that moves the run to `ended`
- * ({@link planTurnFinishedNotice}), for a turn that ended `completed`, the
- * ending today's "finished" row is raised for (`turn.completed`, a turn that
- * settled to idle). The turns that raise nothing today raise nothing here: a
- * turn another chat's message started, and a heartbeat's beat. Both are read
- * where today's emitter reads them, from the live registries, which the run's
- * origin backs up for a run a later boot ends. While the run record is wired,
- * this is the only writer of a run's "finished" row: the projector's emitter
- * leaves a turn with a run to it (`runTellsTurnFinished`).
+ * **Which turns.** Exactly the turns today's emitter tells: the projector's
+ * emitter (`notifications/emitters/session-lifecycle.ts`) still decides, at
+ * the turn's own `streaming → idle` transition and with all of its own skips;
+ * for a turn with a run it hands the turn to the record (`TurnNotices.claim`)
+ * instead of writing the row itself.
  *
- * **Exactly once.** The row's dedupe key is `notify:<runId>:completed`, unique
- * in `notifications` (§6.4), and the row and the effect's `done` commit in one
- * transaction, through the notification store's `onStored` witness. A crash
- * between the two cannot happen; a crash before both leaves the effect to be
- * run again, and a crash after both leaves nothing to run.
+ * **When it is written** (§4.7). In the transaction that records the run's
+ * ending at `turn_end`, when the agent acted, since no pause can put the turn
+ * back after that: the row can be in the inbox while background work still
+ * drains. When the agent had not acted, at settle, after the hold decision,
+ * so a turn a pause put back is never told "finished". A run a later boot
+ * retires is never told: nobody saw it finish, and it was not a completion
+ * the person waited for.
+ *
+ * **Exactly once.** The effect's key and the row's dedupe key are both
+ * `notify:<runId>:<ending>`, unique (§6.4), and the row and the effect's
+ * `done` commit in one transaction, through the notification store's
+ * `onStored` witness. A crash before both leaves the effect to run again; a
+ * crash after both leaves nothing to run.
  *
  * Only the inbox row is the outbox's business. Outside delivery (push, chat
- * apps) stays in the escalation service's own ledger, at most once (§6.2);
- * `turn.completed` never leaves the app.
+ * apps) stays in the escalation service's own ledger (§6.2); `turn.completed`
+ * never leaves the app.
  *
  * @module services/runs/effects/handlers/notify-person
  */
 import { z } from 'zod';
-import { isBeatTurn } from '../../../heartbeats/beat-turns.js';
-import { isChatStartedTurn } from '../../../session/chat-messages/chat-started-turns.js';
 import { notify } from '../../../notifications/notification-service.js';
 import { sessionLabelFor } from '../../../notifications/notification-copy.js';
 import type { TurnRun } from '../../run-store.js';
@@ -38,39 +39,37 @@ import type { EffectHandler } from '../worker.js';
 /** How long a "finished" notice may still be told (§6.2). */
 export const NOTIFY_PERSON_NOT_AFTER_MS = 24 * 60 * 60 * 1000;
 
-/** The notice's payload: references only (§6.1). */
+/** The notice's payload: references and times only (§6.1). */
 const TurnFinishedPayloadSchema = z.strictObject({
   notice: z.literal('turn_finished'),
   runId: z.string().min(1),
   sessionId: z.string().min(1),
-  endedAt: z.string().min(1),
+  /** The run's ending when the notice was written. */
+  ending: z.string().min(1),
+  /** When the turn finished: its `turn_end`, or its settle. */
+  at: z.string().min(1),
   agentId: z.string().min(1).optional(),
 });
 
-/** Turn origins whose finishing is not news to the person (spec `spin-off-chats` §6, `heartbeats` §7.4). */
-const QUIET_ORIGINS = new Set(['chat-message', 'heartbeat']);
-
 /**
- * The "finished" notice an `ended` run owes its person, or `undefined` when it
- * owes none. Called inside the transaction that ends the run.
+ * The "finished" notice for a run's turn.
  *
- * @param run - The run, as stored after its move to `ended`.
- * @param now - The clock, epoch ms.
+ * @param run - The run.
+ * @param ending - Its ending as recorded now.
+ * @param now - The clock, epoch ms: when the turn finished.
  */
-export function planTurnFinishedNotice(run: TurnRun, now: number): NewEffect | undefined {
-  if (run.ending !== 'completed' || run.endedAt === null) return undefined;
-  if (run.origin && QUIET_ORIGINS.has(run.origin.kind)) return undefined;
-  if (isChatStartedTurn(run.sessionId) || isBeatTurn(run.sessionId)) return undefined;
+export function turnFinishedNotice(run: TurnRun, ending: string, now: number): NewEffect {
   return {
     kind: 'notify_person',
-    key: `notify:${run.id}:${run.ending}`,
+    key: `notify:${run.id}:${ending}`,
     runId: run.id,
     sessionId: run.sessionId,
     payload: {
       notice: 'turn_finished',
       runId: run.id,
       sessionId: run.sessionId,
-      endedAt: run.endedAt,
+      ending,
+      at: new Date(now).toISOString(),
       ...(run.agentId !== null ? { agentId: run.agentId } : {}),
     } satisfies z.infer<typeof TurnFinishedPayloadSchema>,
     delivery: 'repeatable',
@@ -109,16 +108,16 @@ export function notifyPersonHandler(deps: NotifyPersonDeps = {}): EffectHandler 
       if (!parsed.success) return { kind: 'drop', reason: 'unreadable_payload' };
       const notice = parsed.data;
       const place = deps.placeOf?.(notice.sessionId) ?? {};
-      const cwd = place.cwd;
       const agentId = notice.agentId ?? place.agentId;
       let stored: string | undefined;
       const result = await notify(
         'turn.completed',
         {
           sessionId: notice.sessionId,
-          sessionLabel: sessionLabelFor(cwd),
-          completedAt: notice.endedAt,
+          sessionLabel: sessionLabelFor(place.cwd),
+          completedAt: notice.at,
           runId: notice.runId,
+          runEnding: notice.ending,
           ...(agentId ? { agentId } : {}),
         },
         {

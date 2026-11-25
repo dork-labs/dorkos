@@ -45,7 +45,7 @@ import { onProjectorStatusChange } from '../../session/session-state-projector.j
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
 import { sessionLabelFor } from '../notification-copy.js';
-import { runTellsTurnFinished } from '../../runs/index.js';
+import { claimTurnFinished } from '../../runs/index.js';
 import { armEscalation, cancelEscalationByKey } from '../escalation-service.js';
 import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
 import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
@@ -244,7 +244,7 @@ export function watchSessionLifecycle(): () => void {
   /** When each session's CURRENT error episode started. Absent when it is fine. */
   const errorSince = new Map<string, string>();
 
-  return onProjectorStatusChange(({ sessionId, cwd, retiredSessionId, status }) => {
+  return onProjectorStatusChange(({ sessionId, cwd, retiredSessionId, turnRef, status }) => {
     // A rekey re-announce carries the id this projector streamed under before
     // its canonical id resolved. Its state MOVES to the new id rather than being
     // dropped: an error episode armed under the old id would otherwise keep a
@@ -278,10 +278,11 @@ export function watchSessionLifecycle(): () => void {
       // A beat finishing is not news either: only what the agent raises through
       // `end_beat` reaches a person (spec `heartbeats` §7.4).
       if (isBeatTurn(sessionId)) return;
-      // A turn the run record holds is told by its run's `notify_person`
-      // effect once the run has ended, so it survives a restart and is never
-      // said for a turn a pause put back (spec `turns-survive-restarts` §6.2).
-      if (runTellsTurnFinished(sessionId)) return;
+      // A turn the run record holds, named by the turn this transition
+      // belongs to, is told by its run's `notify_person` effect: it survives a
+      // restart and is never said for a turn a pause put back (spec
+      // `turns-survive-restarts` §6.2). A turn with no run is told here.
+      if (claimTurnFinished(sessionId, turnRef)) return;
       // Deliberately raised for every finished turn, including one the operator
       // started by typing here. The seam carries no principal — a turn can be
       // started from the composer, a room, a bridge or a schedule, and the

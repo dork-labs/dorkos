@@ -9,7 +9,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { createRunRecord } from '../index.js';
@@ -83,14 +83,24 @@ beforeEach(() => {
   now = Date.parse('2026-11-24T12:00:00.000Z');
 });
 
-describe('a follow-up is saved in the same write as the run’s ending (§6.1)', () => {
-  it('the `ended` fact writes the run’s ending and its notice together', () => {
-    const { store, effects } = createRunRecord(db, { epoch: BOOT_A, now: clock });
+/** A run record whose turns this test holds, as the dispatcher would. */
+function recordOn(database: Db) {
+  return createRunRecord(database, { epoch: BOOT_A, now: clock, ownerHolds: () => true });
+}
+
+describe('a follow-up is saved in the same write as the run’s state change (§6.1, §4.7)', () => {
+  it('a claimed turn whose agent acted gets its notice in the write that records its ending', () => {
+    const { store, effects, notices } = recordOn(db);
     const run = runningRun(store);
+    expect(notices.claim(CHAT, 1)).toBe(true);
 
-    createRunFactsSink(store).report({ kind: 'ended', runId: run.id, ending: 'completed' });
+    createRunFactsSink(store, notices).dispatcher.turnEnded(CHAT, {
+      ending: 'completed',
+      acted: true,
+    });
 
-    expect(store.get(run.id)).toMatchObject({ status: 'ended', ending: 'completed' });
+    // Still `running`: its status moves at settle, its notice does not wait.
+    expect(store.get(run.id)).toMatchObject({ status: 'running', ending: 'completed' });
     expect(effects.listForRun(run.id)).toEqual([
       expect.objectContaining({
         kind: 'notify_person',
@@ -98,27 +108,74 @@ describe('a follow-up is saved in the same write as the run’s ending (§6.1)',
         state: 'pending',
         delivery: 'repeatable',
         notAfter: now + NOTIFY_PERSON_NOT_AFTER_MS,
-        payload: expect.objectContaining({ notice: 'turn_finished', runId: run.id }),
+        payload: expect.objectContaining({
+          notice: 'turn_finished',
+          runId: run.id,
+          ending: 'completed',
+          at: new Date(now).toISOString(),
+        }),
       }),
     ]);
   });
 
-  it('a rollback of the ending drops its follow-up with it', () => {
-    const { store, effects } = createRunRecord(db, { epoch: BOOT_A, now: clock });
+  it('a rollback of the ending drops its notice with it', () => {
+    const { store, effects, notices } = recordOn(db);
     const run = runningRun(store);
+    notices.claim(CHAT, 1);
+    const sink = createRunFactsSink(store, notices);
 
     expect(() =>
       store.transaction(() => {
-        store.move(store.get(run.id)!, 'ended', { ending: 'completed', endedAt: store.stamp() });
+        sink.dispatcher.turnEnded(CHAT, { ending: 'completed', acted: true });
         throw new Error('power cut before the commit');
       })
     ).toThrow('power cut');
 
-    expect(store.get(run.id)?.status).toBe('running');
+    expect(store.get(run.id)?.ending).toBeNull();
     expect(effects.listForRun(run.id)).toEqual([]);
   });
 
-  it('a follow-up that cannot be written rolls the ending back', () => {
+  it('a turn whose agent had not acted is told at settle, in the write that ends it, once', () => {
+    const { store, effects, notices } = recordOn(db);
+    const run = runningRun(store);
+    notices.claim(CHAT, 1);
+    const sink = createRunFactsSink(store, notices);
+
+    sink.dispatcher.turnEnded(CHAT, { ending: 'completed' });
+    expect(effects.listForRun(run.id)).toEqual([]);
+
+    sink.report({ kind: 'ended', runId: run.id, ending: 'completed' });
+    expect(store.get(run.id)?.status).toBe('ended');
+    expect(effects.listForRun(run.id).map((effect) => effect.key)).toEqual([
+      `notify:${run.id}:completed`,
+    ]);
+  });
+
+  it('a turn a pause put back owes nothing; a turn told at turn_end is not told again at settle', () => {
+    const { store, effects, notices } = recordOn(db);
+    const sink = createRunFactsSink(store, notices);
+    const held = runningRun(store, 'chat-held');
+    notices.claim('chat-held', 1);
+    sink.dispatcher.turnEnded('chat-held', { ending: 'completed' });
+    sink.dispatcher.pauseCut(held.id);
+    expect(store.get(held.id)?.status).toBe('queued');
+    expect(effects.listForRun(held.id)).toEqual([]);
+
+    const told = runningRun(store, 'chat-told');
+    notices.claim('chat-told', 1);
+    sink.dispatcher.turnEnded('chat-told', { ending: 'completed', acted: true });
+    sink.report({ kind: 'ended', runId: told.id, ending: 'completed' });
+    expect(effects.listForRun(told.id)).toHaveLength(1);
+  });
+
+  it('only the run’s own turn is claimed: another turn, or a chat with no live run, is not', () => {
+    const { store, notices } = recordOn(db);
+    runningRun(store);
+    expect(notices.claim(CHAT, 2)).toBe(false);
+    expect(notices.claim('chat-without-a-run', 1)).toBe(false);
+  });
+
+  it('a follow-up that cannot be written rolls the state change back', () => {
     const effects = new EffectStore(db, { now: clock });
     const store = new RunStore(db, {
       epoch: BOOT_A,
@@ -362,7 +419,7 @@ describe('expiry and settle (§4.3 transition 13, §6.1)', () => {
   });
 
   it('the worker’s wake-ups carry an ending’s follow-up out without a pass being asked for', async () => {
-    const record = createRunRecord(db, { epoch: BOOT_A, now: clock });
+    const record = recordOn(db);
     record.worker.start();
     try {
       const run = runningRun(record.store);
@@ -374,6 +431,53 @@ describe('expiry and settle (§4.3 transition 13, §6.1)', () => {
   });
 });
 
+describe('wake-ups (§6.1)', () => {
+  /** A worker whose passes are counted. */
+  function counted() {
+    const parts = workerOn(db, BOOT_A, {});
+    const passes = vi.spyOn(parts.worker, 'runOnce');
+    return { ...parts, passes };
+  }
+
+  it('wakes that arrive together, or during a pass, ask for one more pass, never a second loop', async () => {
+    const { worker, passes } = counted();
+    worker.start();
+    worker.wake();
+    worker.wake();
+    await expect.poll(() => passes.mock.calls.length).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(passes).toHaveBeenCalledTimes(1);
+
+    // A wake while a pass runs: exactly one more pass after it.
+    let release!: () => void;
+    passes.mockImplementationOnce(async () => {
+      worker.wake();
+      worker.wake();
+      await new Promise<void>((resolve) => (release = resolve));
+      return 0;
+    });
+    worker.wake();
+    await expect.poll(() => passes.mock.calls.length).toBe(2);
+    release();
+    await expect.poll(() => passes.mock.calls.length).toBe(3);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(passes).toHaveBeenCalledTimes(3);
+    worker.stop();
+  });
+
+  it('no pass runs after stop, whatever was armed or asked for', async () => {
+    const { worker, effects, passes } = counted();
+    worker.start();
+    worker.stop();
+    worker.wake();
+    effects.insert(followUp('after-stop'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(passes).not.toHaveBeenCalled();
+    expect(worker.isRunning).toBe(false);
+  });
+});
+
 afterEach(() => {
+  vi.restoreAllMocks();
   db.$client.close();
 });

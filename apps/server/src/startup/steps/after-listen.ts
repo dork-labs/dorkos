@@ -120,6 +120,12 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     docDeliveryRunner,
   } = built;
 
+  // The outbox's worker, first: the follow-ups runs saved are carried out from
+  // here on, whatever below throws, and before any chat's queue resumes (spec
+  // `turns-survive-restarts` §7.3). Until it runs, the "finished" emitter
+  // tells every turn itself.
+  startRunEffects();
+
   // A hub reads who it belongs to and refuses everybody until it serves them
   // (DOR-2934). The server is listening, so Cloud's health check answers
   // while the first read is in flight.
@@ -174,10 +180,6 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
         ]),
     });
   }
-
-  // The outbox's worker: the follow-ups runs saved, carried out from here on,
-  // before any chat's queue resumes (spec `turns-survive-restarts` §7.3).
-  startRunEffects();
 
   // Messages other chats queued survive a restart, but nothing ran them until a
   // newer message reached the same chat, sometimes days later (DOR-3287). Resume

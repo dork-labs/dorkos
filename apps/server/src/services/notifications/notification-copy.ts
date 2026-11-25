@@ -116,15 +116,19 @@ export interface TurnCompletedPayload {
   completedAt: string;
   /** The turn's run, when the outbox told it (spec `turns-survive-restarts` §6.4). */
   runId?: string;
+  /** The run's ending as recorded when it was told, beside {@link runId}. */
+  runEnding?: string;
 }
 
 /**
  * What makes two "finished" rows the same. A run's is the outbox's own key,
- * unique for good (`notify:<runId>:completed`, §6.4); a turn with no run (a
+ * unique for good (`notify:<runId>:<ending>`, §6.4); a turn with no run (a
  * task's or a relay's, until they reach the dispatcher) keeps its time.
  *
  * @param p - The payload.
  */
 export function turnCompletedDedupeKey(p: TurnCompletedPayload): string {
-  return p.runId ? `notify:${p.runId}:completed` : `turn:${p.sessionId}:${p.completedAt}`;
+  return p.runId
+    ? `notify:${p.runId}:${p.runEnding ?? 'completed'}`
+    : `turn:${p.sessionId}:${p.completedAt}`;
 }
