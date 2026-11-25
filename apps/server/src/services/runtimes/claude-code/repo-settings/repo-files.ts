@@ -154,6 +154,19 @@ export function pickKeys(value: unknown, keys: readonly string[]): Record<string
 }
 
 /**
+ * The strings in an array, trimmed, blanks dropped; nothing for anything else. The one reading
+ * of a settings file's allow rules and folder entries, so every check compares the same strings.
+ *
+ * @param value - A settings value expected to be a list of strings.
+ */
+export function trimmedStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : []
+  );
+}
+
+/**
  * sha256, hex.
  *
  * @param content - Text or bytes.
