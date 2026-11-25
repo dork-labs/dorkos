@@ -49,7 +49,6 @@ import {
   BackgroundTaskTypeSchema,
   InterruptReceiptSchema,
   SessionSettingsSchema,
-  turnEnded,
 } from './schemas.js';
 import type { DirectoryGrant, TurnPermissionCeiling } from './agent-runtime.js';
 
@@ -684,9 +683,11 @@ const BackgroundWorkEntrySchema = z.strictObject({
  * - `waiting_on_person`, `resumed_from_person`: an ask opened, and closed.
  * - `background_work`: the work the run's process holds now, the whole list.
  * - `ended`: the turn ended. DorkOS never writes an ending it did not observe
- *   (ADR 260823-021312), so a `stopped` ending needs proof: a `receipt` for
- *   which `turnEnded()` is true (`acked`, `closed`, `not-running`), or
+ *   (ADR 260823-021312), so a `stopped` ending needs proof: a `receipt` whose
+ *   outcome is `acked` or `closed` (the stop itself ended the turn), or
  *   `interrupted: true`, the runtime's own `turn_end` reporting an interrupt.
+ *   Not `not-running`: `turnEnded()` is true for it, but the turn had already
+ *   finished on its own, and calling it stopped would relabel that ending.
  *   An `unconfirmed` receipt alone is not proof: after an unconfirmed stop, a
  *   plain `turn_end` ends the run as the runtime reports it (`completed`,
  *   `failed`, `limited`). A `failed` receipt never makes a `stopped` ending.
@@ -768,10 +769,11 @@ export const RunFactSchema = z.discriminatedUnion('kind', [
       (fact) =>
         fact.ending !== 'stopped' ||
         fact.interrupted === true ||
-        (fact.receipt !== undefined && turnEnded(fact.receipt)),
+        fact.receipt?.outcome === 'acked' ||
+        fact.receipt?.outcome === 'closed',
       {
         message:
-          "A stopped ending needs a receipt that observed the end, or the runtime's own interrupt",
+          "A stopped ending needs an acked or closed stop receipt, or the runtime's own interrupt",
         path: ['ending'],
       }
     )

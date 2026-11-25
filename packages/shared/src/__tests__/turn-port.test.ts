@@ -422,12 +422,18 @@ describe('facts', () => {
     type Outcome = 'acked' | 'closed' | 'not-running' | 'unconfirmed' | 'failed';
     const receipt = (outcome: Outcome) => ({ outcome, runtime: 'claude-code' });
 
-    it('accepts a receipt that observed the end', () => {
-      for (const outcome of ['acked', 'closed', 'not-running'] as const) {
+    it('accepts a receipt whose stop ended the turn', () => {
+      for (const outcome of ['acked', 'closed'] as const) {
         expect(RunFactSchema.safeParse({ ...stopped, receipt: receipt(outcome) }).success).toBe(
           true
         );
       }
+    });
+
+    it('refuses not-running alone: the turn had already finished on its own', () => {
+      expect(RunFactSchema.safeParse({ ...stopped, receipt: receipt('not-running') }).success).toBe(
+        false
+      );
     });
 
     it("accepts an unconfirmed receipt with the runtime's own interrupt", () => {
