@@ -8,7 +8,7 @@ import {
   PLATFORM_NAMED_ROOM,
   type RoomBridgeLookup,
 } from '../agent-facing-room-name.js';
-import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock } from '../../core/untrusted-text/untrusted-fence.js';
 import type { AsideCarry } from '../room-trigger/aside.js';
 import type { HandoffAdmission } from './handoff-admission.js';
 

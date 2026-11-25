@@ -35,7 +35,7 @@ import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-sc
  * the other side: it re-derives both sets from the schemas and asserts each
  * rendered surface names exactly those, no more and no fewer.
  *
- * @module services/runtimes/shared/ui-tool-contract
+ * @module services/session/browser-seat/ui-tool-contract
  */
 import { z } from 'zod';
 import { UiCanvasContentSchema, UiCommandSchema } from '@dorkos/shared/schemas';

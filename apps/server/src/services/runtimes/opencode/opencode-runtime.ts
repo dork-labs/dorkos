@@ -125,7 +125,7 @@ import {
 import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 import { OpenCodeMcpManager, type EnsureManagedResult } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';

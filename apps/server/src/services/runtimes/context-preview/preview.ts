@@ -31,7 +31,7 @@ import {
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
 import { loadsAgentToAgentTools } from '../shared/tools/tool-exposure-policy.js';
-import { joinFitted } from '../shared/window/context-fit.js';
+import { joinFitted } from '../../session/turn-context/context-fit.js';
 import { buildSystemPromptAppend } from '../claude-code/messaging/context-builder.js';
 import { toolDocGates, type ToolDocGates } from '../claude-code/messaging/tool-doc-gates.js';
 import { buildCodexAgentContext } from '../codex/agent-context.js';

@@ -7,7 +7,7 @@ import { buildAgentContextAppend } from '../shared/agent-context.js';
 import type { AgentContextSource } from '../shared/source/agent-context-source.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
-import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
+import { formatContextWarning } from '../shared/prose/context-warning-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { renderProseContextBlock, type ProseContextEntry } from '../shared/prose/prose-context.js';
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
@@ -18,7 +18,7 @@ import {
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
 import { connectionToolName } from './mcp.js';
-import { joinFitted, type ContextPart } from '../shared/window/context-fit.js';
+import { joinFitted, type ContextPart } from '../../session/turn-context/context-fit.js';
 /** Render all additional context kinds without inserting opaque roomTurn routing metadata. */
 export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
   switch (entry.kind) {

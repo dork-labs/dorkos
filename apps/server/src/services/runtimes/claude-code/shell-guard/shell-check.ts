@@ -17,7 +17,7 @@ import {
   DESKTOP_APP_DATA_FOLDERS,
   PROTECTED_PATHS,
   type ProtectedPath,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 import { realLocation } from '../tool-gate/held-turn-reads.js';
 import { cookieStoreRules, namesCookieStore, writesCookieStore } from './cookie-store-writes.js';
 import {

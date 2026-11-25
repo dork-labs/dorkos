@@ -4,8 +4,11 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { ToolDecisionOptions } from '@dorkos/shared/agent-runtime';
 
 import { resolveApprovalDecision } from '../shared/policy/approvals.js';
-import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import {
+  isProtectedPath,
+  type ProtectedPathRoots,
+} from '../../core/protected-paths/protected-path-check.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 import { checkShellCommand, type ShellCommandVerdict } from '../shared/policy/package-hooks.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { PendingApprovalRegistry } from '../shared/timing/pending-approval-registry.js';

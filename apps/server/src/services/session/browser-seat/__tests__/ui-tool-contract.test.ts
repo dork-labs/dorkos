@@ -40,7 +40,7 @@ import {
   canvasContentTypes,
   uiActionNames,
 } from '../ui-tool-contract.js';
-import { _UI_TOOLS_CONTEXT } from '../../claude-code/messaging/context-builder.js';
+import { _UI_TOOLS_CONTEXT } from '../../../runtimes/claude-code/messaging/context-builder.js';
 
 /**
  * Which of `names` a rendered surface mentions as a whole word.

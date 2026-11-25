@@ -185,7 +185,7 @@ it.each(['eligible', 'paused', 'rejoined', 'independent-reseat'] as const)(
       await import('../../../session/chat-messages/chat-message-current.js');
     const { latestClaudeRoomServerFailure } =
       await import('../../../session/history/latest-room-failure.js');
-    const { claudeTranscriptPath } = await import('../../../session/fleet/carry-over-summary.js');
+    const { claudeTranscriptPath } = await import('../sessions/project-slug.js');
     const { HandoffTerminalSource } =
       await import('../../../rooms/handoff/handoff-terminal-source.js');
     const { HandoffTerminalNotices } =

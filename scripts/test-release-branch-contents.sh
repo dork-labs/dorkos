@@ -86,10 +86,10 @@ printf "export const greeting = 'hi there';\n" >src/str.ts
 # Runnable code a release used to touch, present in the base so a release
 # commit editing it shows as a modification (M), not an addition.
 mkdir -p apps/server/src/services/core/config-migrations apps/server/src/services/core/__tests__ \
-  apps/server/src/services/runtimes/shared/awareness
+  apps/server/src/services/session/new-since
 echo 'export const migrations = [];' >apps/server/src/services/core/config-migrations/index.ts
 echo 'export const hashes = {};' >apps/server/src/services/core/__tests__/merged-migration-hashes.ts
-echo "export const notes = [{ version: 'next' }];" >apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts
+echo "export const notes = [{ version: 'next' }];" >apps/server/src/services/session/new-since/agent-release-notes.ts
 git add -A && git commit -q -m 'chore: base'
 git tag v0.1.0
 
@@ -267,7 +267,7 @@ expect 'a release commit that changes a dependency is refused' 1 'package.json c
 for path in apps/server/src/services/core/config-migrations/v0-2-0.ts \
   apps/server/src/services/core/config-migrations/index.ts \
   apps/server/src/services/core/__tests__/merged-migration-hashes.ts \
-  apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts; do
+  apps/server/src/services/session/new-since/agent-release-notes.ts; do
   pr_branch
   mkdir -p "$(dirname "$path")"
   echo "export const stamp = '0.2.0';" >"$path"

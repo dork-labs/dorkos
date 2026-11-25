@@ -53,7 +53,7 @@ import {
 } from '../../../rooms/turn-guards/turn-waits.js';
 import { failedSeatCandidate } from '../../../rooms/reseat/failed-seat-candidate.js';
 import { RoomSeatMover } from '../../../rooms/reseat/seat-mover.js';
-import { claudeTranscriptPath } from '../../../session/fleet/carry-over-summary.js';
+import { claudeTranscriptPath } from '../sessions/project-slug.js';
 import { SessionEventStore } from '../../../session/session-event-store.js';
 import { TURN_NOT_STARTED_CODE } from '../../../session/launch/turn-not-started.js';
 import { feedProjector } from '../../../session/session-event-normalizer.js';

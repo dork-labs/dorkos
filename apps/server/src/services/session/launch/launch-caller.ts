@@ -20,8 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import { resolveAgentHome } from '../../core/agent-identity/index.js';
-import { isProtectedPath } from '../../runtimes/shared/policy/protected-path-check.js';
-import { protectedPathRoots } from '../../runtimes/shared/policy/protected-path-roots.js';
+import { isProtectedPath } from '../../core/protected-paths/protected-path-check.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 
 /**
  * Who chose where a chat runs. `person`: the person, at the app. `agent`: an

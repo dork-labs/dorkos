@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildOpenCodeSystem } from '../messaging/turn-input.js';
-import type { ContextPart } from '../../shared/window/context-fit.js';
+import type { ContextPart } from '../../../session/turn-context/context-fit.js';
 
 const parts: ContextPart[] = [
   { block: null, text: '<agent_safety_boundaries>\nNever push.\n</agent_safety_boundaries>' },

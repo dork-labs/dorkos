@@ -21,6 +21,7 @@ import {
   slugForCanonicalPath,
   canonicalizeCwd,
   subtreeSlugScope,
+  claudeTranscriptPath,
 } from '../project-slug.js';
 
 describe('slugForCanonicalPath', () => {
@@ -164,5 +165,14 @@ describe('subtreeSlugScope', () => {
     expect(projectSlug(`${long}/api`).startsWith(`${projectSlug(long)}-`)).toBe(false);
     expect(wide(projectSlug(`${long}/api`))).toBe(true);
     expect(wide('-something-else-entirely')).toBe(true);
+  });
+});
+
+describe('claudeTranscriptPath', () => {
+  it('is the account’s projects folder, the folder’s slug and the session id', () => {
+    expect(claudeTranscriptPath('/accounts/work', '/p', 's-1')).toBe(
+      '/accounts/work/projects/-p/s-1.jsonl'
+    );
+    expect(claudeTranscriptPath(null, '/p', 's-1')).toBeNull();
   });
 });

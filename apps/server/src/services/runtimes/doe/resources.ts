@@ -1,8 +1,11 @@
 /** Fresh canonical resources for a single turn; no vendor projection or retained grants. */
 import path from 'node:path';
-import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
+import {
+  isProtectedPath,
+  type ProtectedPathRoots,
+} from '../../core/protected-paths/protected-path-check.js';
 import { logger } from '../../../lib/logger.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 import { readdir, stat } from 'node:fs/promises';
 import {
   LocalResources,

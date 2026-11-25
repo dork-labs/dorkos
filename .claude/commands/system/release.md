@@ -380,7 +380,7 @@ Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) an
 
 ### 6.3a: Stamp agent release facts
 
-In `apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts`,
+In `apps/server/src/services/session/new-since/agent-release-notes.ts`,
 replace every note's `version: 'next'` with the exact release version `X.Y.Z`.
 Only stamp features included in this release; remove a note if its feature was removed.
 Never derive this prose from fragments at runtime. Unstamped notes stay silent.

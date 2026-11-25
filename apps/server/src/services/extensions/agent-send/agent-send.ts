@@ -87,7 +87,7 @@ import {
 } from '../../session/message-dispatcher.js';
 import { getMessageQueueStore } from '../../session/message-queue-store.js';
 import { peekProjector } from '../../session/session-state-projector.js';
-import { mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
+import { mintFenceNonce } from '../../core/untrusted-text/untrusted-fence.js';
 import {
   AgentSendInputSchema,
   FAILURE_MESSAGE,

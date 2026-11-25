@@ -13,7 +13,7 @@ import {
   guardRunPlacement,
 } from '../run-place-guard.js';
 import { isProtectedLaunchFolder } from '../../../session/launch/launch-caller.js';
-import { protectedPathRefusal } from '../../../runtimes/shared/policy/protected-file-guard.js';
+import { protectedPathRefusal } from '../../../core/protected-paths/protected-file-guard.js';
 
 let above: string;
 let home: string;

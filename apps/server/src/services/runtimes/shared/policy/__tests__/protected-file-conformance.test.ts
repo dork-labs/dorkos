@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROTECTED_PATHS } from '../protected-paths.js';
+import { PROTECTED_PATHS } from '../../../../core/protected-paths/protected-paths.js';
 import {
   isProtectedPath,
   searchTouchesProtectedPath,
   type ProtectedPathRoots,
-} from '../protected-path-check.js';
+} from '../../../../core/protected-paths/protected-path-check.js';
 import { protectedFileVerdict } from '../../../opencode/messaging/protected-files.js';
 import { DoeApprovals } from '../../../doe/approvals.js';
 

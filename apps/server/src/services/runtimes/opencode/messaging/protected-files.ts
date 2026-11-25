@@ -4,7 +4,7 @@ import {
   isProtectedPath,
   searchTouchesProtectedPath,
   type ProtectedPathRoots,
-} from '../../shared/policy/protected-path-check.js';
+} from '../../../core/protected-paths/protected-path-check.js';
 
 /** A read or edit permission's concrete paths; malformed file asks fail closed. */
 export function protectedFileVerdict(

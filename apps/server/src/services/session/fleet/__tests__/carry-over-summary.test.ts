@@ -10,7 +10,6 @@ import {
   MESSAGE_MAX_CHARS,
   TRANSCRIPT_POINTER_LINE,
   buildCarryOverSummary,
-  claudeTranscriptPath,
   extractTranscriptFacts,
   gatherCarryOverSummary,
   type CarryOverSummaryInput,
@@ -196,14 +195,5 @@ describe('gatherCarryOverSummary', () => {
     });
     expect(text).toContain('Previous session: old-session');
     expect(text).not.toContain('Git branch');
-  });
-});
-
-describe('claudeTranscriptPath', () => {
-  it('is the account’s projects folder, the folder’s slug and the session id', () => {
-    expect(claudeTranscriptPath('/accounts/work', '/p', 's-1')).toBe(
-      '/accounts/work/projects/-p/s-1.jsonl'
-    );
-    expect(claudeTranscriptPath(null, '/p', 's-1')).toBeNull();
   });
 });

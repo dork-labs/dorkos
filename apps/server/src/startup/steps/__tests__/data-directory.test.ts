@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { claimDataDirectory } from '../data-directory.js';
 import { createServerRefs } from '../../server-refs.js';
-import { PERSON_ONLY_DATA_PATHS } from '../../../services/runtimes/shared/policy/protected-paths.js';
+import { PERSON_ONLY_DATA_PATHS } from '../../../services/core/protected-paths/protected-paths.js';
 import { collapseProtectedPaths } from '../../../services/runtimes/codex/policy/collapse-protected-paths.js';
 import { refuseMissingWritableTargets } from '../../../services/runtimes/codex/policy/writable-missing-targets.js';
 

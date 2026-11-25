@@ -45,7 +45,7 @@ import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
 import type { CodexTurnTools } from './transport/codex-transport.js';
 import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
 import { RESERVED_MCP_SERVER_NAMES } from '@dorkos/shared/global-mcp-schemas';
 import { logger } from '../../../lib/logger.js';

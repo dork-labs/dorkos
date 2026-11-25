@@ -1,7 +1,7 @@
 /**
  * Compiled, reviewed facts about new agent-facing features. Never load prose
  * from fragments, files or the network at runtime. Release stamps `next`.
- * @module runtimes/shared/awareness/agent-release-notes
+ * @module services/session/new-since/agent-release-notes
  */
 import { gt, lte, valid } from 'semver';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';

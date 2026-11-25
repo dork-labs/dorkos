@@ -55,8 +55,8 @@ import {
 import { resolveGrantVerdict } from './directory-grants.js';
 import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
-import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
-import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
+import { protectedPathRoots } from '../../../core/protected-paths/protected-path-roots.js';
+import type { ProtectedPathRoots } from '../../../core/protected-paths/protected-path-check.js';
 import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
 import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
 import { HeavyShellSlots, holdHeavyShell } from './load-gate-hold.js';

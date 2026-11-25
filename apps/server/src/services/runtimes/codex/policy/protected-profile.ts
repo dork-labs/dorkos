@@ -6,12 +6,12 @@ import path from 'node:path';
 import { realPathOf } from '@dorkos/shared/directory-grants';
 import type { CodexOptions } from '@openai/codex-sdk';
 import type { SessionSettings } from '@dorkos/shared/types';
-import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
+import { PROTECTED_PATHS } from '../../../core/protected-paths/protected-paths.js';
 import {
   isProtectedPath,
   type ProtectedPathRoots,
-} from '../../shared/policy/protected-path-check.js';
-import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
+} from '../../../core/protected-paths/protected-path-check.js';
+import { protectedPathRoots } from '../../../core/protected-paths/protected-path-roots.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';

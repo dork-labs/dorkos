@@ -84,7 +84,6 @@ import {
   resolveActiveClaudeRoot,
   resolveLaunchAccountRoot,
   accountIdForRoot,
-  type LaunchAccountResolution,
 } from './claude-config-dir.js';
 import { isCreditsClaudeRoot } from './credits-root.js';
 import {
@@ -122,6 +121,7 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
+import type { LaunchAccountResolution } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { getOrCreateProjector, streamGenerationOf } from '../../session/index.js';
 import { peekLiveProjector } from './live-projector.js';

@@ -5,7 +5,7 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import type { AsideCarry } from './aside.js';
 import { logRecoveredHandoff } from '../handoff/failure-trace.js';
 import { stat } from 'node:fs/promises';
-import { claudeTranscriptPath } from '../../session/fleet/carry-over-summary.js';
+import { claudeTranscriptPath } from '../../runtimes/claude-code/sessions/project-slug.js';
 import type { RecoveryAuthority } from '../reseat/required-launch-store.js';
 import type { SeatMove } from '../reseat/seat-mover.js';
 import { getRoomSeatMover } from '../reseat/create-seat-mover.js';

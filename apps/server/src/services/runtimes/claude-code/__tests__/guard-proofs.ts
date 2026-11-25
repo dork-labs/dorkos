@@ -18,7 +18,7 @@ import type { RuntimeGuardProofs } from '@dorkos/test-utils';
 import {
   DATA_FOLDER_SECRET_PATHS,
   PERSON_ONLY_DATA_PATHS,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 import { homeWriteDenyRules } from '../folder-settings/launch-folder-config.js';
 import { applyPersonOnlyDataDeny } from '../messaging/directory-grants.js';
 import { secretReadDenyRules } from '../secret-files/secret-read-deny.js';

@@ -91,7 +91,7 @@ async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
     await import('../../../session/session-state-projector.js');
   const { setRoomSeatReports, disposeRoomSeatMessages } =
     await import('../../../session/chat-messages/chat-message-current.js');
-  const { claudeTranscriptPath } = await import('../../../session/fleet/carry-over-summary.js');
+  const { claudeTranscriptPath } = await import('../sessions/project-slug.js');
   const { HandoffTerminalSource } =
     await import('../../../rooms/handoff/handoff-terminal-source.js');
   const { HandoffTerminalNotices } =

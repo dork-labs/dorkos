@@ -4,13 +4,13 @@
  *
  * Doe is the runtime that runs local models, and the one whose whole request
  * DorkOS builds: the system prompt, the tool list and the conversation. So it is
- * the one runtime that can both trim DorkOS's own share (`../shared/window/context-fit.ts`)
+ * the one runtime that can both trim DorkOS's own share (`session/turn-context/context-fit.ts`)
  * and check the result before a model ever sees it.
  *
  * @module services/runtimes/doe/window-fit
  */
 import { businessPrompt, estimateInput, type ToolDescriptor } from '@dorkos/doe';
-import type { TrimmableBlock } from '../shared/window/context-fit.js';
+import type { TrimmableBlock } from '../../session/turn-context/context-fit.js';
 
 /** The model's window, as the turn resolved it. */
 export interface DoeWindow {

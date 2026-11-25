@@ -17,7 +17,7 @@ import type {
 import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-identity/index.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 import { assembleDoeMcp } from './mcp.js';
 import { assembleDoeResources } from './resources.js';
 import { buildDoeContextParts } from './context.js';
@@ -26,7 +26,7 @@ import {
   dorkosContextBudget,
   fitItemOf,
   joinFitted,
-} from '../shared/window/context-fit.js';
+} from '../../session/turn-context/context-fit.js';
 import { fitHostTools, hostToolChars, type DoeWindow } from './window-fit.js';
 import { loadsAgentToAgentTools } from '../shared/tools/tool-exposure-policy.js';
 import { doeBuilderTool, type DoeBuilderLifecycle } from './builder.js';
@@ -46,7 +46,7 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
   webFetchPolicy?: WebFetchOptions;
   /**
    * The model's window. When set, DorkOS's own share is trimmed to fit it
-   * (`../shared/window/context-fit.ts`); when absent, nothing is left out.
+   * (`session/turn-context/context-fit.ts`); when absent, nothing is left out.
    */
   window?: DoeWindow;
   /** The effective, already-clamped mode for the folder pin. */

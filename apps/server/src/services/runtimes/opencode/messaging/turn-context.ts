@@ -23,7 +23,7 @@ import {
   resolveToolVisibilityFor,
 } from '../../shared/permission-tool-filter.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
-import { joinFitted, type ContextPart } from '../../shared/window/context-fit.js';
+import { joinFitted, type ContextPart } from '../../../session/turn-context/context-fit.js';
 import { renderSkippedSkillLines } from './skipped-skills.js';
 
 /**
