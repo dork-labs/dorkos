@@ -153,7 +153,8 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 - **A red is not a reason to add load.** After a first queue ejection, read the failing job; once it's plainly not yours, re-queue it once with `gh pr merge --auto <n>`. The same check failing again at the same head is real: read the log and push a fix. Don't push empty commits.
 - **Heavy local runs** (full verify, full suites, builds, installs, Playwright, Docker) wait in the load gate: `pnpm heavy <command>` or `bash scripts/heavy-run-lock.sh`. Exit 75 means try again later. Start nothing heavy while free disk is under the floor in `contributing/ci.md`.
 - **Don't print full process command lines** (`ps -ww`, `ps aux`, `pgrep -a`); they can show tokens.
-- **A throwaway test server gets a throwaway home:** a temp `DORK_HOME`, `DORKOS_TEST_RUNTIME=true`, and `HOME` and `CLAUDE_CONFIG_DIR` pointed inside the temp folder.
+- **A throwaway test server gets a throwaway home:** a temp `DORK_HOME`, `DORKOS_TEST_RUNTIME=true`, and `HOME` and `CLAUDE_CONFIG_DIR` pointed inside the temp folder. Keep that folder outside the repo. The temp `HOME` is only for a server or a `claude` binary you start directly.
+- **Never run `pnpm`, `npx`, `yarn` or `corepack` with `HOME`, `XDG_*` or `PNPM_HOME` overridden**, not even through `pnpm heavy`. Under a fake home the package manager cannot find its pinned version and installs itself there; when that home is inside the repo it does so again without end, which took the Mac down twice on 2026-11-25. Inside a test, set a fake home with `vi.stubEnv`.
 - **Test data uses made-up names only**, not a real person, account or email.
 - **A release goes first.** The `release-window` check holds other merges until the new version is on npm; you add no `hold`. Heavy runs the release doesn't name wait too.
 
