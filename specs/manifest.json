@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261125-193257",
+      "slug": "send-to-an-agent",
+      "title": "Send to an agent: one capability, the seat rule, a program's own identity and level, the reply by id and as a stream, A2A as a projection, and a server with one agent",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-5155"
+    },
+    {
       "id": "261125-180652",
       "slug": "one-wake-and-watchers",
       "title": "One wake, and watchers as mini apps: the registration, the watcher's wake, the author API's gaps and the pull request watcher",
