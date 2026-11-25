@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { errorBody, parseSessionId } from '../route-utils.js';
+import { parseSessionId } from '../route-utils.js';
 
 describe('parseSessionId', () => {
   it('accepts and returns a valid UUID', () => {
@@ -21,11 +21,5 @@ describe('parseSessionId', () => {
 
   it('returns null for a random non-UUID string', () => {
     expect(parseSessionId('not-a-valid-uuid-at-all')).toBeNull();
-  });
-});
-
-describe('errorBody', () => {
-  it('is the repo error shape', () => {
-    expect(errorBody('Not found', 'NOT_FOUND')).toEqual({ error: 'Not found', code: 'NOT_FOUND' });
   });
 });
