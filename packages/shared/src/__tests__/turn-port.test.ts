@@ -49,6 +49,7 @@ const ORIGINS: ReadonlyArray<readonly [TurnOrigin, WireOrigin]> = [
   [{ kind: 'chat-message' }, 'chat'],
   [{ kind: 'account-handoff' }, 'chat'],
   [{ kind: 'account-resume' }, 'chat'],
+  [{ kind: 'resume' }, 'chat'],
   [{ kind: 'heartbeat' }, 'beat'],
   [{ kind: 'test-harness' }, 'chat'],
 ];
@@ -342,8 +343,8 @@ describe('the transition table', () => {
 });
 
 describe('origins', () => {
-  it('names all sixteen kinds, and the samples cover each', () => {
-    expect(TURN_ORIGIN_KINDS).toHaveLength(16);
+  it('names all seventeen kinds, and the samples cover each', () => {
+    expect(TURN_ORIGIN_KINDS).toHaveLength(17);
     expect([...new Set(ORIGINS.map(([origin]) => origin.kind))].sort()).toEqual(
       [...TURN_ORIGIN_KINDS].sort()
     );

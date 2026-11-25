@@ -80,6 +80,7 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // A limited session resumed by itself after its account's reset: already
   // bound, so its own row is its power.
   [{ kind: 'account-resume' }, 'none'],
+  [{ kind: 'resume' }, 'none'],
   // An agent's own heartbeat, in a chat minted for its day (spec `heartbeats`
   // §7.2): the operator's stop on a chat nobody started, like a local room turn.
   [{ kind: 'heartbeat' }, 'configured-stop-on-insert'],
@@ -99,7 +100,7 @@ describe('permissionSeedForOrigin', () => {
     // union's own members are read off its schema in `@dorkos/shared/turn-port`
     // (proven against the type there, in both directions) and compared with
     // what the table exercises.
-    expect(TURN_ORIGIN_KINDS).toHaveLength(16);
+    expect(TURN_ORIGIN_KINDS).toHaveLength(17);
     expect([...new Set(TABLE.map(([origin]) => origin.kind))].sort()).toEqual(
       [...TURN_ORIGIN_KINDS].sort()
     );

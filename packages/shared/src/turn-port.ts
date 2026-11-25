@@ -192,6 +192,14 @@ export type TurnOrigin =
    */
   | { readonly kind: 'account-resume' }
   /**
+   * DorkOS carries on in a chat that is already bound: an approval's verdict
+   * reaching the turn that asked for it, a finished sign-in resuming the work
+   * that needed it, work a restart cut short. Nobody typed it, and the chat's
+   * own row is its power, so it seeds nothing and names no session first.
+   * A carry-on after an account's reset is `account-resume`, not this.
+   */
+  | { readonly kind: 'resume' }
+  /**
    * An agent's own heartbeat (spec `heartbeats` §7.2): a turn the beat runner
    * starts in the agent's beat chat for the day, when a beat found work.
    * Nobody started it by typing, and nobody is waiting on it, the same as a
@@ -237,6 +245,7 @@ export const TurnOriginSchema = z.discriminatedUnion('kind', [
   bareOrigin('chat-message'),
   bareOrigin('account-handoff'),
   bareOrigin('account-resume'),
+  bareOrigin('resume'),
   bareOrigin('heartbeat'),
   bareOrigin('test-harness'),
 ]);
@@ -255,7 +264,7 @@ type AssertTurnOrigin = [z.output<typeof TurnOriginSchema>] extends [TurnOrigin]
 const _assertTurnOrigin: AssertTurnOrigin = true;
 void _assertTurnOrigin;
 
-/** Every {@link TurnOrigin} kind, read off the schema (16 today). */
+/** Every {@link TurnOrigin} kind, read off the schema (17 today). */
 export const TURN_ORIGIN_KINDS: readonly TurnOrigin['kind'][] = TurnOriginSchema.options.map(
   (option) => option.shape.kind.value
 );
@@ -294,6 +303,7 @@ export function wireOriginOf(origin: TurnOrigin): WireOrigin {
     case 'chat-message':
     case 'account-handoff':
     case 'account-resume':
+    case 'resume':
     case 'test-harness':
       return 'chat';
     default: {
