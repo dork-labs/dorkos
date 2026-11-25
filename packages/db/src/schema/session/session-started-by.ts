@@ -87,6 +87,13 @@ export const sessionStartedBy = sqliteTable(
      * every chat started any other way.
      */
     prompt: text('prompt'),
+    /**
+     * The title a start asked for, kept with its words until its turn has
+     * begun and the chat could take it (spec `turns-survive-restarts`,
+     * DOR-5232): a restart in between still titles the chat. Null once set,
+     * and for every chat started any other way.
+     */
+    title: text('title'),
     /** When it was started (ISO 8601). */
     createdAt: text('created_at').notNull(),
   },

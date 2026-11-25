@@ -344,7 +344,7 @@ describe('refusals launch nothing', () => {
     const err = await refusal(service.start('flow', INPUT, 'ctx'));
     expect(err).toMatchObject({
       code: 'start_limit',
-      message: 'Flow already has 3 chats working. Try again when one finishes.',
+      message: 'Flow already has 3 chats working or waiting. Try again when one finishes.',
     });
     expect(launches).toHaveLength(START_WORK_LIMITS.running);
 
@@ -736,5 +736,109 @@ describe('a start a pause cuts after its first event (DOR-5232)', () => {
         .listForRun(runId)
         .filter((e) => e.kind === 'notify_person' && e.key.endsWith(':not_started'))
     ).toEqual([]);
+  });
+});
+
+describe('a start across a restart and a rebind (DOR-5232)', () => {
+  /** A restart: a new run record and seam over the same database. */
+  function restart(epoch: string): void {
+    record = createRunRecord(db, {
+      epoch,
+      admission: { admission: { pausedAgent: () => undefined, machineFull: () => false } },
+    });
+    service = build();
+  }
+
+  it('still titles its chat when a restart lands before its turn begins', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(renamed).toEqual([]);
+    restart('01BOOTEPOCHSTARTWORK000003');
+    await finish(0);
+    expect(renamed).toEqual([
+      { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
+    ]);
+    expect(store.get(sessionId)?.title).toBeNull();
+  });
+
+  it('counts starts still waiting after a restart against the running limit', async () => {
+    for (let i = 0; i < START_WORK_LIMITS.running; i++) await service.start('flow', INPUT, 'ctx');
+    restart('01BOOTEPOCHSTARTWORK000004');
+    const err = await refusal(service.start('flow', INPUT, 'ctx'));
+    expect(err).toMatchObject({ code: 'start_limit' });
+    // One ends: room again.
+    await finish(0);
+    await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeDefined();
+  });
+
+  it('forgets a start whose first callback after a restart is already its end', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    restart('01BOOTEPOCHSTARTWORK000005');
+    record.starts.cancel(launches[0]!.runId, 'account_not_allowed');
+    await flush();
+    expect(store.get(sessionId)).toBeNull();
+  });
+
+  it('lets go at boot of words no run still needs', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    // Killed after its run ended, before its words were let go.
+    const { store: runs } = record;
+    let run = runs.move(runs.get(launches[0]!.runId)!, 'starting', runs.lease());
+    run = runs.move(run, 'started', { startedAt: runs.stamp(), runtime: 'test-mode' });
+    runs.endTurn(run, 'completed');
+    expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
+    restart('01BOOTEPOCHSTARTWORK000006');
+    expect(store.get(sessionId)).toMatchObject({ prompt: null, title: null });
+  });
+
+  it('finds its words and its app after a rebind and a restart, and tells the owner when it is cancelled', async () => {
+    uninstallRunRecord();
+    installRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000007' });
+    record = getRunRecord()!;
+    setMessageQueueStore(new MessageQueueStore(db));
+    try {
+      const { sessionId } = await service.start('flow', INPUT, 'ctx');
+      getOrCreateProjector(sessionId, DORKOS.root);
+      const canonical = `sdk-${sessionId}`;
+      rekeyProjector(sessionId, canonical);
+      // Its turn begins under the id the runtime settled on: the row moves.
+      const { store: runs } = record;
+      const runId = runs.listForChat(canonical)[0]!.id;
+      holdRun(runId);
+      runs.move(runs.get(runId)!, 'starting', runs.lease());
+      const sink = createRunFactsSink(runs, record.notices, record.starts);
+      sink.report({
+        kind: 'started',
+        runId,
+        sessionId: canonical,
+        openedBy: 'caller',
+        runtime: 'test-mode',
+        runtimeTurnRef: 1,
+      });
+      await flush();
+      expect(store.get(canonical)?.prompt).toBe(INPUT.prompt);
+      // A pause cuts it back to waiting; then a restart.
+      sink.dispatcher.pauseCut(runId);
+      releaseRun(runId);
+      await flush();
+      uninstallRunRecord();
+      installRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000008' });
+      record = getRunRecord()!;
+      service = build();
+      const run = record.store.get(runId)!;
+      expect(run.status).toBe('queued');
+      expect(record.port.wordsOf(run)).toBe(INPUT.prompt);
+      // Cancelled now: the owner hears, by the app's name.
+      record.starts.cancel(runId, 'account_not_allowed');
+      const notices = record.effects
+        .listForRun(runId)
+        .filter((effect) => effect['key'] === `notify:${runId}:not_started`);
+      expect(notices).toEqual([
+        expect.objectContaining({ payload: expect.objectContaining({ name: 'Flow' }) }),
+      ]);
+      disposeProjector(canonical);
+    } finally {
+      uninstallRunRecord();
+      setMessageQueueStore(undefined);
+    }
   });
 });

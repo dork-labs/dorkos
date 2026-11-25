@@ -46,7 +46,7 @@ import { logger } from '../../lib/logger.js';
 import { chatKeyOf, type ComputerTurnPort } from '../session/turn-port/index.js';
 import type { StartTurns } from './effects/start-turns.js';
 import type { EffectStore } from './effects/effect-store.js';
-import { startPayloadOf, type StartPayload } from './effects/start-payload.js';
+import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 
 /** The statuses after which a run never goes back in line, so its words are no longer needed. */
@@ -84,15 +84,21 @@ export interface WordSource {
    * The words, or `undefined` when the source no longer holds them.
    *
    * @param id - The source's own id: what follows `<kind>:` in the run's `sourceRef`.
+   * @param run - The run, by the chat it is kept under now (a rebind moves a
+   *   chat's rows to the id the runtime settled on, and its runs with them).
    */
-  read(id: string): string | undefined;
+  read(id: string, run: Pick<TurnRun, 'sessionId'>): string | undefined;
   /**
    * The app that asked, when the source is a mini app's: named in the owner's
    * notice when a start it was answered never runs (§3.1).
    *
    * @param id - The source's own id.
+   * @param run - The run, by the chat it is kept under now.
    */
-  app?(id: string): { extensionId: string; name: string } | undefined;
+  app?(
+    id: string,
+    run: Pick<TurnRun, 'sessionId'>
+  ): { extensionId: string; name: string } | undefined;
 }
 
 /** Which runs a watcher hears. */
@@ -311,11 +317,26 @@ export class SpaceTurnPort {
    *
    * @param run - The run.
    */
-  wordsOf(run: Pick<TurnRun, 'id' | 'sourceRef'>): string | undefined {
+  wordsOf(run: Pick<TurnRun, 'id' | 'sourceRef' | 'sessionId'>): string | undefined {
     const held = this.words.get(run.id);
     if (held !== undefined || run.sourceRef === null) return held;
     const colon = run.sourceRef.indexOf(':');
-    return this.sources.get(run.sourceRef.slice(0, colon))?.read(run.sourceRef.slice(colon + 1));
+    return this.sources
+      .get(run.sourceRef.slice(0, colon))
+      ?.read(run.sourceRef.slice(colon + 1), run);
+  }
+
+  /**
+   * The folder a run was started for, as its `start_turn` keeps it.
+   *
+   * @param runId - The run.
+   */
+  cwdOf(runId: string): string | undefined {
+    const start = this.deps.effects
+      .listForRun(runId)
+      .find((effect) => effect.kind === 'start_turn');
+    const parsed = StartPayloadSchema.safeParse(start?.payload);
+    return parsed.success ? parsed.data.cwd : undefined;
   }
 
   /**
@@ -333,10 +354,14 @@ export class SpaceTurnPort {
    *
    * @param run - The run.
    */
-  appOf(run: Pick<TurnRun, 'sourceRef'>): { extensionId: string; name: string } | undefined {
+  appOf(
+    run: Pick<TurnRun, 'sourceRef' | 'sessionId'>
+  ): { extensionId: string; name: string } | undefined {
     if (run.sourceRef === null) return undefined;
     const colon = run.sourceRef.indexOf(':');
-    return this.sources.get(run.sourceRef.slice(0, colon))?.app?.(run.sourceRef.slice(colon + 1));
+    return this.sources
+      .get(run.sourceRef.slice(0, colon))
+      ?.app?.(run.sourceRef.slice(colon + 1), run);
   }
 
   /**

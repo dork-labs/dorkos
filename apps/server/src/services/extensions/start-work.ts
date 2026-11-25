@@ -13,9 +13,14 @@
  *
  * The answer comes at acceptance: the chat's id, before its turn starts. When
  * every launch slot under `runtimes.maxAgentChats` is taken the start is not
- * refused; its run waits for room (§3.5). The prompt is held in this process
- * until the turn starts, so a restart in between cancels the run, and the
- * chat stays empty, rather than run it twice.
+ * refused; its run waits for room (§3.5). The prompt and title are saved in
+ * the start's own row (the run's `sourceRef`), so a restart before its turn is
+ * handed to the agent hands it over again, and titles the chat once it starts;
+ * both are let go when the run ends. What a start's run changing means here
+ * (the row following a rebind, the title, a launch warning, forgetting a start
+ * that never ran) is one watch registered at attach, keyed by the run's
+ * source, so a restart in between loses none of it. An answered start can
+ * still not run (a refusal at the door, a stop); its owner is told, once.
  *
  * ## The limits
  *
@@ -24,10 +29,11 @@
  * its origin extension): at most {@link START_WORK_LIMITS.perHour} starts in a
  * rolling hour, and at most {@link START_WORK_LIMITS.running} of its chats
  * running a turn at once. The hourly count is read from the table, so a
- * restart does not reset it. "Running" is the live projector's lifecycle, plus
- * the starts this process has launched whose first turn has not settled yet:
- * a turn that has been triggered but not yet reported `streaming` is running
- * too, or a burst of clicks would all pass.
+ * restart does not reset it. "Running" means working or waiting: the live
+ * projector's lifecycle, the starts this process is launching, and, read from
+ * saved rows, its chats with a run that has not ended (a start waiting for a
+ * launch slot or for a paused agent included), so neither a burst of clicks
+ * nor a restart gets past it.
  *
  * The check and the row that claims the slot are written with no await
  * between them, so concurrent starts cannot overshoot either limit.
@@ -51,7 +57,7 @@ import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { ProjectRegistry } from '../projects/project-registry.js';
-import { RUN_ENDS, turnPort, type SpaceTurnPort } from '../runs/index.js';
+import { RUN_ENDS, turnPort, type SpaceTurnPort, type TurnRun } from '../runs/index.js';
 import { listProjectorStatuses } from '../session/session-state-projector.js';
 import type {
   SessionStartedByStore,
@@ -64,6 +70,9 @@ const START_SOURCE = 'start-work';
 
 /** How long the hourly limit looks back. */
 const HOUR_MS = 60 * 60 * 1000;
+
+/** How far back saved starts are read for the running count. */
+const DAY_MS = 24 * HOUR_MS;
 
 /** A projector lifecycle that means a turn is in flight. */
 const RUNNING_LIFECYCLES = new Set(['streaming', 'blocked']);
@@ -126,6 +135,10 @@ export class StartWorkService {
   private readonly launching: Launching = new Map();
   /** The turn port this seam reads its starts from, once it has heard of one. */
   private attachedTo: SpaceTurnPort | undefined;
+  /** Runs whose launch warning is on the history already. */
+  private readonly warned = new Set<string>();
+  /** Runs whose title is being set right now. */
+  private readonly titling = new Set<string>();
   private readonly now: () => number;
   private readonly eligibility: StartWorkEligibility;
   private readonly runningSessionIds: () => string[];
@@ -170,25 +183,118 @@ export class StartWorkService {
     const port = (this.deps.port ?? turnPort)();
     if (!port || port === this.attachedTo) return port;
     this.attachedTo = port;
+    // A start's row, by the chat its run is kept under now, else by the id it
+    // was saved under (a rebind moves the row with the chat).
+    const rowOf = (id: string, run: { sessionId: string }) =>
+      this.deps.store.get(run.sessionId) ?? this.deps.store.get(id);
     port.registerSource(START_SOURCE, {
-      read: (id) => this.deps.store.get(id)?.prompt ?? undefined,
-      app: (id) => {
-        const extensionId = this.deps.store.get(id)?.originExtensionId;
+      read: (id, run) => rowOf(id, run)?.prompt ?? undefined,
+      app: (id, run) => {
+        const extensionId = rowOf(id, run)?.originExtensionId;
         return extensionId
           ? { extensionId, name: this.deps.extensionName(extensionId) }
           : undefined;
       },
     });
-    port.watch((run) => {
-      const prefix = `${START_SOURCE}:`;
-      if (!run.sourceRef?.startsWith(prefix)) return;
-      // Kept until the run can no longer come back to `queued` (a pause can
-      // cut its turn even after the runtime's first event), or never runs.
-      if (!RUN_ENDS.has(run.status)) return;
-      this.deps.store.clearPrompt(run.sourceRef.slice(prefix.length));
-      this.deps.store.clearPrompt(run.sessionId);
-    });
+    port.watch((run) => this.onStartRun(port, run));
+    this.sweepWords(port);
     return port;
+  }
+
+  /**
+   * At boot, let go of the words and title of every start no run still
+   * needs them for: one killed before its run was saved, or after its run
+   * ended but before its words were cleared. A run that has not ended keeps
+   * them, since the next process hands it over again.
+   */
+  private sweepWords(port: SpaceTurnPort): void {
+    for (const id of this.deps.store.withPrompt()) {
+      const open = port
+        .list(id)
+        .some((run) => run.sourceRef?.startsWith(`${START_SOURCE}:`) && !RUN_ENDS.has(run.status));
+      if (!open) this.deps.store.clearPrompt(id);
+    }
+  }
+
+  /**
+   * What a start's run changing means for the start, registered once and
+   * keyed by the run's source, so a restart in between loses none of it: who
+   * started the chat follows the chat to the id the runtime settled on; the
+   * chat is titled once its turn has begun, on the runtime it runs on (a start
+   * that waits or never runs leaves no titled empty chat); a launch warning
+   * rides the start's history until every device shows the run's own (T3);
+   * and at the run's end its words go, and a start that never ran is
+   * forgotten, so it counts against no limit.
+   *
+   * @param port - The space face.
+   * @param run - The run, as it reads now (any status, the first call included).
+   */
+  private onStartRun(port: SpaceTurnPort, run: TurnRun): void {
+    const prefix = `${START_SOURCE}:`;
+    if (!run.sourceRef?.startsWith(prefix) || run.status === 'queued') return;
+    if (run.status === 'starting') return;
+    const sourceId = run.sourceRef.slice(prefix.length);
+    const row = this.deps.store.get(run.sessionId) ?? this.deps.store.get(sourceId);
+    if (!row) return;
+    if (row.sessionId !== run.sessionId) {
+      this.deps.store.move(row.sessionId, run.sessionId);
+      const origin = this.launching.get(row.sessionId);
+      this.launching.delete(row.sessionId);
+      if (origin !== undefined) this.launching.set(run.sessionId, origin);
+    }
+    const extensionId = row.originExtensionId ?? row.extensionId;
+    const name = extensionId ? this.deps.extensionName(extensionId) : 'An app';
+    if (run.status === 'started' || run.status === 'running') {
+      if (run.warnings.length > 0 && !this.warned.has(run.id)) {
+        this.warned.add(run.id);
+        void this.deps.activity
+          ?.emit({
+            actorType: 'system',
+            actorLabel: name,
+            actorId: extensionId ?? 'unknown',
+            category: 'agent',
+            eventType: 'extension.session_warning',
+            resourceType: 'session',
+            resourceId: run.sessionId,
+            ...(row.title ? { resourceLabel: row.title } : {}),
+            summary: `${name}'s chat${row.title ? ` ${row.title}` : ''}: ${run.warnings.map((w) => w.message).join(' ')}`,
+            linkPath: sessionPath({ session: run.sessionId }),
+            metadata: { extensionId, warnings: run.warnings.map((w) => w.code) },
+          })
+          .catch((err: unknown) =>
+            logger.warn('[start-work] could not record a start’s warning', logError(err))
+          );
+      }
+      this.tryTitle(port, run, row.title);
+      return;
+    }
+    this.launching.delete(run.sessionId);
+    if (run.startedAt === null) {
+      // Never ran: forgotten, so it neither shows nor counts.
+      this.deps.store.remove(run.sessionId);
+      return;
+    }
+    // Its first try may have found no transcript yet.
+    this.tryTitle(port, run, row.title);
+    this.deps.store.clearPrompt(run.sessionId);
+  }
+
+  /** Set a start's chat title once, on the runtime the run runs on. */
+  private tryTitle(port: SpaceTurnPort, run: TurnRun, title: string | null): void {
+    if (title === null || this.titling.has(run.id)) return;
+    const cwd = port.cwdOf(run.id);
+    if (cwd === undefined) return;
+    this.titling.add(run.id);
+    void this.rename(run.runtime ?? this.defaultRuntime(), run.sessionId, title, cwd)
+      .then(
+        () => this.deps.store.clearTitle(run.sessionId),
+        (err: unknown) =>
+          logger.info('[start-work] title not set yet; trying again when the turn ends', {
+            sessionId: run.sessionId,
+            ...logError(err),
+          })
+      )
+      .finally(() => this.titling.delete(run.id));
   }
 
   /**
@@ -226,6 +332,9 @@ export class StartWorkService {
     const eligible = this.eligibility({ project, runtime: runtimeType });
     if (!eligible.ok) throw new StartWorkError('account_not_allowed_here', eligible.message);
 
+    // Attached before the start is saved: the boot sweep must not see it first.
+    const door = this.attach();
+    if (!door) throw new Error('DorkOS is still starting. Try again in a moment.');
     const sessionId = crypto.randomUUID();
     const claimed = this.reserve({
       sessionId,
@@ -234,17 +343,13 @@ export class StartWorkService {
       startedBySessionId: null,
       originExtensionId: extensionId,
       reason: request.reason,
-      // Saved with the start, so a restart before its turn hands it over again.
+      // Saved with the start, so a restart before its turn hands it over
+      // again and still titles its chat.
       prompt: request.prompt,
+      title: request.title,
     });
     if (!claimed.ok) throw claimed.error;
     const reservation = claimed.reservation;
-
-    const door = this.attach();
-    if (!door) {
-      reservation.cancel();
-      throw new Error('DorkOS is still starting. Try again in a moment.');
-    }
     let runId: string;
     try {
       ({ runId } = door.start({
@@ -268,83 +373,23 @@ export class StartWorkService {
       reservation.cancel();
       throw err;
     }
-    // The title goes on now when the chat can take it, else once its first
-    // turn ends (a runtime whose transcript does not exist until then).
-    let titled = false;
-    let warned = false;
-    let chatId: string = sessionId;
-    const emit = (eventType: string, note?: string) =>
-      void this.deps.activity
-        ?.emit({
-          actorType: 'system',
-          actorLabel: name,
-          actorId: extensionId,
-          category: 'agent',
-          eventType,
-          resourceType: 'session',
-          resourceId: chatId,
-          resourceLabel: request.title,
-          summary: note
-            ? `${name}'s chat ${request.title}: ${note}`
-            : `${name} started a chat in ${project.name}: ${request.title}`,
-          linkPath: sessionPath({ session: chatId }),
-          metadata: { extensionId, project: project.root, via, reason: request.reason },
-        })
-        .catch((err: unknown) =>
-          logger.warn('[start-work] could not record a started chat', logError(err))
-        );
-    let titling = false;
-    const tryTitle = (run: { sessionId: string; runtime: string | null }) => {
-      if (titled || titling) return;
-      titling = true;
-      void this.rename(run.runtime ?? runtimeType, run.sessionId, request.title, project.root)
-        .then(
-          () => {
-            titled = true;
-          },
-          (err: unknown) =>
-            logger.info('[start-work] title not set yet; trying again when the turn ends', {
-              sessionId: run.sessionId,
-              ...logError(err),
-            })
-        )
-        .finally(() => {
-          titling = false;
-        });
-    };
-    const stop = door.watch(
-      (run) => {
-        if (run.status === 'starting' || run.status === 'queued') return;
-        // The runtime may have settled on another id for the new chat.
-        if (run.sessionId !== chatId) {
-          reservation.rekey(run.sessionId);
-          chatId = run.sessionId;
-        }
-        if (run.status === 'started' || run.status === 'running') {
-          // Titled once its turn has begun, on the runtime it runs on: a start
-          // that waits or never runs leaves no titled empty chat.
-          tryTitle(run);
-          // A warning the launch owes the person rides the start's history
-          // until every device shows the run's own (T3).
-          if (!warned && run.warnings.length > 0) {
-            warned = true;
-            emit('extension.session_warning', run.warnings.map((w) => w.message).join(' '));
-          }
-          return;
-        }
-        stop();
-        // A start that never reached its turn counts against no limit.
-        if (run.startedAt === null) {
-          reservation.cancel();
-          return;
-        }
-        reservation.settle();
-        // A runtime whose transcript did not exist at its start takes it now.
-        tryTitle(run);
-      },
-      { runId }
-    );
-    emit('extension.session_started');
+    void this.deps.activity
+      ?.emit({
+        actorType: 'system',
+        actorLabel: name,
+        actorId: extensionId,
+        category: 'agent',
+        eventType: 'extension.session_started',
+        resourceType: 'session',
+        resourceId: sessionId,
+        resourceLabel: request.title,
+        summary: `${name} asked to start a chat in ${project.name}: ${request.title}`,
+        linkPath: sessionPath({ session: sessionId }),
+        metadata: { extensionId, project: project.root, via, reason: request.reason, runId },
+      })
+      .catch((err: unknown) =>
+        logger.warn('[start-work] could not record a started chat', logError(err))
+      );
 
     return { sessionId };
   }
@@ -407,7 +452,7 @@ export class StartWorkService {
     if (this.runningCount(extensionId) >= START_WORK_LIMITS.running) {
       return new StartWorkError(
         'start_limit',
-        `${name} already has ${START_WORK_LIMITS.running} chats working. Try again when one finishes.`
+        `${name} already has ${START_WORK_LIMITS.running} chats working or waiting. Try again when one finishes.`
       );
     }
     return null;
@@ -424,10 +469,22 @@ export class StartWorkService {
     return this.deps.store.get(sessionId)?.originExtensionId === extensionId;
   }
 
-  /** How many of an extension's chats are running a turn now. */
+  /**
+   * How many of an extension's chats are working or waiting to: the starts
+   * this process is launching, the chats whose turn is running, and, from
+   * saved rows, its chats of the last day with a run that has not ended (so a
+   * restart does not reset the count).
+   */
   private runningCount(extensionId: string): number {
     const running = new Set<string>();
     for (const [id, origin] of this.launching) if (origin === extensionId) running.add(id);
+    const port = this.attach();
+    if (port) {
+      const since = new Date(this.now() - DAY_MS).toISOString();
+      for (const id of this.deps.store.listSince(extensionId, since)) {
+        if (port.list(id).some((run) => !RUN_ENDS.has(run.status))) running.add(id);
+      }
+    }
     const live = this.runningSessionIds().filter((id) => !running.has(id));
     for (const [id, record] of this.deps.store.getMany(live)) {
       if (record.originExtensionId === extensionId) running.add(id);

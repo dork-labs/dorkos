@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "91dea777-b916-47df-9dab-4dd6f5a9b67a",
+  "id": "c361dfbf-7724-4b26-9358-6d0445639536",
   "prevId": "2b874520-7d1e-45a5-9a91-e48d878d10a9",
   "tables": {
     "a2a_tasks": {
@@ -3927,6 +3927,13 @@
         },
         "prompt": {
           "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
