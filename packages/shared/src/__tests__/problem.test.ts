@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { ProblemCodeSchema as CloudProblemCodeSchema } from '@dork-labs/cloud-api';
 import {
   PROBLEM_CODE_LIST,
@@ -9,6 +9,7 @@ import {
   isProblem,
   problemType,
   readErrorBody,
+  type ProblemCode,
 } from '../problem.js';
 
 describe('PROBLEM_CODE_LIST', () => {
@@ -54,6 +55,12 @@ describe('PROBLEM_CODE_LIST', () => {
     ['agent_not_found', 404],
   ] as const)('sends %s with status %i by default', (code, status) => {
     expect(PROBLEM_CODES[code].status).toBe(status);
+  });
+
+  it('types a code as the exact list, so an unknown code does not compile', () => {
+    expectTypeOf<'not_found'>().toExtend<ProblemCode>();
+    expectTypeOf<'no_such_code'>().not.toExtend<ProblemCode>();
+    expectTypeOf<string>().not.toExtend<ProblemCode>();
   });
 
   it('indexes every code, and the schema accepts exactly the list', () => {

@@ -65,6 +65,9 @@ import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import type { CredentialStore } from '../../services/core/credential-provider.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
 import { createMcpServerRoutes } from '../mcp-servers.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { globalMcpPersonDomain } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
+import { GlobalMcpToolLedger } from '../../services/mesh/global-mcp/global-mcp-tools.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
 
 const target = swappableServer();
@@ -119,6 +122,10 @@ function app(user: RequestUser | null = OWNER) {
   return target.mount(
     honoGroupListener(
       [
+        // Removing a server is a person-only capability on the mount (DOR-4978).
+        capabilityGroup(globalMcpPersonDomain, {
+          globalMcpPersonDeps: { store, ledger: new GlobalMcpToolLedger(home), agents: () => [] },
+        }),
         {
           path: '/api/mcp-servers',
           routes: createMcpServerRoutes(store, (id) => agentNames[id]),

@@ -185,6 +185,15 @@ describe('OpenCodeServerManager', () => {
     vi.stubEnv('DO_NOT_TRACK', '1');
     vi.clearAllMocks();
     vi.useFakeTimers();
+    // The fake child's pid is made up, but signalGroup() sends a real signal to
+    // its process group. On a machine where that group exists (a shell, another
+    // agent), the test would stop a real program and the fake child would never
+    // see its kill. Answer group signals as if no such group exists, as on CI.
+    const realKill = process.kill.bind(process);
+    vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      if (pid < 0) throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+      return realKill(pid, signal);
+    });
     children = [];
     vi.mocked(spawn).mockImplementation(() => {
       const child = new FakeChild();
@@ -208,6 +217,7 @@ describe('OpenCodeServerManager', () => {
       }
     } finally {
       vi.unstubAllEnvs();
+      vi.mocked(process.kill).mockRestore();
     }
     vi.useRealTimers();
   });

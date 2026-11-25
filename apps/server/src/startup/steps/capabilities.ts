@@ -70,6 +70,7 @@ import type { WireRoomsResult } from './rooms.js';
 import type { WireSessionServicesResult } from './session-services.js';
 import type { WireMcpTasksAndSkillsResult } from './mcp-tasks-skills.js';
 import type { ServerRefs } from '../server-refs.js';
+import { globalMcpPersonDepsFor } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
 export interface ComposeCapabilitiesInput {
@@ -243,6 +244,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),
+      // The MCP servers a person adds for every agent, on their REST paths (DOR-4978).
+      ...globalMcpPersonDepsFor(deps, () => refs.meshCore),
       // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
       // agent has in the rooms it belongs to. The SAME service instances the
       // REST routes and the trigger dispatcher hold — one set of membership

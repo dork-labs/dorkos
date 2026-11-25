@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -19,6 +20,8 @@ import {
   type CapabilityHandlerContext,
 } from '../../services/core/capabilities/index.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import type { ApiEnv } from '../../http/api-chain.js';
 
 const fixtureTarget = swappableServer();
 
@@ -67,11 +70,62 @@ describe('context.request', () => {
       'accountOwner',
       'atThisComputerWithoutProgramKey',
       'clearsAgentBar',
+      'frontDoorElsewhere',
+      'frontDoorOwner',
       'heldWifiOwner',
       'ownerProven',
     ]);
     const everything = JSON.stringify(seen);
     expect(everything).not.toContain('cookie-secret-value');
     expect(everything).not.toContain('authorization-secret-value');
+  });
+  it('takes the front-door and agent-bar answers from the server’s own gate, never a header (DOR-4978)', async () => {
+    // Headers a caller could forge to claim the other place, or a session. (A forged
+    // Origin or session cookie is refused before any capability runs, so neither is here.)
+    const forged = {
+      'X-Forwarded-For': '127.0.0.1',
+      Forwarded: 'for=127.0.0.1;host=localhost',
+      'X-Real-IP': '127.0.0.1',
+      'X-Forwarded-Host': 'localhost',
+      'X-DorkOS-Ingress': 'local',
+    };
+    const viaWifi: MiddlewareHandler<ApiEnv> = async (c, next) => {
+      markIngress(c.env.incoming, 'wifi');
+      // A Wi-Fi caller the gate asked a credential of: the owner's own sign-in.
+      c.set('user', { userId: 'owner', credential: 'cookie', sessionId: 's', route: 'wifi' });
+      await next();
+    };
+    const atThisComputer: MiddlewareHandler<ApiEnv> = async (c, next) => {
+      c.set('user', { userId: 'owner', credential: 'cookie', sessionId: 's', route: 'local' });
+      await next();
+    };
+    const answers = async (
+      before?: MiddlewareHandler<ApiEnv>,
+      headers: Record<string, string> = {}
+    ) => {
+      seen = undefined;
+      const server = fixtureTarget.mount(
+        honoGroupListener(capabilityGroup(probeDomain), before ? { before } : {})
+      );
+      const res = await request(server).get('/api/probe-echo').set(headers);
+      // A forged header may get the call refused outright; it may never flip an answer.
+      if (res.status !== 200) return 'refused' as const;
+      const facts = seen!.request!;
+      return {
+        owner: facts.frontDoorOwner,
+        elsewhere: facts.frontDoorElsewhere,
+        agentBar: facts.clearsAgentBar,
+      };
+    };
+    // Off this computer: forged "local" headers flip neither answer.
+    const wifi = await answers(viaWifi);
+    expect(wifi).toMatchObject({ owner: false, elsewhere: true });
+    expect([wifi, 'refused']).toContainEqual(await answers(viaWifi, forged));
+    // At this computer: forged headers change nothing either.
+    const local = await answers(atThisComputer);
+    expect(local).not.toBe('refused');
+    expect([local, 'refused']).toContainEqual(
+      await answers(atThisComputer, { ...forged, 'X-Forwarded-For': '203.0.113.7' })
+    );
   });
 });

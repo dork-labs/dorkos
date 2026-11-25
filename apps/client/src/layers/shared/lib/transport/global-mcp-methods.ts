@@ -64,10 +64,13 @@ export function createGlobalMcpMethods(baseUrl: string) {
     },
 
     undoGlobalMcpStandingAllow(name: string, agentId: string, rule: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/mcp-servers/${encodeURIComponent(name)}/allows`, {
-        method: 'DELETE',
-        body: JSON.stringify({ agentId, rule }),
-      });
+      // A DELETE carries no body: the agent and the rule go in the query string.
+      const query = new URLSearchParams({ agentId, rule });
+      return fetchNoContent(
+        baseUrl,
+        `/mcp-servers/${encodeURIComponent(name)}/allows?${query.toString()}`,
+        { method: 'DELETE' }
+      );
     },
   };
 }

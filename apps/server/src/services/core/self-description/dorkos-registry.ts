@@ -48,6 +48,7 @@ import { todoPromiseWriteDomain, todoWriteDomain } from '../../todos/todo-write-
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabilities.js';
 import { meshDomain } from '../../mesh/doors/mesh-capabilities.js';
+import { globalMcpPersonDomain } from '../../mesh/global-mcp/global-mcp-person-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { workGraphDomain } from '../../work-graph/work-graph-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
@@ -93,6 +94,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain, connectorHoldDomain);
   if (deps.mcpDeps) domains.push(mcpDomain);
+  // The MCP servers a person adds for every agent, on `/api/mcp-servers` (DOR-4978).
+  if (deps.globalMcpPersonDeps) domains.push(globalMcpPersonDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
@@ -194,6 +197,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorExecutionDomain,
     connectorHoldDomain,
     mcpDomain,
+    globalMcpPersonDomain,
     roomsDomain,
     sessionDomain,
     chatDomain,
@@ -233,6 +237,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorDeps: {} as CapabilityDeps['connectorDeps'],
     connectorExecutionDeps: {} as CapabilityDeps['connectorExecutionDeps'],
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
+    globalMcpPersonDeps: {} as CapabilityDeps['globalMcpPersonDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
