@@ -335,11 +335,39 @@ export class SessionStartedByStore {
   }
 
   /**
-   * The chats a chat started (`kind = 'chat'`), oldest first: its spin-offs.
+   * The chats a chat started (`kind = 'chat'`), its carried moves included:
+   * its spin-offs, and theirs down to `depth` levels. Each level is oldest
+   * first, and a chat is listed once, so a cycle in the rows ends the walk.
+   *
+   * These are the raw parent rows. A reader that shows chats goes through the
+   * work graph's lineage query (`services/work-graph/chat-lineage.ts`), which
+   * also reads the `started` links and leaves out a start that never ran.
    *
    * @param sessionId - The starting chat.
+   * @param depth - How many levels down: 1 (the default) for its own
+   *   spin-offs, `Infinity` for the whole subtree.
    */
-  childrenOf(sessionId: string): string[] {
+  childrenOf(sessionId: string, depth = 1): string[] {
+    const found: string[] = [];
+    const seen = new Set([sessionId]);
+    let frontier = [sessionId];
+    for (let level = 0; level < depth && frontier.length > 0; level += 1) {
+      const next: string[] = [];
+      for (const parent of frontier) {
+        for (const child of this.directChildrenOf(parent)) {
+          if (seen.has(child)) continue;
+          seen.add(child);
+          found.push(child);
+          next.push(child);
+        }
+      }
+      frontier = next;
+    }
+    return found;
+  }
+
+  /** The chats one chat started, oldest first. */
+  private directChildrenOf(sessionId: string): string[] {
     return this.db
       .select({ sessionId: sessionStartedBy.sessionId })
       .from(sessionStartedBy)

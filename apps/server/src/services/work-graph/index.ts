@@ -30,10 +30,16 @@
  *   is cancelled before its chat launches, so read starts through the lineage
  *   query (W3, DOR-4969), not this table alone.
  *
- * One read site: the re-key edges are registered as the durable record
- * `followChatRekey` asks once the in-memory redirect is gone
- * (`session/turn-identity/follow-chat-rekey.ts`), so a `/r/` link holding a
- * new chat's first id still opens it after a restart.
+ * Two read sites:
+ *
+ * - **A re-key**: the re-key edges are registered as the durable record
+ *   `followChatRekey` asks once the in-memory redirect is gone
+ *   (`session/turn-identity/follow-chat-rekey.ts`), so a `/r/` link holding a
+ *   new chat's first id still opens it after a restart.
+ * - **A lineage** (W3, DOR-4969): {@link readChatLineage} answers a chat's
+ *   ancestors and subtree from the `started` links and `session_started_by`,
+ *   and is the one place that decides which started chats a reader is shown
+ *   (`./chat-lineage.ts`).
  *
  * The store lives in this computer's SQLite store for now; its move to the
  * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
@@ -49,10 +55,27 @@
 import type { Db } from '@dorkos/db';
 import { entityRef } from '@dorkos/shared/entity-ref';
 import { logger } from '../../lib/logger.js';
-import { onSessionStartRecorded } from '../session/origin/session-started-by-store.js';
+import {
+  getSessionStartedByStore,
+  onSessionStartRecorded,
+} from '../session/origin/session-started-by-store.js';
 import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js';
 import { registerDurableRekeyResolver } from '../session/turn-identity/follow-chat-rekey.js';
+import { getRunRecord } from '../runs/index.js';
+import { ChatLineageReader, type ChatLineage, type ChatLineageOptions } from './chat-lineage.js';
 import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
+
+export {
+  ChatLineageReader,
+  LINEAGE_MAX_DEPTH,
+  type ChatLineage,
+  type ChatLineageDeps,
+  type ChatLineageOptions,
+  type LineageAncestor,
+  type LineageDescendant,
+  type LineageState,
+  type LineageVia,
+} from './chat-lineage.js';
 
 export {
   REKEY_MAX_DEPTH,
@@ -68,6 +91,8 @@ export {
 export { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
 
 let store: WorkLinkStore | null = null;
+/** The database the store was installed over: the lineage query reads which chats exist from it. */
+let installedDb: Db | null = null;
 let stopRekeyWrites: (() => void) | null = null;
 let stopRekeyReads: (() => void) | null = null;
 let stopStartWrites: (() => void) | null = null;
@@ -84,6 +109,7 @@ let stopStartWrites: (() => void) | null = null;
  */
 export function installWorkLinkStore(db: Db): WorkLinkStore {
   store = new WorkLinkStore({ db });
+  installedDb = db;
   stopRekeyWrites ??= onDurableSessionRekey((oldId, newId) => recordChatRekey(oldId, newId));
   stopRekeyReads ??= registerDurableRekeyResolver(
     (chatId) => store?.resolveRekey(chatId) ?? chatId
@@ -103,11 +129,34 @@ export function uninstallWorkLinkStore(): void {
   stopRekeyReads?.();
   stopRekeyReads = null;
   store = null;
+  installedDb = null;
 }
 
 /** The installed store, or `null` before startup installs it. */
 export function getWorkLinkStore(): WorkLinkStore | null {
   return store;
+}
+
+/**
+ * A chat's ancestors and its subtree with depth, read from this server's
+ * stores: the installed edge store, `session_started_by` and the run record.
+ * See {@link ChatLineageReader} for what is shown and what is left out.
+ *
+ * @param chatId - The chat, by any id it has had.
+ * @param opts - How many levels of descendants; all by default.
+ * @returns The lineage; `null` before startup installs the store, or when the
+ *   chat has neither a chat nor a run to show.
+ */
+export function readChatLineage(chatId: string, opts?: ChatLineageOptions): ChatLineage | null {
+  if (store === null || installedDb === null) return null;
+  const startedBy = getSessionStartedByStore();
+  const runs = getRunRecord()?.store;
+  return new ChatLineageReader({
+    db: installedDb,
+    links: store,
+    ...(startedBy ? { startedBy } : {}),
+    ...(runs ? { runs } : {}),
+  }).read(chatId, opts);
 }
 
 /**

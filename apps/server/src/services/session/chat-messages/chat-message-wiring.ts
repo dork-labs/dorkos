@@ -31,10 +31,7 @@ import {
 } from '../message-dispatcher.js';
 import { setQueuedChatJoiner } from '../message-dispatcher/state.js';
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
-import {
-  getSessionStartedByStore,
-  type SessionStartedByStore,
-} from '../origin/session-started-by-store.js';
+import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
 import { auditTrail } from '../../audit/audit-trail.js';
 import {
   canReadSession,
@@ -195,7 +192,7 @@ export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target:
     involvedBy.startedReader ||
     store.sendersTo(caller.sessionId).has(target) ||
     store.agentExchangedWith(caller.agentPath, target) ||
-    (startedBy !== undefined && startedDescendant(startedBy, caller.sessionId, target));
+    startedBy?.childrenOf(caller.sessionId, DESCENDANT_DEPTH).includes(target) === true;
   if (!related) return false;
   const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';
   return canReadSession(chatReader(caller), visibility, involvedBy);
@@ -215,30 +212,6 @@ export function maySeeChat(caller: ChatCaller, target: string): boolean {
     getSessionStartedByStore()?.get(caller.sessionId)?.startedBySessionId === target;
   const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';
   return canReadSession(chatReader(caller), visibility, { startedReader });
-}
-
-/** Whether `target` is in the chain of chats `root` started, a few levels down. */
-function startedDescendant(
-  startedBy: SessionStartedByStore,
-  root: string,
-  target: string
-): boolean {
-  let frontier = [root];
-  const seen = new Set(frontier);
-  for (let depth = 0; depth < DESCENDANT_DEPTH && frontier.length > 0; depth += 1) {
-    const next: string[] = [];
-    for (const id of frontier) {
-      for (const child of startedBy.childrenOf(id)) {
-        if (child === target) return true;
-        if (!seen.has(child)) {
-          seen.add(child);
-          next.push(child);
-        }
-      }
-    }
-    frontier = next;
-  }
-  return false;
 }
 
 /** The agent behind a reading chat, as the reader rule names it. */
