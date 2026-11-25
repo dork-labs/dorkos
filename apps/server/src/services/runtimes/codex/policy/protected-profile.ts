@@ -18,6 +18,9 @@ import { collapseProtectedPaths } from './collapse-protected-paths.js';
 import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
 import { gitMetadataReadRules } from './git-metadata.js';
 import { codexExactKeys, codexGlobLiteral, type CodexFilesystemValue } from './codex-path-keys.js';
+import { expandDeepGlobs } from './expand-deep-globs.js';
+import { withMacKnownSecrets } from './mac-known-secrets.js';
+import { noteRenderedSecrets } from './secret-file-activity.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -35,7 +38,8 @@ function protectedEntries(
   { roots, writable }: CodexFilePolicy,
   onMissingTargets?: (targets: string[]) => void,
   metadataFolders: readonly string[] = [],
-  linuxBelowFull = false
+  linuxBelowFull = false,
+  sessionId?: string
 ): Record<string, CodexFilesystemValue> {
   const entries: Record<string, 'read' | 'deny'> = {};
   // The keys built as globs; any other key is an exact path, whatever it holds.
@@ -189,8 +193,26 @@ function protectedEntries(
     ...writable.flatMap(spellings),
     ...tmp.flatMap(spellings),
   ]);
-  // The scan step adds only glob exclusions.
-  return codexExactKeys(scanned, (key) => globs.has(key) || !(key in collapsed));
+  // macOS only: a deep glob would stop every folder under its base being
+  // removed or renamed (DOR-4358), so name the matches instead, each as a glob
+  // for that one path. The working folders are scanned now; every other base in
+  // the background. A file that appeared since the chat's last render gets an
+  // Activity line.
+  const platform = process.platform;
+  const exact = new Map<string, ReadonlySet<string>>();
+  const expanded = expandDeepGlobs(scanned, {
+    platform,
+    working: [...activeFolders, ...writable.flatMap(spellings)],
+    onExact: (base, keys) => exact.set(base, keys),
+  });
+  if (platform === 'darwin' && sessionId !== undefined) noteRenderedSecrets(sessionId, exact);
+  const finished = withMacKnownSecrets(expanded, {
+    homes: spellings(roots.home),
+    data: roots.data,
+    platform,
+  });
+  // The scan, expansion and sign-in steps add only glob keys.
+  return codexExactKeys(finished, (key) => globs.has(key) || !(key in collapsed));
 }
 
 /**
@@ -206,7 +228,8 @@ export function codexProtectedConfig(
   cwd: string,
   policy: CodexFilePolicy = { roots: turnProtectedRoots(cwd), writable: [] },
   settings: Pick<SessionSettings, 'permissionMode'> = {},
-  onMissingTargets?: (targets: string[]) => void
+  onMissingTargets?: (targets: string[]) => void,
+  sessionId?: string
 ): NonNullable<CodexOptions['config']> {
   const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
   const metadataRules = gitMetadataReadRules([cwd, ...policy.writable], policy.roots, {
@@ -225,7 +248,8 @@ export function codexProtectedConfig(
     policy,
     onMissingTargets,
     metadataFolders,
-    linuxBelowFull
+    linuxBelowFull,
+    sessionId
   );
   const profile = codexPermissionProfile(settings);
   return {
