@@ -14,6 +14,8 @@ amends: null
 
 Accepted — specified by `specs/runtime-interrupt-receipts/02-specification.md` (DOR-1303).
 
+**Planned amendment** (`specs/space-computer-contract/02-specification.md` §17.5, with its step W17): a new observed ending, `lost_contact`. What DorkOS observed is that the computer running the turn was not heard from within the life of the run's rules copy. It never claims the turn stopped or finished.
+
 ## Context
 
 `AgentRuntime.interruptQuery` answered with a boolean, and every stop-shaped verb in the

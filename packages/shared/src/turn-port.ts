@@ -53,6 +53,17 @@ import {
   SessionSettingsSchema,
 } from './schemas.js';
 import type { DirectoryGrant, TurnPermissionCeiling } from './agent-runtime.js';
+import { RunEndingSchema, RunStatusSchema, type RunStatus } from './run-schemas.js';
+
+// The record's words live in `run-schemas.ts`, which the session stream reads too.
+export {
+  RunEndingSchema,
+  RunStatusSchema,
+  WaitReasonSchema,
+  type RunEnding,
+  type RunStatus,
+  type WaitReason,
+} from './run-schemas.js';
 
 // === Turn origin ===
 
@@ -572,21 +583,6 @@ export const StartTurnInputSchema = z.strictObject({
 /** What a caller hands `start()`. See {@link StartTurnInputSchema}. */
 export type StartTurnInput = z.infer<typeof StartTurnInputSchema>;
 
-/** The run record's eight statuses (spec §4.3). */
-export const RunStatusSchema = z.enum([
-  'queued',
-  'starting',
-  'started',
-  'running',
-  'ended',
-  'settled',
-  'cancelled',
-  'superseded',
-]);
-
-/** A run's status. See {@link RunStatusSchema}. */
-export type RunStatus = z.infer<typeof RunStatusSchema>;
-
 /**
  * The space face's answer to `start()`, given at acceptance, never at turn
  * start (spec §3.1). `queuePosition` is 1-based, as the message receipt's is:
@@ -707,51 +703,11 @@ export type TurnStartAnswer = z.infer<typeof TurnStartAnswerSchema>;
 
 // === Facts ===
 
-/**
- * How a run's turn ended, as DorkOS observed it (spec §4.4). DorkOS never
- * writes an ending it did not observe (ADR 260823-021312).
- *
- * - `completed`, `failed`: the runtime's turn ended on its own.
- * - `stopped`: a stop ended it, proven by a receipt that observed the end or
- *   by the runtime's own `turn_end` reporting an interrupt.
- * - `limited`: a usage limit ended it.
- * - `refused`: the runtime refused before the agent saw it.
- * - `shutdown`: DorkOS ended it while shutting down gracefully.
- * - `process_died`: the process ended with no `turn_end`.
- */
-export const RunEndingSchema = z.enum([
-  'completed',
-  'failed',
-  'stopped',
-  'limited',
-  'refused',
-  'shutdown',
-  'process_died',
-]);
-
-/** How a run ended. See {@link RunEndingSchema}. */
-export type RunEnding = z.infer<typeof RunEndingSchema>;
-
 /** Why a run exists: a new turn, or a continuation after a restart (spec §4.1). */
 export const AttemptReasonSchema = z.enum(['initial', 'restart']);
 
 /** Why a run exists. See {@link AttemptReasonSchema}. */
 export type AttemptReason = z.infer<typeof AttemptReasonSchema>;
-
-/**
- * Why a `queued` run is waiting (spec §3.5, §4.1). Admission's answer; the
- * computer face never gives one.
- */
-export const WaitReasonSchema = z.enum([
-  'chat_busy',
-  'agent_busy',
-  'machine_full',
-  'paused',
-  'held_after_restart',
-]);
-
-/** Why a run waits. See {@link WaitReasonSchema}. */
-export type WaitReason = z.infer<typeof WaitReasonSchema>;
 
 /** One piece of background work a run's process holds: its kind and a label (spec §7.4). */
 const BackgroundWorkEntrySchema = z.strictObject({

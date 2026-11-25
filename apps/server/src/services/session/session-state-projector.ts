@@ -210,6 +210,10 @@ const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
   //   `spin-off-chats` §6), for the same reason `queue_update` is here: it is
   //   about the chat, not the words of the turn running in it.
   'chat_activity',
+  // - **`run_update`** is the run record's word on the chat's runs (spec
+  //   `turns-survive-restarts` §4.6), whole every time like `queue_update`, and
+  //   for its reason: a stale copy replayed inside a turn would undo a fresh one.
+  'run_update',
 ]);
 
 /**
@@ -1308,9 +1312,7 @@ export class SessionStateProjector {
     // `BLOCKING_INTERACTION_EVENT_TYPES` is the one list — the Telegram
     // adapter stops its typing indicator off the same predicate
     // (`adapters/telegram/outbound.ts`), so the two cannot drift.
-    if (!isBlockingInteractionEvent(event)) {
-      return;
-    }
+    if (!isBlockingInteractionEvent(event)) return;
     const id = event.id;
     const entry = pendingInteractionEntry(event);
     this.interactions.set(id, entry);
@@ -1896,7 +1898,7 @@ export class SessionStateProjector {
    * drift apart.
    */
   private readQueue(): QueuedMessage[] {
-    return getMessageQueueStore()?.list(this._sessionId).map(toQueuedMessage) ?? [];
+    return getMessageQueueStore()?.listShown(this._sessionId).map(toQueuedMessage) ?? [];
   }
 
   /**

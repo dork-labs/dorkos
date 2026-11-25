@@ -1254,11 +1254,13 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
 
     const messages = await call(server, 'GET', `${S}/${sessionId}/messages`);
     expect(messages.status).toBe(200);
+    // A log-backed history row is named by its turn's `turn_start` seq, and the
+    // run record's `run_update` for the accepted message takes a seq before it.
     expect(messages.json).toEqual({
       messages: [
-        { id: 'user-3', role: 'user', content: 'hello', timestamp: expect.any(String) },
+        { id: 'user-4', role: 'user', content: 'hello', timestamp: expect.any(String) },
         {
-          id: 'assistant-3',
+          id: 'assistant-4',
           role: 'assistant',
           content: 'Echo: hello',
           timestamp: expect.any(String),
@@ -1587,11 +1589,13 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
       'queuedMessages',
       'canvas',
       'cursor',
+      // Decorated after the runtime's snapshot, beside the canvas (DOR-5212).
+      'runs',
     ]);
     const cursor = snapshot!.data.cursor as number;
     expect(snapshot!.data.messages).toEqual([
-      { id: 'user-3', role: 'user', content: 'hello', timestamp: expect.any(String) },
-      { id: 'assistant-3', role: 'assistant', content: 'Echo: hello' },
+      { id: 'user-4', role: 'user', content: 'hello', timestamp: expect.any(String) },
+      { id: 'assistant-4', role: 'assistant', content: 'Echo: hello' },
     ]);
 
     // A live turn arrives as frames, each with its id and the next seq.
@@ -1599,7 +1603,12 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     const live = await stream.waitFor((text) => text.includes('event: turn_end'));
     const liveFrames = framesOf(live).slice(1);
     expectGapFree(liveFrames, cursor + 1);
-    expect(liveFrames.map((frame) => frame.event)).toEqual([
+    // The run record's `run_update` frames ride between the turn's (DOR-5212):
+    // one for the accepted message before its `turn_start`, then one per move.
+    // How many land before `turn_end` depends on when its settle lands, so the
+    // turn's own order is pinned apart from them.
+    const events = liveFrames.map((frame) => frame.event);
+    expect(events.filter((event) => event !== 'run_update')).toEqual([
       'queue_update',
       'turn_start',
       'queue_update',
@@ -1607,8 +1616,11 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
       'text_delta',
       'turn_end',
     ]);
+    expect(events.indexOf('run_update')).toBeGreaterThan(-1);
+    expect(events.indexOf('run_update')).toBeLessThan(events.indexOf('turn_start'));
+    const delta = liveFrames.find((frame) => frame.event === 'text_delta')!;
     expect(live).toContain(
-      `\nevent: text_delta\ndata: {"type":"text_delta","text":"Echo: second","seq":${cursor + 5}}\n\n`
+      `\nevent: text_delta\ndata: {"type":"text_delta","text":"Echo: second","seq":${seqOf(delta.id!)}}\n\n`
     );
     const lastId = liveFrames.at(-1)!.id!;
     stream.close();

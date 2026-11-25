@@ -234,6 +234,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'heartbeat.status': 'local',
   'heartbeat.wakers_off': 'local',
   'heartbeat.choose_triage_credits': 'local',
+  // A chat's run records: statuses, ids, endings and fixed DorkOS lines. A
+  // turn's words stay in its queue row and its runtime's transcript (§4.1).
+  'runs.chat_runs': 'local',
   // Folder names, workspaces and the template catalog: what is on this
   // computer, written by the team.
   'directory.browse': 'local',

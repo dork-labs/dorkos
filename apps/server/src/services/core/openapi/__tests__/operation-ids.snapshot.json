@@ -194,6 +194,7 @@
   "GET /api/sessions/{id}/limit-history": "sessions.getLimitHistory",
   "GET /api/sessions/{id}/messages": "sessions.getMessages",
   "GET /api/sessions/{id}/queue": "sessions.listQueue",
+  "GET /api/sessions/{id}/runs": "runs.chat_runs",
   "GET /api/sessions/{id}/settings": "sessions.getSettings",
   "GET /api/sessions/{id}/tasks": "sessions.getTasks",
   "GET /api/shapes": "shapes.get",

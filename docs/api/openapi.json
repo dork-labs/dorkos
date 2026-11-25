@@ -3259,6 +3259,9 @@
             "items": {
               "$ref": "#/components/schemas/QueuedChatEntry"
             }
+          },
+          "restored": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -6205,6 +6208,12 @@
               "$ref": "#/components/schemas/CanvasDocument"
             }
           },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatRun"
+            }
+          },
           "cursor": {
             "type": "integer",
             "minimum": 0
@@ -7910,6 +7919,32 @@
             "required": [
               "seq",
               "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "run_update"
+                ]
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatRun"
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "runs"
             ]
           }
         ]
@@ -9914,6 +9949,158 @@
           "not-stageable",
           "turn-owned-elsewhere",
           "pending-interaction"
+        ]
+      },
+      "ChatRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chatSeq": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "openedBy": {
+            "type": "string",
+            "enum": [
+              "caller",
+              "runtime",
+              "recovery"
+            ]
+          },
+          "attempt": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "waitReason": {
+            "$ref": "#/components/schemas/RunWaitReason"
+          },
+          "queueMessageId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "queuePosition": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "waitingOnPerson": {
+            "type": "boolean"
+          },
+          "ending": {
+            "$ref": "#/components/schemas/RunEnding"
+          },
+          "notice": {
+            "$ref": "#/components/schemas/RunNotice"
+          },
+          "runtimeTurnRef": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionLaunchWarning"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "chatSeq",
+          "status",
+          "openedBy",
+          "attempt",
+          "waitReason",
+          "queueMessageId",
+          "queuePosition",
+          "waitingOnPerson",
+          "ending",
+          "notice",
+          "runtimeTurnRef",
+          "warnings",
+          "createdAt",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "RunStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "starting",
+          "started",
+          "running",
+          "ended",
+          "settled",
+          "cancelled",
+          "superseded"
+        ]
+      },
+      "RunWaitReason": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "chat_busy",
+          "agent_busy",
+          "machine_full",
+          "paused",
+          "held_after_restart",
+          null
+        ]
+      },
+      "RunEnding": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "completed",
+          "failed",
+          "stopped",
+          "limited",
+          "refused",
+          "shutdown",
+          "process_died",
+          null
+        ]
+      },
+      "RunNotice": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "restart_stopped",
+          null
         ]
       },
       "SessionStatus": {
@@ -21937,6 +22124,27 @@
         },
         "required": [
           "useCredits"
+        ]
+      },
+      "ChatRunsPage": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatRun"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "runs",
+          "nextCursor"
         ]
       },
       "BrowseDirectoryResponse": {
@@ -45104,6 +45312,32 @@
                       "required": [
                         "seq",
                         "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "run_update"
+                          ]
+                        },
+                        "runs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatRun"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "runs"
                       ]
                     },
                     {
@@ -108422,6 +108656,163 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/runs": {
+      "get": {
+        "operationId": "runs.chat_runs",
+        "tags": [
+          "Runs"
+        ],
+        "summary": "List a chat’s runs",
+        "description": "A chat’s runs, from its run record: the live run, the runs waiting behind it with their place and why they wait, and, while nothing is live, the run that ended last, with how it ended and the line a person sees (`restart_stopped`: DorkOS restarted during that reply and nothing continues it). Oldest first; page with `limit` and the returned `nextCursor`. Statuses only, never what was said.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many runs this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many runs this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List a chat’s runs result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRunsPage"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
