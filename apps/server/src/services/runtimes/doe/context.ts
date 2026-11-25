@@ -120,7 +120,12 @@ export interface DoeContextOptions {
  * loaded and is false once they are not.
  */
 export async function buildDoeContextParts(options: DoeContextOptions): Promise<ContextPart[]> {
-  const append = await buildAgentContextAppend(options.agentPath, options.cwd, options.source);
+  const append = await buildAgentContextAppend(
+    options.agentPath,
+    options.cwd,
+    options.source,
+    true // Doe loads the home's skills itself (`resources.ts`)
+  );
   const visibility = options.hostConnected
     ? await resolveToolVisibilityFor(options.agentPath)
     : undefined;

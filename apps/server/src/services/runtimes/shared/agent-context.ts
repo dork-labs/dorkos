@@ -26,6 +26,7 @@
  * @module services/runtimes/shared/agent-context
  */
 import type { AgentHome } from '../../core/agent-identity/index.js';
+import { buildHomeSkillsBlock } from './home-skills-block.js';
 import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
 import {
@@ -743,12 +744,14 @@ const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '', par
  * @param source - Where the facts are read from. A turn never passes one; the
  *   context viewer passes the template source so the same builders write the
  *   template (`agent-context-source.ts`).
+ * @param loadsHomeSkills - The runtime loads the home's skills itself (Doe), so they aren't listed.
  * @returns The joined blocks, or `''` when nothing could be built.
  */
 export async function buildAgentContextAppend(
   home: AgentHome | undefined,
   cwd: string,
-  source: AgentContextSource = diskContextSource
+  source: AgentContextSource = diskContextSource,
+  loadsHomeSkills = false
 ): Promise<AgentContextAppend> {
   const [agent, profile, envBlock] = await Promise.all([
     home ? settle(buildAgentBlock(home, source), EMPTY_APPEND) : EMPTY_APPEND,
@@ -756,20 +759,17 @@ export async function buildAgentContextAppend(
     settle(buildEnvBlock(cwd, source), ''),
   ]);
 
-  // A session with no agent (no home, no manifest, or a failed read) still gets
-  // the working rules: a person can be stuck there too.
-  const rules = agent.text ? '' : buildWorkingRulesBlock();
-
-  // Assembled twice from the same parts — see `buildAgentBlock` for why the
-  // memory segment is left OUT of `stable` rather than cut out of `text`.
+  const rules = agent.text ? '' : buildWorkingRulesBlock(); // a session with no agent too
+  // Its own skills, outside its home (DOR-3941); not in the template.
+  const listSkills = home && agent.text && !loadsHomeSkills && source === diskContextSource;
+  const skills = listSkills ? buildHomeSkillsBlock(home, cwd) : '';
+  // Assembled twice from the same parts: `buildAgentBlock` says why `stable` has no memory.
+  const rest = [rules, skills, profile, envBlock].filter(Boolean);
   const append = {
-    text: [agent.text, rules, profile, envBlock].filter(Boolean).join('\n\n'),
-    stable: [agent.stable, rules, profile, envBlock].filter(Boolean).join('\n\n'),
+    text: [agent.text, ...rest].filter(Boolean).join('\n\n'),
+    stable: [agent.stable, ...rest].filter(Boolean).join('\n\n'),
     memory: agent.memory,
-    parts: [
-      ...(agent.parts ?? []),
-      ...[rules, profile, envBlock].filter(Boolean).map((text) => ({ block: null, text })),
-    ],
+    parts: [...(agent.parts ?? []), ...rest.map((text) => ({ block: null, text }))],
   };
 
   logBlockSizes(append.text);
