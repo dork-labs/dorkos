@@ -51,6 +51,7 @@ import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import {
   CapabilityGateRefusal,
   type CapabilityDefinition,
+  type CapabilityHandlerContext,
   type CapabilityInvocationObserver,
 } from '../capabilities/index.js';
 
@@ -103,6 +104,64 @@ function requestOutcome(
   };
 }
 
+/** The machine tag on a person's read past an area Blocked for agents (DOR-4978). */
+export const PERSON_READ_ACTION = 'capability.rest_proof_read';
+
+/** What the audit row says about why that read ran, for a person reading the log. */
+export const PERSON_READ_REASON = 'Your own read in the app, past an area blocked for agents';
+
+/** How long one person's repeated read of one thing, from one sign-in or device, is one row. */
+export const PERSON_READ_WINDOW_MS = 10 * 60 * 1000;
+
+/** How many open windows the recorder remembers; past this, the oldest is forgotten. */
+export const PERSON_READ_MAX_WINDOWS = 1000;
+
+/**
+ * Record a person's reads past an area Blocked for agents, at most one row per
+ * person, sign-in or address, and capability in each
+ * {@link PERSON_READ_WINDOW_MS} (the app polls). The first read in a window is
+ * always written, and a read that failed is always written: only successful
+ * reads are grouped. At most {@link PERSON_READ_MAX_WINDOWS} windows are kept;
+ * forgetting one only writes one more row.
+ *
+ * @returns The recorder; it keeps the open windows in memory.
+ */
+export function personReadRecorder(): (
+  capability: CapabilityDefinition,
+  context: CapabilityHandlerContext,
+  ok: boolean,
+  readGroup: string | undefined
+) => void {
+  // Oldest first: a window is deleted and set again when it reopens.
+  const opened = new Map<string, number>();
+  return (capability, context, ok, readGroup) => {
+    const now = Date.now();
+    if (ok) {
+      // With login off there is no signed-in person, so the person part is
+      // empty and the sign-in or address alone tells readers apart.
+      const key = [context.userId ?? '', readGroup ?? '', capability.id].join('|');
+      const since = opened.get(key);
+      if (since !== undefined && now - since < PERSON_READ_WINDOW_MS) return;
+      opened.delete(key);
+      opened.set(key, now);
+      for (const [other, at] of opened) {
+        if (opened.size <= PERSON_READ_MAX_WINDOWS && now - at < PERSON_READ_WINDOW_MS) break;
+        opened.delete(other);
+      }
+    }
+    recordAudit({
+      action: PERSON_READ_ACTION,
+      operation: 'access',
+      target: { type: 'capability', id: capability.id, name: capability.title },
+      outcome: ok ? 'ok' : 'failed',
+      reason: PERSON_READ_REASON,
+      summary: ok
+        ? `Read ${capability.title}, which agents are blocked from`
+        : `Tried to read ${capability.title}, which agents are blocked from, and it failed`,
+    });
+  };
+}
+
 /**
  * Build the {@link CapabilityInvocationObserver} that records agent-attributed
  * capability invocations in the Activity feed.
@@ -116,12 +175,16 @@ function requestOutcome(
 export function createCapabilityAttributionObserver(
   activityService: ActivityService
 ): CapabilityInvocationObserver {
-  return ({ capability, context, ok, error }) => {
+  const recordPersonRead = personReadRecorder();
+  return ({ capability, context, ok, error, readGroup }) => {
     const identity = context.identity;
     // An anonymous ordinary change is the audit log's alone; an anonymous
     // irreversible action is also the feed's (see the module TSDoc). The
-    // registry never reports an anonymous read.
+    // registry reports no anonymous read but the one below.
     if (!identity && capability.tier !== 'destructive') {
+      // The person's own read past an area Blocked for agents is the one read
+      // reported (DOR-4978): recorded as the request's person, from its proof.
+      if (context.personRead) return recordPersonRead(capability, context, ok, readGroup);
       if (capability.tier === 'observe') return;
       // In session, the scope around this observer is the person whose message
       // started the turn, and an in-session call with no identity is still an

@@ -205,6 +205,7 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
         id: served.id,
         input: requestInput(c, surface),
         ...(surface.success ? { success: surface.success } : {}),
+        rest: true,
       });
     };
     MOUNT_HANDLERS.add(handler);
