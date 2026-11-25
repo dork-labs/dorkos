@@ -57,7 +57,9 @@ import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
 import { turnProtectedRoots } from '../../shared/policy/turn-protected-roots.js';
 import type { ProtectedPathRoots } from '../../../core/protected-paths/protected-path-check.js';
-import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
+import { checkShellCommand } from '../../shared/policy/package-hooks.js';
+import { checkShellProtectedWrites } from '../../shared/policy/shell-protected-writes.js';
+import type { ShellChecker } from '../../claude-code/shell-guard/guard-host.js';
 import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
 import { HeavyShellSlots, holdHeavyShell } from './load-gate-hold.js';
 import {
@@ -290,6 +292,8 @@ export interface ApprovalGateDeps {
   registry: OpenCodeSessionRegistry;
   /** The machine-wide load gate a heavy `bash` ask waits in (tests; the server's own otherwise). */
   loadGate?: RuntimeWaitDeps;
+  /** The shell guard's check a `bash` ask goes through (tests; the server's own otherwise). */
+  shellCheck?: ShellChecker;
 }
 
 /**
@@ -370,21 +374,25 @@ export async function rejectPermissionWithReason(
 }
 
 /**
- * Run the installed packages' shell guards for one `bash` ask (DOR-4379).
+ * Check one `bash` ask: the protected-files list first, at every level
+ * (`shell-protected-writes.ts`, DOR-4522), then the installed packages' own
+ * shell guards (DOR-4379).
  *
  * The command rides the ask's `metadata.command`. One that names none is
- * refused when a shell check applies (see `checkShellCommand`), and a check
- * that throws is refused too.
+ * refused at Full, and when a package's shell check applies (see
+ * `checkShellCommand`); a check that throws is refused too.
  *
  * @param deps - The runtime state, for the live permission mode
  * @param turn - The turn's routing: session and working directory
  * @param approval - The mapped `bash` ask
+ * @param check - The turn's protected roots, and whether the ask runs at Full
  */
 async function shellGuardVerdict(
   deps: ApprovalGateDeps,
   turn: ApprovalRouting,
-  approval: ApprovalEvent
-): Promise<ShellCommandVerdict> {
+  approval: ApprovalEvent,
+  check: { roots: ProtectedPathRoots; full: boolean }
+): Promise<{ allowed: true } | { allowed: false; reason: string; reasonType: string }> {
   let command: string | undefined;
   try {
     const parsed = (JSON.parse(approval.input) as { command?: unknown }).command;
@@ -392,20 +400,28 @@ async function shellGuardVerdict(
   } catch {
     command = undefined;
   }
+  const listed = await checkShellProtectedWrites({
+    command,
+    ...check,
+    runtime: 'opencode',
+    ...(deps.shellCheck ? { check: deps.shellCheck } : {}),
+  });
+  if (!listed.allowed) return { ...listed, reasonType: 'protected_path' };
   const permissionMode = deps.registry.get(turn.sessionId)?.permissionMode;
   try {
-    return await checkShellCommand({
+    const verdict = await checkShellCommand({
       runtime: 'opencode',
       cwd: turn.cwd,
       command,
       sessionId: turn.sessionId,
       ...(permissionMode !== undefined ? { permissionMode } : {}),
     });
+    return verdict.allowed ? verdict : { ...verdict, reasonType: 'package_hook' };
   } catch (err) {
     logger.warn('[PackageHooks] OpenCode shell check failed', logError(err));
     return {
       allowed: false,
-      packageName: 'DorkOS',
+      reasonType: 'package_hook',
       reason: "DorkOS could not run this project's safety checks, so this command was blocked.",
     };
   }
@@ -559,11 +575,15 @@ async function* decideApproval(
       );
       return;
     }
-    // An installed package's own shell guards answer next, before folder grants
-    // and before the mode's auto-approve, so Full cannot skip them. OpenCode
-    // has no hooks of its own (DOR-4379).
+    // The shell's own checks answer next, before folder grants and before the
+    // mode's auto-approve, so Full cannot skip them: the protected-files list
+    // (DOR-4522), then an installed package's own guards. OpenCode has no
+    // hooks of its own (DOR-4379).
+    const liveMode = readOpenCodeTurnMode(deps.registry, sessionId, turn.sendPermissionMode);
+    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (approval.toolName === 'bash') {
-      const verdict = await shellGuardVerdict(deps, turn, approval);
+      const full = mode === 'bypassPermissions';
+      const verdict = await shellGuardVerdict(deps, turn, approval, { roots, full });
       if (!verdict.allowed) {
         // The model reads the guard's words as the tool's error (DOR-4447);
         // the person sees them on the event below.
@@ -578,7 +598,7 @@ async function* decideApproval(
           data: {
             toolCallId: approval.toolCallId,
             toolName: approval.toolName,
-            reasonType: 'package_hook',
+            reasonType: verdict.reasonType,
             reason: verdict.reason,
             message: verdict.reason,
           },
@@ -609,8 +629,6 @@ async function* decideApproval(
         );
       }
     }
-    const liveMode = readOpenCodeTurnMode(deps.registry, sessionId, turn.sendPermissionMode);
-    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (
       grantVerdict !== 'deny' &&
       resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'

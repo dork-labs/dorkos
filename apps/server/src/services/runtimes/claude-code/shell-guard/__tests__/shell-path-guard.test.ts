@@ -893,6 +893,29 @@ describe('shell writes to the Terminal command', () => {
   });
 });
 
+// DOR-4522: OpenCode's and Doe's shells have no other stop, so for them every write on the
+// protected-files list counts, an installed package's folder among them.
+describe('shell writes to the protected-files list', () => {
+  const listed = () => ({ ...roots, protectedWrites: true });
+  const plugin = () => path.join(roots.dorkHome, 'plugins', 'acme');
+
+  it.each([
+    ['touching a file in an installed package', () => `touch ${plugin()}/skills/x/SKILL.md`],
+    ['a relative write from inside it', () => `cd ${plugin()} && echo x > hooks.json`],
+    ['a script writing from inside it', () => `cd ${plugin()} && python3 -c "open('a','w')"`],
+    ['copying over the config', () => `cp /tmp/made-up ${roots.dorkHome}/config.json`],
+    ['removing a folder that holds one', () => `rm -rf ${roots.dorkHome}/cache`],
+  ])('refuses %s, at every level', (_label, command) => {
+    expect(shellWriteVerdict(command(), listed())).toBe('writes');
+    expect(shellWriteVerdict(command(), { ...listed(), full: true })).toBe('writes');
+  });
+
+  it('leaves ordinary writes alone, and Claude Code’s own reading unchanged', () => {
+    expect(shellWriteVerdict(`touch ${roots.cwd}/notes.txt`, listed())).toBe('none');
+    expect(shellWriteVerdict(`touch ${plugin()}/x`, roots)).toBe('none');
+  });
+});
+
 describe('commandWritesAgentSetup', () => {
   it.each([
     ['a redirect', () => `echo '{}' > ${agent}/.claude/settings.json`],
