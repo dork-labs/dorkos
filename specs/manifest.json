@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261124-194924",
+      "slug": "turns-survive-restarts",
+      "title": "Turns survive restarts: the turn port, the run record, the outbox and capped recovery",
+      "created": "2026-11-24",
+      "status": "specified",
+      "linearIssue": "DOR-5153"
+    },
+    {
       "id": "261124-194020",
       "slug": "space-computer-contract",
       "title": "The space-computer contract: one contract between the space side and the computer side",
