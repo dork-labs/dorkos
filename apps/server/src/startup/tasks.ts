@@ -35,6 +35,8 @@ import {
 } from '../services/tasks/task-scheduler-service.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { setTasksEnabled } from '../services/tasks/task-state.js';
+import { setTaskViewReader } from '../services/tasks/view/task-view-capabilities.js';
+import { taskViewReader } from '../routes/task-view-reader.js';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import { ensureDefaultTemplates } from '../services/tasks/task-templates.js';
 import { registerAgentModeEscalators } from '../services/tasks/agent-mode/agent-mode-escalation.js';
@@ -202,6 +204,8 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       ...(meshCore && { meshCore }),
       activity: activityService,
     };
+    // The app's task reads, served by the capability mount (DOR-4978).
+    setTaskViewReader(taskViewReader(honoDeps.tasks));
     setTasksEnabled(true);
     mountedRouters.push('tasks');
     // A task's mode or approval, named by an agent, is decided as its own action (DOR-3703).

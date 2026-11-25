@@ -52,6 +52,8 @@ export type {
 /** Options for listing runs. */
 interface ListRunsOptions {
   taskId?: string;
+  /** Only runs of these schedules; a reader's own reach (`tasks.view_runs`). Never empty. */
+  taskIds?: readonly string[];
   status?: string;
   limit?: number;
   offset?: number;
@@ -538,9 +540,8 @@ export class TaskStore {
     const offset = opts.offset ?? 0;
 
     const conditions = [];
-    if (opts.taskId) {
-      conditions.push(eq(pulseRuns.scheduleId, opts.taskId));
-    }
+    if (opts.taskId) conditions.push(eq(pulseRuns.scheduleId, opts.taskId));
+    if (opts.taskIds) conditions.push(inArray(pulseRuns.scheduleId, [...opts.taskIds]));
     if (opts.status) {
       conditions.push(
         eq(pulseRuns.status, opts.status as (typeof pulseRuns.status.enumValues)[number])

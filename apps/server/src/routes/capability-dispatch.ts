@@ -45,7 +45,6 @@ import {
   type CapabilityRegistry,
   type CapabilityRequestFacts,
 } from '../services/core/capabilities/index.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
 import { deviceIdOf } from '../services/core/auth/sessions/signed-in-devices.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -53,7 +52,12 @@ import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { refuseUnlessAccountOwner, presentsProgramCredential } from '../lib/caller-authority.js';
+import {
+  clearsTheAgentBar,
+  readCallerAuthority,
+  refuseUnlessAccountOwner,
+  presentsProgramCredential,
+} from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { heldWifiOwner, personProof } from '../services/todos/caller.js';
 import type { RequestFacts } from '../http/request-facts.js';
@@ -260,11 +264,15 @@ async function invokeAs(
  * @returns The derived answers; no header value is in them.
  */
 export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFacts {
+  let agentBar: boolean | undefined;
   let accountOwner: boolean | undefined;
   let ownerProven: boolean | undefined;
   let local: boolean | undefined;
   let held: boolean | undefined;
   return {
+    get clearsAgentBar() {
+      return (agentBar ??= clearsTheAgentBar(facts));
+    },
     get accountOwner() {
       return (accountOwner ??= refuseUnlessAccountOwner(facts) === undefined);
     },

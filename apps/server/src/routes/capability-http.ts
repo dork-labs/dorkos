@@ -66,6 +66,9 @@ export const HAND_SERVED_CAPABILITIES: Readonly<Record<string, string>> = Object
   'capabilities.list': 'routes/capabilities-catalog.ts; moves onto the mount with its page shape',
 });
 
+/** Why the task reads may skip the task step-up middleware. */
+const TASK_STEP_UP_WRITES_ONLY = 'The task step-up asks only before a write, and this is a read.';
+
 /**
  * Hand middleware a capability path may skip, keyed `METHOD /path skips ALL
  * /pattern` (Hono paths), each with why it has nothing to do there. Every
@@ -79,6 +82,11 @@ export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.fre
     'The session read guard acts only on a session id, and `running` is not one.',
   'GET /api/sessions/:id/runs skips ALL /api/sessions/:id/*':
     '`runs.chat_runs` folds the session read guard in: an agent gets 404 for a chat it may not read.',
+  // `askForPersonBeforeTaskWrite` asks for the step-up only before a write; these are reads.
+  'GET /api/tasks skips ALL /api/tasks': TASK_STEP_UP_WRITES_ONLY,
+  'GET /api/tasks skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
+  'GET /api/tasks/runs skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
+  'GET /api/tasks/runs/:id skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
 });
 
 /** What a declared path answers when its capability did not start on this server. */
