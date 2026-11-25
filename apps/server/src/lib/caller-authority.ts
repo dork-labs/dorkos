@@ -468,8 +468,7 @@ export function refuseFrontDoorChange(
   facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts,
   subject: string
 ): OperatorCookieRefusal | undefined {
-  const refusal =
-    currentServerRole() === 'hub' ? refuseOnHub(facts) : requirePersonAtThisComputer(facts);
+  const refusal = frontDoorRefusal(facts);
   if (!refusal) return undefined;
   return {
     status: 403,
@@ -479,6 +478,19 @@ export function refuseFrontDoorChange(
         ? `Change ${subject} on the computer DorkOS runs on.`
         : `Only the owner can change ${subject}, in the app.`,
   };
+}
+
+/**
+ * Why {@link refuseFrontDoorChange} refuses a caller, or `undefined` when it
+ * may act. For a capability's request facts, which carry the answer, never the
+ * request (`capabilityRequestFacts`).
+ *
+ * @param facts - The request's facts.
+ */
+export function frontDoorRefusal(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
+): PersonAtThisComputerRefusal | undefined {
+  return currentServerRole() === 'hub' ? refuseOnHub(facts) : requirePersonAtThisComputer(facts);
 }
 
 /** The hub's form of the front-door bar: the owner's own browser session. */

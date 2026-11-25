@@ -10,7 +10,7 @@
  * text (Security, Nov 12). No agent reads the Inbox (an agent caller gets an
  * empty list), and `relay: 'never'` keeps it off chat apps.
  *
- * The emitter is the sheet's tools route (`routes/mcp-server-sheet.ts`).
+ * The emitter is the sheet's tool check (`mcp.check_global_tools`, `global-mcp-person-capabilities.ts`).
  *
  * @module services/mesh/global-mcp/global-mcp-tool-added-notice
  */
