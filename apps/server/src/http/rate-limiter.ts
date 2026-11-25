@@ -231,11 +231,10 @@ export function honoRateLimit(options: HonoRateLimitOptions): MiddlewareHandler<
       if (options.onLimited) return options.onLimited(c);
       // A problem goes out as one; a protocol's own body keeps the bytes and
       // type Express's `res.json` sent.
-      return c.body(JSON.stringify(options.message), 429, {
-        'Content-Type': isProblem(options.message)
-          ? PROBLEM_CONTENT_TYPE
-          : 'application/json; charset=utf-8',
-      });
+      const type = isProblem(options.message)
+        ? { 'Content-Type': PROBLEM_CONTENT_TYPE }
+        : { 'Content-Type': 'application/json; charset=utf-8' };
+      return c.body(JSON.stringify(options.message), 429, type);
     }
     await next();
     // A handler that returns its own `Response` replaces the one `c.header`
