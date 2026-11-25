@@ -88,10 +88,6 @@ import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import { createHubComputerRoutes } from '../routes/hub-computers.js';
 import { createHubLinkRoutes, hubLinkBodyRule } from '../routes/hub-link.js';
 import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
-import {
-  createHeartbeatTriageRoutes,
-  type HeartbeatTriageRouterDeps,
-} from '../routes/heartbeat-triage.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
@@ -218,12 +214,6 @@ export interface ComposedGroupDeps {
    * when heartbeats start (`services/heartbeats`).
    */
   heartbeat?: HeartbeatRouterDeps;
-  /**
-   * The answer to "Run cheap checks on DorkOS credits?"
-   * (`PUT /api/heartbeats/triage-credits`). Handed over with
-   * {@link ComposedGroupDeps.heartbeat}.
-   */
-  heartbeatTriage?: HeartbeatTriageRouterDeps;
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
@@ -579,9 +569,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/owner-factors', createOwnerFactorRoutes());
   // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
   app.route('/api/documents', createDocLinkRoutes());
-  if (deps.heartbeatTriage) {
-    app.route('/api/heartbeats/triage-credits', createHeartbeatTriageRoutes(deps.heartbeatTriage));
-  }
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.localBrowser) {
     const viewerInput = () => env.DORKOS_AGENT_BROWSER_STREAM && env.DORKOS_AGENT_BROWSER_INPUT;

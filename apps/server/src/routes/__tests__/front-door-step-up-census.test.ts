@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { exportedHandler, unguardedWrites } from './front-door-write-flow.js';
 import { HELD_WRITES } from '../../services/core/auth/step-up/front-door-openapi.js';
+import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 
 const ROUTES = path.resolve(__dirname, '..');
 /** The groups DOR-4355 M3 held, each write route judged on its own. */
@@ -51,7 +52,6 @@ const GROUPS = [
   'session-relay',
   'session-relay-passkeys',
   'config',
-  'heartbeat-triage',
   'tasks',
   'mesh',
   'session-send-message',
@@ -225,7 +225,9 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',
   'front-door-step-up.ts': 'The shared helper itself rechecks the bar.',
   'capability-dispatch.ts':
-    'Reads the person bar only to open the person-only door (audience person) on a capability; it grants nothing, and the tier and permission gate still run inside registry.invoke (N).',
+    'Reads the person bar only to open the person-only door (audience person) on a capability, and runs a confirm-first capability’s account owner bar; it grants nothing, and the tier and permission gate still run inside registry.invoke (N). Confirm-first capabilities are checked below.',
+  'capability-confirm-first.ts':
+    'Holds a confirm-first capability call through runAccountWrite; every such capability is checked below.',
   // Shared bars and helpers: their callers are classified here one by one.
   'agent-instructions.ts': 'Reads an agent’s instructions; no write route.',
   'extension-write-binding.ts': 'Shared extension write bar; its callers are classified here.',
@@ -339,7 +341,6 @@ const NARROWING: Record<string, string[]> = {
   'session-relay POST /resume': ['paused'],
   'devices DELETE /sessions/:id': ['own'],
   'cloud PUT /credits/default': ['!useCredits'],
-  'heartbeat-triage PUT /': ['!useCredits'],
   // Not narrowing: an agent's link, which the tool gate already carded and decided.
   'marketplace/dev-links POST /dev-links': ['!person'],
   // Main's DOR-4204 routes: lowering the limit, or raising a price, answers at once.
@@ -593,7 +594,6 @@ describe('front-door write census', () => {
       'extensions-trusted-sources': '/api/extensions',
       'cloud-communities': '/api/cloud/communities',
       'session-relay-passkeys': '/api/session-relay/passkeys',
-      'heartbeat-triage': '/api/heartbeats/triage-credits',
       // DOR-4355 M3: where each group is mounted.
       'connector-management': '/api/connectors',
       'connector-resources': '/api/connectors',
@@ -637,6 +637,15 @@ describe('front-door write census', () => {
       if (!HELD_WRITES.has(key)) missing.push(key);
     }
     expect(missing).toEqual([]);
+  });
+
+  // ADR 261125-114705, decision 4: a confirm-first capability is held by the mount, not a route file.
+  it('documents every confirm-first capability’s route with a 428 response', () => {
+    const held = composeCapabilityRegistryForDocs()
+      .capabilities.filter((capability) => capability.confirmFirst !== undefined)
+      .map(({ surfaces }) => `${surfaces.http?.method} ${surfaces.http?.path}`);
+    expect(held).toEqual(['put /api/heartbeats/triage-credits']);
+    expect(held.filter((key) => !HELD_WRITES.has(key))).toEqual([]);
   });
 
   // Security S4 on DOR-4355 M3: a file judged per route is never also excused as a whole.

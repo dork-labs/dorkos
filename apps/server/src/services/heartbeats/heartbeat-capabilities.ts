@@ -2,6 +2,9 @@
  * The `heartbeat` capability domain (spec `heartbeats` §8): `end_beat`, the one
  * way a beat's words reach a person, and `heartbeat_status` (§10 PR 6,
  * `measures/status-capability.ts`), which any agent may read for any agent.
+ * Beside them, two the app calls: what cannot wake (`wakers-off/`), and the
+ * owner's confirm-first answer to the credits offer
+ * (`triage/triage-credits-capability.ts`), which no agent can call.
  *
  * ## Only a beat may call it
  *
@@ -37,6 +40,7 @@ import { EndBeatInputSchema, type EndBeatInput } from '@dorkos/shared/heartbeat-
 import { endBeatTurn, liveBeatTurn, noteBeatBypass, noteBeatChatSend } from './beat-turns.js';
 import { heartbeatStatusCapability } from './measures/status-capability.js';
 import { wakersOffCapability } from './wakers-off/wakers-off-capability.js';
+import { chooseTriageCreditsCapability } from './triage/triage-credits-capability.js';
 
 /** The MCP tool name, exported so prose that names it reads it from here. */
 export const END_BEAT_TOOL = 'end_beat';
@@ -145,6 +149,7 @@ export const heartbeatDomain: CapabilityDomain = {
     }),
     heartbeatStatusCapability,
     wakersOffCapability,
+    chooseTriageCreditsCapability,
   ],
 };
 

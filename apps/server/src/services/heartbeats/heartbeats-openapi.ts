@@ -1,15 +1,17 @@
 /**
- * The heartbeat routes' OpenAPI entries (spec `heartbeats` §6.3, §7.6).
+ * The heartbeat page's OpenAPI entry (spec `heartbeats` §7.6). The credits
+ * answer (`PUT /api/heartbeats/triage-credits`) is a capability's route, documented
+ * from its declaration (`heartbeat.choose_triage_credits`).
  *
  * @module services/heartbeats/heartbeats-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { HeartbeatStatusSchema, TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
+import { HeartbeatStatusSchema } from '@dorkos/shared/heartbeat-schemas';
 import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
- * Register `GET /api/agents/{id}/heartbeat` and `PUT /api/heartbeats/triage-credits`.
+ * Register `GET /api/agents/{id}/heartbeat`.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -42,28 +44,6 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
       },
       400: problemResponse('`invalid_request`: `days` is not a whole number from 1 to 90'),
       404: problemResponse('`not_found`: no agent with that id'),
-    },
-  });
-  registry.registerPath({
-    method: 'put',
-    path: '/api/heartbeats/triage-credits',
-    tags: ['Heartbeats'],
-    summary: 'Choose whether cheap checks run on DorkOS credits',
-    description:
-      'A person’s answer to the one-time offer: `true` is Use credits, `false` is Not now. ' +
-      'Owner only, and never an agent. Nothing is spent while the answer is not `true`.',
-    request: {
-      body: { content: { 'application/json': { schema: TriageCreditsChoiceSchema } } },
-    },
-    responses: {
-      200: {
-        description: 'The answer, stored',
-        content: { 'application/json': { schema: TriageCreditsChoiceSchema } },
-      },
-      400: problemResponse('`invalid_request`: the body is not an answer'),
-      403: problemResponse(
-        '`owner_only` or `person_only`: only the owner of this DorkOS can answer, in the app'
-      ),
     },
   });
 }

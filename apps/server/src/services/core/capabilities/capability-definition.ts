@@ -44,6 +44,7 @@ import type { InSessionCardKind } from './in-session-card.js';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import type { ApprovalSubjectDeclaration } from '../approvals/approval-subject.js';
 import type { GrantedApproval } from './tier-enforcement.js';
+import type { CapabilityConfirmFirst } from './declarations/confirm-first.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -360,6 +361,14 @@ export interface CapabilityDefinition<
    * lists for it.
    */
   wifi?: CapabilityWifiMode;
+  /**
+   * A confirm-first hold (ADR 261125-114705, decision 4): the call runs only
+   * after the person confirms it's them on the "Confirm it's you" sheet. The
+   * registry refuses it otherwise, and the HTTP mount holds it for the sheet;
+   * see {@link CapabilityConfirmFirst}. Only a person-only capability may
+   * declare one, and only the ids `CONFIRM_FIRST_CAPABILITY_IDS` lists.
+   */
+  confirmFirst?: CapabilityConfirmFirst<z.infer<In>>;
   /**
    * A cancel window this call may wait out INSTEAD of the approval card (spec
    * `trusted-by-default-flip` §5.6). Only `connectors.execute_destructive`

@@ -30,6 +30,7 @@ export const HELD_WRITES = new Set([
   'patch /api/config',
   'post /api/config/mcp/reveal-token',
   'post /api/config/mcp/rotate-token',
+  // A capability's route (`heartbeat.choose_triage_credits`, confirm-first): its 428 is added here too.
   'put /api/heartbeats/triage-credits',
   'post /api/tasks',
   'patch /api/tasks/{id}',
@@ -125,7 +126,6 @@ function nativeBody(path: string): z.ZodType {
   if (path === '/api/remote-access/mode')
     return z.object({ mode: z.enum(['off', 'byo', 'managed']) });
   if (path === '/api/lan-access') return z.object({ enabled: z.boolean() });
-  if (path === '/api/heartbeats/triage-credits') return z.object({ useCredits: z.boolean() });
   if (path === '/api/cloud/credits/default')
     return z.object({ runtime: z.string().min(1), useCredits: z.boolean() });
   if (path === '/api/cloud/communities')

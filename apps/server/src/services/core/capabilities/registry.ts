@@ -18,6 +18,7 @@
  * @module services/core/capabilities/registry
  */
 import { assertNarrowDeclarations } from './declarations/narrow-declarations.js';
+import { requireConfirmation } from './declarations/confirm-first.js';
 import type { CapabilityRequestFacts } from './context/request-facts.js';
 import { assertHttpSurface } from './input-projection.js';
 import { runAsAgent } from '../../audit/audit-trail.js';
@@ -208,6 +209,13 @@ export interface CapabilityInvocationContext {
    * fails closed. Never logged or returned; the gate never reads it.
    */
   request?: CapabilityRequestFacts;
+  /**
+   * A person's confirmation of a confirm-first call (`confirmFirst`), minted
+   * only by the HTTP mount once their step-up passed (`personConfirmed`), for
+   * one capability and one input, spent on use. Opaque; no surface reads it
+   * off the wire.
+   */
+  confirmed?: unknown;
   /** Process-authenticated caller resolved by a server-owned boundary. */
   /**
    * Which MCP server's tool list this call arrived through, set by the MCP
@@ -973,6 +981,9 @@ export function composeRegistry(
         rememberPackageReview = remember;
         if (change !== undefined) invocationContext.approvedChange = change;
       }
+
+      // A confirm-first call runs only once the person confirmed it (ADR 261125-114705, decision 4).
+      requireConfirmation(capability, parsed, supplied.confirmed);
 
       // Run as the caller (spec `audit-trail` PR2): an identified agent's call
       // runs inside its own audit scope, so a write the capability makes further
