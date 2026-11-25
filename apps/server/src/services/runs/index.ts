@@ -47,7 +47,6 @@ export {
   type TurnRun,
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
-export { chatRunsOf, noticeOf } from './run-view.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
   RUN_ENDS,

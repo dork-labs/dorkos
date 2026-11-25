@@ -830,7 +830,6 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // was not necessarily present for, and the queue is what matters.
             applyQueue(session, snapshot.queuedMessages);
             session.queueOutcomes = {};
-            applyRuns(session, snapshot.runs ?? []);
             // The server sends only the sign-in cards it is still carrying, so its
             // answer replaces this projection's grace bookkeeping wholesale
             // (DOR-1004). Keeping stale marks would retire a card the server just
@@ -847,6 +846,9 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // Re-baseline the live-children set against the server's own
             // answer (DOR-1100, `running-subagents.ts`).
             rebaseRunningSubagents(session, snapshot.status, session.inProgressTurn);
+            // After the rebase, which re-assigns the status: the record says
+            // whether the turn the snapshot shows open has in fact ended (§4.6).
+            applyRuns(session, snapshot.runs ?? []);
             session.lastAppliedSeq = snapshot.cursor;
             session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;

@@ -30,7 +30,7 @@ const LIVE: ReadonlySet<string> = new Set(LIVE_RUN_STATUSES);
  * @param run - The run.
  * @param continued - Whether a later run continues it.
  */
-export function noticeOf(run: TurnRun, continued: boolean): RunNotice | null {
+function noticeOf(run: TurnRun, continued: boolean): RunNotice | null {
   const finished = run.status === 'ended' || run.status === 'settled';
   return finished && run.ending === 'process_died' && !continued ? 'restart_stopped' : null;
 }

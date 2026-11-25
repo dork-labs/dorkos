@@ -45,14 +45,14 @@ beforeEach(() => {
 describe('a turn whose process died', () => {
   it('a window opened after it reads the ending, not "working"', () => {
     // The stream alone still says the turn runs: no `turn_end` ever came.
-    useSessionStreamStore.getState().applySnapshot(
-      SID,
-      snapshot({
-        status: { ...STATUS, lifecycle: 'streaming' },
-        inProgressTurn: [{ type: 'turn_start', seq: 3 }],
-        runs: [DIED],
-      })
-    );
+    // Frozen, as a parsed frame is: the store must never write into it.
+    const status = Object.freeze({ ...STATUS, lifecycle: 'streaming' as const });
+    useSessionStreamStore
+      .getState()
+      .applySnapshot(
+        SID,
+        snapshot({ status, inProgressTurn: [{ type: 'turn_start', seq: 3 }], runs: [DIED] })
+      );
 
     expect(session().status?.lifecycle).toBe('interrupted');
     expect(runNoticeOf(session().runs)).toBe('restart_stopped');

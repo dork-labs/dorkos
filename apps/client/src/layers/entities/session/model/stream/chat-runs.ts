@@ -51,7 +51,8 @@ export function applyRuns(session: RunFoldState, runs: ChatRun[]): void {
   if (!open) return;
   const run = runs.find((candidate) => candidate.runtimeTurnRef === open.seq);
   if (!run?.ending || (run.status !== 'ended' && run.status !== 'settled')) return;
-  session.status.lifecycle = lifecycleAfter(run.ending);
+  // A fresh object: a snapshot's status is the caller's, not a draft of this store's.
+  session.status = { ...session.status, lifecycle: lifecycleAfter(run.ending) };
   session.triggerPending = false;
 }
 
