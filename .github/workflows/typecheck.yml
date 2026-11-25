@@ -450,7 +450,7 @@ jobs:
       # config's shape (scripts/config-migration/shape.json, which must match
       # UserConfigSchema) at the base and at HEAD: a new member of an
       # existing section, a removal or a narrowed type fails unless the PR
-      # changes CONFIG_MIGRATIONS or adds a reason to
+      # adds a CONFIG_MIGRATIONS key or adds a reason to
       # scripts/config-migration/no-migration.json. Rides THIS job for the
       # file-size ratchet's reason: `typecheck` is required, unfiltered and
       # reports on `merge_group`, so no new required check. The base is chosen

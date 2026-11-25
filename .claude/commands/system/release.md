@@ -95,7 +95,7 @@ If backfilling: write one fragment per missing change under `changelog/unrelease
 
 Verify that any changes to the user-config schema since the last release have a paired `conf` migration. Missing migrations silently break upgrades for existing users, so catch it here before the tag is cut.
 
-Two parts of this are now code (DOR-5123), so this check is a second look rather than the only one: every PR runs `scripts/config-migration/check-config-migration.ts` in the required `typecheck` job, and `scripts/release/release-commit.ts` raises the version to the newest `CONFIG_MIGRATIONS` key above the last release (and refuses a key past the next minor). Still make sure the version you pick here is at or above that newest key.
+Two parts of this are now code (DOR-5123), so this check is a second look rather than the only one: every PR runs `scripts/config-migration/check-config-migration.ts` in the required `typecheck` job, and `scripts/release/release-commit.ts` raises the version to the newest `CONFIG_MIGRATIONS` key above the last release (and refuses one that is neither the next patch nor the next minor). Still make sure the version you pick here is at or above that newest key.
 
 **Do this check inline in the main context (no subagent).** The diff is small (usually <500 lines) and the judgment calls ("is this an added field with a default? a rename? a type change?") benefit from full project knowledge.
 

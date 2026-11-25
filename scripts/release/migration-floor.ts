@@ -7,10 +7,12 @@
  * 0.66.0 to 0.73.0 to reach its keys. So the planned version is the higher of
  * the fragments' bump and the newest key above the last release.
  *
- * A key past the next minor is refused, not followed: no PR opens a key that
- * far ahead on purpose (the table's rule is the key right above the newest
- * tag), so it is almost surely a typo, and following it would skip versions.
- * An explicit `--version` below the newest key is refused too.
+ * The newest key must be the next patch or the next minor after the last
+ * release, the only keys the table's own rule opens (the key right above the
+ * newest tag). Anything else is refused, not followed: it is almost surely a
+ * typo, and following it would skip versions. An explicit `--version` is a
+ * person's choice, so it may name any version at or above the newest key, and
+ * is refused below it.
  *
  * Reads the release point's table as text (`migration-table.ts`) and
  * runs nothing from it.
@@ -49,22 +51,25 @@ export function applyMigrationFloor(
   newest: string | undefined
 ): BumpDecision {
   if (newest === undefined) return decision;
-  const [major, minor] = parseVersion(previous, '--previous');
-  const nextMinor = `${major}.${minor + 1}.0`;
-  if (compareSemver(newest, nextMinor) > 0)
-    throw new ReleaseCommitError(
-      `${MIGRATIONS_FILE} has the key '${newest}', past the next minor (${nextMinor}) after ${previous}. A key that far ahead is almost surely a typo; fix it in a PR, or release by hand.`
-    );
   const withKey = { ...decision, migrationKey: newest };
-  if (compareSemver(decision.version, newest) >= 0) return withKey;
-  if (decision.bump === 'override')
+  if (decision.bump === 'override') {
+    if (compareSemver(decision.version, newest) >= 0) return withKey;
     throw new ReleaseCommitError(
       `--version ${decision.version} is below the newest config migration key, '${newest}', so that migration would never run.`
     );
-  const [, newMinor] = parseVersion(newest, 'the migration key');
+  }
+  const [major, minor, patch] = parseVersion(previous, '--previous');
+  const nextPatch = `${major}.${minor}.${patch + 1}`;
+  const nextMinor = `${major}.${minor + 1}.0`;
+  if (newest !== nextPatch && newest !== nextMinor)
+    throw new ReleaseCommitError(
+      `${MIGRATIONS_FILE} has the key '${newest}', which is neither the next patch (${nextPatch}) nor the next minor (${nextMinor}) after ${previous}. It is almost surely a typo; fix it in a PR, or name the version with --version.`
+    );
+  if (compareSemver(decision.version, newest) >= 0) return withKey;
+  // The fragments always reach the next patch, so a raise is to the next minor.
   return {
     ...withKey,
-    bump: newMinor === minor ? 'patch' : 'minor',
+    bump: 'minor',
     reason: `the config migration key '${newest}' runs only from ${newest}, above the ${decision.version} the fragments call for (${decision.reason})`,
     version: newest,
     raisedFrom: decision.version,

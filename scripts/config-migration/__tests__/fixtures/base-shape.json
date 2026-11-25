@@ -5,7 +5,7 @@
   "runtimes.accounts[].color": "null | string (default)",
   "runtimes.accounts[].id": "string",
   "server": "object (default)",
-  "server.port": "integer (default)",
+  "server.port": "integer where {\"maximum\":65535,\"minimum\":1} (default)",
   "ui": "object (default)",
   "ui.composer": "object (default)",
   "ui.composer.richText": "boolean (default)",

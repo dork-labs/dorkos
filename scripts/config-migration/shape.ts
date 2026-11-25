@@ -6,7 +6,8 @@
  * shape is what Ajv sees, not what the Zod source looks like: a comment, a
  * reworded `.describe()` or a moved declaration changes nothing here. Defaults
  * are recorded as present or absent, never by value, so changing a default is
- * not a shape change either.
+ * not a shape change either. Bounds, lengths, patterns and formats are kept
+ * (`where {...}`), so a tightened limit reads as a narrowing.
  *
  * A path is a dot-path from the root; `[]` steps into an array's elements and
  * `*` into a record's values. Each path maps to a signature:
@@ -15,7 +16,13 @@
  *   `string | null (default)`    a nullable string with a default
  *   `"dark" | "light"`           an enum, its values as JSON
  *   `number | undefined`         optional, no default: a file may leave it out
+ *   `integer where {"maximum":65535} (default)`   with its constraints
  *   `object` / `array`           a container; its members are their own paths
+ *
+ * A member of a union of objects (`oneOf` variants) is optional only when a
+ * branch that declares it leaves it optional: a member only one variant has is
+ * as required as that variant says, since stored elements of that variant
+ * must carry it.
  *
  * @module scripts/config-migration/shape
  */
@@ -29,18 +36,47 @@ export interface Signature {
   atoms: string[];
   /** The schema gives a default, so a file may leave it out. */
   hasDefault: boolean;
+  /** Constraint keywords (`maximum`, `pattern`, ...) to their values. */
+  constraints: Record<string, unknown>;
 }
 
 const DEFAULT_SUFFIX = ' (default)';
 const ABSENT = 'undefined';
 const ANY = 'any';
-const UNSUPPORTED = ['$ref', 'allOf', 'not', 'prefixItems', 'if', 'patternProperties'];
+const WHERE = ' where ';
+const UNSUPPORTED = [
+  '$ref',
+  'allOf',
+  'not',
+  'prefixItems',
+  'if',
+  'patternProperties',
+  'dependentRequired',
+  'dependentSchemas',
+  'contains',
+  'unevaluatedProperties',
+  'unevaluatedItems',
+];
+/** Bounds that refuse more as they rise, and that refuse more as they fall. */
+const LOWER_BOUNDS = ['minimum', 'exclusiveMinimum', 'minLength', 'minItems', 'minProperties'];
+const UPPER_BOUNDS = ['maximum', 'exclusiveMaximum', 'maxLength', 'maxItems', 'maxProperties'];
+/** Every constraint kept; any change to one of the last five reads as a narrowing. */
+const CONSTRAINTS = [
+  ...LOWER_BOUNDS,
+  ...UPPER_BOUNDS,
+  'multipleOf',
+  'pattern',
+  'format',
+  'uniqueItems',
+  'propertyNames',
+];
 
 type Node = Record<string, unknown>;
 interface Entry {
   atoms: Set<string>;
   hasDefault: boolean;
   absent: boolean;
+  constraints: Map<string, unknown[]>;
 }
 
 function asNode(value: unknown, path: string): Node {
@@ -63,10 +99,17 @@ function record(
   node: Node,
   absent: boolean
 ) {
-  const entry = acc.get(path) ?? { atoms: new Set<string>(), hasDefault: false, absent: false };
+  const entry = acc.get(path) ?? {
+    atoms: new Set<string>(),
+    hasDefault: false,
+    absent: false,
+    constraints: new Map<string, unknown[]>(),
+  };
   for (const atom of atoms) entry.atoms.add(atom);
   entry.hasDefault ||= 'default' in node;
   entry.absent ||= absent;
+  for (const key of CONSTRAINTS)
+    if (key in node) entry.constraints.set(key, [...(entry.constraints.get(key) ?? []), node[key]]);
   acc.set(path, entry);
 }
 
@@ -74,23 +117,9 @@ function walk(value: unknown, path: string, acc: Map<string, Entry>, absent: boo
   const node = asNode(value, path);
   const branches = node.anyOf ?? node.oneOf;
   if (Array.isArray(branches)) {
-    // Walk each branch on its own, so a member only some object branches
-    // declare can be marked as one a file may leave out.
-    const perBranch = branches.map((branch) => {
-      const own = new Map<string, Entry>();
-      walk(branch, path, own, absent);
-      return own;
-    });
-    const objectBranches = perBranch.filter((own) => own.get(path)?.atoms.has('object'));
-    for (const own of perBranch)
-      for (const [child, entry] of own) {
-        const partial = child !== path && objectBranches.some((other) => !other.has(child));
-        const merged = acc.get(child) ?? { atoms: new Set(), hasDefault: false, absent: false };
-        for (const atom of entry.atoms) merged.atoms.add(atom);
-        merged.hasDefault ||= entry.hasDefault;
-        merged.absent ||= entry.absent || partial;
-        acc.set(child, merged);
-      }
+    // Every branch records into the same paths: their values join, and a
+    // member is optional when any branch that declares it says so.
+    for (const branch of branches) walk(branch, path, acc, absent);
     record(acc, path, [], node, absent);
     return;
   }
@@ -133,9 +162,10 @@ function walk(value: unknown, path: string, acc: Map<string, Entry>, absent: boo
 }
 
 /**
- * Reduce a generated JSON Schema to its {@link ConfigShape}. Throws on a node
- * it cannot name (a `$ref`, an `allOf`, an untyped node), because a shape that
- * silently skipped part of the schema would let that part change unchecked.
+ * Reduce a generated JSON Schema to its {@link ConfigShape}. Throws on a
+ * keyword it does not follow (a `$ref`, an `allOf`, `patternProperties`),
+ * because a shape that silently skipped part of the schema would let that part
+ * change unchecked. An untyped node (`z.unknown()`) is recorded as `any`.
  */
 export function shapeOf(jsonSchema: unknown): ConfigShape {
   const acc = new Map<string, Entry>();
@@ -146,9 +176,32 @@ export function shapeOf(jsonSchema: unknown): ConfigShape {
     const entry = acc.get(path)!;
     const atoms = [...entry.atoms];
     if (entry.absent && !entry.hasDefault) atoms.push(ABSENT);
-    shape[path] = formatSignature({ atoms: normalize(atoms), hasDefault: entry.hasDefault });
+    shape[path] = formatSignature({
+      atoms: normalize(atoms),
+      hasDefault: entry.hasDefault,
+      constraints: mergeConstraints(entry.constraints),
+    });
   }
   return shape;
+}
+
+/**
+ * One value per constraint, the loosest when union branches disagree on a
+ * bound; other keywords keep every distinct value, so any change shows.
+ */
+function mergeConstraints(found: Map<string, unknown[]>): Record<string, unknown> {
+  const merged: Record<string, unknown> = {};
+  for (const key of [...found.keys()].sort()) {
+    const values = found.get(key)!;
+    if (LOWER_BOUNDS.includes(key)) merged[key] = Math.min(...(values as number[]));
+    else if (UPPER_BOUNDS.includes(key)) merged[key] = Math.max(...(values as number[]));
+    else {
+      const distinct = [...new Set(values.map((value) => JSON.stringify(value)))].sort();
+      merged[key] =
+        distinct.length === 1 ? values[0] : distinct.map((text) => JSON.parse(text) as unknown);
+    }
+  }
+  return merged;
 }
 
 /** Drop a literal its own type already covers, and sort. */
@@ -160,14 +213,28 @@ function normalize(atoms: string[]): string[] {
 
 /** The signature as stored in the shape file. */
 export function formatSignature(signature: Signature): string {
-  return signature.atoms.join(' | ') + (signature.hasDefault ? DEFAULT_SUFFIX : '');
+  const where = Object.keys(signature.constraints).length
+    ? `${WHERE}${JSON.stringify(signature.constraints)}`
+    : '';
+  return signature.atoms.join(' | ') + where + (signature.hasDefault ? DEFAULT_SUFFIX : '');
 }
 
 /** Parse a stored signature back; JSON string literals may hold any character. */
 export function parseSignature(text: string): Signature {
   const hasDefault = text.endsWith(DEFAULT_SUFFIX);
-  const body = hasDefault ? text.slice(0, -DEFAULT_SUFFIX.length) : text;
-  return { atoms: body.match(/"(?:[^"\\]|\\.)*"|[^\s|]+/g) ?? [], hasDefault };
+  let body = hasDefault ? text.slice(0, -DEFAULT_SUFFIX.length) : text;
+  let constraints: Record<string, unknown> = {};
+  // The first ` where {` whose rest is a JSON object; a literal may hold the words.
+  for (let at = body.indexOf(`${WHERE}{`); at !== -1; at = body.indexOf(`${WHERE}{`, at + 1)) {
+    try {
+      constraints = JSON.parse(body.slice(at + WHERE.length)) as Record<string, unknown>;
+      body = body.slice(0, at);
+      break;
+    } catch {
+      // Not the constraints yet; keep looking.
+    }
+  }
+  return { atoms: body.match(/"(?:[^"\\]|\\.)*"|[^\s|]+/g) ?? [], hasDefault, constraints };
 }
 
 function isLiteral(atom: string): boolean {
@@ -183,7 +250,8 @@ function literalType(atom: string): string {
 /**
  * Whether every value `before` accepts, `after` accepts too: the change only
  * widened the field (a new enum value, `string` to `string | null`, optional
- * where it was required), so no stored value stops fitting.
+ * where it was required, a raised maximum, a dropped pattern), so no stored
+ * value stops fitting.
  */
 export function onlyWidened(before: string, after: string): boolean {
   const was = parseSignature(before);
@@ -199,7 +267,24 @@ export function onlyWidened(before: string, after: string): boolean {
     if (isLiteral(atom)) return accepts(literalType(atom));
     return false;
   };
-  return was.atoms.every(accepts);
+  return was.atoms.every(accepts) && onlyLoosened(was.constraints, now.constraints);
+}
+
+/** No constraint was added, tightened or (for a pattern, format and the like) changed. */
+function onlyLoosened(was: Record<string, unknown>, now: Record<string, unknown>): boolean {
+  return Object.entries(now).every(([key, value]) => {
+    if (!(key in was)) return false;
+    const old = was[key];
+    if (LOWER_BOUNDS.includes(key)) return (value as number) <= (old as number);
+    if (UPPER_BOUNDS.includes(key)) return (value as number) >= (old as number);
+    return JSON.stringify(value) === JSON.stringify(old);
+  });
+}
+
+/** Whether a stored file may leave the path out: it has a default, or it is optional. */
+export function acceptsAbsent(signature: string): boolean {
+  const parsed = parseSignature(signature);
+  return parsed.hasDefault || parsed.atoms.includes(ABSENT);
 }
 
 /** Whether a stored file may leave the path out with nothing filling it in. */

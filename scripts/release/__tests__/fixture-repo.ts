@@ -4,8 +4,9 @@
  * `fixtures/repo/` holds a tiny DorkOS-shaped tree: VERSION, the API document,
  * a ten-version CHANGELOG.md with its archive, both docs changelog pages and
  * three fragments (a patch release as it stands). The five package.json files
- * and the config migrations table are written here rather than committed under `scripts/`, so no tool that
- * walks the repo for manifests ever mistakes the fixture for a package.
+ * and the config migrations table are written here rather than committed
+ * under `scripts/`, so no tool that walks the repo for manifests ever mistakes
+ * the fixture for a package.
  */
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

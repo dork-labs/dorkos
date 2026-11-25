@@ -6,7 +6,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { checkConfigMigration, main, readWaivers, type Waiver } from '../check-config-migration.ts';
+import {
+  checkConfigMigration,
+  liveShape,
+  main,
+  readWaivers,
+  staleShape,
+  type Waiver,
+} from '../check-config-migration.ts';
 import { onlyWidened, shapeOf, type ConfigShape } from '../shape.ts';
 import { pendingKeys, readMigrationTable } from '../../release/migration-table.ts';
 
@@ -79,15 +86,19 @@ describe('the shape walk', () => {
     expect(onlyWidened('"a" | "b"', 'string')).toBe(true);
     expect(onlyWidened('string | undefined', 'string')).toBe(false);
     expect(onlyWidened('number', 'integer')).toBe(false);
+    expect(onlyWidened('integer where {"maximum":9}', 'integer where {"maximum":5}')).toBe(false);
+    expect(onlyWidened('integer where {"maximum":5}', 'integer')).toBe(true);
+    expect(onlyWidened('string where {"pattern":"^a"}', 'string where {"pattern":"^b"}')).toBe(
+      false
+    );
   });
 });
 
 describe('the migrations table, read as text', () => {
-  it('reads every key in order, with comments removed from the code', () => {
-    const entries = readMigrationTable(MIGRATIONS);
-    expect(entries.map((entry) => entry.key)).toEqual(['1.0.0', '0.20.0', '0.21.0']);
-    expect(entries[2]?.code).not.toContain('Seeds the theme');
-    expect(pendingKeys(entries, '0.20.0')).toEqual(['0.21.0']);
+  it('reads every key in table order', () => {
+    const keys = readMigrationTable(MIGRATIONS);
+    expect(keys).toEqual(['1.0.0', '0.20.0', '0.21.0']);
+    expect(pendingKeys(keys, '0.20.0')).toEqual(['0.21.0']);
   });
 
   it('refuses a table it cannot read exactly', () => {
@@ -122,7 +133,11 @@ describe('the waiver file', () => {
 });
 
 describe('the CLI over this repository', () => {
-  it('finds the committed shape current and the tree covered against HEAD', () => {
-    expect(main(['--base', 'HEAD'])).toBe(0);
+  it('finds the committed shape file current', () => {
+    expect(main([])).toBe(0);
+  });
+
+  it('refuses a shape file the schema has moved past', () => {
+    expect(staleShape('{}\n', liveShape())).toContain('does not match UserConfigSchema');
   });
 });

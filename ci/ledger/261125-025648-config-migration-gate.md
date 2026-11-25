@@ -26,7 +26,7 @@ file-size ratchet, with its base chosen the same way. `scripts/config-migration/
 reduces `UserConfigSchema` to a flat shape (path to accepted values), held in
 `scripts/config-migration/shape.json`, which must match the live schema. Against the base's
 copy it fails a new member inside an existing section, a removal (so a rename) or a narrowed
-type, unless the PR changes `CONFIG_MIGRATIONS` or adds a reason to
+type, unless the PR adds a `CONFIG_MIGRATIONS` key or adds a reason to
 `scripts/config-migration/no-migration.json`. A new top-level section, a new optional member
 with no default, a widened type and a comment-only edit pass. No new required check.
 

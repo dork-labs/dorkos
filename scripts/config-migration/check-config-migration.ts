@@ -18,16 +18,22 @@
  *              (`ui.composer`, `accounts[].color`). conf fills in only whole
  *              TOP-LEVEL sections, so nothing else writes it to an existing file
  *              (the "Which of these bodies is a real no-op" docblock above
- *              `CONFIG_MIGRATIONS`). A new top-level section, and a new member
- *              that is optional with no default, need none.
+ *              `CONFIG_MIGRATIONS`). A new top-level section a file may leave
+ *              out, and a new member that is optional with no default, need
+ *              none. In a union of objects (`oneOf` variants), a member one
+ *              variant requires counts as required.
  *   - removed: any path that is gone, at any depth; a rename is a removal plus
  *              an addition, so it lands here too. Stored files still hold it.
  *   - retyped: a path that now refuses a value it used to accept (a type
- *              change, an enum value dropped, newly required). Widening is free.
+ *              change, an enum value dropped, newly required, a bound,
+ *              length or item limit tightened, a pattern or format added or
+ *              changed). Widening is free.
  *
- * WHAT SATISFIES IT. The PR changes `CONFIG_MIGRATIONS` itself: it adds a key,
- * or changes the code (not just comments) of a key above `VERSION`. Shipped
- * keys are frozen by `migration-append-only`, not here. Or the PR adds an
+ * WHAT SATISFIES IT. The PR adds a `CONFIG_MIGRATIONS` key above `VERSION`.
+ * Editing an existing key never counts: a body is frozen from the moment it
+ * merges (`migration-append-only` holds that), so the fix is always a new
+ * key. The check cannot tell whether the key's body is the right migration;
+ * review and an upgrade-boot test decide that. Or the PR adds an
  * entry to `scripts/config-migration/no-migration.json` for each change, with
  * `path`, `change` and a `reason` a reviewer can check. Only entries the PR
  * adds count, so an old one can never cover a later change; an added entry
@@ -48,7 +54,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { UserConfigSchema } from '../../packages/shared/src/config-schema.ts';
-import { isOptionalWithoutDefault, onlyWidened, shapeOf, type ConfigShape } from './shape.ts';
+import {
+  acceptsAbsent,
+  isOptionalWithoutDefault,
+  onlyWidened,
+  shapeOf,
+  type ConfigShape,
+} from './shape.ts';
 import { MIGRATIONS_FILE, compareSemver, readMigrationTable } from '../release/migration-table.ts';
 
 /** The committed shape, repo-relative. */
@@ -130,7 +142,9 @@ export function shapeChanges(before: ConfigShape, after: ConfigShape): ShapeChan
     changed.add(path);
     if (was === undefined) {
       const free = !parentPath(path)
-        ? 'a new top-level section, which conf writes from its defaults'
+        ? acceptsAbsent(now!)
+          ? 'a new top-level section, which conf writes from its defaults'
+          : undefined
         : isOptionalWithoutDefault(now!)
           ? 'optional with no default, so there is nothing to write'
           : undefined;
@@ -142,24 +156,18 @@ export function shapeChanges(before: ConfigShape, after: ConfigShape): ShapeChan
 }
 
 /**
- * How the PR changed `CONFIG_MIGRATIONS`, or undefined when it did not: a key
- * added, or the code of a key above `released` changed.
+ * The key the PR added to `CONFIG_MIGRATIONS` above `released`, or undefined.
+ * A key at or below it would run for nobody already there, so it is no fix.
  */
-export function migrationChange(
+export function addedMigrationKey(
   baseText: string | null,
   headText: string,
   released: string
 ): string | undefined {
-  const base = new Map(
-    (baseText === null ? [] : readMigrationTable(baseText)).map((entry) => [entry.key, entry.code])
+  const base = new Set(baseText === null ? [] : readMigrationTable(baseText));
+  return readMigrationTable(headText).find(
+    (key) => !base.has(key) && compareSemver(key, released) > 0
   );
-  for (const entry of readMigrationTable(headText)) {
-    const was = base.get(entry.key);
-    if (was === undefined) return `adds the key '${entry.key}'`;
-    if (was !== entry.code && compareSemver(entry.key, released) > 0)
-      return `changes the unreleased key '${entry.key}'`;
-  }
-  return undefined;
 }
 
 /** Parse the waiver file; throws on anything a reviewer could not check. */
@@ -198,7 +206,8 @@ export function checkConfigMigration(input: CheckInput): { findings: string[]; n
     .filter((change) => change.free)
     .map((change) => `${change.kind} ${change.path}: needs no migration, ${change.free}`);
   const needed = changes.filter((change) => !change.free);
-  const migration = migrationChange(input.baseMigrations, input.headMigrations, input.released);
+  const key = addedMigrationKey(input.baseMigrations, input.headMigrations, input.released);
+  const migration = key && `adds the key '${key}'`;
   const added = input.headWaivers.filter(
     (waiver) =>
       !input.baseWaivers.some(
@@ -225,6 +234,8 @@ export function checkConfigMigration(input: CheckInput): { findings: string[]; n
 
 function describe(change: ShapeChange): string {
   const fix = `Add a migration key to ${MIGRATIONS_FILE} (the adding-config-fields skill), or add {"path": "${change.path}", "change": "${change.kind}", "reason": "..."} to ${WAIVERS_PATH} saying why none is needed.`;
+  if (change.kind === 'added' && !parentPath(change.path))
+    return `added ${change.path} (${change.after}): a top-level field with no default, which no stored file carries. ${fix}`;
   if (change.kind === 'added')
     return `added ${change.path} (${change.after}): conf never writes a new member into a section a stored file already holds. ${fix}`;
   if (change.kind === 'removed')
@@ -239,6 +250,15 @@ export function liveShape(): ConfigShape {
 
 function serialize(shape: ConfigShape): string {
   return `${JSON.stringify(shape, null, 2)}\n`;
+}
+
+/**
+ * Why the committed shape file is not the live schema's, or undefined when it
+ * is. A stale file would move this PR's change onto the next PR's base.
+ */
+export function staleShape(committed: string, live: ConfigShape): string | undefined {
+  if (committed === serialize(live)) return undefined;
+  return `${SHAPE_PATH} does not match UserConfigSchema. Run \`${UPDATE_COMMAND}\` and commit the result.`;
 }
 
 function git(args: string[]): string {
@@ -274,10 +294,9 @@ export function main(argv: readonly string[]): number {
     console.log(`config-migration: wrote ${Object.keys(live).length} paths to ${SHAPE_PATH}`);
     return 0;
   }
-  if (readFileSync(shapeFile, 'utf8') !== serialize(live)) {
-    console.error(
-      `config-migration: ${SHAPE_PATH} does not match UserConfigSchema. Run \`${UPDATE_COMMAND}\` and commit the result.`
-    );
+  const stale = staleShape(readFileSync(shapeFile, 'utf8'), live);
+  if (stale) {
+    console.error(`config-migration: ${stale}`);
     return 1;
   }
   const at = argv.indexOf('--base');

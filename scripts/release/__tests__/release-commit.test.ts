@@ -147,14 +147,21 @@ describe('the config migration floor', () => {
     expect(plan.prBody).toContain('the newest key, `0.20.1`, runs in this release');
   });
 
-  it('refuses a key past the next minor, a 1.0.0 that is not the sentinel, and a short --version', () => {
-    withKey('0.22.0');
-    expect(() => repo.plan()).toThrow(/'0.22.0', past the next minor \(0.21.0\)/);
+  it('refuses a key that is neither the next patch nor the next minor, the sentinel moved included', () => {
+    for (const key of ['0.22.0', '0.20.2', '0.21.1']) {
+      withKey(key);
+      expect(() => repo.plan(), key).toThrow(`'${key}', which is neither the next patch`);
+    }
     withKey('1.0.0', FIXTURE_MIGRATIONS.replace("'1.0.0'", "'0.18.0'"));
-    expect(() => repo.plan()).toThrow(/'1.0.0', past the next minor/);
+    expect(() => repo.plan()).toThrow(/'1.0.0', which is neither/);
+  });
+
+  it('lets --version name any version at or above the newest key, and refuses one below it', () => {
     withKey('0.21.0');
     expect(() => repo.plan({ version: '0.20.5' })).toThrow(/below the newest config migration key/);
     expect(repo.plan({ version: '0.21.0' }).version).toBe('0.21.0');
+    withKey('0.23.0');
+    expect(repo.plan({ version: '0.23.0' }).decision).toMatchObject({ migrationKey: '0.23.0' });
   });
 
   it('refuses a table it cannot read rather than planning past it', () => {
