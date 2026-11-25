@@ -52,6 +52,7 @@ import {
   evaluateUserLastMessageAtPresence,
 } from './runtime-conformance-session-list.js';
 import { INJECTED_CONTEXT_TAGS } from './injected-context-tags.js';
+import { assertSubfolderListing } from './runtime-conformance-subfolder.js';
 import type {
   ApprovalEvent,
   HistoryMessage,
@@ -563,6 +564,12 @@ export interface RuntimeConformanceOpts extends RestartCaseOpts {
    * wiring {@link userLastMessageAtSession}.
    */
   userLastMessageAtOmittedReason?: string;
+  /**
+   * Why this runtime can't run a session in a project subfolder yet, naming its
+   * follow-up ticket. Only RT-SES-02 reads it, and only computer-local may claim it
+   * (`runtime-conformance-subfolder.ts`).
+   */
+  singleFolderRuntimeReason?: string;
   /**
    * Drives TWO turns on ONE session with two DIFFERENT
    * {@link MessageOpts.systemPromptAppend} values, and reports what the backend
@@ -1447,32 +1454,12 @@ export function runtimeConformance(
       });
 
       it('RT-SES-02: lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
-        // The other half of the membership rule. A person opens a project and
-        // starts an agent in `packages/api`; that session is the project's
-        // session, and every runtime used to decide otherwise by comparing the
-        // two directory strings for equality. DOR-674 fixed OpenCode's sidecar
-        // listing and deferred this invariant because claude-code would have
-        // failed it; DOR-1550 is where the rest of the set caught up.
-        const runtime = makeRuntime();
-        const subfolder = `${projectDir}/packages/api`;
-        const inside = await seedListableSession(runtime, subfolder);
-        // `<project>-2` shares a character prefix with the project and shares no
-        // path SEGMENT with it — the trap a `startsWith` check falls into, and
-        // the control that keeps the case above from passing by listing
-        // everything on the machine.
-        const sibling = await seedListableSession(runtime, `${projectDir}-2`);
-        // And the project's own directory, so a wiring that seeds nothing
-        // listable fails here rather than silently proving nothing.
-        const own = await seedListableSession(runtime, projectDir);
-
-        const listed = await runtime.listSessions(projectDir);
-        const ids = listed.map((s) => s.id);
-        expect(ids, 'the project’s own session must list at all').toContain(own);
-        expect(ids, 'a session started in a subfolder belongs to the project').toContain(inside);
-        expect(ids, 'a sibling project’s session is not this project’s').not.toContain(sibling);
-        // Each row still says where it is really running — a listing that
-        // rewrote `cwd` to the project would hide which folder an agent is in.
-        expect(listed.find((s) => s.id === inside)?.cwd).toBe(subfolder);
+        await assertSubfolderListing(
+          makeRuntime(),
+          projectDir,
+          seedListableSession,
+          opts.singleFolderRuntimeReason
+        );
       });
 
       it('RT-SES-01: getSession resolves session metadata or null — and null for an unknown id', async () => {
