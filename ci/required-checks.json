@@ -14,7 +14,8 @@
     "fixtures",
     "not-held",
     "release-window",
-    "pr-gates"
+    "pr-gates",
+    "codex-sandbox-macos"
   ],
   "workflows": [
     {

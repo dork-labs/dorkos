@@ -554,6 +554,7 @@ this block byte for byte, so it cannot drift quietly):
 - `not-held`
 - `release-window`
 - `pr-gates`
+- `codex-sandbox-macos`
 - Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
