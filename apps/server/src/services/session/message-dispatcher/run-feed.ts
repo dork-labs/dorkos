@@ -8,7 +8,11 @@
  * finds another run of its chat `started` or `running` does not go on
  * ({@link launchVerdictOf}). Everything else is a record of what the
  * dispatcher's own rules already did. A failure to write is logged and never
- * breaks a turn: the dispatcher's in-memory rules still hold the turn.
+ * breaks the turn it describes, but the record is then behind: a run may be
+ * left live with nothing in this process running it. That is why a run is
+ * held (`holdRun` in `turn-port/facts.ts`) only while its launch or turn is
+ * under way here: a live run of this boot nobody holds is retired at the next
+ * read of its chat, so one failed write cannot hold the chat's next launch.
  *
  * With no run record wired, every call here is skipped and every launch goes
  * on, exactly as before the record existed.
@@ -112,8 +116,8 @@ export function adoptRun(sessionId: string, queueMessageId: string): string | un
  */
 export function launchVerdictOf(plan: DispatchPlan): LaunchVerdict {
   const { runId } = plan;
-  if (runId === undefined) return 'starting';
-  return toRuns('launch', (feed) => feed.launchBegins(runId), 'starting');
+  if (runId === undefined) return { kind: 'starting' };
+  return toRuns('launch', (feed) => feed.launchBegins(runId), { kind: 'starting' });
 }
 
 /**

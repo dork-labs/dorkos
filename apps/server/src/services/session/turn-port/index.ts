@@ -9,6 +9,7 @@
  * @module services/session/turn-port
  */
 export {
+  isRunHeld,
   setTurnFactsSink,
   turnFacts,
   type DispatcherRunFeed,

@@ -43,6 +43,7 @@ import type { SessionMessageQueueRow } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { isPersonWindowClientId } from './person-window-client-id.js';
 import { turnFacts, type DispatcherRunFeed, type QueueRowExit } from './turn-port/facts.js';
+import type { TurnOrigin } from '@dorkos/shared/turn-port';
 import {
   parseQueuedLimits,
   serializeQueuedLimits,
@@ -129,7 +130,11 @@ export interface QueuedMessageRecord extends QueuedMessage {
  * @param what - The change, for the log line.
  * @param write - The record's write.
  */
-function reportToRuns(what: string, write: (feed: DispatcherRunFeed) => void): void {
+function reportToRuns(
+  what: string,
+  write: (feed: DispatcherRunFeed) => void,
+  ids: Record<string, string> = {}
+): void {
   const feed = turnFacts()?.dispatcher;
   if (!feed) return;
   try {
@@ -137,9 +142,68 @@ function reportToRuns(what: string, write: (feed: DispatcherRunFeed) => void): v
   } catch (err) {
     logger.error('[MessageQueueStore] the run record refused a queue change', {
       what,
+      ...ids,
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * Delete one queue row in `executor`'s transaction, ending the run that waits
+ * on it as `exit` says (spec `turns-survive-restarts` §4.7, transition 5). For
+ * code that writes the queue inside its own transaction without the shared
+ * store; {@link MessageQueueStore.remove} is the same delete.
+ *
+ * @param tx - The transaction to join
+ * @param messageId - The row
+ * @param exit - Why it leaves; a person's removal unless said otherwise
+ * @returns The row as it was, or `undefined` when there was none
+ */
+export function deleteQueueRow(
+  tx: DbTransaction,
+  messageId: string,
+  exit: QueueRowExit = 'removed'
+): SessionMessageQueueRow | undefined {
+  const row = tx
+    .select()
+    .from(sessionMessageQueue)
+    .where(eq(sessionMessageQueue.id, messageId))
+    .get();
+  if (!row) return undefined;
+  tx.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
+  reportToRuns('remove', (feed) => feed.queueRowsLeaving([messageId], exit), { messageId });
+  heldFor.delete(messageId);
+  return row;
+}
+
+/**
+ * Move one queue row to the end of another chat's queue, in `tx`, and the run
+ * that waits on it with it, so the run is never left under a chat its words
+ * are not in.
+ *
+ * @param tx - The transaction to join
+ * @param messageId - The row
+ * @param toSessionId - The chat it now waits on
+ */
+export function moveQueueRowToSession(
+  tx: DbTransaction,
+  messageId: string,
+  toSessionId: string
+): void {
+  const tail =
+    tx
+      .select({ value: max(sessionMessageQueue.position) })
+      .from(sessionMessageQueue)
+      .where(eq(sessionMessageQueue.sessionId, toSessionId))
+      .get()?.value ?? 0;
+  tx.update(sessionMessageQueue)
+    .set({ sessionId: toSessionId, position: Math.max(0, tail) + QUEUE_POSITION_STEP })
+    .where(eq(sessionMessageQueue.id, messageId))
+    .run();
+  reportToRuns('move', (feed) => feed.queueRowMoved(messageId, toSessionId), {
+    messageId,
+    toSessionId,
+  });
 }
 
 /**
@@ -237,6 +301,12 @@ export interface EnqueueInput {
   heldToDefault?: boolean;
   /** See {@link QueuedMessageRecord.carriedLimits}. Absent or `undefined` means none. */
   carriedLimits?: QueuedCarriedLimits | undefined;
+  /**
+   * What starts the row's turn. When given, the row's run is written in the
+   * same transaction as the row (a protected source's acceptance); absent, the
+   * caller writes it (the dispatcher) or nobody does.
+   */
+  origin?: TurnOrigin;
 }
 
 /**
@@ -312,7 +382,21 @@ export class MessageQueueStore {
       carriedLimitsJson: serializeQueuedLimits(input.carriedLimits),
       state: 'waiting',
     };
-    executor.insert(sessionMessageQueue).values(row).run();
+    const origin = input.origin;
+    if (origin === undefined) {
+      executor.insert(sessionMessageQueue).values(row).run();
+      return toRecord(row);
+    }
+    // A caller that names an origin gets the row's run in the same
+    // transaction (spec `turns-survive-restarts` §4.7, transition 1).
+    const write = (own: Db | DbTransaction): void => {
+      own.insert(sessionMessageQueue).values(row).run();
+      reportToRuns('accept', (feed) => {
+        feed.accept({ chatKey: row.sessionId, origin, queueMessageId: row.id });
+      });
+    };
+    if (tx) write(tx);
+    else this.db.transaction((own) => write(own));
     return toRecord(row);
   }
 
@@ -366,17 +450,10 @@ export class MessageQueueStore {
     tx?: DbTransaction,
     exit: QueueRowExit = 'removed'
   ): QueuedMessageRecord | undefined {
-    const take = (executor: Db | DbTransaction): SessionMessageQueueRow | undefined => {
-      const row = this.row(messageId, executor);
-      if (!row) return undefined;
-      executor.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
-      reportToRuns('remove', (feed) => feed.queueRowsLeaving([messageId], exit));
-      return row;
-    };
-    const row = tx ? take(tx) : this.db.transaction((own) => take(own));
-    if (!row) return undefined;
-    heldFor.delete(messageId);
-    return toRecord(row);
+    const row = tx
+      ? deleteQueueRow(tx, messageId, exit)
+      : this.db.transaction((own) => deleteQueueRow(own, messageId, exit));
+    return row ? toRecord(row) : undefined;
   }
 
   /**
@@ -574,7 +651,9 @@ export class MessageQueueStore {
     if (fromId === toId) return;
     const move = (tx: DbTransaction) => {
       // The chat's runs go with its rows, in the same transaction (§4.1).
-      reportToRuns('rekey', (feed) => feed.rekeyChat(fromId, toId));
+      // Refused only when both ids hold a live run: logged with both, and the
+      // rows still move.
+      reportToRuns('rekey', (feed) => feed.rekeyChat(fromId, toId), { fromId, toId });
       const moving = tx
         .select()
         .from(sessionMessageQueue)

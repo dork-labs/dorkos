@@ -78,6 +78,7 @@ import { DetachedTurnLifecycle, guardTurnErrors } from '../trigger-turn.js';
 import { tapEachEvent, warnOnRuntimeError } from '../turn-stream/tap-each-event.js';
 import { noteDispatchedTurn, noteRuntimeTurnSettled } from './late-turns.js';
 import { reportRun } from '../message-dispatcher/run-feed.js';
+import { holdRun, releaseRun } from '../turn-port/facts.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 
 /**
@@ -277,6 +278,7 @@ async function projectRuntimeTurn(
       // `started` or `running` (§4.7); one still `starting` goes back in line.
       onTurnStart: (seq) => {
         opened = true;
+        holdRun(runId);
         reportRun({
           kind: 'started',
           runId,
@@ -297,6 +299,7 @@ async function projectRuntimeTurn(
     // Its run ends before it lets go of the lock, so a launch the release
     // wakes never meets it live.
     if (opened) reportRun({ kind: 'ended', runId, ending: said.error ? 'failed' : 'completed' });
+    releaseRun(runId);
     releaseOnce();
     // After the session is handed back, so a follower that dispatches more
     // work in answer finds it free.

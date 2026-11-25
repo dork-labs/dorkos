@@ -65,6 +65,8 @@ function requeueOtherStarting(store: RunStore, chatKey: string, keepId?: string)
   const live = store.liveRunOf(chatKey);
   if (live && live.status === 'starting' && live.id !== keepId) {
     store.move(live, 'queued', { ownerEpoch: null, leaseUntil: null });
+    // Its launch is this process's and still under way.
+    store.holdWords(live.id);
   }
 }
 
@@ -244,29 +246,38 @@ function dispatcherFeed(store: RunStore): DispatcherRunFeed {
       }),
 
     launchBegins: (runId): LaunchVerdict =>
-      store.transaction(() => {
+      store.transaction((): LaunchVerdict => {
         const run = store.get(runId);
-        if (!run || run.status !== 'queued') return 'starting';
+        if (!run || run.status !== 'queued') return { kind: 'starting' };
         const live = store.liveRunOf(run.sessionId);
-        if (live && live.id !== run.id) return live.status === 'starting' ? 'queued' : 'busy';
+        if (live && live.id !== run.id) {
+          if (live.status === 'starting') return { kind: 'queued' };
+          // Another boot's run is retired only once its lease runs out, and
+          // nothing in this process will settle it: say when to look again.
+          return live.ownerEpoch !== store.epoch && live.leaseUntil !== null
+            ? { kind: 'busy', retryAt: live.leaseUntil + 1 }
+            : { kind: 'busy' };
+        }
         try {
           store.move(run, 'starting', { ...store.lease(), waitReason: null });
-          return 'starting';
+          return { kind: 'starting' };
         } catch (error) {
           if (!isUniqueViolation(error)) throw error;
           logger.error('[runs] the one-live-run index refused a launch', {
             runId,
             sessionId: run.sessionId,
           });
-          return 'queued';
+          return { kind: 'queued' };
         }
       }),
 
     backInLine: (runId) =>
       store.transaction(() => {
         const run = store.get(runId);
-        if (run?.status === 'starting')
-          store.move(run, 'queued', { ownerEpoch: null, leaseUntil: null });
+        if (run?.status !== 'starting') return;
+        store.move(run, 'queued', { ownerEpoch: null, leaseUntil: null });
+        // Its words are back in this process's pending set.
+        store.holdWords(run.id);
       }),
 
     cancel: (runId, why) =>
@@ -294,10 +305,28 @@ function dispatcherFeed(store: RunStore): DispatcherRunFeed {
         for (const id of queueMessageIds) rowLeaving(store, id, why);
       }),
 
+    queueRowMoved: (queueMessageId, toChatKey) =>
+      store.transaction(() => {
+        const run = store.findByQueueMessage(queueMessageId);
+        if (run?.status === 'queued') store.moveToChat(run, toChatKey);
+        else if (run && run.status !== 'cancelled' && run.status !== 'superseded') {
+          // Only a waiting row moves between chats; a live run stays where its turn is.
+          logger.error('[runs] a queue row moved whose run was not waiting', {
+            runId: run.id,
+            status: run.status,
+          });
+        }
+      }),
+
     turnEnded: (chatKey, observed) =>
       store.transaction(() => {
         const live = store.liveRunOf(chatKey);
-        if (live && (live.status === 'started' || live.status === 'running')) {
+        // A stop a receipt already confirmed stays `stopped` (§4.4).
+        if (
+          live &&
+          (live.status === 'started' || live.status === 'running') &&
+          live.ending !== 'stopped'
+        ) {
           store.annotate(live.id, { ending: observedEnding(live, observed) });
         }
       }),

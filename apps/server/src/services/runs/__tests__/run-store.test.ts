@@ -153,7 +153,7 @@ describe('one live run per chat (§5)', () => {
       openedBy: 'caller',
       origin: null,
     });
-    expect(sink.dispatcher.launchBegins(waiting.id)).toBe('busy');
+    expect(sink.dispatcher.launchBegins(waiting.id)).toEqual({ kind: 'busy' });
     store.move(live, 'ended');
     store.move(store.get(live.id)!, 'settled');
     const launching = runIn('starting', 'chat-demo-3');
@@ -163,10 +163,10 @@ describe('one live run per chat (§5)', () => {
       openedBy: 'caller',
       origin: null,
     });
-    expect(sink.dispatcher.launchBegins(behind.id)).toBe('queued');
+    expect(sink.dispatcher.launchBegins(behind.id)).toEqual({ kind: 'queued' });
     expect(store.get(behind.id)?.status).toBe('queued');
     expect(store.get(launching.id)?.status).toBe('starting');
-    expect(sink.dispatcher.launchBegins(waiting.id)).toBe('starting');
+    expect(sink.dispatcher.launchBegins(waiting.id)).toEqual({ kind: 'starting' });
   });
 });
 
@@ -203,6 +203,86 @@ describe('the boot epoch', () => {
       endingDetail: { delivery: 'unknown' },
     });
     expect(store.get(starting.id)?.status).toBe('queued');
+  });
+});
+
+describe('a rowless waiting run whose words were in an earlier boot’s memory', () => {
+  const rowless = (on: RunStore) =>
+    on.create({ chatKey: CHAT, status: 'queued', openedBy: 'caller', origin: null });
+  const earlier = () => new RunStore(db, { epoch: '01EARLIERBOOT0000000000000', now: () => now });
+
+  it('is cancelled start_lost at the next read of its chat', () => {
+    const lost = rowless(earlier());
+    store.liveRunOf(CHAT);
+    expect(store.get(lost.id)).toMatchObject({
+      status: 'cancelled',
+      endingDetail: { cancelledBecause: 'start_lost' },
+    });
+  });
+
+  it('this boot’s own, still in its pending set, is kept', () => {
+    const mine = rowless(store);
+    store.liveRunOf(CHAT);
+    expect(store.get(mine.id)?.status).toBe('queued');
+  });
+
+  it('one that left queued is no longer held: put back by anyone but this process, it is lost', () => {
+    const mine = rowless(store);
+    store.move(mine, 'starting', store.lease());
+    // Put back in line by a write that is not this process's own launch.
+    earlier().move(store.get(mine.id)!, 'queued');
+    store.liveRunOf(CHAT);
+    expect(store.get(mine.id)?.endingDetail.cancelledBecause).toBe('start_lost');
+  });
+
+  it('one this process’s own launch put back in line is still held', () => {
+    const sink = createRunFactsSink(store);
+    const mine = rowless(store);
+    expect(sink.dispatcher.launchBegins(mine.id)).toEqual({ kind: 'starting' });
+    sink.dispatcher.backInLine(mine.id);
+    store.liveRunOf(CHAT);
+    expect(store.get(mine.id)?.status).toBe('queued');
+  });
+
+  it('a run with a queue row is never this rule’s', () => {
+    const rowed = earlier().create({
+      chatKey: CHAT,
+      status: 'queued',
+      openedBy: 'caller',
+      origin: null,
+      queueMessageId: 'row-demo-1',
+    });
+    store.liveRunOf(CHAT);
+    expect(store.get(rowed.id)?.status).toBe('queued');
+  });
+});
+
+describe('a live run of this boot whose in-memory owner is gone', () => {
+  it('is retired like a dead boot’s, and its lease is not renewed', () => {
+    const held = new Set<string>();
+    const own = new RunStore(db, {
+      epoch: EPOCH,
+      now: () => now,
+      ownerHolds: (id) => held.has(id),
+    });
+    const kept = own.create({
+      chatKey: CHAT,
+      status: 'running',
+      openedBy: 'runtime',
+      origin: null,
+    });
+    held.add(kept.id);
+    const orphan = own.create({
+      chatKey: 'chat-demo-2',
+      status: 'running',
+      openedBy: 'runtime',
+      origin: null,
+    });
+    now += 30_000;
+    expect(own.renewLeases()).toBe(1);
+    expect(own.liveRunOf(CHAT)?.id).toBe(kept.id);
+    expect(own.liveRunOf('chat-demo-2')).toBeUndefined();
+    expect(own.get(orphan.id)).toMatchObject({ status: 'ended', ending: 'process_died' });
   });
 });
 

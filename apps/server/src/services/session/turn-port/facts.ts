@@ -38,9 +38,12 @@ import type { RunFact, TurnOrigin, WaitReason, RunEnding } from '@dorkos/shared/
  *   stays `queued`, and its own `turn_start` writes 4 and 7 together.
  * - `busy`: another run of the chat is `started` or `running`. The launch
  *   must not go on: it re-parks and waits for that run to settle (one writer
- *   per chat, §5).
+ *   per chat, §5). `retryAt` (epoch ms) is set when that run is another
+ *   boot's: nothing in this process will settle it, and it is retired once its
+ *   lease runs out, so the launch looks again then.
  */
-export type LaunchVerdict = 'starting' | 'queued' | 'busy';
+export type LaunchVerdict =
+  { kind: 'starting' } | { kind: 'queued' } | { kind: 'busy'; retryAt?: number };
 
 /**
  * Why queue rows are leaving the table, which decides what becomes of a run
@@ -139,6 +142,14 @@ export interface DispatcherRunFeed {
    */
   queueRowsLeaving(queueMessageIds: readonly string[], why: QueueRowExit): void;
   /**
+   * One queue row moved to another chat's queue; the run that waits on it
+   * moves with it. Called inside the transaction that moves the row.
+   *
+   * @param queueMessageId - The row.
+   * @param toChatKey - The chat it now waits on.
+   */
+  queueRowMoved(queueMessageId: string, toChatKey: string): void;
+  /**
    * The chat's `turn_end` was ingested: record its ending on the chat's
    * `started` or `running` run at once, before its status moves at settle.
    *
@@ -175,6 +186,52 @@ export interface TurnFactsSink {
 }
 
 let sink: TurnFactsSink | undefined;
+
+/**
+ * The runs whose in-memory owner this process holds right now: a launch under
+ * way or a turn it opened, from the dispatcher's launch to its end, and a
+ * runtime's own turn while it is projected. The run record renews only these
+ * runs' leases, and retires a live run of this boot that is not here (a write
+ * that failed left it live), so one failed write cannot hold a chat for the
+ * life of the process.
+ */
+const heldRuns = new Set<string>();
+
+/**
+ * This process holds the run's in-memory owner from now on.
+ *
+ * @param runId - The run.
+ */
+export function holdRun(runId: string): void {
+  heldRuns.add(runId);
+}
+
+/**
+ * This process no longer holds the run's in-memory owner.
+ *
+ * @param runId - The run.
+ */
+export function releaseRun(runId: string): void {
+  heldRuns.delete(runId);
+}
+
+/**
+ * Whether this process holds the run's in-memory owner.
+ *
+ * @param runId - The run.
+ */
+export function isRunHeld(runId: string): boolean {
+  return heldRuns.has(runId);
+}
+
+/**
+ * Forget every held run.
+ *
+ * @internal Exported for testing only, through `resetMessageDispatcher`.
+ */
+export function forgetHeldRuns(): void {
+  heldRuns.clear();
+}
 
 /**
  * Register (or clear) the run record as the sink. Called once at startup by

@@ -71,8 +71,10 @@ let runs: RunStore;
 let sessionId: string;
 /** Every status change the run store made, in order: `<runId>: <from>→<to>`. */
 let trail: string[];
-let errors: { mock: { calls: unknown[][] } };
+let errors: { mock: { calls: unknown[][] }; mockClear(): void };
 let releaseLongTurn: (() => void) | undefined;
+/** Set to make the record's next `ended` write throw, once. */
+let failNextEnded = false;
 
 /** The turn every queued fixture waits behind: it works until released. */
 const longTurn = async function* (): AsyncGenerator<StreamEvent> {
@@ -145,9 +147,16 @@ function rearm(): Promise<number> {
   });
 }
 
-/** Whether the record ever logged the one-live-run index firing. */
+/**
+ * Whether the record ever complained: the one-live-run index firing, or a
+ * write the record refused (an illegal transition the dispatcher or the queue
+ * store swallowed so a turn could go on).
+ */
 function indexFired(): boolean {
-  return errors.mock.calls.some((call) => String(call[0]).includes('[runs]'));
+  return errors.mock.calls.some((call) => {
+    const message = String(call[0]);
+    return message.includes('[runs]') || message.includes('the run record refused');
+  });
 }
 
 beforeEach(() => {
@@ -177,7 +186,12 @@ beforeEach(() => {
   runs = installRunRecord(db, { epoch: EPOCH });
   trail = [];
   const move = runs.move.bind(runs);
+  failNextEnded = false;
   vi.spyOn(runs, 'move').mockImplementation((run, to, patch) => {
+    if (failNextEnded && to === 'ended') {
+      failNextEnded = false;
+      throw new Error('the disk said no, once');
+    }
     const moved = move(run, to, patch);
     trail.push(`${run.id}: ${run.status}→${to}`);
     return moved;
@@ -206,7 +220,8 @@ afterEach(async () => {
   releaseLongTurn = undefined;
   await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
   await settle();
-  // Rule (ii) of §4.7, for every case: the one-live-run index never fired.
+  // Rules (i) and (ii) of §4.7, for every case: no write was refused, and the
+  // one-live-run index never fired.
   expect(indexFired()).toBe(false);
   setQueuedChatCeilingResolver(undefined);
   setQueuedChatJoiner(undefined);
@@ -598,15 +613,18 @@ describe('one writer per chat (F5)', () => {
 });
 
 describe('a stop request (F6)', () => {
+  /** A turn that works until `wait` opens, having said `first` (or nothing). */
+  function workingTurn(wait: Promise<void>, first = true) {
+    return async function* (): AsyncGenerator<StreamEvent> {
+      if (first) yield { type: 'text_delta', data: { text: 'working' } };
+      await wait;
+      yield { type: 'done', data: {} };
+    };
+  }
+
   it('is on the run before its receipt; an unconfirmed stop whose turn then finishes ends completed', async () => {
     const turn = gate();
-    inner.withScenarios([
-      async function* (): AsyncGenerator<StreamEvent> {
-        yield { type: 'text_delta', data: { text: 'working' } };
-        await turn.wait;
-        yield { type: 'done', data: {} };
-      },
-    ]);
+    inner.withScenarios([workingTurn(turn.wait)]);
     await send('person-window', 'a long job');
     const [run] = runs.listForChat(sessionId);
     await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('running'));
@@ -625,6 +643,62 @@ describe('a stop request (F6)', () => {
       ending: 'completed',
       endingDetail: { stopRequests: [{ via: 'stop', outcome: 'unconfirmed' }] },
     });
+  });
+
+  it('an acked stop ends the run stopped, though its turn_end reads like a finish', async () => {
+    const turn = gate();
+    inner.withScenarios([workingTurn(turn.wait)]);
+    await send('person-window', 'a long job');
+    const [run] = runs.listForChat(sessionId);
+    await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('running'));
+
+    recordStopReceipt(recordStopRequest(sessionId, { via: 'stop' }), { outcome: 'acked' });
+    expect(runs.get(run!.id)?.ending).toBe('stopped');
+    turn.open();
+    await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('ended'));
+
+    expect(runs.get(run!.id)).toMatchObject({
+      ending: 'stopped',
+      endingDetail: { stopRequests: [{ via: 'stop', outcome: 'acked' }] },
+    });
+  });
+
+  it('a Stop before delivery, closed, ends it stopped with delivery unknown', async () => {
+    const turn = gate();
+    inner.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        await turn.wait;
+        yield* [];
+      },
+    ]);
+    void send('person-window', 'stopped before a word');
+    await vi.waitFor(() => expect(runs.listForChat(sessionId)[0]?.status).toBe('started'));
+    const [run] = runs.listForChat(sessionId);
+
+    recordStopReceipt(recordStopRequest(sessionId, { via: 'stop' }), { outcome: 'closed' });
+    turn.open();
+    await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('ended'));
+
+    expect(runs.get(run!.id)).toMatchObject({
+      ending: 'stopped',
+      endingDetail: { delivery: 'unknown' },
+    });
+  });
+
+  it('a confirming receipt that lands after the turn settled is still read', async () => {
+    const turn = gate();
+    inner.withScenarios([workingTurn(turn.wait)]);
+    await send('person-window', 'a long job');
+    const [run] = runs.listForChat(sessionId);
+    await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('running'));
+    const stopped = recordStopRequest(sessionId, { via: 'stop' });
+    turn.open();
+    await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('ended'));
+    expect(runs.get(run!.id)?.ending).toBe('completed');
+
+    recordStopReceipt(stopped, { outcome: 'acked' });
+
+    expect(runs.get(run!.id)).toMatchObject({ status: 'ended', ending: 'stopped' });
   });
 });
 
@@ -898,8 +972,103 @@ describe('what this step adds to the map (§4.7, F10 to F12)', () => {
 
     rekeyProjector(chat, canonical);
 
-    expect(runs.listForChat(chat)).toEqual([]);
+    // Kept under the new id, and found by either: a run is read through the
+    // same id resolution its queue rows are (§4.1).
+    expect([runs.get(waiting.id)?.sessionId, runs.get(own.id)?.sessionId]).toEqual([
+      canonical,
+      canonical,
+    ]);
     expect(runs.listForChat(canonical).map((run) => run.id)).toEqual([waiting.id, own.id]);
+    expect(runs.listForChat(chat).map((run) => run.id)).toEqual([waiting.id, own.id]);
     disposeProjector(canonical);
+  });
+
+  it('a run another boot left, its lease still running, holds the chat only until the lease runs out', async () => {
+    // Crashed a moment ago: its lease has ~0.4 s left, far short of a wait bound.
+    const gone = new RunStore(db, {
+      epoch: '01DEADBOOT0000000000000000',
+      now: () => Date.now() - RUN_LEASE_MS + 400,
+    });
+    const dead = gone.create({
+      chatKey: sessionId,
+      status: 'running',
+      openedBy: 'caller',
+      origin: null,
+    });
+    inner.withScenarios([quick]);
+    const sentAt = Date.now();
+
+    // A short bound so the no-timer re-park (bound spent) is met too.
+    await send('person-window', 'right after the crash', { queueWaitMs: 50 });
+    const mine = runs.listForChat(sessionId).find((run) => run.id !== dead.id)!;
+    expect(runs.get(mine.id)?.status).toBe('queued');
+    await vi.waitFor(() => expect(runs.get(mine.id)?.status).toBe('ended'), { timeout: 3000 });
+
+    expect(Date.now() - sentAt).toBeLessThan(3000);
+    expect(runs.get(dead.id)).toMatchObject({ status: 'ended', ending: 'process_died' });
+  });
+
+  it('one failed ended write does not hold the chat: the next message still starts', async () => {
+    inner.withScenarios([quick, quick]);
+    failNextEnded = true;
+    await send('person-window', 'first');
+    const [first] = runs.listForChat(sessionId);
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    // The write failed: the record still says the turn runs, and said why.
+    expect(runs.get(first!.id)).toMatchObject({ status: 'running', ending: 'completed' });
+    expect(indexFired()).toBe(true);
+    errors.mockClear();
+
+    await send('person-window', 'second');
+    const second = runs.listForChat(sessionId).find((run) => run.id !== first!.id)!;
+    await vi.waitFor(() => expect(runs.get(second.id)?.status).toBe('ended'));
+
+    // Nothing in this process held it any more, so it was retired with the
+    // ending its turn_end recorded.
+    expect(runs.get(first!.id)).toMatchObject({ status: 'ended', ending: 'completed' });
+    expect(inner.sendMessage.mock.calls.map((call) => call[1])).toEqual(['first', 'second']);
+  });
+
+  it('across the Claude Code SDK rebind, a run before it and a launch after it meet one key', async () => {
+    const rebound = gate();
+    const finish = gate();
+    inner.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: 'text_delta', data: { text: 'before the rebind' } };
+        await rebound.wait;
+        // The resumed process speaks: this event is where the turn learns its new id.
+        yield { type: 'text_delta', data: { text: 'after the rebind' } };
+        await finish.wait;
+        yield { type: 'done', data: {} };
+      },
+      quick,
+    ]);
+    await send('person-window', 'a long job');
+    const [before] = runs.listForChat(sessionId);
+    await vi.waitFor(() => expect(runs.get(before!.id)?.status).toBe('running'));
+
+    // The runtime resumes under a new SDK id: the settings move by that id
+    // (`rekeySessionSettings`), and the turn's next event rekeys the projector,
+    // which moves the chat's queue rows and its runs.
+    const next = crypto.randomUUID();
+    inner.getInternalSessionId.mockReturnValue(next);
+    await runtimeRegistry.rekeySessionSettings(sessionId, next);
+    rebound.open();
+    await vi.waitFor(() => expect(runs.get(before!.id)?.sessionId).toBe(next));
+
+    await send('person-window', 'after the rebind');
+    const after = runs.listForChat(next).find((run) => run.id !== before!.id)!;
+    // One key for both, so the one-live-run check holds: the second waits.
+    expect(after.sessionId).toBe(next);
+    expect(runs.get(after.id)?.status).toBe('queued');
+    // Read by either id the chat has had, both runs are there.
+    expect(runs.listForChat(next).map((run) => run.id)).toEqual([before!.id, after.id]);
+    expect(runs.listForChat(sessionId).map((run) => run.id)).toEqual([before!.id, after.id]);
+
+    finish.open();
+    await vi.waitFor(() => expect(runs.get(after.id)?.status).toBe('ended'));
+    expect(runs.get(before!.id)?.status).toBe('ended');
+    disposeProjector(next);
   });
 });

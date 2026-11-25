@@ -11,7 +11,7 @@
  * @module services/runs
  */
 import type { Db } from '@dorkos/db';
-import { chatKeyOf, setTurnFactsSink } from '../session/turn-port/index.js';
+import { chatKeyOf, isRunHeld, setTurnFactsSink } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
 import { createRunFactsSink } from './run-facts-sink.js';
 import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
@@ -38,11 +38,17 @@ let installed: { store: RunStore; renew: ReturnType<typeof setInterval> } | unde
  * @param db - The machine store.
  * @param opts.epoch - This boot's epoch, minted once at startup (§6.1).
  * @param opts.now - The clock, in tests.
+ * @param opts.ownerHolds - Whether this process holds a run's owner; defaults
+ *   to the turn code's own record of it (`isRunHeld`).
  * @returns The store.
  */
-export function installRunRecord(db: Db, opts: { epoch: string; now?: () => number }): RunStore {
+export function installRunRecord(
+  db: Db,
+  opts: { epoch: string; now?: () => number; ownerHolds?: (runId: string) => boolean }
+): RunStore {
   uninstallRunRecord();
-  const store = new RunStore(db, opts);
+  // Renewed, and kept from retirement, only while this process holds the run.
+  const store = new RunStore(db, { ownerHolds: isRunHeld, ...opts });
   setTurnFactsSink(createRunFactsSink(store));
   const renew = setInterval(() => {
     try {
@@ -64,11 +70,6 @@ export function uninstallRunRecord(): void {
   clearInterval(installed.renew);
   setTurnFactsSink(undefined);
   installed = undefined;
-}
-
-/** The installed run store, or `undefined` before startup wired it. */
-export function getRunStore(): RunStore | undefined {
-  return installed?.store;
 }
 
 /**

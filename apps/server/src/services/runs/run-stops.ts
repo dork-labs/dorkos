@@ -5,9 +5,22 @@
  * own transaction, before the runtime is asked: a crash between the two must
  * still show that somebody asked, because recovery's rule "a stop by a person
  * or agent: nothing continues" (§7.3) reads it. The receipt is added when it
- * comes. Neither decides the run's ending: a run ends `stopped` only on a
- * `turn_end` that reports the interrupt (§4.4), and an `unconfirmed` stop
- * whose turn then finishes ends as the runtime reports it.
+ * comes. A receipt whose outcome is `acked` or `closed` is the proof that the
+ * stop ended the turn (§4.4, the rule `RunFactSchema` holds), so it records
+ * the ending `stopped` on a run that is `started`, `running` or `ended`; a
+ * `turn_end` read later never overwrites it. An `unconfirmed`, `failed` or
+ * `not-running` receipt records nothing more: that turn ends as the runtime
+ * reports it.
+ *
+ * **A receipt can land after the turn settled** (the runtime answers the
+ * interrupt after the turn's own end). It is still read: the ending is
+ * written when the receipt arrives, on a run that is `ended` but not yet
+ * `settled`. Holding the settle until a receipt would leave a turn open on a
+ * receipt that may never come; an ending written late is one write. Runs
+ * reach `settled` only once their follow-ups are done (T4), so from then a
+ * receipt that comes after `settled` is kept on the request and changes no
+ * ending. A run a pause cut back to `queued` is never `stopped`: the pause's
+ * own receipt finds no request left on it.
  *
  * The callers are the Stop button's route and a pause, which are not turn
  * code, so they write through `services/runs` (§3.4) until they move to the
@@ -73,6 +86,12 @@ export function writeStopReceipt(
     const stopRequests = requests.map((request, i) =>
       i === index ? { ...request, outcome: outcome.data } : request
     );
-    store.annotate(run.id, { endingDetail: { ...run.endingDetail, stopRequests } });
+    const confirmed =
+      (outcome.data === 'acked' || outcome.data === 'closed') &&
+      (run.status === 'started' || run.status === 'running' || run.status === 'ended');
+    store.annotate(run.id, {
+      endingDetail: { ...run.endingDetail, stopRequests },
+      ...(confirmed ? { ending: 'stopped' } : {}),
+    });
   });
 }

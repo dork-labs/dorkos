@@ -249,10 +249,22 @@ export function dropTransient(plan: DispatchPlan, why: string): void {
  *   turn ahead is waiting on a person, DOR-3113).
  * - A transient trigger is dropped: it has no later moment worth running at.
  *
+ * A run another boot left live is the exception to "its settle wakes it":
+ * nothing in this process will settle it, and the record retires it once its
+ * lease runs out. So the launch is parked not before `retryAt`, and the pump
+ * tries it again at that moment, whatever is left of its bound (a no-timer
+ * re-park included), rather than wait out a whole bound behind a turn that
+ * is already gone.
+ *
  * @param plan - The launch that met a live run.
  * @param budgetExhausted - Whether the wait bound launched it.
+ * @param retryAt - Epoch ms at which the live run, another boot's, can be retired.
  */
-export function reparkBehindLiveRun(plan: DispatchPlan, budgetExhausted: boolean): void {
+export function reparkBehindLiveRun(
+  plan: DispatchPlan,
+  budgetExhausted: boolean,
+  retryAt?: number
+): void {
   if (plan.transient) {
     dropTransient(plan, 'another turn of its chat was running');
     return;
@@ -277,11 +289,10 @@ export function reparkBehindLiveRun(plan: DispatchPlan, budgetExhausted: boolean
       return;
     }
   }
-  parkDispatch(
-    plan,
-    unwatchedSettle(plan),
-    remainingMs > 0 ? { budgetMs: remainingMs } : { noTimer: true }
-  );
+  parkDispatch(plan, unwatchedSettle(plan), {
+    ...(remainingMs > 0 ? { budgetMs: remainingMs } : { noTimer: true as const }),
+    ...(retryAt !== undefined ? { notBefore: new Date(retryAt).toISOString() } : {}),
+  });
 }
 
 /**

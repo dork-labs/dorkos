@@ -6,9 +6,17 @@
  * (`@dorkos/shared/turn-port`), never in Drizzle rows (§4.2), and it checks
  * every status change against {@link canTransition}: an illegal pair throws
  * {@link IllegalRunTransitionError} and writes nothing. Every write is one
- * synchronous `better-sqlite3` transaction (`immediate`); one made while
- * another transaction is open on the same connection joins it as a savepoint,
- * which is how a queue row and its run change together (§5, item 1).
+ * synchronous `better-sqlite3` transaction. Opened on its own it is
+ * `immediate`; opened while another transaction is open on the same
+ * connection (the queue store's `atomically`, a deferred transaction, or a
+ * Drizzle `tx` it was handed) it is a savepoint inside that one, and the
+ * outer transaction's mode stands. That nesting is how a queue row and its run
+ * change together (§5, item 1).
+ *
+ * **A chat's id.** Every reader that looks runs up by a chat resolves the id
+ * through {@link chatKeyOf}, the very function the queue's own readers use
+ * (`queueKeyOf` in `session/resolution/session-key-registry.ts`), so a run is
+ * never looked up under an id its queue rows are not kept under (§4.1).
  *
  * Who calls which method, and when, is {@link createRunFactsSink} (the
  * dispatcher's facts) and `run-stops.ts` (stop requests). This file only
@@ -19,6 +27,7 @@
 import { ulid } from 'ulidx';
 import {
   and,
+  isNull,
   eq,
   inArray,
   isNotNull,
@@ -40,6 +49,7 @@ import {
   type WaitReason,
 } from '@dorkos/shared/turn-port';
 import type { InterruptReceipt } from '@dorkos/shared/schemas';
+import { chatKeyOf } from '../session/turn-port/index.js';
 
 /** How long a live run's lease lasts after each renewal (§4.1, §7.1). */
 export const RUN_LEASE_MS = 60_000;
@@ -248,11 +258,24 @@ export interface RunStoreOptions {
   epoch: string;
   /** The clock, epoch ms. Injected by tests. */
   now?: () => number;
+  /**
+   * Whether this process still holds the in-memory owner of one of its live
+   * runs: a launch under way, an open turn, a runtime's own turn. A live run
+   * this boot owns with no such owner is retired like a dead boot's (a write
+   * that failed left it live); absent, every run this boot owns counts as held.
+   */
+  ownerHolds?: (runId: string) => boolean;
 }
 
 /** The run record over the machine store's `turn_runs` table. */
 export class RunStore {
   private readonly now: () => number;
+  /**
+   * Rowless `queued` runs whose words this process holds in memory (a
+   * refusing caller's trigger, waiting in the dispatcher's pending set). See
+   * {@link retireDeadRuns}.
+   */
+  private readonly heldWords = new Set<string>();
 
   /**
    * Open the store over the machine store.
@@ -264,7 +287,23 @@ export class RunStore {
     private readonly db: Db,
     private readonly opts: RunStoreOptions
   ) {
-    this.now = opts.now ?? Date.now;
+    this.now = opts.now ?? (() => Date.now());
+  }
+
+  /** Whether this process still holds the owner of one of its own live runs. */
+  private holds(runId: string): boolean {
+    return this.opts.ownerHolds?.(runId) ?? true;
+  }
+
+  /**
+   * Note that this process holds a rowless `queued` run's words in memory: the
+   * dispatcher put it back in line itself (transition 8). Created runs are
+   * noted by {@link create}; any move out of `queued` forgets the run.
+   *
+   * @param runId - The run.
+   */
+  holdWords(runId: string): void {
+    this.heldWords.add(runId);
   }
 
   /** This process's boot epoch. */
@@ -297,6 +336,11 @@ export class RunStore {
    * @param chatKey - The chat.
    */
   listForChat(chatKey: string): TurnRun[] {
+    return this.rawListForChat(chatKeyOf(chatKey));
+  }
+
+  /** A chat's runs under exactly this id, oldest first. */
+  private rawListForChat(chatKey: string): TurnRun[] {
     return this.db
       .select()
       .from(turnRuns)
@@ -315,7 +359,8 @@ export class RunStore {
    *
    * @param chatKey - The chat.
    */
-  liveRunOf(chatKey: string): TurnRun | undefined {
+  liveRunOf(chatId: string): TurnRun | undefined {
+    const chatKey = chatKeyOf(chatId);
     return this.transaction(() => {
       this.retireDeadRuns(chatKey);
       const row = this.db
@@ -333,9 +378,15 @@ export class RunStore {
   }
 
   /**
-   * Retire every live run of a chat (or of every chat) whose owner is gone:
-   * another boot owned it and its lease ran out (§7.1). An owner whose lease
-   * ran out is an observation, so this writes only what was observed:
+   * Retire what nobody is running any more, in one chat (or every chat). The
+   * one place this rule lives; {@link liveRunOf} runs it before every read of
+   * a chat's live run, so no reader is ever held behind a turn nobody runs.
+   *
+   * A live run whose owner is gone: another boot owned it and its lease ran
+   * out (§7.1), or this boot owns it and no longer holds its in-memory owner
+   * (`RunStoreOptions.ownerHolds`; a write that failed left it live). An
+   * owner that is gone is an observation, so only what was observed is
+   * written:
    *
    * - `starting`: its launch never reached `turn_start` in a live process, so
    *   the runtime never saw its words. Back to `queued` (transition 8).
@@ -345,10 +396,19 @@ export class RunStore {
    *   hand the words back as a draft.
    * - `running`: ended (12) the same way.
    *
-   * What follows a dead run is recovery's to decide at boot (T15), so
-   * `recovery_decided_at` stays empty. The one place this rule lives.
+   * A `queued` run with no queue row and no source whose words this process
+   * does not hold: an earlier boot made it, its words were in that process's
+   * memory, and they are gone. Cancelled (5) as `start_lost`, or it would
+   * read as waiting forever. From T5 a run with a pending or leased
+   * `start_turn` effect is never cancelled by this rule: its words are at
+   * their source, not in memory. A known edge: with the instance lock
+   * skipped, two servers sharing one data folder would cancel each other's
+   * waiting rowless runs, as each holds only its own.
    *
-   * @param chatKey - Only this chat's runs, when given.
+   * What follows a dead run is recovery's to decide at boot (T15), so
+   * `recovery_decided_at` stays empty.
+   *
+   * @param chatKey - Only this chat's runs (as its queue rows are kept), when given.
    */
   retireDeadRuns(chatKey?: string): void {
     this.transaction(() => {
@@ -359,7 +419,32 @@ export class RunStore {
           this.endTurn(run, 'process_died');
         }
       }
+      for (const run of this.lostRowlessRuns(chatKey)) {
+        this.move(run, 'cancelled', {
+          waitReason: null,
+          endedAt: this.stamp(),
+          endingDetail: { ...run.endingDetail, cancelledBecause: 'start_lost' },
+        });
+      }
     });
+  }
+
+  /** Rowless `queued` runs whose words this process does not hold. */
+  private lostRowlessRuns(chatKey?: string): TurnRun[] {
+    return this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(
+          eq(turnRuns.status, 'queued'),
+          isNull(turnRuns.queueMessageId),
+          isNull(turnRuns.sourceRef),
+          ...(chatKey !== undefined ? [eq(turnRuns.sessionId, chatKey)] : [])
+        )
+      )
+      .all()
+      .map(toRun)
+      .filter((run) => !this.heldWords.has(run.id));
   }
 
   /**
@@ -417,11 +502,12 @@ export class RunStore {
     }
     return this.transaction(() => {
       const id = input.id ?? ulid();
+      const chatKey = chatKeyOf(input.chatKey);
       const seq =
         (this.db
           .select({ value: max(turnRuns.chatSeq) })
           .from(turnRuns)
-          .where(eq(turnRuns.sessionId, input.chatKey))
+          .where(eq(turnRuns.sessionId, chatKey))
           .get()?.value ?? 0) + 1;
       const at = new Date(this.now()).toISOString();
       const live = input.status === 'running';
@@ -429,7 +515,7 @@ export class RunStore {
         .insert(turnRuns)
         .values({
           id,
-          sessionId: input.chatKey,
+          sessionId: chatKey,
           chatSeq: seq,
           chainId: id,
           agentId: input.agentId ?? null,
@@ -444,6 +530,7 @@ export class RunStore {
           ...(live ? { startedAt: at, deliveredAt: at } : {}),
         })
         .run();
+      if (input.status === 'queued' && input.queueMessageId === undefined) this.heldWords.add(id);
       return this.get(id)!;
     });
   }
@@ -467,6 +554,7 @@ export class RunStore {
       .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, run.status)))
       .run().changes;
     if (changed === 0) throw new IllegalRunTransitionError(run.id, run.status, to);
+    if (to !== 'queued') this.heldWords.delete(run.id);
     return this.get(run.id)!;
   }
 
@@ -492,43 +580,55 @@ export class RunStore {
   }
 
   /**
-   * Renew the lease of every live run this boot owns (§4.1).
+   * Renew the lease of every live run this boot owns and still holds the
+   * in-memory owner of (§4.1). A run whose owner is gone is left to lapse.
    *
    * @returns How many leases were renewed.
    */
   renewLeases(): number {
+    const held = this.ownLiveRuns().filter((run) => this.holds(run.id));
+    if (held.length === 0) return 0;
     return this.db
       .update(turnRuns)
       .set({ leaseUntil: this.now() + RUN_LEASE_MS })
       .where(
         and(
-          eq(turnRuns.ownerEpoch, this.opts.epoch),
+          inArray(
+            turnRuns.id,
+            held.map((run) => run.id)
+          ),
           inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES])
         )
       )
       .run().changes;
   }
 
-  /**
-   * Whether a live run's owner is gone: another boot owned it and its lease
-   * ran out (§7.1). A run this boot owns is never dead, however late its
-   * lease, which is what keeps a laptop's sleep from killing its own turns.
-   *
-   * @param run - A live run.
-   */
-  ownerIsGone(run: TurnRun): boolean {
-    return (
-      run.ownerEpoch !== this.opts.epoch && (run.leaseUntil === null || run.leaseUntil < this.now())
-    );
+  /** This boot's live runs, of one chat or all. */
+  private ownLiveRuns(chatKey?: string): TurnRun[] {
+    return this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(
+          inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES]),
+          eq(turnRuns.ownerEpoch, this.opts.epoch),
+          ...(chatKey !== undefined ? [eq(turnRuns.sessionId, chatKey)] : [])
+        )
+      )
+      .all()
+      .map(toRun);
   }
 
   /**
-   * Every live run another boot owned whose lease ran out (§7.1).
+   * Every live run whose owner is gone: another boot owned it and its lease
+   * ran out (§7.1), or this boot owns it and no longer holds its in-memory
+   * owner. A run this boot still holds is never dead, however late its lease,
+   * which is what keeps a laptop's sleep from killing its own turns.
    *
    * @param chatKey - Only this chat's, when given.
    */
   deadLiveRuns(chatKey?: string): TurnRun[] {
-    return this.db
+    const foreign = this.db
       .select()
       .from(turnRuns)
       .where(
@@ -541,6 +641,7 @@ export class RunStore {
       )
       .all()
       .map(toRun);
+    return [...foreign, ...this.ownLiveRuns(chatKey).filter((run) => !this.holds(run.id))];
   }
 
   /**
@@ -563,16 +664,47 @@ export class RunStore {
   }
 
   /**
+   * Move one waiting run to another chat, after that chat's runs, when its
+   * queue row moved there.
+   *
+   * @param run - The run, `queued`.
+   * @param toChatKey - The chat its row now waits on, as its queue rows are kept.
+   */
+  moveToChat(run: TurnRun, toChatKey: string): void {
+    if (run.sessionId === toChatKey) return;
+    this.transaction(() => {
+      const tail =
+        this.db
+          .select({ value: max(turnRuns.chatSeq) })
+          .from(turnRuns)
+          .where(eq(turnRuns.sessionId, toChatKey))
+          .get()?.value ?? 0;
+      this.db
+        .update(turnRuns)
+        .set({ sessionId: toChatKey, chatSeq: tail + 1 })
+        .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, 'queued')))
+        .run();
+    });
+  }
+
+  /**
    * Move a chat's runs to a new id, after any runs already there, so
-   * `chat_seq` stays unique and in order.
+   * `chat_seq` stays unique and in order. Exact ids, never resolved: it runs
+   * in the transaction that moves the chat's queue rows, before the new id is
+   * linked.
+   *
+   * Throws when both ids hold a live run (the one-live-run index refuses the
+   * move): nothing moves, the runs stay under the old id, and the queue
+   * store's caller logs both ids and still moves its rows.
    *
    * @param fromChatKey - The id they are kept under.
    * @param toChatKey - The id they move to.
+   * @throws When both chats hold a live run.
    */
   rekeyChat(fromChatKey: string, toChatKey: string): void {
     if (fromChatKey === toChatKey) return;
     this.transaction(() => {
-      const moving = this.listForChat(fromChatKey);
+      const moving = this.rawListForChat(fromChatKey);
       if (moving.length === 0) return;
       const tail =
         this.db

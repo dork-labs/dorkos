@@ -61,6 +61,7 @@ import { joinWaitingChatRows } from './join-chat-rows.js';
 import { isOwnersCleanSend } from './owner-send.js';
 import { withKeptCeiling } from './carried-limits.js';
 import { feedRun, launchVerdictOf } from './run-feed.js';
+import { forgetHeldRuns, holdRun, releaseRun } from '../turn-port/facts.js';
 import {
   putBackForPause,
   recordTurnDelivered,
@@ -82,6 +83,7 @@ const recoveryFailures = new Map<string, number>();
 export function forgetLaunchMemory(): void {
   recoveryFailures.clear();
   forgetRecordedHolds();
+  forgetHeldRuns();
   steering.clear();
 }
 
@@ -195,10 +197,13 @@ export function launchDispatchInner(
   // cannot say this alone: a runtime's own turn, a turn whose write-lock went
   // quiet past its timeout, or a launch still in `SessionTurnQueue` may hold
   // the chat with no slot. Otherwise the run is `starting` now (transition 4).
-  if (launchVerdictOf(plan) === 'busy') {
-    reparkBehindLiveRun(plan, opts.budgetExhausted);
+  const verdict = launchVerdictOf(plan);
+  if (verdict.kind === 'busy') {
+    reparkBehindLiveRun(plan, opts.budgetExhausted, verdict.retryAt);
     return Promise.resolve({ accepted: false });
   }
+  // This process holds the run's owner until the launch is done with it.
+  if (plan.runId !== undefined) holdRun(plan.runId);
   const { sessionKey, clientId, messageId } = plan;
   let turnStarted = false;
   // Set when a pause landed between the check above and this turn's start: the
@@ -224,6 +229,7 @@ export function launchDispatchInner(
     // A launch that started no turn: its words go back in line (transition 8),
     // unless something on the way out already cancelled its run.
     if (!turnStarted) feedRun(plan, 'back in line', (feed, runId) => feed.backInLine(runId));
+    if (plan.runId !== undefined) releaseRun(plan.runId);
     launching.delete(messageId);
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
     schedulePump(sessionKey);

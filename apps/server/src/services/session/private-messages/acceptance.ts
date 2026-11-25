@@ -47,7 +47,7 @@ import type {
 } from './source-types.js';
 export { PrivateSessionMessageRefusalError } from './refusal.js';
 import { PrivateSessionMessageRefusalError } from './refusal.js';
-import { privateSourceIdOf } from './source-types.js';
+import { privateQueueRowOf, privateSourceIdOf } from './source-types.js';
 
 /** Durable private-source acceptance and exactly-once dispatch coordinator. */
 export class PrivateSessionMessageAcceptanceService {
@@ -112,7 +112,7 @@ export class PrivateSessionMessageAcceptanceService {
           id: queueMessageId,
           sessionId: draft.sessionId,
           content: draft.queuePlaceholder,
-          clientId: `system:${draft.sourceKind}`,
+          ...privateQueueRowOf(draft.sourceKind),
           disposition: 'queue',
         },
         tx
