@@ -435,6 +435,7 @@ test('workflow path list covers Security’s complete list and both sides of ren
     '.claude/hooks/user-level-heavy-guard.sh',
     '.claude/hooks/heavy-command-guard.mjs',
     '.claude/hooks/lib/shell-command.mjs',
+    '.claude/settings.json',
     'any/turn-ceiling.ts',
     'any/continuation-hold.ts',
     'any/agent-level.ts',
