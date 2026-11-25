@@ -6,6 +6,7 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { KeepAwakeStatusSchema } from '@dorkos/shared/schemas';
+import { INTERNAL_ERROR_RESPONSE } from '../openapi/problem-openapi.js';
 
 /**
  * Register the keep-awake routes.
@@ -24,6 +25,7 @@ export function registerKeepAwakeOpenApi(registry: OpenAPIRegistry): void {
       'cannot when it cannot (a container, a missing tool, or a refusal). The same payload is ' +
       'pushed as `keep_awake_status` on `GET /api/events` whenever it changes.',
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'The keep-awake status',
         content: { 'application/json': { schema: KeepAwakeStatusSchema } },

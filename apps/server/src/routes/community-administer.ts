@@ -17,7 +17,10 @@ import type { Context, Hono } from 'hono';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import { CommunityConnectionAdministerSchema } from '@dorkos/shared/community-administer';
 import type { ApiEnv } from '../http/api-chain.js';
+import { problem } from '@dorkos/http-kit';
+import { logger, logError } from '../lib/logger.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
+import { connectionNotFound as notFound } from './community-problems.js';
 import type { RemoteAdministerCredentials } from '../services/communities/remote/administer/administer-credentials.js';
 
 /** What the route needs of the manage credentials: whether one is held, never the credential. */
@@ -46,11 +49,8 @@ export function addAdministerRoutes(
       );
     } catch (error) {
       if (error instanceof RemoteConnectionNotFoundError) return notFound(c);
-      return c.json({ error: 'Could not check this space. Try again.' }, 500);
+      logger.warn('[Communities] Could not read whether the app manages a space', logError(error));
+      return problem(c, 'internal_error', { detail: 'Couldn’t check this space. Try again.' });
     }
   });
-}
-
-function notFound(c: Context): Response {
-  return c.json({ error: 'Space connection not found.' }, 404);
 }

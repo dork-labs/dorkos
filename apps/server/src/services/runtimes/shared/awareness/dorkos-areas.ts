@@ -63,7 +63,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // Work claims ride here with no words of their own: a claim is a chat saying
     // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.'],
+    // A chat's change review (diff.*) rides here with no words of its own (DOR-4978).
+    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.', 'diff.'],
     areas: ['agents', 'messages', 'own_chat'],
   },
   {
@@ -146,6 +147,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'Tasks',
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
+    // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978).
     covers: ['tasks_', 'heartbeat.'],
     areas: ['tasks'],
   },
@@ -153,6 +155,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     name: 'Agents',
     can: 'find, create, change, pause, resume agents and work queues.',
     covers: [
+      // Also a person's own queue doors (`work-queue.view_queue` and the rest, DOR-4978).
       'work-queue.',
       'mesh_',
       'create_agent',
@@ -160,6 +163,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'agent.',
       'operator.update_agent',
       'operator.sidebar_',
+      // The agent templates a person added ride here with no words of their own (DOR-4978).
+      'templates.',
     ],
     areas: ['agents', 'safety'],
   },
@@ -173,6 +178,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'To-dos',
     can: "promises and to-dos: add, assign, read the team's, mark kept or dropped.",
+    // Also the app's to-do reads and a person's to-do writes, "add a promise" among them
+    // (DOR-4978): the writes are person-only, so no agent can call them.
     covers: ['todo_promises.', 'todos.'],
     areas: ['todos'],
   },
@@ -191,6 +198,12 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'list_extensions',
       'get_extension_errors',
       'accounts_',
+      // Opening a /r/ link is a read that names nothing new, so it rides here with no words of its
+      // own (DOR-5046): the block has no room left under its token cap.
+      'link.resolve',
+      // Folder and workspace reads ride here with no words of their own (DOR-4978).
+      'directory.',
+      'workspaces.',
     ],
     areas: [],
     gate: 'read only',

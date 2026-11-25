@@ -10,7 +10,6 @@ gates:
   - wf.test.community-pg
   - wf.test.community-packaged
   - wf.after-merge-alert.alert
-  - wf.auto-revert.decide
 prs: []
 ratchet-release: []
 field-changes: []
@@ -27,7 +26,10 @@ community-pg and the packaged community proof leave the queue (about 25 runner-m
 build: 12-15 and 10-12 min in the last five green builds) and run on that push run, the canary and
 release pull requests; the `test` fan-in accepts community-pg's skip on `merge_group` as on a pull
 request, and community-packaged's scope step answers `run=false` there. after-merge-alert (ROLLING=1)
-and auto-revert read the push runs. Shard 1 of a push run does not save the build cache:
+reads the push runs. auto-revert does not yet: since #4347 it skips a rolling workflow and leaves it
+to rolling-bisect.yml, which needs test.yml to take the `bisect_sha` / `bisect_of` dispatch inputs.
+That follow-up adds `test` to auto-revert.yml, ROLLING_WORKFLOWS and rolling-bisect's `workflows:`
+together. Shard 1 of a push run does not save the build cache:
 build-cache.yml already saves the same key after every merge.
 
 Baseline (week of Nov 16-22): queue test-shard 57,233 runner-min/week, queue `test` p50 21.2 min;

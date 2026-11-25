@@ -50,7 +50,7 @@
  * @module routes/search
  */
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { problem } from '@dorkos/http-kit';
 import type { Db } from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -63,7 +63,7 @@ import { answerSearch, type SearchScope } from '../services/search/index.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { readerOfRequest } from './audit-reader.js';
 import { resolveCaller } from './room-caller.js';
-import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { isOwnerCaller, sendRoomError } from './room-error-response.js';
 
 /** What the search router reads. It writes nothing and holds no state. */
 export interface SearchRouterDeps {
@@ -114,16 +114,10 @@ export function createSearchRoutes(deps: SearchRouterDeps): Hono<ApiEnv> {
         { rooms: rooms.searchScope(caller.id), sessions },
         readQuery(c)
       );
-      if (!answer.ok) {
-        return c.json(
-          { error: answer.error, code: answer.code },
-          answer.status as ContentfulStatusCode
-        );
-      }
+      if (!answer.ok) return problem(c, 'invalid_request', { detail: answer.detail });
       return c.json(answer.response);
     } catch (err) {
-      const reply = roomErrorReply(err, 'GET /api/search', () => isOwnerCaller(caller));
-      return c.json(reply.body, reply.status as ContentfulStatusCode);
+      return sendRoomError(c, err, 'GET /api/search', () => isOwnerCaller(caller));
     }
   });
 

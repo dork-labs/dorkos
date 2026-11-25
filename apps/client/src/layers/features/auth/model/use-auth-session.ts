@@ -165,7 +165,7 @@ export function usePasskeySignIn(): AuthActionState<[]> {
   return { run, isPending, error, reset: () => setError(null) };
 }
 
-/** Where a Wi-Fi sign-in by code stands (DOR-4744). */
+/** Where a network sign-in by code stands (DOR-4744). */
 export type WifiCodeSignInStep = 'idle' | 'asking' | 'waiting' | 'signing-in';
 
 /** What {@link useWifiCodeSignIn} hands the screen. */
@@ -201,8 +201,8 @@ async function postSignIn(
 }
 
 /**
- * Sign this device in over Wi-Fi: ask the computer DorkOS runs on, then type
- * the one-time code the owner sees there after approving (DOR-4744). Wi-Fi
+ * Sign this device in over the network: ask the computer DorkOS runs on, then type
+ * the one-time code the owner sees there after approving (DOR-4744). A network sign-in
  * takes no password.
  */
 export function useWifiCodeSignIn(): WifiCodeSignIn {
@@ -222,7 +222,7 @@ export function useWifiCodeSignIn(): WifiCodeSignIn {
       setError(
         res?.status === 429
           ? 'Too many sign-in requests. Try again in a few minutes.'
-          : 'Couldn’t reach the computer. Check you’re on the same Wi-Fi.'
+          : 'Couldn’t reach the computer. Check you’re on the same network or VPN.'
       );
       return;
     }

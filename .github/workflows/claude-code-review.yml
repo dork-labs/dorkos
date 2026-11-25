@@ -1,12 +1,14 @@
 name: claude-code-review
 
 # Automated PR review by Claude Code, posting inline comments on the specific
-# lines where it finds issues. Runs on-demand, not on every push: a full review
-# fires when a PR is opened or marked ready-for-review, and re-reviews fire when
-# the author applies the `re-review` label (auto-cleared after, so it is a reusable
-# "re-request review" button). Since Nov 23 every push runs too (see `on:`),
-# because the Security lens's verdict has to name the exact head; since Nov 24 a
-# push to an already-reviewed PR runs the Security lens only. Controls (labels): `skip-review`
+# lines where it finds issues. It runs a full review when a PR is opened or
+# marked ready for review, and a Security-lens re-check on every push to a PR
+# that has already had a full review (the Security verdict has to name the
+# exact head).
+# Which of the two a push gets is decided by scripts/review-mode.sh from the
+# review's own marked summaries (see PUSH MODE beside `on:`). The `re-review`
+# label asks for a full re-review (auto-cleared after, so it is a reusable
+# "re-request review" button). Controls (labels): `skip-review`
 # (no review at all), `review:light` / `review:deep` (intensity). See the
 # `creating-pull-requests` skill for the author-facing flow. This is the "auto"
 # half of the Claude review setup; claude.yml is the interactive "@claude" half.
@@ -202,9 +204,16 @@ on:
   # per PR. Before Nov 23 pushes were not reviewed at all, so this restores that
   # for the general review and keeps the per-head Security verdict, which judges
   # the whole diff with the same lens, model and turn budget as before. The
-  # mode is the reviewer's call from its own prior summary, so a PR whose first
-  # review was lost (a conflicted open, a spent quota) still gets a full one on
-  # its next push. A full re-review on demand is still the `re-review` label.
+  # mode is decided by the workflow, not the reviewer: "Decide the review mode"
+  # runs scripts/review-mode.sh (main's copy) over the PR's comments before the
+  # review starts and hands the prompt `REVIEW MODE: push-recheck` or
+  # `REVIEW MODE: full`. Push re-check needs a push AND a full review's summary
+  # posted by `claude[bot]` itself, recognised by the hidden marker that
+  # scripts/review-gh.sh appends to every summary (head and mode, from this
+  # workflow, never from the reviewer); a push re-check's own summary does not
+  # count. So a PR whose first review was lost (a conflicted open, a spent
+  # quota) still gets a full one on its next push, and every doubt is `full`.
+  # A full re-review on demand is still the `re-review` label.
   #
   # NOT DONE, measured: debounce (per-PR `cancel-in-progress`). Only 1 of 18
   # consecutive push pairs arrived while the earlier review was running (a
@@ -485,7 +494,7 @@ jobs:
           exit 1
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # Empty means "checkout's own default", which for a `pull_request` run is
@@ -617,7 +626,10 @@ jobs:
       # Then made read-only, file and directory (0500). Be honest about what that
       # buys, because an earlier version of this comment oversold it: as long as the
       # CONTAINMENT INVARIANT holds, no granted tool can write a file at all, so
-      # there is nothing for these permissions to stop. They mattered while
+      # there is nothing for these permissions to stop. (One fixed exception:
+      # `review-gh.sh security-findings` writes the model's text to one file in
+      # REVIEW_FINDINGS_DIR, outside this directory and the workspace, which the
+      # send step only ever encrypts as opaque bytes and deletes.) They mattered while
       # `Bash(git log:*)`/`Bash(git show:*)` were granted — `--output=<file>` wrote
       # any path — and even then they were the wrong layer, because those same
       # grants could execute a shell and simply `chmod u+w` a directory the runner
@@ -808,6 +820,45 @@ jobs:
             echo "- turn budget: $max_turns"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # FULL REVIEW OR PUSH RE-CHECK (see PUSH MODE beside `on:`). Decided here,
+      # before the review starts, so the prompt carries one explicit value and
+      # the reviewer never has to work it out from the comments itself. The
+      # rule is scripts/review-mode.sh, pinned by scripts/test-review-mode.sh:
+      # push-recheck only for a push (`synchronize`) to a PR that has a full
+      # review's summary posted by `claude[bot]` (user type Bot) and marked
+      # mode=full by scripts/review-gh.sh, which stamps this step's output
+      # (REVIEW_MODE below) into every summary it posts. Run from the
+      # DEFAULT BRANCH's copy, like the classifier and the helper, because
+      # nothing executed in this job may come from the checkout. Every doubt
+      # is `full`: not a push, the script not on the default branch yet, the
+      # comments unreadable, or any answer but the two values. A full review
+      # costs a little more and never skips the code review, so that is the
+      # safe direction. This step cannot fail the job.
+      - name: Decide the review mode
+        id: review-mode
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ steps.target.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          mode=full
+          decider="$RUNNER_TEMP/review-mode.sh"
+          if [ "$EVENT_ACTION" != synchronize ]; then
+            echo "Not a push (${EVENT_ACTION:-dispatch}): a full review."
+          elif [ -z "$DEFAULT_BRANCH" ] ||
+            ! git show "origin/$DEFAULT_BRANCH:scripts/review-mode.sh" >"$decider" 2>/dev/null; then
+            echo "::warning::scripts/review-mode.sh is not on the default branch, so this push gets a full review."
+          elif ! comments=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" 2>/dev/null); then
+            echo "::warning::Could not read this PR's comments, so this push gets a full review."
+          else
+            mode=$(bash "$decider" "$EVENT_ACTION" - <<<"$comments") || mode=full
+          fi
+          case "$mode" in push-recheck | full) ;; *) mode=full ;; esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Review mode: $mode"
+          echo "- review mode: $mode" >> "$GITHUB_STEP_SUMMARY"
+
       # THE CHECK'S COLOUR IS NOT THIS STEP'S TO DECIDE (DOR-1665).
       #
       # `continue-on-error` hands that to "Decide the check" at the bottom of the
@@ -843,7 +894,7 @@ jobs:
       - name: Claude Code review
         id: claude-review
         continue-on-error: true
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@f431adaf77e0fecf918431e75a2b5b45b85af002 # v1.0.283
         env:
           # The reviewer's destination, read by scripts/review-gh.sh. It lives in
           # the environment rather than in the helper's arguments precisely so the
@@ -857,6 +908,13 @@ jobs:
           # the PR's current head itself. A SHA from the event payload, never a
           # path, so it cannot point anything into the workspace.
           REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # The mode decided above, stamped by the helper into the summary's
+          # marker, which is what the next push's mode is decided from.
+          REVIEW_MODE: ${{ steps.review-mode.outputs.mode || 'full' }}
+          # Where `review-gh.sh security-findings` saves a failing Security
+          # lens's details, for the send step below to encrypt and delete. Out of
+          # the workspace, and chosen here so the model cannot point it anywhere.
+          REVIEW_FINDINGS_DIR: ${{ runner.temp }}/security-findings
           # DEFENCE IN DEPTH, not a control (DOR-464). These blunt one specific
           # escalation: git executes a `diff.external` / `GIT_EXTERNAL_DIFF` driver
           # through `sh -c`, and that driver is configurable from `$HOME/.gitconfig`
@@ -911,7 +969,7 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.target.outputs.number }}
             INLINE COMMENTS: ${{ github.event_name == 'workflow_dispatch' && 'review-gh.sh inline' || 'inline-comment tool' }}
-            TRIGGER: ${{ github.event.action == 'synchronize' && 'push' || 'review request' }}
+            REVIEW MODE: ${{ steps.review-mode.outputs.mode || 'full' }}
 
             You are reviewing this pull request as a senior DorkOS engineer.
 
@@ -929,6 +987,7 @@ jobs:
               bash ${{ runner.temp }}/trusted/review-gh.sh inline <file> <line> '<body>'
               bash ${{ runner.temp }}/trusted/review-gh.sh security-verdict pass 0
               bash ${{ runner.temp }}/trusted/review-gh.sh security-verdict fail <musts> <categories>
+              bash ${{ runner.temp }}/trusted/review-gh.sh security-findings '<details>'
 
             `view` takes comma-separated JSON field names, e.g. `view labels`,
             `view comments` or `view files` for the changed-file list, and prints
@@ -944,19 +1003,18 @@ jobs:
             that — Grep and Glob cover every search this review needs, dot-
             directories included, in a single pass.
 
-            PUSH MODE. If TRIGGER at the top of this prompt is `push`, first look
-            for your own prior summary comment on this PR (`review-gh.sh view
-            comments`): a top-level comment with a severity tally such as
-            "1 important, 3 nits" or "No blocking issues found". If there is one,
-            this run is a Security re-check of the new head only:
-            - Do not read REVIEW.md or AGENTS.md, do not review the code again,
-              and post no inline comments.
-            - Post exactly this summary with `review-gh.sh summary`:
-              'Push re-check: the Security lens only. The code review is not repeated on a push (add the re-review label for one), so 0 important, 0 nits here.'
-            - Then do the SECURITY LENS section at the end of this prompt in
-              full, over the whole diff, exactly as on any other run.
-            If there is no prior summary of yours, this PR has never had a full
-            review: ignore this paragraph and do the full review below.
+            PUSH MODE. REVIEW MODE at the top of this prompt was decided by the
+            workflow before this run started, from your own earlier summaries on
+            this PR. Follow it exactly; do not decide it again from the comments.
+            - `push-recheck`: this push follows a full review, so this run is a
+              Security re-check of the new head only:
+              - Do not read REVIEW.md or AGENTS.md, do not review the code
+                again, and post no inline comments.
+              - Post exactly this summary with `review-gh.sh summary`:
+                'Push re-check: the Security lens only. The code review is not repeated on a push (add the re-review label for one), so 0 important, 0 nits here.'
+              - Then do the SECURITY LENS section at the end of this prompt in
+                full, over the whole diff, exactly as on any other run.
+            - `full`: ignore this paragraph and do the full review below.
 
             First, read REVIEW.md and AGENTS.md at the repository root and apply
             them in full, including REVIEW.md's "How to review" process, the
@@ -1034,6 +1092,12 @@ jobs:
             - This repository is public. Never describe a Security Must, an attack
               or an exploit path in any comment, inline or summary. Leave security
               findings out of the code-review comments above as well.
+            - When there are Musts, first save their details with
+              `review-gh.sh security-findings '<details>'`: for each Must, the
+              file and line, who the attacker is, the attack, and the smallest
+              fix. That command posts nothing: the details are encrypted so only
+              DorkOS Security can read them. A fail verdict is refused until they
+              are saved.
             - Post exactly one verdict, as your last action, for this head:
               `review-gh.sh security-verdict pass 0` when there are no Musts, or
               `review-gh.sh security-verdict fail <musts> <categories>`, where
@@ -1154,6 +1218,45 @@ jobs:
             --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(~/.claude/**),Read(~/.config/**),Read(~/.ssh/**)"
             --setting-sources user
             --max-turns ${{ steps.pr-size.outputs.max_turns }}
+
+      # A FAILING SECURITY LENS'S DETAILS, TO SECURITY ONLY (Nov 24). The lens may
+      # not describe a Must in public, so the reviewer saves the details through
+      # `review-gh.sh security-findings` into REVIEW_FINDINGS_DIR. This step,
+      # not the model, encrypts them with age to the public key(s) in MAIN's
+      # ci/security/findings-recipients.txt and posts only the ciphertext, as
+      # github-actions[bot]; Security reads it with
+      # `scripts/security-findings.sh decrypt`. No recipients on main: nothing
+      # is sent. The plaintext is deleted on every path (the trap below, and the
+      # script's own), and nothing here prints it. Like the classifier below,
+      # the script runs from main's copy, never the checkout. Best effort: every
+      # failure here is a warning and exit 0 (not `continue-on-error`, which
+      # test-review-classifier.sh keeps to the review step alone), so it never
+      # decides the review's own check.
+      - name: Send the Security lens details to Security, encrypted
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.target.outputs.number }}
+          REPO: ${{ github.repository }}
+          FINDINGS_DIR: ${{ runner.temp }}/security-findings
+        run: |
+          trap 'rm -rf "$FINDINGS_DIR"' EXIT
+          if [ ! -s "$FINDINGS_DIR/findings.txt" ]; then
+            echo "No Security lens details to send."
+            exit 0
+          fi
+          tools="$RUNNER_TEMP/security-findings-tools"
+          mkdir -p "$tools"
+          for f in security-findings.sh install-age.sh; do
+            if ! git show "origin/$DEFAULT_BRANCH:scripts/$f" >"$tools/$f" 2>/dev/null; then
+              echo "::warning::scripts/$f is not on $DEFAULT_BRANCH yet, so the Security lens details were discarded unsent."
+              exit 0
+            fi
+          done
+          git show "origin/$DEFAULT_BRANCH:ci/security/findings-recipients.txt" >"$tools/recipients.txt" 2>/dev/null ||
+            : >"$tools/recipients.txt"
+          bash "$tools/security-findings.sh" post "$FINDINGS_DIR" "$tools/recipients.txt" ||
+            echo "::warning::The Security lens details could not be sent to Security; see the line above."
 
       # Self-explaining infra failures (DOR-396): a review that dies produces a red
       # check indistinguishable from a red check backed by real findings, forcing a

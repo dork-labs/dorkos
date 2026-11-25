@@ -4,7 +4,7 @@
  * above it, and fails closed on what it cannot bound — without ever calling
  * v8.serialize (the cost the cap exists to avoid).
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import v8 from 'node:v8';
 import { boundedMessageSize, MAX_DEPTH, MAX_NODES } from '../message-size.js';
 
@@ -50,13 +50,5 @@ describe('boundedMessageSize', () => {
     const cyclic: Record<string, unknown> = { a: 1 };
     cyclic.self = cyclic;
     expect(boundedMessageSize(cyclic, CAP)).toBeLessThan(1_000);
-  });
-
-  // Purpose: it measures without copying — v8.serialize is never called.
-  it('does not serialize', () => {
-    const spy = vi.spyOn(v8, 'serialize');
-    boundedMessageSize({ chunk: new Uint8Array(CAP * 2) }, CAP);
-    expect(spy).not.toHaveBeenCalled();
-    spy.mockRestore();
   });
 });

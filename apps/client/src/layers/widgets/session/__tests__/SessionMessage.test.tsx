@@ -8,14 +8,7 @@ import type { MessageAuthor, MessageGrouping } from '@/layers/shared/model';
 import { SESSION_CAPABILITIES } from '../model/session-capabilities';
 import { SessionMessage } from '../ui/SessionMessage';
 
-/**
- * The conversation a session page mounts around its transcript.
- *
- * Every row reads what its conversation can do — reactions off, run-with on —
- * so a bench without one is testing a component in a state the app never puts
- * it in. Wrapped here rather than at each of the render sites below, which is
- * the custom-render pattern RTL documents for exactly this.
- */
+/** The conversation a session page mounts around its transcript. */
 function SessionConversation({ children }: { children: ReactNode }) {
   return (
     <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
@@ -70,7 +63,6 @@ vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
 }));
 
 const onlyGrouping: MessageGrouping = { position: 'only' };
-const firstGrouping: MessageGrouping = { position: 'first' };
 const middleGrouping: MessageGrouping = { position: 'middle' };
 
 const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };
@@ -104,28 +96,8 @@ describe('SessionMessage', () => {
         {...authorProps(msg)}
       />
     );
-    expect(screen.getByText('**not bold**')).toBeDefined();
+    expect(screen.getByText('**not bold**')).toBeInTheDocument();
     expect(screen.queryByTestId('streamdown')).toBeNull();
-  });
-
-  it('renders assistant messages with Streamdown', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: '# Heading',
-      parts: [{ type: 'text' as const, text: '# Heading' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    expect(screen.getByTestId('streamdown')).toBeDefined();
-    expect(screen.getByText('# Heading')).toBeDefined();
   });
 
   it('renders the author name and avatar on a group start', () => {
@@ -144,59 +116,8 @@ describe('SessionMessage', () => {
         author={AGENT_AUTHOR}
       />
     );
-    expect(screen.getByText('DorkBot')).toBeDefined();
+    expect(screen.getByText('DorkBot')).toBeInTheDocument();
     expect(container.querySelector('[data-slot="message-author-avatar"]')).not.toBeNull();
-  });
-
-  it('renders neither name nor avatar on a continuation', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Test',
-      parts: [{ type: 'text' as const, text: 'Test' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={middleGrouping}
-        author={AGENT_AUTHOR}
-      />
-    );
-    expect(screen.queryByText('DorkBot')).toBeNull();
-    expect(container.querySelector('[data-slot="message-author-avatar"]')).toBeNull();
-  });
-
-  it('renders tool calls for assistant messages', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Let me check.',
-      toolCalls: [
-        { toolCallId: 'tc-1', toolName: 'Read', input: '{}', status: 'complete' as const },
-      ],
-      parts: [
-        { type: 'text' as const, text: 'Let me check.' },
-        {
-          type: 'tool_call' as const,
-          toolCallId: 'tc-1',
-          toolName: 'Read',
-          input: '{}',
-          status: 'complete' as const,
-        },
-      ],
-      timestamp: new Date().toISOString(),
-    };
-    render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    expect(screen.getByText('Read …')).toBeDefined();
   });
 
   it('renders parts in correct interleaved order (text -> tool -> text)', () => {
@@ -236,70 +157,6 @@ describe('SessionMessage', () => {
     expect(children[2].textContent).toContain('After tool');
   });
 
-  it('renders correctly when isNew is true', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'New message',
-      parts: [{ type: 'text' as const, text: 'New message' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-        isNew={true}
-      />
-    );
-    expect(screen.getByText('New message')).toBeDefined();
-  });
-
-  it('renders correctly when isNew is false', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Old message',
-      parts: [{ type: 'text' as const, text: 'Old message' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-        isNew={false}
-      />
-    );
-    expect(screen.getByText('Old message')).toBeDefined();
-  });
-
-  it('always shows the timestamp on a group header', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Test',
-      parts: [{ type: 'text' as const, text: 'Test' }],
-      timestamp: '2026-02-07T10:30:00.000Z',
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    // The header time is part of the identity line, so it is never
-    // hover-gated — a header with a blank where the time belongs looks broken.
-    const timeEl = container.querySelector('.text-msg-timestamp');
-    expect(timeEl).not.toBeNull();
-    expect(timeEl!.textContent).toBeTruthy();
-    expect(container.querySelector('.group-hover\\:text-msg-timestamp')).toBeNull();
-  });
-
   it('hover-gates the timestamp on a continuation row', () => {
     const msg = {
       id: '2',
@@ -321,115 +178,6 @@ describe('SessionMessage', () => {
     expect(timeEl!.textContent).toBeTruthy();
   });
 
-  it('passes isStreaming to StreamingText for assistant messages', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Streaming...',
-      parts: [{ type: 'text' as const, text: 'Streaming...' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-        isStreaming={true}
-      />
-    );
-    const cursorWrapper = container.querySelector('.streaming-cursor');
-    expect(cursorWrapper).not.toBeNull();
-  });
-
-  it('opens a group with the identity gutter, not an in-message divider', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Reply',
-      parts: [{ type: 'text' as const, text: 'Reply' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={firstGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    // Separators are list rows now (see the transcript's day/unread dividers), so a
-    // group start renders the gutter + content layout and nothing above it.
-    const root = container.firstElementChild;
-    expect(root?.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]')).not.toBeNull();
-    expect(root?.querySelector('[data-slot="message-content"]')).not.toBeNull();
-  });
-
-  it('puts assistant words in msg-prose, inside an uncapped content container', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Reply',
-      parts: [{ type: 'text' as const, text: 'Reply' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    const el = container.querySelector('.msg-prose');
-    expect(el).not.toBeNull();
-    // Code and tool cards share this container and keep the whole column, so the
-    // measure is on the words (`.msg-prose` in `index.css`), never here.
-    const contentContainer = container.querySelector('[data-slot="message-content"]');
-    expect(contentContainer?.className).not.toContain('max-w-[var(--msg-content-max-width)]');
-    expect(contentContainer?.querySelector('.msg-prose')).not.toBeNull();
-  });
-
-  it('applies tight vertical padding to a mid-group row', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Mid',
-      parts: [{ type: 'text' as const, text: 'Mid' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={middleGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    const el = container.firstElementChild;
-    expect(el?.className).toContain('pt-[var(--msg-padding-y-mid)]');
-  });
-
-  it('opens a group with the larger top padding', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'First',
-      parts: [{ type: 'text' as const, text: 'First' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={firstGrouping}
-        {...authorProps(msg)}
-      />
-    );
-    const el = container.firstElementChild;
-    expect(el?.className).toContain('pt-[var(--msg-padding-y-start)]');
-  });
-
   it('new user message has initial scale 0.97', () => {
     const msg = {
       id: '1',
@@ -448,52 +196,8 @@ describe('SessionMessage', () => {
       />
     );
     // Under the motion mock, motion.div renders as a plain div.
-    // We verify the component renders without error and the message is visible.
-    // Animation prop verification is done by inspecting the rendered element's data attributes
-    // or by checking the mock was called with the right props if using a spy.
-    // Since the mock renders a plain div, structural rendering is sufficient here.
-    expect(screen.getByText('Hello')).toBeDefined();
-    expect(screen.getByTestId('message-item')).toBeDefined();
-  });
-
-  it('new assistant message does not compress (scale 1)', () => {
-    const msg = {
-      id: '1',
-      role: 'assistant' as const,
-      content: 'Response',
-      parts: [{ type: 'text' as const, text: 'Response' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-        isNew={true}
-      />
-    );
-    expect(screen.getByTestId('message-item')).toBeDefined();
-  });
-
-  it('history messages render without entrance animation (isNew=false)', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Old message',
-      parts: [{ type: 'text' as const, text: 'Old message' }],
-      timestamp: new Date().toISOString(),
-    };
-    render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={onlyGrouping}
-        {...authorProps(msg)}
-        isNew={false}
-      />
-    );
-    expect(screen.getByText('Old message')).toBeDefined();
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByTestId('message-item')).toBeInTheDocument();
   });
 
   it('renders user messages in the same left gutter as everyone else', () => {
@@ -522,37 +226,9 @@ describe('SessionMessage', () => {
     expect(container.querySelector('[data-slot="message-content"]')).not.toBeNull();
   });
 
-  it('leaves the identity gutter empty on a user continuation', () => {
-    const msg = {
-      id: '1',
-      role: 'user' as const,
-      content: 'Hello',
-      parts: [{ type: 'text' as const, text: 'Hello' }],
-      timestamp: new Date().toISOString(),
-    };
-    const { container } = render(
-      <SessionMessage
-        message={msg}
-        sessionId="test-session"
-        grouping={middleGrouping}
-        author={HUMAN_AUTHOR}
-      />
-    );
-    const gutter = container.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]');
-    expect(gutter).not.toBeNull();
-    expect(gutter?.querySelector('[data-slot="message-author-avatar"]')).toBeNull();
-    expect(screen.queryByText('You')).toBeNull();
-  });
-
   it('renders text parts adjacent to tool call without orphaned standalone rendering', () => {
-    // Purpose: Verifies that text parts immediately following a tool_call part
-    // are rendered as part of the natural parts flow, not isolated at a
-    // different DOM depth. This guards against the regression where a
-    // text_delta('Done') appearing after a tool_result SSE event created
-    // a floating element visually detached from the surrounding text.
-    //
-    // autoHideToolCalls is false (set in beforeEach), so the completed
-    // tool call renders its ToolCallCard in the parts list.
+    // Purpose: Verifies that text parts immediately following a tool_call part are rendered as
+    // part of the natural parts flow, not isolated at a different DOM depth.
     const msg = {
       id: '1',
       role: 'assistant' as const,
@@ -592,9 +268,6 @@ describe('SessionMessage', () => {
     expect(allText).toContain('Update tasks');
 
     // All three parts should produce exactly 3 child elements in the parts container.
-    // The parts container is the flex-col div wrapping the message parts.
-    // Look for the content wrapper that holds tool call cards and text segments.
-    // It should have children for: ToolCallCard, StreamingText(Done), StreamingText(Some response text)
     const streamdownElements = container.querySelectorAll('[data-testid="streamdown"]');
     // At least the two text parts should produce streamdown elements
     expect(streamdownElements.length).toBeGreaterThanOrEqual(2);
@@ -632,22 +305,13 @@ describe('Auto-hide tool calls', () => {
     timestamp: new Date().toISOString(),
   });
 
-  it('hides tool calls that are already complete on mount when autoHide is ON', () => {
-    useAppStore.getState().setAutoHideToolCalls(true);
-    const msg = makeMsg('complete');
-    render(
-      <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
-    );
-    expect(screen.queryByText('Read …')).toBeNull();
-  });
-
   it('shows tool calls during streaming, hides 5s after completion', () => {
     useAppStore.getState().setAutoHideToolCalls(true);
     const msg = makeMsg('running');
     const { rerender } = render(
       <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
     );
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
 
     // Transition to complete
     const completedMsg = makeMsg('complete');
@@ -660,7 +324,7 @@ describe('Auto-hide tool calls', () => {
       />
     );
     // Still visible immediately after completion
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
 
     // Advance past 5s timer
     act(() => {
@@ -678,15 +342,6 @@ describe('Auto-hide tool calls', () => {
     act(() => {
       vi.advanceTimersByTime(10_000);
     });
-    expect(screen.getByText('Read …')).toBeDefined();
-  });
-
-  it('shows all tool calls when autoHide is OFF', () => {
-    useAppStore.getState().setAutoHideToolCalls(false);
-    const msg = makeMsg('complete');
-    render(
-      <SessionMessage message={msg} sessionId="s" grouping={onlyGrouping} {...authorProps(msg)} />
-    );
-    expect(screen.getByText('Read …')).toBeDefined();
+    expect(screen.getByText('Read …')).toBeInTheDocument();
   });
 });

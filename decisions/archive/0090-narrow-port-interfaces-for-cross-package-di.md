@@ -1,7 +1,7 @@
 ---
 number: 90
 title: Narrow Port Interfaces for Cross-Package DI
-status: proposed
+status: archived
 created: 2026-03-06
 spec: agent-runtime-review-remediation
 superseded-by: null

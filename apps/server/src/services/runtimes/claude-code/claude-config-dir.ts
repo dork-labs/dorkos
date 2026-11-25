@@ -66,6 +66,7 @@ import {
   projectRefFor,
   readEligibilityRules,
   refusalFor,
+  type LaunchAccountResolution,
 } from '../../core/usage/account-eligibility.js';
 import { launchFallbackOrder, mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
@@ -74,6 +75,7 @@ import {
   canonicalAccountPath,
   defaultAccountFolder,
   expandAccountPath,
+  isMainSignIn,
   resolveRuntimeAccounts,
   type AccountWarning,
 } from '../../core/usage/runtime-accounts.js';
@@ -367,17 +369,6 @@ export function machineDefaultClaudeRoot(config: ConfigReader = configManager): 
   }
   return claudeDefaultAccountFolder({ runtimes: { claudeCode } }).path;
 }
-
-/** The answer to {@link resolveLaunchAccountRoot}. */
-export type LaunchAccountResolution =
-  | {
-      ok: true;
-      /** The absolute Claude config directory this launch runs and bills on. */
-      root: string;
-      /** The account that folder is: a registry id, or `default` for Main. */
-      accountId: string;
-    }
-  | { ok: false; error: AccountNotAllowedError };
 
 /**
  * Resolve the Claude root ONE launch runs and bills on, through the full ladder
@@ -836,6 +827,32 @@ function resolvedDefaultAccount(
 }
 
 /**
+ * The registered rows that are this computer's main sign-in, by the same rule
+ * core's account check refuses them by (`isMainSignIn`, DOR-5033): the row
+ * `default` aliases and any other row on its folder. Empty when the accounts
+ * cannot be read.
+ *
+ * @param config - Config reader.
+ * @param unavailable - Whether the stored registry could not be read.
+ */
+function mainSignInIds(config: ConfigReader, unavailable: boolean): Set<string> {
+  if (unavailable) return new Set();
+  try {
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: { runtimes: { claudeCode: config.get('runtimes')?.claudeCode } },
+      home: os.homedir(),
+      defaultFolder: (_runtime, raw) => claudeDefaultAccountFolder(raw),
+    });
+    return new Set(
+      accounts.filter((a) => !a.implicit && isMainSignIn(a, accounts)).map((a) => a.id)
+    );
+  } catch (err) {
+    logger.debug('[claude-config-dir] main sign-in rows unavailable', { err: String(err) });
+    return new Set();
+  }
+}
+
+/**
  * The launch-only override Settings has to say in words, if any: the server's
  * inherited `$CLAUDE_CONFIG_DIR` while no default account is chosen (exactly
  * when {@link resolveActiveClaudeRoot} hands new sessions that folder), AND no
@@ -880,6 +897,7 @@ export function describeClaudeCodeAccounts(
   const { defaultAccount, accounts, defaultAccountColor, unavailable } =
     readClaudeCodeConfig(config);
   const resolved = resolvedDefaultAccount(config, unavailable);
+  const mainIds = mainSignInIds(config, unavailable);
   const credits = describeCreditsEntry(config, opts.creditsAvailable ?? false);
   // New sessions run on credits when they are the machine default, so the row
   // marked "in use" is the credits entry, not the folder `defaultAccount` names.
@@ -934,6 +952,11 @@ export function describeClaudeCodeAccounts(
         // Sent only when on, so Settings' "Move agents here automatically" switch
         // reads it, and a row without it reads the same wire as before.
         ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
+        // Sent only when on, for Settings' "Agents may pick this account" switch.
+        ...(account.agentsMayPick === true ? { agentsMayPick: true } : {}),
+        // Sent only for Main's own rows, which core never lets an agent pick
+        // (DOR-5033), so Settings does not offer the switch there.
+        ...(account.id !== null && mainIds.has(account.id) ? { isDefault: true } : {}),
       })),
     ...describeAccountRules(config, unavailable),
     credits,

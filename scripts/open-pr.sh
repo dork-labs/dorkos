@@ -36,8 +36,10 @@
 #        label.
 #      - `needs-design` when a user-visible UI path is touched outside tests
 #        (UI_RE and UI_SKIP_RE, the design gate's own lists).
-#   3. The provenance line (AGENTS.md "Signing outward writes"): appended to
-#      the body when it has none, with only the fields this script knows.
+#   3. The provenance line (AGENTS.md "Signing outward writes"): a version 2
+#      line from scripts/provenance/provenance-line.ts, appended unless the
+#      body's last non-blank line is already one. A field it cannot read is left out and named; a CLI
+#      that cannot run leaves a minimal line and a warning, never a refusal.
 #   4. `gh pr create` with every label at creation, so the `opened` event and
 #      the review see them. With `--hold`, `hold` is one of them and the reason
 #      is posted straight after as a one-line comment, `hold: <reason>`, which
@@ -56,8 +58,8 @@
 #          the ruleset requires them, the PR opens without auto-merge, exactly
 #          as before, so this switches itself on when they become required.
 #      The strategy flag is left off: the merge queue owns it.
-#   Then it prints the PR URL, the head SHA, the labels GitHub reports, and
-#   whether auto-merge is on.
+#   Then it prints the PR URL, the head SHA, the labels GitHub reports, the
+#   provenance line it appended, and whether auto-merge is on.
 #
 # `--extra-label` adds any other label, but never `hold` or another hold label
 # (`do-not-merge`, `wip`, `blocked`), never a gate label someone else owns
@@ -69,7 +71,9 @@
 # the labels and the exact commands it would run.
 #
 # Environment: GH (the gh binary, for fixtures), OPEN_PR_CAP (the cap script),
-# OPEN_PR_BASE (default origin/main), OPEN_PR_REMOTE (default origin).
+# OPEN_PR_BASE (default origin/main), OPEN_PR_REMOTE (default origin),
+# OPEN_PR_TSX (the tsx binary that runs the provenance CLI, default the repo's
+# node_modules/.bin/tsx).
 #
 # Exit codes: 0 opened (or dry run); 1 refused by a rule or the cap; 2 usage;
 # 3 a gh call failed (the PR may exist: read the message).
@@ -254,32 +258,78 @@ if [ "$want_skip" = 0 ] && [ -z "$fragments" ] && grep -qE "$USER_FACING_COMMIT_
 fi
 
 # --- 3. The provenance line. ------------------------------------------------
+# Version 2, built by scripts/provenance/provenance-line.ts through
+# @dorkos/shared/provenance, the one place its rules live. dork-labs/dorkos is
+# public, so the chat is cut to 8 characters and host and turn never go in.
+# The CLI derives the surface (dorkos, ci or bare-cli: where the work was
+# driven from). A field the environment does not name is left out, and the
+# note names it.
+#
+# Signing never stops a PR from opening. When the CLI cannot run (no
+# node_modules, no node, a crash, or output that is not one signature line),
+# the body gets PROVENANCE_MINIMAL instead, and the note and a warning say why.
+#
+# A body counts as signed only when its LAST non-blank line is a signature,
+# the rule every reader uses (readProvenance): a line quoted mid-body or in a
+# fence signs nothing, so such a body still gets one.
+PROVENANCE_CLI=$REPO_ROOT/scripts/provenance/provenance-line.ts
+# Without the CLI nothing is known, not even the surface.
+PROVENANCE_MINIMAL='<!-- agent:provenance {"v":2} -->'
+SIGNATURE_RE='^[[:space:]]*<!--[[:space:]]*(agent|flow):provenance[[:space:]]+\{.*\}[[:space:]]*-->[[:space:]]*$'
+# tsx: OPEN_PR_TSX when set; else this checkout's, then the main checkout's,
+# since a fresh worktree often has no install of its own.
+if [ -n "${OPEN_PR_TSX:-}" ]; then
+  tsx_tried=("$OPEN_PR_TSX")
+else
+  tsx_tried=("$REPO_ROOT/node_modules/.bin/tsx")
+  if common_dir=$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    main_tsx=$(dirname "$common_dir")/node_modules/.bin/tsx
+    [ "$main_tsx" = "${tsx_tried[0]}" ] || [ "$main_tsx" -ef "${tsx_tried[0]}" ] || tsx_tried+=("$main_tsx")
+  fi
+fi
+TSX=""
+for candidate in "${tsx_tried[@]}"; do
+  if [ -x "$candidate" ]; then
+    TSX=$candidate
+    break
+  fi
+done
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 body="$tmp/body.md"
 cat "$body_file" >"$body"
-if grep -qE '<!-- (agent|flow):provenance ' "$body"; then
+last_line=$(tr -d '\r' <"$body" | awk 'NF { l = $0 } END { print l }')
+if grep -qE "$SIGNATURE_RE" <<<"$last_line"; then
   provenance_note="already in the body"
 else
-  harness=${DORKOS_HARNESS:-}
-  if [ -z "$harness" ] && [ -n "${CLAUDECODE:-}" ]; then harness=claude-code; fi
-  account=""
-  if [ "$harness" = claude-code ]; then
-    # ~/.claude2 is the handle "claude2", as every brief writes it.
-    account=$(basename "${CLAUDE_CONFIG_DIR:-claude}")
-    account=${account#.}
-    case "$account" in *@*) account="" ;; esac
+  cli_failed=""
+  cli_rc=0
+  line=""
+  if [ -n "$TSX" ]; then
+    line=$("$TSX" "$PROVENANCE_CLI" --visibility public 2>"$tmp/provenance.err") || cli_rc=$?
   fi
-  session=${CLAUDE_SESSION_ID:-}
-  session=${session:0:8}
-  line=$(jq -cn --arg h "$harness" --arg s "$session" --arg a "$account" '
-    {v: 1} + (if $h != "" then {harness: $h} else {} end)
-    + (if $s != "" then {sessionId: $s} else {} end)
-    + (if $a != "" then {account: $a} else {} end)
-    + {surface: "github"}') || die 2 "could not build the provenance line (needs jq)"
+  if [ -z "$TSX" ]; then
+    cli_failed="tsx is not installed (looked in $(printf '%s, ' "${tsx_tried[@]}" | sed 's/, $//')); run pnpm install"
+  elif [ "$cli_rc" -ne 0 ]; then
+    # The error, not the stack: the first line naming one, else the last line.
+    reason=$(grep -m1 'Error' "$tmp/provenance.err" || awk 'NF { l = $0 } END { print l }' "$tmp/provenance.err")
+    cli_failed="it exited $cli_rc: $(cut -c1-200 <<<"$reason")"
+  elif [[ $line == *$'\n'* ]] || ! grep -qxE '<!-- agent:provenance \{.*\} -->' <<<"$line"; then
+    cli_failed="it printed no signature line"
+  fi
+  if [ -n "$cli_failed" ]; then
+    line=$PROVENANCE_MINIMAL
+    provenance_note="appended the minimal line, because the provenance CLI could not sign ($cli_failed): $line"
+    echo "open-pr: warning: $provenance_note" >&2
+  else
+    json=${line#<!-- agent:provenance }
+    omitted=$(jq -r '["harness", "account", "agent", "chat", "space"] - keys | join(", ")' <<<"${json% -->}" 2>/dev/null) ||
+      omitted="unknown (jq could not read the line)"
+    provenance_note="appended: $line"
+    [ -z "$omitted" ] || provenance_note="$provenance_note (omitted: $omitted)"
+  fi
   [ -n "$(tail -c1 "$body")" ] && echo >>"$body"
-  printf '\n<!-- agent:provenance %s -->\n' "$line" >>"$body"
-  provenance_note="appended: <!-- agent:provenance $line -->"
+  printf '\n%s\n' "$line" >>"$body"
 fi
 
 # --- 4. Open it. ------------------------------------------------------------
@@ -344,6 +394,7 @@ gh_labels=$(jq -r '[.labels[].name] | join(",")' <<<"$view")
 echo "url: $url"
 echo "head: $gh_head"
 echo "labels: $gh_labels"
+echo "provenance: $provenance_note"
 missing=""
 for label in "${labels[@]}"; do
   case ",$gh_labels," in *",$label,"*) ;; *) missing="$missing $label" ;; esac

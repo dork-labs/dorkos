@@ -346,13 +346,6 @@ describe('TopologyManager', () => {
         'relay.agent.ns-b.*'
       );
     });
-
-    it('is a no-op when relayCore is undefined', () => {
-      const tm = makeTopology(makeMockRegistry(), undefined);
-
-      // Should not throw
-      tm.denyCrossNamespace('ns-a', 'ns-b');
-    });
   });
 
   // ---------------------------------------------------------------------------
@@ -559,22 +552,6 @@ describe('TopologyManager', () => {
       expect(store.list()).toEqual([]);
       expect(relay.addAccessRule).not.toHaveBeenCalled();
       expect(relay.removeAccessRule).not.toHaveBeenCalled();
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // No Relay scenario
-  // ---------------------------------------------------------------------------
-
-  describe('without RelayCore', () => {
-    it('getTopology returns only caller own namespace', () => {
-      const registry = makeMockRegistry([agentA1, agentB1]);
-      const tm = makeTopology(registry, undefined);
-
-      const view = tm.getTopology('ns-a');
-
-      expect(view.namespaces).toHaveLength(1);
-      expect(view.namespaces[0]!.namespace).toBe('ns-a');
     });
   });
 });

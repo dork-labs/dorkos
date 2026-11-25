@@ -1,7 +1,7 @@
 ---
 number: 206
 title: Per-Extension Hot Reload via Deactivate-Reactivate Pattern
-status: draft
+status: archived
 created: 2026-03-26
 spec: ext-platform-04-agent-extensions
 superseded-by: null

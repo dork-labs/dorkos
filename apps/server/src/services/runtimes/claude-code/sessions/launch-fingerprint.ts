@@ -98,6 +98,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
+import { TURN_REFERENCE_ENV_NAMES } from '../../shared/references/turn-reference-env.js';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
 import {
@@ -180,12 +181,9 @@ export const PIN_DISPOSITIONS = {
    */
   settingsEnv: 'relaunch',
   /**
-   * The turn's folder grants (`settings.permissions`, spec `agent-home-desk`
-   * §4.2), as the sorted `path:access` list, so a reordered set rides and a
-   * changed one relaunches. The CLI reads settings at launch and has no live
-   * setter for them, and a grant a later turn does not carry must not stay
-   * reachable in a warm process (I5). Room sessions carry a stable set, so the
-   * steady state costs nothing.
+   * Folder grants (`settings.permissions`, spec `agent-home-desk` §4.2) as the sorted `path:access`
+   * list, so a reordered set rides, then the folders added at launch (the agent's home, DOR-5250).
+   * The CLI reads both at launch only; a grant a later turn lacks must not stay reachable (I5).
    */
   additionalDirectories: 'relaunch',
   /**
@@ -292,6 +290,13 @@ export interface AgentIdentityPin {
   readonly agentPath: string;
   /** The agent's display name, as attribution labels show it. */
   readonly displayName: string | undefined;
+  /**
+   * The agent's Mesh ULID, which the launch hands its shells as
+   * `DORKOS_AGENT_ID` for signatures (DOR-5138). Pinned here so a re-registered
+   * agent at the same path relaunches rather than signing with its old id.
+   * Absent only in pins built without one.
+   */
+  readonly agentId?: string;
   /**
    * Whether a token was actually minted. A launch that could not mint runs
    * unattributed; asking for attribution afterwards is a change of authority
@@ -578,7 +583,9 @@ function withdrawnPlugins(
 function describeAgentIdentity(identity: AgentIdentityPin | undefined): string {
   if (!identity) return '<unattributed>';
   const state = identity.attributed ? 'token' : 'mint-failed';
-  return [state, identity.agentPath, identity.displayName ?? ''].join(FIELD_SEP);
+  return [state, identity.agentPath, identity.displayName ?? '', identity.agentId ?? ''].join(
+    FIELD_SEP
+  );
 }
 
 /**
@@ -609,10 +616,14 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
   // partition is complete and each row is independently comparable.
   // `DORKOS_SESSION_ID` is left out too (DOR-4380): a chat rekey (DOR-1309) changes
   // the id the turn arrives under, but every id of the chat resolves to the same
-  // chat, so it must not cost the warm process.
+  // chat, so it must not cost the warm process. `DORKOS_AGENT_ID` is left out of
+  // the env digest because the `agentIdentity` pin already carries the same Mesh
+  // id, so an agent change still relaunches, through that pin. `DORKOS_SPACE_ID`
+  // is the value boot loaded and cannot change while the server runs.
   const owned = new Set([
     'CLAUDE_CONFIG_DIR',
     'DORKOS_SESSION_ID',
+    ...TURN_REFERENCE_ENV_NAMES,
     AGENT_TOKEN_ENV_VAR,
     ...Object.keys(credentialEnv),
   ]);
@@ -638,7 +649,10 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           ? ((options.settings as { fastMode?: boolean }).fastMode ?? false)
           : false
       ),
-      additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+      additionalDirectories: [
+        directoryGrantsFingerprint(grantsFromSettings(options.settings)),
+        ...(options.additionalDirectories ?? []).map((folder) => `${folder}:added`),
+      ].join('\n'),
       folderAllows: digest(JSON.stringify(folderAllowsFromSettings(options.settings))),
       permissionsDeny: digest(JSON.stringify(denyRulesFromSettings(options.settings))),
       folderConfig: [

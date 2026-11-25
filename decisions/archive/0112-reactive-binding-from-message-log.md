@@ -1,7 +1,7 @@
 ---
 number: 112
 title: Reactive Binding Creation from Message Log
-status: draft
+status: archived
 created: 2026-03-11
 spec: adapter-binding-ux-overhaul
 superseded-by: null

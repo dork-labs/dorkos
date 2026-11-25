@@ -184,8 +184,8 @@ describe('the mini app access page', () => {
     const body = { token, decision: 'approve', connectionId: 'linear-work' };
     expect((await decide(body, { ...SAME_PAGE, cookie })).status).toBe(200);
     const again = await decide(body, { ...SAME_PAGE, cookie });
-    expect(again.status).toBe(403);
-    expect(again.body.code).toBe('MINI_APP_ACCESS_STALE');
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe('stale_page');
     expect(access.approve).toHaveBeenCalledTimes(1);
   });
 
@@ -199,7 +199,7 @@ describe('the mini app access page', () => {
   ])('refuses %s', async (_case, body, extra) => {
     const { cookie } = await openPage();
     const res = await decide(body, { ...SAME_PAGE, cookie, ...extra });
-    expect([400, 403]).toContain(res.status);
+    expect([400, 403, 409]).toContain(res.status);
     expect(access.approve).not.toHaveBeenCalled();
   });
 
@@ -235,8 +235,9 @@ describe('the mini app access page', () => {
       { token, decision: 'approve', connectionId: 'linear-work' },
       { ...SAME_PAGE, cookie }
     );
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/changed since the page opened/u);
+    expect(res.status).toBe(412);
+    expect(res.body).toMatchObject({ code: 'precondition_failed' });
+    expect(res.body.detail).toMatch(/changed since the page opened/u);
   });
 
   it('Not now changes nothing', async () => {

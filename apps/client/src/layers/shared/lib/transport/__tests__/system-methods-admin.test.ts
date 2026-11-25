@@ -22,6 +22,14 @@ const DESKTOP_REFUSAL =
   'leave you with no server running. Quit DorkOS and open it again instead.';
 
 /** Answer the next fetch with `status` and this JSON body. */
+/** The problem document's own members for a desktop-managed refusal. */
+const MANAGED_BY_DESKTOP = {
+  type: 'urn:dorkos:problem:managed_by_desktop',
+  title: 'The DorkOS app runs this server, so do this there.',
+  status: 409,
+  code: 'managed_by_desktop',
+};
+
 function serve(status: number, body: Record<string, unknown>) {
   const fetchMock = vi.fn().mockResolvedValue(
     new Response(JSON.stringify(body), {
@@ -56,7 +64,7 @@ async function refusalMessage(call: Promise<unknown>): Promise<string> {
 
 describe('restartServer', () => {
   it('throws the sentence the server wrote, not the body it came in', async () => {
-    serve(409, { error: DESKTOP_REFUSAL, code: 'MANAGED_BY_DESKTOP' });
+    serve(409, { ...MANAGED_BY_DESKTOP, detail: DESKTOP_REFUSAL });
 
     await expect(refusalMessage(createSystemMethods(BASE).restartServer())).resolves.toBe(
       DESKTOP_REFUSAL
@@ -64,13 +72,13 @@ describe('restartServer', () => {
   });
 
   it('carries the refusal code and status, so a caller can branch on them', async () => {
-    serve(409, { error: DESKTOP_REFUSAL, code: 'MANAGED_BY_DESKTOP' });
+    serve(409, { ...MANAGED_BY_DESKTOP, detail: DESKTOP_REFUSAL });
 
     const err = (await createSystemMethods(BASE)
       .restartServer()
       .catch((e: unknown) => e)) as Error & { code?: string; status?: number };
 
-    expect(err.code).toBe('MANAGED_BY_DESKTOP');
+    expect(err.code).toBe('managed_by_desktop');
     expect(err.status).toBe(409);
   });
 
@@ -96,21 +104,21 @@ describe('prepareReset', () => {
   });
 
   it('throws the sentence the server wrote, not the body it came in', async () => {
-    serve(409, { error: 'Nothing has been deleted.', code: 'MANAGED_BY_DESKTOP' });
+    serve(409, { ...MANAGED_BY_DESKTOP, detail: 'Nothing was deleted.' });
 
     await expect(refusalMessage(createSystemMethods(BASE).prepareReset())).resolves.toBe(
-      'Nothing has been deleted.'
+      'Nothing was deleted.'
     );
   });
 });
 
 describe('resetAllData', () => {
   it('throws the sentence the server wrote, not the body it came in', async () => {
-    serve(409, { error: 'Nothing has been deleted.', code: 'MANAGED_BY_DESKTOP' });
+    serve(409, { ...MANAGED_BY_DESKTOP, detail: 'Nothing was deleted.' });
 
     await expect(
       refusalMessage(createSystemMethods(BASE).resetAllData('reset', 'a-one-time-token'))
-    ).resolves.toBe('Nothing has been deleted.');
+    ).resolves.toBe('Nothing was deleted.');
   });
 
   // The confirmation says a person typed a word; the token says the server was

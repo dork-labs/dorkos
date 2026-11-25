@@ -25,6 +25,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { CreditsLaunch } from '../../../core/cloud/credits-protocols.js';
 import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
+import type { TurnReferenceEnv } from '../../shared/references/turn-reference-env.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
 import type { CodexFilePolicy } from '../policy/protected-profile.js';
 import type { CodexManagedMcpServers } from '../mcp-server-config.js';
@@ -47,6 +48,8 @@ export interface CodexTurnTools {
    * with. Absent when the turn is unattributed.
    */
   readonly mintAgentToken?: () => Promise<Record<string, string>>;
+  /** The chat's agent and space references for the shell (`turn-reference-env.ts`). */
+  readonly referenceEnv?: TurnReferenceEnv;
   /** The agent's enabled managed MCP servers, in Codex config shape. */
   readonly managed: CodexManagedMcpServers;
   /** The `dorkos` tool server carrying this turn's bearer, or `null`. */

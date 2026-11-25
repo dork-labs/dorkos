@@ -123,6 +123,13 @@ export const NOTIFICATION_KINDS = [
    */
   'extension.stopped',
   /**
+   * A chat a mini app started (`api.startWork`, `ctx.sessions.start`) was answered and then
+   * never ran: the launch refused it after the answer (the account rule, a paused agent, its
+   * folder) or it kept failing to start (spec `turns-survive-restarts` §3.1, DOR-5232). One
+   * row per start; notable; relay never.
+   */
+  'extension.work_not_started',
+  /**
    * Someone asked the host to make someone else the owner of a community this person owns, or
    * that request completed (DOR-2543). One per request and phase.
    */

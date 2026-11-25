@@ -1,3 +1,4 @@
+import { browserRefusalCode } from '@/layers/entities/local-browser';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   LocalBrowserHistoryDirection,
@@ -188,7 +189,7 @@ export function LocalBrowserView({
       try {
         return await transport.stepLocalBrowserHistory(direction, sessionId);
       } catch (cause) {
-        if ((cause as { code?: string } | null)?.code !== 'history_refused' || !tabId) throw cause;
+        if (browserRefusalCode(cause) !== 'history_refused' || !tabId) throw cause;
         setStepNotice({ tabId, text: browserErrorMessage(cause) });
         return transport.getLocalBrowserState(sessionId);
       }

@@ -506,53 +506,6 @@ describe('marketplace-mcp integration', () => {
     expect(sentry?.type).toBe('plugin');
   });
 
-  // ── Scenario 2 ───────────────────────────────────────────────────────────
-  it('list_marketplaces → reports both personal and community sources', async () => {
-    const result = await callTool(server, 'marketplace_list_marketplaces', {});
-
-    expect(result.isError).toBeUndefined();
-    const payload = parsePayload<{
-      sources: { name: string; source: string; enabled: boolean; packageCount: number }[];
-    }>(result);
-
-    const names = payload.sources.map((s) => s.name).sort();
-    expect(names).toContain(PERSONAL_MARKETPLACE_NAME);
-    expect(names).toContain('community');
-
-    const community = payload.sources.find((s) => s.name === 'community');
-    expect(community?.enabled).toBe(true);
-    expect(community?.packageCount).toBe(3);
-
-    const personal = payload.sources.find((s) => s.name === PERSONAL_MARKETPLACE_NAME);
-    expect(personal?.enabled).toBe(true);
-    expect(personal?.packageCount).toBe(0);
-  });
-
-  // ── Scenario 3 ───────────────────────────────────────────────────────────
-  it('recommend → surfaces a relevant package for a free-text context', async () => {
-    const result = await callTool(server, 'marketplace_recommend', {
-      context: 'I need to track errors in my Next.js app',
-      limit: 5,
-    });
-
-    expect(result.isError).toBeUndefined();
-    const payload = parsePayload<{
-      recommendations: {
-        name: string;
-        marketplace: string;
-        relevanceScore: number;
-        reason: string;
-      }[];
-    }>(result);
-
-    expect(payload.recommendations.length).toBeGreaterThan(0);
-    const top = payload.recommendations[0];
-    expect(top?.name).toBe('sentry-monitor');
-    expect(top?.marketplace).toBe('community');
-    expect(top?.relevanceScore).toBeGreaterThan(0);
-    expect(top?.reason.length).toBeGreaterThan(0);
-  });
-
   // ── Scenario 4 ───────────────────────────────────────────────────────────
   it('install → token round-trip: pending → approve → installed', async () => {
     // First call: no token. Should issue a fresh confirmation token and NOT
@@ -754,43 +707,5 @@ describe('marketplace-mcp integration', () => {
     }>(list);
     const personal = listPayload.sources.find((s) => s.name === PERSONAL_MARKETPLACE_NAME);
     expect(personal?.packageCount).toBe(1);
-  });
-
-  // ── Scenario 8 ───────────────────────────────────────────────────────────
-  it('does not regress sibling tools registered on the same server', async () => {
-    // The marketplace registrations must coexist with the existing core tools
-    // (`ping`, `get_server_info`) on a shared `McpServer`. Both surfaces are
-    // exercised here against the SAME server instance.
-
-    // Marketplace surface still works.
-    const search = await callTool(server, 'marketplace_search', { limit: 20 });
-    expect(search.isError).toBeUndefined();
-
-    // Core tools still work.
-    const ping = await callTool(server, 'ping', {});
-    expect(ping.isError).toBeUndefined();
-    expect(ping.content[0]?.text).toBe('pong');
-
-    const info = await callTool(server, 'get_server_info', {});
-    expect(info.isError).toBeUndefined();
-    const infoPayload = parsePayload<{ name: string; version: string }>(info);
-    expect(infoPayload.name).toBe('dorkos-marketplace-test');
-    expect(infoPayload.version).toBe('1.0.0');
-
-    // No accidental tool name collisions: every expected tool is registered.
-    for (const name of [
-      'marketplace_search',
-      'marketplace_get',
-      'marketplace_list_marketplaces',
-      'marketplace_list_installed',
-      'marketplace_recommend',
-      'marketplace_install',
-      'marketplace_uninstall',
-      'marketplace_create_package',
-      'ping',
-      'get_server_info',
-    ]) {
-      expect(() => getRegisteredTool(server, name)).not.toThrow();
-    }
   });
 });

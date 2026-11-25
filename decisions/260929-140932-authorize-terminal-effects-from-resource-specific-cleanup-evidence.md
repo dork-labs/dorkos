@@ -1,16 +1,18 @@
 ---
 id: 260929-140932
 title: Authorize terminal effects from resource-specific cleanup evidence
-status: proposed
+status: superseded
 created: 2026-09-29
 spec: shutdown-handoff-outcomes
 extractedFrom: shutdown-handoff-outcomes
-superseded-by: null
+superseded-by: 261124-150517
 ---
 
 # 260929-140932. Authorize terminal effects from resource-specific cleanup evidence
 
 ## Status
+
+Superseded by [261124-150517](261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md) (accepted 2026-11-24). It was never adopted. Its two rules that still hold are carried there: a timeout is not proof that work has drained, and an effect whose outcome is unknown is never retried or replayed.
 
 Proposed from [shutdown handoff outcomes](../specs/shutdown-handoff-outcomes/02-specification.md), DOR-2482. Admission is merged in [PR #2338](https://github.com/dork-labs/dorkos/pull/2338); this decision defines the separate handoff policy. Production adoption and the proposed laboratory remain unselected.
 

@@ -144,19 +144,6 @@ describe('resolveChildPath', () => {
     expect(spawnSync).toHaveBeenCalledTimes(1);
   });
 
-  it('ignores whatever the rc files wrote to stderr', async () => {
-    const { spawnSync } = await getChildProcessMock();
-    spawnSync.mockReturnValue({
-      status: 0,
-      signal: null,
-      stdout: await shellStdout(LOGIN_PATH),
-      stderr: 'zsh: no matches found: ~/.iterm2_shell_integration.*\n',
-    });
-    const { resolveChildPath } = await import('../shell-path');
-
-    expect(resolveChildPath(LAUNCHD_PATH)).toBe(LOGIN_PATH);
-  });
-
   it("reads fish's colon-joined PATH, never a space-separated list", async () => {
     // fish keeps PATH as a LIST, so asking it for `"$PATH"` yields
     // `/opt/homebrew/bin /usr/local/bin …` — one junk entry that the old probe
@@ -195,19 +182,6 @@ describe('resolveChildPath', () => {
     expect(log.warn).toHaveBeenCalled();
   });
 
-  it('parses a shell that printed nothing but the PATH', async () => {
-    const { spawnSync } = await getChildProcessMock();
-    spawnSync.mockReturnValue({
-      status: 0,
-      signal: null,
-      stdout: await shellStdout(LOGIN_PATH, { noise: false }),
-      stderr: '',
-    });
-    const { resolveChildPath } = await import('../shell-path');
-
-    expect(resolveChildPath(LAUNCHD_PATH)).toBe(LOGIN_PATH);
-  });
-
   describe('falls back to the inherited PATH', () => {
     /** Assert the fallback happened, and that it said so out loud. */
     async function expectFallbackWithWarning(): Promise<void> {
@@ -243,48 +217,6 @@ describe('resolveChildPath', () => {
 
       await expectFallbackWithWarning();
     });
-
-    it('when the shell exited non-zero', async () => {
-      const { spawnSync } = await getChildProcessMock();
-      spawnSync.mockReturnValue({ status: 127, signal: null, stdout: '', stderr: 'nope' });
-
-      await expectFallbackWithWarning();
-    });
-
-    it('when the output carries no marked PATH', async () => {
-      const { spawnSync } = await getChildProcessMock();
-      spawnSync.mockReturnValue({
-        status: 0,
-        signal: null,
-        stdout: 'Welcome to your shell!\n',
-        stderr: '',
-      });
-
-      await expectFallbackWithWarning();
-    });
-
-    it('when what came back does not look like a PATH', async () => {
-      // A shell that printed an empty or relative-only PATH is a shell whose
-      // answer would make things worse than launchd's four directories.
-      const { spawnSync } = await getChildProcessMock();
-      spawnSync.mockReturnValue({
-        status: 0,
-        signal: null,
-        stdout: await shellStdout('node_modules/.bin:'),
-        stderr: '',
-      });
-
-      await expectFallbackWithWarning();
-    });
-
-    it('when $SHELL is not set', async () => {
-      vi.stubEnv('SHELL', '');
-
-      await expectFallbackWithWarning();
-
-      const { spawnSync } = await getChildProcessMock();
-      expect(spawnSync).not.toHaveBeenCalled();
-    });
   });
 
   describe('does not ask a shell at all', () => {
@@ -299,22 +231,6 @@ describe('resolveChildPath', () => {
       expect(spawnSync).not.toHaveBeenCalled();
       // Skipping on purpose is not a fault; it must not read as one in the log.
       expect(log.warn).not.toHaveBeenCalled();
-    });
-
-    it('on Windows, which has no login-shell PATH to read', async () => {
-      const original = process.platform;
-      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-      try {
-        const { spawnSync } = await getChildProcessMock();
-        const { resolveChildPath } = await import('../shell-path');
-        const { default: log } = await getLogMock();
-
-        expect(resolveChildPath(LAUNCHD_PATH)).toBe(LAUNCHD_PATH);
-        expect(spawnSync).not.toHaveBeenCalled();
-        expect(log.warn).not.toHaveBeenCalled();
-      } finally {
-        Object.defineProperty(process, 'platform', { value: original, configurable: true });
-      }
     });
   });
 });

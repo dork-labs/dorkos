@@ -1,5 +1,8 @@
 /**
- * Workspace HTTP API (DOR-84) — thin handlers over the WorkspaceManager.
+ * Workspace HTTP API (DOR-84) — thin handlers over the WorkspaceManager: make,
+ * read by id, resolve a path, the port block and remove. Listing, the scan and
+ * the pin are capabilities the mount serves
+ * (`services/workspace/workspace-capabilities.ts`).
  *
  * @module server/routes/workspaces
  */
@@ -8,8 +11,6 @@ import { z } from 'zod';
 import { EnsureWorkspaceRequestSchema, derivePorts } from '@dorkos/shared/workspace';
 import {
   getWorkspaceManager,
-  getWorkspaceRoot,
-  scanWorktrees,
   UnsafeWorkspaceSourceError,
   workspaceGateFor,
   WorkspaceApprovalPendingError,
@@ -22,17 +23,16 @@ import { readCallerAuthority } from '../lib/caller-authority.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
 const router = new Hono<ApiEnv>();
 
-const ListQuerySchema = z.object({ projectKey: z.string().optional() });
 const ResolveQuerySchema = z.object({ path: z.string().min(1) });
 const PortsBodySchema = z.object({ path: z.string().min(1) });
-const PinBodySchema = z.object({ pinned: z.boolean() });
 const RemoveQuerySchema = z.object({
   force: z.coerce.boolean().optional(),
   approvedRemoveHooks: z.string().min(1).optional(),
@@ -65,36 +65,10 @@ function shownOf(inspection: WorkspaceInspection) {
   };
 }
 
-/** List workspaces (optionally one project), each with attached sessions. */
-router.get('/', async (c) => {
-  const parsed = ListQuerySchema.safeParse(readQuery(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  try {
-    const workspaces = await getWorkspaceManager().list({ projectKey: parsed.data.projectKey });
-    return c.json({ workspaces });
-  } catch (err) {
-    logger.error('[workspaces] GET / failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
 /**
- * Read-only adoption scan (DOR-1056): every real checkout under the workspace
- * root, with the facts git can answer cheaply. Declared before `/:id` so the
- * literal path wins over the parameter.
+ * Resolve an absolute path (e.g. a session cwd) to its containing workspace.
+ * Declared before `/:id` so the literal path wins over the parameter.
  */
-router.get('/scan', async (c) => {
-  try {
-    return c.json(await scanWorktrees(getWorkspaceRoot()));
-  } catch (err) {
-    logger.error('[workspaces] GET /scan failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-/** Resolve an absolute path (e.g. a session cwd) to its containing workspace. */
 router.get('/resolve', async (c) => {
   const parsed = ResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
@@ -105,7 +79,7 @@ router.get('/resolve', async (c) => {
     return c.json({ workspace });
   } catch (err) {
     logger.error('[workspaces] GET /resolve failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -120,17 +94,19 @@ router.post('/ports', async (c) => {
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
-    if (!workspace) return c.json({ error: 'No managed workspace for path' }, 404);
+    if (!workspace) {
+      return problem(c, 'not_found', { detail: 'That path isn’t inside a managed workspace.' });
+    }
     return c.json(derivePorts(workspace.portBase));
   } catch (err) {
     logger.error('[workspaces] POST /ports failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
 });
 
 /**
  * Provision-or-reuse a workspace. A new one is shown before anything runs
- * there (DOR-2335): a person sees what it brings (409 `workspace_needs_review`)
+ * there (DOR-2335): a person sees what it brings (409 `needs_review`)
  * and sends back `approvedReviewHash`; an agent gets an approval card (202
  * `requires_confirmation`) and retries with `confirmationToken`. The person's
  * request with the hash waits for the owner's password (428, DOR-4355).
@@ -185,10 +161,13 @@ router.post('/', async (c) => {
 /** Answer a provision that did not make a workspace, with what the caller needs to go on. */
 function ensureFailed(c: Context<ApiEnv>, err: unknown): Response {
   if (err instanceof UnsafeWorkspaceSourceError) {
-    return c.json({ error: err.message, code: 'UNSAFE_WORKSPACE_SOURCE' }, 400);
+    return problem(c, 'invalid_request', { detail: err.message });
   }
   if (err instanceof WorkspaceNeedsReviewError) {
-    return c.json({ error: err.message, code: err.code, workspace: shownOf(err.inspection) }, 409);
+    return problem(c, 'needs_review', {
+      detail: err.message,
+      extensions: { workspace: shownOf(err.inspection) },
+    });
   }
   if (err instanceof WorkspaceApprovalPendingError) {
     return c.json(
@@ -203,36 +182,21 @@ function ensureFailed(c: Context<ApiEnv>, err: unknown): Response {
     );
   }
   if (err instanceof WorkspaceDeclinedError) {
-    return c.json({ status: 'declined', error: err.message }, 403);
+    return problem(c, 'declined', { detail: err.message });
   }
   logger.error('[workspaces] POST / failed', { err });
-  return c.json({ error: 'Internal server error' }, 500);
+  return problem(c, 'internal_error');
 }
 
 /** Get one workspace by id. */
 router.get('/:id', async (c) => {
   try {
     const workspace = await getWorkspaceManager().get(c.req.param('id'));
-    if (!workspace) return c.json({ error: 'Not found' }, 404);
+    if (!workspace) return problem(c, 'not_found', { detail: 'No workspace with that id.' });
     return c.json(workspace);
   } catch (err) {
     logger.error('[workspaces] GET /:id failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
-
-/** Pin or unpin a workspace. */
-router.post('/:id/pin', async (c) => {
-  const parsed = PinBodySchema.safeParse(readJsonBody(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  try {
-    const workspace = await getWorkspaceManager().setPinned(c.req.param('id'), parsed.data.pinned);
-    return c.json(workspace);
-  } catch (err) {
-    logger.error('[workspaces] POST /:id/pin failed', { err });
-    return c.json({ error: 'Not found' }, 404);
+    return problem(c, 'internal_error');
   }
 });
 
@@ -241,7 +205,7 @@ router.post('/:id/pin', async (c) => {
  *
  * A workspace made before its removal commands were recorded (DOR-2335) runs
  * only commands a person saw. A person is shown its source's `before_remove`
- * commands (409 `remove_hooks_need_review`) and allows exactly those with
+ * commands (409 `needs_review`) and allows exactly those with
  * `?approvedRemoveHooks=<reviewHash>`, or removes it without them with
  * `?skipRemoveHooks=true`. Any other caller removes it without running them.
  * Whenever they are left out, the response lists them in `skippedHooks`. Only
@@ -263,30 +227,24 @@ router.delete('/:id', async (c) => {
         ...(approvedRemoveHooks && { approvedRemoveHooks }),
       });
       if (result.blocked === 'hooks') {
-        return c.json(
-          {
-            code: 'remove_hooks_need_review',
-            error:
-              'This workspace was made before DorkOS recorded its removal commands, and its source ' +
-              'now declares some. Look at them, then remove it again with approvedRemoveHooks set to ' +
-              'the review hash to run exactly these, or with skipRemoveHooks=true to remove it without ' +
-              'running them.',
-            ...result.hooks,
-          },
-          409
-        );
+        // Made before DorkOS recorded removal commands, and its source declares some now.
+        return problem(c, 'needs_review', {
+          detail:
+            'Look at its removal commands, then send approvedRemoveHooks with the review hash, ' +
+            'or skipRemoveHooks=true.',
+          extensions: { ...result.hooks },
+        });
       }
       // 404 only when the workspace genuinely doesn't exist. A dirty refusal is a
       // valid outcome carried in the RemoveResult body (`removed:false, blocked:'dirty'`),
       // so the client can escalate to a force-confirm rather than seeing a generic error.
-      if (!result.removed && !result.blocked) return c.json({ error: 'Not found' }, 404);
+      if (!result.removed && !result.blocked)
+        return problem(c, 'not_found', { detail: 'No workspace with that id.' });
       return c.json(result);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[workspaces] DELETE /:id failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   };
   // Removing without the commands it was not made with stays immediate.
@@ -296,9 +254,9 @@ router.delete('/:id', async (c) => {
     workspace = await getWorkspaceManager().get(id);
   } catch (err) {
     logger.error('[workspaces] DELETE /:id failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error');
   }
-  if (!workspace) return c.json({ error: 'Not found' }, 404);
+  if (!workspace) return problem(c, 'not_found', { detail: 'No workspace with that id.' });
   const name = `${workspace.projectKey}/${workspace.key}`;
   // A person's yes to the removal commands runs them, so the owner confirms
   // it's them first (DOR-4355).

@@ -62,7 +62,8 @@ function manifest(name: string, deps: string[] = []): string {
 let count = 0;
 /**
  * A committed monorepo: `shared`, a `server` that depends on it and reads a
- * root doc, and a `steward` that reads `ci/` and the workflows. Returns its
+ * root doc and `.github/`, and a `steward` that reads `ci/`, `scripts/` and the
+ * workflows, as the real server and ci-steward suites do. Returns its
  * path and base commit. With `planner`, the base carries the real planner
  * script, as `main` will once this lands.
  */
@@ -118,11 +119,20 @@ function monorepo({ planner = false } = {}): { repo: string; base: string } {
           test: { dependsOn: ['^build'] },
           'server#test': {
             dependsOn: ['^build'],
-            inputs: ['$TURBO_DEFAULT$', '$TURBO_ROOT$/contributing/capabilities/runtimes.md'],
+            inputs: [
+              '$TURBO_DEFAULT$',
+              '$TURBO_ROOT$/contributing/capabilities/runtimes.md',
+              '$TURBO_ROOT$/.github/**',
+            ],
           },
           'steward#test': {
             dependsOn: ['^build'],
-            inputs: ['$TURBO_DEFAULT$', '$TURBO_ROOT$/.github/workflows/**', '$TURBO_ROOT$/ci/**'],
+            inputs: [
+              '$TURBO_DEFAULT$',
+              '$TURBO_ROOT$/.github/workflows/**',
+              '$TURBO_ROOT$/ci/**',
+              '$TURBO_ROOT$/scripts/**',
+            ],
           },
         },
       },
@@ -186,17 +196,53 @@ describe.skipIf(!existsSync(turbo))('pr-test-plan.sh with the real turbo', () =>
     expect(tasks.filter((task) => task.task === 'test')).toEqual([]);
   });
 
-  // Both touch how tests are chosen or run, so they run every suite, which is
-  // at least one test task each, and includes the steward that reads them.
-  it.each(['ci/ledger/a.md', '.github/workflows/lint.yml'])(
-    'a %s-only change runs every suite',
-    (file) => {
-      const { repo, base } = monorepo();
-      const result = plan(repo, base, change(repo, [file]));
-      expect(result.verdict).toBe('full');
-      expect(result.why).toContain('how tests are chosen or run');
-    }
-  );
+  // DOR-5130: paths under .github/, scripts/ and ci/ that choose and run no
+  // test are planned by hash like any other file, so only the suites that
+  // declare them run: the steward for ci/ and scripts/, the server for
+  // .github/ (and the steward too for a workflow).
+  const steward = ['steward packages/steward'];
+  const server = ['server apps/server'];
+  it.each([
+    ['ci/ledger/a.md', steward],
+    ['ci/ledger/261124-000000-new-entry.md', steward],
+    ['ci/proposals/a.md', steward],
+    ['.github/workflows/lint.yml', [...server, ...steward]],
+    ['.github/workflows/new-workflow.yaml', [...server, ...steward]],
+    ['.github/pull_request_template.md', server],
+    ['scripts/__tests__/a.test.ts', steward],
+    ['scripts/__tests__/fixtures/plan/a.json', steward],
+    ['scripts/test-a.sh', steward],
+    ['scripts/README.md', steward],
+  ])('a %s-only change runs only the suites that read it', (file, suites) => {
+    const { repo, base } = monorepo();
+    const result = plan(repo, base, change(repo, [file]));
+    expect(result).toMatchObject({ verdict: 'selected', suites });
+    expect(result.why).not.toContain('how tests are chosen or run');
+  });
+
+  it('an inert path beside a package change runs the union of both', () => {
+    const { repo, base } = monorepo();
+    const head = change(repo, ['ci/ledger/a.md', 'packages/shared/src/index.ts']);
+    expect(plan(repo, base, head)).toMatchObject({
+      verdict: 'selected',
+      suites: ['server apps/server', 'shared packages/shared', 'steward packages/steward'],
+    });
+  });
+
+  // An inert path never dilutes a control path: one control file in the diff
+  // runs every suite, whatever else changed.
+  it.each([
+    ['ci/ledger/a.md', 'scripts/pr-test-plan.sh'],
+    ['.github/workflows/lint.yml', '.github/workflows/test.yml'],
+    ['scripts/test-a.sh', 'scripts/build-test-deps.sh'],
+    ['scripts/__tests__/a.test.ts', 'ci/gates.yaml'],
+    ['.github/pull_request_template.md', 'package.json'],
+  ])('%s beside %s runs every suite', (inert, control) => {
+    const { repo, base } = monorepo();
+    const result = plan(repo, base, change(repo, [inert, control]));
+    expect(result.verdict).toBe('full');
+    expect(result.why).toContain('how tests are chosen or run');
+  });
 
   it('a change to a package runs it and every suite that builds on it', () => {
     const { repo, base } = monorepo();
@@ -228,6 +274,22 @@ describe.skipIf(!existsSync(turbo))('pr-test-plan.sh with the real turbo', () =>
     'scripts/pr-test-plan.sh',
     'scripts/lib/anything.mjs',
     'ci/gates.yaml',
+    // Kept on purpose when DOR-5130 narrowed the list: test.yml reads or
+    // restores what these define, they hold code, or they sit beside the
+    // inert paths without being one.
+    '.github/workflows/security-gate.yml',
+    '.github/workflows/build-cache.yml',
+    '.github/workflows/nested/a.yml',
+    '.github/scripts/security-gate.mjs',
+    '.github/ISSUE_TEMPLATE/bug.yml',
+    'scripts/sharding/config.ts',
+    'scripts/build-test-deps.sh',
+    'scripts/test-a/fixture.sh',
+    'scripts/test-a.mjs',
+    'scripts/__tests__/fixtures/package.json',
+    'ci/ledger/package.json',
+    'ci/config.yaml',
+    'ci/space-server.env',
   ])('a change to %s runs every suite', (file) => {
     const { repo, base } = monorepo();
     const result = plan(repo, base, change(repo, ['apps/server/src/a.test.ts', file]));

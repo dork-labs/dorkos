@@ -34,17 +34,15 @@ export interface DecisionRefusal {
  */
 const SHOW_SERVER_MESSAGE = new Set([
   // Answered by something that is not a signed-in person while login is on.
-  'operator_cookie_required',
+  'person_only',
   // A Wi-Fi answer needs the desk or Remote Access; it must never open a password sheet.
-  'NOT_FROM_WIFI',
+  'not_from_wifi',
   // Always allow on a request that does not offer it.
-  'ALWAYS_NOT_OFFERED',
-  // Always allow could not be saved, so nothing was allowed.
-  'ALWAYS_ALLOW_NOT_RECORDED',
+  'always_not_offered',
   // The request was already decided, or its window closed, while the card was up.
-  'APPROVAL_NOT_PENDING',
-  'APPROVAL_EXPIRED',
-  'UNKNOWN_APPROVAL',
+  'already_resolved',
+  'expired',
+  'not_found',
 ]);
 
 /**

@@ -353,7 +353,7 @@ export type PendingExtensionApprovalsResponse = z.infer<
  *
  * The copy the person saw, so an answer to a row that went out of date (the
  * extension moved or updated while it was on screen) is refused with
- * `409 stale_approval` instead of silencing a copy nobody looked at.
+ * `412 precondition_failed` instead of silencing a copy nobody looked at.
  */
 export const DismissExtensionApprovalRequestSchema = z
   .object({
@@ -368,16 +368,6 @@ export const DismissExtensionApprovalRequestSchema = z
 
 /** Body of `POST /api/extensions/:id/dismiss-approval`. */
 export type DismissExtensionApprovalRequest = z.infer<typeof DismissExtensionApprovalRequestSchema>;
-
-/** The code a "Not now" answer to an out-of-date row is refused with. */
-export const STALE_APPROVAL_CODE = 'stale_approval';
-
-/**
- * The code a yes to a copy DorkOS cannot check is refused with (DOR-3068): its
- * folder links to files outside itself, or cannot be read whole, so there are
- * no files a yes could name. Asking again cannot help until the folder changes.
- */
-export const UNPINNABLE_APPROVAL_CODE = 'extension_unpinnable';
 
 /**
  * Which copy of an extension a person was asked about: its id, the resolved
@@ -397,7 +387,7 @@ export interface ExtensionCopyIdentity {
 
 /**
  * Optional body of `POST /api/extensions/:id/approve`: the copy the person was
- * shown. When present, the approval is refused with `409 stale_approval` unless
+ * shown. When present, the approval is refused with `412 precondition_failed` unless
  * the copy on disk is still exactly that one, so a click on an old row can
  * never approve a copy that took its place (another plugin, or a project folder
  * reusing the id).
@@ -418,7 +408,7 @@ export const ApproveExtensionRequestSchema = z
      * The permission set the card showed (DOR-2686): where it runs and the
      * hosts, programs and agent access it declared. Compared when sent: a
      * manifest that asks for anything outside it by now is refused with
-     * `409 stale_approval` instead of being approved on a yes given to the
+     * `412 precondition_failed` instead of being approved on a yes given to the
      * old lists. One that narrowed since is approved, and what it declares
      * now (the narrower set) is recorded.
      */
@@ -441,7 +431,7 @@ export const ApproveExtensionRequestSchema = z
     /**
      * The digest of the files the card showed (the row's `digest`,
      * DOR-3068). Compared when sent: files that changed since are refused
-     * with `409 stale_approval`, so a yes never lands on code the person
+     * with `412 precondition_failed`, so a yes never lands on code the person
      * was not shown.
      */
     expectedDigest: z.string().min(1).optional(),
@@ -546,13 +536,13 @@ export type TrustedSourcesResponse = z.infer<typeof TrustedSourcesResponseSchema
 /** The most extensions one "Allow all" may cover; a bigger set is approved one by one. */
 export const APPROVAL_SET_MAX_MEMBERS = 10;
 
-/** The code a set whose members, files or permissions moved since the card is refused with. */
+/** A set whose members, files or permissions moved since the card (`412 precondition_failed`). */
 export const STALE_SET_CODE = 'stale_set';
 
-/** The code a set naming an extension its plugin did not install is refused with. */
+/** A set naming an extension its plugin did not install (`409 conflict`). */
 export const NOT_IN_SET_CODE = 'not_in_set';
 
-/** The code a set over {@link APPROVAL_SET_MAX_MEMBERS} is refused with. */
+/** A set over {@link APPROVAL_SET_MAX_MEMBERS} members (`409 conflict`). */
 export const TOO_MANY_IN_SET_CODE = 'too_many_in_set';
 
 /** The permission set one member was shown with: the same four facts a single approval echoes. */

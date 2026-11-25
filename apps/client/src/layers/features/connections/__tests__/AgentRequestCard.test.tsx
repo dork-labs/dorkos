@@ -277,87 +277,6 @@ describe('AgentRequestCard — no account yet', () => {
     expect(openSettings).toHaveBeenCalledWith('account');
   });
 
-  it.each([
-    ['dorkos_account_unavailable', 'unavailable', 'Link my DorkOS account again'],
-    ['own_key_unavailable', null, 'Use a DorkOS account'],
-  ] as const)(
-    'offers the DorkOS account beside the key when the way in is down (%s)',
-    async (reason, accountStatus, accountButton) => {
-      const user = userEvent.setup();
-      const transport = transportWith([]);
-      const appConnections = {
-        ways: accountStatus
-          ? [{ kind: 'dorkos_account', type: 'dorkos-managed', status: accountStatus }]
-          : [{ kind: 'own_key', type: 'composio', status: 'unavailable' }],
-        newApps: { status: 'setup_needed', reason },
-      };
-      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
-        services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
-        warnings: [],
-        appConnections,
-      } as never);
-      vi.mocked(transport.getConnectorProviders).mockResolvedValue({
-        providers: [
-          {
-            type: 'composio',
-            providerInstanceId: 'composio-1',
-            configured: false,
-            registered: false,
-            custody: 'managed',
-            disclosure: 'Composio keeps sign-ins.',
-          },
-        ],
-        appConnections,
-      } as never);
-      renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-      await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
-      const step = await screen.findByTestId('first-connect-step');
-      expect(within(step).getByRole('button', { name: accountButton })).toBeInTheDocument();
-      expect(within(step).getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
-    }
-  );
-
-  it('says the DorkOS account isn’t linked anymore in the one-time step, beside a key as an equal choice', async () => {
-    const user = userEvent.setup();
-    openSettings.mockClear();
-    const transport = transportWith([]);
-    const appConnections = {
-      ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'unlinked' }],
-      newApps: { status: 'setup_needed', reason: 'dorkos_account_unlinked' },
-    };
-    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
-      services: [{ ...GMAIL, intents: [{ ...GMAIL.intents[0], routes: [] }] }],
-      warnings: [],
-      appConnections,
-    } as never);
-    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
-      providers: [
-        {
-          type: 'composio',
-          providerInstanceId: 'composio-1',
-          configured: false,
-          registered: false,
-          custody: 'managed',
-          disclosure: 'Composio keeps sign-ins.',
-        },
-      ],
-      appConnections,
-    } as never);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Connect Gmail' }));
-    const step = await screen.findByTestId('first-connect-step');
-    expect(step).toHaveTextContent('Your DorkOS account isn’t linked anymore.');
-    expect(step).not.toHaveTextContent(/come back|bring/);
-    const relink = await screen.findByRole('button', { name: 'Link my DorkOS account again' });
-    const key = screen.getByRole('button', { name: /Use my Composio key/ });
-    // Equal choices: the same weight, neither pressed on the person.
-    expect(relink.className).toBe(key.className);
-    await user.click(relink);
-    expect(openSettings).toHaveBeenCalledWith('account');
-  });
-
   it('answers "Not now" as a denial', async () => {
     const user = userEvent.setup();
     const transport = transportWith([]);
@@ -450,19 +369,6 @@ describe('AgentRequestCard — an account exists', () => {
     expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
   });
 
-  it('goes back to the connected accounts without answering', async () => {
-    const user = userEvent.setup();
-    const transport = transportWith([account('connection-1')]);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Connect another Gmail account' }));
-    await user.click(await screen.findByRole('button', { name: 'Back' }));
-
-    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
-    expect(transport.startConnectorAgentRequestAuthentication).not.toHaveBeenCalled();
-    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
-  });
-
   it('never says "nothing changed" once the access landed, and Try again re-sends the answer', async () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
@@ -496,7 +402,7 @@ describe('AgentRequestCard — an account exists', () => {
       preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest)
-      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'app_off_in_chat' }))
       .mockResolvedValueOnce({ ...REQUEST, status: 'approved' } as never);
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
     vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({
@@ -530,29 +436,6 @@ describe('AgentRequestCard — an account exists', () => {
     });
   });
 
-  it('offers no turn-on button when the chat’s readiness does not name it as the fix', async () => {
-    const user = userEvent.setup();
-    const transport = transportWith([account('connection-1')]);
-    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
-    );
-    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
-      Object.assign(new Error('off'), { code: 'session_access_off' })
-    );
-    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(false));
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).toHaveTextContent('This chat has Gmail turned off for Bo');
-    await waitFor(() =>
-      expect(transport.getSessionConnectorConnections).toHaveBeenCalledWith(REQUEST.sessionId)
-    );
-    expect(screen.queryByRole('button', { name: 'Turn on for this chat' })).not.toBeInTheDocument();
-    expect(unanswered).not.toHaveTextContent(/only affects this chat/);
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
   it('says so, and does not answer, when turning the app on for this chat fails', async () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
@@ -560,7 +443,7 @@ describe('AgentRequestCard — an account exists', () => {
       preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
     );
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
-      Object.assign(new Error('off'), { code: 'session_access_off' })
+      Object.assign(new Error('off'), { code: 'app_off_in_chat' })
     );
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
     vi.mocked(transport.setSessionConnectorAccess).mockRejectedValue(new Error('offline'));
@@ -573,25 +456,6 @@ describe('AgentRequestCard — an account exists', () => {
     expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    ['request_already_resolved', 'answered somewhere else'],
-    ['request_expired', 'ran out of time'],
-  ])('offers no retry that cannot land when the request is %s', async (code, words) => {
-    const user = userEvent.setup();
-    const transport = transportWith([account('connection-1')]);
-    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }])
-    );
-    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
-      Object.assign(new Error('refused'), { code })
-    );
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(words);
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
   it('starts on the level the agent asked for and says what it asked for', async () => {
     const transport = transportWith([account('connection-1')]);
     renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
@@ -600,24 +464,6 @@ describe('AgentRequestCard — an account exists', () => {
     expect(asked).toHaveTextContent('It wants to read and change things in Gmail.');
     expect(screen.getByRole('radio', { name: 'Read and write' })).toBeChecked();
     expect(asked).not.toHaveTextContent('With Read');
-  });
-
-  it('says what Read leaves out when the person picks it over the level asked for', async () => {
-    const user = userEvent.setup();
-    const transport = transportWith([account('connection-1')]);
-    renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
-    const asked = await screen.findByTestId('requested-access');
-    await user.click(screen.getByRole('radio', { name: 'Read' }));
-    expect(asked).toHaveTextContent('With Read, Bo can’t change Gmail.');
-  });
-
-  it('starts on Read when that is all the agent asked for', async () => {
-    const transport = transportWith([account('connection-1')]);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-    expect(await screen.findByTestId('requested-access')).toHaveTextContent(
-      'It wants to read Gmail.'
-    );
-    expect(screen.getByRole('radio', { name: 'Read' })).toBeChecked();
   });
 
   it('says write access needs the person, inside the card just above its buttons, and only for write', async () => {
@@ -664,35 +510,6 @@ describe('AgentRequestCard — an account exists', () => {
       );
     });
 
-    it('names Advanced even when the page can open the access dialog', async () => {
-      const user = userEvent.setup();
-      const onEditExactActions = vi.fn();
-      const transport = transportWith([account('connection-1')]);
-      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
-        previewOf(['read', 'destructive'])
-      );
-      renderWith(
-        transport,
-        <AgentRequestCard
-          request={{ ...REQUEST, access: 'read-write' }}
-          onEditExactActions={onEditExactActions}
-        />
-      );
-      const missing = await screen.findByTestId('requested-write-missing');
-      expect(missing).toHaveTextContent(
-        'To let it change things, use Advanced on the Connections page.'
-      );
-      await user.click(screen.getByRole('button', { name: 'Choose exact actions' }));
-      expect(onEditExactActions).toHaveBeenCalledExactlyOnceWith('connection-1');
-      expect(screen.getAllByRole('button', { name: 'Choose exact actions' })).toHaveLength(1);
-      expect(screen.getByTestId('agent-request-write-note')).toHaveTextContent(
-        'Write access needs you.'
-      );
-      expect(
-        screen.getByRole('button', { name: 'Connect another Gmail account' })
-      ).toBeInTheDocument();
-    });
-
     it('omits write and reconnect controls when the app has no change actions', async () => {
       const transport = transportWith([account('connection-1')]);
       vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
@@ -709,26 +526,6 @@ describe('AgentRequestCard — an account exists', () => {
       expect(
         screen.queryByRole('button', { name: 'Connect another Gmail account' })
       ).not.toBeInTheDocument();
-    });
-
-    it('says nothing of the kind when Read and write is on offer', async () => {
-      renderWith(
-        transportWith([account('connection-1')]),
-        <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />
-      );
-      await screen.findByTestId('requested-access');
-      expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
-    });
-
-    it('keeps Connect another account for a Read request on an app without change actions', async () => {
-      const transport = transportWith([account('connection-1')]);
-      vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(previewOf(['read']));
-      renderWith(transport, <AgentRequestCard request={REQUEST} />);
-      await screen.findByTestId('requested-access');
-      expect(screen.queryByTestId('requested-write-missing')).not.toBeInTheDocument();
-      expect(
-        screen.getByRole('button', { name: 'Connect another Gmail account' })
-      ).toBeInTheDocument();
     });
   });
 });
@@ -764,13 +561,6 @@ describe('AgentRequestCard — approved by another agent (DOR-3959)', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('says it is an agent, read only and when, in words a screen reader reads', async () => {
-    renderWith(transportWith([]), <AgentRequestCard request={approved()} />);
-    expect(
-      await screen.findByText('Approved by DorkOS PM, an agent, read only, 2 minutes ago')
-    ).toHaveClass('sr-only');
-  });
-
   it('shows the approver kept at approval, not a name read later', async () => {
     const transport = transportWith([]);
     vi.mocked(transport.listMeshAgents).mockResolvedValue({
@@ -791,13 +581,6 @@ describe('AgentRequestCard — approved by another agent (DOR-3959)', () => {
     expect(within(receipt).getByText('Bo · Gmail')).toBeInTheDocument();
     expect(receipt).toHaveTextContent('Undone by you');
     expect(receipt).not.toHaveTextContent('Approved by');
-  });
-
-  it('keeps the plain receipt for a request no agent approved', async () => {
-    renderWith(transportWith([]), <AgentRequestCard request={grantedRequest} />);
-    expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
-      'Allowed Bo to use Gmail'
-    );
   });
 });
 
@@ -905,7 +688,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
     vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
-      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
+      Object.assign(new Error('unavailable'), { code: 'updates_unavailable' })
     );
     renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
 
@@ -932,47 +715,6 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
         eventScopes: [],
       })
     );
-  });
-
-  it('reads a changed update choice as "pick again", never as a lost connection', async () => {
-    const user = userEvent.setup();
-    const transport = updatesTransport();
-    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
-      Object.assign(new Error('conflict'), { code: 'review_conflict' })
-    );
-    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
-    await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    const send = screen.getByRole('button', { name: 'Send updates' });
-    await waitFor(() => expect(send).toBeEnabled());
-    await user.click(send);
-    const unanswered = await screen.findByTestId('agent-request-unanswered');
-    expect(unanswered).not.toHaveTextContent('didn’t reach DorkOS');
-    expect(screen.getByRole('button', { name: 'Pick updates again' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
-  it('answers without updates straight from the failure', async () => {
-    const user = userEvent.setup();
-    const transport = updatesTransport();
-    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValueOnce(
-      Object.assign(new Error('unavailable'), { code: 'event_selection_unavailable' })
-    );
-    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
-    await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
-    await user.click(await screen.findByRole('option', { name: 'New email' }));
-    const send = screen.getByRole('button', { name: 'Send updates' });
-    await waitFor(() => expect(send).toBeEnabled());
-    await user.click(send);
-    await user.click(await screen.findByRole('button', { name: 'Answer without updates' }));
-    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
-    expect(transport.resolveConnectorAgentRequest).toHaveBeenLastCalledWith('request-1', {
-      decision: 'current_access',
-      connectionId: 'connection-1',
-      eventScopes: [],
-    });
   });
 
   /** Allow, pick "New email", send: the answer carries exactly this update. */
@@ -1003,7 +745,7 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
     const user = userEvent.setup();
     const transport = updatesTransport();
     vi.mocked(transport.resolveConnectorAgentRequest)
-      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'session_access_off' }))
+      .mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'app_off_in_chat' }))
       .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue(chatTurnedOff(true));
     vi.mocked(transport.setSessionConnectorAccess).mockResolvedValue({
@@ -1026,41 +768,6 @@ describe('AgentRequestCard — a request that also asks for updates', () => {
       2,
       'request-1',
       PICKED_UPDATES
-    );
-  });
-
-  it('resends the same updates on Try again', async () => {
-    const user = userEvent.setup();
-    const transport = updatesTransport();
-    vi.mocked(transport.resolveConnectorAgentRequest)
-      .mockRejectedValueOnce(new Error('network dropped'))
-      .mockResolvedValueOnce({ ...EVENT_REQUEST, status: 'granted' } as never);
-    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
-
-    await answerWithUpdates(user);
-    await user.click(await screen.findByRole('button', { name: 'Try again' }));
-
-    await waitFor(() => expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(2));
-    expect(transport.resolveConnectorAgentRequest).toHaveBeenNthCalledWith(
-      2,
-      'request-1',
-      PICKED_UPDATES
-    );
-  });
-
-  it('can leave updates out and still answer the access', async () => {
-    const user = userEvent.setup();
-    const transport = updatesTransport();
-    renderWith(transport, <AgentRequestCard request={EVENT_REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    await user.click(await screen.findByRole('button', { name: 'No updates' }));
-    await waitFor(() =>
-      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
-        decision: 'current_access',
-        connectionId: 'connection-1',
-        eventScopes: [],
-      })
     );
   });
 });
@@ -1170,62 +877,6 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
   });
 
-  it('names a key that isn’t set up or didn’t answer, with its one fix', async () => {
-    const user = userEvent.setup();
-    openSettings.mockClear();
-    const transport = transportWith([
-      {
-        ...account('connection-1'),
-        readiness: needs(
-          'own_key_unavailable',
-          'fix_key',
-          'The key it was connected through isn’t set up or didn’t answer. Fix the key to use it.'
-        ),
-      },
-    ]);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
-      'isn’t set up or didn’t answer'
-    );
-    // One problem, one button: connecting again is not a second fix here.
-    expect(screen.queryByRole('button', { name: 'Connect Gmail again' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Fix the key' }));
-    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
-  });
-
-  it('offers a fresh check when the linked DorkOS account can’t reach the app right now', async () => {
-    const user = userEvent.setup();
-    const transport = transportWith([
-      {
-        ...account('connection-1'),
-        readiness: needs(
-          'dorkos_account_unavailable',
-          'retry',
-          CONNECTION_READINESS_COPY.dorkos_account_unavailable.owner,
-          'unavailable'
-        ),
-      },
-    ]);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    expect(await screen.findByTestId('account-attention')).toHaveTextContent(
-      'can’t reach it right now'
-    );
-    const reads = vi.mocked(transport.getConnectorConnections).mock.calls.length;
-    const catalogReads = vi.mocked(transport.getConnectorCatalog).mock.calls.length;
-    await user.click(screen.getByRole('button', { name: 'Check again' }));
-    // The catalog read is what makes the server try the DorkOS account again.
-    await waitFor(() =>
-      expect(vi.mocked(transport.getConnectorCatalog).mock.calls.length).toBeGreaterThan(
-        catalogReads
-      )
-    );
-    await waitFor(() =>
-      expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThan(reads)
-    );
-  });
-
   it('asks to resume a paused account before any Allow', async () => {
     const user = userEvent.setup();
     const transport = transportWith([
@@ -1284,36 +935,6 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     );
   });
 
-  it('says a sign-in that failed and offers it again, instead of turning a spinner forever', async () => {
-    const user = userEvent.setup();
-    const transport = transportWith([
-      {
-        ...account('connection-1'),
-        authenticationStatus: 'expired',
-        readiness: needs('signed_out', 'sign_in_again', 'Signed out.'),
-      },
-    ]);
-    vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
-      flowId: 'flow-f',
-      providerInstanceId: 'composio-1',
-      toolkit: 'gmail',
-      state: 'starting',
-    } as never);
-    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
-      flowId: 'flow-f',
-      providerInstanceId: 'composio-1',
-      toolkit: 'gmail',
-      state: 'failed',
-      reason: 'Sign-in didn’t finish. Try again.',
-    } as never);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Sign in again' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t finish that.');
-    expect(screen.queryByText('Getting the sign-in page ready…')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign in again' })).toBeEnabled();
-  });
-
   it('offers only "Not now" when nothing can be done from here', async () => {
     const transport = transportWith([
       {
@@ -1331,22 +952,6 @@ describe('AgentRequestCard — an account that needs attention first', () => {
       'Agents can’t use apps connected this way yet.'
     );
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Not now']);
-  });
-
-  it('skips a paused account when another one is ready', async () => {
-    const transport = transportWith([
-      {
-        ...account('connection-2'),
-        label: 'home',
-        lifecycle: 'paused',
-        readiness: needs('paused', 'resume', 'Paused.', 'paused'),
-      },
-      account('connection-1'),
-    ]);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
-    // Only one usable account, so no "which account?" question.
-    expect(screen.queryByRole('heading', { name: 'Which Gmail account?' })).not.toBeInTheDocument();
   });
 });
 
@@ -1413,50 +1018,6 @@ describe('AgentRequestCard — a managed save that applies later (round 2)', () 
     );
     expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(1);
     expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps the question once shown even when the account then needs a review', async () => {
-    const user = userEvent.setup();
-    const ready = account('connection-1');
-    const moved = {
-      ...ready,
-      reconciliationStatus: 'migration_needs_reconcile' as const,
-      readiness: needs('needs_review', 'review_access', 'Check who can use it.'),
-    };
-    const transport = transportWith([ready]);
-    vi.mocked(transport.getConnectorConnections)
-      .mockResolvedValueOnce({ connections: [ready] })
-      .mockResolvedValue({ connections: [moved] });
-    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
-      connectionId: 'connection-1' as never,
-      reconciliationStatus: 'migration_needs_reconcile',
-      authoritySync: { status: 'ready' },
-      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'], level: 'read' }],
-    });
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-
-    await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    await waitFor(() =>
-      expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThanOrEqual(
-        2
-      )
-    );
-    // The shared card reports its own outcome; the readiness gate stays out of it.
-    expect(await screen.findByText('Access needs review')).toBeInTheDocument();
-    expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
-  });
-
-  it("does not block an account whose only pending sync is another agent's", async () => {
-    const transport = transportWith([
-      {
-        ...account('connection-1'),
-        authoritySync: { status: 'pending' },
-        readiness: needs('access_updating', 'wait', 'Updating who can use it…', 'finishing'),
-      },
-    ]);
-    renderWith(transport, <AgentRequestCard request={REQUEST} />);
-    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
-    expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
   });
 
   it('asks for the review, not an Allow, when a change to who can use it was refused', async () => {

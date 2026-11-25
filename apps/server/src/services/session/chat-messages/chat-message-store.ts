@@ -29,6 +29,7 @@ import type {
   ChatMessageKind,
   ChatMessageStatus,
 } from '@dorkos/shared/chat-messages';
+import * as receipts from './sending/chat-message-birth.js';
 import { HandoffOutboxStore } from '../../rooms/handoff/outbox/handoff-outbox-store.js';
 
 const ACTIVE_ASK_KINDS: readonly ChatMessageKind[] = ['message', 'start'];
@@ -112,20 +113,17 @@ export class ChatMessageStore {
    * @param input - The row.
    */
   insert(input: NewChatMessage): ChatMessageRow {
-    const at = this.now().toISOString();
-    const row: ChatMessageRow = {
-      ...input,
-      deliveryRoute: input.deliveryRoute ?? 'chat',
-      seatRoomId: input.seatRoomId ?? null,
-      seatAuthorId: input.seatAuthorId ?? null,
-      seatJoinedAt: input.seatJoinedAt ?? null,
-      seatSessionId: input.seatSessionId ?? null,
-      failureReason: null,
-      createdAt: at,
-      updatedAt: at,
-    };
-    this.db.insert(chatMessages).values(row).run();
-    return row;
+    return receipts.insertChatReceipt(this.db, input, this.now().toISOString());
+  }
+
+  /** Reserve the newly minted direct chat and its receipt together. */
+  insertFreshDm(input: NewChatMessage, agent: { id: string; path: string }) {
+    return receipts.insertFreshDm(this.db, input, agent, this.now);
+  }
+
+  /** Remove a refused admission only while its exact original reservation still belongs to it. */
+  deleteRejectedFreshDm(row: ChatMessageRow, birth: receipts.FreshDmBirth): void {
+    receipts.deleteRejectedFreshDm(this.db, row, birth);
   }
 
   /** Commit a receipt and its trusted local trace in the same consolidated database transaction. */

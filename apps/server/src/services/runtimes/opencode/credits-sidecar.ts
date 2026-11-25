@@ -57,9 +57,7 @@ import type { InferenceModel } from '@dork-labs/cloud-api';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CreditsUnavailableError, isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
-
-/** The provider id the credits provider is registered under. */
-export const OPENCODE_CREDITS_PROVIDER_ID = 'dorkos-credits';
+import { CREDITS_PROVIDER_ID, scrubForCredits } from '../shared/credits/environment.js';
 
 /** The provider package OpenCode loads for the chat-completions format (bundled with OpenCode). */
 const CHAT_COMPLETIONS_PACKAGE = '@ai-sdk/openai-compatible';
@@ -98,11 +96,10 @@ const PERSON_PROVIDER_NAMES = new Set([
 export function openCodeCreditsEnv(
   projected: Readonly<Record<string, string>>
 ): Record<string, string> {
-  const kept: Record<string, string> = {};
-  for (const [name, value] of Object.entries(projected)) {
-    if (!PERSON_PROVIDER_NAMES.has(name) && !isCreditsTokenVar(name)) kept[name] = value;
-  }
-  return kept;
+  return scrubForCredits(
+    projected,
+    (name) => PERSON_PROVIDER_NAMES.has(name) || isCreditsTokenVar(name)
+  );
 }
 
 /** Where a credits sidecar's provider points, and the key it presents there. */
@@ -125,7 +122,7 @@ export function creditsModelFor(
   selected: string | undefined,
   available: readonly InferenceModel[]
 ): string | null {
-  const prefix = `${OPENCODE_CREDITS_PROVIDER_ID}/`;
+  const prefix = `${CREDITS_PROVIDER_ID}/`;
   if (selected?.startsWith(prefix)) {
     const id = selected.slice(prefix.length);
     if (available.some((model) => model.id === id)) return id;
@@ -146,16 +143,16 @@ export function openCodeCreditsConfig(
   relay: OpenCodeRelayGrant | null,
   available: readonly InferenceModel[]
 ): Record<string, unknown> {
-  const pinned = { enabled_providers: [OPENCODE_CREDITS_PROVIDER_ID] };
+  const pinned = { enabled_providers: [CREDITS_PROVIDER_ID] };
   const fallback = creditsModelFor(undefined, available);
   if (relay === null || fallback === null) return pinned;
-  const modelRef = `${OPENCODE_CREDITS_PROVIDER_ID}/${fallback}`;
+  const modelRef = `${CREDITS_PROVIDER_ID}/${fallback}`;
   return {
     ...pinned,
     model: modelRef,
     small_model: modelRef,
     provider: {
-      [OPENCODE_CREDITS_PROVIDER_ID]: {
+      [CREDITS_PROVIDER_ID]: {
         name: 'DorkOS credits',
         npm: CHAT_COMPLETIONS_PACKAGE,
         // `includeUsage` asks for usage on streamed answers, so every turn is

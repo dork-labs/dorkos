@@ -99,14 +99,20 @@ describe('access-change routes', () => {
   it('answers one change the owner does not have with 404', async () => {
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/access-changes/change-z')
-      .expect(404, { error: 'Nothing to show there.', code: 'UNDO_NOT_FOUND' });
+      .expect(404)
+      .expect((res) => {
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body).toMatchObject({ code: 'not_found', detail: 'Nothing to show there.' });
+        expect(res.body).not.toHaveProperty('error');
+      });
   });
 
-  it('answers a stale Undo with 409 and an unknown one with 404', async () => {
+  it('answers a stale Undo with 412 and an unknown one with 404', async () => {
     narrowing.undo.mockRejectedValueOnce(new AccessNarrowingError('UNDO_STALE'));
     await request(fixtureTarget.mount(buildApp()))
       .post('/api/connectors/access-changes/change-a/undo')
-      .expect(409);
+      .expect(412)
+      .expect((res) => expect(res.body.code).toBe('precondition_failed'));
     narrowing.undo.mockRejectedValueOnce(new AccessNarrowingError('UNDO_NOT_FOUND'));
     await request(fixtureTarget.mount(buildApp()))
       .post('/api/connectors/access-changes/change-z/undo')

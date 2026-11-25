@@ -17,7 +17,9 @@
  *    refused, never followed. The list is DorkOS Security's `dork-ro` list.
  * 2. **Nothing reaches out.** No lazy fetch (`GIT_NO_LAZY_FETCH`), no transport
  *    at all (`protocol.allow=never` and an empty `GIT_ALLOW_PROTOCOL`), no ssh
- *    command, credential helper or ask-pass program, no submodule recursion.
+ *    command, credential helper or ask-pass program, no submodule recursion:
+ *    `status` and the `diff` family get `--ignore-submodules=all` on the command
+ *    line, which wins over a `.gitmodules` `ignore` line in the work tree.
  * 3. **A minimal environment.** Only what git needs to start (`PATH`, `HOME`,
  *    locale and temp folders), and never the system's or person's global git
  *    settings, so nothing the server process carries reaches git or a program.
@@ -53,6 +55,10 @@ export const SAFE_REPO_CONFIG_KEY = new RegExp(
       'remote\\.[a-z0-9._-]+\\.(?:url|pushurl|fetch|push|tagopt|prune|gh-resolved)',
       // Git never runs a command from a `branch.*` key.
       'branch\\.[a-z0-9._/-]+\\.[a-z0-9-]+',
+      // What `git submodule add` writes in the containing repository; a name
+      // may hold any character but a line end. Never `submodule.*.update`,
+      // which can name a command.
+      'submodule\\.[^\\n]+\\.(?:url|active)',
       'extensions\\.(?:worktreeconfig|objectformat)',
       'blame\\.ignorerevsfile',
       'rerere\\.enabled',
@@ -78,14 +84,18 @@ export const SAFE_REPO_CONFIG_KEY = new RegExp(
  * Whether one config key may stand in a DorkOS room repo's shared config
  * (DOR-3667): {@link SAFE_REPO_CONFIG_KEY}, minus `extensions.worktreeConfig`,
  * which would make each copy's own agent-writable `config.worktree` part of
- * what git reads. Anything else (a filter, a driver, an include, a helper, a
+ * what git reads, and minus the `submodule.*` keys, which a room never needs. Anything else (a filter, a driver, an include, a helper, a
  * hook path, a promisor remote with its own `uploadpack`,
  * `extensions.partialClone`) stops the server's git in that room.
  *
  * @param key - One key name, as `git config --list` prints it.
  */
 export function isSafeRoomRepoConfigKey(key: string): boolean {
-  return SAFE_REPO_CONFIG_KEY.test(key) && !/^extensions\.worktreeconfig$/i.test(key);
+  return (
+    SAFE_REPO_CONFIG_KEY.test(key) &&
+    !/^extensions\.worktreeconfig$/i.test(key) &&
+    !/^submodule\./i.test(key)
+  );
 }
 
 /**
@@ -116,9 +126,42 @@ const SAFE_GIT_ARGS: readonly string[] = [
   'diff.ignoreSubmodules=all',
   '-c',
   'status.submoduleSummary=false',
-  '-c',
-  'submodule.recurse=false',
 ];
+
+/** The subcommands that look at the work tree's submodules, unless told not to. */
+const SUBMODULE_READERS = new Set(['status', 'diff', 'diff-files', 'diff-index']);
+
+/**
+ * git's own options, before the subcommand, that take their value as the next
+ * argument: what a caller skips, value and all, to find the subcommand.
+ */
+export const GIT_OPTIONS_WITH_VALUE: ReadonlySet<string> = new Set([
+  '-c',
+  '-C',
+  '--git-dir',
+  '--work-tree',
+  '--namespace',
+  '--config-env',
+]);
+
+/**
+ * `args` with `--ignore-submodules=all` right after a {@link SUBMODULE_READERS}
+ * subcommand: on the command line it wins over a `.gitmodules` `ignore` line,
+ * which `-c diff.ignoreSubmodules=all` does not.
+ *
+ * @throws {Error} When the caller passes `--ignore-submodules` itself.
+ */
+function withSubmodulesIgnored(args: readonly string[]): readonly string[] {
+  let at = 0;
+  while (at < args.length && args[at].startsWith('-')) {
+    at += GIT_OPTIONS_WITH_VALUE.has(args[at]) ? 2 : 1;
+  }
+  if (!SUBMODULE_READERS.has(args[at] ?? '')) return args;
+  if (args.some((arg) => arg.startsWith('--ignore-submodules'))) {
+    throw new Error('The safe git runner sets --ignore-submodules itself.');
+  }
+  return [...args.slice(0, at + 1), '--ignore-submodules=all', ...args.slice(at + 1)];
+}
 
 /** Thrown when a repository's own settings hold a key off the safe list. */
 export class GitRepoConfigUnsafeError extends Error {
@@ -154,6 +197,12 @@ export interface SafeGitOptions {
    * text. Only `LC_ALL` and `LANG` are taken; nothing else can be set.
    */
   env?: Readonly<Partial<Record<'LC_ALL' | 'LANG', string>>>;
+  /**
+   * The work tree to give git with `--work-tree`, which wins over a repository's own
+   * `core.worktree`. That key is then accepted when it names the checkout whose
+   * `.git` file leads back to its git folder, as a submodule's does.
+   */
+  workTree?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -332,7 +381,10 @@ export function minimalGitEnv(locale: SafeGitOptions['env'] = {}): NodeJS.Proces
 }
 
 /** The last stat each settings file passed the audit at. */
-const auditedAt = new Map<string, { stamp: string; worktreeConfig: boolean }>();
+const auditedAt = new Map<
+  string,
+  { stamp: string; worktreeConfig: boolean; workTree: string | undefined }
+>();
 
 /** The keys a settings file sets that are off the safe list. */
 function keysIn(file: string): Promise<string[]> {
@@ -358,6 +410,30 @@ function keysIn(file: string): Promise<string[]> {
   });
 }
 
+/** The value a settings file gives `core.worktree`; `null` if git can't read it. */
+function workTreeIn(file: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['config', '--file', file, '--no-includes', '--get', 'core.worktree'],
+      { cwd: path.parse(file).root, timeout: AUDIT_TIMEOUT_MS, env: minimalGitEnv() },
+      (err, stdout) => resolve(err ? null : stdout.replace(/[\r\n]+$/, ''))
+    );
+  });
+}
+
+/**
+ * Whether a `core.worktree` set in `gitDir`'s settings names the checkout whose
+ * `.git` file leads back to `gitDir`, as `git submodule add` lays one out.
+ */
+function workTreeLeadsBack(gitDir: string, workTree: string): boolean {
+  const top = path.resolve(gitDir, workTree);
+  const text = readGitFile(path.join(top, '.git'));
+  if (text === null || !text.startsWith('gitdir: ')) return false;
+  const back = path.resolve(top, text.slice('gitdir: '.length));
+  return nativeRealPath(back) === nativeRealPath(gitDir);
+}
+
 /** How {@link assertRepoConfigSafe} judges one repository. */
 export interface RepoConfigAuditOptions {
   /**
@@ -367,6 +443,13 @@ export interface RepoConfigAuditOptions {
    * person's hooks, so there the key stays refused (DOR-3345).
    */
   allowHooksPath?: boolean;
+  /**
+   * Also accept a `core.worktree` that names the checkout whose `.git` file leads
+   * back to that git folder, as a submodule's does. Only the read runner sets
+   * it, for a call that gives git `--work-tree` itself, which wins over the
+   * repository's value. One that names any other folder is still refused.
+   */
+  allowWorkTree?: boolean;
 }
 
 /**
@@ -382,24 +465,24 @@ export interface RepoConfigAuditOptions {
  * git never opens.
  *
  * @param cwd - The folder git would run in.
- * @param options - Whether `core.hooksPath` is accepted (reads only).
+ * @param options - Whether `core.hooksPath` and `core.worktree` are accepted (reads only).
  * @throws {GitRepoConfigUnsafeError} When a settings file sets a key off the
  *   list, cannot be read, or a `.git` pointer cannot be followed.
  */
 export async function assertRepoConfigSafe(
   cwd: string,
-  { allowHooksPath = false }: RepoConfigAuditOptions = {}
+  options: RepoConfigAuditOptions = {}
 ): Promise<void> {
   const places = findGitPlaces(cwd);
   if (places === null) throw new GitRepoConfigUnsafeError(path.join(cwd, '.git'), []);
   let worktreeConfigOn = false;
   for (const gitDir of places.gitDirs) {
-    const passed = await auditFile(path.join(gitDir, 'config'), allowHooksPath);
+    const passed = await auditFile(path.join(gitDir, 'config'), options);
     worktreeConfigOn ||= passed.worktreeConfig;
   }
   if (!worktreeConfigOn) return;
   for (const gitDir of places.gitDirs) {
-    await auditFile(path.join(gitDir, 'config.worktree'), allowHooksPath);
+    await auditFile(path.join(gitDir, 'config.worktree'), options);
   }
 }
 
@@ -409,25 +492,37 @@ export async function assertRepoConfigSafe(
  */
 async function auditFile(
   file: string,
-  allowHooksPath: boolean
+  { allowHooksPath = false, allowWorkTree = false }: RepoConfigAuditOptions
 ): Promise<{ worktreeConfig: boolean }> {
   const stat = fs.statSync(file, { throwIfNoEntry: false });
   if (!stat) return { worktreeConfig: false };
   const stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
-  const cacheKey = allowHooksPath ? `${file}\0read` : file;
-  const cached = auditedAt.get(cacheKey);
-  if (cached?.stamp === stamp) return { worktreeConfig: cached.worktreeConfig };
-  const keys = await keysIn(file);
-  const unsafe = keys.filter(
-    (key) => !SAFE_REPO_CONFIG_KEY.test(key) && !(allowHooksPath && key === 'core.hookspath')
-  );
-  if (unsafe.length > 0) {
+  const cacheKey = [file, allowHooksPath ? 'read' : '', allowWorkTree ? 'tree' : ''].join('\0');
+  let entry = auditedAt.get(cacheKey);
+  if (entry?.stamp !== stamp) {
     auditedAt.delete(cacheKey);
-    throw new GitRepoConfigUnsafeError(file, unsafe);
+    const keys = await keysIn(file);
+    const unsafe = keys.filter(
+      (key) =>
+        !SAFE_REPO_CONFIG_KEY.test(key) &&
+        !(allowHooksPath && key === 'core.hookspath') &&
+        !(allowWorkTree && key === 'core.worktree')
+    );
+    if (unsafe.length > 0) throw new GitRepoConfigUnsafeError(file, unsafe);
+    let workTree: string | undefined;
+    if (keys.includes('core.worktree')) {
+      const value = await workTreeIn(file);
+      if (value === null) throw new GitRepoConfigUnsafeError(file, ['core.worktree']);
+      workTree = value;
+    }
+    entry = { stamp, worktreeConfig: keys.includes('extensions.worktreeconfig'), workTree };
+    auditedAt.set(cacheKey, entry);
   }
-  const worktreeConfig = keys.includes('extensions.worktreeconfig');
-  auditedAt.set(cacheKey, { stamp, worktreeConfig });
-  return { worktreeConfig };
+  // Checked on every call: the `.git` file it leads to is not part of the stamp.
+  if (entry.workTree !== undefined && !workTreeLeadsBack(path.dirname(file), entry.workTree)) {
+    throw new GitRepoConfigUnsafeError(file, ['core.worktree']);
+  }
+  return { worktreeConfig: entry.worktreeConfig };
 }
 
 /**
@@ -471,11 +566,12 @@ async function spawnSafeGit(
   options: SafeGitOptions,
   encoding: 'utf8' | 'buffer'
 ): Promise<string | Buffer> {
-  await assertRepoConfigSafe(cwd, { allowHooksPath: true });
+  const workTree = options.workTree === undefined ? [] : [`--work-tree=${options.workTree}`];
+  await assertRepoConfigSafe(cwd, { allowHooksPath: true, allowWorkTree: workTree.length > 0 });
   return new Promise((resolve, reject) => {
     execFile(
       'git',
-      [...SAFE_GIT_ARGS, ...args],
+      [...SAFE_GIT_ARGS, ...workTree, ...withSubmodulesIgnored(args)],
       {
         cwd,
         timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,

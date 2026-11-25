@@ -11,10 +11,15 @@ import {
   SetSpendingPriceBodySchema,
   SpendingSummarySchema,
 } from '@dorkos/shared/connector-spending';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../../core/openapi/problem-openapi.js';
 
 const held = { description: 'Confirm it’s you first: more money could leave without a card.' };
-const refused = { description: 'Only the person who owns this DorkOS can change spending.' };
-const invalid = { description: 'The amount is below $0.01, above the maximum, or not a number.' };
+const refused = problemResponse(
+  '`person_only` or `owner_only`: only the person who owns this DorkOS can change spending.'
+);
+const invalid = problemResponse(
+  '`invalid_request`: the amount is below $0.01, above the maximum, or not a number.'
+);
 
 /**
  * Register the spending routes.
@@ -31,7 +36,10 @@ export function registerConnectorSpendingOpenApi(registry: OpenAPIRegistry): voi
     path: '/api/connectors/spending',
     tags: ['Connections'],
     summary: 'Read the monthly spend limit and what agents spent this month',
-    responses: { 200: ok },
+    responses: {
+      500: INTERNAL_ERROR_RESPONSE,
+      200: ok,
+    },
   });
   registry.registerPath({
     method: 'put',

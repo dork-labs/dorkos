@@ -2,6 +2,10 @@ import { defineConfig } from 'eslint/config';
 import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
 import spaces from './eslint-rules/space-boundary.js';
+import workGraph from './eslint-rules/work-graph-boundary.js';
+import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
+import problemOnly from './eslint-rules/problem-only.js';
+import turnPort from './eslint-rules/turn-port-boundary.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -414,6 +418,40 @@ export default defineConfig([
     ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
     plugins: { spaces },
     rules: { 'spaces/no-reach-in': 'error' },
+  },
+  // The work graph is space data: turn code reaches it only through hooks or events, so its
+  // move to the space store (DOR-5139) is a store move. Tests are checked too.
+  {
+    files: ['src/services/runtimes/**/*.{ts,tsx}', 'src/services/session/**/*.{ts,tsx}'],
+    plugins: { 'work-graph': workGraph },
+    rules: { 'work-graph/stay-out': 'error' },
+  },
+  // The runtimes build on session, never the reverse (DOR-4928): a shared piece lives in session
+  // or core, and an adapter's own fact reaches session through a port. Tests are not checked.
+  {
+    files: ['src/services/session/**/*.{ts,tsx}'],
+    ignores: ['src/services/session/**/__tests__/**', 'src/services/session/**/*.test.{ts,tsx}'],
+    plugins: { 'session-runtimes': sessionRuntimes },
+    rules: { 'session-runtimes/no-runtimes': 'error' },
+  },
+
+  // Every error answer is a problem document (ADR 261123-170831): no hand-built `{ error }`
+  // body in the HTTP layer. Tests are not checked: they assert what old shapes looked like.
+  {
+    files: ['src/routes/**/*.ts', 'src/http/**/*.ts', 'src/middleware/**/*.ts'],
+    ignores: ['src/**/__tests__/**', 'src/**/*.test.ts'],
+    plugins: { 'problem-only': problemOnly },
+    rules: { 'problem-only/no-error-body': 'error' },
+  },
+
+  // The turn port's ratchet (spec `turns-survive-restarts` §3.4): the space side reaches turn code
+  // only through the turn port, and the imports that do not yet may only go
+  // (`turn-port-boundary.baseline.json`). Tests are not checked.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
+    plugins: { 'turn-port': turnPort },
+    rules: { 'turn-port/boundary': 'error' },
   },
 
   ...testConfig,

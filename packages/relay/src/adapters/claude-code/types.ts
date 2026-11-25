@@ -99,6 +99,28 @@ export type TurnDeskCheck = (input: {
   sessionKey: string;
 }) => Promise<string | null>;
 
+/** Where a chat that has already run stands and as whom, as the host records it. */
+export interface RecalledChatPlace {
+  /** The chat's own folder; absent leaves it to the session. */
+  cwd?: string;
+  /** The home of the agent the chat runs as, when one is recorded. */
+  forAgent?: string;
+}
+
+/**
+ * The host's record of where a relay chat stands, asked on every turn whose
+ * subject names no Mesh agent and whose sender names no folder (DOR-5245): the
+ * chat's recorded folder and its recorded agent. A room-bound chat's room
+ * folders are not read here. Resolves to `null` when nothing holds the chat
+ * yet, which is how the handler knows the chat is new.
+ *
+ * Tolerant by contract: a rejection is logged and read as `null`.
+ */
+export type ChatPlaceRecall = (chat: {
+  /** The key the turn runs under. */
+  sessionKey: string;
+}) => Promise<RecalledChatPlace | null>;
+
 /**
  * Which runtime one TURN on an agent-addressed conversation runs on, asked of
  * the host.
@@ -508,6 +530,12 @@ export interface ClaudeCodeAdapterDeps {
    * nothing to consult, which is what every host did before DOR-1774.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
+  /**
+   * Where a relay chat that has already run stands and as whom — see
+   * {@link ChatPlaceRecall}. Absent means such a turn names no folder and
+   * leaves it to the session, which is what every host did before DOR-5245.
+   */
+  recallChatPlace?: ChatPlaceRecall;
   /**
    * Told when a turn is about to start, with the session it runs in and who sent
    * the message, before anything runs. The host uses it to know, per turn,

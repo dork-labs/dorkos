@@ -1,7 +1,7 @@
 ---
 number: 204
 title: Full-Trust Security Model for Agent-Written Extensions
-status: draft
+status: archived
 created: 2026-03-26
 spec: ext-platform-04-agent-extensions
 superseded-by: null

@@ -30,7 +30,7 @@ vi.mock('child_process', async (importOriginal) => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }));
 
-import { createAdminRoutes, MANAGED_BY_DESKTOP_CODE, RESET_TOKEN_REQUIRED_CODE } from '../admin.js';
+import { createAdminRoutes } from '../admin.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { RESET_TOKEN_TTL_MS } from '../../services/core/auth/reset-token.js';
 import { spawn } from 'child_process';
@@ -87,7 +87,8 @@ describe('Admin routes', () => {
     it('returns 400 without confirm field', async () => {
       const res = await request(fixtureServer).post('/api/admin/reset').send({});
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('confirm');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('confirm');
     });
 
     it('returns 400 with wrong confirm value', async () => {
@@ -121,8 +122,8 @@ describe('Admin routes', () => {
         .send({ confirm: 'reset', ...body });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(RESET_TOKEN_REQUIRED_CODE);
-      expect(res.body.error).toContain('Nothing has been deleted');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toContain('Nothing was deleted');
       await settle();
       expect(fs.rm).not.toHaveBeenCalled();
       expect(mockShutdownServices).not.toHaveBeenCalled();
@@ -176,7 +177,7 @@ describe('Admin routes', () => {
         .send({ confirm: 'reset', token });
 
       expect(replay.status).toBe(403);
-      expect(replay.body.code).toBe(RESET_TOKEN_REQUIRED_CODE);
+      expect(replay.body.code).toBe('forbidden');
       await settle();
       expect(fs.rm).not.toHaveBeenCalled();
     });
@@ -211,8 +212,8 @@ describe('Admin routes', () => {
     it('refuses a restart with 409 and never exits the process', async () => {
       const res = await request(fixtureServer).post('/api/admin/restart');
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
-      expect(res.body.error).toContain('Quit DorkOS and open it again');
+      expect(res.body.code).toBe('managed_by_desktop');
+      expect(res.body.detail).toContain('Quit DorkOS and open it again');
       expect(mockShutdownServices).not.toHaveBeenCalled();
       expect(mockExit).not.toHaveBeenCalled();
       expect(spawn).not.toHaveBeenCalled();
@@ -221,7 +222,7 @@ describe('Admin routes', () => {
     it('refuses a reset with 409 and never deletes the data directory', async () => {
       const res = await request(fixtureServer).post('/api/admin/reset').send({ confirm: 'reset' });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
+      expect(res.body.code).toBe('managed_by_desktop');
       expect(mockCloseDb).not.toHaveBeenCalled();
       expect(mockShutdownServices).not.toHaveBeenCalled();
       expect(mockExit).not.toHaveBeenCalled();
@@ -233,9 +234,10 @@ describe('Admin routes', () => {
     it('does not tell a reset caller that reopening the app resets anything', async () => {
       const res = await request(fixtureServer).post('/api/admin/reset').send({ confirm: 'reset' });
 
-      expect(res.body.error).toContain('Nothing has been deleted');
-      expect(res.body.error).toContain(DORK_HOME);
-      expect(res.body.error).not.toMatch(/open it again instead/);
+      expect(res.body.detail).toContain('Nothing was deleted');
+      // A problem's detail never names a path.
+      expect(res.body.detail).not.toContain(DORK_HOME);
+      expect(res.body.detail).not.toMatch(/That restarts the server/);
     });
 
     // Arming a reset is refused for the same reason as finishing one, so it says
@@ -244,8 +246,7 @@ describe('Admin routes', () => {
       const res = await request(fixtureServer).post('/api/admin/reset/prepare');
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('Nothing has been deleted');
-      expect(res.body.error).toContain(DORK_HOME);
+      expect(res.body.detail).toContain('Nothing was deleted');
       expect(res.body.token).toBeUndefined();
     });
 
@@ -269,7 +270,7 @@ describe('Admin routes', () => {
       const res = await request(fixtureServer).post(path).send({ confirm: 'reset' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
+      expect(res.body.code).toBe('managed_by_desktop');
       expect(mockShutdownServices).not.toHaveBeenCalled();
       expect(mockCloseDb).not.toHaveBeenCalled();
       expect(mockExit).not.toHaveBeenCalled();
@@ -286,7 +287,7 @@ describe('Admin routes', () => {
       const res = await request(fixtureServer).post('/api/admin/restart');
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
+      expect(res.body.code).toBe('managed_by_desktop');
     });
   });
 

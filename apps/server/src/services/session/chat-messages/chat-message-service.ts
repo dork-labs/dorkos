@@ -80,6 +80,7 @@ import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaul
 import { CHAT_MESSAGE_MAX, chatClientId, isChatClientId } from './chat-client-id.js';
 import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
+import type { FreshDmBirth } from './sending/chat-message-birth.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 import { ChatCapHold } from './chat-cap-hold.js';
 import { ChatMessageError } from './chat-message-error.js';
@@ -286,7 +287,6 @@ export class ChatMessageService {
       kind,
       sender: this.agentFacts(caller.agentPath),
       deliver: (...args) => this.deliver(...args),
-      markReplied: (id) => this.markReplied(id),
     });
   }
 
@@ -296,7 +296,9 @@ export class ChatMessageService {
     row: ChatMessageRow,
     target: ChatTarget,
     content: string,
-    delivery: ChatDelivery
+    delivery: ChatDelivery,
+    birth?: FreshDmBirth,
+    onAccepted?: () => void
   ): Promise<ChatSendReceipt> {
     // Null when the check failed: not known to be idle, so it never counts toward the cap.
     const busy =
@@ -306,7 +308,7 @@ export class ChatMessageService {
     if (delivery === 'steer' && target.sessionId !== null && busy) {
       // Only into a turn that runs no looser than the sender: a running turn
       // cannot be lowered to the sender's ceiling.
-      if (!this.maySteer(caller.sessionId, target.sessionId)) {
+      if (!mayChatSteer(this.deps, caller.sessionId, target.sessionId)) {
         note =
           'It waits for the turn to end instead of joining it, because that turn may do more ' +
           'than your chat can.';
@@ -327,10 +329,13 @@ export class ChatMessageService {
       }
     }
 
-    const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
+    const sessionId = target.sessionId ?? target.newSessionId;
+    if (!sessionId || (target.sessionId === null && !birth))
+      throw new ChatMessageError('UNAVAILABLE', 'DorkOS could not resolve this chat.');
     const cwd = target.sessionId ? await this.deps.sessionCwd(target.sessionId) : undefined;
     const result = await this.dispatch({
       origin: CHAT_MESSAGE_ORIGIN,
+      ...(birth ? { freshDmBirth: birth } : {}),
       sessionId,
       messageId: row.queueMessageId ?? undefined,
       request: {
@@ -356,6 +361,7 @@ export class ChatMessageService {
     if (!result.accepted) {
       throw new ChatMessageError('UNAVAILABLE', 'The chat could not take the message. Try again.');
     }
+    onAccepted?.();
     const chatId = result.canonicalId ?? sessionId;
     if (target.agent && target.sessionId === null) {
       this.deps.store.keepDmChat(caller.agentPath, target.agent.id, chatId);
@@ -390,21 +396,6 @@ export class ChatMessageService {
         : {}),
       ...(note ? { note } : {}),
     };
-  }
-
-  /**
-   * Whether a steer from one chat may join another's running turn, by the two
-   * turns' levels and marks (`mayJoinRunningTurn`). Unknown levels never steer, and a sender's
-   * Wi-Fi hold joins only a turn that holds one too: a running turn cannot be marked (DOR-3561).
-   */
-  private maySteer(fromSessionId: string, toSessionId: string): boolean {
-    return mayChatSteer(this.deps, fromSessionId, toSessionId);
-  }
-
-  /** Mark a chat message answered, and tell its sender's windows. */
-  private markReplied(id: string): void {
-    const row = this.deps.store.update(id, { status: 'replied' });
-    if (row) this.deps.emitActivity(row.fromSessionId);
   }
 
   /**

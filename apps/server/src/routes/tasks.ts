@@ -28,7 +28,6 @@ import * as personReview from '../services/tasks/approvals/person-review.js';
  * @module routes/tasks
  */
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ListTaskRunsQuerySchema, TriggerTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/schemas';
 import { wifiRunNowRefusal } from './task-wifi-guard.js';
@@ -51,7 +50,8 @@ import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { TASK_NOT_FOUND, taskProblem } from './task-problem.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';
@@ -70,8 +70,21 @@ import { mountTaskModeUndo } from './task-mode-undo.js';
 import type { TasksRouterDeps } from './tasks-deps.js';
 import { createTaskHttp } from './tasks-create-http.js';
 import { updateTaskHttp } from './tasks-update-http.js';
+import { logger } from '../lib/logger.js';
+import type { UnconfirmedStop } from '../services/tasks/run-cancel.js';
 
 export type { TasksRouterDeps } from './tasks-deps.js';
+
+/** What a request naming a run that is not there is told. */
+const RUN_NOT_FOUND = 'No run has that id.';
+
+/** What a stop nobody confirmed says, by why: a fixed sentence, never the bus's own words. */
+const UNCONFIRMED_STOP: Readonly<Record<UnconfirmedStop, string>> = {
+  no_bus: 'This run isn’t driven by this server. It may still be working.',
+  send_failed: 'The stop couldn’t be sent. The agent may still be working.',
+  refused: 'The stop was refused for now. Try again in a moment.',
+  no_answer: 'Nothing confirmed the stop. Check the run again in a moment.',
+};
 
 /**
  * Create the Tasks routes with schedule and run management endpoints.
@@ -146,23 +159,17 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // `requireOperatorCookieUnderLogin` runs.
     const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'delete a scheduled task');
     if (cookieRefusal) {
-      return c.json(
-        {
-          error: 'Only a person signed in to DorkOS can delete a scheduled task',
-          code: cookieRefusal.code,
-        },
-        cookieRefusal.status as ContentfulStatusCode
-      );
+      return problem(c, 'person_only', {
+        detail: 'Only a person signed in to DorkOS can delete a scheduled task.',
+      });
     }
 
     const id = c.req.param('id');
     const schedule = store.getTask(id);
-    if (!schedule) {
-      return c.json({ error: 'Scheduled task not found' }, 404);
-    }
+    if (!schedule) return problem(c, 'not_found', { detail: TASK_NOT_FOUND });
     // One project's copy shares its file with every other project's (DOR-3376).
     if (schedule.projectOnly) {
-      return c.json({ error: PROJECT_COPY_DELETE_REFUSAL, code: 'schedule_project_copy' }, 409);
+      return problem(c, 'conflict', { detail: PROJECT_COPY_DELETE_REFUSAL });
     }
 
     const declined = (await deleteOrDeclineTask(schedule, store, meshCore)) === 'declined';
@@ -217,7 +224,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // does short of approving it
     // (`services/tasks/__tests__/trigger-pending-schedule.test.ts`).
     if (!clearsTheAgentBar(caller)) {
-      return c.json(
+      return taskProblem(
+        c,
         {
           error: OPERATOR_ONLY_TASK_ERROR,
           code: OPERATOR_ONLY_TASK_CODE,
@@ -233,27 +241,25 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     }
 
     const wifiRefusal = wifiRunNowRefusal(caller, store.getTask(id) ?? undefined);
-    if (wifiRefusal) return c.json(wifiRefusal, 403);
+    if (wifiRefusal) return taskProblem(c, wifiRefusal, 403);
     const creditsRefusal =
       store.getTask(id)?.account === CREDITS_ACCOUNT_ID
         ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
         : undefined;
-    if (creditsRefusal) return c.json(creditsRefusal, 403);
+    if (creditsRefusal) return taskProblem(c, creditsRefusal, 403);
 
     // A trial of a pending schedule is never looser than one click could approve, and runs at
     // the mode the person picked when that is stricter still (DOR-4336).
     const body = TriggerTaskRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) return validationProblem(c, body.error);
     const trial = await trialRunMode(store.getTask(id), body.data.permissionMode, meshCore);
-    if (trial.kind === 'refused') return c.json(TRIAL_TOO_LOOSE_REFUSAL, 409);
-    if (trial.kind === 'unknown_mode') return c.json(TRIAL_UNKNOWN_MODE_REFUSAL, 400);
+    if (trial.kind === 'refused') return taskProblem(c, TRIAL_TOO_LOOSE_REFUSAL, 409);
+    if (trial.kind === 'unknown_mode') return taskProblem(c, TRIAL_UNKNOWN_MODE_REFUSAL, 400);
     const run =
       trial.kind === 'tightened'
         ? await scheduler.triggerManualRun(id, trial.permissionMode)
         : await scheduler.triggerManualRun(id);
-    if (!run) {
-      return c.json({ error: 'Scheduled task not found' }, 404);
-    }
+    if (!run) return problem(c, 'not_found', { detail: TASK_NOT_FOUND });
     return c.json({ runId: run.id }, 201);
   });
 
@@ -275,9 +281,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
   router.get('/runs/:id', (c) => {
     const run = store.getRun(c.req.param('id'));
-    if (!run) {
-      return c.json({ error: 'Run not found' }, 404);
-    }
+    if (!run) return problem(c, 'not_found', { detail: RUN_NOT_FOUND });
     return c.json(run);
   });
 
@@ -291,25 +295,21 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // residual), so the shipped default posture is unchanged.
     const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'cancel a scheduled run');
     if (cookieRefusal) {
-      return c.json(
-        {
-          error: 'Only a person signed in to DorkOS can cancel a scheduled run',
-          code: cookieRefusal.code,
-        },
-        cookieRefusal.status as ContentfulStatusCode
-      );
+      return problem(c, 'person_only', {
+        detail: 'Only a person signed in to DorkOS can cancel a scheduled run.',
+      });
     }
 
     const run = store.getRun(id);
     const outcome = await scheduler.cancelRun(id);
 
-    if (outcome.state === 'not_found') {
-      return c.json({ error: 'Run not found' }, 404);
-    }
+    if (outcome.state === 'not_found') return problem(c, 'not_found', { detail: RUN_NOT_FOUND });
     if (outcome.state === 'unconfirmed') {
       // 502: the request left this server and nothing answered for it. Saying
-      // "cancelled" here would be a claim about a run we cannot see.
-      return c.json({ error: outcome.reason }, 502);
+      // "cancelled" here would be a claim about a run we cannot see. The full
+      // account can hold the bus's own error text: it goes to the log only.
+      logger.warn('[tasks] a run stop was not confirmed', { runId: id, why: outcome.reason });
+      return problem(c, 'upstream_unavailable', { detail: UNCONFIRMED_STOP[outcome.why] });
     }
     // Nothing was stopped, so nothing happened worth telling the activity feed.
     if (outcome.state === 'already_finished') {

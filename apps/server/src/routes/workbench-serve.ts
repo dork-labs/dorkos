@@ -38,8 +38,9 @@ import {
   WorkbenchSignRequestSchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { logger } from '../lib/logger.js';
-import { protectedPathRefusal } from '../services/runtimes/shared/policy/protected-file-guard.js';
+import { protectedPathRefusal } from '../services/core/protected-paths/protected-file-guard.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
 import { WORKBENCH } from '../config/constants.js';
 import { injectFrameScripts } from '../services/workbench-serve/frame-inject.js';
@@ -60,7 +61,7 @@ import {
   bridgeKeyFor,
 } from '../services/workbench-serve/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
 
@@ -111,10 +112,18 @@ function requestProtocol(c: Context<ApiEnv>): string {
   return comma !== -1 ? header.substring(0, comma).trim() : header.trim();
 }
 
-/** Map a token-verification failure to its HTTP status (expired vs. forged/malformed). */
-function tokenErrorStatus(err: WorkbenchTokenError): 401 | 403 {
-  return err.code === 'EXPIRED' ? 401 : 403;
+/** Answer a token-verification failure: an expired link (401) or a forged or malformed one (403). */
+function tokenRefusal(c: Context<ApiEnv>, err: WorkbenchTokenError): Response {
+  return err.code === 'EXPIRED'
+    ? problem(c, 'unauthenticated', {
+        detail: 'This preview link expired. Open the preview again.',
+      })
+    : problem(c, 'forbidden', { detail: 'This preview link isn’t valid. Open the preview again.' });
 }
+
+/** The answer when serving failed on this side; the cause is in the log. */
+const serveFailed = (c: Context<ApiEnv>) =>
+  problem(c, 'internal_error', { detail: 'Couldn’t serve that file. Try again.' });
 
 /**
  * `POST /api/workbench/sign` — mint what the embedded browser needs to load a
@@ -146,12 +155,9 @@ router.post('/sign', async (c) => {
     try {
       validatedCwd = await validateBoundary(parsed.data.cwd);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        const status = err.code === 'NULL_BYTE' ? 400 : 403;
-        return c.json({ error: err.message, code: err.code }, status);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[workbench-serve] sign(serve) boundary failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t check that folder. Try again.' });
     }
     // Normalize the initial path to a clean cwd-relative POSIX path so the URL's
     // splat is unambiguous. Reject a path that escapes the cwd up front (the
@@ -160,10 +166,7 @@ router.post('/sign', async (c) => {
     const abs = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.join(validatedCwd, rawPath);
     const rel = path.relative(validatedCwd, abs);
     if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
-      return c.json(
-        { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
-        403
-      );
+      return problem(c, 'outside_boundary', { detail: 'Pick a file inside the chat’s folder.' });
     }
     const token = workbenchTokenSigner.mint({ kind: 'serve', cwd: validatedCwd });
     const encoded = rel.split(path.sep).map(encodeURIComponent).join('/');
@@ -201,7 +204,7 @@ async function signPreview(c: Context<ApiEnv>, port: number) {
       return c.json({ url: null, unavailable: 'no-port' as const });
     }
     logger.error('[workbench-serve] preview listener failed to open', { err, port });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t open the preview. Try again.' });
   }
 
   const token = workbenchTokenSigner.mint({ kind: 'proxy', port });
@@ -230,7 +233,7 @@ router.post('/probe', async (c) => {
   // then asks for a preview anyway, which a hub answers as a tunnel would.
   // An agent computer's ports are nobody's to look at either.
   if (!isPersonalComputer()) {
-    return c.json({ error: 'No dev servers are looked for here.', code: 'NOT_ON_HUB' }, 409);
+    return problem(c, 'conflict', { detail: 'This computer doesn’t look for dev servers.' });
   }
   const listening = await probeLoopbackPort(parsed.data.port);
   return c.json({ listening });
@@ -264,7 +267,8 @@ router.post('/bridge', async (c) => {
  */
 async function handleServe(c: Context<ApiEnv>) {
   // A hub mints no serve token, nor does an agent computer, so none is good here.
-  if (!isPersonalComputer()) return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
+  if (!isPersonalComputer())
+    return problem(c, 'not_found', { detail: 'This computer serves no previews.' });
   // Response sandboxing also covers top-level navigation and SVG/documents;
   // the iframe attribute alone only isolates the app's embedded view.
   // The concrete auth-origin list includes Vite, desktop development and the
@@ -276,12 +280,12 @@ async function handleServe(c: Context<ApiEnv>) {
   try {
     const payload = workbenchTokenSigner.verify(c.req.param('token') ?? '');
     if (payload.scope.kind !== 'serve') {
-      return c.json({ error: 'Token is not a serve token', code: 'WRONG_SCOPE' }, 403);
+      return problem(c, 'forbidden', { detail: 'This link isn’t a file preview link.' });
     }
     cwd = payload.scope.cwd;
   } catch (err) {
     if (err instanceof WorkbenchTokenError) {
-      return c.json({ error: err.message, code: err.code }, tokenErrorStatus(err));
+      return tokenRefusal(c, err);
     }
     throw err;
   }
@@ -294,33 +298,34 @@ async function handleServe(c: Context<ApiEnv>) {
     const target = path.join(cwd, relPath);
     resolved = await validateBoundary(target, cwd);
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      const status = err.code === 'NULL_BYTE' ? 400 : 403;
-      return c.json({ error: err.message, code: err.code }, status);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
+    if (code === 'ENOENT') return problem(c, 'not_found', { detail: 'That file doesn’t exist.' });
     if (code === 'ELOOP' || code === 'ENOTDIR') {
-      return c.json({ error: 'Invalid path', code }, 400);
+      return problem(c, 'invalid_request', { detail: 'That path can’t be served.' });
     }
     logger.error('[workbench-serve] serve resolve failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
+    return serveFailed(c);
   }
 
   let size: number;
   try {
     const stat = await fs.stat(resolved);
-    if (!stat.isFile()) return c.json({ error: 'Not a file', code: 'NOT_A_FILE' }, 404);
+    if (!stat.isFile())
+      return problem(c, 'not_found', { detail: 'That path is a folder, not a file.' });
     // DorkOS's own protected files are never served, whatever page asks (DOR-4060).
     // No link-count check here: a preview loads hard-linked package files.
     const refused = protectedPathRefusal(resolved, cwd);
-    if (refused) return c.json({ error: refused.message, code: refused.code }, 403);
+    if (refused)
+      return problem(c, 'forbidden', {
+        detail: 'That file is protected, so DorkOS won’t serve it.',
+      });
     size = stat.size;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
+    if (code === 'ENOENT') return problem(c, 'not_found', { detail: 'That file doesn’t exist.' });
     logger.error('[workbench-serve] serve stat failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return serveFailed(c);
   }
 
   const contentType = SERVE_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
@@ -369,21 +374,21 @@ async function handleServe(c: Context<ApiEnv>) {
       knownLength = false;
     } catch (err) {
       logger.error('[workbench-serve] serve read/inject failed', { err, resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return serveFailed(c);
     }
   }
 
   if (knownLength) c.header('Content-Length', String(size));
   // A HEAD gets the headers alone: a stream nobody reads would hold its file open.
   if (c.req.method === 'HEAD') return c.body(null);
-  // Opened before answering, so a file gone since the stat is a JSON 500
+  // Opened before answering, so a file gone since the stat is a problem 500
   // rather than file headers with nothing behind them.
   let file: Awaited<ReturnType<typeof fs.open>>;
   try {
     file = await fs.open(resolved, 'r');
   } catch (err) {
     logger.error('[workbench-serve] serve stream failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return serveFailed(c);
   }
   const stream = file.createReadStream();
   stream.on('error', (err) =>

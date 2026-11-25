@@ -1,6 +1,7 @@
 /** Person-only, tap-only metadata scan. Deliberately absent from the capability registry. */
 import { Hono } from 'hono';
 import type { YourBrowserScan } from '@dorkos/shared/your-browser';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { presentsProgramCredential, requirePersonAtThisComputer } from '../lib/caller-authority.js';
@@ -15,11 +16,7 @@ export function createYourBrowserRoutes(
   const router = new Hono<ApiEnv>();
   router.post('/scan', async (c) => {
     c.header('Cache-Control', 'no-store');
-    if (!enabled())
-      return c.json(
-        { error: 'Browser discovery is off.', code: 'browser_discovery_disabled' },
-        404
-      );
+    if (!enabled()) return problem(c, 'not_found', { detail: 'Browser discovery is off.' });
     const facts = honoRequestFacts(c);
     // Run the existing person bar first so the app can ask for the owner's
     // session even with Require login off. An owner-less open gate proves no
@@ -32,10 +29,7 @@ export function createYourBrowserRoutes(
       facts.user?.credential !== 'cookie' ||
       (origin !== undefined && !/^https?:\/\//i.test(origin))
     )
-      return c.json(
-        { error: 'Only you can find your browsers, from DorkOS.', code: 'person_only' },
-        403
-      );
+      return problem(c, 'person_only', { detail: 'Only you can find your browsers, from DorkOS.' });
     return c.json(await scan());
   });
   return router;

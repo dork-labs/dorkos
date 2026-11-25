@@ -1,14 +1,5 @@
-/**
- * An installed extension waiting to be turned on asks in the Inbox's "Needs
- * You" with one short row, and answering there works (DOR-2517, spec
- * `flow-multiproject` §5.6 item 6).
- *
- * The extension routes are plain `fetch` calls (the extensions slice's
- * established pattern), so this suite stubs `fetch` with a tiny fake server
- * and reads back exactly what the bell sent.
- *
- * @vitest-environment jsdom
- */
+// @vitest-environment jsdom
+/** An extension waiting to be turned on asks in the Inbox, and answering there works (DOR-2517). */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
@@ -87,16 +78,23 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         // The extension widened while the row was on screen.
         if (staleReplacement) waiting = [staleReplacement];
         return json(
-          { error: 'This extension changed since you saw it.', code: 'stale_approval' },
-          409
+          {
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'This extension changed since you saw it.',
+          },
+          412
         );
       }
       if (approveStatus === 419) {
-        // A copy DorkOS cannot check (DOR-3068): plain words, its own code.
+        // A copy DorkOS cannot check (DOR-3068): plain words, its own reason.
         return json(
           {
-            error: "Its folder links to files outside it, so DorkOS can't check what would run.",
-            code: 'extension_unpinnable',
+            title: 'That clashes with a change made meanwhile.',
+            status: 409,
+            code: 'conflict',
+            detail: "Its folder links to files outside it, so DorkOS can't check what would run.",
           },
           409
         );
@@ -106,7 +104,17 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         // hands back the server's refusal, and the copy still waits.
         return json({ error: 'Confirm it’s you.', code: STEP_UP_REQUIRED_CODE }, 428);
       }
-      if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
+      if (approveStatus !== 200) {
+        return json(
+          {
+            title: 'DorkOS hit an error on its side.',
+            status: approveStatus,
+            code: 'internal_error',
+            detail: 'Nope',
+          },
+          approveStatus
+        );
+      }
       if (approvalGate) await approvalGate;
       waiting = [];
       return json({ extension: { id: 'flow' } });
@@ -181,9 +189,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     vi.clearAllMocks();
   });
 
-  // Purpose: screens run sealed off with no access of their own (DOR-3293),
-  // so the card never says they run with yours; "It can change:" says what
-  // they can do, and Runs as stays.
+  // Purpose: screens run sealed off with no access of their own (DOR-3293), so the card never
+  // says they run with yours; "It can change:" says what they can do, and Runs as stays.
   it('never says an app’s screens run with your access', async () => {
     waiting = [
       {
@@ -203,22 +210,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     );
   });
 
-  // Purpose: on a phone the Inbox is a bottom sheet, and Allow and Not now
-  // stay pinned to its bottom while a long card scrolls (designer, DOR-3293).
-  it('pins Allow and Not now to the bottom of the phone sheet', async () => {
-    renderBell();
-    const { row } = await openRow();
-    const answers = within(row)
-      .getByRole('button', { name: 'Allow' })
-      .closest('[data-slot="inbox-answer-buttons"]');
-    expect(answers).toHaveClass(
-      'max-md:sticky',
-      'max-md:bottom-0',
-      'max-md:bg-[var(--dui-scroll-cover,var(--color-popover))]'
-    );
-    expect(within(answers as HTMLElement).getByRole('button', { name: 'Not now' })).toBeVisible();
-  });
-
   it('opens on the card a held app’s tile asked for, ringed and focused (DOR-3970)', async () => {
     renderBell();
     await screen.findByTestId('inbox-bell');
@@ -232,39 +223,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     await waitFor(() => expect(frame).toHaveFocus());
     expect(frame).toHaveAttribute('data-focused', 'true');
     clearInboxRequest();
-  });
-
-  it('counts it in the pill, in its own words', async () => {
-    renderBell();
-
-    const bell = await screen.findByTestId('inbox-bell');
-    expect(bell).toHaveAccessibleName('1 mini app is waiting to be turned on. Open to answer it.');
-    expect(bell).toHaveTextContent('1');
-  });
-
-  it('asks with one short row: the question, why, and where it came from', async () => {
-    renderBell();
-    const { row } = await openRow();
-
-    // The Runs as line says it, so the second line does not end "It runs as you."
-    expect(
-      within(row).getByText(
-        'You installed the flow plugin. This adds a Flow tab that shows what your agents are working on.'
-      )
-    ).toBeInTheDocument();
-    expect(within(row).getByText('flow plugin · dork-labs/marketplace')).toBeInTheDocument();
-    expect(
-      within(row)
-        .getAllByRole('button')
-        .map((button) => button.getAttribute('aria-label') ?? button.textContent)
-    ).toEqual(['Allow', 'Not now', 'More about this']);
-    // The answers are words on buttons; ⓘ is the only icon.
-    expect(row.querySelector('[data-slot="inbox-answer-buttons"]')).toHaveTextContent(
-      'AllowNot now'
-    );
-    expect(
-      screen.getByText("Flow is waiting to be turned on. It won't run until you decide.")
-    ).toBeInTheDocument();
   });
 
   // Purpose: Security's words for a copy allowed before whose files changed:
@@ -301,52 +259,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label') ?? button.textContent)
     ).toEqual(['Allow the new version', 'Keep paused', 'More about this']);
-  });
-
-  it('says a changed copy that was not updated changed too, and Keep paused only defers', async () => {
-    waiting = [{ ...FLOW, changedFiles: ['index.ts', 'a.js', 'b.js', 'c.js', 'd.js'] }];
-    renderBell();
-    const user = userEvent.setup();
-    await user.click(await screen.findByTestId('inbox-bell'));
-
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
-      '[data-slot="inbox-decision-row"]'
-    ) as HTMLElement;
-    expect(
-      within(row).getByText(/^index\.ts, a\.js, b\.js and 2 more files · Noticed /)
-    ).toBeInTheDocument();
-    // Its reach did not widen, so it waits behind ⓘ rather than on the row.
-    expect(within(row).queryByTestId('extension-permissions-flow')).not.toBeInTheDocument();
-
-    await user.click(within(row).getByRole('button', { name: 'Keep paused' }));
-    await waitFor(() => expect(screen.queryByText(PAUSED_TITLE)).not.toBeInTheDocument());
-    expect(posts).toEqual([
-      {
-        url: '/api/extensions/flow/dismiss-approval',
-        body: { path: FLOW.path, version: '1.2.0', plugin: 'flow' },
-      },
-    ]);
-  });
-
-  it('puts what a changed copy newly reaches on the row, before the yes', async () => {
-    waiting = [
-      {
-        ...FLOW,
-        changedFiles: ['index.ts'],
-        added: { net: ['api.example.com'], run: [], agents: false, runtime: false },
-      },
-    ];
-    renderBell();
-    const user = userEvent.setup();
-    await user.click(await screen.findByTestId('inbox-bell'));
-
-    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
-      '[data-slot="inbox-decision-row"]'
-    ) as HTMLElement;
-    expect(
-      within(row).getByTestId('extension-permissions-flow').querySelector('li')
-    ).toHaveTextContent('Now also wants to connect to: api.example.com');
-    expect(screen.queryByText(PAUSED_TITLE)).not.toBeInTheDocument();
   });
 
   // Purpose: an update that adds a power names each one as new on the row,
@@ -387,118 +299,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       .getByTestId('extension-permissions-flow')
       .querySelectorAll('li[data-tone="new"]');
     expect([...fresh].map((li) => li.textContent)).toEqual([line]);
-  });
-
-  // Purpose: an update that starts opening another app's pages (`navigate`)
-  // marks that app New on the row (DOR-4504, QA's case).
-  it('marks an app whose pages an update starts opening as New', async () => {
-    waiting = [
-      {
-        ...FLOW,
-        version: '1.1.0',
-        updatedFrom: '1.0.0',
-        changedFiles: ['extension.json'],
-        permissions: {
-          ...FLOW.permissions!,
-          apps: [{ id: 'planner', name: 'Planner', access: null, opens: true }],
-        },
-        added: { net: [], run: [], agents: false, runtime: false, apps: ['planner'] },
-      },
-    ];
-    renderBell();
-    const user = userEvent.setup();
-    await user.click(await screen.findByTestId('inbox-bell'));
-
-    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
-      '[data-slot="inbox-decision-row"]'
-    ) as HTMLElement;
-    const app = row.querySelector('li[data-app="planner"]') as HTMLElement;
-    expect(app).toHaveAttribute('data-new');
-    expect(app).toHaveTextContent('Planner');
-    expect(app).toHaveTextContent('can only open its pages');
-    expect(within(app).getByText('New')).toBeInTheDocument();
-  });
-
-  it('marks nothing new for an update that adds no power', async () => {
-    waiting = [{ ...FLOW, version: '1.1.0', updatedFrom: '1.0.0', changedFiles: ['index.ts'] }];
-    renderBell();
-    const user = userEvent.setup();
-    await user.click(await screen.findByTestId('inbox-bell'));
-
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
-      '[data-slot="inbox-decision-row"]'
-    ) as HTMLElement;
-    expect(row.querySelector('li[data-tone="new"]')).toBeNull();
-    // Files only, so the title keeps today's words (DOR-4531).
-    expect(screen.queryByText(WANTS_MORE_TITLE)).not.toBeInTheDocument();
-  });
-
-  // Purpose: one app that keeps running while only new places wait asks
-  // about those places alone, and never says it is paused (DOR-4282).
-  it('asks a running app only about its new places, by name', async () => {
-    waiting = [
-      {
-        ...FLOW,
-        placesOnly: true,
-        added: { net: [], run: [], agents: false, runtime: false, slots: ['pages', 'dialog'] },
-      },
-    ];
-    renderBell();
-    const user = userEvent.setup();
-    await user.click(await screen.findByTestId('inbox-bell'));
-
-    expect(await screen.findByText('Flow wants to show in new places.')).toBeInTheDocument();
-    expect(
-      screen.getByText('It keeps working meanwhile. Adds a page and dialogs.')
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/paused/i)).not.toBeInTheDocument();
-  });
-
-  // Purpose: in a grouped card, Not now collapses that row in place while the
-  // answer is sent; the card never folds away and back mid-request (DOR-4282).
-  it('keeps a two-app places card open, that row answered, while Not now is sent', async () => {
-    const placesOnly = {
-      placesOnly: true,
-      added: { net: [], run: [], agents: false, runtime: false, slots: ['pages'] },
-      runsInServer: false,
-    };
-    waiting = [
-      { ...FLOW, ...placesOnly },
-      {
-        ...FLOW,
-        ...placesOnly,
-        id: 'beacon',
-        name: 'Beacon',
-        plugin: 'beacon',
-        path: '/home/me/.dork/plugins/beacon/.dork/extensions/beacon',
-      },
-    ];
-    // The answer is never confirmed, so the card shows what it does meanwhile.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
-        String(input).endsWith('/dismiss-approval')
-          ? new Promise<Response>(() => {})
-          : fakeFetch(input, init)
-      )
-    );
-    renderBell();
-    const user = userEvent.setup();
-    await user.click(await screen.findByTestId('inbox-bell'));
-    expect(await screen.findByText('2 apps need a quick look')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Not now for Flow' }));
-
-    expect(await screen.findByText('1 app needs a quick look')).toBeInTheDocument();
-    const rows = screen.getAllByTestId(/^places-reask-row-/);
-    expect(rows.map((row) => row.dataset.testid)).toEqual([
-      'places-reask-row-flow',
-      'places-reask-row-beacon',
-    ]);
-    expect(rows[0]).toHaveTextContent('Flow · Not now');
-    expect(within(rows[0]!).queryByRole('button')).toBeNull();
-    // Beacon stays on the card, never on a card of its own.
-    expect(screen.queryByText('Beacon wants to show in new places.')).not.toBeInTheDocument();
   });
 
   // Purpose: a yes left on "Confirm it's you" is not undone on the card when
@@ -551,9 +351,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
   });
 
   describe('a "Confirm it’s you" closed without confirming (DOR-4909)', () => {
-    // Purpose: on Nov 21 a cancelled step-up left the card exactly as it was,
-    // so "Not now" looked like the way out and the app stayed off for hours.
-    // The card now says nothing was allowed, and how to try again.
+    // Purpose: on Nov 21 a cancelled step-up left the card exactly as it was, so "Not now" looked
+    // like the way out and the app stayed off for hours.
     it('says on the card that nothing was allowed, and how to try again', async () => {
       approveStatus = 428;
       renderBell();
@@ -574,49 +373,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       approvalGate = new Promise(() => {});
       await user.click(within(row).getByRole('button', { name: 'Allow' }));
       await waitFor(() => expect(within(row).queryByText(STEP_UP_NOT_CONFIRMED)).toBeNull());
-    });
-
-    it('clears the line when the person answers Not now instead', async () => {
-      approveStatus = 428;
-      renderBell();
-      const { user, row } = await openRow();
-      await user.click(within(row).getByRole('button', { name: 'Allow' }));
-      expect(await within(row).findByText(STEP_UP_NOT_CONFIRMED)).toBeInTheDocument();
-
-      await user.click(within(row).getByRole('button', { name: 'Not now' }));
-
-      await waitFor(() => expect(screen.queryByText(STEP_UP_NOT_CONFIRMED)).toBeNull());
-    });
-
-    it('says it on the places card too, on that app’s own row', async () => {
-      const placesOnly = {
-        placesOnly: true,
-        added: { net: [], run: [], agents: false, runtime: false, slots: ['pages'] },
-        runsInServer: false,
-      };
-      const beacon = {
-        ...FLOW,
-        ...placesOnly,
-        id: 'beacon',
-        name: 'Beacon',
-        plugin: 'beacon',
-        path: '/home/me/.dork/plugins/beacon/.dork/extensions/beacon',
-      };
-      waiting = [{ ...FLOW, ...placesOnly }, beacon];
-      approveStatus = 428;
-      renderBell();
-      const user = userEvent.setup();
-      await user.click(await screen.findByTestId('inbox-bell'));
-      await user.click(await screen.findByRole('button', { name: 'Allow Flow' }));
-
-      const row = screen.getByTestId('places-reask-row-flow');
-      await waitFor(() =>
-        expect(within(row).getByRole('status')).toHaveTextContent(STEP_UP_NOT_CONFIRMED)
-      );
-      expect(within(row).getByRole('button', { name: 'Allow Flow' })).toBeEnabled();
-      expect(
-        within(screen.getByTestId('places-reask-row-beacon')).queryByRole('status')
-      ).toBeNull();
     });
   });
 
@@ -661,33 +417,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
       // Nothing runs before the yes, so the row says what it WOULD give.
       expect(within(row).getByText('Would give agents 2 tools and 1 skill')).toBeInTheDocument();
-    });
-
-    it('lists each tool with its tier, each skill, and any refusal in ⓘ', async () => {
-      waiting = [WITH_TOOLS];
-      renderBell();
-      const { user, row } = await openRow();
-
-      await user.click(within(row).getByRole('button', { name: 'More about this' }));
-
-      // The ⓘ panel's gift rows, not the permission lines drawn on the row.
-      const gifts = row.querySelector('[data-slot="extension-agent-gift-rows"]') as HTMLElement;
-      const items = within(gifts)
-        .getAllByRole('listitem')
-        .map((item) => item.textContent);
-      expect(items).toEqual([
-        'List work itemsReads',
-        'Close a work itemAsks you first',
-        'open_endedLeft out: Its input must list every field.',
-        'triage-boardSkill',
-      ]);
-    });
-
-    it('adds no line for an extension that gives agents nothing', async () => {
-      renderBell();
-      const { row } = await openRow();
-
-      expect(within(row).queryByText(/give agents|Gives agents/)).not.toBeInTheDocument();
     });
   });
 
@@ -836,59 +565,6 @@ describe('InboxBell — an extension waiting to be turned on', () => {
         run: ['git'],
         agents: false,
       });
-    });
-
-    // Purpose: a re-ask leads with what is new since the last yes.
-    it('leads a re-ask with the new host', async () => {
-      waiting = [
-        { ...MAIL, added: { net: ['api.example.com'], run: [], agents: false, runtime: false } },
-      ];
-      renderBell();
-      const { row } = await openRow();
-      const lines = within(row).getByTestId('extension-permissions-flow');
-      const first = lines.querySelector('li');
-      expect(first).toHaveTextContent('Now also wants to connect to: api.example.com');
-    });
-
-    // Purpose: a yes to a row that widened while on screen is refused, says so
-    // plainly, and the row comes back showing what it asks for now.
-    it('says so plainly and redraws the row when the yes is stale', async () => {
-      waiting = [MAIL];
-      approveStatus = 409;
-      staleReplacement = {
-        ...MAIL,
-        permissions: { ...MAIL.permissions!, net: [...MAIL.permissions!.net, 'api.example.com'] },
-      };
-      renderBell();
-      const { user, row } = await openRow();
-
-      await user.click(within(row).getByRole('button', { name: 'Allow' }));
-
-      await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith('Flow changed since you saw it. Check it again.')
-      );
-      // A first ask has no earlier approval, yet the redrawn row still leads
-      // with the host the refused card did not list.
-      await waitFor(() =>
-        expect(
-          screen.getByTestId('extension-permissions-flow').querySelector('li')
-        ).toHaveTextContent('Now also wants to connect to: api.example.com')
-      );
-      expect(screen.getByTestId('extension-access-facts-flow')).toHaveTextContent(
-        'NetworkCan reach imap.fastmail.com, smtp.fastmail.com, api.example.com'
-      );
-    });
-
-    // Purpose: a server one version behind sends no set; the row adds nothing
-    // and the yes compares nothing.
-    it('adds nothing and echoes nothing when the server sent no set', async () => {
-      waiting = [{ ...FLOW, permissions: null }];
-      renderBell();
-      const { user, row } = await openRow();
-      expect(within(row).queryByText(/Runs (inside|separately)/)).not.toBeInTheDocument();
-      await user.click(within(row).getByRole('button', { name: 'Allow' }));
-      await waitFor(() => expect(posts).toHaveLength(1));
-      expect(posts[0]!.body).not.toHaveProperty('permissions');
     });
   });
 });

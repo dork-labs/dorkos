@@ -134,7 +134,11 @@ describe('cloud routes', () => {
     it('returns 502 when the cloud is unreachable', async () => {
       manager.startLink.mockRejectedValue(new Error('fetch failed'));
       const res = await request(server).post('/api/cloud/link/start').expect(502);
-      expect(res.body.error).toMatch(/cloud/i);
+      expect(res.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'Couldn’t reach DorkOS to start linking. Try again shortly.',
+      });
+      expect(JSON.stringify(res.body)).not.toContain('fetch failed');
     });
   });
 
@@ -373,7 +377,10 @@ describe('cloud routes', () => {
         .put('/api/cloud/credits/default')
         .send({ runtime: 'codex', useCredits: true })
         .expect(400);
-      expect(res.body.error).toBe("Codex can't run on DorkOS credits yet.");
+      expect(res.body).toMatchObject({
+        code: 'invalid_request',
+        detail: 'That runtime can’t run on DorkOS credits yet.',
+      });
       expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
     });
 
@@ -397,9 +404,10 @@ describe('cloud routes', () => {
             .put('/api/cloud/credits/default')
             .send({ runtime: 'opencode', useCredits })
             .expect(409);
-          expect(res.body.error).toBe(
-            'OpenCode is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.'
-          );
+          expect(res.body).toMatchObject({
+            code: 'runtime_busy',
+            detail: 'OpenCode is in the middle of a reply. Switch once it finishes.',
+          });
         }
         expect(mockCreditsDefaults.setCreditsDefault).not.toHaveBeenCalled();
         // A change that changes nothing is never refused.

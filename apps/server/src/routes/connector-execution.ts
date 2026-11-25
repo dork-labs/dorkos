@@ -6,7 +6,7 @@ import {
   ConnectorExecutionTargetSchema,
 } from '@dorkos/shared/connector-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -37,6 +37,12 @@ import {
   type ConnectorEventAccessQueryService,
 } from '../services/connectors/events/access-query-service.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import {
+  ACCESS_QUERY_PROBLEM,
+  EVENT_ACCESS_PROBLEM,
+  sendConnectorProblem,
+} from './connector-problems.js';
+import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
 import { PROGRAM_KEY_ROUTES as KEY } from '../services/connectors/principal/program-key-routes.js';
 
 const AgentQuerySchema = z.object({ agentId: z.string().min(1) }).strict();
@@ -81,9 +87,9 @@ export interface ConnectorExecutionRouterDeps extends ConnectorOwnerBoundaryDeps
 /** The 401 for a call that did not prove a verified API key. */
 function executionKeyRequired(
   c: Context<ApiEnv>,
-  error = 'Use a verified API key to call this service.'
+  detail = 'Use a verified API key to call this service.'
 ): Response {
-  return c.json({ error, code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED' }, 401);
+  return problem(c, 'unauthenticated', { detail });
 }
 
 /**
@@ -98,15 +104,9 @@ async function resolveProgramPrincipal(
   deps: ConnectorExecutionRouterDeps
 ): Promise<ServerPrincipalProof | Response> {
   if (presentsAgentIdentity(honoRequestFacts(c))) {
-    return c.json(
-      {
-        error:
-          'This service call cannot run from an active agent session. Use an API key outside the session.',
-        code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
-        message: 'Run this service call with an API key outside an active agent session.',
-      },
-      403
-    );
+    return problem(c, 'forbidden', {
+      detail: 'Run this with an API key, outside an agent’s chat.',
+    });
   }
   const { headers } = c.env.incoming;
   if (headers.authorization === undefined) return executionKeyRequired(c);
@@ -119,7 +119,7 @@ async function resolveProgramPrincipal(
   if (!principal) {
     return executionKeyRequired(
       c,
-      'DorkOS could not verify access for this API key. Sign in again or use another key.'
+      'DorkOS couldn’t confirm this API key’s access. Use another key.'
     );
   }
   return principal;
@@ -137,42 +137,18 @@ function approvalToken(c: Context<ApiEnv>): string | undefined {
  */
 function programErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ConnectorEventAccessError) {
-    return c.json(
-      { error: error.message, code: error.code },
-      error.code === 'credential_unavailable' ? 401 : error.code === 'invalid_cursor' ? 400 : 404
-    );
+    return sendConnectorProblem(c, EVENT_ACCESS_PROBLEM[error.code], error);
   }
-  if (error instanceof CapabilityGateRefusal) {
-    return c.json(
-      error.decision.payload,
-      error.decision.outcome === 'approval_required' ? 202 : 403
-    );
-  }
+  if (error instanceof CapabilityGateRefusal) return gateResponse(c, error.decision);
   if (error instanceof ConnectorAccessQueryError) {
-    const status = error.code === 'invalid_cursor' ? 400 : 404;
-    return c.json({ error: error.message, code: error.code }, status);
+    return sendConnectorProblem(c, ACCESS_QUERY_PROBLEM[error.code], error);
   }
   if (error instanceof z.ZodError) {
     // The detail names the first field and what it needs (`validationProblem`).
     return validationProblem(c, error);
   }
   if (error instanceof CapabilityToolError) {
-    const payload = error.payload;
-    const code =
-      payload && typeof payload === 'object' && 'code' in payload
-        ? String((payload as { code?: unknown }).code ?? '')
-        : '';
-    if (['CONNECTOR_TARGET_NOT_FOUND', 'CONNECTOR_OWNER_MISMATCH'].includes(code)) {
-      return c.json(
-        {
-          error:
-            'The selected connection was not found. Choose a connection this agent can use and try again.',
-          code: 'CONNECTOR_TARGET_NOT_FOUND',
-        },
-        404
-      );
-    }
-    return c.json(payload as object, code === 'CONNECTOR_GRANT_REQUIRED' ? 403 : 409);
+    return sendProblem(c, toolRefusalProblem(error.payload));
   }
   const managed = managedCloudErrorResponse(c, error);
   if (managed) return managed;
@@ -220,7 +196,9 @@ export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDep
           return programErrorResponse(c, error);
         } catch (unexpected) {
           logger.error('[connectors] program execution failed', { unexpected });
-          return c.json({ error: 'Internal server error' }, 500);
+          return problem(c, 'internal_error', {
+            detail: 'DorkOS couldn’t run that service call. Try again.',
+          });
         }
       }
     };

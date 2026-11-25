@@ -43,7 +43,6 @@ vi.mock('../../lib/logger.js', () => ({
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { createRuntimesRoutes } from '../runtimes.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { OPERATOR_COOKIE_REQUIRED_CODE } from '../../lib/caller-authority.js';
 
 const server = listeningServer(
   honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() })
@@ -174,7 +173,8 @@ describe('POST /api/runtimes/claude-code/accounts/found/dismiss', () => {
 
     // The more specific answer: sign in first (the cookie bar runs before the agent bar).
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
+    expect(res.body.code).toBe('person_only');
+    expect(res.body.detail).toMatch(/signed in to DorkOS/);
     expect(configManager.get('runtimes').claudeCode.dismissedFolders).toEqual([]);
   });
 

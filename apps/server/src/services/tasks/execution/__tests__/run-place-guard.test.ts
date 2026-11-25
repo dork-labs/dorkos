@@ -13,7 +13,12 @@ import {
   guardRunPlacement,
 } from '../run-place-guard.js';
 import { isProtectedLaunchFolder } from '../../../session/launch/launch-caller.js';
-import { protectedPathRefusal } from '../../../runtimes/shared/policy/protected-file-guard.js';
+import { protectedPathRefusal } from '../../../core/protected-paths/protected-file-guard.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 let above: string;
 let home: string;

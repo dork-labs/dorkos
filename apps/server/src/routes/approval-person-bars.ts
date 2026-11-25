@@ -6,16 +6,15 @@
  *
  * @module routes/approval-person-bars
  */
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import {
   resolveDecisionAuthority,
   type DecisionAuthorityResult,
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
-import {
-  readCallerAuthority,
-  requireOperatorCookieUnderLogin,
-  type OperatorCookieRefusal,
-} from '../lib/caller-authority.js';
+import type { DecisionRefusalCode } from '../services/core/approvals/decision-authority.js';
+import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
 /**
@@ -48,9 +47,7 @@ export function decisionAuthority(
  * a person: it says WHERE the answer has to happen, not which header was missing.
  * A refusal that names a header reads as a hint about how to get around it.
  */
-const DECIDE_NEEDS_APP =
-  'Approving or refusing a risky action has to happen inside DorkOS, by a person who is signed in. ' +
-  'A program holding an API key cannot answer for you. Open DorkOS and answer it there.';
+const DECIDE_NEEDS_APP = 'Answer this inside DorkOS, signed in. An API key can’t answer for you.';
 
 /**
  * With login on, require that a person in the app is answering (DOR-474).
@@ -62,8 +59,8 @@ const DECIDE_NEEDS_APP =
  * `refusal.code` and supplies its own `error`.
  *
  * Runs AFTER `resolveDecisionAuthority`, so a caller that names itself an agent
- * still hears `AGENT_CANNOT_DECIDE`. That answer is more specific and more useful
- * than "sign in", and an honest agent should be told the thing it did wrong.
+ * still hears that agents can't decide. That answer is more specific and more
+ * useful than "sign in", and an honest agent should be told the thing it did wrong.
  *
  * @param facts - The request's facts, with the session gate's resolved user.
  * @param isLoginEnabled - Optional login-state lookup for tests.
@@ -72,11 +69,30 @@ const DECIDE_NEEDS_APP =
 export function requirePersonToDecide(
   facts: RequestFacts,
   isLoginEnabled?: LoginEnabledLookup
-): OperatorCookieRefusal | undefined {
+): Problem | undefined {
   const refusal = requireOperatorCookieUnderLogin(
     facts,
     'whether a risky action goes ahead',
     isLoginEnabled
   );
-  return refusal ? { ...refusal, error: DECIDE_NEEDS_APP } : undefined;
+  return refusal ? problemBody('person_only', { detail: DECIDE_NEEDS_APP }) : undefined;
+}
+
+/** The problem code for each reason a caller may not decide. */
+const DECISION_REFUSAL_PROBLEM: Record<DecisionRefusalCode, ProblemCode> = {
+  AGENT_CANNOT_DECIDE: 'person_only',
+  REQUESTER_CANNOT_DECIDE: 'person_only',
+  AUTH_REQUIRED: 'unauthenticated',
+};
+
+/**
+ * The problem for a caller the first bar refused.
+ *
+ * @param refusal - What {@link decisionAuthority} refused with.
+ * @returns The problem document.
+ */
+export function decisionRefusalProblem(
+  refusal: Extract<DecisionAuthorityResult, { allowed: false }>
+): Problem {
+  return problemBody(DECISION_REFUSAL_PROBLEM[refusal.code], { detail: refusal.error });
 }

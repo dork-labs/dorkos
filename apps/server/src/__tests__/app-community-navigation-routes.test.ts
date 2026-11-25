@@ -188,7 +188,7 @@ describe('Space routes while the spaces experiment is off (DOR-2740)', () => {
     ['GET', '/api/communities/community-a/rooms/general/events'],
     ['GET', '/api/cloud/communities'],
     ['POST', '/api/cloud/communities'],
-  ])('%s %s refuses with SPACES_DISABLED and touches nothing', async (method, path) => {
+  ])('%s %s refuses with spaces_disabled and touches nothing', async (method, path) => {
     config.values.spaces = { enabled: false };
     try {
       const app = bootApp();
@@ -196,9 +196,10 @@ describe('Space routes while the spaces experiment is off (DOR-2740)', () => {
       const res =
         method === 'GET' ? await request(app).get(path) : await request(app).post(path).send({});
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({
-        error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
-        code: 'SPACES_DISABLED',
+      expect(res.body).toMatchObject({
+        status: 404,
+        code: 'spaces_disabled',
+        detail: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
       });
       expect(JSON.stringify(config.values.ui)).toBe(before);
     } finally {
@@ -211,7 +212,7 @@ describe('Space routes while the spaces experiment is off (DOR-2740)', () => {
     try {
       const res = await request(bootApp()).get('/api/community-connections/navigation');
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('SPACES_DISABLED');
+      expect(res.body.code).toBe('spaces_disabled');
     } finally {
       config.values.spaces = { enabled: true };
     }
@@ -270,7 +271,7 @@ describe('the official space while the spaces experiment is off', () => {
         installName: 'Mine',
       });
       expect(other.status).toBe(404);
-      expect(other.body.code).toBe('SPACES_DISABLED');
+      expect(other.body.code).toBe('spaces_disabled');
       expect(spaces.started).toEqual([spaces.OFFICIAL_URL]);
     });
   });
@@ -286,17 +287,17 @@ describe('the official space while the spaces experiment is off', () => {
         '/api/community-connections/remote_other/wake-agents-from'
       );
       expect(other.status).toBe(404);
-      expect(other.body.code).toBe('SPACES_DISABLED');
+      expect(other.body.code).toBe('spaces_disabled');
       const otherRooms = await request(app).get('/api/communities/remote_other/rooms');
-      expect(otherRooms.body.code).toBe('SPACES_DISABLED');
+      expect(otherRooms.body.code).toBe('spaces_disabled');
       const otherDestination = await request(app).get(
         '/api/community-connections/navigation/remote_other/destination'
       );
-      expect(otherDestination.body.code).toBe('SPACES_DISABLED');
+      expect(otherDestination.body.code).toBe('spaces_disabled');
       const otherMove = await request(app)
         .post('/api/community-connections/navigation/move')
         .send({ ref: 'remote_other', direction: 'down' });
-      expect(otherMove.body.code).toBe('SPACES_DISABLED');
+      expect(otherMove.body.code).toBe('spaces_disabled');
     });
   });
 
@@ -324,7 +325,7 @@ describe('the official space while the spaces experiment is off', () => {
   it('lets an official :ref through to the space routes', async () => {
     await offWithOfficial(async (app) => {
       const res = await request(app).get('/api/communities/remote_official/rooms');
-      expect(res.body.code).not.toBe('SPACES_DISABLED');
+      expect(res.body.code).not.toBe('spaces_disabled');
     });
   });
 
@@ -336,7 +337,7 @@ describe('the official space while the spaces experiment is off', () => {
         await request(app).get('/api/cloud/communities/name-check?name=abc'),
       ]) {
         expect(res.status).toBe(404);
-        expect(res.body.code).toBe('SPACES_DISABLED');
+        expect(res.body.code).toBe('spaces_disabled');
       }
     });
   });

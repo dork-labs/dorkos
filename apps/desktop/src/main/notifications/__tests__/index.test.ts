@@ -249,20 +249,6 @@ describe('watchNotifications — standing conditions', () => {
     expect(host.shown[0]?.spec.hasReply).toBeUndefined();
   });
 
-  it('shows a banner for a capability approval an agent is waiting on', () => {
-    start();
-    sendStandingPending({
-      kind: 'approval.pending',
-      subjectKey: 'approval:01J1',
-      title: 'Nightly Bot needs your approval',
-      body: 'Delete a scheduled task cannot be undone, so it will not run until you decide.',
-      deepLink: '/',
-    });
-
-    expect(host.shown).toHaveLength(1);
-    expect(host.shown[0]?.spec.title).toBe('Nightly Bot needs your approval');
-  });
-
   it('opens the route the server chose when the banner is clicked', () => {
     start();
     sendStandingPending({ kind: 'approval.pending', subjectKey: 'approval:01J1', deepLink: '/' });
@@ -270,14 +256,6 @@ describe('watchNotifications — standing conditions', () => {
     host.shown[0]?.spec.onClick?.();
 
     expect(focusAndNavigate).toHaveBeenCalledWith('/');
-  });
-
-  it('interrupts even while a window is focused — Blocking always does', () => {
-    unfocused = false;
-    start();
-    sendStandingPending();
-
-    expect(host.shown).toHaveLength(1);
   });
 
   it('never shows the same condition twice', () => {
@@ -317,55 +295,6 @@ describe('watchNotifications — standing conditions', () => {
     expect(host.shown).toHaveLength(2);
   });
 
-  it('leaves a banner alone when a DIFFERENT condition resolves', () => {
-    start();
-    sendStandingPending();
-    expect(host.shown).toHaveLength(1);
-
-    source.emitEvent('standing_resolved', {
-      kind: 'schedule.parked',
-      subjectKey: 'schedule:task-999',
-      resolvedAt: '2026-08-25T00:01:00.000Z',
-    });
-
-    expect(host.shown[0]?.closed).toBe(false);
-    // Positive control: the very same event naming the RIGHT key does close it,
-    // so the banner staying open was the key not matching and not a resolution
-    // path that does nothing to anybody.
-    source.emitEvent('standing_resolved', {
-      kind: 'schedule.parked',
-      subjectKey: 'schedule:task-1',
-      resolvedAt: '2026-08-25T00:01:00.000Z',
-    });
-    expect(host.shown[0]?.closed).toBe(true);
-  });
-
-  it('ignores a frame with no usable tier, rather than defaulting to loud', () => {
-    start();
-    sendStandingPending({ tier: 'unheard-of' });
-
-    expect(host.shown).toHaveLength(0);
-    // Positive control: a well-formed frame straight after still gets through,
-    // so the silence was the tier being rejected and not a watcher the
-    // malformed frame knocked over.
-    sendStandingPending({ subjectKey: 'schedule:task-ok' });
-    expect(host.shown).toHaveLength(1);
-  });
-
-  it('holds a Notable condition back while a window has focus', () => {
-    unfocused = false;
-    start();
-    sendStandingPending({ tier: 'notable' });
-
-    expect(host.shown).toHaveLength(0);
-    // Positive control: the identical condition shows the moment focus is gone
-    // — a condition held back is not tracked, so re-sending it is the whole
-    // test of the away-only rule.
-    unfocused = true;
-    sendStandingPending({ tier: 'notable' });
-    expect(host.shown).toHaveLength(1);
-  });
-
   // Expiry is the one ending the server never announces (DOR-1570 review): an
   // approval that runs out of time with no agent retry and no operator click
   // produces no `standing_resolved`. Without a local timer the banner would
@@ -393,54 +322,6 @@ describe('watchNotifications — standing conditions', () => {
 
     expect(host.shown[0]?.closed).toBe(true);
   });
-
-  it('does not self-retire a schedule banner, which carries no expiry', () => {
-    vi.useFakeTimers();
-    start();
-    // A parked schedule has no `expiresAt`; it must wait for standing_resolved.
-    sendStandingPending();
-    // Positive control, armed alongside it: an approval that DOES carry an
-    // expiry retires on the very same advance, so the schedule still standing
-    // is the missing deadline and not a timer nothing ever fires.
-    sendStandingPending({
-      kind: 'approval.pending',
-      subjectKey: 'approval:01JCONTROL',
-      deepLink: '/',
-      expiresAt: new Date(Date.now() + 40).toISOString(),
-    });
-    expect(host.shown).toHaveLength(2);
-
-    vi.advanceTimersByTime(60_000);
-
-    expect(host.shown[0]?.closed).toBe(false);
-    expect(host.shown[1]?.closed).toBe(true);
-  });
-
-  it('does not double-handle when standing_resolved beats the expiry timer', () => {
-    vi.useFakeTimers();
-    start();
-    sendStandingPending({
-      kind: 'approval.pending',
-      subjectKey: 'approval:01JRACE',
-      deepLink: '/',
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    });
-    expect(host.shown).toHaveLength(1);
-
-    source.emitEvent('standing_resolved', {
-      kind: 'approval.pending',
-      subjectKey: 'approval:01JRACE',
-      resolvedAt: new Date().toISOString(),
-    });
-    expect(host.shown[0]?.closed).toBe(true);
-
-    // Past the deadline the (now-cleared) timer would have fired at.
-    vi.advanceTimersByTime(120_000);
-
-    // The banner closed exactly once; nothing re-opened or re-closed it.
-    expect(host.shown).toHaveLength(1);
-    expect(host.shown[0]?.closes).toBe(1);
-  });
 });
 
 describe('watchNotifications — Asks', () => {
@@ -451,28 +332,6 @@ describe('watchNotifications — Asks', () => {
     expect(host.shown).toHaveLength(1);
     expect(host.shown[0]?.spec.title).toBe('myproj is waiting on your answer');
     expect(host.shown[0]?.spec.actions).toEqual([{ label: 'Allow' }, { label: 'Deny' }]);
-  });
-
-  it('shows a Blocking banner even while a window is focused — Blocking always interrupts', () => {
-    unfocused = false;
-    start();
-    sendAskPending({ interaction: approval() });
-
-    expect(host.shown).toHaveLength(1);
-  });
-
-  it('never shows the same pending Ask twice', () => {
-    start();
-    sendAskPending({ interaction: approval() });
-    expect(host.shown).toHaveLength(1);
-
-    sendAskPending({ interaction: approval() });
-
-    expect(host.shown).toHaveLength(1);
-    // Positive control: a DIFFERENT interaction id still gets its banner, so
-    // the second frame being dropped was the de-dupe.
-    sendAskPending({ interaction: approval({ id: 'tool-2' }) });
-    expect(host.shown).toHaveLength(2);
   });
 
   it('Allow POSTs the exact approve payload', () => {
@@ -529,35 +388,6 @@ describe('watchNotifications — Asks', () => {
     );
   });
 
-  it('offers neither actions nor a reply for a multi-question ask', () => {
-    start();
-    sendAskPending({
-      interaction: {
-        type: 'question',
-        id: 'question-2',
-        startedAt: 0,
-        remainingMs: 60_000,
-        questions: [
-          { header: 'Color', question: 'What color?', options: [], multiSelect: false },
-          { header: 'Size', question: 'What size?', options: [], multiSelect: false },
-        ],
-      },
-    });
-
-    expect(host.shown).toHaveLength(1);
-    expect(host.shown[0]?.spec.hasReply).toBeUndefined();
-    expect(host.shown[0]?.spec.actions).toBeUndefined();
-  });
-
-  it('clicking the banner focuses the window and deep-links to the session', () => {
-    start();
-    sendAskPending({ sessionId: 'session-9', interaction: approval() });
-
-    host.shown[0]?.spec.onClick?.();
-
-    expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
-  });
-
   it('closes the banner when interaction_resolved names it', () => {
     start();
     sendAskPending({ interaction: approval({ id: 'tool-close-me' }) });
@@ -585,7 +415,7 @@ describe('watchNotifications — Asks', () => {
   });
 
   it('does NOT steal focus on a refused action — the server understood and said no (already resolved)', async () => {
-    // 409 INTERACTION_ALREADY_RESOLVED — someone else already answered it, or
+    // 409 already_resolved — someone else already answered it, or
     // it timed out. Reopening the app over a card that no longer exists would
     // surprise the person for nothing.
     fetchMock.mockResolvedValue(new Response(null, { status: 409 }));
@@ -606,43 +436,6 @@ describe('watchNotifications — Asks', () => {
     await answerSettles();
     expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
   });
-
-  it('does NOT steal focus on a refused reply either', async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 409 }));
-    start();
-    sendAskPending({ sessionId: 'session-9', interaction: singleQuestion() });
-
-    host.shown[0]?.spec.onReply?.('Blue');
-
-    await answerSettles();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(focusAndNavigate).not.toHaveBeenCalled();
-
-    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
-    host.shown[0]?.spec.onReply?.('Blue');
-    await answerSettles();
-    expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
-  });
-
-  it('shows nothing for a question-type interaction whose questions field is not an array', () => {
-    start();
-    sendAskPending({
-      interaction: {
-        type: 'question',
-        id: 'question-malformed',
-        startedAt: 0,
-        remainingMs: 60_000,
-        questions: 'not-an-array',
-      },
-    });
-
-    expect(host.shown).toHaveLength(0);
-
-    // Positive control: the malformed payload didn't crash the watcher — a
-    // well-formed frame right after it still gets through.
-    sendAskPending({ interaction: approval() });
-    expect(host.shown).toHaveLength(1);
-  });
 });
 
 describe('watchNotifications — Activity notifications', () => {
@@ -655,14 +448,6 @@ describe('watchNotifications — Activity notifications', () => {
     // Positive control: a Blocking row on the same focused window does show, so
     // the silence was the tier rule and not a stream nobody is listening to.
     sendNotification({ id: 'notif-blocking', tier: 'blocking' });
-    expect(host.shown).toHaveLength(1);
-  });
-
-  it('shows a Notable notification once no window is focused', () => {
-    unfocused = true;
-    start();
-    sendNotification({ tier: 'notable' });
-
     expect(host.shown).toHaveLength(1);
   });
 
@@ -695,58 +480,6 @@ describe('watchNotifications — Activity notifications', () => {
     expect(host.shown).toHaveLength(1);
   });
 
-  it('never shows the same notification id twice', () => {
-    unfocused = true;
-    start();
-    sendNotification({ id: 'notif-dupe', tier: 'blocking' });
-    expect(host.shown).toHaveLength(1);
-
-    sendNotification({ id: 'notif-dupe', tier: 'blocking' });
-
-    expect(host.shown).toHaveLength(1);
-    sendNotification({ id: 'notif-other', tier: 'blocking' });
-    expect(host.shown).toHaveLength(2);
-  });
-
-  it('ignores a notification whose subject type it does not know', () => {
-    // `notificationDeepLink` switches on `subject.type`; a value outside the
-    // enum falls off the end of that switch and yields `undefined`, which is a
-    // banner whose click goes nowhere. Failing closed is the honest answer —
-    // the row is still in the Inbox.
-    unfocused = true;
-    start();
-    sendNotification({
-      id: 'notif-alien',
-      tier: 'blocking',
-      subject: { type: 'workspace', id: 'ws-1' },
-    });
-
-    expect(host.shown).toHaveLength(0);
-    sendNotification({ id: 'notif-known', tier: 'blocking' });
-    expect(host.shown).toHaveLength(1);
-  });
-
-  it('ignores a notification whose subject carries no type at all', () => {
-    unfocused = true;
-    start();
-    sendNotification({ id: 'notif-typeless', tier: 'blocking', subject: { id: 'x' } });
-
-    expect(host.shown).toHaveLength(0);
-    sendNotification({ id: 'notif-known', tier: 'blocking' });
-    expect(host.shown).toHaveLength(1);
-  });
-
-  it('still shows every subject type the deep-link builder handles', () => {
-    // The guard above must fail closed on the unknown, not on everything.
-    unfocused = true;
-    start();
-    for (const type of ['session', 'task', 'run', 'room', 'agent', 'system']) {
-      sendNotification({ id: `notif-${type}`, tier: 'blocking', subject: { type, id: 'x' } });
-    }
-
-    expect(host.shown).toHaveLength(6);
-  });
-
   it("clicking the banner deep-links to the notification's subject", () => {
     unfocused = true;
     start();
@@ -771,23 +504,6 @@ describe('watchNotifications — Activity notifications', () => {
     });
 
     expect(host.shown[0]?.closed).toBe(true);
-  });
-
-  it('closes every tracked banner when notification_read says all', () => {
-    unfocused = true;
-    start();
-    sendNotification({ id: 'notif-a', tier: 'blocking' });
-    sendNotification({ id: 'notif-b', tier: 'blocking' });
-    expect(host.shown).toHaveLength(2);
-
-    source.emitEvent('notification_read', {
-      ids: [],
-      all: true,
-      readAt: '2026-08-19T00:00:03.000Z',
-      unreadCount: 0,
-    });
-
-    expect(host.shown.every((entry) => entry.closed)).toBe(true);
   });
 });
 

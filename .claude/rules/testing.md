@@ -218,6 +218,36 @@ A test that cannot fail is worse than no test: it reports safety it never checke
 - **jsdom reports every element as `0 × 0`.** Nothing geometric — height, overlap, truncation, animation frames — can be settled in a unit test. Say so in the test rather than asserting a proxy and implying coverage.
 - **A comment admitting an assertion is weak does not make it acceptable.** Three tests shipped carrying "browser-verified rather than asserted here"; they were vacuous, and the note is why nobody looked again.
 
+## Is this test worth keeping?
+
+Every test has a cost: CI minutes, a review each time it changes, an edit each time the code it pins moves, and lines the next agent has to read. On 2026-11-23 the repo had more lines of test than of source. A test stays only if it pays for itself. The same four questions decide whether to write a test and whether to keep one.
+
+**Keep a test only if the answer to all four is yes:**
+
+1. **Can it go red for a bug a person would notice?** Name the change to the product that turns it red (see "Assertions that cannot fail" above). If you can't, it is decoration.
+2. **Does it check behaviour, not structure?** A refactor that keeps behaviour should leave it green. Mocking our own modules, asserting the call order of internals, snapshotting markup and reading private state all fail this.
+3. **Is it the only test that catches that bug?** If another test (an integration test, a route test, one browser test) already goes red for the same break, this one is a duplicate. Keep the one nearest to what the person sees, unless it is much slower.
+4. **Is it worth what it costs?** A unit test that takes over a second, has flaked, or gets edited in most PRs near it must catch something nothing else does.
+
+**Delete on sight:**
+
+- A test that checks a mock was called with what the test itself handed it.
+- A test of a constant, a type, a re-export, a barrel's shape or a default prop.
+- One test per prop or variant where one `it.each` table or one behaviour test would do. Collapse them.
+- A large markup snapshot.
+- A test of a third-party library's own behaviour.
+- A browser spec that repeats what a component or route test already proves. Browser tests are for journeys across server and client.
+
+**Never delete without a replacement:** the regression test for a bug that shipped (it names its DOR id), tests of permissions, security or data loss, and the shared conformance suites (`runtimeConformance`, `communityConformance`). One of these may go only when a test at another layer fails for the same bug.
+
+**How many to write.** The fewest that would catch the change's realistic failures: usually one path through the public surface, plus the edge cases that broke before or are easy to get wrong. Not one test per branch, and not one per prop. A bug fix gets one test that was red before the fix.
+
+**Coverage is an aim, never a gate.** We aim for about 60% line coverage, and only to size a pruning pass: well above it means there is more to cut. No check fails on coverage, and a low number is never a reason to add a test. Once a coverage number becomes the goal, people write tests that run code without checking it (Fowler, "TestCoverage"; Google, "Code Coverage Best Practices"). Use a coverage report to find untested code a person depends on, never as a score.
+
+**The budget.** Each package has a test budget in `scripts/test-ratio/baseline.json`, held by `pnpm check:test-ratio` at pre-push and in the required `typecheck` check. A package fails only when it adds tests faster than source: more lines of test than its recorded count _and_ more per line of source than its recorded ratio. So deleting dead code never fails, and tests that come with new source are fine. Each budget leaves room for about 300 more lines of test, and budgets only tighten. Over budget, delete weaker tests in that package before adding more. Moving test code into a non-test helper to dodge the count is the same bloat; reviewers treat it that way. The browser suite (`apps/e2e`) and the space test tiers (`apps/space`) have no budget, because they test code in other packages; the rubric still applies to them.
+
+**Deleting is normal work.** A PR may delete tests with one line per file in its body saying which question it failed ("duplicate of `chat-flow.spec.ts`", "asserts the mock"). It needs no ledger entry: the pass-count ratchets in `ci/ratchets.yaml` follow tests that were deleted from source. After deleting, run `pnpm check:test-ratio -- --update --package <package>` to lower that package's ceiling. The `pruning-tests` skill is the full method, and the QA agent runs it weekly.
+
 ## Mock AgentRuntime (Server Tests)
 
 ### Stable HTTP listeners for server route tests
@@ -355,10 +385,10 @@ Failures that blame the wrong thing, each measured on this machine:
   refused with exit 2 before any check runs. Forced forms that work:
   `turbo run typecheck lint --force` and `turbo run test --force -- --run`
   (they record no proof).
-- **Before you open a PR, run `pnpm verify:preopen`** on the final head with a
-  clean tree. Arming needs green required checks and all six test shards at the
-  exact head (or a full local `pnpm verify` proof). A PR that touches `.github/`
-  still needs a full `pnpm verify` or a PM waiver. A preopen proof never arms.
+- **No local check is a step before opening a PR.** When the work is done, open
+  it with `scripts/open-pr.sh`; CI runs the typecheck, lint and tests, and
+  auto-merge waits for every required check. `pnpm verify:preopen` and
+  `pnpm verify` are optional, for debugging a failure (`.github/` PRs included).
 - **Targeted server vitest runs read some `@dorkos/shared` subpaths from `dist`**
   (only aliased subpaths load from source), so a source-edited schema tests stale
   until `pnpm --filter @dorkos/shared build`. CI is safe via turbo `^build`;

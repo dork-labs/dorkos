@@ -114,7 +114,7 @@ describe('GET /api/rooms/:id/events', () => {
   it('404s an unknown room before any header flushes, so the client can read it', async () => {
     const res = await request(testServer).get('/api/rooms/nope/events');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
   });
 
   it('opens a cold connect with the room, its roster and its history', async () => {
@@ -377,7 +377,7 @@ describe('GET /api/rooms/:id/events', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
     resetAgentIdentityService();
   });
 });
@@ -506,6 +506,6 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
       .send({ lastReadSeq: 1 })
       .expect(404);
 
-    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    expect(res.body.code).toBe('room_not_found');
   });
 });

@@ -57,11 +57,10 @@ export interface RuleSpec {
 
 /**
  * Every rule's treatment. `hand-registered-path` is advisory until the
- * capability HTTP mount (DOR-4978) merges: from then a new route is a
- * capability `http` surface, which the mount serves and the OpenAPI projection
- * documents, so the hand registry takes no new paths (ADR PR #4160).
- * Until it merges, a documented `registerPath` is the only way to add a route,
- * so blocking it would freeze the API rather than guard it.
+ * pending list (`apps/server/src/http/hand-routes/pending.json`) is empty:
+ * until then hand routes still wait to move onto capability `http` surfaces,
+ * and blocking would freeze them rather than guard the API. Routes on the
+ * permanent allowlist are never counted.
  */
 export const RULES: Record<RuleId, RuleSpec> = {
   'operation-id': { blocking: true, fix: 'Give each new operation a unique operationId.' },
@@ -79,7 +78,7 @@ export const RULES: Record<RuleId, RuleSpec> = {
   },
   'error-shape': {
     blocking: true,
-    fix: 'Point each 4xx and 5xx body at a shared error schema (ErrorResponse).',
+    fix: 'Answer each 4xx and 5xx with a problem document: `problemResponse()` in the route’s registration.',
   },
   'list-paging': {
     blocking: true,
@@ -94,11 +93,11 @@ export const RULES: Record<RuleId, RuleSpec> = {
     fix: 'Serve the documented operation, or remove it from the document.',
   },
   'hand-registered-path': {
-    // The DOR-4978 mount PR flips this to `blocking: true`, and must run `--update` in the
-    // same PR: the advisory entries may lag the measured count, and a raise is judged against
-    // the base.
+    // The PR that empties the pending list flips this to `blocking: true`, and must run
+    // `--update` in the same PR: the advisory entries may lag the measured count, and a raise
+    // is judged against the base.
     blocking: false,
-    fix: 'Advisory today. Once the capability mount (DOR-4978) merges, declare new routes as a capability `http` surface, not a hand registerPath.',
+    fix: 'Declare a new route as a capability `http` surface, not a hand registerPath; a stream, bytes, callback, sign-in, page or docs route goes on the hand-route allowlist instead.',
   },
 };
 
@@ -137,8 +136,19 @@ export const ALLOWED_VERBS: readonly string[] = [
  */
 export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
 
-/** Error schemas a 4xx or 5xx body may reference. DOR-4979 adds `Problem`. */
-export const SHARED_ERROR_SCHEMAS: readonly string[] = ['ErrorResponse'];
+/**
+ * Schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every route
+ * answers with (ADR 261123-170831), and the few shared answers that are not
+ * problems on purpose: the login gate's `AuthRequired` 401, and the two 428
+ * "confirm first" answers, `StepUpRequired` on every held write and
+ * `PasskeyCheckRequired` on the passkey-checked device writes.
+ */
+export const SHARED_ERROR_SCHEMAS: readonly string[] = [
+  'Problem',
+  'AuthRequired',
+  'StepUpRequired',
+  'PasskeyCheckRequired',
+];
 
 /** The paths whose `registerPath(` calls count as hand registrations. */
 const HAND_REGISTRY_FILE =
@@ -149,6 +159,9 @@ const TEST_FILE = /(^|\/)__tests__\/|\.(test|spec)\.ts$/;
 
 /** A `registerPath(` call. */
 const REGISTER_CALL = /\bregisterPath\(/g;
+
+/** The same, for one search. */
+const REGISTER_CALL_ONCE = /\bregisterPath\(/;
 
 /** A line that is only a comment, so prose quoting a call is not a call. */
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
@@ -279,13 +292,24 @@ export function errorMissingItems(doc: OpenApiDocument): Items {
   return items;
 }
 
-function isSharedErrorRef(schema: SchemaNode | undefined): boolean {
-  return SHARED_ERROR_SCHEMAS.some((name) => schema?.$ref === `#/components/schemas/${name}`);
+function isSharedErrorRef(doc: OpenApiDocument, schema: SchemaNode | undefined): boolean {
+  const isShared = (node: SchemaNode | undefined) =>
+    SHARED_ERROR_SCHEMAS.some((name) => node?.$ref === `#/components/schemas/${name}`);
+  // A problem with extension members is the shared schema plus its own fields,
+  // inline or as a named component of its own.
+  const extendsShared = (node: SchemaNode | undefined) =>
+    isShared(node) ||
+    (node?.allOf ?? []).some(isShared) ||
+    (node?.$ref !== undefined && (resolveSchema(doc, node).allOf ?? []).some(isShared));
+  if (extendsShared(schema)) return true;
+  // A choice between such answers (a 409 that may carry `conflict`) is one too.
+  const members = [...(schema?.anyOf ?? []), ...(schema?.oneOf ?? [])];
+  return members.length > 0 && members.every(extendsShared);
 }
 
 /**
- * 4xx and 5xx responses whose JSON body is not a `$ref` to a shared error
- * schema, or that have no body at all.
+ * 4xx and 5xx responses whose body (a problem document, else JSON) is not a
+ * `$ref` to a shared error schema, or that have no body at all.
  *
  * @param doc - The OpenAPI document.
  */
@@ -295,7 +319,10 @@ export function errorShapeItems(doc: OpenApiDocument): Items {
     for (const status of errorStatuses(operation.op)) {
       const response = operation.op.responses?.[status];
       const resolved = response ? resolveResponse(doc, response) : {};
-      if (!isSharedErrorRef(resolved.content?.['application/json']?.schema)) {
+      const body =
+        resolved.content?.['application/problem+json']?.schema ??
+        resolved.content?.['application/json']?.schema;
+      if (!isSharedErrorRef(doc, body)) {
         add(items, groupOf(operation.path), `${label(operation)} ${status}`);
       }
     }
@@ -448,18 +475,63 @@ export function isHandRegistryFile(file: string): boolean {
   return HAND_REGISTRY_FILE.test(file) && !TEST_FILE.test(file);
 }
 
+/** A route the hand registry may keep documenting: `ALL` matches any method, a trailing `/*` any path under it. */
+export interface KeptRoute {
+  /** Upper-case method, or `ALL`. */
+  readonly method: string;
+  /** Path in Hono (`:id`) or OpenAPI (`{id}`) form. */
+  readonly path: string;
+}
+
+/** A path with every parameter, whatever its spelling, reduced to `:`. */
+function paramShape(path: string): string {
+  return path.replace(/\{[^}]*\}/g, ':').replace(/:[^/]*/g, ':');
+}
+
+/**
+ * Whether a registered operation is one of the kept routes.
+ *
+ * @param kept - The routes the hand registry may keep.
+ * @param method - The operation's method, any case.
+ * @param path - The operation's OpenAPI path.
+ */
+export function isKeptRoute(kept: readonly KeptRoute[], method: string, path: string): boolean {
+  const shape = paramShape(path);
+  return kept.some((route) => {
+    if (route.method !== 'ALL' && route.method !== method.toUpperCase()) return false;
+    const want = paramShape(route.path);
+    return want.endsWith('/*')
+      ? shape.startsWith(want.slice(0, -1)) || shape === want.slice(0, -2)
+      : shape === want;
+  });
+}
+
 /**
  * The 1-based line of every `registerPath(` call in one file's text, once
- * per call, skipping comment lines.
+ * per call, skipping comment lines and any call whose literal `method` and
+ * `path` name a kept route (the permanent hand-route allowlist). It fails
+ * toward counting: a call whose method or path is not a plain literal within
+ * a few lines (a template with `${…}`, a variable) is counted.
  *
  * @param text - The file's source.
+ * @param kept - The routes the hand registry may keep documenting.
  */
-export function registerPathLines(text: string): number[] {
+export function registerPathLines(text: string, kept: readonly KeptRoute[] = []): number[] {
   const lines: number[] = [];
-  text.split('\n').forEach((line, i) => {
+  const all = text.split('\n');
+  all.forEach((line, i) => {
     if (COMMENT_LINE.test(line)) return;
-    const calls = [...line.matchAll(REGISTER_CALL)].length;
-    for (let k = 0; k < calls; k += 1) lines.push(i + 1);
+    const calls = [...line.matchAll(REGISTER_CALL)];
+    for (const call of calls) {
+      // The call's own text: from it to the next call, or a few lines on.
+      const rest = [line.slice(call.index! + 1), ...all.slice(i + 1, i + 8)].join('\n');
+      const next = rest.search(REGISTER_CALL_ONCE);
+      const own = next === -1 ? rest : rest.slice(0, next);
+      const method = /\bmethod:\s*'(\w+)'/.exec(own)?.[1];
+      const path = /\bpath:\s*['`]([^'`$]+)['`]/.exec(own)?.[1];
+      if (method && path && isKeptRoute(kept, method, path)) continue;
+      lines.push(i + 1);
+    }
   });
   return lines;
 }

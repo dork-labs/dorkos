@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, eq } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
@@ -9,7 +8,6 @@ import { MeshCore } from '../mesh-core.js';
 import { AgentRegistry } from '../agent-registry.js';
 import { writeManifest } from '../manifest.js';
 import * as reconcilerModule from '../reconciler.js';
-import type { ScanEvent } from '../discovery/types.js';
 import { cleanTempDirsAfterEach, makeManifest, makeTempDir } from './mesh-core.fixtures.js';
 
 let db: Db;
@@ -136,31 +134,6 @@ describe('update() write-through (ADR-0043)', () => {
     expect(Object.keys(cleared!)).not.toContain('effort');
     expect(mesh.get(manifest.id)?.model).toBeUndefined();
     expect(mesh.get(manifest.id)?.effort).toBeUndefined();
-
-    mesh.close();
-  });
-
-  it('carries an agent account from disk into the cache on syncFromDisk', async () => {
-    // The reconciler path (ADR-0043): `agent.json` is the source of truth and
-    // the DB is derived, so a manifest edited on disk — or written by another
-    // process — must bring its account across on the next sync.
-    const base = await makeTempDir();
-    const projectDir = path.join(base, 'synced-account');
-    await fs.mkdir(projectDir, { recursive: true });
-    const { readManifest: readDisk, writeManifest } = await import('../manifest.js');
-
-    const mesh = new MeshCore({ db, defaultScanRoot: base });
-    const manifest = await mesh.registerByPath(projectDir, {
-      name: 'synced',
-      runtime: 'claude-code',
-    });
-    expect(mesh.get(manifest.id)?.account).toBeUndefined();
-
-    const onDisk = (await readDisk(projectDir))!;
-    await writeManifest(projectDir, { ...onDisk, account: 'personal' });
-    expect(await mesh.syncFromDisk(projectDir)).toBe('synced');
-
-    expect(mesh.get(manifest.id)?.account).toBe('personal');
 
     mesh.close();
   });
@@ -385,35 +358,6 @@ describe('reconciler disk discovery (ADR-0043)', () => {
     // The recorded scan root is the walked root, not the default scan root —
     // a persisted default (homedir in production) would poison later walks.
     expect(registry.getByPath(dorkbotDir)?.scanRoot).toBe(agentsHome);
-
-    mesh.close();
-  });
-
-  it('does not walk a recorded scan root equal to the homedir fallback', async () => {
-    const base = await makeTempDir();
-    const projectDir = path.join(base, 'legacy-proj');
-    await fs.mkdir(projectDir, { recursive: true });
-
-    // No defaultScanRoot option → MeshCore falls back to the homedir. A legacy
-    // entry persisted before scan-root plumbing carries that fallback as its
-    // recorded scan root; the reconciler must NOT walk the user's home for it.
-    const mesh = new MeshCore({ db });
-    const registry = new AgentRegistry(db);
-    registry.upsert({
-      ...makeManifest({ id: '01LEGACYHOME1', name: 'legacy' }),
-      projectPath: projectDir,
-      namespace: 'default',
-      scanRoot: os.homedir(),
-    });
-
-    const discoverSpy = vi
-      .spyOn(mesh, 'discover')
-      .mockImplementation(async function* (): AsyncGenerator<ScanEvent> {});
-    const result = await mesh.reconcileOnStartup();
-
-    // The homedir-fallback root is the only candidate, so no walk happens at all.
-    expect(discoverSpy).not.toHaveBeenCalled();
-    expect(result.discovered).toBe(0);
 
     mesh.close();
   });

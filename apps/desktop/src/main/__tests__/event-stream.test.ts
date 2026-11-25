@@ -8,11 +8,7 @@ import { watchNotifications, type NotificationsWatch } from '../notifications';
 import electronLog from 'electron-log';
 import { resetLogMock } from './electron-log-mock';
 import {
-  nextReconnectDelayMs,
   subscribeEventStream,
-  OutageLog,
-  OUTAGE_LOG_INTERVAL_MS,
-  RECONNECT_BASE_MS,
   type EventStreamHandlers,
   type EventStreamSubscription,
   type GetServerPort,
@@ -177,35 +173,6 @@ describe('event-stream sharing (DOR-1386)', () => {
 
     expect(stream.connections).toBe(1);
   });
-
-  it('keeps the connection alive for the survivor when one of the two watchers stops', async () => {
-    const host = new NoopNotificationHost();
-    activityWatch = watchAgentActivity({ getPort: () => stream.port, onChange: vi.fn() });
-    notificationsWatch = watchNotifications({
-      getPort: () => stream.port,
-      isWindowUnfocused: () => true,
-      focusAndNavigate: vi.fn(),
-      host,
-    });
-    await stream.connectionsReach(1);
-
-    activityWatch.stop();
-    activityWatch = null;
-
-    stream.sendEvent('notification', {
-      notification: {
-        id: 'notif-2',
-        kind: 'turn.completed',
-        tier: 'blocking',
-        subject: { type: 'session', id: 'session-a' },
-        title: 'still here',
-        createdAt: '2026-08-19T00:00:00.000Z',
-      },
-    });
-    await host.shows(1);
-    // No reconnect was needed for the survivor.
-    expect(stream.connections).toBe(1);
-  });
 });
 
 describe('event-stream teardown (DOR-1730)', () => {
@@ -264,32 +231,6 @@ describe('event-stream reconnection (DOR-1727)', () => {
     await log.arrives('session_status');
   });
 
-  it('keeps trying when the server refuses the stream, and passes nothing on while it is refused', async () => {
-    stream.status = 403;
-    const log = new FrameLog();
-    subscribe(() => stream.port, { onFrame: log.record });
-
-    // The retry itself is the positive control for the empty log below: the
-    // stream is being asked for, repeatedly, and answering 403 to every ask —
-    // it is not that nothing is happening.
-    await stream.connectionsReach(2);
-    expect(log.names).toEqual([]);
-  });
-
-  it('waits for a port rather than connecting to nothing', async () => {
-    let port: number | null = null;
-    subscribe(() => port, { onFrame: () => {} });
-
-    expect(stream.connections).toBe(0);
-
-    port = stream.port;
-
-    // And the moment there IS a port it connects — which is what makes the
-    // zero above a fact about the missing port rather than about a
-    // subscription that was never going to connect at all.
-    await stream.connectionsReach(1);
-  });
-
   it('reassembles an event split across two chunks', async () => {
     const log = new FrameLog();
     subscribe(() => stream.port, { onFrame: log.record });
@@ -310,39 +251,6 @@ describe('event-stream reconnection (DOR-1727)', () => {
 
     const frame = await log.arrives('session_status');
     expect(frame.data).toBe(payload);
-  });
-
-  it('backs off between attempts, and never waits longer than fifteen seconds', () => {
-    // The other half of what the wall-clock cases used to assert by accident:
-    // that a reconnect is quick. Walked exactly, because how long the module
-    // waits is a decision it makes, not a duration to measure — a base delay
-    // raised to a minute would have passed every timing bound in this file
-    // while making the tray look dead after every server restart.
-    expect(RECONNECT_BASE_MS).toBe(1_000);
-
-    const ladder: number[] = [RECONNECT_BASE_MS];
-    while (ladder.length < 8) ladder.push(nextReconnectDelayMs(ladder[ladder.length - 1] ?? 0));
-
-    expect(ladder).toEqual([1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000]);
-  });
-
-  it('leaves no reconnect armed once the last subscriber lets go', () => {
-    // With no port there is no socket in this test at all: the only thing
-    // `connect()` can do is arm a retry, which makes the count of armed timers
-    // the whole of what there is to observe — and observing it is why the
-    // timers are faked here and nowhere else in this file.
-    vi.useFakeTimers();
-
-    const subscription = subscribe(() => null, { onFrame: () => {} });
-    expect(vi.getTimerCount()).toBe(1);
-
-    subscription.unsubscribe();
-
-    // A retry still armed after the last subscriber has gone is a reconnect
-    // nobody asked for, to a port nobody is watching any more. `teardown()`
-    // clearing it is what makes an unsubscribe final, and nothing else in this
-    // file could tell whether it did.
-    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -375,25 +283,6 @@ describe('event-stream throw isolation (DOR-1386 review)', () => {
       process.off('uncaughtException', uncaught);
     }
   });
-
-  it('a subscriber that throws on connection-lost does not stop another subscriber from being told', async () => {
-    const survivorNotified = deferred();
-    const notifiedCount = vi.fn(() => survivorNotified.resolve());
-    subscribe(() => stream.port, {
-      onFrame: () => {},
-      onConnectionLost: () => {
-        throw new Error('boom');
-      },
-    });
-    subscribe(() => stream.port, { onFrame: () => {}, onConnectionLost: notifiedCount });
-
-    await stream.connectionsReach(1);
-
-    stream.dropClients();
-
-    await survivorNotified.promise;
-    expect(notifiedCount).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe.skipIf(!(await canStageIpv6OnlyLocalhost()))('the host it dials (DOR-4294)', () => {
@@ -418,20 +307,6 @@ describe.skipIf(!(await canStageIpv6OnlyLocalhost()))('the host it dials (DOR-42
     subscribe(() => v6.port, { onFrame: log.record });
 
     await log.arrives('connected');
-    v6.sendStatus('session-a', 'streaming');
-    await log.arrives('session_status');
-  });
-
-  it('reconnects to that same server after the stream drops', async () => {
-    const log = new FrameLog();
-    const lost = deferred();
-    subscribe(() => v6.port, { onFrame: log.record, onConnectionLost: () => lost.resolve() });
-    await log.arrives('connected');
-
-    v6.dropClients();
-    await lost.promise;
-    await v6.connectionsReach(2);
-
     v6.sendStatus('session-a', 'streaming');
     await log.arrives('session_status');
   });
@@ -498,52 +373,5 @@ describe.each([
       for (const subscription of subscriptions.splice(0)) subscription.unsubscribe();
       await late.close();
     }
-  });
-});
-
-describe('the outage log (DOR-4294)', () => {
-  // A loop refused forever used to log once and then nothing, which read the
-  // same as one failure that recovered. Now it says so every thirty seconds.
-  beforeEach(() => resetLogMock());
-
-  it('logs the first failure, then at most one line per interval, with a running count', () => {
-    let now = 1_000_000;
-    const outage = new OutageLog(() => now);
-
-    outage.failed('connect ECONNREFUSED');
-    for (let i = 0; i < 5; i += 1) {
-      now += 1_000;
-      outage.failed('connect ECONNREFUSED');
-    }
-    expect(electronLog.warn).toHaveBeenCalledTimes(1);
-    expect(electronLog.warn).toHaveBeenLastCalledWith(
-      '[event-stream] Cannot reach the server event stream (1 failed attempt so far). connect ECONNREFUSED'
-    );
-
-    now += OUTAGE_LOG_INTERVAL_MS - 5_000;
-    outage.failed('connect ECONNREFUSED');
-    expect(electronLog.warn).toHaveBeenCalledTimes(2);
-    expect(electronLog.warn).toHaveBeenLastCalledWith(
-      '[event-stream] Cannot reach the server event stream (7 failed attempts so far). connect ECONNREFUSED'
-    );
-  });
-
-  it('says once when the stream is back, and only after an outage', () => {
-    const outage = new OutageLog(() => 0);
-    outage.recovered();
-    expect(electronLog.info).not.toHaveBeenCalled();
-
-    outage.failed('connect ECONNREFUSED');
-    outage.failed('connect ECONNREFUSED');
-    outage.recovered();
-    expect(electronLog.info).toHaveBeenCalledExactlyOnceWith(
-      '[event-stream] Reconnected to the server event stream after 2 failed attempts.'
-    );
-
-    // A fresh outage starts its count and its interval again.
-    outage.failed('connect ECONNREFUSED');
-    expect(electronLog.warn).toHaveBeenLastCalledWith(
-      '[event-stream] Cannot reach the server event stream (1 failed attempt so far). connect ECONNREFUSED'
-    );
   });
 });

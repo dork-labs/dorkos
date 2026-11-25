@@ -6,7 +6,16 @@
  */
 import type { AgentRuntime, DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
+import type {
+  PersonChatBinding,
+  PersonDraftWitness,
+} from '../../core/runtime-seam/person-draft-settings.js';
+import {
+  SessionBirthWriteError,
+  type SessionBirthWriteContext,
+} from '../../core/runtime-seam/session-birth-write.js';
+import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
+import { recordedAgentOf } from './session-tool-warnings.js';
 import {
   resolveSessionCwdWithRoom,
   type ResolvedSessionPlace,
@@ -67,7 +76,7 @@ export interface ResolveChatPlaceDeps {
   ): Promise<ResolvedSessionPlace>;
 }
 
-/** Production chat-place collaborators with selected test seams replaced. */
+/** Production chat-place collaborators with selected seams replaced. */
 function chatPlaceDeps(overrides: Partial<ResolveChatPlaceDeps>): ResolveChatPlaceDeps {
   return {
     resolveSession: (sessionId) =>
@@ -90,7 +99,8 @@ function chatPlaceDeps(overrides: Partial<ResolveChatPlaceDeps>): ResolveChatPla
  * `launchSessionMessage`'s workspace branch still owns that per-turn binding.
  *
  * @param input - The chat id and place hints the launch surface knows.
- * @param overrides - Test seams for runtime and room-aware place resolution.
+ * @param overrides - Seams for runtime and room-aware place resolution: a caller that
+ *   already read who holds the chat, or a test.
  * @returns A dispatchable place and ownership read, or a refusal.
  */
 export async function resolveChatPlace(
@@ -154,6 +164,46 @@ export async function resolveChatPlace(
   };
 }
 
+/** Where a chat that has run before stands and as whom. */
+export interface HeldChatPlace {
+  /** The chat's recorded folder; absent leaves it to the runtime. */
+  cwd?: string;
+  /** The agent recorded when the chat began, when there is one. */
+  forAgent?: string;
+}
+
+/**
+ * Where a chat something already holds stands, and as whom: the folder its
+ * runtime records ({@link resolveChatPlace}), else its recorded agent's home,
+ * and the agent recorded when it began. `null` when nothing holds the chat yet,
+ * so it is a new chat. No room binding is read, so a room-bound chat gets no
+ * room folders here. A failed agent read keeps the folder. A relay turn that
+ * names no folder of its own reads its chat's place here (DOR-5245).
+ *
+ * @param sessionId - The chat.
+ * @param overrides - Seams for place resolution, for a test.
+ */
+export async function heldChatPlace(
+  sessionId: string,
+  overrides: Partial<ResolveChatPlaceDeps> = {}
+): Promise<HeldChatPlace | null> {
+  const deps = chatPlaceDeps(overrides);
+  const session = await deps.resolveSession(sessionId);
+  if (!session.bound) return null;
+  const recorded = (await recordedAgentOf(sessionId)) ?? undefined;
+  const resolved = await resolveChatPlace(
+    { sessionId, ...(recorded !== undefined ? { agentPath: recorded } : {}) },
+    { ...overrides, resolveSession: async () => session }
+  );
+  // Only a room binding refuses a place, and none is passed here; the chat is still held.
+  if ('refusal' in resolved) return {};
+  const forAgent = resolved.forAgent ?? recorded;
+  return {
+    ...(resolved.cwd !== undefined ? { cwd: resolved.cwd } : {}),
+    ...(forAgent !== undefined ? { forAgent } : {}),
+  };
+}
+
 /** Match a saved folder to its directory and a registered agent to its verified owner.
  * A registered agent can use a different directory through ordinary workspace placement.
  */
@@ -174,4 +224,22 @@ export function matchesPersonChatPlace(
     ? verifiedAgentPath === expectedAgentPath &&
         (place.forAgent === undefined || place.forAgent === expectedAgentPath)
     : place.cwd === (birth?.kind === 'person-location' ? birth.cwd : draft?.sourcePath);
+}
+
+/** Select the exact server-owned source for a first bind without changing ordinary calls. */
+export function launchBindingSourceArgs(
+  place: ResolvedChatPlace,
+  verifiedAgentPath: string | undefined,
+  person: PersonChatBinding | undefined,
+  freshDm: FreshDmBirth | undefined
+): [SessionBirthWriteContext?, PersonDraftWitness?] {
+  if (person) {
+    if (freshDm || place.session.bound || !matchesPersonChatPlace(person, place, verifiedAgentPath))
+      throw new SessionBirthWriteError('source');
+    return 'birth' in person ? [person.birth] : [undefined, person.draft];
+  }
+  if (!freshDm) return [];
+  if (place.session.bound || freshDm.targetAgent.path !== verifiedAgentPath)
+    throw new SessionBirthWriteError('source');
+  return [freshDm];
 }

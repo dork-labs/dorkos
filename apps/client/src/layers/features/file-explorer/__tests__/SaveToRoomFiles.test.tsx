@@ -116,7 +116,7 @@ describe('Save to room files', () => {
       .fn()
       .mockRejectedValueOnce(
         Object.assign(new Error('`screenshot.png` is already there.'), {
-          code: 'ROOM_FILE_EXISTS',
+          code: 'room_file_exists',
           status: 409,
         })
       )
@@ -159,7 +159,7 @@ describe('Save to room files', () => {
     transport.saveAttachmentToRoomFiles = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('No such file.'), { code: 'ATTACHMENT_NOT_FOUND', status: 404 })
+        Object.assign(new Error('No such file.'), { code: 'attachment_not_found', status: 404 })
       );
     renderButton(transport);
 

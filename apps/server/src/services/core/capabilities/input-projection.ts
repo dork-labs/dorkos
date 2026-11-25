@@ -66,7 +66,7 @@ export function splitPathParams(
  * @param capability - The capability being composed.
  * @throws Naming the fields no request could carry.
  */
-export function assertHttpInputReachable(capability: CapabilityDefinition): void {
+function assertHttpInputReachable(capability: CapabilityDefinition): void {
   const http = capability.surfaces.http;
   if (!http?.query || (http.method !== 'get' && http.method !== 'delete')) return;
   const carried = [...http.path.matchAll(/\{([^}]+)\}/g)].map(
@@ -80,6 +80,26 @@ export function assertHttpInputReachable(capability: CapabilityDefinition): void
       `Capability registry: "${capability.id}" is ${http.method.toUpperCase()} ${http.path}, ` +
         `which has no body, so no request can send ${unreachable.join(', ')}. ` +
         'Put each in the path or in http.query.'
+    );
+  }
+}
+
+/**
+ * Refuse an HTTP surface that cannot be served as declared: its input must be
+ * reachable ({@link assertHttpInputReachable}), and a person-only capability
+ * (`audience: 'person'`) may not declare an MCP surface. Every MCP caller is an
+ * agent, so such a tool could only ever refuse; leaving it off MCP hides it
+ * there instead.
+ *
+ * @param capability - The capability being composed.
+ * @throws Naming what no caller could use.
+ */
+export function assertHttpSurface(capability: CapabilityDefinition): void {
+  assertHttpInputReachable(capability);
+  if (capability.surfaces.http?.audience === 'person' && capability.surfaces.mcp) {
+    throw new Error(
+      `Capability registry: "${capability.id}" is for a person only (http.audience), ` +
+        'so it may not declare an MCP surface: every MCP caller is an agent.'
     );
   }
 }

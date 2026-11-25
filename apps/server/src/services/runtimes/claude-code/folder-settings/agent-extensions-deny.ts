@@ -27,7 +27,6 @@
  *
  * @module services/runtimes/claude-code/folder-settings/agent-extensions-deny
  */
-import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
@@ -38,16 +37,11 @@ import { configManager } from '../../../core/config-manager.js';
 import { heldToACeiling } from '../turn-permission.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
-import { addLaunchDenyRules, writeDenyRules } from '../messaging/directory-grants.js';
-
-/** The real path of `target`, or `undefined` when it does not exist. */
-function realpathOrUndefined(target: string): string | undefined {
-  try {
-    return realpathSync.native(target);
-  } catch {
-    return undefined;
-  }
-}
+import {
+  addLaunchDenyRules,
+  realpathOrUndefined,
+  writeDenyRules,
+} from '../messaging/directory-grants.js';
 
 /** Every spelling of one home's `.dork/extensions` folder, the canonical one first. */
 function extensionFolderNames(home: string): string[] {

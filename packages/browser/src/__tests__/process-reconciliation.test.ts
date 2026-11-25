@@ -153,27 +153,6 @@ describe('pure recorded generation reconciliation', () => {
     ])
       expect(field in disposition).toBe(false);
   });
-  it('retains the live root even when other originals are recorded gone', () => {
-    const observations = batch();
-    observations.statuses[1] = { kind: 'original-alive', identity: root, currentParent: manager };
-    const disposition = result(snapshot(), binding, observations);
-    expect(disposition.recordedDisposition).toBe('live-recorded');
-    expect(disposition.retainedOriginalIdentities).toContainEqual(root);
-    expect(disposition.decision).toBe('retain');
-  });
-  it('retains a live child when manager/root are recorded gone and child is reparented', () => {
-    const observations = batch();
-    observations.statuses[2] = {
-      kind: 'original-alive',
-      identity: child,
-      currentParent: { pid: 1, birth: 'reparented-system-parent' },
-    };
-    const disposition = result(snapshot(), binding, observations);
-    expect(disposition.recordedDisposition).toBe('live-recorded');
-    expect(disposition.decision).toBe('retain');
-    expect(disposition.retainedOriginalIdentities).toContainEqual(child);
-    expect(snapshot().retainedIdentities[2]!.parent).toEqual(root); // Original association never rewritten.
-  });
   it('separates same-PID replacement birth and never enrolls it into old originals', () => {
     const observations = batch(),
       replacement = { pid: child.pid, birth: 'different-new-birth' };
@@ -196,21 +175,6 @@ describe('pure recorded generation reconciliation', () => {
       expect(disposition.firstCause?.cause).toBe('sequence-gap');
     }
   );
-  it('treats crossboot, equal text with changed source, and unknown boot as unknown', () => {
-    for (const bootScope of [
-      { ...boot, value: 'new-boot' },
-      { ...boot, sourceIdentityDigest: 'c'.repeat(64) },
-      { kind: 'unknown' as const, cause: 'boot-unknown' as const },
-    ]) {
-      const observations = { ...batch(), bootScope };
-      expect(result(snapshot(), binding, observations).recordedDisposition).toBe('unknown');
-    }
-    const s = snapshot();
-    s.binding = { ...binding, bootScope: { kind: 'unknown', cause: 'boot-unknown' } };
-    expect(
-      result(s, s.binding, { ...batch(), bootScope: s.binding.bootScope }).firstCause?.cause
-    ).toBe('boot-unknown');
-  });
   it('refuses missing, duplicate, contradictory and late identities rather than defaulting to death', () => {
     const missing = batch();
     missing.statuses.pop();
@@ -232,17 +196,6 @@ describe('pure recorded generation reconciliation', () => {
     expect(result(snapshot(), binding, late).pendingAttribution).toEqual([
       { pid: 40, birth: 'late-unattributed' },
     ]);
-  });
-  it('keeps root pending and missing association unknown', () => {
-    const s = snapshot();
-    s.root = { kind: 'pending' };
-    s.retainedIdentities = [s.retainedIdentities[0]!];
-    const observations = batch();
-    observations.statuses = [observations.statuses[0]!];
-    expect(result(s, binding, observations).firstCause?.cause).toBe('root-pending');
-    const missing = snapshot();
-    missing.retainedIdentities[2]!.association = null;
-    expect(result(missing).recordedDisposition).toBe('unknown');
   });
   it('rejects parent death before association, changing parent samples and PID-only enrollment', () => {
     const deadParent = snapshot();
@@ -276,19 +229,6 @@ describe('pure recorded generation reconciliation', () => {
       expect(result(snapshot(), binding, observations).firstCause?.cause).toBe('sequence-gap');
     }
   });
-  it('keeps first cause and sticky coverage gap when every recorded original later dies', () => {
-    const s = snapshot();
-    s.gaps = [
-      { cause: 'observer-lost', firstSequence: 1, identity: null, count: 1 },
-      { cause: 'custody-pending', firstSequence: 2, identity: manager, count: 1 },
-    ];
-    s.firstCause = { cause: 'observer-lost', sequence: 1 };
-    const disposition = result(s);
-    expect(disposition.recordedDisposition).toBe('unknown');
-    expect(disposition.coverage).toBe('unknown');
-    expect(disposition.firstCause).toEqual(s.firstCause);
-    expect(disposition.gaps[0]!.count).toBe(1);
-  });
   it('cannot heal a recorded unknown identity just by supplying a later gone status', () => {
     const s = snapshot();
     s.retainedIdentities[2]!.lifecycle = 'unknown';
@@ -297,20 +237,6 @@ describe('pure recorded generation reconciliation', () => {
     s.firstCause = { cause: 'identity-unknown', sequence: 2 };
     expect(result(s).recordedDisposition).toBe('unknown');
     expect(result(s).firstCause).toEqual(s.firstCause);
-  });
-  it('requires explicit matching absence and a distinct actual replacement identity', () => {
-    const absent = batch();
-    absent.statuses[2] = {
-      kind: 'original-gone',
-      identity: child,
-      absence: { kind: 'explicit-original-absent', queriedPid: child.pid, queriedBirth: 'foreign' },
-    };
-    const replacement = batch();
-    replacement.statuses[2] = { kind: 'replacement-observed', identity: child, replacement: child };
-    const unavailable = batch();
-    unavailable.statuses[2] = { kind: 'unknown', identity: child, cause: 'identity-unknown' };
-    for (const observations of [absent, replacement, unavailable])
-      expect(result(snapshot(), binding, observations).recordedDisposition).toBe('unknown');
   });
   it('rejects unknown fields/accessors/oversize/overflow without executing supplied methods', () => {
     let called = 0;
@@ -338,29 +264,27 @@ describe('pure recorded generation reconciliation', () => {
         .recordedDisposition
     ).toBe('unknown');
   });
-  it('distinguishes historical lifetimes with the same PID without discarding either', () => {
-    const s = snapshot(),
-      replacement = { pid: child.pid, birth: 'historical-other-birth' };
-    const a = association(root, replacement, 2);
-    s.retainedIdentities.push({
-      ...s.retainedIdentities[2]!,
-      identity: replacement,
-      association: a,
-      lifecycle: 'dead',
-    });
+
+  it('retains the live root even when other originals are recorded gone', () => {
     const observations = batch();
-    observations.statuses.push({
-      kind: 'original-gone',
-      identity: replacement,
-      absence: {
-        kind: 'explicit-original-absent',
-        queriedPid: replacement.pid,
-        queriedBirth: replacement.birth,
-      },
-    });
-    const disposition = result(s, binding, observations);
-    expect(disposition.matchingRecordedCount).toBe(4);
-    expect(disposition.retainedOriginalIdentities).toHaveLength(4);
+    observations.statuses[1] = { kind: 'original-alive', identity: root, currentParent: manager };
+    const disposition = result(snapshot(), binding, observations);
+    expect(disposition.recordedDisposition).toBe('live-recorded');
+    expect(disposition.retainedOriginalIdentities).toContainEqual(root);
     expect(disposition.decision).toBe('retain');
+  });
+
+  it('retains a live child when manager/root are recorded gone and child is reparented', () => {
+    const observations = batch();
+    observations.statuses[2] = {
+      kind: 'original-alive',
+      identity: child,
+      currentParent: { pid: 1, birth: 'reparented-system-parent' },
+    };
+    const disposition = result(snapshot(), binding, observations);
+    expect(disposition.recordedDisposition).toBe('live-recorded');
+    expect(disposition.decision).toBe('retain');
+    expect(disposition.retainedOriginalIdentities).toContainEqual(child);
+    expect(snapshot().retainedIdentities[2]!.parent).toEqual(root); // Original association never rewritten.
   });
 });

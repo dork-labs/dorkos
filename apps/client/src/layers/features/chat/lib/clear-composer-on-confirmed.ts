@@ -5,7 +5,7 @@
  * happened" — DOR-480 added `confirmed` for exactly that gap and settled the
  * QUEUE's undo on it. The composer never got the same treatment: a `/compact
  * focus on the API changes` typed mid-stream reported `ran: true`, the composer
- * emptied, the trigger then came back `SESSION_LOCKED`, and the person was left
+ * emptied, the trigger then came back `session_locked`, and the person was left
  * with a toast telling them to try again and no instructions to try it with.
  *
  * So the clear waits on the same signal the queue does. Both send paths — the

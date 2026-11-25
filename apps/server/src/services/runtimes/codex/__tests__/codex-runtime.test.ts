@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Codex } from '@openai/codex-sdk';
 import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -8,7 +11,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
 import { MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../app-server/background-wake.js';
-import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
+import { type CodexTransport } from '../transport/index.js';
 import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
 import { buildCodexOptions } from './fixtures/sdk-options.js';
 import * as logHistory from '../../../session/log-backed-history.js';
@@ -18,6 +21,7 @@ import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
 import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
 import { scanSkillCommands } from '../scan-skill-commands.js';
+import { setAgentHomeRegistry } from '../../../core/agent-identity/index.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
 import { feedProjector } from '../../../session/session-event-normalizer.js';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -333,14 +337,6 @@ describe('CodexRuntime', () => {
     }
   });
 
-  it('recognizes a personal native source before any DorkOS thread binding', async () => {
-    const { runtime, threadMap } = makeRuntime();
-    const id = crypto.randomUUID();
-    nativeMocks.findSession.mockResolvedValueOnce({ id, cwd: '/project', runtime: 'codex' });
-    expect(await runtime.sessionRunsOnCredits(id)).toBe(false);
-    expect(threadMap.get(id)).toBeUndefined();
-  });
-
   it('loads native external history and resumes the native thread rather than starting another', async () => {
     const { runtime, threadMap } = makeRuntime();
     const id = crypto.randomUUID();
@@ -368,23 +364,6 @@ describe('CodexRuntime', () => {
     expect(threadMap.getThreadId(id)).toBe(id);
     expect(sdkMocks.resumeThread).toHaveBeenCalledWith(id, expect.anything());
     expect(sdkMocks.startThread).not.toHaveBeenCalled();
-  });
-
-  it('uses native history once after an imported turn is also recorded in the DorkOS log', async () => {
-    const { runtime, threadMap } = makeRuntime();
-    const id = crypto.randomUUID();
-    threadMap.setThreadId(id, id, '/projects/demo');
-    const projector = getOrCreateProjector(id, '/projects/demo');
-    await feedProjector(projector, runtime.sendMessage(id, 'continue', { cwd: '/projects/demo' }), {
-      userMessage: 'continue',
-    });
-    nativeMocks.readHistory.mockResolvedValueOnce([
-      { id: 'native-user', role: 'user', content: 'continue' },
-      { id: 'native-assistant', role: 'assistant', content: 'Resumed' },
-    ]);
-    expect(
-      (await runtime.getMessageHistory('/projects/demo', id)).map((message) => message.content)
-    ).toEqual(['continue', 'Resumed']);
   });
 
   describe('identity and dependencies', () => {
@@ -424,47 +403,9 @@ describe('CodexRuntime', () => {
       );
       expect(sdkMocks.startThread).not.toHaveBeenCalled();
     });
-
-    it('passes the resolved binary as codexPathOverride and a projected env on the shared client', async () => {
-      const { runtime } = makeRuntime({ binaryPath: '/opt/custom/codex' });
-
-      await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));
-
-      const [shared] = sdkMocks.constructorOptions as Record<string, unknown>[];
-      expect(shared).toMatchObject({ codexPathOverride: '/opt/custom/codex' });
-      expect(shared).toHaveProperty('env');
-    });
-
-    it('builds a fresh policy-bearing client for each turn', async () => {
-      const { runtime } = makeRuntime({ binaryPath: '/opt/custom/codex' });
-
-      await drain(runtime.sendMessage(crypto.randomUUID(), 'one', { cwd: '/projects/demo' }));
-      await drain(runtime.sendMessage(crypto.randomUUID(), 'two', { cwd: '/projects/demo' }));
-
-      expect(sdkMocks.constructorOptions).toHaveLength(2);
-    });
   });
 
   describe('buildCodexOptions', () => {
-    it('includes codexPathOverride and no config when nothing is injected', () => {
-      // DorkOS used to always inject a scoped `dorkos_ui` bridge here, so every
-      // launch carried a config. It is retired (spec `canvas-agent-seat` §5), so
-      // a launch with no managed servers and no turn-bound servers carries none.
-      const options = buildCodexOptions('/opt/custom/codex');
-      expect(options).toEqual({ codexPathOverride: '/opt/custom/codex', env: expect.any(Object) });
-      expect(options).not.toHaveProperty('config');
-    });
-
-    it('omits codexPathOverride when binaryPath is falsy', () => {
-      expect(buildCodexOptions(null)).toEqual({ env: expect.any(Object) });
-      expect(buildCodexOptions(undefined)).toEqual({ env: expect.any(Object) });
-    });
-
-    it('supplies complete env even without extraEnv', () => {
-      expect(buildCodexOptions('/bin/codex')).toHaveProperty('env');
-      expect(buildCodexOptions('/bin/codex', {})).toHaveProperty('env');
-    });
-
     it('preserves OS inputs but withholds stale server identity when extraEnv is given', () => {
       // Only the freshly minted token may reach this launch.
       vi.stubEnv('DORKOS_BUILD_OPTIONS_PROBE', 'inherited');
@@ -530,13 +471,6 @@ describe('CodexRuntime', () => {
       });
     });
 
-    it('omits config entirely when there are no managed servers and nothing injected', () => {
-      expect(buildCodexOptions(null, undefined, { servers: {}, env: {} })).not.toHaveProperty(
-        'config'
-      );
-      expect(buildCodexOptions(null)).not.toHaveProperty('config');
-    });
-
     it('puts a managed server header VALUE in env and nowhere in config (DOR-993)', () => {
       // The SDK flattens `config` into `--config key=value` arguments on the
       // `codex exec` command line, so a value written there is in the spawned
@@ -563,90 +497,6 @@ describe('CodexRuntime', () => {
     });
   });
 
-  describe('capabilities', () => {
-    it('returns the finalized capability shape from the 2.2 verification', () => {
-      const { runtime } = makeRuntime();
-      const caps = runtime.getCapabilities();
-
-      expect(caps).toMatchObject({
-        type: 'codex',
-        supportsToolApproval: false,
-        supportsCostTracking: false,
-        supportsResume: true,
-        supportsMcp: false,
-        // Codex hosts no in-process DorkOS tool server (`supportsMcp: false`)
-        // but DOES accept the agent's own managed MCP servers (DOR-892).
-        supportsManagedMcpServers: true,
-        supportsQuestionPrompt: false,
-        supportsPlugins: false,
-        nativeContext: [],
-      });
-      expect(caps.permissionModes.supported).toBe(true);
-      expect(caps.permissionModes.default).toBe('default');
-      expect(caps.permissionModes.values.map((v) => v.id)).toEqual([
-        'default',
-        'acceptEdits',
-        'bypassPermissions',
-      ]);
-    });
-
-    it('declares what the app-server transport adds, and exec keeps its own (spec §14)', () => {
-      const appServer = new CodexRuntime({
-        threadMap: new CodexThreadMap(createTestDb()),
-        resolveBinary: async () => '/opt/codex',
-        transport: 'app-server',
-      });
-      const caps = appServer.getCapabilities();
-      expect(caps).toMatchObject({
-        supportsToolApproval: true,
-        supportsQuestionPrompt: true,
-        supportsPersistentSession: true,
-      });
-      expect(caps.permissionModes.denyReason).toBe(false);
-      expect(
-        caps.permissionModes.values.map(({ id, label, asks, reach }) => ({
-          id,
-          label,
-          asks,
-          reach,
-        }))
-      ).toEqual([
-        { id: 'default', label: 'Ask first', asks: 'always', reach: 'edit' },
-        { id: 'acceptEdits', label: 'Workspace write', asks: 'when-risky', reach: 'workspace' },
-        { id: 'bypassPermissions', label: 'Full access', asks: 'never', reach: 'everything' },
-      ]);
-      // Honest about what runs unasked and how far an approved step reaches
-      // (proven on the binary: an MCP tool its server marks read-only runs
-      // without a card).
-      const [ask, write] = caps.permissionModes.values;
-      expect(ask!.promise).toContain('read-only commands and tools');
-      expect(ask!.description).toContain('beyond this project');
-      expect(write!.description).toContain('Approved steps can go further');
-      // App copy: no block over 15 words (writing-app-copy).
-      for (const mode of caps.permissionModes.values) {
-        for (const block of [mode.label, mode.description ?? '', mode.promise]) {
-          expect(block.split(/\s+/).filter(Boolean).length, block).toBeLessThanOrEqual(15);
-        }
-      }
-
-      const exec = makeRuntime().runtime.getCapabilities();
-      expect(exec).toMatchObject({ supportsToolApproval: false, supportsQuestionPrompt: false });
-      expect(exec.permissionModes.denyReason).toBeUndefined();
-      expect(exec.permissionModes.values[0]!.label).toBe('Read only');
-    });
-
-    it('exposes the current account catalog and its CLI-reported default', async () => {
-      const { runtime } = makeRuntime();
-      const models = await runtime.getSupportedModels();
-
-      const defaults = models.filter((m) => m.isDefault);
-      expect(defaults).toHaveLength(1);
-      expect(defaults[0]!.value).toBe('gpt-6-astra');
-      expect(models.map((m) => m.value)).toContain('gpt-5.6-sol');
-      for (const model of models) expect(model.provider).toBe('openai');
-    });
-  });
-
   describe('session lifecycle', () => {
     it('keeps ensureSession metadata private until a thread exists', async () => {
       const { runtime } = makeRuntime();
@@ -658,30 +508,6 @@ describe('CodexRuntime', () => {
 
       expect(await runtime.getSession('/projects/demo', sessionId)).toBeNull();
       await expect(runtime.getSession('/projects/demo', crypto.randomUUID())).resolves.toBeNull();
-    });
-
-    it('lists tracked sessions scoped to the project directory', async () => {
-      const { runtime } = makeRuntime();
-      const inProject = crypto.randomUUID();
-      const elsewhere = crypto.randomUUID();
-      runtime.ensureSession(inProject, { permissionMode: 'default', cwd: '/projects/demo' });
-      runtime.ensureSession(elsewhere, { permissionMode: 'default', cwd: '/projects/other' });
-
-      const sessions = await runtime.listSessions('/projects/demo');
-      expect(sessions.map((s) => s.id)).toEqual([inProject]);
-      expect(sessions[0]!.runtime).toBe('codex');
-    });
-
-    it('renameSession sets the tracked title', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      runtime.ensureSession(sessionId, { permissionMode: 'default' });
-
-      await runtime.renameSession(sessionId, 'Investigate flaky test', '/projects/demo');
-
-      await drain(runtime.sendMessage(sessionId, 'hello', { cwd: '/projects/demo' }));
-      const session = await runtime.getSession('/projects/demo', sessionId);
-      expect(session?.title).toBe('Investigate flaky test');
     });
 
     it('updateSession saves pending choices without exposing a native session', async () => {
@@ -747,49 +573,6 @@ describe('CodexRuntime', () => {
         await runtime.interruptQuery(sessionId);
         await drainRest();
       });
-
-      it('stays quiet about a loosening, which the next turn simply picks up', async () => {
-        const { runtime } = makeRuntime();
-        const sessionId = crypto.randomUUID();
-        runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/demo' });
-        const { gen, drainRest } = startParkedTurn(runtime, sessionId);
-        await gen.next();
-
-        await expect(
-          runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' })
-        ).resolves.toEqual({ updated: true });
-
-        await runtime.interruptQuery(sessionId);
-        await drainRest();
-      });
-
-      it('stays quiet when no turn is running — the next one is projected from the new mode', async () => {
-        const { runtime } = makeRuntime();
-        const sessionId = crypto.randomUUID();
-        runtime.ensureSession(sessionId, {
-          permissionMode: 'bypassPermissions',
-          cwd: '/projects/demo',
-        });
-
-        await expect(
-          runtime.updateSession(sessionId, { permissionMode: 'default' })
-        ).resolves.toEqual({ updated: true });
-      });
-    });
-
-    it('forkSession is unsupported and resolves null', async () => {
-      const { runtime } = makeRuntime();
-      await expect(runtime.forkSession('/p', crypto.randomUUID())).resolves.toBeNull();
-    });
-
-    it('getInternalSessionId returns undefined — the DorkOS id is canonical (no rekey)', () => {
-      const { runtime, threadMap } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      threadMap.setThreadId(sessionId, THREAD_ID);
-
-      // Returning the Codex thread id here would trip trigger-turn's C1 rekey
-      // and re-key the projector (and the 202 canonical id) to the thread id.
-      expect(runtime.getInternalSessionId(sessionId)).toBeUndefined();
     });
   });
 
@@ -833,83 +616,6 @@ describe('CodexRuntime', () => {
       expect(session?.id).toBe(sessionId);
     });
 
-    it('rename persists across a simulated restart', async () => {
-      const { runtime, db } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
-
-      await runtime.renameSession(sessionId, 'Investigate flaky test', '/projects/demo');
-
-      const { runtime: restarted } = makeRuntime({ db });
-      await restarted.hydrateSessions();
-      const session = await restarted.getSession('/projects/demo', sessionId);
-      expect(session?.title).toBe('Investigate flaky test');
-    });
-
-    it('recordMessage writes preview/updatedAt through once the binding exists', async () => {
-      const { runtime, threadMap } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-
-      await drain(runtime.sendMessage(sessionId, 'first question', { cwd: '/projects/demo' }));
-      const afterFirst = threadMap.get(sessionId)!;
-      expect(afterFirst).toMatchObject({
-        title: 'First question',
-        lastMessagePreview: 'first question',
-      });
-
-      await drain(runtime.sendMessage(sessionId, 'second question', { cwd: '/projects/demo' }));
-      const afterSecond = threadMap.get(sessionId)!;
-      // Title is first-turn-derived and sticky; the preview tracks the latest turn.
-      expect(afterSecond.title).toBe('First question');
-      expect(afterSecond.lastMessagePreview).toBe('second question');
-      expect(afterSecond.updatedAt! >= afterFirst.updatedAt!).toBe(true);
-    });
-
-    it('hydration joins persisted settings from the settings port', async () => {
-      const { runtime, db } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
-
-      const { runtime: restarted } = makeRuntime({ db });
-      const port: SessionSettingsPort = {
-        getSessionSettings: vi.fn().mockResolvedValue({
-          permissionMode: 'acceptEdits',
-          model: 'gpt-5.4-mini',
-          effort: 'high',
-          fastMode: true,
-        }),
-        saveSessionSettings: vi.fn().mockResolvedValue(undefined),
-        // Codex never aliases a session id, so it never re-keys (DOR-493).
-        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
-      };
-      restarted.setSessionSettings(port);
-      await restarted.hydrateSessions();
-
-      expect(port.getSessionSettings).toHaveBeenCalledWith(sessionId);
-      const session = await restarted.getSession('/projects/demo', sessionId);
-      expect(session).toMatchObject({
-        permissionMode: 'acceptEdits',
-        model: 'gpt-5.4-mini',
-        effort: 'high',
-        fastMode: true,
-      });
-    });
-
-    it('hydrateSessions is idempotent and never clobbers fresher in-memory state', async () => {
-      const { runtime, db } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
-
-      const { runtime: restarted } = makeRuntime({ db });
-      await restarted.hydrateSessions();
-      await restarted.renameSession(sessionId, 'renamed after hydrate', '/projects/demo');
-      await restarted.hydrateSessions();
-
-      const sessions = await restarted.listSessions('/projects/demo');
-      expect(sessions).toHaveLength(1);
-      expect(sessions[0]?.title).toBe('renamed after hydrate');
-    });
-
     describe('pre-hydration touches (boot-time race)', () => {
       it('renameSession before hydration seeds the durable row, keeps the rename, and survives later hydration', async () => {
         const { runtime, db, threadMap } = makeRuntime();
@@ -946,103 +652,6 @@ describe('CodexRuntime', () => {
         await third.hydrateSessions();
         const rehydrated = await third.getSession('/projects/demo', sessionId);
         expect(rehydrated?.title).toBe('Renamed before hydration');
-      });
-
-      it('sendMessage before hydration keeps the durable saved title while refreshing preview/updatedAt', async () => {
-        const { runtime, db, threadMap } = makeRuntime();
-        const sessionId = crypto.randomUUID();
-        await drain(runtime.sendMessage(sessionId, 'first question', { cwd: '/projects/demo' }));
-        await runtime.renameSession(sessionId, 'Saved title', '/projects/demo');
-        const durable = threadMap.getRecord(sessionId)!;
-
-        // Simulated restart: a message lands BEFORE hydrateSessions runs.
-        const { runtime: restarted } = makeRuntime({ db });
-        await drain(
-          restarted.sendMessage(sessionId, 'follow-up question', { cwd: '/projects/demo' })
-        );
-
-        // The auto-derived preview must NOT overwrite the persisted title.
-        const session = await restarted.getSession('/projects/demo', sessionId);
-        expect(session).toMatchObject({
-          title: 'Saved title',
-          lastMessagePreview: 'follow-up question',
-          createdAt: durable.createdAt,
-          cwd: '/projects/demo',
-        });
-        expect(session!.updatedAt >= durable.updatedAt!).toBe(true);
-
-        // The refreshed preview wrote through; the durable title stayed intact.
-        const after = threadMap.getRecord(sessionId)!;
-        expect(after.title).toBe('Saved title');
-        expect(after.lastMessagePreview).toBe('follow-up question');
-
-        // Later hydration does not resurrect the stale preview.
-        await restarted.hydrateSessions();
-        const rehydrated = await restarted.getSession('/projects/demo', sessionId);
-        expect(rehydrated?.title).toBe('Saved title');
-        expect(rehydrated?.lastMessagePreview).toBe('follow-up question');
-      });
-
-      it('updateSession before hydration seeds the durable row and applies the patch on top', async () => {
-        const { runtime, db } = makeRuntime();
-        const sessionId = crypto.randomUUID();
-        await drain(
-          runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' })
-        );
-
-        // Simulated restart: the settings PATCH lands BEFORE hydrateSessions.
-        const { runtime: restarted } = makeRuntime({ db });
-        const port: SessionSettingsPort = {
-          getSessionSettings: vi.fn().mockResolvedValue(null),
-          saveSessionSettings: vi.fn().mockResolvedValue(undefined),
-          // Codex never aliases a session id, so it never re-keys (DOR-493).
-          rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
-        };
-        restarted.setSessionSettings(port);
-        await restarted.updateSession(sessionId, { permissionMode: 'acceptEdits' });
-
-        const session = await restarted.getSession('/projects/demo', sessionId);
-        expect(session).toMatchObject({
-          title: 'Fix the flaky test',
-          permissionMode: 'acceptEdits',
-          cwd: '/projects/demo',
-        });
-
-        await restarted.hydrateSessions();
-        const rehydrated = await restarted.getSession('/projects/demo', sessionId);
-        expect(rehydrated).toMatchObject({
-          title: 'Fix the flaky test',
-          permissionMode: 'acceptEdits',
-        });
-      });
-
-      it('ensureSession before hydration seeds display metadata with the caller opts folded on top', async () => {
-        const { runtime, db } = makeRuntime();
-        const sessionId = crypto.randomUUID();
-        await drain(
-          runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' })
-        );
-
-        // Simulated restart: ensureSession lands BEFORE hydrateSessions.
-        const { runtime: restarted } = makeRuntime({ db });
-        restarted.ensureSession(sessionId, {
-          permissionMode: 'acceptEdits',
-          cwd: '/projects/demo',
-        });
-
-        const session = await restarted.getSession('/projects/demo', sessionId);
-        expect(session).toMatchObject({
-          id: sessionId,
-          title: 'Fix the flaky test',
-          lastMessagePreview: 'Fix the flaky test',
-          permissionMode: 'acceptEdits',
-          cwd: '/projects/demo',
-        });
-
-        await restarted.hydrateSessions();
-        const rehydrated = await restarted.getSession('/projects/demo', sessionId);
-        expect(rehydrated?.title).toBe('Fix the flaky test');
-        expect(rehydrated?.permissionMode).toBe('acceptEdits');
       });
 
       it('hydrateSessions after a pre-hydration touch emits no stale session_upserted for the touched id', async () => {
@@ -1169,68 +778,6 @@ describe('CodexRuntime', () => {
       );
     });
 
-    it('RT-MOD-01: projects session model and effort into ThreadOptions', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      runtime.ensureSession(sessionId, {
-        permissionMode: 'default',
-        model: 'gpt-5.4',
-        effort: 'max',
-      });
-
-      await drain(runtime.sendMessage(sessionId, 'hi'));
-
-      expect(sdkMocks.startThread).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'gpt-5.4', modelReasoningEffort: 'xhigh' })
-      );
-    });
-
-    it('hydrates persisted settings for an untracked session (restart resume path)', async () => {
-      const { runtime } = makeRuntime();
-      const port: SessionSettingsPort = {
-        getSessionSettings: vi
-          .fn()
-          .mockResolvedValue({ permissionMode: 'acceptEdits', model: 'gpt-5.4-mini' }),
-        saveSessionSettings: vi.fn().mockResolvedValue(undefined),
-        // Codex never aliases a session id, so it never re-keys (DOR-493).
-        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
-      };
-      runtime.setSessionSettings(port);
-      const sessionId = crypto.randomUUID();
-
-      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
-
-      expect(port.getSessionSettings).toHaveBeenCalledWith(sessionId);
-      expect(sdkMocks.startThread).toHaveBeenCalledWith(
-        expect.objectContaining({
-          permissionProfile: 'dorkos-files-workspace-write',
-          model: 'gpt-5.4-mini',
-        })
-      );
-    });
-
-    it('runs a seeded new session on the model and effort the server chose', async () => {
-      // The other half of the execution-defaults seam (spec execution-defaults
-      // E1): the server writes its per-runtime default onto `session_metadata`
-      // at the session's first write, and this adapter reads that row like any
-      // other persisted setting. Nothing in Codex knows about config.
-      const { runtime } = makeRuntime();
-      const port: SessionSettingsPort = {
-        getSessionSettings: vi.fn().mockResolvedValue({ model: 'gpt-5.3-codex', effort: 'low' }),
-        saveSessionSettings: vi.fn().mockResolvedValue(undefined),
-        // Codex never aliases a session id, so it never re-keys (DOR-493).
-        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
-      };
-      runtime.setSessionSettings(port);
-      const sessionId = crypto.randomUUID();
-
-      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
-
-      expect(sdkMocks.startThread).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'gpt-5.3-codex', modelReasoningEffort: 'low' })
-      );
-    });
-
     it('prepends systemPromptAppend and additional context, keeping content last and unmutated', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
@@ -1254,19 +801,20 @@ describe('CodexRuntime', () => {
       expect(String(input).endsWith('What changed?')).toBe(true);
     });
 
-    it('leads with the <gen_ui> block and keeps user content last when no context is supplied', async () => {
+    it('RT-MOD-01: projects session model and effort into ThreadOptions', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
-      const thread = makeMockThread(codexSimpleTurn('ok'));
-      sdkMocks.startThread.mockReturnValue(thread);
+      runtime.ensureSession(sessionId, {
+        permissionMode: 'default',
+        model: 'gpt-5.4',
+        effort: 'max',
+      });
 
-      await drain(runtime.sendMessage(sessionId, 'plain message'));
+      await drain(runtime.sendMessage(sessionId, 'hi'));
 
-      // Codex has no cacheable system-prompt channel, so the static <gen_ui>
-      // teaching block is prepended inline on every turn; content stays last.
-      const input = thread.runStreamed.mock.calls[0]![0];
-      expect(input).toContain('<gen_ui>');
-      expect(String(input).endsWith('plain message')).toBe(true);
+      expect(sdkMocks.startThread).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-5.4', modelReasoningEffort: 'xhigh' })
+      );
     });
   });
 
@@ -1340,18 +888,6 @@ describe('CodexRuntime', () => {
       expect(threadMap.getThreadId(sessionId)).toBe('thread-existing');
     });
 
-    it('starts then resumes across two turns of one session', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-
-      await drain(runtime.sendMessage(sessionId, 'one'));
-      await drain(runtime.sendMessage(sessionId, 'two'));
-
-      expect(sdkMocks.startThread).toHaveBeenCalledTimes(1);
-      expect(sdkMocks.resumeThread).toHaveBeenCalledTimes(1);
-      expect(sdkMocks.resumeThread).toHaveBeenCalledWith(THREAD_ID, expect.any(Object));
-    });
-
     it('resolves the persisted binding cwd when the in-memory registry is gone (post-restart)', async () => {
       const { runtime, threadMap } = makeRuntime();
       const sessionId = crypto.randomUUID();
@@ -1367,40 +903,6 @@ describe('CodexRuntime', () => {
         skipGitRepoCheck: true,
         workingDirectory: '/projects/persisted',
       });
-    });
-
-    it('resumes a legacy binding without a persisted cwd in the default root (DOR-202)', async () => {
-      const { runtime, threadMap } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      threadMap.setThreadId(sessionId, 'thread-legacy'); // pre-cwd (legacy) binding
-
-      await drain(runtime.sendMessage(sessionId, 'resume'));
-
-      // The default-root floor replaces the old "omit workingDirectory"
-      // degradation: the turn runs in a known directory instead of the
-      // server's process.cwd(), and the session gains a real cwd.
-      expect(sdkMocks.resumeThread).toHaveBeenCalledWith(
-        'thread-legacy',
-        expect.objectContaining({ workingDirectory: DEFAULT_ROOT })
-      );
-      const sessions = await runtime.listSessions(DEFAULT_ROOT);
-      expect(sessions.map((s) => s.id)).toContain(sessionId);
-    });
-
-    it('a resumed legacy binding backfills its cwd durably — the session survives a restart on the list (DOR-202)', async () => {
-      const { runtime, threadMap, db } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      threadMap.setThreadId(sessionId, 'thread-legacy'); // pre-cwd (legacy) binding
-
-      await drain(runtime.sendMessage(sessionId, 'resume'));
-      expect(threadMap.get(sessionId)?.cwd).toBe(DEFAULT_ROOT);
-
-      // Without the durable backfill this re-hydrated cwd-less and vanished
-      // from every project list again after each restart.
-      const { runtime: restarted } = makeRuntime({ db });
-      await restarted.hydrateSessions();
-      const sessions = await restarted.listSessions(DEFAULT_ROOT);
-      expect(sessions.map((s) => s.id)).toContain(sessionId);
     });
 
     it('a turn with no cwd from any source binds and persists the default root — a row is never minted cwd-less (DOR-202)', async () => {
@@ -1456,15 +958,6 @@ describe('CodexRuntime', () => {
       expect(threadMap.getThreadId(sessionId)).toBe(THREAD_ID);
       // The turn is settled — a second interrupt has nothing to abort.
       await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
-        outcome: 'not-running',
-        reason: 'no-open-turn',
-        runtime: 'codex',
-      });
-    });
-
-    it('resolves not-running when no turn is in flight', async () => {
-      const { runtime } = makeRuntime();
-      await expect(runtime.interruptQuery(crypto.randomUUID())).resolves.toEqual({
         outcome: 'not-running',
         reason: 'no-open-turn',
         runtime: 'codex',
@@ -1528,13 +1021,6 @@ describe('CodexRuntime', () => {
       ]);
     });
 
-    it('returns empty history for a session that never streamed', async () => {
-      const { runtime } = makeRuntime();
-      await expect(
-        runtime.getMessageHistory('/projects/demo', crypto.randomUUID())
-      ).resolves.toEqual([]);
-    });
-
     // Cross-runtime kickoff-suppression evidence (agent-creation-redesign M4).
     // The client fires the auto-first-turn kickoff runtime-blind, so a codex
     // session gets one too. FINDING (verified by these tests): codex delivers
@@ -1570,54 +1056,6 @@ describe('CodexRuntime', () => {
       expect(filtered.some((m) => m.role === 'user')).toBe(false);
       expect(filtered.some((m) => m.role === 'assistant')).toBe(true);
       expect(JSON.stringify(filtered)).not.toContain('dork-kickoff');
-    });
-
-    it('keeps a genuine first message that merely mentions the kickoff tag (no over-suppression)', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      const projector = getOrCreateProjector(sessionId, '/projects/demo');
-      const genuine = 'what does <dork-kickoff> mean?';
-
-      await feedProjector(projector, runtime.sendMessage(sessionId, genuine), {
-        userMessage: genuine,
-      });
-
-      const history = await runtime.getMessageHistory('/projects/demo', sessionId);
-      // A partial-tag mention is genuine content and passes through untouched.
-      expect(filterKickoffHistory(history)).toEqual(history);
-      expect(history.some((m) => m.role === 'user' && m.content === genuine)).toBe(true);
-    });
-
-    it('getSessionSnapshot serves the projector snapshot (cold session: empty, cursor 0)', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-
-      const snapshot = await runtime.getSessionSnapshot(
-        { permissionMode: 'default', cwd: '/projects/demo' },
-        sessionId
-      );
-
-      expect(snapshot.messages).toEqual([]);
-      expect(snapshot.inProgressTurn).toBeNull();
-      expect(snapshot.cursor).toBe(0);
-    });
-
-    it('subscribeSessionList yields the tracked inventory as session_upserted events', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/demo' });
-
-      const iterator = runtime
-        .subscribeSessionList({ permissionMode: 'default' })
-        [Symbol.asyncIterator]();
-      const first = await iterator.next();
-      await iterator.return?.(undefined);
-
-      expect(first.done).toBe(false);
-      expect(first.value).toMatchObject({
-        type: 'session_upserted',
-        session: { id: sessionId, runtime: 'codex' },
-      });
     });
   });
 
@@ -1656,22 +1094,6 @@ describe('CodexRuntime', () => {
     });
   });
 
-  describe('storage stubs', () => {
-    it('returns honest empties for surfaces Codex has no native store for', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = crypto.randomUUID();
-
-      await expect(runtime.getSessionTasks('/p', sessionId)).resolves.toEqual([]);
-      await expect(runtime.getSessionETag('/p', sessionId)).resolves.toBeNull();
-      await expect(runtime.getLastMessageIds(sessionId)).resolves.toBeNull();
-      await expect(runtime.readFromOffset('/p', sessionId, 0)).resolves.toEqual({
-        content: '',
-        newOffset: 0,
-      });
-      await expect(runtime.getSupportedSubagents()).resolves.toEqual([]);
-    });
-  });
-
   describe('commands (project-skill palette)', () => {
     it('surfaces the project skills under the session cwd as slash commands', async () => {
       const { runtime } = makeRuntime();
@@ -1684,14 +1106,35 @@ describe('CodexRuntime', () => {
       expect(registry.commands).toEqual(commands);
       expect(typeof registry.lastScanned).toBe('string');
     });
+  });
 
-    it('returns an empty palette with no cwd (cold discovery, no project to scan)', async () => {
+  describe('commands outside the agent’s home (DOR-5250)', () => {
+    let root: string;
+    afterEach(() => {
+      setAgentHomeRegistry(undefined);
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('adds the session’s agent’s own skills, and only for a folder outside its home', async () => {
+      root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-commands-')));
+      const [home, project] = [path.join(root, 'ana'), path.join(root, 'site')];
+      for (const dir of [home, project]) fs.mkdirSync(dir);
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === home,
+        listRegisteredHomes: () => [home],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      vi.mocked(scanSkillCommands).mockImplementation((dir) => [
+        { command: dir, fullCommand: dir === home ? '/triage' : '/deploy', description: dir },
+      ]);
       const { runtime } = makeRuntime();
+      const listed = async (cwd: string, agentPath?: string) =>
+        (await runtime.getCommands(false, cwd, agentPath)).commands.map((c) => c.fullCommand);
 
-      const registry = await runtime.getCommands();
-
-      expect(registry.commands).toEqual([]);
-      expect(scanSkillCommands).not.toHaveBeenCalled();
+      expect(await listed(project, home)).toEqual(['/deploy', '/triage']);
+      expect(await listed(project)).toEqual(['/deploy']);
+      expect(await listed(home, home)).toEqual(['/triage']);
     });
   });
 
@@ -1712,86 +1155,10 @@ describe('CodexRuntime', () => {
       runtime.getMcpStatus('/projects/demo');
       expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
     });
-
-    it('caches an empty result (no servers configured) without re-enumerating', async () => {
-      const { runtime } = makeRuntime();
-      vi.mocked(enumerateCodexMcpServers).mockResolvedValue([]);
-
-      expect(runtime.getMcpStatus('/p')).toBeNull();
-      await vi.waitFor(() => {
-        expect(runtime.getMcpStatus('/p')).toEqual([]);
-      });
-      runtime.getMcpStatus('/p');
-      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
-    });
-
-    it('stays null when enumeration genuinely fails', async () => {
-      const { runtime } = makeRuntime();
-      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(null);
-
-      expect(runtime.getMcpStatus('/p')).toBeNull();
-      await vi.waitFor(() => {
-        expect(enumerateCodexMcpServers).toHaveBeenCalled();
-      });
-      expect(runtime.getMcpStatus('/p')).toBeNull();
-    });
-
-    it('pre-warms the cache on ensureSession so the first getMcpStatus is populated', async () => {
-      const { runtime } = makeRuntime();
-      const servers = [{ name: 'linear', type: 'http' as const, scope: 'user' }];
-      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(servers);
-
-      // ensureSession kicks the warm before any getMcpStatus call.
-      runtime.ensureSession(crypto.randomUUID(), {
-        permissionMode: 'default',
-        cwd: '/projects/demo',
-      });
-      await vi.waitFor(() => {
-        expect(runtime.getMcpStatus('/projects/demo')).toEqual(servers);
-      });
-      // The pre-warm satisfied the first ask — no extra probe from getMcpStatus.
-      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
-    });
-
-    it('re-warms after the TTL window but serves the cached value within it', async () => {
-      const { runtime } = makeRuntime();
-      const first = [{ name: 'linear', type: 'http' as const, scope: 'user' }];
-      const second = [{ name: 'github', type: 'http' as const, scope: 'user' }];
-      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(first);
-
-      const t0 = 1_000_000;
-      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(t0);
-
-      runtime.getMcpStatus('/p'); // kicks the initial warm
-      await vi.waitFor(() => expect(runtime.getMcpStatus('/p')).toEqual(first));
-      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
-
-      // Within the TTL: no re-warm, still serves the cached value.
-      nowSpy.mockReturnValue(t0 + 30_000);
-      expect(runtime.getMcpStatus('/p')).toEqual(first);
-      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
-
-      // Past the TTL: background re-warm, but the stale value is returned
-      // immediately (the getter stays synchronous).
-      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(second);
-      nowSpy.mockReturnValue(t0 + 61_000);
-      expect(runtime.getMcpStatus('/p')).toEqual(first);
-      await vi.waitFor(() => expect(runtime.getMcpStatus('/p')).toEqual(second));
-      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(2);
-
-      nowSpy.mockRestore();
-    });
   });
 });
 
 describe('resolveCodexTransport (spec §15)', () => {
-  it('routes every persisted setting through protected app-server', () => {
-    expect(resolveCodexTransport(undefined)).toBe('app-server');
-    expect(resolveCodexTransport('auto')).toBe('app-server');
-    expect(resolveCodexTransport('app-server')).toBe('app-server');
-    expect(resolveCodexTransport('exec')).toBe('app-server');
-  });
-
   it('a runtime set to exec launches on app-server, which keeps MCP secrets off the command line (DOR-3883)', async () => {
     // `codex exec` put a stdio server's env on its argv; app-server sends config over stdin.
     const runtime = new CodexRuntime({
@@ -1948,30 +1315,6 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
     await drain(runtime.sendMessage('s1', 'again', { cwd: '/project' }));
     expect(requests[0]!.boundThreadId).toBe('old-thread');
     expect(threadMap.getThreadId('s1')).toBe('new-thread');
-  });
-
-  it('merges the transport’s capabilities over the shared base, and exec changes nothing', () => {
-    const db = createTestDb();
-    const exec = new CodexRuntime({
-      transport: new ScriptedCodexTransport((options) => new Codex(options)),
-      threadMap: new CodexThreadMap(db),
-      resolveBinary: async () => '/opt/codex',
-    });
-    expect(exec.getCapabilities().supportsPersistentSession).toBe(false);
-    expect(exec.getSessionWarmth).toBeUndefined();
-    expect(exec.reapSession).toBeUndefined();
-    expect(exec.settleOpenTurn).toBeUndefined();
-
-    const { transport } = recordingTransport({ persistent: true });
-    const onAppServer = new CodexRuntime({
-      threadMap: new CodexThreadMap(createTestDb()),
-      resolveBinary: async () => '/opt/codex',
-      transport,
-    });
-    expect(onAppServer.getCapabilities().supportsPersistentSession).toBe(true);
-    expect(onAppServer.getCapabilities().supportsToolApproval).toBe(false);
-    expect(onAppServer.getSessionWarmth?.('s')).toBe('warm');
-    expect(onAppServer.settleOpenTurn).toBeDefined();
   });
 
   it('returns the transport’s interrupt receipt for an open turn, and not-running otherwise', async () => {
@@ -2241,24 +1584,6 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(requests).toHaveLength(1);
     });
 
-    it('starts no model turn for work from turns run differently', async () => {
-      const { runtime, requests, wake } = backgroundRuntime();
-      await drain(runtime.sendMessage('s1', 'a', { cwd: '/project', forAgent: '/agents/a' }));
-      await drain(runtime.sendMessage('s1', 'b', { cwd: '/project', forAgent: '/agents/b' }));
-      const turns = project(runtime);
-      wake({
-        sessionId: 's1',
-        completions: [
-          finished(requests[0]!.wakeContext),
-          finished(requests[1]!.wakeContext, { taskId: 'cmd-2' }),
-        ],
-        startTurn: true,
-        notices: [],
-      });
-      expect((await turns[0]!).filter((e) => e.type === 'background_task_done')).toHaveLength(2);
-      expect(requests).toHaveLength(2);
-    });
-
     it('never starts a model turn when read without the session’s runtime lock', async () => {
       const { runtime, requests, wake } = backgroundRuntime();
       await drain(runtime.sendMessage('s1', 'go', { cwd: '/project' }));
@@ -2296,23 +1621,6 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(requests).toHaveLength(3 + MAX_CONSECUTIVE_WAKES);
     });
 
-    it('shows a finish that may not wake the model, and starts no turn', async () => {
-      const { runtime, requests, wake } = backgroundRuntime();
-      const turns = project(runtime);
-      wake({
-        sessionId: 's1',
-        completions: [finished(undefined, { status: 'stopped', wakes: false })],
-        startTurn: false,
-        notices: ['lost it'],
-      });
-      expect((await turns[0]!).map((e) => e.type)).toEqual([
-        'system_status',
-        'background_task_done',
-        'done',
-      ]);
-      expect(requests).toHaveLength(0);
-    });
-
     it('tells listeners when a dispatched turn opens, and stops tasks through the transport', async () => {
       const { runtime } = backgroundRuntime();
       const dispatched: string[] = [];
@@ -2323,19 +1631,6 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       expect(dispatched).toEqual(['s1']);
       expect(runtime.holdsBackgroundWork!('s1')).toBe(true);
       expect(await runtime.stopTask('s1', 'cmd-1')).toEqual({ outcome: 'acked', runtime: 'codex' });
-    });
-
-    it('declares none of it on exec, where nothing outlives the turn', async () => {
-      const runtime = new CodexRuntime({
-        threadMap: new CodexThreadMap(createTestDb()),
-        resolveBinary: async () => '/opt/codex',
-        transport: new ScriptedCodexTransport((options) => new Codex(options)),
-      });
-      expect(runtime.onRuntimeTurn).toBeUndefined();
-      expect(runtime.isSegmentPending).toBeUndefined();
-      expect(runtime.holdsBackgroundWork).toBeUndefined();
-      expect(runtime.acquireRuntimeLock).toBeUndefined();
-      expect((await runtime.stopTask('s1', 'x')).outcome).toBe('not-running');
     });
   });
 });

@@ -184,6 +184,8 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
 
     const result = await dispatchMessage({
       turnStarter: 'agent',
+      // DorkOS carries the bound chat on: it adds no power to it.
+      origin: { kind: 'resume' },
       sessionId,
       clientId: `mcp-signin-${event.flowId}`,
       content,

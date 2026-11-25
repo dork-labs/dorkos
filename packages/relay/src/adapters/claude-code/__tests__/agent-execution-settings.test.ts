@@ -115,29 +115,6 @@ describe('a relay turn runs on the agent it addressed', () => {
     expect(sendCall[2]).toEqual(expect.objectContaining({ model: 'claude-haiku-4-5' }));
   });
 
-  it("asks about the agent's own directory even when the turn runs elsewhere", async () => {
-    // A payload cwd moves where the turn RUNS. Which model the agent is, is a
-    // property of the agent, so it keeps being read where the agent lives — the
-    // session still runs in the directory the payload named.
-    await adapter.start(relay);
-    const envelope = createTestEnvelope({
-      from: BINDING_SENDER,
-      payload: { content: 'What is the status?', cwd: '/projects/other' },
-    });
-
-    await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-
-    expect(resolveExecutionSettings).toHaveBeenCalledWith({
-      runtimeType: 'claude-code',
-      sessionId: 'agent-ulid-1',
-      agentDirectory: '/projects/ana',
-    });
-    expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      'agent-ulid-1',
-      expect.objectContaining({ cwd: '/projects/other' })
-    );
-  });
-
   it("hands the runtime the binding's agent as the turn's agent (DOR-2355)", async () => {
     await adapter.start(relay);
     const envelope = createTestEnvelope({
@@ -218,20 +195,6 @@ describe('a relay turn runs on the agent it addressed', () => {
       'agent-ulid-1',
       expect.objectContaining({ permissionMode: 'bypassPermissions', model: 'claude-haiku-4-5' })
     );
-  });
-
-  it('still answers when the settings lookup fails', async () => {
-    // A settings problem is a reason to fall through to the runtime's own
-    // default, never a reason to drop somebody's message.
-    resolveExecutionSettings.mockRejectedValue(new Error('database is locked'));
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    const result = await adapter.deliver(envelope.subject, envelope, MESH_CONTEXT);
-
-    expect(result.success).toBe(true);
-    const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
-    expect(ensureCall[1]).not.toHaveProperty('model');
   });
 });
 

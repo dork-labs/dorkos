@@ -643,7 +643,7 @@ When you pick a handle, DorkOS turns it down if it looks like someone else's, li
 to `@dorian`.
 
 Renaming an agent needs a secure connection: this computer, your tunnel, or an `https` address. A
-phone on your Wi-Fi can rename you, but not an agent, until Wi-Fi connections are encrypted.
+device on your network can rename you, but not an agent, until those connections are encrypted.
 
 **People writing in from Telegram get a handle too.** Theirs always carries the service they came
 from, like `@miguel.telegram`. Somebody on another service can rename themselves anything they like
@@ -936,7 +936,7 @@ Read state is not a room endpoint. One address covers every kind of room or chat
 | `PUT`  | `/api/read-cursors/room/:id` | Move your mark in this room to a position. |
 | `GET`  | `/api/read-cursors/room/:id` | Read your mark back.                       |
 
-Both are people-only. A caller the server resolves as an agent gets `403 PEOPLE_ONLY` rather than a
+Both are people-only. A caller the server resolves as an agent gets `403 person_only` rather than a
 row of its own, and there is no way to name a different user in the request, so a cursor is only
 ever written and read back by the person it belongs to.
 
@@ -1053,7 +1053,7 @@ the most usage left and answers the same message. The room says so in one short 
 has usage left, the room says when the soonest one is back. You can also move an agent yourself:
 open its menu in the member list and choose **Continue on another account…**.
 
-An agent on Claude Code can move its own seat too, from another chat, but not while it's answering in that room. Its account must be at 80% of its usage or more. It can't pick your main account or one you keep out of automatic moves. It can't move when its usage can't be read, or after someone other than you messaged it from a device on [your Wi-Fi](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi). The room gets a line each time.
+An agent on Claude Code can move its own seat too, from another chat, but not while it's answering in that room. Its account must be at 80% of its usage or more. It can't pick your main account or one you keep out of automatic moves. It can't move when its usage can't be read, or after someone other than you messaged it from a device on [your network](/docs/self-hosting/securing-your-instance#on-your-own-network). The room gets a line each time.
 
 ### Setting it, in the app
 
@@ -1115,8 +1115,8 @@ its own branch is left alone and the turn is told to switch back.
 Continuing a room-bound chat from the app follows the same rule: the turn runs at the agent's
 home with the same grants. A request naming the agent's own worktree in the room is switched to its
 home, and one naming a private copy of the agent's own home is allowed. A request naming any folder
-that isn't the agent's own is refused `DESK_NOT_OWN`, and a chat whose runtime keeps it inside
-the room's files is refused `ROOM_SESSION_MOVED`, both with `409`.
+that isn't the agent's own is refused `desk_not_own`, and a chat whose runtime keeps it inside
+the room's files is refused `room_session_moved`, both with `409`.
 
 ### Giving a room files
 
@@ -1125,9 +1125,9 @@ room's shared copy, seeds a `ROOM.md` from the room's name and topic, and commit
 asked.
 
 **Any member can call it**, and agents reach it through the `set_up_room_files` tool. Someone
-outside the room gets `404`, and an archived room answers `409 ROOM_ARCHIVED`. Asking twice is safe: a room that already has files answers `409` with
+outside the room gets `404`, and an archived room answers `409 room_archived`. Asking twice is safe: a room that already has files answers `409` with
 the binding it already has. If room files are switched off in settings, it answers `409
-ROOM_REPOS_DISABLED`.
+room_repos_disabled`.
 
 | Method | Path                                   | Purpose                                                         |
 | ------ | -------------------------------------- | --------------------------------------------------------------- |
@@ -1151,14 +1151,14 @@ Every listing and every read answers from a commit, never from whatever is on di
 half-written edit in the shared copy is invisible and `.git` is not in the tree to be reached. A
 symlink is listed and never followed.
 
-Two answers from these read routes are worth not confusing. `409 ROOM_HAS_NO_REPO` means this room
+Two answers from these read routes are worth not confusing. `409 room_has_no_repo` means this room
 specifically has no files, either because it was never given any or because room files are switched
 off: one predicate covers both, on purpose, so the answer cannot be used to tell them apart.
-`ROOM_REPO_GIT_UNAVAILABLE` means this machine has no `git` at all. The merge tool never returns
+`room_repo_git_unavailable` means this machine has no `git` at all. The merge tool never returns
 either one; it distinguishes `NOT_A_PROJECT_ROOM` from `ROOM_REPOS_DISABLED` instead.
 
 `PUT /api/rooms/:id/files/content` carries `{ path, baseCommit, text }`. `baseCommit` is the commit
-the editor loaded, and the save is refused `409 FILE_CHANGED` only if the shared copy moved **and
+the editor loaded, and the save is refused `409 file_changed` only if the shared copy moved **and
 touched that path**. The refusal carries the commit that won, which is what the app turns into
 "open their version, or save yours over it".
 

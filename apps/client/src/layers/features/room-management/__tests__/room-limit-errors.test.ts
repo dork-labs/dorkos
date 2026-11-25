@@ -17,7 +17,7 @@ function coded(code: string, message: string): Error {
 describe('roomLimitsErrorMessage', () => {
   it('replaces the owner-only refusal with a sentence naming who can', () => {
     const said = roomLimitsErrorMessage(
-      coded('OPERATOR_ONLY', 'Only you can change how much a room may spend on automatic replies')
+      coded('operator_only', 'Only you can change how much a room may spend on automatic replies')
     );
 
     expect(said).toBe('Only the owner of this DorkOS can change room limits.');
@@ -25,7 +25,7 @@ describe('roomLimitsErrorMessage', () => {
   });
 
   it('says what to do about an archived room', () => {
-    expect(roomLimitsErrorMessage(coded('ROOM_ARCHIVED', 'Room is archived'))).toBe(
+    expect(roomLimitsErrorMessage(coded('room_archived', 'Room is archived'))).toBe(
       'This room is archived. Bring it back to change its limits.'
     );
   });

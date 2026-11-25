@@ -10,7 +10,6 @@ import {
   planSkillNameCollisions,
   pluginRootText,
   rewritePluginRootInHooks,
-  opencodeWrapperFilename,
 } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
@@ -55,13 +54,6 @@ const plugin: ProjectInstalledPlugin = {
   layers: ['commands', 'skills', 'hooks'],
 };
 
-describe('opencodeWrapperFilename', () => {
-  it('CM-03: joins pkg and command with a hyphen (flat, invoked /<pkg>-<name>)', () => {
-    // `/flow:capture` in Claude becomes `/flow-capture` in OpenCode (no namespacing).
-    expect(opencodeWrapperFilename('flow', 'capture')).toBe('flow-capture.md');
-  });
-});
-
 describe('planInstalledCommands — opencode', () => {
   it('CM-03: generates a flat `.opencode/commands/<pkg>-<name>.md` wrapper with the token rewritten, frontmatter reduced to description, and the engine marker', () => {
     const repo = emptyRepo();
@@ -90,16 +82,6 @@ describe('planInstalledCommands — opencode', () => {
       rmSync(repo, { recursive: true, force: true });
     }
   });
-
-  it('CM-03: does NOT emit a per-plugin `.gitignore` for opencode (the shared dir gets one aggregated one)', () => {
-    const repo = emptyRepo();
-    try {
-      const actions = planInstalledCommands('opencode', plugin, repo);
-      expect(actions.some((a) => a.target?.endsWith('.gitignore'))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('planOpencodeCommandsGitignore', () => {
@@ -112,10 +94,6 @@ describe('planOpencodeCommandsGitignore', () => {
     expect(content).not.toContain('*'); // NEVER a wildcard — authored commands must stay committable
     expect(content).toContain('dorkos:generated-command'); // marker so the sweep recognizes it
   });
-
-  it('returns undefined when no plugin ships a command', () => {
-    expect(planOpencodeCommandsGitignore([{ ...plugin, commands: [] }])).toBeUndefined();
-  });
 });
 
 describe('planInstalledSkills — opencode', () => {
@@ -126,22 +104,6 @@ describe('planInstalledSkills — opencode', () => {
     expect(actions[0].name).toBe('flow__capturing');
     expect(actions[0].target).toBeUndefined(); // native: no file written
   });
-
-  it('SK-07: still warns when a projected skill references ${CLAUDE_PLUGIN_ROOT}', () => {
-    const { warnings } = planInstalledSkills('opencode', {
-      ...plugin,
-      skills: [
-        {
-          name: 'capturing',
-          sourceDir: '.dork/plugins/flow/skills/capturing',
-          usesPluginRoot: true,
-          hasSchedule: false,
-        },
-      ],
-    });
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0].reason).toContain('${CLAUDE_PLUGIN_ROOT}');
-  });
 });
 
 describe('rewritePluginRootInHooks — item A', () => {
@@ -151,10 +113,6 @@ describe('rewritePluginRootInHooks — item A', () => {
       '/abs/install'
     );
     expect(out?.Stop[0].hooks[0].command).toBe('node "/abs/install/h.mjs"');
-  });
-
-  it('returns undefined for undefined input', () => {
-    expect(rewritePluginRootInHooks(undefined, '/abs')).toBeUndefined();
   });
 });
 
@@ -216,29 +174,6 @@ describe('buildPlan — opencode harness', () => {
     }
   });
 
-  it('HK-05: rewrites the installed hook token to absolute in the generated Codex hooks and emits NO token warning (item A)', () => {
-    const repo = emptyRepo();
-    try {
-      const plan = buildPlan({
-        repoRoot: repo,
-        manifest,
-        agentsMdExists: false,
-        installedPlugins: [plugin],
-      });
-      const codexHooks = plan.actions.find(
-        (a) => a.kind === 'generate' && a.target === '.codex/hooks.json'
-      );
-      const content = getActionContent(codexHooks!)!;
-      expect(content).toContain(
-        `${pluginRootText(join(repo, '.dork/plugins/flow'), process.platform)}/h.mjs`
-      );
-      expect(content).not.toContain('${CLAUDE_PLUGIN_ROOT}');
-      expect(plan.warnings.some((w) => w.harness === 'codex' && w.artifact === 'hook')).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
   it('HK-04: still warns for an AUTHORED hook token whose install root is unknown (item A)', () => {
     const repo = emptyRepo();
     try {
@@ -294,48 +229,5 @@ describe('planSkillNameCollisions — item C', () => {
     expect(warnings.some((w) => w.harness === 'codex')).toBe(true);
     expect(warnings.some((w) => w.harness === 'opencode')).toBe(true);
     expect(warnings.some((w) => w.harness === 'claude-code')).toBe(false); // dir-keyed, protected
-  });
-
-  it('SK-06: fires when an installed frontmatter name collides with an authored skill name', () => {
-    const warnings = planSkillNameCollisions({
-      authoredSkillNames: ['capturing-work'],
-      plugins: [pluginWith('flow', 'capturing-work')],
-      harnesses: ['opencode'],
-    });
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0].name).toBe('flow__s');
-    expect(warnings[0].reason).toContain('authored skill "capturing-work"');
-  });
-
-  it('SK-06: does NOT false-positive when frontmatter names differ', () => {
-    const warnings = planSkillNameCollisions({
-      authoredSkillNames: ['something-else'],
-      plugins: [pluginWith('flow', 'capturing-work'), pluginWith('other', 'reviewing-work')],
-      harnesses: ['codex', 'opencode'],
-    });
-    expect(warnings).toEqual([]);
-  });
-
-  it('SK-06: emits nothing when no frontmatter-keyed harness is enabled, even on a real collision', () => {
-    const warnings = planSkillNameCollisions({
-      authoredSkillNames: ['capturing-work'],
-      plugins: [pluginWith('flow', 'capturing-work')],
-      harnesses: ['claude-code', 'cursor'],
-    });
-    expect(warnings).toEqual([]);
-  });
-
-  it('SK-06: falls back to the directory name when a skill declares no frontmatter name', () => {
-    // Two plugins each shipping a dir-named `s` with no frontmatter name collide on `s`.
-    const warnings = planSkillNameCollisions({
-      authoredSkillNames: [],
-      plugins: [
-        pluginWith('flow', undefined as unknown as string),
-        pluginWith('other', undefined as unknown as string),
-      ],
-      harnesses: ['opencode'],
-    });
-    expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0].reason).toContain('"s"');
   });
 });

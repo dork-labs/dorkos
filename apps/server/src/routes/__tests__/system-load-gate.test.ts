@@ -158,7 +158,7 @@ describe('a person’s actions', () => {
   it('refuses an id that cannot be a job’s, writing nothing', async () => {
     const response = await act('NOT-A-JOB', 'urgent');
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('invalid_id');
+    expect(response.body.code).toBe('invalid_request');
     expect(marks()).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -236,7 +236,7 @@ async function expectEveryRouteRefused(
 
 describe('anyone but a person at this computer', () => {
   it('refuses an agent on every route, at the route’s own person check', async () => {
-    await expectEveryRouteRefused(403, 'person_required', { 'x-dorkos-agent': 'agent-a' });
+    await expectEveryRouteRefused(403, 'person_only', { 'x-dorkos-agent': 'agent-a' });
   });
 
   it('refuses a page from another site on every route', async () => {
@@ -266,6 +266,6 @@ describe('anyone but a person at this computer', () => {
         app.route('/api/system', router);
       },
     });
-    await expectEveryRouteRefused(403, 'local_only');
+    await expectEveryRouteRefused(403, 'operator_only');
   });
 });

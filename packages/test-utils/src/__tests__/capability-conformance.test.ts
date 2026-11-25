@@ -401,6 +401,28 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
     const violations = checkCapabilityConformance(registry, fixtures);
     expect(hasCheck(violations, 'metadata')).toBe(true);
   });
+
+  it('metadata: a hyphenated domain is a domain; a malformed id is not', () => {
+    const idViolations = (id: string) => {
+      const obs = observeCapability();
+      obs.id = id;
+      const registry = conformantRegistry([obs, actCapability()]);
+      return checkCapabilityConformance(registry, conformantFixtures(registry)).filter(
+        (violation) => violation.check === 'metadata'
+      );
+    };
+    expect(idViolations('work-queue.view_queue')).toEqual([]);
+    expect(idViolations('work-claims.check')).toEqual([]);
+    for (const bad of [
+      'Work.list',
+      'work-.list',
+      '-work.list',
+      'work--queue.list',
+      'work.queue-list',
+    ]) {
+      expect(idViolations(bad).length, bad).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe('checkRegistryGateConformance', () => {
@@ -418,6 +440,31 @@ describe('checkRegistryGateConformance', () => {
     expect(violations.length).toBeGreaterThan(0);
     expect(violations.every((v) => v.check === 'destructive-gate')).toBe(true);
     expect(violations.some((v) => v.detail.includes('RAN a destructive capability'))).toBe(true);
+  });
+
+  it('seeded drift: a pre-gate NO_AGENT fails the probe unless an identity is supplied', async () => {
+    // A handler that refuses an unidentified caller before the gate (as the
+    // agents' work queue tools do) answers the gate only when the probe calls
+    // it as an active agent.
+    const identity = { agentPath: '/agents/probe' };
+    const caps = [observeCapability(), destructiveCapability()];
+    const registry: ConformanceRegistry = {
+      capabilities: caps,
+      invoke: async (_id, _input, context) => {
+        if (!(context as { identity?: unknown } | undefined)?.identity) {
+          throw Object.assign(new Error('This chat needs an active agent.'), {
+            name: 'CapabilityToolError',
+          });
+        }
+        throw gateRefusal();
+      },
+    };
+    const destroyId = destructiveCapability().id;
+    const bare = await checkRegistryGateConformance(registry);
+    expect(bare.some((v) => v.detail.includes('not with a gate refusal'))).toBe(true);
+    expect(await checkRegistryGateConformance(registry, {}, { [destroyId]: { identity } })).toEqual(
+      []
+    );
   });
 
   it('seeded drift: invoke rejects, but not with a gate refusal', async () => {

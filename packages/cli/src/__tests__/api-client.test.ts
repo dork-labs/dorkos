@@ -235,8 +235,10 @@ describe('apiCall 401 guidance', () => {
         async () =>
           new Response(
             JSON.stringify({
-              error: 'That agent identity could not be verified.',
-              code: 'AGENT_IDENTITY_UNVERIFIED',
+              title: 'DorkOS couldn’t confirm which agent sent this.',
+              status: 401,
+              code: 'agent_identity_unverified',
+              detail: 'That agent identity could not be verified.',
             }),
             { status: 401 }
           )
@@ -248,7 +250,7 @@ describe('apiCall 401 guidance', () => {
     expect(err.status).toBe(401);
     expect(err.message).toBe('That agent identity could not be verified.');
     expect(err.message).not.toContain('API key');
-    expect(err.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    expect(err.body.code).toBe('agent_identity_unverified');
   });
 
   it('still guides a 401 that carries no code at all', async () => {
@@ -329,9 +331,18 @@ describe('apiCall 401 guidance', () => {
       'fetch',
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ error: 'Validation failed', errors: ['bad name'] }), {
-            status: 400,
-          })
+          new Response(
+            JSON.stringify({
+              title: 'Refused.',
+              status: 400,
+              code: 'invalid_request',
+              detail: 'Validation failed',
+              errors: ['bad name'],
+            }),
+            {
+              status: 400,
+            }
+          )
       )
     );
 
@@ -342,20 +353,17 @@ describe('apiCall 401 guidance', () => {
     expect(err.body.errors).toEqual(['bad name']);
   });
 
+  // A connection route's 401 is `unauthenticated` too, so it gets the login
+  // gate's API-key guidance above, which is the right advice for it.
   it.each([
     {
       status: 403,
       body: {
-        error: 'Open this account action from the DorkOS app.',
-        code: 'connector_owner_origin_required',
-        message: 'Open this account action from the DorkOS app.',
-      },
-    },
-    {
-      status: 401,
-      body: {
-        error: 'This program needs a verified API key to request an account change.',
-        code: 'connector_program_credential_required',
+        type: 'urn:dorkos:problem:origin_not_allowed',
+        title: 'This page isn’t allowed to call DorkOS.',
+        status: 403,
+        code: 'origin_not_allowed',
+        detail: 'Open this account action from the DorkOS app.',
       },
     },
   ])(
@@ -371,8 +379,8 @@ describe('apiCall 401 guidance', () => {
       )) as ApiError;
 
       expect(err.status).toBe(status);
-      expect(err.message).toBe(body.error);
-      expect(err.body.code).toBe(body.code);
+      expect(err.message).toBe(body.detail);
+      expect(err.code).toBe(body.code);
     }
   );
 });

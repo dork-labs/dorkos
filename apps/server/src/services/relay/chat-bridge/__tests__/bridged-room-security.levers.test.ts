@@ -233,7 +233,7 @@ describe('bridged-room security suite (chats-as-channels §9): the levers and th
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('RESERVED_SENDER');
+      expect(res.body.code).toBe('reserved_sender');
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
   });

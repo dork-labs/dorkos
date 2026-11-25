@@ -129,7 +129,10 @@ describe('runMarketplaceHeldBack', () => {
         .mockResolvedValueOnce(mockResponse(200, { packages: [HELD] }))
         .mockResolvedValueOnce(
           mockResponse(409, {
-            error: 'fmt changed since it was shown to you, so nothing was recorded.',
+            title: 'Refused.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'fmt changed since it was shown to you, so nothing was recorded.',
           })
         )
     );
@@ -150,8 +153,12 @@ describe('runMarketplaceHeldBack with sign-in on (I-4)', () => {
         .mockResolvedValueOnce(mockResponse(200, { packages: [HELD] }))
         .mockResolvedValueOnce(
           mockResponse(403, {
-            error: 'DorkOS requires sign-in, so this has to be decided by a person signed in.',
-            code: 'operator_cookie_required',
+            type: 'urn:dorkos:problem:person_only',
+            title: 'Only a person can do that, not an agent.',
+            status: 403,
+            code: 'person_only',
+            detail:
+              'DorkOS requires sign-in. In the app, open Marketplace, Installed, and press Review.',
           })
         )
     );

@@ -92,6 +92,7 @@ function quickTurn() {
 /** Dispatch with the fields these cases do not care about filled in. */
 function send(content: string) {
   return dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId: TAB,
     content,

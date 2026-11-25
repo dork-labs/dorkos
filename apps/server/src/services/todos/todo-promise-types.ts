@@ -19,7 +19,15 @@ export type TodoPromiseErrorCode =
   | 'PAST_DUE'
   | 'NO_AGENT'
   | 'UNKNOWN_AGENT'
-  | 'TOO_MANY';
+  | 'TOO_MANY'
+  | 'HELD_DEVICE';
+
+/**
+ * The one sentence a person on a Wi-Fi device not let run agents reads when they try to give an
+ * agent work (`requireMayGiveAgentWork`); the refusal table sends it as `person_only`.
+ */
+export const HELD_DEVICE_REFUSAL =
+  'Give an agent work at this computer, or let this device run agents.';
 
 /** A refusal, with a stable code and a plain sentence for whoever asked. */
 export class TodoPromiseError extends Error {
@@ -63,6 +71,12 @@ export type TodoPromiseActor =
        * request classifier, never from a request body.
        */
       ownerless?: boolean;
+      /**
+       * True when the request is the owner's own sign-in on a Wi-Fi device not let run agents
+       * (`heldWifiOwner`, DOR-5070). Such a person may not change an agent's promise or answer for
+       * it (`mayGiveAgentWork`). Set by the server, never from a request body.
+       */
+      held?: boolean;
     };
 
 /**

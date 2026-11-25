@@ -15,7 +15,7 @@
  * @module services/todos/todo-turn-prompt
  */
 import type { TodoRow } from '@dorkos/db';
-import { fenceUntrustedBlock } from '../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock } from '../core/untrusted-text/untrusted-fence.js';
 import { readAuthority } from './todo-authority.js';
 
 /** The source message, as the server read it from the room. */

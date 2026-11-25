@@ -185,6 +185,7 @@ describe('enforceApprovals with folder grants', () => {
         sessionId: 's1',
         ocSessionId: 'oc-1',
         cwd: '/agents/ana',
+        directory: '/agents/ana',
         permissions: { pendingPermissionSessions: new Map() } as never,
         ...(turnGrants ? { grants: turnGrants } : {}),
       },
@@ -262,12 +263,19 @@ describe('enforceApprovals under a turn ceiling', () => {
         sessionId: 's1',
         ocSessionId: 'oc-1',
         cwd: '/agents/ana',
+        directory: '/agents/ana',
         permissions: { pendingPermissionSessions: new Map() } as never,
         ...(ceiling ? { permissionCeiling: ceiling } : {}),
       },
       {
         type: 'approval_required',
-        data: { toolCallId: 'per_1', timeoutMs: 1000, startedAt: 0, toolName: 'bash', input: {} },
+        data: {
+          toolCallId: 'per_1',
+          timeoutMs: 1000,
+          startedAt: 0,
+          toolName: 'bash',
+          input: JSON.stringify({ command: 'ls' }),
+        },
       } as StreamEvent
     )) {
       out.push(event);

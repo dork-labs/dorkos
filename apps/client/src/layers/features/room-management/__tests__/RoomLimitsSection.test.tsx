@@ -298,7 +298,7 @@ describe('RoomLimitsSection', () => {
       const user = userEvent.setup();
       renderLive(room(), {
         reject: Object.assign(new Error('Only you can change how much a room may spend'), {
-          code: 'OPERATOR_ONLY',
+          code: 'operator_only',
           status: 403,
         }),
       });

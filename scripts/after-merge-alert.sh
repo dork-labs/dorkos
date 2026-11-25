@@ -3,6 +3,8 @@
 #
 #   scripts/after-merge-alert.sh failed <run-id> <head-sha> <workflow-name> <run-url>
 #   scripts/after-merge-alert.sh passed <workflow-name> <run-url>
+#   scripts/after-merge-alert.sh blame <run-id> <culprit-sha> <workflow-name> <run-url>
+#   scripts/after-merge-alert.sh note <run-id> <workflow-name> <run-url> <text>
 #
 # DOR-5121, under DOR-5098 (Dorian, Nov 23: release fast, fix forward). Checks
 # that rarely catch real failures run after merge, on `push` to main. When one
@@ -14,6 +16,11 @@
 #           and assigned to the author when GitHub allows it.
 #   passed: the workflow is green on main again, so its open groups are closed
 #           with a comment naming the run.
+#   blame:  a rolling run's failure was bisected to <culprit-sha>
+#           (rolling-bisect.yml, DOR-5122): comments once on the culprit's PR,
+#           and once on every open group of the workflow, assigning its author.
+#   note:   the bisect of run <run-id> could not name a merge: <text> goes once
+#           on every open group of the workflow.
 #
 # The room ping comes from the red-main alarm, which reads main's runs.
 #
@@ -38,7 +45,7 @@ LABEL=after-merge-failure
 MAX_GROUPS=5
 
 usage() {
-  sed -n '4,5p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '4,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 err() {
@@ -180,8 +187,64 @@ passed() {
   [ -n "$nums" ] || echo "No open $LABEL issues for $wf."
 }
 
+# Open group issues of one workflow.
+groups_of() {
+  "$GH" api --paginate "repos/$REPO/issues?state=open&labels=$LABEL&per_page=100" \
+    --jq ".[] | select(.pull_request == null and (.title | startswith($(jq -Rn --arg p "After merge: $1 / " '$p')))) | .number"
+}
+
+# Post <body> on issue or PR <n> unless a comment there already carries <marker>.
+comment_once() {
+  local n=$1 marker=$2 body=$3 existing
+  existing=$("$GH" api --paginate "repos/$REPO/issues/$n/comments?per_page=100" \
+    --jq ".[] | select(.body | contains($(jq -Rn --arg m "$marker" '$m'))) | .id") ||
+    err "could not read the comments of #$n"
+  if [ -n "$existing" ]; then
+    echo "#$n already has $marker."
+    return 0
+  fi
+  "$GH" api --method POST "repos/$REPO/issues/$n/comments" -f body="$marker
+$body" >/dev/null || err "could not comment on #$n"
+  echo "Commented on #$n."
+}
+
+blame() {
+  local run=$1 sha=$2 wf=$3 url=$4 line pr author marker nums n
+  [[ "$run" =~ ^[1-9][0-9]*$ ]] && [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && [ -n "$wf" ] && [ -n "$url" ] || usage
+  line=$("$GH" api "repos/$REPO/commits/$sha/pulls" \
+    --jq '[.[] | select(.merged_at != null)] | first | if . == null then "" else "\(.number) \(.user.login)" end') ||
+    err "could not read the PR behind ${sha:0:7}"
+  read -r pr author <<<"$line"
+  [[ "${pr:-}" =~ ^[1-9][0-9]*$ ]] || err "no merged PR behind ${sha:0:7}"
+  # One marker per culprit: a later rolling failure that bisects to the same
+  # merge says nothing new.
+  marker="<!-- after-merge-alert bisect=$sha -->"
+  comment_once "$pr" "$marker" "@$author \`$wf\` failed on main in a rolling run ($url), and a bisect found this PR (${sha:0:7}) as the first merge it fails on: the merge before it passed.
+
+Please fix forward with a new PR. If AUTO_REVERT is on, a revert PR follows."
+  nums=$(groups_of "$wf") || err "could not list the open $LABEL issues"
+  for n in $nums; do
+    comment_once "$n" "$marker" "Bisected: \`$wf\` first fails at ${sha:0:7}, after #$pr by @$author; the merge before it passed. Run: $url"
+    [[ "$author" != *"[bot]" ]] &&
+      { "$GH" api --method POST "repos/$REPO/issues/$n/assignees" -f "assignees[]=$author" >/dev/null 2>&1 || true; }
+  done
+  [ -n "$nums" ] || echo "No open $LABEL issues for $wf."
+}
+
+note() {
+  local run=$1 wf=$2 url=$3 text=$4 nums n
+  [[ "$run" =~ ^[1-9][0-9]*$ ]] && [ -n "$wf" ] && [ -n "$url" ] && [ -n "$text" ] || usage
+  nums=$(groups_of "$wf") || err "could not list the open $LABEL issues"
+  for n in $nums; do
+    comment_once "$n" "<!-- after-merge-alert bisect-note run=$run -->" "$text Run: $url"
+  done
+  [ -n "$nums" ] || echo "No open $LABEL issues for $wf. $text"
+}
+
 case "${1:-}" in
   failed) [ $# -eq 5 ] || usage; failed "$2" "$3" "$4" "$5" ;;
   passed) [ $# -eq 3 ] || usage; passed "$2" "$3" ;;
+  blame) [ $# -eq 5 ] || usage; blame "$2" "$3" "$4" "$5" ;;
+  note) [ $# -eq 5 ] || usage; note "$2" "$3" "$4" "$5" ;;
   *) usage ;;
 esac

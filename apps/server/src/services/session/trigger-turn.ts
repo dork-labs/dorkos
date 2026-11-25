@@ -677,6 +677,22 @@ export interface TriggerTurnOpts {
    * @param seq - The `turn_start`'s seq.
    */
   onTurnStart?(seq: number): void;
+  /**
+   * The runtime's first event for this turn arrived, so the runtime has the
+   * words (spec `turns-survive-restarts` §4.3, the `delivered` fact). Only an
+   * event the runtime emitted: the error terminal {@link guardTurnErrors}
+   * builds from a throw (a paused agent's refusal among them) is not one.
+   * Fired once, after `onTurnStart`.
+   */
+  onDelivered?(): void;
+  /**
+   * The agent acted in this turn: the first runtime event beyond request and
+   * session bookkeeping (output, a tool call starting, a held card), the
+   * same reading `onSettled`'s `agentActed` reports at the end. Fired once,
+   * before the projector ingests that event, so a `turn_end` after it already
+   * knows (spec `turns-survive-restarts` §4.7).
+   */
+  onActed?(): void;
 }
 
 /** Outcome of a {@link triggerTurn} attempt. */
@@ -1009,7 +1025,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     }
     // A runtime that refuses a turn before the agent sees it settles without a
     // throw, so the refusal is read off the stream (DOR-2994).
-    const watched = watchSpinOffTurn(source, projector);
+    const watched = watchSpinOffTurn(source, projector, opts.onActed);
     const tapped = tapEachEvent(watched.stream, (event) => {
       if (event) warnOnRuntimeError(event, sessionId, deps.type);
       signalFirstEvent();
@@ -1017,7 +1033,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       // Proof of life for the write-lock: a turn that is visibly producing
       // events must never be declared abandoned and stolen mid-flight (DOR-782).
       lifecycle.touch();
-      eventCount++;
+      if (eventCount++ === 0 && event) opts.onDelivered?.();
     });
 
     // Run the turn detached, double-wrapped. Inner: the stall watchdog abandons a

@@ -26,11 +26,16 @@
  * answer exactly as they did. Reading through `c.req.arrayBuffer()` would hold
  * an unbounded chunked body in memory before any ceiling could apply.
  *
+ * Refusals are problem documents (DOR-4979). The Standard Webhooks senders
+ * that call this read only the status (a 2xx is delivered, anything else is
+ * retried), so the body is ours to choose.
+ *
  * @module services/connectors/events/signed-ingress
  */
 import type { IncomingMessage } from 'node:http';
 import bodyParser from 'body-parser';
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import typeis from 'type-is';
 import { CONNECTOR_EVENT_MAX_RAW_BYTES } from '@dorkos/shared/connector-event-schemas';
 import type {
@@ -62,26 +67,34 @@ const readRawBody = bodyParser.raw({
   inflate: false,
 });
 
+/** The one answer for an unsigned, stale or unknown event: it names no check. */
+function invalidSignature(c: Context<ApiEnv>): Response {
+  return problem(c, 'invalid_signature', { detail: 'This event’s signature didn’t check out.' });
+}
+
+/** The answer while the protected inbox can't take events. */
+function eventsUnavailable(c: Context<ApiEnv>): Response {
+  return problem(c, 'temporarily_unavailable', {
+    detail: 'DorkOS can’t take events right now. Send it again later.',
+  });
+}
+
 /**
  * Read the raw body into `incoming.body`, or say why it could not be read.
  *
- * @returns `undefined` once read, else the refusal status and code.
+ * @returns `undefined` once read, else whether it was too large or unreadable.
  */
 function readBody(
   incoming: ReadRequest,
   outgoing: Parameters<typeof readRawBody>[1]
-): Promise<{ status: 413 | 400; error: string } | undefined> {
+): Promise<'too_large' | 'unreadable' | undefined> {
   return new Promise((resolve) => {
     readRawBody(incoming, outgoing, (error?: unknown) => {
       if (error === undefined || error === null) return resolve(undefined);
       incoming.body = undefined;
       const oversized =
         typeof error === 'object' && 'type' in error && error.type === 'entity.too.large';
-      resolve(
-        oversized
-          ? { status: 413, error: 'EVENT_TOO_LARGE' }
-          : { status: 400, error: 'INVALID_EVENT_REQUEST' }
-      );
+      resolve(oversized ? 'too_large' : 'unreadable');
     });
   });
 }
@@ -104,15 +117,22 @@ export function mountConnectorSignedIngress(
       !typeis(incoming, ['application/json']) ||
       (headers['content-encoding'] && headers['content-encoding'] !== 'identity')
     ) {
-      return c.json({ error: 'UNSUPPORTED_EVENT_ENCODING' }, 415);
+      return problem(c, 'unsupported_media_type', {
+        detail: 'Send the event as uncompressed application/json.',
+      });
     }
     const unreadable = await readBody(incoming, c.env.outgoing);
-    if (unreadable) return c.json({ error: unreadable.error }, unreadable.status);
+    if (unreadable === 'too_large') {
+      return problem(c, 'request_too_large', { detail: 'That event is over the size limit.' });
+    }
+    if (unreadable === 'unreadable') {
+      return problem(c, 'malformed_request', { detail: 'The event’s body couldn’t be read.' });
+    }
 
     const providerInstanceId = c.req.param('providerInstanceId');
     const rawBody = incoming.body;
     if (providerInstanceId.length > 256 || !Buffer.isBuffer(rawBody)) {
-      return c.json({ error: 'INVALID_EVENT_REQUEST' }, 400);
+      return problem(c, 'malformed_request', { detail: 'The event’s body couldn’t be read.' });
     }
     const id = headers['webhook-id'];
     const timestamp = headers['webhook-timestamp'];
@@ -127,13 +147,13 @@ export function mountConnectorSignedIngress(
       !SAFE_PROVIDER_ID.test(providerInstanceId) ||
       providerInstanceId.includes('..')
     ) {
-      return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
+      return invalidSignature(c);
     }
     try {
       const verifier = ingress.verifier(providerInstanceId);
       if (!verifier) {
         incoming.body = undefined;
-        return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
+        return invalidSignature(c);
       }
       const verified = await verifier.verifyWebhook({
         rawBody,
@@ -143,14 +163,16 @@ export function mountConnectorSignedIngress(
       });
       // Drop the raw body before entering any later error or request handling.
       incoming.body = undefined;
-      if (verified.status !== 'verified') return c.json({ error: 'INVALID_EVENT_SIGNATURE' }, 401);
+      if (verified.status !== 'verified') return invalidSignature(c);
       const outcome = await ingress.accept(providerInstanceId, verified.event);
-      if (outcome === 'unavailable') return c.json({ error: 'EVENTS_UNAVAILABLE' }, 503);
-      if (outcome === 'rejected') return c.json({ error: 'EVENT_BINDING_REJECTED' }, 403);
+      if (outcome === 'unavailable') return eventsUnavailable(c);
+      if (outcome === 'rejected') {
+        return problem(c, 'forbidden', { detail: 'No notification set up here takes this event.' });
+      }
       return c.json({ accepted: true }, 202);
     } catch {
       incoming.body = undefined;
-      return c.json({ error: 'EVENTS_UNAVAILABLE' }, 503);
+      return eventsUnavailable(c);
     }
   });
 }

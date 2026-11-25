@@ -22,7 +22,7 @@ import {
   DATA_GRANT_FILE_PATHS,
   HOME_SELF_GRANT_PATHS,
   protectedPathGlob,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 import { isExactlyAgentHome, readFolderAllowList } from './agent-folder-allows.js';
 import {
   folderAllowEntry,

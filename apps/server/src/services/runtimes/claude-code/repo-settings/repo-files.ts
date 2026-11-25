@@ -14,7 +14,14 @@
  * @module services/runtimes/claude-code/repo-settings/repo-files
  */
 import { createHash } from 'node:crypto';
-import { lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
+import {
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import path from 'node:path';
 
 /** The largest file read. */
@@ -154,6 +161,19 @@ export function pickKeys(value: unknown, keys: readonly string[]): Record<string
 }
 
 /**
+ * The strings in an array, trimmed, blanks dropped; nothing for anything else. The one reading
+ * of a settings file's allow rules and folder entries, so every check compares the same strings.
+ *
+ * @param value - A settings value expected to be a list of strings.
+ */
+export function trimmedStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : []
+  );
+}
+
+/**
  * sha256, hex.
  *
  * @param content - Text or bytes.
@@ -170,6 +190,19 @@ export function sha256(content: string | Buffer): string {
  */
 export function repoRelative(root: string, abs: string): string {
   return path.relative(root, abs).split(path.sep).join('/');
+}
+
+/**
+ * A path by its real path, or resolved when it is not there.
+ *
+ * @param p - The path.
+ */
+export function realOrResolved(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 /**

@@ -47,7 +47,7 @@ import type {
 import { renderContextEntry } from '../../claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../codex/turn-input.js';
 import { buildOpenCodeParts } from '../../opencode/messaging/turn-input.js';
-import { parseTranscript } from '../../claude-code/sessions/transcript-parser.js';
+import { parseTranscript } from '../../claude-code/sessions/__tests__/parse-transcript.js';
 import { formatApprovalVerdict } from '../approval-verdict-block.js';
 
 /** A granted verdict, as the deliverer composes one from the approval row. */

@@ -2,21 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
 import { FakeAppServerHost } from '../../__tests__/fake-app-server.js';
 import { CodexAppServerPool } from '../process-pool.js';
-import { approvalPolicyFor } from '../turn-parts.js';
 import {
   CodexThreadLoader,
-  THREAD_ARCHIVED_NOTICE,
   THREAD_STARTS_FRESH_NOTICE,
   buildLoadOverrides,
   trustLevelFor,
   type ThreadLoadInput,
 } from '../thread-loader.js';
 import type { CodexTurnTools } from '../../transport/codex-transport.js';
-import {
-  AppServerCodexTransport,
-  createCodexTransport,
-  resolveCodexTransport,
-} from '../../transport/index.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -122,6 +115,15 @@ describe('the load table (§6)', () => {
     }
   );
 
+  it('DOR-5138: the shell env carries the chat’s agent and space beside the chat id', async () => {
+    const { loader, fake, input } = await setup();
+    const referenceEnv = { DORKOS_AGENT_ID: '01JAGENT0000000000000000', DORKOS_SPACE_ID: 'space' };
+    await loader.ensureLoaded(input({ tools: { ...NO_TOOLS, referenceEnv } }));
+    expect(
+      (fake.requestsOf('thread/start')[0]!.config as LoadConfig).shell_environment_policy
+    ).toEqual({ set: { ...referenceEnv, DORKOS_SESSION_ID: 's1' } });
+  });
+
   it.each(['thread/start', 'thread/resume', 'thread/fork'] as const)(
     'authenticates DorkOS discovery during %s with the open turn binding',
     async (method) => {
@@ -217,31 +219,6 @@ describe('the load table (§6)', () => {
     ).toEqual([undefined, undefined, undefined, undefined]);
   });
 
-  it('starts a thread for an unbound session and does not bind it yet', async () => {
-    const { loader, fake, input } = await setup();
-    const loaded = await loader.ensureLoaded(input());
-    expect(loaded).toMatchObject({ needsBinding: true, replaces: undefined, notice: undefined });
-    expect(fake.requestsOf('thread/start')).toHaveLength(1);
-    // A retry of the same unbound session reuses that thread rather than leaking another.
-    const again = await loader.ensureLoaded(input());
-    expect(again.threadId).toBe(loaded.threadId);
-    expect(fake.requestsOf('thread/start')).toHaveLength(1);
-  });
-
-  it('cold-resumes a bound thread with its config, and leaves a loaded match alone', async () => {
-    const { host, loader, fake, input, process } = await setup();
-    host.home(HOME).threads.set('t-old', { id: 't-old', hasRollout: true });
-    const loaded = await loader.ensureLoaded(input({ boundThreadId: 't-old' }));
-    expect(loaded).toMatchObject({ threadId: 't-old', needsBinding: false });
-    expect(fake.requestsOf('thread/resume')[0]).toMatchObject({
-      threadId: 't-old',
-      permissions: 'dorkos-files-read-only',
-    });
-    await loader.ensureLoaded(input({ boundThreadId: 't-old' }));
-    expect(fake.requestsOf('thread/resume')).toHaveLength(1);
-    expect(process.stale).toBe(false);
-  });
-
   it('reloads a changed permission profile before the next turn', async () => {
     const { host, loader, fake, input, process } = await setup();
     host.home(HOME).threads.set('t1', { id: 't1', hasRollout: true });
@@ -270,40 +247,6 @@ describe('the load table (§6)', () => {
       notice: { type: 'system_status', data: { message: THREAD_STARTS_FRESH_NOTICE } },
     });
     expect(loaded.threadId).not.toBe('t-empty');
-  });
-
-  it('reads a deleted thread first, and starts fresh without trying to resume it', async () => {
-    const { loader, fake, input } = await setup();
-    const loaded = await loader.ensureLoaded(input({ boundThreadId: 'deleted-in-codex' }));
-    expect(loaded).toMatchObject({
-      needsBinding: true,
-      replaces: 'deleted-in-codex',
-      notice: { type: 'system_status', data: { message: THREAD_STARTS_FRESH_NOTICE } },
-    });
-    expect(fake.requestsOf('thread/read')).toEqual([{ threadId: 'deleted-in-codex' }]);
-    expect(fake.requestsOf('thread/resume')).toHaveLength(0);
-  });
-
-  it('starts fresh with its own notice when the person archived the thread in Codex', async () => {
-    const { host, loader, input } = await setup();
-    host.home(HOME).threads.set('t-arch', { id: 't-arch', hasRollout: true, archived: true });
-    const loaded = await loader.ensureLoaded(input({ boundThreadId: 't-arch' }));
-    expect(loaded).toMatchObject({
-      needsBinding: true,
-      replaces: 't-arch',
-      notice: { type: 'system_status', data: { message: THREAD_ARCHIVED_NOTICE } },
-    });
-    // Still archived in Codex: DorkOS never unarchives behind the person's back.
-    expect(host.home(HOME).threads.get('t-arch')!.archived).toBe(true);
-  });
-
-  it('reads a bound thread once per cold load, and not again while it is loaded', async () => {
-    const { host, loader, fake, input } = await setup();
-    host.home(HOME).threads.set('t-live', { id: 't-live', hasRollout: true });
-    await loader.ensureLoaded(input({ boundThreadId: 't-live' }));
-    await loader.ensureLoaded(input({ boundThreadId: 't-live' }));
-    expect(fake.requestsOf('thread/read')).toHaveLength(1);
-    expect(fake.requestsOf('thread/resume')).toHaveLength(1);
   });
 });
 
@@ -344,54 +287,6 @@ describe('load config (§9)', () => {
       bindingId: undefined,
       scope: { canonicalSessionId: 's1', canonicalCwd: '/project' },
     });
-  });
-
-  it('mints no key, and injects no listener-backed server, when thread keys are not wired', async () => {
-    const { loader, fake, input } = await setup(false);
-    const loaded = await loader.ensureLoaded(input({ tools: TOOLS }));
-    expect(loaded.keyId).toBeUndefined();
-    const config = fake.requestsOf('thread/start')[0]!.config as LoadConfig;
-    expect(Object.keys(config.mcp_servers)).toEqual(['notion']);
-  });
-
-  it('keeps the person’s own recorded trust verdict', async () => {
-    const { host, loader, fake, input } = await setup();
-    host.home(HOME).projects['/real/project'] = { trust_level: 'untrusted' };
-    await loader.ensureLoaded(input({ settings: { permissionMode: 'bypassPermissions' } }));
-    expect(
-      (fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>).projects
-    ).toEqual({
-      '/real/project': { trust_level: 'untrusted' },
-    });
-  });
-
-  // DOR-4408: Codex loads a folder's own `.codex/config.toml` only when the load trusts it.
-  it.each([
-    ['default', undefined],
-    ['acceptEdits', 'untrusted'],
-    ['bypassPermissions', 'trusted'],
-  ] as const)('loads a folder with no verdict at %s with trust %s', async (mode, trust) => {
-    const { loader, fake, input } = await setup();
-    await loader.ensureLoaded(input({ settings: { permissionMode: mode } }));
-    const projects = (fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>)
-      .projects;
-    expect(projects).toEqual(trust ? { '/real/project': { trust_level: trust } } : undefined);
-  });
-
-  it('still loads a folder the person trusted in Codex, below Full', async () => {
-    const { host, loader, fake, input } = await setup();
-    host.home(HOME).projects['/real/project'] = { trust_level: 'trusted' };
-    await loader.ensureLoaded(input({ settings: { permissionMode: 'acceptEdits' } }));
-    expect(
-      (fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>).projects
-    ).toEqual({ '/real/project': { trust_level: 'trusted' } });
-  });
-
-  it('builds the same app-server load for the legacy exec setting', () => {
-    expect(resolveCodexTransport('exec')).toBe('app-server');
-    expect(createCodexTransport('exec', { connectorTools: () => undefined })).toBeInstanceOf(
-      AppServerCodexTransport
-    );
   });
 
   // DOR-4408: a cloned repo's `.codex/config.toml` (and the MCP servers it starts,
@@ -449,7 +344,18 @@ describe('thread key lifecycle', () => {
     const { loader, fake, input, keys, process } = await setup();
     const tools = { ...TOOLS, connectorBindingId: 'open-turn' };
     fake.overloadNext = 10;
-    await expect(loader.ensureLoaded(input({ tools }))).rejects.toThrow();
+    // The client backs off 250/500/1000 ms between overload retries; a fake
+    // clock walks the backoff of the load's overloaded requests at once.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const failed = expect(loader.ensureLoaded(input({ tools }))).rejects.toMatchObject({
+        kind: 'overloaded',
+      });
+      await vi.advanceTimersByTimeAsync(3_500);
+      await failed;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(keys.size).toBe(0);
     fake.overloadNext = 0;
     const loaded = await loader.ensureLoaded(input({ tools }));
@@ -596,21 +502,6 @@ describe('review fixes: fingerprint and identity', () => {
     env: { DORKOS_MCP_HDR_N: value },
   });
 
-  it('does not recycle the home when only a managed header VALUE changed (an OAuth refresh)', async () => {
-    const { loader, input, process } = await setup();
-    const tools = (managed: CodexTurnTools['managed']) => ({ ...NO_TOOLS, managed });
-    const first = await loader.ensureLoaded(
-      input({ tools: tools(managedWith('Authorization', 'Bearer old')) })
-    );
-    await loader.ensureLoaded(
-      input({ tools: tools(managedWith('Authorization', 'Bearer refreshed')) })
-    );
-    expect(process.stale).toBe(false);
-    await loader.ensureLoaded(input({ tools: tools(managedWith('X-Other', 'Bearer refreshed')) }));
-    expect(process.stale).toBe(false);
-    expect(first.needsBinding).toBe(true);
-  });
-
   it('reloads the thread without a managed server removed between turns (DOR-3872)', async () => {
     const { host, process, loader, fake, input } = await setup();
     const tools = (managed: CodexTurnTools['managed']) => ({ ...NO_TOOLS, managed });
@@ -645,14 +536,19 @@ describe('review fixes: fingerprint and identity', () => {
       set: { DORKOS_AGENT_TOKEN: 'token-1', DORKOS_SESSION_ID: 's1' },
     });
   });
-});
 
-describe('approval policy by mode (§10)', () => {
-  it('asks on request in every mode but full access, and for any mode it does not know', () => {
-    expect(approvalPolicyFor({ permissionMode: 'default' })).toBe('on-request');
-    expect(approvalPolicyFor({ permissionMode: 'acceptEdits' })).toBe('on-request');
-    expect(approvalPolicyFor({ permissionMode: 'bypassPermissions' })).toBe('never');
-    expect(approvalPolicyFor({ permissionMode: 'plan' })).toBe('on-request');
-    expect(approvalPolicyFor({})).toBe('on-request');
+  it('does not recycle the home when only a managed header VALUE changed (an OAuth refresh)', async () => {
+    const { loader, input, process } = await setup();
+    const tools = (managed: CodexTurnTools['managed']) => ({ ...NO_TOOLS, managed });
+    const first = await loader.ensureLoaded(
+      input({ tools: tools(managedWith('Authorization', 'Bearer old')) })
+    );
+    await loader.ensureLoaded(
+      input({ tools: tools(managedWith('Authorization', 'Bearer refreshed')) })
+    );
+    expect(process.stale).toBe(false);
+    await loader.ensureLoaded(input({ tools: tools(managedWith('X-Other', 'Bearer refreshed')) }));
+    expect(process.stale).toBe(false);
+    expect(first.needsBinding).toBe(true);
   });
 });

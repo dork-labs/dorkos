@@ -39,9 +39,18 @@ gates:
     purpose: Checks that the Linux CLI build accepts the exact attested Mac browser assets from the same source commit.
 
   # --- codex-binary-macos.yml ---
+  - id: wf.codex-binary-macos.scope
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: Decides from scripts/codex-macos-scope.sh, read from the base commit, whether a PR, queue entry or merge to main can reach the Codex binary suites, so only those pay for a macOS runner; any doubt runs them.
+  - id: wf.codex-binary-macos.attest
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: In a merge group with a Codex change only, checks whether codex-sandbox-macos already succeeded on the entry PR's current head, so the queue can skip the macOS run (DOR-5130); any doubt runs it.
   - id: wf.codex-binary-macos.codex-binary-macos
     source: .github/workflows/codex-binary-macos.yml
-    purpose: Runs the real Codex binary suites and protected-file probes on macOS, on Codex or release PRs and on request, so a release gets a macOS result.
+    purpose: Runs the real Codex binary suites and protected-file probes on macOS with no secrets, for every change that can reach them, every merge to main that does, and on request.
+  - id: wf.codex-binary-macos.codex-sandbox-macos
+    source: .github/workflows/codex-binary-macos.yml
+    purpose: Reports on every PR and queue build that the macOS Codex suites passed, were out of scope, or already passed on the PR head, and fails closed on anything else (DOR-4402).
 
   # --- mac-browser-reading.yml ---
   - id: wf.mac-browser-reading.read
@@ -154,6 +163,9 @@ gates:
     purpose: Weekly CodeQL security scan of main for injection, path traversal and similar bug classes.
 
   # --- credential-free-build.yml ---
+  - id: wf.credential-free-build.attest
+    source: .github/workflows/credential-free-build.yml
+    purpose: In a merge group only, checks whether credential-free-build already succeeded on the entry PR's current head, so the queue can skip re-running it (DOR-5130); any doubt runs the real check.
   - id: wf.credential-free-build.credential-free-build
     source: .github/workflows/credential-free-build.yml
     purpose: Proves the app installs, builds, typechecks, lints and boots with no cloud credentials or private-repo variables present.
@@ -169,12 +181,18 @@ gates:
     purpose: Restores the pnpm overrides block Dependabot drops from pnpm-lock.yaml, so its PRs can install at all.
 
   # --- desktop-release.yml ---
+  - id: wf.desktop-release.tag-is-on-main
+    source: .github/workflows/desktop-release.yml
+    purpose: On a manual run of main's copy only, picks the commit to build (main's, or the tag input's) and refuses it unless main's tag-is-on-main.sh accepts it, so the signing job only ever runs checked code.
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
-    purpose: Builds, signs and notarizes the macOS desktop app on a release tag, checks its signature and Gatekeeper, attaches it, and publishes the draft release.
+    purpose: Builds the macOS desktop app at the checked commit, signs and notarizes it behind the release environment (main only), checks its signature and Gatekeeper, and uploads it for publish.
   - id: wf.desktop-release.build-windows
     source: .github/workflows/desktop-release.yml
-    purpose: Builds the unsigned Windows installer on a release tag, silent-installs it, and attaches it, without blocking the release.
+    purpose: Builds the unsigned Windows installer, silent-installs it, and uploads it for publish, without blocking the release.
+  - id: wf.desktop-release.publish
+    source: .github/workflows/desktop-release.yml
+    purpose: On a tag run of main's copy only, checks the tag still names the built commit, attaches the verified macOS and Windows artifacts to the draft release and publishes it; the one job here that may write to a release.
 
   # --- desktop-renderer.yml ---
   - id: wf.desktop-renderer.renderer-defines
@@ -187,6 +205,9 @@ gates:
     purpose: Packages and launches the macOS app and proves its bundled server answers and shuts down cleanly.
 
   # --- docs-openapi-check.yml ---
+  - id: wf.docs-openapi-check.attest
+    source: .github/workflows/docs-openapi-check.yml
+    purpose: In a merge group only, checks whether openapi-fresh already succeeded on the entry PR's current head, so the queue can skip re-running it (DOR-5130); any doubt runs the real check.
   - id: wf.docs-openapi-check.openapi-fresh
     source: .github/workflows/docs-openapi-check.yml
     purpose: Fails when the committed OpenAPI spec or generated API reference has drifted from the Zod schemas.
@@ -205,6 +226,9 @@ gates:
     purpose: Runs the harness projection engine and CLI harness-sync suites on a real Windows runner.
 
   # --- lint.yml ---
+  - id: wf.lint.attest
+    source: .github/workflows/lint.yml
+    purpose: In a merge group only, checks whether lint already succeeded on the entry PR's current head, so the queue can skip re-running it (DOR-5130); any doubt runs the real check.
   - id: wf.lint.lint
     source: .github/workflows/lint.yml
     purpose: Full-monorepo Prettier check, ESLint for every package, and ESLint for the repo-root scripts and hooks.
@@ -220,25 +244,31 @@ gates:
     purpose: Fails a change to the seeded skill pack unless its version is strictly higher than the base branch's.
 
   # --- publish-docker.yml ---
+  - id: wf.publish-docker.tag-is-on-main
+    source: .github/workflows/publish-docker.yml
+    purpose: On a manual run of main's copy with a tag only, refuses to push or mirror any image unless main's tag-is-on-main.sh accepts that tag's commit.
   - id: wf.publish-docker.build-and-push
     source: .github/workflows/publish-docker.yml
-    purpose: Builds the multi-arch Docker image from the published npm package on a release tag and pushes it to GHCR.
+    purpose: On a manual run of main's copy with a tag, builds the multi-arch Docker image at the tag's checked commit from the published npm package and pushes it to GHCR.
   - id: wf.publish-docker.build-and-push-hub
     source: .github/workflows/publish-docker.yml
-    purpose: On a release tag, builds the hub image DorkOS Cloud boots, pushes it to GHCR by version and commit, and attests and verifies its digest.
+    purpose: On a manual run of main's copy with a tag, builds the hub image DorkOS Cloud boots at the tag's checked commit, pushes it to GHCR by version and commit, and attests and verifies its digest.
   - id: wf.publish-docker.mirror-docker-hub
     source: .github/workflows/publish-docker.yml
-    purpose: Mirrors the released image to Docker Hub when the mirror is switched on.
+    purpose: In the same run, copies the GHCR image build-and-push just pushed to Docker Hub by its digest, when the mirror is switched on.
 
   # --- publish-community.yml ---
+  - id: wf.publish-community.tag-is-on-main
+    source: .github/workflows/publish-community.yml
+    purpose: On a v* tag push, refuses to publish the Community image and manifest unless the tag is exactly vX.Y.Z and main's tag-is-on-main.sh accepts its commit.
   - id: wf.publish-community.build-and-publish
     source: .github/workflows/publish-community.yml
-    purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
+    purpose: On a v* tag push, publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
   # --- review-redispatch.yml ---
   - id: wf.review-redispatch.redispatch
     source: .github/workflows/review-redispatch.yml
-    purpose: Never gates a merge. Every 10 minutes, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
+    purpose: Never gates a merge. On every CLI Smoke Test finish on main (a tick after each push) and a 10-minute cron backstop, re-requests a lost automated review (re-review label) on PRs whose review check is red, up to the ladder in should-redispatch-review.sh, so pr-gates is not left waiting (DOR-5124; was merge-tail's second duty).
 
   # --- release-publish.yml ---
   - id: wf.release-publish.prove
@@ -247,14 +277,25 @@ gates:
   - id: wf.release-publish.prepare
     source: .github/workflows/release-publish.yml
     purpose: After the proof passes, installs and builds the release commit with main's release-cli (which proves again) and packs the three packages.
+  - id: wf.release-publish.gate
+    source: .github/workflows/release-publish.yml
+    purpose: Right before npm, refuses the publish unless main's release-gate.sh answers exactly SHIP for P, the proven release point (on main's first-parent history and not reverted, its full run on main green, every required check green in its merge-queue build); read-only, no secrets (DOR-5123).
+  - id: wf.release-publish.smoke
+    source: .github/workflows/release-publish.yml
+    purpose: Before npm, on ubuntu and macOS, refuses the publish unless the exact packed tarballs install into a clean prefix, report the release version, pass main's smoke test, answer a chat in the browser on the test runtime, and import cleanly; read-only, no secrets (DOR-5123).
   - id: wf.release-publish.publish
     source: .github/workflows/release-publish.yml
-    purpose: Publishes the packed tarballs to npm by trusted publishing only after the named approver, not the dispatcher, approved npm-release and the tip is unchanged.
+    purpose: Publishes the packed tarballs to npm by trusted publishing only after the gate shipped P, the named approver, not the dispatcher, approved npm-release, and the tip is unchanged.
 
   # --- queue-repeat-guard.yml ---
   - id: wf.queue-repeat-guard.door
     source: .github/workflows/queue-repeat-guard.yml
-    purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
+    purpose: Seconds after every merge-queue entry (when its changelog-fragment-check finishes), runs from main and takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
+
+  # --- queue-reentry.yml ---
+  - id: wf.queue-reentry.sweep
+    source: .github/workflows/queue-reentry.yml
+    purpose: Never gates a merge. After the merge queue itself takes a PR out, turns auto-merge back on once its head is green and mergeable (at most twice per head, never after a person's dequeue, a hold or a repeat failure), and asks the author once per head to merge main when it conflicts; also tells the author, once per head, of any PR with auto-merge on that conflicts with main, since GitHub then runs no checks or review on it (DOR-5098).
 
   # --- security-verdict.yml ---
   - id: wf.security-verdict.security-verdict
@@ -273,16 +314,63 @@ gates:
   - id: wf.auto-revert.revert
     source: .github/workflows/auto-revert.yml
     purpose: Never gates a merge. Opens a revert PR with auto-merge for a merge that broke main, only while the AUTO_REVERT repo variable is on (DOR-5122).
+  # --- rolling-bisect.yml ---
+  - id: wf.rolling-bisect.next
+    source: .github/workflows/rolling-bisect.yml
+    purpose: Never gates a merge. When a rolling main run (browser-test) still fails after its re-run, binary-searches the merges since the last green run by dispatching the workflow on each midpoint, at most ceil(log2 N) runs for N <= 16 merges (DOR-5122).
+  - id: wf.rolling-bisect.report
+    source: .github/workflows/rolling-bisect.yml
+    purpose: Never gates a merge. Names the bisected merge on its PR and the failure-group issues, or says once why the bisect stopped without one (DOR-5122).
+  - id: wf.rolling-bisect.revert
+    source: .github/workflows/rolling-bisect.yml
+    purpose: Never gates a merge. Opens a revert PR for the bisected merge through auto-revert.sh's revert path, only while the AUTO_REVERT repo variable is on (DOR-5122).
 
   # --- daily-sweep.yml ---
+  - id: wf.daily-sweep.due
+    source: .github/workflows/daily-sweep.yml
+    purpose: Never gates a merge. Lets the 17:13 UTC cron or the after-push backstop sweep only once today's slot has passed and no run has swept yet (timed-slot.sh).
   - id: wf.daily-sweep.sweep
     source: .github/workflows/daily-sweep.yml
     purpose: Never gates a merge. Once a day, rewrites one issue per release window listing the PRs merged since the last release that the design-ok or qa-real-data rules flag, for QA's and the designer's batch review (DOR-5120).
 
+  # --- daily-release.yml ---
+  - id: wf.daily-release.due
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Lets the 15:07 UTC cron or the after-push backstop go on only once today's slot has passed and no run has done it yet (timed-slot.sh), so the slot runs once a day even when GitHub drops the cron.
+  - id: wf.daily-release.plan
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Once a day (and by hand), reads the release state with daily-release.sh, picks P (newest main commit of 48 h with a green full run that release-gate.sh ships; for a rollback, P_prev, which the gate must still ship), plans the version with release-commit.ts, and writes what it would do to the step summary (DOR-5123).
+  - id: wf.daily-release.hold
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. On a rollback dispatch (action=rollback), opens an issue labelled release-hold with GITHUB_TOKEN (issues write only), which holds every new daily cut until a person closes it once the fix is on main; only while DAILY_RELEASE_LIVE is on (DOR-5123, design §6).
+  - id: wf.daily-release.cut
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Cuts release/vX.Y.Z at P and opens the release PR with the merge-tail app token, only while DAILY_RELEASE_LIVE is on; a rollback cuts release/vX.Y.(Z+1) at P_prev the same way, after its hold (DOR-5123).
+  - id: wf.daily-release.advance
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Tags a merged release PR and dispatches the native artifact, or dispatches release-publish.yml once that is green, only while DAILY_RELEASE_LIVE is on (DOR-5123).
+  - id: wf.daily-release.slot-done
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. Uploads the day's timed-slot artifact once a slot run's plan and chosen step finished, so no later cron or backstop run repeats the day's slot.
+
+  # --- release-watch.yml ---
+  - id: wf.release-watch.due
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Lets a watch go on once Release Publish succeeds, and on the after-push tick or the hourly cron only while the newest npm release is under 24 hours old and was last watched 55 minutes ago or more, and marks it watched (release-watch.sh due, DOR-5123).
+  - id: wf.release-watch.npx
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Checks that `npx -y dorkos@X.Y.Z --version` prints X.Y.Z from a clean npm cache on Linux, macOS and Windows, for the newest release's first 24 hours.
+  - id: wf.release-watch.surfaces
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Checks the newest release's three npm packages, its GHCR image's health, the Homebrew formula and both dorkos.ai download links, and lists new issues naming it, for its first 24 hours.
+  - id: wf.release-watch.report
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Opens or updates one release-watch issue per version and failing check group, and closes it when the group passes again (DOR-5123).
+
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml
-    purpose: Fails while the head lacks Security's sign-off (security-reviewed after the head, or a passing cloud security-verdict), so auto-merge waits for it (DOR-5107, DOR-5119). QA and design labels are notes for the daily sweep, not gates.
+    purpose: Fails while the head lacks Security's sign-off, so auto-merge waits for it (DOR-5107, DOR-5119). Security's sign-off is a signed review marker or the cloud verdict (a comment whose signature verifies against main's ci/security/allowed_signers for this head, or a passing security-verdict). QA and design labels are notes for the daily sweep, not gates.
 
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason
@@ -302,15 +390,18 @@ gates:
   # --- release-window-refresh.yml ---
   - id: wf.release-window-refresh.refresh
     source: .github/workflows/release-window-refresh.yml
-    purpose: Not a gate; re-runs failed release-window checks on open PRs once no freeze is set and main's VERSION is on npm, since GitHub raises no event for either.
+    purpose: Not a gate; re-runs failed release-window checks on open PRs once no freeze is set and main's VERSION is on npm, since GitHub raises no event for either; runs after every push to main, a release publish, a PR's failed first release-window attempt, and a 15-minute cron backstop.
 
   # --- scripts-test.yml ---
+  - id: wf.scripts-test.attest
+    source: .github/workflows/scripts-test.yml
+    purpose: In a merge group only, checks whether fixtures already succeeded on the entry PR's current head, and whether harness needs to run (main's scope list, then the same attested exit), so the queue can skip re-running them (DOR-5130); any doubt runs the real check.
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
     purpose: The required fixtures check; runs the shell fixture suites that pin the repo's guard hooks, gate scripts and assert scripts, and the docs-coverage-map drift check, on every PR and merge group.
   - id: wf.scripts-test.harness
     source: .github/workflows/scripts-test.yml
-    purpose: Typechecks and tests the TypeScript under scripts/, which no workspace package covers.
+    purpose: Typechecks and tests the TypeScript under scripts/, which no workspace package covers, and runs the shell suites that need node_modules; on every PR and queue entry the scope list can reach, unless the queue entry's PR head already passed it.
 
   # --- site-build.yml ---
   - id: wf.site-build.site-build
@@ -346,9 +437,12 @@ gates:
     purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, the 500-line ratchet, the API lint ratchet, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
 
   # --- update-homebrew.yml ---
+  - id: wf.update-homebrew.tag-is-on-main
+    source: .github/workflows/update-homebrew.yml
+    purpose: On a manual run of main's copy only, refuses to update the Homebrew tap unless main's tag-is-on-main.sh accepts the tag input's commit.
   - id: wf.update-homebrew.update-formula
     source: .github/workflows/update-homebrew.yml
-    purpose: Updates the Homebrew formula to the newly released npm version.
+    purpose: On a manual run of main's copy with a tag, updates the Homebrew formula (and the desktop cask once its dmg is attached) to that release.
 
   # --- lefthook.yml ---
   # Every command below opens with the CI Steward time-wrap
@@ -382,6 +476,12 @@ gates:
   - id: lefthook.pre-push.own-mocks
     source: lefthook.yml
     purpose: Refuses new vi.mock calls on our own modules before pushing.
+  - id: lefthook.pre-push.turn-port
+    source: lefthook.yml
+    purpose: Refuses an entry of the turn port's import baseline raised or added by hand before pushing.
+  - id: lefthook.pre-push.test-ratio
+    source: lefthook.yml
+    purpose: Refuses a package adding tests faster than source past its test budget, or a budget loosened by hand, before pushing.
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.

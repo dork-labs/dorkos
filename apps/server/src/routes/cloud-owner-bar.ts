@@ -5,21 +5,18 @@
  * all refuse the same callers with the same codes.
  *
  * The decision itself is `refuseUnlessAccountOwner` in `lib/caller-authority.ts`,
- * beside the other person bars. This module only words it, in the two shapes
- * these routes answer with:
+ * beside the other person bars. This module only words it, as a `403`
+ * problem document (DOR-4979): `person_only` for anything but a person,
+ * `owner_only` for a person signed in to another account. The app reads the
+ * sentence out of its `detail`.
  *
- * - **An envelope** (`{ ok: false, code, message }`) for the writes whose
- *   answer is already an `ok` envelope — billing pages, export, deletion,
- *   seats, the link check, hosted spaces. The app reads the sentence out of it
- *   instead of saying the account could not be reached.
- * - **An error** (`{ error, code }`) for the writes that answer with a status
- *   object — the link flow and the credits choices — so the transport's thrown
- *   error carries the sentence as its message.
- *
- * Both answer 403: a refusal of the caller, not of the request.
+ * One older shape is left, `errorRefusalUnlessOwner` (`{ error, code }`), for
+ * the connected-apps spending routes that have not moved to problems yet.
  *
  * @module routes/cloud-owner-bar
  */
+import { problem, problemBody } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
 import type { RequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { Context } from 'hono';
@@ -62,23 +59,6 @@ function refusalFor(
 }
 
 /**
- * The 403 body for the writes that answer with an envelope, for a route on the
- * Hono chain that answers it itself: `c.json(body, 403)`.
- *
- * @param caller - The request's facts.
- * @param wording - What this write says when it refuses.
- * @returns `{ ok: false, code, message }`, or `undefined` when the caller owns
- *   this install.
- */
-export function envelopeRefusalUnlessOwner(
-  caller: RequestFacts,
-  wording: AccountOwnerWording
-): { ok: false; code: string; message: string } | undefined {
-  const refusal = refusalFor(caller, wording);
-  return refusal === undefined ? undefined : { ok: false, ...refusal };
-}
-
-/**
  * The 403 body for the writes that answer with a status object, for a route on
  * the Hono chain that answers it itself: `c.json(body, 403)`.
  *
@@ -92,6 +72,27 @@ export function errorRefusalUnlessOwner(
 ): { error: string; code: string } | undefined {
   const refusal = refusalFor(caller, wording);
   return refusal === undefined ? undefined : { error: refusal.message, code: refusal.code };
+}
+
+/**
+ * The 403 problem document for a write that answers problems, for a route on
+ * the Hono chain: send it with `sendProblem`, or hand it back from a held
+ * action's commit as its body.
+ *
+ * @param caller - The request's facts.
+ * @param wording - What this write says when it refuses.
+ * @returns `person_only` or `owner_only`, or `undefined` when the caller owns
+ *   this install.
+ */
+export function problemRefusalUnlessOwner(
+  caller: RequestFacts,
+  wording: AccountOwnerWording
+): Problem | undefined {
+  const refusal = refusalFor(caller, wording);
+  if (refusal === undefined) return undefined;
+  return problemBody(refusal.code === PERSON_ONLY_CODE ? 'person_only' : 'owner_only', {
+    detail: refusal.message,
+  });
 }
 
 /**
@@ -114,19 +115,15 @@ export function runAccountWrite(
     subject: 'the DorkOS account',
     run: async (confirming) => {
       if (refuseUnlessAccountOwner(confirming) !== undefined) {
-        return c.json(
-          { error: 'Only the owner can change this account.', code: 'owner_only' },
-          403
-        );
+        return problem(c, 'owner_only', { detail: 'Only the owner can change this account.' });
       }
       if (
         generation !== getCloudLinkGeneration() ||
         token !== (configManager.get('cloud')?.instanceToken ?? null)
       ) {
-        return c.json(
-          { error: 'The account link changed. Try again.', code: 'ACCOUNT_LINK_CHANGED' },
-          409
-        );
+        return problem(c, 'precondition_failed', {
+          detail: 'The account link changed. Try again.',
+        });
       }
       return action.run(confirming);
     },

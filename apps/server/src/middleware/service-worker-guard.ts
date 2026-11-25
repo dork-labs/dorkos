@@ -17,6 +17,7 @@
  * @module middleware/service-worker-guard
  */
 import type { MiddlewareHandler } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 
 /** The one worker script this origin serves: DorkOS's push notifications. */
@@ -26,7 +27,7 @@ export const DORKOS_SERVICE_WORKER_PATH = '/sw.js';
 export const refuseForeignServiceWorkers: MiddlewareHandler<ApiEnv> = async (c, next) => {
   const fetchingWorker = c.env.incoming.headers['service-worker'] === 'script';
   if (fetchingWorker && c.req.path !== DORKOS_SERVICE_WORKER_PATH) {
-    return c.json({ error: 'Only DorkOS’s own service worker runs here.' }, 403);
+    return problem(c, 'forbidden', { detail: 'Only DorkOS’s own service worker runs here.' });
   }
   await next();
 };

@@ -61,6 +61,7 @@ function gate(): { wait: Promise<void>; open: () => void } {
 
 function send(content: string, clientId: string, extra: Record<string, unknown> = {}) {
   return dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId,
     content,

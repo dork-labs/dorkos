@@ -1,11 +1,11 @@
 /**
- * The Wi-Fi level (F4 part 3, DOR-2969; plan `2026-10-accounts-and-devices`).
+ * The network level (F4 part 3, DOR-2969; plan `2026-10-accounts-and-devices`).
  *
- * A person signed in over Wi-Fi reaches DorkOS over plain `http` on the local
+ * A person signed in over the network reaches DorkOS over plain `http` on the local
  * network, where anyone on the same network can watch or relay the traffic.
  * The level is about that proof, not the place (DOR-3172): the same person on
  * the own tunnel, managed remote access or `https` gets what the desk gets
- * (`isOnEncryptedConnection` in `../gate-policy.ts`). So a Wi-Fi sign-in gets
+ * (`isOnEncryptedConnection` in `../gate-policy.ts`). So a network sign-in gets
  * a lower level: it can chat, read, and answer
  * approvals that are not front-door settings, and is refused (403,
  * {@link NOT_FROM_WIFI}) on everything in {@link WIFI_REFUSED_ROUTES}:
@@ -17,13 +17,13 @@
  * - **API keys**, all of `/api/auth/api-key/*`, reads included: a key is not
  *   bound to a route, so one made or read here would work from anywhere;
  * - **`/mcp` and A2A by cookie**: an agent tool brings its own key, never a
- *   person's Wi-Fi sign-in;
+ *   person's network sign-in;
  * - **Owner-only front-door settings**: remote access and the own tunnel,
- *   Wi-Fi itself, the session relay, runtime credentials and sign-ins, package
+ *   network access itself, the session relay, runtime credentials and sign-ins, package
  *   sources, and the password. `PATCH /api/config` carries front-door settings
  *   in its body, so that route runs the front-door bar on them itself
  *   (`refuseFrontDoorChange` in `lib/caller-authority.ts`), which refuses
- *   Wi-Fi as it refuses every caller neither at this computer nor on an
+ *   the network as it refuses every caller neither at this computer nor on an
  *   encrypted connection;
  * - **the host itself**: resetting or restarting DorkOS, syncing or adopting
  *   the harness, adding a workspace, folder or agent, turning on and setting
@@ -33,8 +33,8 @@
  *   app's stored credential;
  * - **signing out everywhere**, here and through Better Auth.
  *
- * A request is at the Wi-Fi level when the Wi-Fi listener admitted it (its
- * ingress mark, read by the request classifier). A Wi-Fi sign-in works only on
+ * A request is at the network level when the network listener admitted it (its
+ * ingress mark, read by the request classifier). A network sign-in works only on
  * that listener (`./session-route.ts`), so this covers every request it
  * can make, and an API key or a request with no credential arriving the same
  * way is held to the same level.
@@ -47,6 +47,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 import type { MiddlewareHandler } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../../../../http/api-chain.js';
 import { honoRequestFacts } from '../../../../http/request-facts.js';
 import { classifyRequest, type ClassifierFacts } from '../../../../lib/request-classifier.js';
@@ -54,11 +55,11 @@ import { currentServerRole } from '../../../../lib/server-role.js';
 import { upgradeFacts } from '../../streams/stream-upgrade-auth.js';
 import { mayCarrySessionCookie } from './session-route.js';
 
-/** Refusal code for an action a Wi-Fi sign-in may not take. */
+/** Refusal code for an action a network sign-in may not take. */
 export const NOT_FROM_WIFI = 'NOT_FROM_WIFI';
 
 /**
- * What a Wi-Fi sign-in reads when an action's tier is beyond its level: a
+ * What a network sign-in reads when an action's tier is beyond its level: a
  * capability that acts or destroys, called directly, or a destructive one
  * approved. Those two checks live where the tier is known
  * (`routes/capabilities-invoke.ts`, `routes/approvals.ts`), not in the list.
@@ -66,16 +67,16 @@ export const NOT_FROM_WIFI = 'NOT_FROM_WIFI';
 export const WIFI_ACTION_REFUSAL = 'Do this at this computer.';
 
 /**
- * What a Wi-Fi sign-in reads when it answers with a standing yes: an
+ * What a network sign-in reads when it answers with a standing yes: an
  * approval's "Always allow", a tool prompt's always-allow, an extension's "next
- * time, on its own". From Wi-Fi an answer is Allow once or Deny, never a yes
+ * time, on its own". From the network an answer is Allow once or Deny, never a yes
  * that outlives the request (DOR-2969).
  */
 export const WIFI_STANDING_YES_REFUSAL = 'Always allow is only available at this computer.';
 
 /**
- * The refusal for a standing yes from Wi-Fi, or `undefined` when the request
- * is not from Wi-Fi or the answer is not a standing one.
+ * The refusal for a standing yes from the network, or `undefined` when the request
+ * is not from the network or the answer is not a standing one.
  *
  * @param facts - The request's TCP peer, raw headers and ingress.
  * @param standing - Whether the answer would outlive this request.
@@ -112,7 +113,7 @@ export interface WifiRefusedRoute {
   /**
    * Refused when the request carries a session cookie or no `Authorization`
    * header. A bearer with no cookie at all is left to the surface's own key
-   * check, which on Wi-Fi never accepts a cookie (`middleware/mcp-auth.ts`).
+   * check, which on the network never accepts a cookie (`middleware/mcp-auth.ts`).
    */
   readonly cookieOnly?: boolean;
   /** The sentence the person reads. */
@@ -122,7 +123,7 @@ export interface WifiRefusedRoute {
 /** Where a refused action can be done instead, as every reason ends. */
 const ON_THE_COMPUTER = 'at this computer.';
 
-/** Every route a Wi-Fi sign-in is refused on. The single source of the level. */
+/** Every route a network sign-in is refused on. The single source of the level. */
 export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
   {
     // Private browser metadata is read only for the owner over a trusted connection.
@@ -181,14 +182,14 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     methods: 'all',
     pattern: /^\/mcp(?:\/|$)/,
     cookieOnly: true,
-    reason: 'Agent tools need their own key, not a Wi-Fi sign-in.',
+    reason: 'Agent tools need their own key, not a sign-in from your network.',
   },
   {
     surface: 'a2a',
     methods: 'all',
     pattern: /^\/a2a(?:\/|$)/,
     cookieOnly: true,
-    reason: 'Agent tools need their own key, not a Wi-Fi sign-in.',
+    reason: 'Agent tools need their own key, not a sign-in from your network.',
   },
   {
     surface: 'front-door',
@@ -373,7 +374,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
 /** Methods that only read. Everything else is a write. */
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** A refusal at the Wi-Fi level. */
+/** A refusal at the network level. */
 export interface WifiLevelRefusal {
   /** Always 403. */
   readonly status: 403;
@@ -399,7 +400,7 @@ export interface WifiLevelRequest {
 }
 
 /**
- * Whether a request is at the Wi-Fi level: the Wi-Fi listener admitted it.
+ * Whether a request is at the network level: the network listener admitted it.
  *
  * @param facts - The request's TCP peer, raw headers and ingress.
  */
@@ -446,7 +447,7 @@ export function matchWifiRefusedRoute(
 }
 
 /**
- * The refusal for a request at the Wi-Fi level that matches a refused route,
+ * The refusal for a request at the network level that matches a refused route,
  * or `undefined` when it may go on.
  *
  * @param request - The request.
@@ -473,7 +474,7 @@ function pathSpellings(raw: string, decoded?: string): string[] {
 }
 
 /**
- * The Wi-Fi level on the HTTP chain. Runs before Better Auth and the session
+ * The network level on the HTTP chain. Runs before Better Auth and the session
  * gate, so it reads the listener's mark rather than a resolved user.
  *
  * @returns The middleware.
@@ -486,13 +487,14 @@ export function wifiLevelMiddleware(): MiddlewareHandler<ApiEnv> {
       paths: pathSpellings(raw, c.req.path),
       facts: honoRequestFacts(c),
     });
-    if (refusal) return c.json({ error: refusal.error, code: refusal.code }, 403);
+    // The problem code; `refusal.code` keeps the spelling its other senders share.
+    if (refusal) return problem(c, 'not_from_wifi', { detail: refusal.error });
     await next();
   };
 }
 
 /**
- * The Wi-Fi level on a WebSocket upgrade, which runs no chain.
+ * The network level on a WebSocket upgrade, which runs no chain.
  *
  * @param req - The upgrade request.
  * @param pathname - The parsed pathname the router routes on.

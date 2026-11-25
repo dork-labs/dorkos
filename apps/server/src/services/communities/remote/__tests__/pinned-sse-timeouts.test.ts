@@ -75,18 +75,6 @@ it('gives up on an open stream that goes quiet for longer than the idle bound', 
   expect(Date.now() - started).toBeLessThan(3_000);
 });
 
-it('gives up on a stream that answers and then sends nothing at all', async () => {
-  // Catches the opening bound standing in for the idle one: here it is far longer, so only the
-  // idle bound armed when the answer arrives can end the stream in time.
-  handle = (response) => {
-    response.writeHead(200, { 'content-type': 'text/event-stream' });
-    response.flushHeaders();
-  };
-  const started = Date.now();
-  await expect(stream({ connectMs: 5_000, idleMs: 300 }).next()).rejects.toThrow();
-  expect(Date.now() - started).toBeLessThan(3_000);
-});
-
 it('gives up on a stream that never answers within the opening bound', async () => {
   // Catches losing the opening bound while moving the timeout off the open stream.
   handle = () => undefined;

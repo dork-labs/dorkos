@@ -326,6 +326,10 @@ describe('dispatchSessionMessage', () => {
         });
 
         expect(isSessionLaunchRefusal(result) && result.refused, cwd).toBe('DESK_NOT_OWN');
+        // The sentence reaches a problem's `detail`, which never carries a path.
+        const message = isSessionLaunchRefusal(result) ? result.message : '';
+        expect(message).toMatch(/room's files/u);
+        expect(message).not.toContain('/dork/rooms');
       }
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
       expect(dispatchMessage).not.toHaveBeenCalled();

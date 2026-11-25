@@ -15,7 +15,7 @@ describe('API key confirmation', () => {
       const list = Array.isArray(before.body) ? before.body : before.body.apiKeys;
       expect(list.every((key: { name: string }) => key.name !== 'Northwind')).toBe(true);
       expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
       const confirmed = await owner.confirm(held.body.heldActionId, via);
       expect(confirmed.body).toMatchObject({
@@ -40,7 +40,7 @@ describe('API key confirmation', () => {
         .set('x-api-key', key.key)
         .send({ name: 'Other key' });
       expect(program.status).toBe(403);
-      expect(program.body).toMatchObject({ code: 'not-a-person' });
+      expect(program.body).toMatchObject({ code: 'person_only' });
       expect(program.body.heldActionId).toBeUndefined();
       expect(
         (await owner.call('post', '/api/auth/api-key/delete', via).send({ keyId: key.id })).status

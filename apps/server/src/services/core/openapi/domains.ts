@@ -10,16 +10,13 @@ import { registerSessionLocationsOpenApi } from '../../session/resolution/sessio
 import { registerProjectsOpenApi } from '../../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from '../usage/account-eligibility-openapi.js';
 import { registerKeepAwakeOpenApi } from '../keep-awake/keep-awake-openapi.js';
-import { registerTodoPromisesOpenApi } from '../../todos/todo-promises-openapi.js';
-import { registerTodosOpenApi } from '../../todos/todos-openapi.js';
-import { env } from '../../../env.js';
-import { registerWorkQueueOpenApi } from '../../work-queue/work-queue-openapi.js';
 import { registerHeartbeatsOpenApi } from '../../heartbeats/heartbeats-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
 import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
+import { registerRelayAdapterOpenApi } from './relay-adapters.js';
 import { registerConnectorExclusionsOpenApi } from '../../connectors/access/exclusions-openapi.js';
 import { registerMiniAppAccessOpenApi } from '../../connectors/extensions/mini-app-access-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
@@ -41,16 +38,13 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerProjectsOpenApi(registry);
   registerAccountEligibilityOpenApi(registry);
   registerKeepAwakeOpenApi(registry);
-  registerTodoPromisesOpenApi(registry);
-  // To-dos (DOR-3088): documented only where they are mounted, behind their flag.
-  if (env.DORKOS_TODOS_ENABLED) registerTodosOpenApi(registry);
-  registerWorkQueueOpenApi(registry);
   registerHeartbeatsOpenApi(registry);
   registerOnboardingOpenApi(registry);
   registerComputerOpenApi(registry);
   registerFileWriteOpenApi(registry);
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
+  registerRelayAdapterOpenApi(registry);
   registerConnectorExclusionsOpenApi(registry);
   registerMiniAppAccessOpenApi(registry);
   registerLocalBrowserOpenApi(registry);

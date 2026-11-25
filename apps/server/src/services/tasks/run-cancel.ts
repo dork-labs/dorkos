@@ -37,8 +37,29 @@ export type CancelRunOutcome =
   | { state: 'already_finished' }
   /** A runner has the request and the run is ending. */
   | { state: 'stopping' }
-  /** The request went out and nothing acknowledged it. */
-  | { state: 'unconfirmed'; reason: string };
+  /**
+   * The request went out and nothing acknowledged it. `why` says which way,
+   * for a caller that words it; `reason` is the full account for the log, and
+   * can carry a bus's own error text, so it never reaches an HTTP answer.
+   */
+  | { state: 'unconfirmed'; why: UnconfirmedStop; reason: string };
+
+/**
+ * Why a stop was not confirmed: no bus to send it on, a send that threw, a
+ * bus that refused it, or a send nobody answered.
+ */
+export type UnconfirmedStop = 'no_bus' | 'send_failed' | 'refused' | 'no_answer';
+
+/**
+ * A stop nobody confirmed.
+ *
+ * @param why - Which way it went unconfirmed.
+ * @param reason - The full account, for the log only.
+ * @returns The outcome.
+ */
+export function unconfirmedStop(why: UnconfirmedStop, reason: string): CancelRunOutcome {
+  return { state: 'unconfirmed', why, reason };
+}
 
 /**
  * Why the bus refused to carry a stop, in words for the person who pressed the

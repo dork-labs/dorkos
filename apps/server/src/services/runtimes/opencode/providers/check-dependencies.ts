@@ -22,6 +22,7 @@ import { credentialProvider, type CredentialProvider } from '../../../core/crede
 import { logger } from '../../../../lib/logger.js';
 import { resolveRuntimeBinary } from '../../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath, logProbeFailure } from '../../shared/run-probe.js';
+import { checkCliBinary } from '../../shared/program/cli-binary-check.js';
 import {
   OPENCODE_PACKAGE_VERSION,
   ensureProvisionedOpenCodeVersion,
@@ -60,7 +61,7 @@ const ENVIRONMENT_COUNT_PATTERN = /\b[1-9]\d*\s+environment variables?\b/;
 function runOpenCode(binary: string, args: string[]): Promise<string> {
   return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS, {
     runtime: 'opencode',
-    purpose: args.includes('--version') ? 'version-probe' : 'auth-probe',
+    purpose: 'auth-probe',
   });
 }
 
@@ -152,32 +153,6 @@ function warnIfVersionDrifted(binary: string, version: string): string | undefin
     `[OpenCode] opencode CLI at ${binary} reports version ${version}, DorkOS is pinned to ${OPENCODE_PACKAGE_VERSION} — continuing (you manage this binary)`
   );
   return OPENCODE_PACKAGE_VERSION;
-}
-
-/** Check that the OpenCode CLI binary resolves and answers `--version`. */
-async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
-  const name = 'OpenCode CLI';
-  const description = 'The OpenCode CLI powers OpenCode agent chats in DorkOS.';
-
-  if (binary) {
-    try {
-      const version = await runOpenCode(binary, ['--version']);
-      const requiredVersion = warnIfVersionDrifted(binary, version);
-      return { name, description, status: 'satisfied', version, requiredVersion };
-    } catch (err) {
-      // Binary resolved but failed to launch — fall through to "missing", with
-      // one log line saying why (DOR-1334 / F3).
-      logProbeFailure(name, binary, err);
-    }
-  }
-
-  return {
-    name,
-    description,
-    status: 'missing',
-    installHint: OPENCODE_INSTALL_HINT,
-    infoUrl: OPENCODE_INFO_URL,
-  };
 }
 
 /**
@@ -330,5 +305,16 @@ export async function checkOpenCodeDependencies(
   deps: OpenCodeDependencyDeps = {}
 ): Promise<DependencyCheck[]> {
   const binary = await resolveOpenCodeBinaryPath();
-  return Promise.all([checkCliBinary(binary), checkAuthState(binary, deps)]);
+  return Promise.all([
+    checkCliBinary(binary, {
+      name: 'OpenCode CLI',
+      description: 'The OpenCode CLI powers OpenCode agent chats in DorkOS.',
+      installHint: OPENCODE_INSTALL_HINT,
+      infoUrl: OPENCODE_INFO_URL,
+      runtime: 'opencode',
+      timeoutMs: PROBE_TIMEOUT_MS,
+      versionFields: (cli, version) => ({ requiredVersion: warnIfVersionDrifted(cli, version) }),
+    }),
+    checkAuthState(binary, deps),
+  ]);
 }

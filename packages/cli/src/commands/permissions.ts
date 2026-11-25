@@ -543,13 +543,13 @@ async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
     return 0;
   } catch (err) {
     printError(err);
-    if (err instanceof ApiError && err.body.code === 'UNDO_CONFLICT') {
-      const conflicts = (err.body as { conflicts?: PermissionUndoSkip[] }).conflicts ?? [];
+    const conflicts = err instanceof ApiError ? err.body.conflicts : undefined;
+    if (err instanceof ApiError && err.body.code === 'precondition_failed' && conflicts) {
       if (conflicts.length > 0) {
         console.error(
           renderTable(
             ['FOR', 'SETTING', 'WOULD SET', 'WHY'],
-            conflicts.map((skip) => skipRow(skip, UNDO_LABELS))
+            (conflicts as PermissionUndoSkip[]).map((skip) => skipRow(skip, UNDO_LABELS))
           )
         );
       }

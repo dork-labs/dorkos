@@ -19,8 +19,10 @@ import {
   CommunityTeammateSpendSchema,
 } from '@dorkos/shared/community-teammates';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { logger, logError } from '../lib/logger.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
+import { connectionNotFound as notFound } from './community-problems.js';
 import type { TeammateSpend } from '../services/communities/remote/wake/teammate-spend.js';
 import { getRemoteCommunityEnrollmentStore } from '../services/communities/remote/state.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -77,7 +79,9 @@ export function addTeammateSpendRoutes(
     if (!ref.success) return notFound(c);
     const body = CommunityTeammateSpendLimitRequestSchema.safeParse(readJsonBody(c));
     if (!body.success)
-      return c.json({ error: 'Enter a monthly limit of at least $0.01, or none.' }, 400);
+      return validationProblem(c, body.error, {
+        detail: 'Enter a monthly limit of at least $0.01, or none.',
+      });
     const next = body.data.monthlyLimitUsd;
     const run = async () => {
       try {
@@ -110,11 +114,8 @@ export function addTeammateSpendRoutes(
   });
 }
 
-function notFound(c: Context): Response {
-  return c.json({ error: 'Space connection not found.' }, 404);
-}
-
 function failure(c: Context, error: unknown): Response {
   if (error instanceof RemoteConnectionNotFoundError) return notFound(c);
-  return c.json({ error: 'Could not save the monthly limit. Try again.' }, 500);
+  logger.warn('[Communities] Could not read or save the teammates’ limit', logError(error));
+  return problem(c, 'internal_error', { detail: 'Couldn’t save the monthly limit. Try again.' });
 }

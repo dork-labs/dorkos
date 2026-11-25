@@ -110,7 +110,7 @@ describe('Shape apply confirmation', () => {
     expect(held.status).toBe(428);
     expect(setActiveShape).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(setActiveShape).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -126,7 +126,10 @@ describe('Shape apply confirmation', () => {
       .call('post', '/api/shapes/northwind-ghost/apply', 'own-tunnel')
       .send({});
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Shape 'northwind-ghost' is not installed" });
+    expect(res.body).toMatchObject({
+      code: 'not_found',
+      detail: "No Shape called 'northwind-ghost' is installed.",
+    });
   });
 
   it('forks one at once', async () => {

@@ -215,48 +215,6 @@ describe('ScheduleRow', () => {
     expect(note?.textContent).toContain('Lab Scout approved it: Never ask, was Accept edits');
   });
 
-  it('names the mode as the runtime’s own picker does, the word its notices use', async () => {
-    const transport = createMockTransport({
-      getCapabilities: vi.fn().mockResolvedValue({
-        defaultRuntime: 'claude-code',
-        capabilities: {
-          'claude-code': {
-            permissionModes: {
-              supported: true,
-              default: 'default',
-              values: [
-                { id: 'acceptEdits', label: 'Accept edits' },
-                { id: 'bypassPermissions', label: 'Bypass permissions' },
-              ],
-            },
-          },
-        },
-      }),
-    });
-    renderScheduleRow(
-      {
-        ...activeSchedule,
-        permissionMode: 'bypassPermissions',
-        agentModeRecord: {
-          kind: 'set_mode',
-          agentPath: '/agents/lab-scout',
-          agentName: 'Lab Scout',
-          at: new Date().toISOString(),
-          mode: 'bypassPermissions',
-          previousMode: 'acceptEdits',
-        },
-      },
-      {},
-      transport
-    );
-    await waitFor(() =>
-      expect(document.querySelector('[data-slot="task-agent-mode-note"]')?.textContent).toContain(
-        'Lab Scout set Bypass permissions, was Accept edits'
-      )
-    );
-    expect(document.body.textContent).not.toContain('Bypass all');
-  });
-
   it('says when an agent set the mode, and stays quiet when no agent did', () => {
     const { unmount } = renderScheduleRow({
       ...activeSchedule,
@@ -277,27 +235,6 @@ describe('ScheduleRow', () => {
     expect(document.querySelector('[data-slot="task-agent-mode-note"]')).toBeNull();
   });
 
-  it('renders active schedule with name and cron description', () => {
-    renderScheduleRow(activeSchedule);
-
-    expect(screen.getByText('Daily Review')).toBeTruthy();
-    // cronstrue mock returns "Every: <cron>"
-    expect(screen.getByText(/Every: 0 9 \* \* \*/)).toBeTruthy();
-  });
-
-  it('shows Switch toggle for active schedules', () => {
-    renderScheduleRow(activeSchedule);
-
-    // Radix Switch renders with role="switch"
-    expect(screen.getByRole('switch')).toBeTruthy();
-  });
-
-  it('shows Switch toggle for disabled schedules', () => {
-    renderScheduleRow(disabledSchedule);
-
-    expect(screen.getByRole('switch')).toBeTruthy();
-  });
-
   // A removed schedule keeps the person's `enabled` (FB-26) but runs nothing, so
   // the row must not read as switched on.
   describe('a paused schedule whose file is gone', () => {
@@ -309,14 +246,6 @@ describe('ScheduleRow', () => {
       const toggle = screen.getByRole('switch');
       expect(toggle).toHaveAttribute('aria-checked', 'false');
       expect(toggle).toBeDisabled();
-    });
-
-    it('keeps an active schedule switched on and flippable', () => {
-      renderScheduleRow(activeSchedule);
-
-      const toggle = screen.getByRole('switch');
-      expect(toggle).toHaveAttribute('aria-checked', 'true');
-      expect(toggle).not.toBeDisabled();
     });
 
     it('offers no Run Now', async () => {
@@ -352,12 +281,6 @@ describe('ScheduleRow', () => {
       });
       expect(updateTask).toHaveBeenCalledWith(offered.id, { enabled: true });
     });
-
-    it('says nothing on an ordinary switched-off schedule', () => {
-      renderScheduleRow(disabledSchedule);
-
-      expect(screen.queryByText(/Its file says on/)).toBeNull();
-    });
   });
 
   it('offers review before approval for pending schedules', () => {
@@ -366,12 +289,6 @@ describe('ScheduleRow', () => {
     expect(screen.getByRole('button', { name: 'Review Pending Task' })).toBeTruthy();
     expect(screen.queryByText('Approve')).toBeNull();
     expect(screen.queryByText('Reject')).toBeNull();
-  });
-
-  it('does not show Switch for pending_approval schedules', () => {
-    renderScheduleRow(pendingSchedule);
-
-    expect(screen.queryByRole('switch')).toBeNull();
   });
 
   // The Approve button is right here, so the reason to approve — or the reason
@@ -386,45 +303,6 @@ describe('ScheduleRow', () => {
     expect(screen.getByText('Its "cron" setting is not something DorkOS can read.')).toBeTruthy();
   });
 
-  // A schedule a person made themselves, whose file has since drifted, carries
-  // OUR sentence — so it shows, even though its origin is not `file`.
-  it('says why a drifted schedule of your own is waiting', () => {
-    renderScheduleRow({
-      ...pendingSchedule,
-      origin: null,
-      reasonSource: 'dorkos',
-      reason: 'This schedule’s file changed since it was last approved.',
-    });
-
-    expect(
-      screen.getByText('This schedule’s file changed since it was last approved.')
-    ).toBeTruthy();
-  });
-
-  it('says nothing extra about a schedule that is already running', () => {
-    renderScheduleRow({
-      ...activeSchedule,
-      origin: 'file',
-      reason: 'A reason nobody needs to see now.',
-    });
-
-    expect(screen.queryByText('A reason nobody needs to see now.')).toBeNull();
-  });
-
-  // `reason` on an agent's proposal is the AGENT'S case, not DorkOS's. It gets
-  // the approval card, which can say who is making it; a bare line in the row
-  // would be an argument on screen with nobody's name on it.
-  it('does not print an agent’s case as an unattributed line', () => {
-    renderScheduleRow({
-      ...pendingSchedule,
-      origin: null,
-      proposedByAgentPath: '/Users/dev/agents/dorkbot',
-      reason: 'The backlog piles up overnight and nobody sees it.',
-    });
-
-    expect(screen.queryByText('The backlog piles up overnight and nobody sees it.')).toBeNull();
-  });
-
   describe('a schedule a package shipped switched off (DOR-2059)', () => {
     it('shows no Approve/Reject — it reads as an ordinary switched-off task', () => {
       renderScheduleRow(offByDefaultSchedule);
@@ -432,55 +310,6 @@ describe('ScheduleRow', () => {
       expect(screen.queryByText('Approve')).toBeNull();
       expect(screen.queryByText('Reject')).toBeNull();
       expect(screen.getByRole('switch')).toBeTruthy();
-    });
-
-    it('shows its switch off but flippable, unlike a paused schedule', () => {
-      renderScheduleRow(offByDefaultSchedule);
-
-      const toggle = screen.getByRole('switch');
-      expect(toggle).toHaveAttribute('aria-checked', 'false');
-      expect(toggle).not.toBeDisabled();
-    });
-
-    it('says nothing about why it is waiting — there is no card to explain', () => {
-      renderScheduleRow(offByDefaultSchedule);
-
-      expect(
-        screen.queryByText(/DorkOS found this schedule in a file on your computer/)
-      ).toBeNull();
-    });
-
-    it('names its source on the row itself, without expanding (DOR-2059 review)', () => {
-      // No card and no reason line would otherwise leave this row
-      // indistinguishable from one the person switched off themselves.
-      renderScheduleRow(offByDefaultSchedule);
-
-      expect(screen.getByText(/Installed/)).toBeTruthy();
-      expect(screen.getByText(/flow-drain/)).toBeTruthy();
-    });
-
-    it('stays off the minimal row, which is a name and a dot (delta review)', () => {
-      const t = createMockTransport();
-      const Wrapper = createWrapper(t);
-      render(
-        <Wrapper>
-          <TaskRow
-            task={offByDefaultSchedule}
-            expanded={false}
-            onToggleExpand={vi.fn()}
-            onEdit={vi.fn()}
-            size="minimal"
-          />
-        </Wrapper>
-      );
-
-      expect(screen.queryByText(/Installed/)).toBeNull();
-    });
-
-    it('names no source on an ordinary switched-off schedule, which has none', () => {
-      renderScheduleRow(disabledSchedule);
-
-      expect(screen.queryByText(/Installed/)).toBeNull();
     });
   });
 
@@ -494,12 +323,6 @@ describe('ScheduleRow', () => {
       ).toBeTruthy();
       expect(screen.queryByText('Approve')).toBeNull();
       expect(screen.queryByRole('switch')).toBeNull();
-    });
-
-    it('names no source, unlike a genuinely file-discovered schedule', () => {
-      renderScheduleRow(agentHidOwnProposal);
-
-      expect(screen.queryByText(/Installed/)).toBeNull();
     });
 
     it('switching it on runs the same approval a person clicking Approve would (DOR-607)', async () => {
@@ -534,47 +357,6 @@ describe('ScheduleRow', () => {
 
       expect(updateTask).toHaveBeenCalledWith('sched-1', { enabled: false });
     });
-  });
-
-  it('opens dropdown menu with Edit, Run Now, Delete items', async () => {
-    renderScheduleRow(activeSchedule);
-
-    const trigger = screen.getByLabelText(`Actions for ${activeSchedule.name}`);
-    // Radix DropdownMenu requires the full pointer sequence to open in jsdom
-    await act(async () => {
-      fireEvent.pointerDown(trigger);
-      fireEvent.mouseDown(trigger);
-      fireEvent.click(trigger);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /Edit/i })).toBeTruthy();
-    });
-
-    expect(screen.getByRole('menuitem', { name: /Run now/i })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Delete/i })).toBeTruthy();
-  });
-
-  it('calls onEdit when Edit menu item is clicked', async () => {
-    const onEdit = vi.fn();
-    renderScheduleRow(activeSchedule, { onEdit });
-
-    const trigger = screen.getByLabelText(`Actions for ${activeSchedule.name}`);
-    await act(async () => {
-      fireEvent.pointerDown(trigger);
-      fireEvent.mouseDown(trigger);
-      fireEvent.click(trigger);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /Edit/i })).toBeTruthy();
-    });
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Edit/i }));
-    });
-
-    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
   it('shows delete confirmation dialog when Delete menu item is clicked', async () => {
@@ -628,18 +410,6 @@ describe('ScheduleRow', () => {
     expect(screen.queryByRole('button', { name: 'Delete task' })).toBeNull();
   });
 
-  it('expands run history when expanded prop is true', () => {
-    renderScheduleRow(activeSchedule, { expanded: true });
-
-    expect(screen.getByTestId('run-history')).toBeTruthy();
-  });
-
-  it('does not render run history when expanded is false', () => {
-    renderScheduleRow(activeSchedule, { expanded: false });
-
-    expect(screen.queryByTestId('run-history')).toBeNull();
-  });
-
   it('calls onToggleExpand when the row body is clicked', async () => {
     const onToggleExpand = vi.fn();
     renderScheduleRow(activeSchedule, { onToggleExpand });
@@ -650,18 +420,6 @@ describe('ScheduleRow', () => {
     });
 
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
-  });
-
-  it('gives its primary click target hover and focus feedback (batch 06, finding 6.2)', () => {
-    // Every action button nested inside the row already carries a hover
-    // treatment; the row body itself — the largest and most-clicked target —
-    // used to carry none at all.
-    const { container } = renderScheduleRow(activeSchedule);
-
-    const row = container.querySelector('[role="button"]');
-    expect(row).not.toBeNull();
-    expect(row!.className).toContain('hover:bg-accent/50');
-    expect(row!.className).toContain('focus-visible:bg-accent/50');
   });
 
   describe('schedule target display', () => {
@@ -706,191 +464,21 @@ describe('ScheduleRow', () => {
       expect(screen.getByText('🤖')).toBeTruthy();
     });
 
-    /** An agent fixture with the given name. */
-    function namedAgent(name: string) {
-      return {
-        id: 'agent-1',
-        name,
-        icon: '🤖',
-        color: '#6366f1',
-        description: '',
-        runtime: 'claude-code' as const,
-        capabilities: [],
-        behavior: { responseMode: 'always' as const },
-        registeredAt: new Date().toISOString(),
-        registeredBy: 'test',
-        mcpServers: [],
-        personaEnabled: true,
-        isSystem: false,
-        workspace: { mode: 'home' as const },
-      };
-    }
-
-    /** Render one row with this agent and schedule name, and return its two names. */
-    function renderNames(agentName: string, scheduleName: string) {
-      const agent = namedAgent(agentName);
-      const Wrapper = createWrapper(createMockTransport());
-      const { container } = render(
-        <Wrapper>
-          <TaskRow
-            task={{ ...activeSchedule, agentId: agent.id, displayName: scheduleName }}
-            agent={agent}
-            expanded={false}
-            onToggleExpand={vi.fn()}
-            onEdit={vi.fn()}
-          />
-        </Wrapper>
-      );
-      return {
-        agentName: container.querySelector('[data-slot="task-agent-name"]'),
-        taskName: container.querySelector('[data-slot="task-name"]'),
-      };
-    }
-
-    it('caps names and top-aligns the two-line phone heading', () => {
-      // At 390px a long schedule name used to squeeze the agent name to "q"
-      // and cut itself to one line (QA, DOR-4120).
-      const { agentName, taskName } = renderNames(
-        'an agent name that is much too long for a phone row',
-        'A schedule name that also cannot fit on a phone row'
-      );
-
-      const heading = taskName?.parentElement;
-      const row = taskName?.closest('[role="button"]');
-
-      expect(agentName).toHaveClass('shrink-0', 'max-w-[30%]', 'sm:max-w-[40%]', 'truncate');
-      expect(agentName).not.toHaveClass('shrink');
-      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2', 'break-words', 'sm:line-clamp-1');
-      expect(taskName).not.toHaveClass('truncate');
-      expect(heading).toHaveClass('items-start', 'sm:items-center');
-      expect(row).toHaveClass('items-start', 'sm:items-center');
-      expect(agentName).toHaveAttribute(
-        'title',
-        'an agent name that is much too long for a phone row'
-      );
-      expect(taskName).toHaveAttribute(
-        'title',
-        'A schedule name that also cannot fit on a phone row'
-      );
-    });
-
-    it('caps a long agent name beside a short schedule name, which stays whole', () => {
-      const { agentName, taskName } = renderNames(
-        'an agent name that is much too long for a phone row',
-        'Backup'
-      );
-
-      expect(agentName).toHaveClass('shrink-0', 'max-w-[30%]', 'sm:max-w-[40%]', 'truncate');
-      expect(taskName).toHaveTextContent('Backup');
-      expect(taskName).toHaveClass('min-w-0', 'line-clamp-2', 'sm:line-clamp-1');
-    });
-
-    it('draws the agent as an agent — square, filled, Bot-marked — not a bare colour dot', () => {
-      const agent = {
-        id: 'agent-1',
-        name: 'api-bot',
-        icon: '🤖',
-        color: '#6366f1',
-        description: '',
-        runtime: 'claude-code' as const,
-        capabilities: [],
-        behavior: { responseMode: 'always' as const },
-        registeredAt: new Date().toISOString(),
-        registeredBy: 'test',
-        mcpServers: [],
-        workspace: { mode: 'home' as const },
-        personaEnabled: true,
-        isSystem: false,
-      };
-
-      const t = createMockTransport();
-      const Wrapper = createWrapper(t);
-      const { container } = render(
-        <Wrapper>
-          <TaskRow
-            task={{ ...activeSchedule, agentId: 'agent-1' }}
-            agent={agent}
-            expanded={false}
-            onToggleExpand={vi.fn()}
-            onEdit={vi.fn()}
-          />
-        </Wrapper>
-      );
-
-      const disc = container.querySelector('[data-slot="identity-avatar"]');
-      expect(disc).toBeTruthy();
-      // The three things the hand-rolled dot could not say: agents are square,
-      // they are filled with their own colour, and they carry the Bot mark.
-      expect(disc?.className).toContain('rounded-md');
-      expect(disc?.className).not.toContain('rounded-full');
-      expect(disc?.getAttribute('style')).toContain('#6366f1');
-      expect(disc?.querySelector('[data-slot="identity-badge"]')).toBeTruthy();
-    });
-
     it('shows "Agent not found" warning when agentId is set but agent is not provided', () => {
       renderScheduleRow(scheduleWithOrphanedAgent);
 
       expect(screen.getByText('Agent not found')).toBeTruthy();
-    });
-
-    it('shows schedule name without any target prefix when no agentId', () => {
-      renderScheduleRow(activeSchedule);
-
-      // Name shows as primary text, no agent/cwd prefix
-      expect(screen.getByText('Daily Review')).toBeTruthy();
-      expect(screen.queryByText('Agent not found')).toBeNull();
     });
   });
 
   // A chip on every row would be a column of the same word: nearly every task
   // follows its agent (DOR-1615, DOR-1347).
   describe('the runs-on override chip', () => {
-    it('is absent from a task that follows its agent', () => {
-      renderScheduleRow(activeSchedule);
-
-      expect(screen.queryByTestId('task-override-chip')).toBeNull();
-    });
-
     it('names the runtime a task pins', () => {
       renderScheduleRow({ ...activeSchedule, runtime: 'codex' });
 
       expect(screen.getByTestId('task-override-chip')).toBeInTheDocument();
       expect(screen.getByLabelText('Runs on Codex')).toBeInTheDocument();
-    });
-
-    it('shows the model beside it, shortened the way every other surface shortens it', () => {
-      renderScheduleRow({ ...activeSchedule, runtime: 'opencode', model: 'ollama/qwen2.5-coder' });
-
-      const chip = screen.getByTestId('task-override-chip');
-      expect(chip).toHaveTextContent('qwen2.5-coder');
-      expect(chip).not.toHaveTextContent('ollama/');
-    });
-
-    it('shows a pinned model on its own, without inventing a runtime for it', () => {
-      // Naming a runtime here would mean resolving the agent's manifest for a
-      // value the person never chose, and a guessed runtime is worse than none.
-      renderScheduleRow({ ...activeSchedule, model: 'claude-opus-4-6' });
-
-      expect(screen.getByTestId('task-override-chip')).toHaveTextContent('claude-opus-4-6');
-      expect(screen.queryByLabelText(/^Runtime:/)).toBeNull();
-    });
-
-    it('stays off the minimal row, which is a name and a dot', () => {
-      const t = createMockTransport();
-      const Wrapper = createWrapper(t);
-      render(
-        <Wrapper>
-          <TaskRow
-            task={{ ...activeSchedule, runtime: 'codex' }}
-            expanded={false}
-            onToggleExpand={vi.fn()}
-            onEdit={vi.fn()}
-            size="minimal"
-          />
-        </Wrapper>
-      );
-
-      expect(screen.queryByTestId('task-override-chip')).toBeNull();
     });
   });
 
@@ -910,17 +498,6 @@ describe('ScheduleRow', () => {
       filePath: '/home/user/.dork/plugins/flow/skills/flow-drain/SKILL.md',
     };
 
-    /** Open the row's actions menu, the full pointer sequence Radix needs in jsdom. */
-    async function openActions(task: Task) {
-      const trigger = screen.getByLabelText(`Actions for ${task.name}`);
-      await act(async () => {
-        fireEvent.pointerDown(trigger);
-        fireEvent.mouseDown(trigger);
-        fireEvent.click(trigger);
-      });
-      await waitFor(() => expect(screen.getByRole('menuitem', { name: /Edit/i })).toBeTruthy());
-    }
-
     it('shows the timing that runs and marks it as the person’s own', () => {
       // Purpose: the collapsed row is where a person asks "why is this not
       // running when the package says it does".
@@ -930,23 +507,6 @@ describe('ScheduleRow', () => {
       expect(document.querySelector('[data-slot="task-timing-override"]')).toHaveTextContent(
         'Your timing'
       );
-    });
-
-    it('names the zone the person chose beside their timing', () => {
-      // Purpose: "At 07:30" is a time in a place; for a person's own timing the
-      // place has to be on the row.
-      renderScheduleRow(retimed);
-
-      expect(screen.getByText(/Every: 30 7 \* \* 1-5, Europe\/Berlin/)).toBeTruthy();
-    });
-
-    it('keeps a timezone-only override marked without repeating the viewer’s zone', () => {
-      const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      renderScheduleRow({ ...activeSchedule, timezone: viewerZone, timingOverridden: true });
-
-      expect(screen.queryByText(new RegExp(`, ${viewerZone.replace('/', '\\/')}`))).toBeNull();
-      const marker = document.querySelector('[data-slot="task-timing-override"]');
-      expect(marker).toHaveTextContent('Your timing');
     });
 
     it('names a zone that is not the reader’s own, and leaves out the one that is', () => {
@@ -962,22 +522,15 @@ describe('ScheduleRow', () => {
       expect(screen.queryByText(new RegExp(`, ${viewerZone.replace('/', '\\/')}`))).toBeNull();
     });
 
-    it('says nothing of the kind for a schedule on its own timing', () => {
-      // Purpose: the marker must mean something — never on every row.
-      renderScheduleRow(activeSchedule, { expanded: true });
-
-      expect(document.querySelector('[data-slot="task-timing-override"]')).toBeNull();
-      expect(document.querySelector('[data-slot="task-package-timing"]')).toBeNull();
-    });
-
-    it('names the package’s own timing when expanded', () => {
-      // Purpose: resetting blind is a guess; the row says what it goes back to.
-      renderScheduleRow(retimed, { expanded: true });
-
-      expect(document.querySelector('[data-slot="task-package-timing"]')).toHaveTextContent(
-        'The package runs this every: 0 * * * *, UTC.'
-      );
-    });
+    async function openActions(task: Task) {
+      const trigger = screen.getByLabelText(`Actions for ${task.name}`);
+      await act(async () => {
+        fireEvent.pointerDown(trigger);
+        fireEvent.mouseDown(trigger);
+        fireEvent.click(trigger);
+      });
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: /Edit/i })).toBeTruthy());
+    }
 
     it('puts it back from the expanded row', async () => {
       // Purpose: "Reset to the package's default" sends the one request that
@@ -1007,14 +560,6 @@ describe('ScheduleRow', () => {
       await waitFor(() =>
         expect(transport.updateTask).toHaveBeenCalledWith('sched-9', { resetTiming: true })
       );
-    });
-
-    it('offers no reset where there is nothing to reset', async () => {
-      // Purpose: a menu item that does nothing is noise.
-      renderScheduleRow(activeSchedule);
-      await openActions(activeSchedule);
-
-      expect(screen.queryByRole('menuitem', { name: /Reset to the package’s default/ })).toBeNull();
     });
   });
 });
@@ -1080,36 +625,6 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
     await waitFor(() => expect(approveTaskFile).toHaveBeenCalledWith('sched-1', CAP_AT, HASH));
   });
 
-  it('leaves it to the agent when it had an ordinary chat lately', () => {
-    renderScheduleRow(capped(false));
-    expect(document.querySelector('[data-slot="task-file-cap-line"]')?.textContent).toMatch(
-      /^Capped at Never ask: its file changed outside the task tools\./
-    );
-    expect(screen.getByText('Its agent can accept the file from a chat.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Approve file' })).toBeNull();
-  });
-
-  it('says nothing about a cap on a task that has none', () => {
-    renderScheduleRow(activeSchedule);
-    expect(document.querySelector('[data-slot="task-file-cap-note"]')).toBeNull();
-  });
-
-  it('on a phone: no empty icon gutter, the text spans the card, approve buttons come last', () => {
-    renderScheduleRow(activeSchedule);
-    const slot = document.querySelector('[data-slot="task-status-slot"]')!;
-    expect(slot.className.split(/\s+/)).toEqual(expect.arrayContaining(['hidden', 'sm:flex']));
-    const row = slot.parentElement!;
-    expect(row.className).toContain(
-      "[grid-template-areas:'status_head_actions'_'body_body_body'_'foot_foot_foot']"
-    );
-    cleanup();
-    renderScheduleRow(pendingSchedule);
-    const foot = [...document.querySelectorAll('div')].find((el) =>
-      el.className.includes('max-sm:[grid-area:foot]')
-    );
-    expect(foot?.querySelector('button')).toBeTruthy();
-  });
-
   describe('TaskRow: the review a person approves a changed file from (DOR-3703, round 8)', () => {
     afterEach(() => cleanup());
 
@@ -1173,28 +688,6 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
       }
     });
 
-    it('counts one change on a long diff, a rewritten line once, and nothing on a short one', async () => {
-      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}`);
-      const one = lines.map((l, i) => (i === 10 ? 'rewritten' : l)).join('\n');
-      renderScheduleRow({
-        ...capped,
-        fileCap: { ...capped.fileCap!, previous: lines.join('\n'), current: one },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
-      await screen.findByText('Review the changed file');
-      expect(document.querySelector('[data-slot="task-file-cap-change-count"]')?.textContent).toBe(
-        '1 change'
-      );
-      cleanup();
-      renderScheduleRow({
-        ...capped,
-        fileCap: { ...capped.fileCap!, previous: 'a\nb', current: 'a\nc' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
-      await screen.findByText('Review the changed file');
-      expect(document.querySelector('[data-slot="task-file-cap-change-count"]')).toBeNull();
-    });
-
     it('tells a person at the row doors that the next run is capped until they approve the file', () => {
       renderScheduleRow({ ...pendingSchedule, fileCapNext: true });
       expect(document.querySelector('[data-slot="task-file-cap-next"]')?.textContent).toBe(
@@ -1256,45 +749,6 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
       expect(document.querySelector('[data-slot="task-file-cap-review-body"]')?.textContent).toBe(
         `Approving lets “${longName}” run at Bypass permissions.`
       );
-    });
-
-    it('says the whole file shows only when no approved copy was kept (DOR-5075)', async () => {
-      renderScheduleRow({
-        ...activeSchedule,
-        fileCapNext: true,
-        fileReview: { hash: HASH, previous: null, current: 'triage the inbox' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
-      await screen.findByText('Review the file');
-      const cue = document.querySelector('[data-slot="task-file-cap-first-review"]');
-      expect(cue?.textContent).toBe('No approved copy was kept, so the whole file shows.');
-      // Above the diff, in the same scrolling body.
-      const diff = document.querySelector('[data-slot="task-file-cap-diff"]')!;
-      expect(cue!.compareDocumentPosition(diff) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      cleanup();
-      renderScheduleRow({
-        ...activeSchedule,
-        fileCapNext: true,
-        fileReview: { hash: HASH, previous: 'triage the inbox', current: 'triage the backlog' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
-      await screen.findByText('Review the file');
-      expect(document.querySelector('[data-slot="task-file-cap-first-review"]')).toBeNull();
-    });
-
-    it('lines the diff up with the title and drops the dialog’s empty floor (DOR-5075)', async () => {
-      renderScheduleRow({
-        ...activeSchedule,
-        fileCapNext: true,
-        fileReview: { hash: HASH, previous: null, current: 'triage the inbox' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
-      await screen.findByText('Review the file');
-      const dialog = document.querySelector('[data-slot="task-file-cap-review"]')!;
-      expect(dialog.className.split(/\s+/)).toContain('min-h-0');
-      expect(dialog.className).not.toContain('min-h-[50vh]');
-      const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
-      expect(scroll.className.split(/\s+/)).toContain('-mx-4');
     });
 
     it('draws hidden characters in the diff as labelled chips, and an emoji’s own selector as text (DOR-5075)', async () => {

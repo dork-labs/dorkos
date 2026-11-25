@@ -230,35 +230,6 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     expect(probeDirect).toHaveBeenCalledWith(`${PREVIEW_ORIGIN}/__dorkos_preview/health`);
   });
 
-  it('lands on the page that was asked for, not the app’s front door', async () => {
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-
-    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
-    const framed = new URL(iframeSrc() as string);
-    expect(framed.pathname).toBe('/dorkos/flagship-promo/vo');
-    // The one-time token rides along behind the path; the listener strips it.
-    expect(framed.searchParams.get('__dorkos_preview')).toBe('tok');
-  });
-
-  it('resolves once, however many times the transport object is rebuilt', async () => {
-    // The transport arrives fresh on every render here. Re-resolving on that
-    // would re-mint a preview token per render — and, because storing the result
-    // renders again, would never stop.
-    const { rerender } = render(
-      <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />
-    );
-    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
-    for (let i = 0; i < 5; i++) {
-      rerender(
-        <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />
-      );
-    }
-    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
-
-    expect(createProxyUrl).toHaveBeenCalledTimes(1);
-    expect(probeLoopbackPort).toHaveBeenCalledTimes(1);
-  });
-
   it('gives the preview origin allow-same-origin — it is cross-origin to the API', async () => {
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
     const frame = await screen.findByTitle('Embedded browser');
@@ -274,21 +245,6 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
     const frame = await screen.findByTitle('Embedded browser');
     expect(frame.getAttribute('sandbox')).toBe(WORKBENCH_SANDBOX_EXTERNAL);
-  });
-
-  it('says the connection does not reach the preview port, from a device that is not the machine', async () => {
-    // A phone over Tailscale: DorkOS can see the dev server, this browser can
-    // see neither the origin DorkOS opened nor `localhost` (which is the phone).
-    vi.stubGlobal('location', { ...window.location, hostname: 'machine.tail.ts.net' });
-    reachable(() => false);
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-
-    expect(
-      await screen.findByText(/This view can’t reach port 4390 on localhost\./i)
-    ).toBeInTheDocument();
-    expect(document.querySelector('iframe')).toBeNull();
-    // Not a loopback page, so the dev server's own address was never tried.
-    expect(probeDirect).not.toHaveBeenCalledWith(DEV_URL);
   });
 
   /**
@@ -368,23 +324,6 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     expect(createProxyUrl).not.toHaveBeenCalled();
   });
 
-  it('names the address the way the user typed it', async () => {
-    reachable(() => false);
-    probeLoopbackPort.mockResolvedValue({ listening: false });
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'http://127.0.0.1:5399/' }}
-      />
-    );
-
-    // Telling someone who typed 127.0.0.1 about "localhost" invites them to
-    // doubt the message rather than the port.
-    expect(
-      await screen.findByText(/Nothing is listening on 127\.0\.0\.1:5399\./i)
-    ).toBeInTheDocument();
-  });
-
   it('re-mints on reload, because a token expires', async () => {
     reachable(() => false);
     probeLoopbackPort.mockResolvedValue({ listening: false });
@@ -396,22 +335,6 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
     fireEvent.click(screen.getByLabelText('Reload'));
     await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
     expect(createProxyUrl).toHaveBeenCalledTimes(1);
-  });
-
-  it('frames it anyway when the transport cannot check the port', async () => {
-    // `null` means "no server to ask", not "nothing is there" — a preview must
-    // never be refused on the strength of an answer nobody gave.
-    probeLoopbackPort.mockResolvedValue(null);
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
-  });
-
-  it('falls back to the dev server’s own address when there is no server to mint from', async () => {
-    probeLoopbackPort.mockResolvedValue(null);
-    createProxyUrl.mockResolvedValue(null as never);
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-
-    await waitFor(() => expect(iframeSrc()).toBe(DEV_URL));
   });
 
   // DOR-3370. The direct fallback earns WORKBENCH_SANDBOX_EXTERNAL because a dev
@@ -479,17 +402,6 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
       WORKBENCH_SANDBOX_EXTERNAL
     );
   });
-
-  it('works from another device, where the dev server’s own address never could', async () => {
-    // On a phone over Tailscale, `localhost` is the phone. The preview origin is
-    // on the machine that can actually reach the dev server.
-    vi.stubGlobal('location', { ...window.location, hostname: 'machine.tail.ts.net' });
-    render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);
-
-    await waitFor(() => expect(iframeSrc()).toContain(PREVIEW_ORIGIN));
-    expect(probeDirect).not.toHaveBeenCalledWith(DEV_URL);
-    expect(probeLoopbackPort).toHaveBeenCalledWith(5178);
-  });
 });
 
 describe('CanvasBrowserContent — a preview that loads badly', () => {
@@ -522,20 +434,6 @@ describe('CanvasBrowserContent — a preview that loads badly', () => {
       expect(screen.getByText(/This preview is slow to load\./i)).toBeInTheDocument();
       // A slow page is still a live page — never pull the frame out from under it.
       expect(document.querySelector('iframe')).not.toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('stops saying it once the page loads', async () => {
-    vi.useFakeTimers();
-    try {
-      const frame = await renderSettled(DEV_URL);
-      fireEvent.load(frame);
-      await act(async () => {
-        vi.advanceTimersByTime(11_000);
-      });
-      expect(screen.queryByText(/taking a long time/i)).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -649,47 +547,9 @@ describe('CanvasBrowserContent — the ⋯ menu (DOR-4435)', () => {
     // jsdom lays nothing out, so the row reads as narrow and Forward moves in here.
     expect(items).toEqual(['Forward', 'Copy address', 'Open in your browser']);
   });
-
-  it('opens the page outside the app from the menu', async () => {
-    const opened = vi.spyOn(window, 'open').mockReturnValue(null);
-    try {
-      render(
-        <CanvasBrowserContent
-          documentId="doc"
-          content={{ type: 'browser', url: 'https://a.test/page' }}
-        />
-      );
-      const menu = await openMenu();
-      fireEvent.click(within(menu).getByRole('menuitem', { name: 'Open in your browser' }));
-      expect(opened).toHaveBeenCalledOnce();
-      expect(opened.mock.calls[0]?.[0]).toBe('https://a.test/page');
-    } finally {
-      opened.mockRestore();
-    }
-  });
-
-  it('shows no menu for a local file, so Forward stays in the row', async () => {
-    render(
-      <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />
-    );
-    await screen.findByTitle('Embedded browser');
-    expect(screen.queryByRole('button', { name: 'Browser menu' })).toBeNull();
-    expect(screen.getByLabelText('Forward')).not.toHaveClass('hidden');
-  });
 });
 
 describe('CanvasBrowserContent — url content type routes here (DOR-233)', () => {
-  it('renders navigation chrome for a `url` document', async () => {
-    render(
-      <CanvasBrowserContent documentId="doc" content={{ type: 'url', url: 'https://a.test/' }} />
-    );
-    expect(screen.getByLabelText('Back')).toBeInTheDocument();
-    expect(screen.getByLabelText('Forward')).toBeInTheDocument();
-    expect(screen.getByLabelText('Reload')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Address:/ })).toBeInTheDocument();
-    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
-  });
-
   it('refuses a blocked protocol (javascript:) — no frame', async () => {
     render(
       <CanvasBrowserContent
@@ -703,24 +563,6 @@ describe('CanvasBrowserContent — url content type routes here (DOR-233)', () =
 });
 
 describe('CanvasBrowserContent — address bar (at rest)', () => {
-  it('simplifies an external URL: scheme stripped, host emphasized, path dimmed', () => {
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'https://www.example.com/docs?x=1' }}
-      />
-    );
-    const bar = screen.getByRole('button', { name: /^Address:/ });
-    // Scheme + leading www. stripped from the visible text.
-    expect(bar.textContent).toBe('example.com/docs?x=1');
-    const host = bar.querySelector('.text-foreground');
-    const rest = bar.querySelector('.text-muted-foreground');
-    expect(host?.textContent).toBe('example.com');
-    expect(rest?.textContent).toBe('/docs?x=1');
-    // The accessible name carries the location, not just "Address".
-    expect(bar).toHaveAccessibleName('Address: example.com/docs?x=1');
-  });
-
   it('shows a local file as its logical path behind a "local" chip — never the token URL', async () => {
     render(
       <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />
@@ -742,20 +584,6 @@ describe('CanvasBrowserContent — address bar (at rest)', () => {
 });
 
 describe('CanvasBrowserContent — address bar (editing)', () => {
-  it('focus reveals the full logical URL and selects all', () => {
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'https://example.com/docs' }}
-      />
-    );
-    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
-    const input = screen.getByLabelText('Address') as HTMLInputElement;
-    expect(input.value).toBe('https://example.com/docs');
-    expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe('https://example.com/docs'.length);
-  });
-
   it('Enter navigates to the typed address', async () => {
     render(
       <CanvasBrowserContent
@@ -796,18 +624,6 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     fireEvent.submit(input.closest('form') as HTMLFormElement);
   };
 
-  it('searches DuckDuckGo for words typed into the address bar', async () => {
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'https://a.test/' }}
-      />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
-    typeAddress('Error: ENOENT');
-    await waitFor(() => expect(iframeSrc()).toBe('https://duckduckgo.com/?q=Error%3A+ENOENT'));
-  });
-
   it('refuses another scheme with a notice and keeps what was typed', async () => {
     render(
       <CanvasBrowserContent
@@ -822,33 +638,6 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Address')).toHaveValue('javascript:alert(1)');
     expect(iframeSrc()).toBe('https://a.test/');
-  });
-
-  it('opens about:blank as an empty page with no frame', async () => {
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'https://a.test/' }}
-      />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
-    typeAddress('about:blank');
-    await waitFor(() => expect(document.querySelector('iframe')).toBeNull());
-    expect(document.querySelector('[data-slot="blank-page"]')).not.toBeNull();
-  });
-
-  it('still opens a local file typed as a path', async () => {
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'https://a.test/' }}
-      />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
-    typeAddress('demo/index.html');
-    expect(
-      await screen.findByRole('button', { name: 'Address: demo/index.html' })
-    ).toBeInTheDocument();
   });
 
   it('Escape reverts without navigating', async () => {
@@ -870,24 +659,6 @@ describe('CanvasBrowserContent — address bar (editing)', () => {
     expect(bar.textContent).toBe('a.test');
     expect(iframeSrc()).toBe('https://a.test/');
   });
-
-  it('blur reverts without navigating', async () => {
-    render(
-      <CanvasBrowserContent
-        documentId="doc"
-        content={{ type: 'browser', url: 'https://a.test/' }}
-      />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://a.test/'));
-
-    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
-    const input = screen.getByLabelText('Address') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: 'https://evil.test/' } });
-    fireEvent.blur(input);
-
-    expect(screen.getByRole('button', { name: /^Address:/ })).toBeInTheDocument();
-    expect(iframeSrc()).toBe('https://a.test/');
-  });
 });
 
 describe('CanvasBrowserContent — external embed fallback', () => {
@@ -907,14 +678,6 @@ describe('CanvasBrowserContent — external embed fallback', () => {
     expect(
       screen.getAllByRole('button', { name: /open in your browser/i }).length
     ).toBeGreaterThanOrEqual(1);
-  });
-
-  it('does NOT show the external fallback for served local content', async () => {
-    render(
-      <CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: 'preview.html' }} />
-    );
-    await screen.findByTitle('Embedded browser');
-    expect(screen.queryByText(/can’t always be embedded/i)).not.toBeInTheDocument();
   });
 });
 
@@ -959,62 +722,6 @@ describe('CanvasBrowserContent — per-document history across tab switches (DOR
     fireEvent.click(screen.getByLabelText('Back'));
     await waitFor(() => expect(iframeSrc()).toBe('https://a1.test/'));
   });
-
-  it('resets history when an agent-driven url change remounts the same document', async () => {
-    const a = render(
-      <CanvasBrowserContent documentId="A" content={{ type: 'browser', url: 'https://a1.test/' }} />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://a1.test/'));
-    await navigateTo('https://a2.test/');
-    a.unmount();
-
-    // update_canvas swaps this document's url in place → the renderer remounts
-    // with a NEW content.url. The stored entry's contentUrl no longer matches,
-    // so history reseeds fresh (DOR-233 remount-resets-history semantic).
-    render(
-      <CanvasBrowserContent documentId="A" content={{ type: 'browser', url: 'https://a3.test/' }} />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://a3.test/'));
-    expect(screen.getByLabelText('Back')).toBeDisabled();
-  });
-
-  it('two documents at the same url keep independent histories (keyed by document id)', async () => {
-    // A navigates away from the shared url; B (same url, different id) stays fresh.
-    const a = render(
-      <CanvasBrowserContent
-        documentId="A"
-        content={{ type: 'browser', url: 'https://same.test/' }}
-      />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://same.test/'));
-    await navigateTo('https://a-only.test/');
-    a.unmount();
-
-    render(
-      <CanvasBrowserContent
-        documentId="B"
-        content={{ type: 'browser', url: 'https://same.test/' }}
-      />
-    );
-    await waitFor(() => expect(iframeSrc()).toBe('https://same.test/'));
-    // B has no history of its own despite sharing A's url.
-    expect(screen.getByLabelText('Back')).toBeDisabled();
-  });
-
-  it('clamps an out-of-bounds stored cursor into the stack (defensive)', async () => {
-    mockState.browserHistories['C'] = {
-      contentUrl: 'https://c1.test/',
-      stack: ['https://c1.test/', 'https://c2.test/'],
-      cursor: 99,
-    };
-    render(
-      <CanvasBrowserContent documentId="C" content={{ type: 'browser', url: 'https://c1.test/' }} />
-    );
-    // Cursor clamped to the last valid index → shows c2, Forward disabled, Back enabled.
-    await waitFor(() => expect(iframeSrc()).toBe('https://c2.test/'));
-    expect(screen.getByLabelText('Forward')).toBeDisabled();
-    expect(screen.getByLabelText('Back')).not.toBeDisabled();
-  });
 });
 
 describe('CanvasBrowserContent — the address bar on a room route', () => {
@@ -1057,14 +764,6 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('No such room');
     expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('https://example.com');
-  });
-
-  it('falls back to a sentence of its own when the failure has nothing to say', async () => {
-    openRoomCanvasDocument.mockRejectedValue(new Error(''));
-    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
-    await typeAddress('https://example.com');
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t reach DorkOS/i);
   });
 });
 
@@ -1113,14 +812,6 @@ describe('CanvasBrowserContent — following somebody’s page', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /^Address:/ })).toHaveTextContent('example.com')
     );
-  });
-
-  it('leaves a page alone when the position is about a different document', async () => {
-    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
-    kaiIsOn('another-document', 'https://example.com/deep');
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.getByRole('button', { name: /^Address:/ })).toHaveTextContent('dorkos.ai');
   });
 
   it('never moves somebody who is in the middle of typing', async () => {

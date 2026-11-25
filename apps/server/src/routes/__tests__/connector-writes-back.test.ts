@@ -111,7 +111,7 @@ describe('writes-back routes', () => {
       .put('/api/connectors/connections/mail/writes-back')
       .send({ writesBackUnasked: true, confirmsNoOutsideSync: true })
       .expect(422);
-    expect(res.body.code).toBe('writes_back_unsupported_app');
+    expect(res.body.code).toBe('app_not_supported');
     expect(column('mail')).toBe(false);
   });
 

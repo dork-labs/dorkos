@@ -112,7 +112,7 @@ describe('CanvasImageDiffContent', () => {
   it('degrades honestly when the baseline 404s: new-image disclosure, no restore', () => {
     render(<CanvasImageDiffContent content={CONTENT} />);
 
-    // Simulate the baseline layer failing to load (404 NO_BASELINE).
+    // Simulate the baseline layer failing to load (404 not_found).
     fireEvent.error(screen.getByAltText('Previous version'));
 
     expect(screen.getByText('New image')).toBeInTheDocument();

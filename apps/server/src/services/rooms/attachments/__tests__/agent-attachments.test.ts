@@ -41,6 +41,11 @@ import { projectRoomAttachments } from '../attachment-projection.js';
 import { projectedAttachmentPath } from '../attachment-paths.js';
 import type { RoomAttachmentStore } from '../room-attachment-store.js';
 import { discardStagedAttachments, readOwnFile } from '../agent-attachments.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const ANA_PATH = '/agents/ana';
 const KAI_PATH = '/agents/kai';

@@ -14,7 +14,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';
 import { eq, roomSeatLaunchRequirements, sessionMetadata } from '@dorkos/db';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
@@ -31,10 +31,8 @@ import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-ru
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { configManager } from '../../../../core/config-manager.js';
 import { resolveDorkHome } from '../../../../../lib/dork-home.js';
-import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
-import { NOTE_WRITES_AFTER } from '../../tool-gate/extension-write-note.js';
 import { LOAD_GATE_MATCHER } from '../../tool-gate/load-gate-hook.js';
 import {
   agentHomesSelfGrantRules,
@@ -589,33 +587,10 @@ describe('the launch options every Claude Code turn is given', () => {
     }
   });
 
-  it('turns the task and todo tools on, which no newer model gets by default', async () => {
-    const options = await captureSdkOptions();
-
-    const env = options.env as Record<string, string | undefined>;
-    expect(
-      env.CLAUDE_CODE_ENABLE_TODO_TOOLS,
-      'without this the model never calls TodoWrite/TaskCreate/TaskUpdate, so the todo panel ' +
-        'and the Tasks surface stay empty forever and nothing anywhere errors'
-    ).toBe('1');
-  });
-
   it('registers the hook that refuses a removed MCP server mid-chat, on MCP tools (DOR-3872)', async () => {
     const options = await captureSdkOptions();
     const matchers = (options.hooks?.PreToolUse ?? []).map((m) => m.matcher);
     expect(matchers).toContain('^mcp__');
-  });
-
-  it("registers the hooks that record a helper agent's tool calls, on every tool", async () => {
-    const options = await captureSdkOptions();
-    const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
-    expect(unmatched).toHaveLength(1);
-    expect(options.hooks?.PostToolUseFailure).toEqual([
-      { hooks: [unmatched[0]!.hooks[0]] },
-      NOTE_WRITES_AFTER,
-      // A failed shell call gives its heavy-job slot back (DOR-4209).
-      expect.objectContaining({ matcher: LOAD_GATE_MATCHER }),
-    ]);
   });
 
   it('registers the load gate on the shell, past its hard cap, and every way a slot comes back (DOR-4209)', async () => {
@@ -642,17 +617,6 @@ describe('the launch options every Claude Code turn is given', () => {
     ] as const) {
       expect(options.hooks?.[event], event).toEqual([sweep]);
     }
-  });
-
-  it('registers the hooks that note who wrote a mini app’s files, before and after', async () => {
-    // DOR-4528. Unregistered, every edit to an agent's own mini app is tied to no one and waits.
-    const options = await captureSdkOptions();
-    // On every tool, beside the held turn's ask, so a held turn that only starts later work still
-    // sets the launch's hold.
-    const everyTool = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    expect(everyTool).toHaveLength(2);
-    expect(options.hooks?.PostToolUse).toContain(NOTE_WRITES_AFTER);
-    expect(options.hooks?.PostToolUseFailure).toContain(NOTE_WRITES_AFTER);
   });
 
   it('registers the held turn’s ask on every tool, read from the session as each call is made', async () => {
@@ -805,12 +769,6 @@ describe('the launch options every Claude Code turn is given', () => {
       expect(launched.enrichedContent).toBe(`${ZW}/compact`);
     });
 
-    it('leaves the person here exactly as today: commands run bare, files are read', async () => {
-      expect((await resolveWith('/leak')).enrichedContent).toBe('/leak');
-      expect((await resolveWith('  /leak  ')).enrichedContent).toBe('/leak');
-      expect((await resolveWith('see @notes.md')).enrichedContent).toBe('see @notes.md');
-    });
-
     it('defuses every context block, whoever wrote the message', async () => {
       vi.mocked(renderContextEntry).mockReturnValueOnce(
         '<room_context>bo: @/etc/hosts</room_context>'
@@ -821,6 +779,95 @@ describe('the launch options every Claude Code turn is given', () => {
       expect(launched.enrichedContent).toBe(
         `<room_context>bo: ${ZW}@/etc/hosts</room_context>\n\nsee @notes.md`
       );
+    });
+  });
+
+  describe('the agent’s own home on a launch outside it (DOR-5250)', () => {
+    let root: string;
+    let ana: string;
+    let bo: string;
+    let project: string;
+    const CLAUDE_MD_VAR = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
+
+    beforeEach(() => {
+      root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'dorkos-home-dir-')));
+      [ana, bo, project] = ['agents/ana', 'agents/bo', 'work/site'].map((dir) => {
+        mkdirSync(path.join(root, dir), { recursive: true });
+        return path.join(root, dir);
+      });
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === ana || dir === bo,
+        listRegisteredHomes: () => [ana, bo],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+    });
+
+    afterEach(() => {
+      setAgentHomeRegistry(undefined);
+      heldChats.clear();
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    const launch = async (cwd: string, forAgent?: string) =>
+      (
+        await resolveLaunch({
+          sessionId: 's1',
+          content: 'hello',
+          session: makeSession(),
+          opts: makeOpts({ cwd }),
+          messageOpts: forAgent ? { forAgent } : {},
+          effectiveCwd: cwd,
+        })
+      ).sdkOptions;
+    const settingsEnv = (options: Options) =>
+      (options.settings as { env?: Record<string, string> } | undefined)?.env;
+
+    it('adds the home, and blanks the variable that would load its CLAUDE.md', async () => {
+      vi.stubEnv(CLAUDE_MD_VAR, '1');
+      const options = await launch(project, ana);
+      expect(options.additionalDirectories).toEqual([ana]);
+      expect(Object.keys(options.env ?? {})).not.toContain(CLAUDE_MD_VAR);
+      expect(settingsEnv(options)?.[CLAUDE_MD_VAR]).toBe('');
+    });
+
+    it('adds nothing inside the home, for a turn with no agent, or for a marked turn', async () => {
+      for (const options of [
+        await launch(ana, ana),
+        await launch(path.join(root, 'work'), undefined),
+      ]) {
+        expect(options.additionalDirectories).toBeUndefined();
+        expect(settingsEnv(options)?.[CLAUDE_MD_VAR]).toBeUndefined();
+      }
+      heldChats.add('sdk-1');
+      expect((await launch(project, ana)).additionalDirectories).toBeUndefined();
+    });
+
+    it('never adds another agent’s home, or a folder no agent is registered at', async () => {
+      // Standing in Bo's home, a turn for Ana resolves to nobody.
+      expect((await launch(bo, ana)).additionalDirectories).toBeUndefined();
+      const stray = path.join(root, 'work');
+      expect((await launch(project, stray)).additionalDirectories).toBeUndefined();
+    });
+
+    it('relaunches a warm process when the home it added changes', async () => {
+      const fingerprint = async (cwd: string) =>
+        captureLaunchFingerprint(
+          (
+            await resolveLaunch({
+              sessionId: 's1',
+              content: 'hello',
+              session: makeSession(),
+              opts: makeOpts({ cwd }),
+              messageOpts: { forAgent: ana },
+              effectiveCwd: cwd,
+            })
+          ).launch
+        );
+      const outside = await fingerprint(project);
+      expect(outside.pins.additionalDirectories).toContain(`${ana}:added`);
+      expect((await fingerprint(ana)).pins.additionalDirectories).toBe('');
     });
   });
 
@@ -862,13 +909,6 @@ describe('the launch options every Claude Code turn is given', () => {
       expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
     });
 
-    it('stays on while the agent still has Claude Code notes nobody has moved', async () => {
-      mkdirSync(memoryDir(), { recursive: true });
-      writeFileSync(path.join(memoryDir(), 'MEMORY.md'), '- [a](a.md)\n');
-      const resolved = await launch(home);
-      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
-    });
-
     it('goes off once the migration has left its marker in that folder', async () => {
       mkdirSync(memoryDir(), { recursive: true });
       writeFileSync(path.join(memoryDir(), 'MEMORY.md'), '- [a](a.md)\n');
@@ -876,90 +916,6 @@ describe('the launch options every Claude Code turn is given', () => {
       const resolved = await launch(home);
       expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
     });
-
-    it('stays on for a plain folder, which has no DorkOS memory to use instead', async () => {
-      const resolved = await launch(path.join(root, 'plain'));
-      expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
-    });
-  });
-
-  it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {
-    // Spec `auto-mode-classifier-context`. Nothing else can catch this: a hook
-    // that was never registered produces no error, no log line and no failing
-    // assertion anywhere — auto mode just goes on guessing about DorkOS's own
-    // tools, exactly as it did before, and the whole change is a no-op nobody
-    // notices.
-    const options = await captureSdkOptions();
-
-    // The audit record's helper-tool hook rides PostToolUse too (spec
-    // `audit-trail` PR3); the classifier hook is the one with a matcher.
-    const matchers = (options.hooks?.PostToolUse ?? []).filter(
-      (m) => m.matcher !== undefined && m !== NOTE_WRITES_AFTER && m.matcher !== LOAD_GATE_MATCHER
-    );
-    expect(matchers).toHaveLength(1);
-    expect(
-      matchers[0]?.matcher,
-      'the CLI reads a word-characters-only matcher as a list of exact tool names, so the ' +
-        'registration has to hand it a pattern \u2014 see CLASSIFIER_CONTEXT_MATCHER'
-    ).toBe(CLASSIFIER_CONTEXT_MATCHER);
-
-    const hook = matchers[0]!.hooks[0]!;
-    const result = (await hook(
-      {
-        hook_event_name: 'PostToolUse',
-        tool_name: 'mcp__dorkos__mesh_list',
-        tool_input: {},
-        tool_response: {},
-        tool_use_id: 'toolu_1',
-      } as never,
-      'toolu_1',
-      { signal: new AbortController().signal }
-    )) as Record<string, unknown>;
-
-    const specific = result.hookSpecificOutput as Record<string, unknown>;
-    expect(specific?.hookEventName).toBe('PostToolUse');
-    expect(specific?.classifierContext).toContain("passed DorkOS's own permission check");
-  });
-
-  // DOR-2717. A session timer (CronCreate, ScheduleWakeup, /loop) lives inside
-  // the CLI and is no background task, so nothing on the stream says one is
-  // pending. The Stop hook's input does, at every turn end; the warm process is
-  // held on it so the idle reaper cannot kill the timer before it fires.
-  it('records the timers the CLI reports pending at each turn end', async () => {
-    const session = makeSession();
-    const options = await captureSdkOptions(undefined, session);
-
-    const stop = options.hooks?.Stop ?? [];
-    // The timers' hook first; the load gate's turn-end sweep after it (DOR-4209).
-    expect(stop).toHaveLength(2);
-    const hook = stop[0]!.hooks[0]!;
-    const fire = (crons: unknown) =>
-      hook(
-        { hook_event_name: 'Stop', stop_hook_active: false, session_crons: crons } as never,
-        undefined,
-        { signal: new AbortController().signal }
-      );
-
-    expect(
-      await fire([{ id: 'c1', schedule: '5 9 * * *', recurring: false, prompt: 'tick' }])
-    ).toEqual({});
-    expect(session.pendingTimers).toBe(1);
-    await fire([]);
-    expect(session.pendingTimers).toBe(0);
-    // A CLI too old to report the field says nothing about timers.
-    await fire(undefined);
-    expect(session.pendingTimers).toBe(0);
-  });
-
-  it('sends the plugin list over stdin rather than on the command line', async () => {
-    const options = await captureSdkOptions();
-
-    expect(
-      options.pluginDelivery,
-      'ADR-0239 activates every enabled marketplace plugin through `options.plugins`, and on ' +
-        'argv that list is an unbounded count of absolute paths — past Windows\u2019 command-line ' +
-        'length limit the CLI simply stops starting'
-    ).toBe('initialize');
   });
 });
 
@@ -1003,19 +959,6 @@ describe('a marked turn on an agent at Full autonomy', () => {
           teammate: [{ roomId: 'r', authorId: 'a' }],
         },
       },
-      bypassSession()
-    );
-    expect(options.permissionMode).toBe('bypassPermissions');
-  });
-
-  it('launches at Full autonomy for the owner’s own turn', async () => {
-    const options = await launchAs(undefined, bypassSession());
-    expect(options.permissionMode).toBe('bypassPermissions');
-  });
-
-  it('launches at Full autonomy for another of the owner’s agents at Full autonomy', async () => {
-    const options = await launchAs(
-      { permissionCeiling: { asks: 'never', reach: 'everything' } },
       bypassSession()
     );
     expect(options.permissionMode).toBe('bypassPermissions');

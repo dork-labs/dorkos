@@ -20,11 +20,6 @@ const COPY: Record<string, CloudFailureCopy> = {
     description: 'Link your DorkOS account again. Nothing changed.',
     action: 'relink',
   },
-  cloud_link_needs_update: {
-    title: 'This computer’s link needs updating',
-    description: 'Link your DorkOS account again to update it. Nothing changed.',
-    action: 'relink',
-  },
   cloud_unavailable: {
     title: 'DorkOS’s servers aren’t answering',
     description: 'Nothing changed. Try again in a few minutes.',

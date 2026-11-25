@@ -17,11 +17,12 @@
  *
  * @module routes/extensions-step-up
  */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
+import { problem } from '@dorkos/http-kit';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
@@ -35,17 +36,22 @@ import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.j
 
 /** What the move route says when its bar refuses it. */
 const MOVE_BAR: PersonBarCopy = {
-  error: 'Only a person can move a mini app.',
   code: 'person_only',
   subject: 'where a mini app’s code lives',
-  crossSite: (origin) =>
-    `DorkOS moved nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Moving a mini app changes which code this copy of DorkOS runs, so a person does ` +
-    `it in their own app.`,
-  agent:
-    `DorkOS moved nothing. Moving a mini app out of an agent's folder is a decision ` +
-    `only a person makes. Ask them to open Settings > Extensions and move it there.`,
+  crossSite: (origin) => `Nothing moved. ${origin} isn’t DorkOS. Move mini apps in the app.`,
+  agent: 'Nothing moved. Only a person moves a mini app, in Settings.',
 };
+
+/** What each refused move says: a fixed sentence per case, never the error's own text. */
+const MOVE_REFUSALS: Record<MoveExtensionError['code'], string> = {
+  'not-movable': 'This mini app can’t be moved from where it is.',
+  'has-link': 'Its folder holds a link, so it can’t be moved safely.',
+  exists: 'A mini app with this name is already in DorkOS’s folder.',
+  'changed-while-moving': 'It changed while it was being moved. Nothing moved.',
+};
+
+/** A `409 conflict` for a mini app that can't be moved, with the sentence that says why. */
+const notMovable = (c: Context<ApiEnv>, detail: string) => problem(c, 'conflict', { detail });
 
 /** What these routes read. */
 export interface ExtensionStepUpRouteDeps {
@@ -71,23 +77,20 @@ export function registerExtensionStepUpRoutes(
 
   router.post('/:id/move-out', async (c) => {
     const id = c.req.param('id');
-    if (!safeId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!safeId.test(id))
+      return problem(c, 'invalid_request', {
+        detail: 'Use an extension id in lowercase, like my-extension.',
+      });
     const refused = refusedNotAPerson(c, MOVE_BAR);
     if (refused) return refused;
     const risk = currentStepUpExtensionRisks().find((entry) => entry.id === id);
     const record = manager.listRecords().find((entry) => entry.id === id);
     if (!record || risk?.reason !== 'agent-folder') {
-      return c.json(
-        { error: 'This mini app isn’t in an agent’s folder.', code: 'not-movable' },
-        409
-      );
+      return notMovable(c, 'This mini app isn’t in an agent’s folder.');
     }
     // A plugin's or a dev link's copy lives where its plugin put it.
     if (record.sourcePlugin || record.devLink || record.origin === 'core') {
-      return c.json(
-        { error: 'This mini app came with a plugin, so it can’t be moved.', code: 'not-movable' },
-        409
-      );
+      return notMovable(c, 'This mini app came with a plugin, so it can’t be moved.');
     }
     try {
       const movedTo = await moveExtensionOut(record.realPath ?? record.path, id, dorkHome);
@@ -105,13 +108,13 @@ export function registerExtensionStepUpRoutes(
       return c.json({ ok: true, movedTo });
     } catch (error) {
       if (error instanceof MoveExtensionError) {
-        return c.json({ error: error.message, code: error.code }, 409);
+        return problem(c, 'conflict', { detail: MOVE_REFUSALS[error.code] });
       }
       logger.error('[Extensions] A move out of an agent’s folder failed', {
         id,
         error: (error as Error).name,
       });
-      return c.json({ error: 'That didn’t work. Nothing moved.' }, 500);
+      return problem(c, 'internal_error', { detail: 'That didn’t work. Nothing moved.' });
     }
   });
 }

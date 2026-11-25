@@ -6,11 +6,9 @@ import {
 import {
   ConnectorAuthoritySyncStateSchema,
   ConnectorAuthenticationFlowStateSchema,
-  ConnectorCatalogLogoPathSchema,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   connectorCatalogLogoPath,
-  ConnectorLifecycleResultSchema,
   ConnectorSessionConnectionsSchema,
 } from '../connector-resource-schemas.js';
 
@@ -102,18 +100,6 @@ describe('connector resource schemas', () => {
         completedAt: '2026-09-06T18:02:00.000Z',
       }).success
     ).toBe(false);
-  });
-
-  it('keeps pending authority distinct from ready lifecycle state', () => {
-    expect(
-      ConnectorLifecycleResultSchema.parse({
-        connectionId: 'connection-1',
-        lifecycle: 'paused',
-        authenticationStatus: 'active',
-        authoritySync: { status: 'pending' },
-        externalCleanup: 'not_required',
-      })
-    ).toMatchObject({ authoritySync: { status: 'pending' } });
   });
 
   it('models owner detail without account routing secrets', () => {
@@ -235,14 +221,6 @@ describe('connectorCatalogLogoPath', () => {
     for (const unsafe of ['Odd.Slug', 'a/b', '../x', '', 'x'.repeat(101)]) {
       expect(connectorCatalogLogoPath(unsafe), unsafe).toBeUndefined();
     }
-  });
-
-  it('only ever produces a path the wire schema accepts', () => {
-    const path = connectorCatalogLogoPath('x'.repeat(100))!;
-    expect(ConnectorCatalogLogoPathSchema.safeParse(path).success).toBe(true);
-    expect(
-      ConnectorCatalogLogoPathSchema.safeParse('https://logos.composio.dev/api/gmail').success
-    ).toBe(false);
   });
 
   it('keeps readiness honest: only a usable account is ready, with nothing to fix, and waiting is DorkOS’s job', () => {

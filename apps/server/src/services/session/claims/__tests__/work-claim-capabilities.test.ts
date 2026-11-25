@@ -41,7 +41,7 @@ beforeEach(() => {
           ? { title: null, link: null, private: true }
           : {
               title: `Chat ${sessionId}`,
-              link: `[Chat ${sessionId}](/session?session=${sessionId})`,
+              link: `[Chat ${sessionId}](/r/dork:chat:${sessionId})`,
               private: false,
             },
     },
@@ -88,7 +88,7 @@ describe('the work-claim tools', () => {
     ]);
     const second = await call('work-claims.claim', { key: 'DOR-7' }, as('/agents/ana', 'chat-b'));
     expect(second).toMatchObject({ ok: false, code: 'CLAIMED' });
-    expect(second.error).toContain('[Chat chat-a](/session?session=chat-a)');
+    expect(second.error).toContain('[Chat chat-a](/r/dork:chat:chat-a)');
   });
 
   it('names a holder the caller may not read only as a private chat', async () => {

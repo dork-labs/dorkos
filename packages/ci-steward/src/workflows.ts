@@ -17,6 +17,8 @@ interface StepModel {
   if?: string | boolean;
   continueOnError?: unknown;
   run?: string;
+  /** The action reference as written, e.g. `actions/checkout@<sha>`. */
+  uses?: string;
   /** The whole step as JSON, for "does this step read X" questions. */
   text: string;
 }
@@ -39,7 +41,13 @@ export interface JobModel {
   needs: string[];
   timeoutMinutes?: unknown;
   continueOnError?: unknown;
+  /** The deployment environment's name as written (`environment:` or `environment.name`). */
+  environment?: string;
+  /** `permissions:` as written: a mapping, a `read-all`/`write-all` string, or absent. */
+  permissions?: unknown;
   steps: StepModel[];
+  /** The whole job as JSON, for "does this job read X" questions (job-level `env:` included). */
+  text: string;
 }
 
 /** One trigger block, e.g. `pull_request: { types, paths }`. */
@@ -66,6 +74,8 @@ export interface WorkflowModel {
   /** Repo-relative path. */
   path: string;
   triggers: Map<string, TriggerModel>;
+  /** The workflow-level `permissions:` as written, which a job without its own inherits. */
+  permissions?: unknown;
   jobs: JobModel[];
 }
 
@@ -128,6 +138,7 @@ function parseWorkflow(file: string, relPath: string, text: string): WorkflowMod
         if: typeof step.if === 'string' || typeof step.if === 'boolean' ? step.if : undefined,
         continueOnError: step['continue-on-error'],
         run: typeof step.run === 'string' ? step.run : undefined,
+        uses: typeof step.uses === 'string' ? step.uses : undefined,
         text: JSON.stringify(step),
       };
     });
@@ -141,7 +152,15 @@ function parseWorkflow(file: string, relPath: string, text: string): WorkflowMod
       needs: asStrings(job.needs) ?? [],
       timeoutMinutes: job['timeout-minutes'],
       continueOnError: job['continue-on-error'],
+      environment:
+        typeof job.environment === 'string'
+          ? job.environment
+          : isObj(job.environment) && typeof job.environment.name === 'string'
+            ? job.environment.name
+            : undefined,
+      permissions: job.permissions,
       steps,
+      text: JSON.stringify(job),
     });
   }
   return {
@@ -149,6 +168,7 @@ function parseWorkflow(file: string, relPath: string, text: string): WorkflowMod
     stem: file.replace(/\.ya?ml$/, ''),
     path: relPath,
     triggers: parseTriggers(doc.on),
+    permissions: doc.permissions,
     jobs,
   };
 }

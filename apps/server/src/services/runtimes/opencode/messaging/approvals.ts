@@ -10,15 +10,11 @@
  * else — including unknown future modes and permission keys nobody has seen —
  * falls through to the safe default of asking the user.
  *
- * Every forwarded request waits in two stages, exactly as the Claude adapter's
- * prompts do (spec `ask-parks-on-timeout`). The card counts down for
- * `SESSIONS.INTERACTION_TIMEOUT_MS`, which is the `timeoutMs` the mapper
- * advertises on `approval_required` and is left there deliberately: it is the
- * number a person is counting down against, not the number the sidecar is
- * answered at. Past it the card PARKS — `listPendingInteractions` derives that
- * from the same two numbers, so OpenCode gets it without a line of its own —
- * and the auto-deny timer here fires only at
- * `SESSIONS.INTERACTION_PARK_CEILING_MS`.
+ * Every forwarded request uses the attended approval profile
+ * (spec `ask-parks-on-timeout`). The mapper advertises its countdown
+ * on `approval_required`. At the end of the countdown the card parks, as
+ * derived by `listPendingInteractions`. The store auto-denies the request
+ * at the profile's terminal deadline.
  *
  * **One thing here is unverified, and it is stated rather than assumed.**
  * Whether the OpenCode sidecar applies an expiry of its own to an unanswered
@@ -44,27 +40,36 @@
  *
  * @module services/runtimes/opencode/approvals
  */
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
-import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
-import { SESSIONS } from '../../../../config/constants.js';
 import { logger, logError } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import type { OpenCodePermissionState } from '../events/session-event-mapper.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
+import {
+  effectiveApprovalMode,
+  readOpenCodeTurnMode,
+  type OpenCodeTurnOptions,
+} from './turn-options.js';
 import { resolveGrantVerdict } from './directory-grants.js';
 import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
-import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
-import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
-import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
+import { turnProtectedRoots } from '../../shared/policy/turn-protected-roots.js';
+import type { ProtectedPathRoots } from '../../../core/protected-paths/protected-path-check.js';
+import { checkShellCommand } from '../../shared/policy/package-hooks.js';
+import { checkShellProtectedWrites } from '../../shared/policy/shell-protected-writes.js';
+import type { ShellChecker } from '../../claude-code/shell-guard/guard-host.js';
 import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
 import { HeavyShellSlots, holdHeavyShell } from './load-gate-hold.js';
+import {
+  resolveApprovalDecision as resolveOrdinaryApprovalDecision,
+  type ApprovalDecision,
+} from '../../shared/policy/approvals.js';
+import { PendingApprovalRegistry } from '../../shared/timing/pending-approval-registry.js';
 
-/** How a permission request should be resolved under a DorkOS mode. */
-export type ApprovalDecision = 'ask' | 'auto-approve';
+export type { ApprovalDecision };
+export { effectiveApprovalMode };
 
 /**
  * The only OpenCode permission responses DorkOS ever sends. `always` is
@@ -97,9 +102,10 @@ export function resolveApprovalDecision(
   mode: PermissionModeId | undefined,
   permissionType: string
 ): ApprovalDecision {
-  if (mode === 'bypassPermissions') return 'auto-approve';
-  if (mode === 'acceptEdits' && EDIT_PERMISSION_TYPES.has(permissionType)) return 'auto-approve';
-  return 'ask';
+  return resolveOrdinaryApprovalDecision(
+    mode,
+    EDIT_PERMISSION_TYPES.has(permissionType) ? 'edit' : 'other'
+  );
 }
 
 /** One forwarded, still-unanswered permission request. */
@@ -108,8 +114,6 @@ interface PendingApproval {
   ocSessionId: string;
   /** Working directory for `getClient` routing. */
   cwd: string;
-  /** Armed auto-deny timer, which fires at the park ceiling. */
-  timer: ReturnType<typeof setTimeout>;
   /** The permission's key (`bash`, `edit`, …), for the auto-deny log line only. */
   toolName?: string;
   /** Server epoch ms this request was registered, for the auto-deny `waitedMs`. */
@@ -122,7 +126,7 @@ interface PendingApproval {
  */
 export class PendingApprovalStore {
   /** DorkOS session id → permission id → pending record. */
-  private readonly pending = new Map<string, Map<string, PendingApproval>>();
+  private readonly pending = new PendingApprovalRegistry<PendingApproval>();
 
   /**
    * Permission ids this store auto-denied because nobody answered, per session,
@@ -146,9 +150,8 @@ export class PendingApprovalStore {
   /**
    * Track a forwarded request and arm its auto-deny timer.
    *
-   * The timer fires at {@link SESSIONS.INTERACTION_PARK_CEILING_MS}: the card
-   * counts down for ten minutes, then parks and says the agent is waiting, and
-   * only four hours in does the sidecar hear a `reject`.
+   * The card counts down for ten minutes, then parks and says the agent is
+   * waiting. The timer sends a `reject` to the sidecar only after four hours.
    *
    * @param sessionId - DorkOS session the request belongs to
    * @param permissionId - `Permission.id` (the `approval_required.toolCallId`)
@@ -176,8 +179,8 @@ export class PendingApprovalStore {
     // agent is waiting, and this is when the agent actually gives up (spec
     // `ask-parks-on-timeout` §6). The mapper still advertises the countdown,
     // which is what the person watches.
-    const timer = setTimeout(() => {
-      if (!this.take(sessionId, permissionId)) return;
+    const record = { ...entry, startedAt };
+    this.pending.insert(sessionId, permissionId, record, 'attended', (expired) => {
       const forSession = this.expired.get(sessionId) ?? new Set<string>();
       forSession.add(permissionId);
       this.expired.set(sessionId, forSession);
@@ -188,7 +191,7 @@ export class PendingApprovalStore {
       // module's TSDoc), so this line is the only record at all. Nothing from
       // the request's input is logged — only what it was and how long it
       // waited.
-      const waitedMs = Date.now() - startedAt;
+      const waitedMs = Date.now() - expired.startedAt;
       logRefusal(
         `[opencode] nobody answered in ${Math.round(waitedMs / 60_000)}m, so this was denied`,
         {
@@ -198,21 +201,13 @@ export class PendingApprovalStore {
           detail: {
             interactionId: permissionId,
             kind: 'approval',
-            toolName: entry.toolName,
+            toolName: expired.toolName,
             waitedMs,
           },
         }
       );
       onTimeout();
-    }, SESSIONS.INTERACTION_PARK_CEILING_MS);
-    // Never hold the event loop open for an approval countdown.
-    timer.unref?.();
-    let forSession = this.pending.get(sessionId);
-    if (!forSession) {
-      forSession = new Map();
-      this.pending.set(sessionId, forSession);
-    }
-    forSession.set(permissionId, { ...entry, timer, startedAt });
+    });
   }
 
   /**
@@ -220,13 +215,8 @@ export class PendingApprovalStore {
    * nothing is pending under that id (already answered, timed out, or unknown).
    */
   take(sessionId: string, permissionId: string): { ocSessionId: string; cwd: string } | null {
-    const forSession = this.pending.get(sessionId);
-    const entry = forSession?.get(permissionId);
-    if (!forSession || !entry) return null;
-    clearTimeout(entry.timer);
-    forSession.delete(permissionId);
-    if (forSession.size === 0) this.pending.delete(sessionId);
-    return { ocSessionId: entry.ocSessionId, cwd: entry.cwd };
+    const entry = this.pending.take(sessionId, permissionId);
+    return entry ? { ocSessionId: entry.ocSessionId, cwd: entry.cwd } : null;
   }
 
   /**
@@ -254,10 +244,7 @@ export class PendingApprovalStore {
   clearSession(sessionId: string): void {
     this.heavyJobs.endSession(sessionId);
     this.expired.delete(sessionId);
-    const forSession = this.pending.get(sessionId);
-    if (!forSession) return;
-    for (const entry of forSession.values()) clearTimeout(entry.timer);
-    this.pending.delete(sessionId);
+    this.pending.clear(sessionId);
   }
 }
 
@@ -269,10 +256,19 @@ export class PendingApprovalStore {
  * subagent raises its prompts in its own CHILD session and only that session
  * can take the answer (DOR-1126).
  */
-export interface ApprovalRouting {
+export interface ApprovalRouting extends Pick<
+  OpenCodeTurnOptions,
+  'sendPermissionMode' | 'permissionCeiling'
+> {
   sessionId: string;
   ocSessionId: string;
   cwd: string;
+  /**
+   * The folder OpenCode stores the session under (`Session.directory`). A reply
+   * that names no session is routed by it (DOR-5248); a child session's asks
+   * live in the same folder.
+   */
+  directory: string;
   permissions: OpenCodePermissionState;
   /**
    * The folders THIS turn was granted (spec `agent-home-desk` §4.4). Consulted
@@ -282,12 +278,6 @@ export interface ApprovalRouting {
   grants?: readonly DirectoryGrant[];
   /** Native file refusals precede grants and Full mode. */
   protectedRoots?: ProtectedPathRoots;
-  /**
-   * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`).
-   * Applied to the live mode on every ask, so the turn runs at the stricter of
-   * the two and the session's stored mode is never rewritten.
-   */
-  permissionCeiling?: TurnPermissionCeiling;
   /** The turn's own stop: it ends a heavy `bash` ask's wait for the machine's line. */
   signal?: AbortSignal;
 }
@@ -308,6 +298,8 @@ export interface ApprovalGateDeps {
   registry: OpenCodeSessionRegistry;
   /** The machine-wide load gate a heavy `bash` ask waits in (tests; the server's own otherwise). */
   loadGate?: RuntimeWaitDeps;
+  /** The shell guard's check a `bash` ask goes through (tests; the server's own otherwise). */
+  shellCheck?: ShellChecker;
 }
 
 /**
@@ -315,9 +307,10 @@ export interface ApprovalGateDeps {
  * deny). `POST /session/{id}/permissions/{permissionID}` is the route the
  * SDK client exposes, and 1.18.15 still serves it: a live approve and a live
  * deny were both accepted (200) and both echoed back as `permission.replied`
- * (2026-08-11, DOR-1147). The sidecar has since grown a second spelling
- * (`POST /permission/{requestID}/reply`, also verified working) that the SDK
- * does not expose yet. Only a refusal that must tell the model why uses it
+ * (2026-08-11, DOR-1147). It names the session, so OpenCode routes it to the
+ * session's own folder. The sidecar has since grown a second spelling
+ * (`POST /permission/{requestID}/reply`) that the SDK does not expose yet and
+ * that names no session. Only a refusal that must tell the model why uses it
  * ({@link rejectPermissionWithReason}); everything else answers here.
  *
  * @param provider - Sidecar client source, routed by `target.cwd`
@@ -342,67 +335,103 @@ export async function respondPermission(
 }
 
 /**
+ * How long a refusal waits on the reason route before it rejects plainly
+ * (DOR-5248). The route answers in milliseconds when it is addressed right; the
+ * bound is for a sidecar that is slow or wedged, so a refusal never stalls.
+ */
+export const REASON_REPLY_TIMEOUT_MS = 2_000;
+
+/**
  * Refuse one permission request and tell the model why (DOR-4447), as the
  * DorkOS runtime does: a bare reject reaches the model only as OpenCode's
- * "The user rejected permission to use this specific tool call."
+ * "The user rejected permission to use this specific tool call.", and it ends
+ * OpenCode's loop, where a reason goes back to the model as the tool's error.
  *
  * The SDK's v1 route takes no message. The sidecar's own
- * `POST /permission/{requestID}/reply` takes `{reply, message}` (verified on
- * 1.18.15, typed in the pinned 1.19.3's v2 SDK), and OpenCode hands that
- * message to the model as the tool's error. The v1 client has no method for
- * it, so the route is named on the v1 method's request, whose options spread
- * over its own URL. If the sidecar will not take it, the plain reject still
- * lands: a refusal never turns into an approval or a hanging ask.
+ * `POST /permission/{requestID}/reply` takes `{reply, message}` (typed in the
+ * pinned 1.19.3's v2 SDK). The v1 client has no method for it, so the route is
+ * named on the v1 method's request, whose options spread over its own URL.
+ *
+ * That route names no session, so OpenCode finds the ask by `?directory=`:
+ * left out, it looks in the folder the sidecar was started in, boots that
+ * folder (about 70 s on the pinned binary, offline) and answers "not found"
+ * (DOR-5248). So the session's stored folder rides along, and the attempt is
+ * bounded by {@link REASON_REPLY_TIMEOUT_MS}. If the sidecar will not take it
+ * in time, the plain reject still lands: a refusal never turns into an
+ * approval or a hanging ask.
  *
  * @param provider - Sidecar client source, routed by `target.cwd`
- * @param target - The OpenCode session that RAISED the request, and its cwd
+ * @param target - The OpenCode session that RAISED the request, the turn's cwd,
+ *   and the folder OpenCode stores the session under (`Session.directory`)
  * @param permissionID - `Permission.id` to answer (the reply route's `requestID`)
  * @param message - Why it was refused, for the model
  */
 export async function rejectPermissionWithReason(
   provider: OpenCodeClientProvider,
-  target: { ocSessionId: string; cwd: string },
+  target: { ocSessionId: string; cwd: string; directory: string },
   permissionID: string,
   message: string
 ): Promise<void> {
   const client = await provider.getClient(target.cwd);
+  const stop = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<string>((resolve) => {
+    timer = setTimeout(() => {
+      stop.abort();
+      resolve('no answer in time');
+    }, REASON_REPLY_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  // Never rejects: the race below must not leave a failure nobody awaits.
+  const replied = (async (): Promise<true | string> => {
+    try {
+      const result = (await client.postSessionIdPermissionsPermissionId({
+        url: '/permission/{requestID}/reply',
+        path: { requestID: permissionID },
+        query: { directory: target.directory },
+        body: { reply: 'reject', message },
+        signal: stop.signal,
+      } as never)) as { data?: unknown; error?: unknown };
+      // The route answers `true` once it took the reply. Anything else (an
+      // error, a page some other route served) is not proof.
+      if (result.data === true) return true;
+      return JSON.stringify(result.error ?? result.data ?? null);
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  })();
   try {
-    const result = await client.postSessionIdPermissionsPermissionId({
-      url: '/permission/{requestID}/reply',
-      path: { requestID: permissionID },
-      body: { reply: 'reject', message },
-    } as never);
-    // The route answers `true` once it took the reply. Anything else (an
-    // error, a page some other route served) is not proof, so reject plainly.
-    if ((result as { data?: unknown }).data === true) return;
+    const outcome = await Promise.race([replied, expired]);
+    if (outcome === true) return;
     logger.warn('[OpenCodeRuntime] reject with a reason not confirmed; rejecting without one', {
-      error: JSON.stringify(result.error ?? (result as { data?: unknown }).data ?? null),
+      error: outcome,
     });
-  } catch (err) {
-    logger.warn(
-      '[OpenCodeRuntime] reject with a reason failed; rejecting without one',
-      logError(err)
-    );
+  } finally {
+    clearTimeout(timer);
   }
   await respondPermission(provider, target, permissionID, 'reject');
 }
 
 /**
- * Run the installed packages' shell guards for one `bash` ask (DOR-4379).
+ * Check one `bash` ask: the protected-files list first, at every level
+ * (`shell-protected-writes.ts`, DOR-4522), then the installed packages' own
+ * shell guards (DOR-4379).
  *
  * The command rides the ask's `metadata.command`. One that names none is
- * refused when a shell check applies (see `checkShellCommand`), and a check
- * that throws is refused too.
+ * refused at Full, and when a package's shell check applies (see
+ * `checkShellCommand`); a check that throws is refused too.
  *
  * @param deps - The runtime state, for the live permission mode
  * @param turn - The turn's routing: session and working directory
  * @param approval - The mapped `bash` ask
+ * @param check - The turn's protected roots, and whether the ask runs at Full
  */
 async function shellGuardVerdict(
   deps: ApprovalGateDeps,
   turn: ApprovalRouting,
-  approval: ApprovalEvent
-): Promise<ShellCommandVerdict> {
+  approval: ApprovalEvent,
+  check: { roots: ProtectedPathRoots; full: boolean }
+): Promise<{ allowed: true } | { allowed: false; reason: string; reasonType: string }> {
   let command: string | undefined;
   try {
     const parsed = (JSON.parse(approval.input) as { command?: unknown }).command;
@@ -410,20 +439,28 @@ async function shellGuardVerdict(
   } catch {
     command = undefined;
   }
+  const listed = await checkShellProtectedWrites({
+    command,
+    ...check,
+    runtime: 'opencode',
+    ...(deps.shellCheck ? { check: deps.shellCheck } : {}),
+  });
+  if (!listed.allowed) return { ...listed, reasonType: 'protected_path' };
   const permissionMode = deps.registry.get(turn.sessionId)?.permissionMode;
   try {
-    return await checkShellCommand({
+    const verdict = await checkShellCommand({
       runtime: 'opencode',
       cwd: turn.cwd,
       command,
       sessionId: turn.sessionId,
       ...(permissionMode !== undefined ? { permissionMode } : {}),
     });
+    return verdict.allowed ? verdict : { ...verdict, reasonType: 'package_hook' };
   } catch (err) {
     logger.warn('[PackageHooks] OpenCode shell check failed', logError(err));
     return {
       allowed: false,
-      packageName: 'DorkOS',
+      reasonType: 'package_hook',
       reason: "DorkOS could not run this project's safety checks, so this command was blocked.",
     };
   }
@@ -494,7 +531,7 @@ async function* refuseStoppedAsk(
     turn.permissions.pendingPermissionSessions.get(approval.toolCallId) ?? turn.ocSessionId;
   await rejectPermissionWithReason(
     deps.provider,
-    { ocSessionId: askedIn, cwd: turn.cwd },
+    { ocSessionId: askedIn, cwd: turn.cwd, directory: turn.directory },
     approval.toolCallId,
     STOPPED_WHILE_WAITING_REASON
   );
@@ -560,7 +597,7 @@ async function* decideApproval(
     // inside a `read` grant has to beat `bypassPermissions`, which would
     // otherwise approve the write below. A refusal that cannot be delivered
     // falls to the person's card, never to the mode's auto-approve.
-    const roots = turn.protectedRoots ?? protectedPathRoots(cwd);
+    const roots = turn.protectedRoots ?? turnProtectedRoots(cwd);
     const fileVerdict = protectedFileVerdict(approval, roots);
     if (fileVerdict !== undefined) {
       if (fileVerdict === 'deny')
@@ -577,17 +614,21 @@ async function* decideApproval(
       );
       return;
     }
-    // An installed package's own shell guards answer next, before folder grants
-    // and before the mode's auto-approve, so Full cannot skip them. OpenCode
-    // has no hooks of its own (DOR-4379).
+    // The shell's own checks answer next, before folder grants and before the
+    // mode's auto-approve, so Full cannot skip them: the protected-files list
+    // (DOR-4522), then an installed package's own guards. OpenCode has no
+    // hooks of its own (DOR-4379).
+    const liveMode = readOpenCodeTurnMode(deps.registry, sessionId, turn.sendPermissionMode);
+    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (approval.toolName === 'bash') {
-      const verdict = await shellGuardVerdict(deps, turn, approval);
+      const full = mode === 'bypassPermissions';
+      const verdict = await shellGuardVerdict(deps, turn, approval, { roots, full });
       if (!verdict.allowed) {
         // The model reads the guard's words as the tool's error (DOR-4447);
         // the person sees them on the event below.
         await rejectPermissionWithReason(
           deps.provider,
-          { ocSessionId: askedIn, cwd },
+          { ocSessionId: askedIn, cwd, directory: turn.directory },
           approval.toolCallId,
           verdict.reason
         );
@@ -596,7 +637,7 @@ async function* decideApproval(
           data: {
             toolCallId: approval.toolCallId,
             toolName: approval.toolName,
-            reasonType: 'package_hook',
+            reasonType: verdict.reasonType,
             reason: verdict.reason,
             message: verdict.reason,
           },
@@ -627,8 +668,6 @@ async function* decideApproval(
         );
       }
     }
-    const liveMode = deps.registry.get(sessionId)?.permissionMode;
-    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (
       grantVerdict !== 'deny' &&
       resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'
@@ -683,14 +722,4 @@ async function* decideApproval(
     }
   }
   yield event;
-}
-
-/** The live permission mode bounded by this turn's own ceiling, without changing stored settings. */
-export function effectiveApprovalMode(
-  mode: PermissionModeId | undefined,
-  ceiling?: TurnPermissionCeiling
-): PermissionModeId | undefined {
-  return mode !== undefined && ceiling !== undefined
-    ? clampModeToCeiling(OPENCODE_CAPABILITIES.permissionModes, mode, ceiling)
-    : mode;
 }

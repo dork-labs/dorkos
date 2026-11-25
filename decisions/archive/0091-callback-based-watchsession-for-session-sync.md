@@ -1,7 +1,7 @@
 ---
 number: 91
 title: Callback-Based watchSession for Session Sync
-status: proposed
+status: archived
 created: 2026-03-06
 spec: agent-runtime-review-remediation
 superseded-by: null

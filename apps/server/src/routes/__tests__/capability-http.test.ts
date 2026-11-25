@@ -41,13 +41,14 @@ import { mcpDomain } from '../../services/mesh/mcp-capabilities.js';
 import { AgentMcpServerService } from '../../services/mesh/agent-mcp-server-service.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   HAND_SERVED_CAPABILITIES,
   NOT_ON_THIS_COMPUTER,
+  SKIPPABLE_MIDDLEWARE,
   assertNoCapabilityRouteCollisions,
+  compareRouteSpecificity,
   createCapabilityHttpRoutes,
   mountedCapabilities,
 } from '../capability-http.js';
@@ -93,6 +94,7 @@ const AS_SCOUT: AgentIdentity = {
 describe('the mount', () => {
   it('serves exactly the declared surfaces no hand route still serves', () => {
     expect(mountedCapabilities().map((capability) => capability.id)).toEqual([
+      'operator.activity_list',
       'mcp.list',
       'mcp.add',
       'mcp.import',
@@ -102,9 +104,41 @@ describe('the mount', () => {
       'mcp.disable',
       'mcp.test',
       'mcp.set_client',
+      'todos.view_promises',
+      'todos.add_promise_for_agent',
+      'todos.change_promise',
+      'todos.confirm_promise',
+      'todos.view_list',
+      'todos.view_card',
+      'todos.add_as_person',
+      'todos.change_as_person',
+      'work-queue.view_queue',
+      'work-queue.change_settings',
+      'work-queue.stop_all',
+      'work-queue.set_order',
+      'work-queue.add_item',
+      'work-queue.remove_item',
+      'work-queue.requeue_item',
+      'audit.verify',
+      'audit.query',
+      'audit.get',
+      'audit.account_timeline',
+      'audit.running_chats',
       'agent.pause',
       'agent.resume',
       'agent.list_paused',
+      'link.resolve',
+      'heartbeat.wakers_off',
+      'directory.browse',
+      'directory.default',
+      'diff.baseline',
+      'diff.advance_baseline',
+      'diff.pending',
+      'diff.revert',
+      'workspaces.list',
+      'workspaces.scan',
+      'workspaces.pin',
+      'templates.list',
     ]);
   });
 
@@ -122,13 +156,7 @@ describe('the mount', () => {
   // too. Never add one.
   it('pins the hand-served list, which may only shrink', () => {
     expect(Object.keys(HAND_SERVED_CAPABILITIES).sort()).toEqual([
-      'audit.account_timeline',
-      'audit.get',
-      'audit.query',
-      'audit.running_chats',
-      'audit.verify',
       'capabilities.list',
-      'operator.activity_list',
       'rooms.reseat',
       'rooms.reseat_options',
     ]);
@@ -140,10 +168,8 @@ describe('the mount', () => {
       '/api/agents/pauses'
     );
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({
-      error: NOT_ON_THIS_COMPUTER,
-      code: 'UNKNOWN_CAPABILITY',
-    });
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body).toMatchObject({ code: 'unknown_capability', detail: NOT_ON_THIS_COMPUTER });
     expect(NOT_ON_THIS_COMPUTER).toBe("This isn't available on this computer.");
   });
 
@@ -152,7 +178,7 @@ describe('the mount', () => {
       '/api/agents/pauses'
     );
     expect(res.status).toBe(503);
-    expect(res.body.code).toBe('NOT_READY');
+    expect(res.body.code).toBe('temporarily_unavailable');
   });
 
   it('refuses two surfaces on one path, whatever their parameters are called', () => {
@@ -166,17 +192,273 @@ describe('the mount', () => {
   it('refuses an app where a hand route claims a capability’s path', () => {
     const capability = demo('demo.one', { method: 'post', path: '/api/demo/{id}/go' });
     const app = new Hono();
+    // Middleware registered before the mount runs first, as for every route.
+    app.use('/api/demo/*', async (_c, next) => next());
     app.route(
       '/',
       createCapabilityHttpRoutes({ registry: () => undefined, capabilities: [capability] })
     );
-    app.use('/api/demo/*', async (_c, next) => next());
     app.get('/api/demo/:id/go', (c) => c.text('a GET is another route'));
     expect(() => assertNoCapabilityRouteCollisions(app, [capability])).not.toThrow();
     app.post('/api/demo/:thing/go', (c) => c.text('hand'));
     expect(() => assertNoCapabilityRouteCollisions(app, [capability])).toThrow(
       /POST \/api\/demo\/:\/go \(demo.one\)/
     );
+  });
+});
+
+describe('mount order', () => {
+  const running = () => demo('demo.running', { method: 'get', path: '/api/sessions/running' });
+  /** An app with the mount over `capabilities`, plus whatever `hand` registers before and after. */
+  function app(
+    capabilities: CapabilityDefinition[],
+    hand: { before?: (app: Hono) => void; after?: (app: Hono) => void }
+  ): Hono {
+    const built = new Hono();
+    hand.before?.(built);
+    built.route('/', createCapabilityHttpRoutes({ registry: () => undefined, capabilities }));
+    hand.after?.(built);
+    return built;
+  }
+
+  it('refuses a hand route registered earlier that would answer a capability’s requests', () => {
+    const shadowed = app([running()], {
+      before: (hand) => hand.get('/api/sessions/:id', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(shadowed, [running()])).toThrow(
+      /GET \/api\/sessions\/running \(demo.running\) is shadowed by GET \/api\/sessions\/:id/
+    );
+    const first = app([running()], {
+      after: (hand) => hand.get('/api/sessions/:id', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(first, [running()])).not.toThrow();
+  });
+
+  it('refuses a capability that would take requests a more specific hand route is meant for', () => {
+    const any = demo('demo.any', { method: 'get', path: '/api/demo/{agentId}' });
+    const built = app([any], {
+      after: (hand) => hand.get('/api/demo/current', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(built, [any])).toThrow(
+      /\(demo.any\) shadows GET \/api\/demo\/current/
+    );
+  });
+
+  it('refuses hand middleware after the mount on a capability path, which would never run', () => {
+    const built = app([running()], {
+      after: (hand) => hand.use('/api/sessions/*', async (_c, next) => next()),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(built, [running()])).toThrow(
+      /\(demo.running\) skips middleware ALL \/api\/sessions\/\*/
+    );
+  });
+
+  it('lets a capability skip the hand middleware listed with a reason, and no other', () => {
+    const real = demo('audit.running_chats', { method: 'get', path: '/api/sessions/running' });
+    const guarded = app([real], {
+      after: (hand) => hand.use('/api/sessions/:id/*', async (_c, next) => next()),
+    });
+    expect(
+      SKIPPABLE_MIDDLEWARE['GET /api/sessions/running skips ALL /api/sessions/:id/*']
+    ).toBeTruthy();
+    expect(() => assertNoCapabilityRouteCollisions(guarded, [real])).not.toThrow();
+    const other = app([real], {
+      after: (hand) => hand.use('/api/sessions/*', async (_c, next) => next()),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(other, [real])).toThrow(/skips middleware/);
+  });
+
+  it('never counts the mount’s own routes against each other', () => {
+    const fixed = demo('demo.fixed', { method: 'get', path: '/api/demo/fixed' });
+    const any = demo('demo.any', { method: 'get', path: '/api/demo/{id}' });
+    const built = app([any, fixed], {});
+    expect(() => assertNoCapabilityRouteCollisions(built, [any, fixed])).not.toThrow();
+    // A hand route on a capability's own path is still a claim.
+    const claimed = app([any, fixed], {
+      after: (hand) => hand.get('/api/demo/fixed', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(claimed, [any, fixed])).toThrow(
+      /\(demo.fixed\) is claimed by GET \/api\/demo\/fixed/
+    );
+    // One registered before the mount is a hand route too, never the mount's
+    // own, so it cannot slip past the shadow check for its neighbours.
+    const early = app([any, fixed], {
+      before: (hand) => hand.get('/api/demo/fixed', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(early, [any, fixed])).toThrow(
+      /\(demo.any\) is shadowed by GET \/api\/demo\/fixed/
+    );
+  });
+
+  it('reads a regex splat param (`:path{.+}`) as spanning segments', () => {
+    const spanned = app([running()], {
+      before: (hand) => hand.get('/api/:rest{.+}', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(spanned, [running()])).toThrow(
+      /is shadowed by GET \/api\/:rest\{\.\+\}/
+    );
+    const oneSegment = app([running()], {
+      before: (hand) => hand.get('/api/:id{[0-9]+}', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(oneSegment, [running()])).not.toThrow();
+  });
+
+  it('registers its own routes static before param, whatever order they were declared in', () => {
+    const routes = createCapabilityHttpRoutes({
+      registry: () => undefined,
+      capabilities: [
+        demo('demo.any', { method: 'get', path: '/api/demo/{agentId}' }),
+        // No http surface: never routed, never compared.
+        defineCapability({
+          ...demo('demo.none', { method: 'get', path: '/unused' }),
+          surfaces: {},
+        }) as CapabilityDefinition,
+        demo('demo.rest', { method: 'get', path: '/api/demo/{agentId}/items' }),
+        demo('demo.fixed', { method: 'get', path: '/api/demo/fixed' }),
+      ],
+    });
+    expect(routes.routes.map((route) => route.path)).toEqual([
+      '/api/demo/fixed',
+      '/api/demo/:agentId/items',
+      '/api/demo/:agentId',
+    ]);
+    expect(compareRouteSpecificity('/api/demo/fixed', '/api/demo/:id')).toBeLessThan(0);
+    expect(compareRouteSpecificity('/api/demo/:id', '/api/demo/*')).toBeLessThan(0);
+    expect(compareRouteSpecificity('/api/demo/:a', '/api/demo/:b')).toBe(0);
+  });
+});
+
+describe('a person-only capability (audience: person)', () => {
+  const ran = vi.fn();
+  afterEach(() => ran.mockClear());
+  const personOnly = (tier: 'observe' | 'act' = 'act'): CapabilityDefinition =>
+    defineCapability({
+      ...demo(
+        'demo.mine',
+        { method: 'post', path: '/api/demo/{agentId}', audience: 'person' },
+        tier
+      ),
+      invoke: async (_deps: unknown, input: unknown) => {
+        ran();
+        return { got: input };
+      },
+    }) as CapabilityDefinition;
+  /** Serve the capability over a registry of it, through the mount and the invoke endpoint. */
+  function serve(before?: MiddlewareHandler<ApiEnv>, tier: 'observe' | 'act' = 'act') {
+    const capability = personOnly(tier);
+    const registry = composeRegistry([{ name: 'demo', capabilities: [capability] }], {
+      logger: noopLogger,
+    });
+    const routes = new Hono<ApiEnv>();
+    routes.route(
+      '/',
+      createCapabilityHttpRoutes({ registry: () => registry, capabilities: [capability] })
+    );
+    routes.route('/api/capabilities', createCapabilitiesInvokeRoutes(registry));
+    return target.mount(honoGroupListener({ path: '/', routes }, before ? { before } : {}));
+  }
+
+  it('refuses an agent with 403 person_only before the handler runs, on both doors', async () => {
+    const listener = serve(presenting(AS_SCOUT));
+    const rest = await request(listener).post('/api/demo/a1').send({});
+    expect(rest.status).toBe(403);
+    expect(rest.body).toMatchObject({ code: 'person_only' });
+    const viaInvoke = await request(target.server)
+      .post('/api/capabilities/demo.mine/invoke')
+      .send({ agentId: 'a1' });
+    expect(viaInvoke.status).toBe(403);
+    expect(viaInvoke.body).toMatchObject({ code: 'person_only' });
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller that sent an agent token this machine could not resolve', async () => {
+    const res = await request(serve())
+      .post('/api/demo/a1')
+      .set('X-DorkOS-Agent', 'not-a-real-token')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+  });
+
+  it('refuses a caller holding an approval token, as the decide endpoint does', async () => {
+    const res = await request(serve())
+      .post('/api/demo/a1')
+      .set('X-DorkOS-Approval', 'some-token')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it('refuses an Authorization bearer that sent no agent header: a program, not a person', async () => {
+    const res = await request(serve())
+      .post('/api/demo/a1')
+      .set('Authorization', 'Bearer a-key')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  describe('where a person must prove a session (a credential-gated request)', () => {
+    /** Mark the request as one the gate asked for a credential, with this caller. */
+    function gated(user?: { credential: 'cookie' | 'api-key' }): MiddlewareHandler<ApiEnv> {
+      return async (c, next) => {
+        markIngress(c.env.incoming, 'wifi');
+        if (user) {
+          c.set('user', {
+            userId: 'owner',
+            credential: user.credential,
+            sessionId: 'sess-1',
+            route: 'wifi',
+          });
+        }
+        await next();
+      };
+    }
+
+    it('refuses a caller with no person session', async () => {
+      const res = await request(serve(gated(), 'observe')).post('/api/demo/a1').send({});
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+    });
+
+    it('refuses a per-user API key', async () => {
+      const res = await request(serve(gated({ credential: 'api-key' }), 'observe'))
+        .post('/api/demo/a1')
+        .send({});
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+      expect(ran).not.toHaveBeenCalled();
+    });
+
+    it('runs for a person signed in with a browser session', async () => {
+      const res = await request(serve(gated({ credential: 'cookie' }), 'observe'))
+        .post('/api/demo/a1')
+        .send({});
+      expect(res.status).toBe(200);
+      expect(ran).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('runs for a person', async () => {
+    const res = await request(serve()).post('/api/demo/a1').send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ got: { agentId: 'a1' } });
+    expect(ran).toHaveBeenCalledOnce();
+  });
+
+  it('may not declare an MCP surface, so no MCP server lists it', () => {
+    const capability = defineCapability({
+      ...personOnly(),
+      surfaces: {
+        http: { method: 'post', path: '/api/demo/{agentId}', audience: 'person' },
+        mcp: { toolName: 'demo_mine', servers: ['external'] },
+      },
+    }) as CapabilityDefinition;
+    expect(() =>
+      composeRegistry([{ name: 'demo', capabilities: [capability] }], { logger: noopLogger })
+    ).toThrow(/"demo.mine" is for a person only \(http.audience\)/);
   });
 });
 
@@ -303,7 +585,7 @@ describe('turning a request into input', () => {
       );
       const res = await request(listener).post('/api/demo/a1').send({});
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(NOT_FROM_WIFI);
+      expect(res.body.code).toBe('not_from_wifi');
     });
   });
 });
@@ -361,7 +643,7 @@ describe('agent pause, served by the mount', () => {
     const res = await request(mount(registry, agentPauseDomain.capabilities))
       .post('/api/agents/nobody/pause')
       .expect(404);
-    expect(res.body.code).toBe('AGENT_NOT_FOUND');
+    expect(res.body.code).toBe('agent_not_found');
   });
 
   it('answers 403 when the paused agent tries to resume itself', async () => {
@@ -372,7 +654,10 @@ describe('agent pause, served by the mount', () => {
       mount(registry, agentPauseDomain.capabilities, presenting(AS_SCOUT))
     ).post(`/api/agents/${SCOUT.id}/resume`);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('CANNOT_RESUME_SELF');
+    expect(res.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'An agent can’t lift its own pause. A person has to.',
+    });
   });
 });
 
@@ -448,7 +733,7 @@ describe('agent pause from a Wi-Fi sign-in, through both doors', () => {
     expect(pauses.isPaused(SCOUT.id)).toBeDefined();
     const resume = await request(target.server).post(`/api/agents/${SCOUT.id}/resume`).send({});
     expect(resume.status).toBe(403);
-    expect(resume.body.code).toBe(NOT_FROM_WIFI);
+    expect(resume.body.code).toBe('not_from_wifi');
     expect(pauses.isPaused(SCOUT.id)).toBeDefined();
   });
 
@@ -463,7 +748,7 @@ describe('agent pause from a Wi-Fi sign-in, through both doors', () => {
       .post('/api/capabilities/agent.resume/invoke')
       .send({ agentId: SCOUT.id });
     expect(resume.status).toBe(403);
-    expect(resume.body.code).toBe(NOT_FROM_WIFI);
+    expect(resume.body.code).toBe('not_from_wifi');
     expect(pauses.isPaused(SCOUT.id)).toBeDefined();
   });
 });
@@ -529,6 +814,6 @@ describe('an agent’s MCP servers, served by the mount', () => {
       '/api/agents/nobody/mcp-servers'
     );
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('AGENT_NOT_FOUND');
+    expect(res.body.code).toBe('agent_not_found');
   });
 });

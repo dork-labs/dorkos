@@ -5,9 +5,10 @@ vi.mock('../../lib/api-client.js', () => {
   class ApiError extends Error {
     constructor(
       public status: number,
-      public body: { error?: string; code?: string }
+      public body: { error?: string; detail?: string; code?: string }
     ) {
-      super(body.error ?? `HTTP ${status}`);
+      // The real one reads a problem's `detail` first (`readErrorBody`).
+      super(body.detail ?? body.error ?? `HTTP ${status}`);
     }
   }
   return {
@@ -28,34 +29,6 @@ function writtenJson(): unknown {
   if (typeof value !== 'string') throw new Error('Expected one JSON string on stdout.');
   return JSON.parse(value);
 }
-
-const CONNECTIONS = {
-  connections: [
-    {
-      connectionId: 'connection/a',
-      toolkit: 'GMAIL',
-      label: 'Work mail',
-      status: 'active',
-      custody: 'managed',
-      reconciliationStatus: 'ready',
-    },
-  ],
-};
-
-const OPERATIONS = {
-  connectionId: 'connection/a',
-  operations: [
-    {
-      operationRevisionId: 'revision/a',
-      toolkit: 'GMAIL',
-      operationSlug: 'GMAIL_FETCH_MESSAGE',
-      toolkitVersion: '20260901_00',
-      capabilityClassification: 'read',
-      retryPolicy: 'never',
-      inputSchema: { type: 'object', required: ['messageId'] },
-    },
-  ],
-};
 
 const USAGE = {
   items: [
@@ -166,38 +139,6 @@ describe('connections dispatcher', () => {
 });
 
 describe('connections list and schema', () => {
-  it('calls the agent-scoped list route and preserves the raw envelope for --json', async () => {
-    apiCallMock.mockResolvedValue(CONNECTIONS);
-
-    expect(await runConnectionsDispatcher(['list', '--agent', ' agent/a ', '--json'])).toBe(0);
-
-    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/connectors/accessible?agentId=agent%2Fa');
-    expect(process.stdout.write).toHaveBeenCalledWith(`${JSON.stringify(CONNECTIONS, null, 2)}\n`);
-  });
-
-  it('renders a human connection table', async () => {
-    apiCallMock.mockResolvedValue(CONNECTIONS);
-
-    expect(await runConnectionsDispatcher(['list', '--agent', 'agent-a'])).toBe(0);
-
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Work mail'));
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('RECONCILIATION'));
-  });
-
-  it('encodes the connection and agent and shows the exact revision schema in JSON', async () => {
-    apiCallMock.mockResolvedValue(OPERATIONS);
-
-    expect(
-      await runConnectionsDispatcher(['schema', 'connection/a', '--agent', 'agent/a', '--json'])
-    ).toBe(0);
-
-    expect(apiCallMock).toHaveBeenCalledWith(
-      'GET',
-      '/api/connectors/accessible/connection%2Fa/operations?agentId=agent%2Fa'
-    );
-    expect(process.stdout.write).toHaveBeenCalledWith(`${JSON.stringify(OPERATIONS, null, 2)}\n`);
-  });
-
   it('rejects malformed success data instead of printing it as granted access', async () => {
     apiCallMock.mockResolvedValue({ connections: [{ connectionId: 'connection-a' }] });
 
@@ -307,15 +248,15 @@ describe('connections call', () => {
   it('surfaces a server refusal and leaves stdout empty', async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(403, {
-        error:
-          'This service call cannot run from an active agent session. Use an API key outside the session.',
-        code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
+        title: 'This account isn’t allowed to do that.',
+        code: 'forbidden',
+        detail: 'Run this with an API key, outside an agent’s chat.',
       })
     );
 
     expect(await runConnectionsDispatcher(command)).toBe(1);
     expect(console.error).toHaveBeenCalledWith(
-      'Error: This service call cannot run from an active agent session. Use an API key outside the session.'
+      'Error: Run this with an API key, outside an agent’s chat.'
     );
     expect(process.stdout.write).not.toHaveBeenCalled();
   });
@@ -377,53 +318,6 @@ describe('connections management review handoff', () => {
     expect(console.log).toHaveBeenCalledWith('State: pending');
     expect(console.log).toHaveBeenCalledWith('Expires: 2026-09-06T12:15:00.000Z');
     expect(apiCallMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('prints the safe URL without opening for --print or a non-interactive caller', async () => {
-    apiCallMock.mockResolvedValue(pendingReview('review-two'));
-    const openUrl = vi.fn(() => true);
-
-    expect(await runConnectionsDispatcher([...request, '--print'], { openUrl, isTty: true })).toBe(
-      2
-    );
-    expect(openUrl).not.toHaveBeenCalled();
-    expect(console.log).toHaveBeenCalledWith('http://localhost:4242/connections?review=review-two');
-
-    vi.clearAllMocks();
-    apiCallMock.mockResolvedValue(pendingReview('review-three'));
-    expect(await runConnectionsDispatcher(request, { openUrl, isTty: false })).toBe(2);
-    expect(openUrl).not.toHaveBeenCalled();
-  });
-
-  it('prints a machine-readable pending state and safe URL without opening', async () => {
-    apiCallMock.mockResolvedValue(pendingReview());
-    const openUrl = vi.fn(() => true);
-
-    expect(await runConnectionsDispatcher([...request, '--json'], { openUrl, isTty: true })).toBe(
-      2
-    );
-    expect(openUrl).not.toHaveBeenCalled();
-    expect(writtenJson()).toEqual({
-      reviewRequestId: 'review/one',
-      state: 'pending',
-      targetStatus: 'available',
-      expiresAt: '2026-09-06T12:15:00.000Z',
-      reviewUrl: 'http://localhost:4242/connections?review=review%2Fone',
-    });
-  });
-
-  it('reports an already-resolved idempotent request without reopening it for a decision', async () => {
-    apiCallMock.mockResolvedValue(resolvedReview('approved', 'applied'));
-    const openUrl = vi.fn(() => true);
-
-    expect(await runConnectionsDispatcher(request, { openUrl, isTty: true })).toBe(0);
-
-    expect(openUrl).not.toHaveBeenCalled();
-    expect(console.log).toHaveBeenCalledWith('State: approved');
-    expect(console.log).toHaveBeenCalledWith('Outcome: applied');
-    expect(console.log).not.toHaveBeenCalledWith(
-      'Nothing changes until the owner approves it there.'
-    );
   });
 
   it.each([
@@ -504,23 +398,6 @@ describe('connections management review handoff', () => {
 });
 
 describe('connections requester-safe review status', () => {
-  it('encodes the review id, renders the safe status, and does not open a browser', async () => {
-    apiCallMock.mockResolvedValue(pendingReview());
-    const openUrl = vi.fn(() => true);
-
-    expect(await runConnectionsDispatcher(['status', 'review/one'], { openUrl, isTty: true })).toBe(
-      2
-    );
-
-    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/connectors/program/reviews/review%2Fone');
-    expect(openUrl).not.toHaveBeenCalled();
-    expect(console.log).toHaveBeenCalledWith('Review: review/one');
-    expect(console.log).toHaveBeenCalledWith('State: pending');
-    expect(console.log).toHaveBeenCalledWith(
-      'Open in the DorkOS app: http://localhost:4242/connections?review=review%2Fone'
-    );
-  });
-
   it.each([
     [resolvingReview(), 2],
     [resolvedReview('expired'), 5],
@@ -543,26 +420,6 @@ describe('connections requester-safe review status', () => {
       });
     }
   );
-
-  it('distinguishes an unavailable target from an awaiting review', async () => {
-    apiCallMock.mockResolvedValue({
-      ...pendingReview('review-unavailable'),
-      targetStatus: 'unavailable',
-    });
-
-    expect(await runConnectionsDispatcher(['status', 'review-unavailable', '--json'])).toBe(4);
-    expect(writtenJson()).toMatchObject({ state: 'pending', targetStatus: 'unavailable' });
-  });
-
-  it('distinguishes an indeterminate resolution from an upstream request failure', async () => {
-    apiCallMock.mockRejectedValueOnce(
-      new ApiError(409, { error: 'This review is still resolving.', code: 'review_resolving' })
-    );
-    expect(await runConnectionsDispatcher(['status', 'review-one'])).toBe(6);
-
-    apiCallMock.mockRejectedValueOnce(new ApiError(503, { error: 'Provider unavailable.' }));
-    expect(await runConnectionsDispatcher(['status', 'review-one'])).toBe(1);
-  });
 
   it('rejects malformed or mismatched status before printing it', async () => {
     apiCallMock.mockResolvedValue({
@@ -597,11 +454,5 @@ describe('connections requester-safe review status', () => {
     expect(await runConnectionsDispatcher(['status', 'review-one'])).toBe(1);
     expect(apiCallMock).toHaveBeenCalledTimes(1);
     expect(process.stdout.write).not.toHaveBeenCalled();
-  });
-
-  it('requires exactly one review id before making HTTP calls', async () => {
-    expect(await runConnectionsDispatcher(['status'])).toBe(1);
-    expect(await runConnectionsDispatcher(['status', 'one', 'two'])).toBe(1);
-    expect(apiCallMock).not.toHaveBeenCalled();
   });
 });

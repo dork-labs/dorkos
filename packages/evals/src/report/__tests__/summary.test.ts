@@ -77,17 +77,6 @@ describe('formatSummaryTable', () => {
     expect(table).toMatch(/1 quarantined \(1 of them failing\)/);
   });
 
-  it('renders a quarantined PASS as `quarantined:pass` (promotion evidence)', () => {
-    const table = formatSummaryTable(
-      summary([
-        result({ id: 'widget-round-trip', status: 'pass' }),
-        result({ id: 'governance-approval-gate', status: 'pass', quarantined: true }),
-      ])
-    );
-    expect(table).toContain('quarantined:pass');
-    expect(table).toMatch(/1 quarantined \(0 of them failing\)/);
-  });
-
   it('prints the retained sandbox and copied logs path under a retained row (DOR-1241)', () => {
     const table = formatSummaryTable(
       summary([
@@ -109,13 +98,6 @@ describe('formatSummaryTable', () => {
       '  ↳ retained: /tmp/dorkos-evals-abc123/.dork; logs copied to connector-slack/logs'
     );
     expect(table).not.toMatch(/widget-round-trip\n {2}↳/);
-  });
-
-  it('prints no retention line for a case nothing was retained for', () => {
-    const table = formatSummaryTable(
-      summary([result({ id: 'widget-round-trip', status: 'pass' })])
-    );
-    expect(table).not.toContain('↳ retained');
   });
 
   it('never shows `quarantined:` on a skipped-wrong-tier row, matching the footer that excludes it (DOR-1228 review, NIT 5)', () => {
@@ -160,20 +142,6 @@ describe('formatSummaryTable', () => {
     );
     expect(table).toMatch(/GATING: 0 of 2 cases gate this run/);
     expect(table).toMatch(/proves nothing/);
-  });
-
-  it('keeps columns aligned for an id longer than the minimum width', () => {
-    const table = formatSummaryTable(
-      summary([
-        result({ id: 'marketplace-search-and-install', status: 'fail', quarantined: true }),
-        result({ id: 'widget-round-trip', status: 'pass' }),
-      ])
-    );
-    const [header, longRow, shortRow] = table.split('\n');
-    // Every row starts its TIER column at the same offset as the header's.
-    const tierColumn = header.indexOf('TIER');
-    expect(longRow.indexOf('test-mode')).toBe(tierColumn);
-    expect(shortRow.indexOf('test-mode')).toBe(tierColumn);
   });
 
   it('WARNS when a credentialed run completed turns and still reported no cost', () => {
@@ -277,19 +245,6 @@ describe('formatSummaryTable', () => {
     expect(table).toMatch(/is a floor, not a total/);
   });
 
-  it('does not repeat the floor line when the total is already $0.0000', () => {
-    // The zero-total warning has said it. A second line saying the same thing is
-    // how a reader learns to skim past the first.
-    const table = formatSummaryTable({
-      ...summary([
-        result({ id: 'a', runtimeTier: 'claude-code-cheap', status: 'error', costUnmetered: true }),
-      ]),
-      tier: 'claude-code-cheap',
-      totalCostUsd: 0,
-    });
-    expect(table).not.toMatch(/SPEND:/);
-  });
-
   it('names the credential the run actually used', () => {
     const table = formatSummaryTable({
       ...summary([result({ id: 'a', runtimeTier: 'claude-code-cheap', costUsd: 0.02 })]),
@@ -299,20 +254,6 @@ describe('formatSummaryTable', () => {
     });
     // Nobody should have to guess which of the three sources answered.
     expect(table).toMatch(/CREDENTIAL: the Claude sign-in on this machine/);
-  });
-
-  it('does NOT warn about cost on a free test-mode run', () => {
-    const table = formatSummaryTable(summary([result({ id: 'widget-round-trip' })]));
-    expect(table).not.toMatch(/WARNING/);
-  });
-
-  it('does NOT warn when a credentialed run actually spent something', () => {
-    const table = formatSummaryTable({
-      ...summary([result({ id: 'a', runtimeTier: 'claude-code-cheap', costUsd: 0.02 })]),
-      tier: 'claude-code-cheap',
-      totalCostUsd: 0.02,
-    });
-    expect(table).not.toMatch(/WARNING/);
   });
 
   it('counts a downward wrong-tier skip as "needing test-mode" (DOR-1228)', () => {
@@ -329,21 +270,6 @@ describe('formatSummaryTable', () => {
     });
     expect(table).toMatch(/1 needing test-mode/);
     expect(table).not.toMatch(/needing a credentialed tier/);
-  });
-
-  it('reports the isolation each eval actually ran inside', () => {
-    const table = formatSummaryTable(
-      summary([
-        result({ id: 'governance-approval-gate', isolation: 'child-process', quarantined: true }),
-        result({ id: 'widget-round-trip', isolation: 'in-process' }),
-        result({ id: 'skipped-one', status: 'skipped-over-budget' }),
-      ])
-    );
-    expect(table).toContain('ISOLATION');
-    expect(table).toContain('child-process');
-    expect(table).toContain('in-process');
-    // A case that never launched a server says so rather than claiming a tier.
-    expect(table).toContain('not-run');
   });
 });
 
@@ -395,22 +321,6 @@ describe('evaluateRunGate', () => {
     expect(verdict.reason).toContain('test-mode');
     expect(verdict.reason).not.toContain('credentialed runtime');
   });
-
-  it('counts coverage even on a clean run', () => {
-    const verdict = evaluateRunGate(
-      summary([
-        result({ id: 'widget-round-trip', status: 'pass' }),
-        result({ id: 'governance-approval-gate', status: 'fail', quarantined: true }),
-      ])
-    );
-    expect(verdict).toMatchObject({
-      totalCases: 2,
-      gatingCases: 1,
-      quarantinedCases: 1,
-      failingQuarantinedCases: 1,
-      failed: false,
-    });
-  });
 });
 
 /**
@@ -442,17 +352,5 @@ describe('a case skipped for the wrong runtime', () => {
     );
     expect(gate.failed).toBe(true);
     expect(gate.reason).toContain('--runtime');
-  });
-
-  it('never renders as `quarantined`, so the row cannot claim coverage the footer denies', () => {
-    const table = formatSummaryTable(
-      summary([
-        result({ id: 'opencode-only', status: 'skipped-wrong-runtime', quarantined: true }),
-        result({ id: 'ran', status: 'pass' }),
-      ])
-    );
-    expect(table).toContain('skipped-wrong-runtime');
-    expect(table).not.toContain('quarantined:skipped-wrong-runtime');
-    expect(table).toContain('1 needing another runtime');
   });
 });

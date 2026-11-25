@@ -53,7 +53,7 @@ import {
 } from '../../../../mesh/agent-path-lookup.js';
 import { UNNAMED_PROPOSER } from '../../../../notifications/emitters/schedule-park.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
-import { fenceUntrustedBlock } from '../../../shared/untrusted-fence.js';
+import { fenceUntrustedBlock } from '../../../../core/untrusted-text/untrusted-fence.js';
 import { contentEditVouched, recordToolAttestation } from './task-tool-mode.js';
 
 /** What a write's reply carries about the file, when there is something to say. */

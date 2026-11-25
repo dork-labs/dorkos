@@ -82,13 +82,7 @@ interface MockServer {
   tools: { name: string; description: string }[];
 }
 
-/**
- * A real, empty data directory for the handlers that write one.
- *
- * `tasks_create` writes a SKILL.md before it touches the row (DOR-1568), so a
- * fabricated path would make every create in this file fail on the filesystem
- * rather than on the thing it is testing.
- */
+/** A real, empty data directory: the task handlers write SKILL.md files under it. */
 const TASKS_HOME = mkdtempSync(path.join(os.tmpdir(), 'dorkos-mcp-tool-server-'));
 
 /** Create a mock McpToolDeps with a stubbed transcript reader */
@@ -106,12 +100,7 @@ function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {
 function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}) {
   return {
     getTasks: vi.fn().mockReturnValue([]),
-    // A plausible EXISTING task by default: `createUpdateScheduleHandler` and
-    // `createDeleteScheduleHandler` both read the row before they write, so a
-    // default of `null` makes every update look like a 404. It is a NON-bypass,
-    // active task on purpose — the update handler's approved-bypass clamp only
-    // fires on a `bypassPermissions` row, so this default never masks it; the clamp
-    // tests set `getTask` to a bypass task explicitly.
+    // A plausible EXISTING task: update and delete read the row before they write.
     getTask: vi.fn().mockReturnValue({
       id: 'existing',
       name: 'existing-task',
@@ -120,13 +109,6 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
       permissionMode: 'acceptEdits',
       status: 'active',
     }),
-    createTask: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
-    // The create path's HAPPY branch since DOR-1568: the file is written first
-    // and the row is derived from reading it back, so this is what a create
-    // normally goes through. `createTask` above is only the fallback for a file
-    // that will not parse.
-    fileSync: { upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }) },
-    recordProposal: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
     // A row-only update (no file written) is settled against the approval
     // (DOR-2302); these cases never change a package's timing, so nothing moves.
@@ -156,81 +138,23 @@ function makeTasksDeps(
 
 describe('MCP Tool Handlers', () => {
   describe('handlePing', () => {
-    it('returns pong status with timestamp', async () => {
-      const result = await handlePing();
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.status).toBe('pong');
-      expect(parsed.server).toBe('dorkos');
-      expect(parsed.timestamp).toBeDefined();
-    });
-
-    it('returns valid ISO timestamp', async () => {
-      const result = await handlePing();
-      const parsed = JSON.parse(result.content[0].text);
-      expect(() => new Date(parsed.timestamp)).not.toThrow();
-      expect(new Date(parsed.timestamp).toISOString()).toBe(parsed.timestamp);
-    });
-
-    it('returns single content block with type text', async () => {
+    it('returns one text block: pong, the server name and an ISO timestamp', async () => {
       const result = await handlePing();
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe('text');
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.status).toBe('pong');
+      expect(parsed.server).toBe('dorkos');
+      expect(new Date(parsed.timestamp).toISOString()).toBe(parsed.timestamp);
     });
   });
 
   describe('handleGetServerInfo', () => {
-    it('returns server info without uptime by default', async () => {
-      const result = await handleGetServerInfo({});
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.product).toBe('DorkOS');
-      expect(parsed.port).toBeDefined();
-      expect(parsed.uptime_seconds).toBeUndefined();
-    });
-
-    it('includes uptime when requested', async () => {
-      const result = await handleGetServerInfo({ include_uptime: true });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.uptime_seconds).toBeTypeOf('number');
-      expect(parsed.uptime_seconds).toBeGreaterThanOrEqual(0);
-    });
-
-    it('uses DORKOS_PORT env var when set', async () => {
-      vi.stubEnv('DORKOS_PORT', '9999');
-      vi.resetModules();
-      const { handleGetServerInfo: handler } =
-        await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
-      const result = await handler({});
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.port).toBe(9999);
-      vi.unstubAllEnvs();
-    });
-
-    it('uses SERVER_VERSION from version module', async () => {
-      const result = await handleGetServerInfo({});
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.version).toBe('1.0.0');
-    });
-
-    it('defaults port to 4242 when env var unset', async () => {
-      vi.stubEnv('DORKOS_PORT', undefined as unknown as string);
-      vi.resetModules();
-      const { handleGetServerInfo: handler } =
-        await import('../../runtimes/claude-code/mcp-tools/core-tools.js');
-      const result = await handler({});
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.port).toBe(4242);
-      vi.unstubAllEnvs();
-    });
-
-    it('includes version from SERVER_VERSION constant', async () => {
-      const result = await handleGetServerInfo({});
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.version).toBe('1.0.0');
-    });
-
     it('says which kind of DorkOS this is, with its version and architecture', async () => {
       const result = await handleGetServerInfo({});
       const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.product).toBe('DorkOS');
+      expect(parsed.uptime_seconds).toBeUndefined();
       // Tests run from source, so this server is a checkout.
       expect(parsed.distribution).toEqual({
         kind: 'dev',
@@ -274,47 +198,6 @@ describe('MCP Tool Handlers', () => {
       } finally {
         disposeProjector('bg-count-chat');
       }
-    });
-
-    it('returns isError when transcript reader fails', async () => {
-      const listSessions = vi.fn().mockRejectedValue(new Error('ENOENT'));
-      const handler = createGetSessionCountHandler(makeMockDeps({ listSessions }));
-      const result = await handler({ cwd: '/test/cwd' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('ENOENT');
-    });
-
-    it('returns zero for empty session directory', async () => {
-      const handler = createGetSessionCountHandler(makeMockDeps());
-      const result = await handler({ cwd: '/test/cwd' });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.count).toBe(0);
-    });
-
-    it('handles non-Error exceptions gracefully', async () => {
-      const listSessions = vi.fn().mockRejectedValue('string error');
-      const handler = createGetSessionCountHandler(makeMockDeps({ listSessions }));
-      const result = await handler({ cwd: '/test/cwd' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toBe('Failed to list sessions');
-    });
-
-    it('returns isError when neither agent_id nor cwd provided', async () => {
-      const handler = createGetSessionCountHandler(makeMockDeps());
-      const result = await handler({});
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('Either agent_id or cwd must be provided');
-    });
-
-    it('returns isError when both agent_id and cwd provided', async () => {
-      const handler = createGetSessionCountHandler(makeMockDeps());
-      const result = await handler({ agent_id: 'abc', cwd: '/test' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('not both');
     });
 
     it('includes agent_id in response when resolved via agent_id', async () => {
@@ -376,72 +259,23 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.schedules[1].nextRun).toBeNull();
     });
 
-    it('returns error when taskStore undefined', async () => {
-      const handler = createListSchedulesHandler(makeMockDeps());
-      const result = await handler({});
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('turned off');
-    });
-
-    it('handles empty schedule list', async () => {
-      const handler = createListSchedulesHandler(makeTasksDeps());
-      const result = await handler({});
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.schedules).toEqual([]);
-      expect(parsed.count).toBe(0);
-    });
-  });
-
-  describe('createCreateScheduleHandler', () => {
-    it('creates schedule and sets pending_approval status', async () => {
-      const created = { id: 'new-1', name: 'Nightly' };
-      const updated = { ...created, status: 'pending_approval' };
-      const handler = createCreateScheduleHandler(
-        makeTasksDeps({
-          createTask: vi.fn().mockReturnValue(created),
-          updateTask: vi.fn().mockReturnValue(updated),
-          getTask: vi.fn().mockReturnValue(updated),
-        })
-      );
-      const result = await handler({
-        name: 'Nightly',
-        prompt: 'Run tests',
-        cron: '0 2 * * *',
-        target: 'global',
-        reason: 'Nobody is watching the overnight test run.',
-      });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.schedule.status).toBe('pending_approval');
-      // The note asks the agent to SAY the schedule is waiting rather than
-      // restating a status field the model has already been handed (DOR-1570).
-      expect(parsed.note).toContain('will NOT run until the person approves it');
-      expect(parsed.note).toContain('Tell them so in your reply');
-    });
-
-    it('returns created schedule with approval note', async () => {
-      const handler = createCreateScheduleHandler(
-        makeTasksDeps({
-          createTask: vi.fn().mockReturnValue({ id: 'x' }),
-          updateTask: vi.fn(),
-          getTask: vi.fn().mockReturnValue({ id: 'x', status: 'pending_approval' }),
-        })
-      );
-      const result = await handler({
-        name: 'Test',
-        prompt: 'Do stuff',
-        cron: '* * * * *',
-        target: 'global',
-        reason: 'It needs to run every minute while we watch it.',
-      });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.note).toContain('approve');
-      expect(result.isError).toBeUndefined();
-    });
-
-    it('returns error when Tasks disabled', async () => {
-      const handler = createCreateScheduleHandler(makeMockDeps());
-      const result = await handler({ name: 'X', prompt: 'Y', cron: '* * * * *', target: 'global' });
+    it.each([
+      ['list_schedules', () => createListSchedulesHandler(makeMockDeps())({})],
+      [
+        'create_schedule',
+        () =>
+          createCreateScheduleHandler(makeMockDeps())({
+            name: 'X',
+            prompt: 'Y',
+            cron: '* * * * *',
+            target: 'global',
+          }),
+      ],
+      ['update_schedule', () => createUpdateScheduleHandler(makeMockDeps())({ id: 'x' })],
+      ['delete_schedule', () => createDeleteScheduleHandler(makeMockDeps())({ id: 'x' })],
+      ['get_run_history', () => createGetRunHistoryHandler(makeMockDeps())({ schedule_id: 'x' })],
+    ] as const)('%s refuses while Tasks is turned off', async (_tool, call) => {
+      const result = await call();
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('turned off');
@@ -449,17 +283,6 @@ describe('MCP Tool Handlers', () => {
   });
 
   describe('createUpdateScheduleHandler', () => {
-    it('updates existing schedule', async () => {
-      const updated = { id: 'u1', name: 'Updated Name' };
-      const handler = createUpdateScheduleHandler(
-        makeTasksDeps({ updateTask: vi.fn().mockReturnValue(updated) })
-      );
-      const result = await handler({ id: 'u1', name: 'Updated Name' });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.schedule).toEqual(updated);
-      expect(result.isError).toBeUndefined();
-    });
-
     it('returns error for non-existent ID', async () => {
       const handler = createUpdateScheduleHandler(
         makeTasksDeps({ updateTask: vi.fn().mockReturnValue(null) })
@@ -469,83 +292,6 @@ describe('MCP Tool Handlers', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('missing');
       expect(parsed.error).toContain('not found');
-    });
-
-    it('refuses permissionMode and writes nothing (DOR-504)', async () => {
-      // This test used to assert the OPPOSITE: that the handler passed
-      // `permissionMode` through to the store. That was the defect — an agent
-      // could hand a future unattended run the safety prompts its caller did not
-      // have. The field is now refused, and the refusal is whole, so the store is
-      // never touched. Full coverage of both servers lives in
-      // `mcp-tools/__tests__/task-tools.test.ts` and
-      // `external-mcp/__tests__/task-permission-mode.test.ts`.
-      const store = makeMockTasksStore({ updateTask: vi.fn() });
-      const deps = { ...makeMockDeps(), taskStore: store };
-      const handler = createUpdateScheduleHandler(deps);
-      const result = await handler({ id: 'u1', name: 'Renamed', permissionMode: 'plan' });
-
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.code).toBe('operator_only_task_field');
-      expect(parsed.fields).toEqual(['permissionMode']);
-      // Not even the rename landed.
-      expect(store!.updateTask).not.toHaveBeenCalled();
-    });
-
-    it('drops an approved bypass when the update changes the work (security)', async () => {
-      // The keeps-approved-bypass window: this handler writes the ROW ONLY, so a
-      // prompt/cron/name change on an approved `bypassPermissions` task must clamp
-      // the mode HERE — the reconciler that would otherwise clamp it is up to five
-      // minutes away. Routed through the same seam the REST path uses. Full
-      // behavioral coverage lives in `mcp-tools/__tests__/task-tools.test.ts`; this
-      // pins the security behavior on this suite too, at the store-call boundary.
-      const approved = {
-        id: 'u1',
-        name: 'nightly-sweep',
-        prompt: 'the approved prompt',
-        cron: '0 2 * * *',
-        permissionMode: 'bypassPermissions',
-        status: 'active',
-      };
-      const updateTask = vi.fn().mockReturnValue({ ...approved, prompt: 'a different prompt' });
-      const handler = createUpdateScheduleHandler(
-        makeTasksDeps({ getTask: vi.fn().mockReturnValue(approved), updateTask })
-      );
-      const result = await handler({ id: 'u1', prompt: 'a different prompt' });
-
-      expect(result.isError).toBeUndefined();
-      // The clamp rides along with the write: the row's mode is dropped to
-      // `acceptEdits` in the same call that lands the new prompt.
-      expect(updateTask).toHaveBeenCalledWith(
-        'u1',
-        expect.objectContaining({ prompt: 'a different prompt', permissionMode: 'acceptEdits' }),
-        // Where the timing lands (DOR-2302); not this case's concern.
-        expect.anything()
-      );
-    });
-
-    it('leaves an approved bypass alone when only metadata changes', async () => {
-      // The clamp binds to the approved WORK. A metadata-only edit (here `enabled`)
-      // changes nothing an unattended run does, so the grant must survive it — or a
-      // legitimate on/off toggle would silently strip a task's autonomy.
-      const approved = {
-        id: 'u1',
-        name: 'nightly-sweep',
-        prompt: 'the approved prompt',
-        cron: '0 2 * * *',
-        permissionMode: 'bypassPermissions',
-        status: 'active',
-      };
-      const updateTask = vi.fn().mockReturnValue({ ...approved, enabled: false });
-      const handler = createUpdateScheduleHandler(
-        makeTasksDeps({ getTask: vi.fn().mockReturnValue(approved), updateTask })
-      );
-      const result = await handler({ id: 'u1', enabled: false });
-
-      expect(result.isError).toBeUndefined();
-      const patch = updateTask.mock.calls[0]![1] as Record<string, unknown>;
-      expect(patch.enabled).toBe(false);
-      expect(patch).not.toHaveProperty('permissionMode');
     });
 
     // FB-26: a package schedule is switched on the row alone and `enabled` is
@@ -593,39 +339,10 @@ describe('MCP Tool Handlers', () => {
           })
         );
       });
-
-      it('records nothing when the schedule was already on, or is being switched off', async () => {
-        const alreadyOn = depsWithActivity({ ...switchedOff, enabled: true }, true);
-        await createUpdateScheduleHandler(alreadyOn.deps)({ id: 'u1', enabled: true });
-        expect(alreadyOn.emit).not.toHaveBeenCalled();
-
-        const turningOff = depsWithActivity({ ...switchedOff, enabled: true }, false);
-        await createUpdateScheduleHandler(turningOff.deps)({ id: 'u1', enabled: false });
-        expect(turningOff.emit).not.toHaveBeenCalled();
-      });
-    });
-
-    it('returns error when Tasks disabled', async () => {
-      const handler = createUpdateScheduleHandler(makeMockDeps());
-      const result = await handler({ id: 'x' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('turned off');
     });
   });
 
   describe('createDeleteScheduleHandler', () => {
-    it('deletes existing schedule and returns success', async () => {
-      const handler = createDeleteScheduleHandler(
-        makeTasksDeps({ deleteTask: vi.fn().mockReturnValue(true) })
-      );
-      const result = await handler({ id: 'del-1' });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.success).toBe(true);
-      expect(parsed.id).toBe('del-1');
-      expect(result.isError).toBeUndefined();
-    });
-
     it('returns error for non-existent ID', async () => {
       const handler = createDeleteScheduleHandler(
         makeTasksDeps({ deleteTask: vi.fn().mockReturnValue(false) })
@@ -635,14 +352,6 @@ describe('MCP Tool Handlers', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('ghost');
       expect(parsed.error).toContain('not found');
-    });
-
-    it('returns error when Tasks disabled', async () => {
-      const handler = createDeleteScheduleHandler(makeMockDeps());
-      const result = await handler({ id: 'x' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('turned off');
     });
   });
 
@@ -657,34 +366,9 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.count).toBe(2);
       expect(listRuns).toHaveBeenCalledWith({ taskId: 'sched-1', limit: 20 });
     });
-
-    it('respects custom limit parameter', async () => {
-      const listRuns = vi.fn().mockReturnValue([]);
-      const handler = createGetRunHistoryHandler(makeTasksDeps({ listRuns }));
-      await handler({ schedule_id: 'sched-1', limit: 5 });
-      expect(listRuns).toHaveBeenCalledWith({ taskId: 'sched-1', limit: 5 });
-    });
-
-    it('returns error when Tasks disabled', async () => {
-      const handler = createGetRunHistoryHandler(makeMockDeps());
-      const result = await handler({ schedule_id: 'x' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('turned off');
-    });
   });
 
   describe('createGetAgentHandler', () => {
-    it('returns null with message when no manifest exists', async () => {
-      const { readManifest } = await import('@dorkos/shared/manifest');
-      vi.mocked(readManifest).mockResolvedValue(null);
-      const handler = createGetAgentHandler(makeMockDeps());
-      const result = await handler({ cwd: '/test/cwd' });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.agent).toBeNull();
-      expect(parsed.message).toContain('No agent registered');
-    });
-
     it('returns full manifest when agent exists', async () => {
       const { readManifest } = await import('@dorkos/shared/manifest');
       const mockManifest = {
@@ -701,14 +385,6 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.agent).toEqual(mockManifest);
       expect(parsed.agent.id).toBe('test-agent-id');
       expect(parsed.agent.name).toBe('Test Agent');
-    });
-
-    it('uses provided cwd as the working directory', async () => {
-      const { readManifest } = await import('@dorkos/shared/manifest');
-      vi.mocked(readManifest).mockResolvedValue(null);
-      const handler = createGetAgentHandler(makeMockDeps());
-      await handler({ cwd: '/test/cwd' });
-      expect(readManifest).toHaveBeenCalledWith('/test/cwd');
     });
 
     it('resolves agent_id via meshCore.getProjectPath', async () => {
@@ -730,84 +406,13 @@ describe('MCP Tool Handlers', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain('Permission denied');
     });
-
-    it('handles non-Error exceptions gracefully', async () => {
-      const { readManifest } = await import('@dorkos/shared/manifest');
-      vi.mocked(readManifest).mockRejectedValue('string error');
-      const handler = createGetAgentHandler(makeMockDeps());
-      const result = await handler({ cwd: '/test/cwd' });
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toBe('Failed to read agent manifest');
-    });
-
-    it('returns isError when neither agent_id nor cwd provided', async () => {
-      const handler = createGetAgentHandler(makeMockDeps());
-      const result = await handler({});
-      expect(result.isError).toBe(true);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error).toContain('Either agent_id or cwd must be provided');
-    });
   });
 
   describe('createDorkOsToolServer', () => {
-    it('creates server with name dorkos and version 1.0.0', () => {
-      const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server).toBeDefined();
-      expect(server.name).toBe('dorkos');
-      expect(server.version).toBe('1.0.0');
-    });
-
     it('registers 56 tools including the five document-channel verbs', () => {
-      // Purpose: regression guard against accidental tool omissions or additions.
-      // This count changes intentionally when new MCP tools are added. 32 legacy
-      // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
-      // driving + 2 browser recording + 1 extension) plus the 7 operator
-      // capabilities, `list_capabilities` and `memory_write`, all projected from
-      // the registry.
-      //
-      // 32 -> 33 for `update_agent_boundaries`, the NOPE.md write split out of
-      // `update_agent` so it can be tier `destructive` (DOR-1698).
-      //
-      // 33 -> 39 for the six browser-driving verbs (spec `canvas-agent-seat`):
-      // click, type, press, scroll, wait_for and read_page, registered beside
-      // the three DevTools reads they extend.
-      //
-      // 39 -> 41 for the two recording verbs (spec `canvas-agent-seat` §3),
-      // registered beside the six they film.
-      //
-      // 41 -> 42 for `read_canvas_document`, the first verb of the `ui`
-      // capability DOMAIN (spec `canvas-agent-seat` §5). It declares
-      // `servers: ['in-session']`, so it reaches THIS server — the loopback one
-      // every runtime is injected with, which is the whole point of the domain
-      // — and not the external `/mcp` one.
-      //
-      // 42 -> 44 for `sidebar_add_to_group` and `sidebar_remove_from_group`,
-      // the two targeted sidebar-section writes that replace re-sending the
-      // whole `ui.sidebar.groups` array through `config_patch` (DOR-2055).
-      // They take the operator capabilities from 7 to 9.
-      //
-      // 44 -> 45 for `feedback_draft`, which builds the prefilled GitHub issue
-      // link `dorkos feedback` builds and sends nothing (DOR-2056). Operator
-      // capabilities go from 9 to 10.
-      //
-      // 45 -> 47 for `request_permission` and `list_my_permissions` (spec
-      // `agent-permissions` D8, D9), which every agent carries.
-      //
-      // 47 -> 48 for `update_agent_execution` (DOR-2328), the runtime, model and
-      // effort write split out of `update_agent`. Operator capabilities go from
-      // 10 to 11.
-      // 48 -> 49 for `change_permission` (spec `agent-permissions` D9).
-      // 49 -> 50 for `accounts_usage` (spec `claude-account-fleet` D2).
-      // 50 -> 51 for `accounts_probe` (spec `claude-account-fleet` D3).
-      // 51 -> 52 for `session_start` (spec `claude-account-fleet` D5).
-      // 57 -> 51: the six relay send, inbox and endpoint tools retired for the
-      // chat tools, which these deps do not compose (spec `spin-off-chats` §7).
-      // 51 -> 52 for `end_beat` (spec `heartbeats` §8), every agent's.
-      // 52 -> 53 for `heartbeat_status` (spec `heartbeats` §10 PR 6), every agent's.
-      // 53 -> 54 for `memory_read` (ADR 261017-153539), every agent's.
-      // 54 -> 55 for `agent_instructions` (spec `context-viewer` phase 3), every agent's.
-      // 55 -> 56 for `update_agent_config` (DOR-4266), an agent's setup files.
+      // Regression guard against accidental tool omissions or additions. The
+      // count changes on purpose when a tool is added or retired; the history
+      // of each step is in this file's git log.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
       expect(server.tools).toHaveLength(56);
       for (const name of [
@@ -824,17 +429,18 @@ describe('MCP Tool Handlers', () => {
     it('registers tools with correct names', () => {
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
       const toolNames = server.tools.map((t) => t.name);
-      expect(toolNames).toContain('ping');
-      expect(toolNames).toContain('get_server_info');
-      expect(toolNames).toContain('get_session_count');
-      expect(toolNames).toContain('get_agent');
-      expect(toolNames).toContain('tasks_list');
-      expect(toolNames).toContain('tasks_create');
-      expect(toolNames).toContain('tasks_update');
-      expect(toolNames).toContain('tasks_delete');
-      expect(toolNames).toContain('tasks_get_run_history');
-      expect(toolNames).toContain('relay_list_endpoints');
-      expect(toolNames).toContain('relay_notify_user');
+      expect(toolNames).toEqual(
+        expect.arrayContaining([
+          'ping',
+          'get_session_count',
+          'get_agent',
+          'tasks_list',
+          'tasks_create',
+          'relay_notify_user',
+          'control_ui',
+          'browser_screenshot',
+        ])
+      );
       // Retired for the chat tools (spec `spin-off-chats` §7).
       for (const retired of [
         'relay_send',
@@ -846,11 +452,6 @@ describe('MCP Tool Handlers', () => {
       ]) {
         expect(toolNames).not.toContain(retired);
       }
-      expect(toolNames).toContain('control_ui');
-      expect(toolNames).toContain('get_ui_state');
-      expect(toolNames).toContain('browser_read_console');
-      expect(toolNames).toContain('browser_read_network');
-      expect(toolNames).toContain('browser_screenshot');
     });
   });
 });

@@ -40,6 +40,7 @@ export {
   type PermissionActionInfo,
   type PermissionAgentRef,
 } from './permission-service.js';
+export type { PermissionErrorCode } from './permission-values.js';
 export {
   readRawManifestFile,
   runPermissionRetirements,

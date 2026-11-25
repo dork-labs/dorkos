@@ -327,7 +327,7 @@ duplicated here:
 
 - **`orchestrating-parallel-work`** → its **"Landing Parallel Batches"** section, which owns
   sequencing by collision class, the per-batch chain, the landing rules (format last before every
-  push; verify the merge is armed **or** queued; rebase to both intents; test-merge in-flight
+  push; verify auto-merge is on **or** the PR is queued; rebase to both intents; test-merge in-flight
   branches), rolling dispatch, and close-out discipline.
 - **`REVIEW.md`** → its **"Failure modes worth hunting by name"** section, the library a review
   brief points a reviewer at. `assets/review-brief.md` is that brief.

@@ -9,11 +9,7 @@ import { gt, valid } from 'semver';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { NewSinceData } from '@dorkos/shared/additional-context';
 import { logger } from '../../../lib/logger.js';
-import {
-  notesSince,
-  releaseNoteLine,
-  type AgentReleaseNote,
-} from '../../runtimes/shared/awareness/agent-release-notes.js';
+import { notesSince, releaseNoteLine, type AgentReleaseNote } from './agent-release-notes.js';
 
 /** A claim to hand back if no turn started. */
 export interface NewSinceClaim {

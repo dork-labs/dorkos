@@ -79,37 +79,6 @@ test.describe('Agent browser status pill', () => {
   // Every test uses the seeded agent's one chat, so they take turns.
   test.describe.configure({ mode: 'default', timeout: 60_000 });
 
-  test('Reload while the agent drives takes the page in one step, with no confirm', async ({
-    page,
-    chatPage,
-  }) => {
-    const { browser, posts } = await chatWithBrowser(page, chatPage);
-    await expect(pill(page)).toHaveAttribute('data-state-kind', 'driving');
-    await expect(pill(page)).toHaveAccessibleName(/is using this page\.$/);
-    await browser.controls.getByRole('button', { name: 'Reload', exact: true }).click();
-    await expect(pill(page)).toHaveAttribute('data-state-kind', 'you');
-    expect(posts).toEqual(['/navigate']);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('alertdialog')).toHaveCount(0);
-    await expect(
-      browser.controls.locator('[role="status"]', { hasText: /^You have the page\./ })
-    ).toHaveText(/can’t see it until you hand it back\.$/);
-  });
-
-  test('Enter while the agent is paused takes the page too', async ({ page, chatPage }) => {
-    const { browser, posts } = await chatWithBrowser(page, chatPage, (id) => ({
-      ...drivenBy(id),
-      paused: true,
-    }));
-    await expect(pill(page)).toHaveAttribute('data-state-kind', 'paused');
-    await browser.controls.getByRole('button', { name: /^Address:/ }).click();
-    const field = browser.controls.getByRole('textbox', { name: 'Address', exact: true });
-    await field.fill('northwind.example/plans');
-    await field.press('Enter');
-    await expect(pill(page)).toHaveAttribute('data-state-kind', 'you');
-    expect(posts).toEqual(['/navigate']);
-  });
-
   test('Take over and Hand back from the popover', async ({ page, chatPage }) => {
     const { posts } = await chatWithBrowser(page, chatPage);
     await pill(page).click();

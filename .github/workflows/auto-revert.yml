@@ -16,12 +16,32 @@ name: auto-revert
 # GITHUB_TOKEN push starts no workflows and the revert's required checks would
 # never run. Until AUTO_REVERT is on, the decision still runs and is logged.
 #
+# A rolling run (browser-test's push run, one run for several merges) is
+# skipped here at every attempt, never re-run: a re-run of an old push run joins
+# browser-test's `gate` concurrency group, where it would cancel the pending
+# newest-main run or be cancelled by the next merge. rolling-bisect.yml takes it
+# from its first failure, re-tests the failing head in a dispatched run of its
+# own, finds the first bad merge, and reverts it through the same
+# `scripts/auto-revert.sh revert` path, under the same AUTO_REVERT switch. The
+# full order, and the rolling list that must match rolling-bisect.yml's
+# `workflows:`, are in the header of scripts/auto-revert.sh.
+#
 # A `workflow_run` workflow runs the default branch's copy, and both jobs check
 # out main, so a PR cannot change it. Nothing from the reverted commit runs.
 
 on:
   workflow_run:
-    workflows: [scripts-test, CLI Smoke Test, Desktop Smoke, db-check, browser-test, test]
+    workflows:
+      [
+        scripts-test,
+        CLI Smoke Test,
+        Desktop Smoke,
+        db-check,
+        browser-test,
+        lint,
+        credential-free-build,
+        docs-openapi-check,
+      ]
     types: [completed]
 
 permissions:
@@ -50,7 +70,7 @@ jobs:
     outputs:
       decision: ${{ steps.decide.outputs.decision }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
@@ -77,16 +97,19 @@ jobs:
     needs: decide
     if: startsWith(needs.decide.outputs.decision, 'revert ') && vars.AUTO_REVERT == 'on'
     runs-on: ubuntu-latest
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). A workflow_run run is main's copy on main, so it enters.
+    environment: automation
     timeout-minutes: 10
     steps:
       - name: Mint the merge-tail app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 2
@@ -101,24 +124,4 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           read -r _ sha pr <<<"$DECISION"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$pr" =~ ^[1-9][0-9]*$ ]] || { echo "::error::bad decision '$DECISION'"; exit 1; }
-          [ "$(git rev-parse HEAD)" = "$sha" ] || { echo "::notice::main moved on; not reverting."; exit 0; }
-          branch="auto-revert/${sha:0:12}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git revert --no-edit "$sha"
-          git push origin "$branch"
-          author=$(gh api "repos/$REPO/pulls/$pr" --jq .user.login)
-          title="Revert #$pr: $WORKFLOW failed on main (auto-revert)"
-          body="Auto-revert (DOR-5122): \`$WORKFLOW\` failed twice on main after #$pr merged, and was green on the commit before it.
-
-          Run: $RUN_URL
-
-          @$author please fix forward: reopen the change in a new PR with the fix."
-          url=$(gh pr create --repo "$REPO" --base main --head "$branch" --title "$title" \
-            --body "$body" --label skip-changelog --label auto-revert)
-          echo "Opened $url"
-          gh pr merge "$url" --repo "$REPO" --auto || echo "::warning::could not turn on auto-merge for $url"
-          gh api --method POST "repos/$REPO/issues/$pr/comments" \
-            -f body="@$author this PR turned main red (\`$WORKFLOW\`, $RUN_URL) and is being reverted in $url. Please fix forward in a new PR." >/dev/null
+          bash scripts/auto-revert.sh revert "$sha" "$pr" "$WORKFLOW" "$RUN_URL"

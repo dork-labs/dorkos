@@ -21,7 +21,7 @@ import {
   RemoteCommunityStandingSchema,
 } from '@dorkos/shared/community-views';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { getRemoteCommunityAdapter } from '../services/communities/remote/state.js';
@@ -37,13 +37,9 @@ function resolve(c: Context<ApiEnv>): CommunityTarget | Response {
   const target = communityTarget(c);
   if (target instanceof Response) return target;
   if (!clearsTheAgentBar(honoRequestFacts(c))) {
-    return c.json(
-      {
-        code: 'COMMUNITY_PERSON_REQUIRED',
-        error: 'Only you can do this in a space, not an agent.',
-      },
-      403
-    );
+    return problem(c, 'person_only', {
+      detail: 'Only you can do this in a space, not an agent.',
+    });
   }
   return target;
 }
@@ -75,7 +71,8 @@ export function registerRemoteCommunityConductRoutes(router: Hono<ApiEnv>): void
     const target = resolve(c);
     if (target instanceof Response) return target;
     const input = RemoteCommunityRulesAcceptRequestSchema.safeParse(readJsonBody(c));
-    if (!input.success) return c.json({ error: 'Read the rules first.' }, 400);
+    if (!input.success)
+      return validationProblem(c, input.error, { detail: 'Read the rules first.' });
     try {
       // A space its host holds reads as archived, so the connection cannot post, yet a person may
       // still accept its rules there, which changes nothing anyone sees (DOR-2836). Only reading
@@ -97,7 +94,9 @@ export function registerRemoteCommunityConductRoutes(router: Hono<ApiEnv>): void
     if (target instanceof Response) return target;
     const input = RemoteCommunityDisplayNameRequestSchema.safeParse(readJsonBody(c));
     if (!input.success) {
-      return c.json({ error: 'Use letters, numbers and spaces, up to 128.' }, 400);
+      return validationProblem(c, input.error, {
+        detail: 'Use letters, numbers and spaces, up to 128.',
+      });
     }
     try {
       await verifiedConnection(target.ref, target.owner, 'post');
@@ -120,7 +119,9 @@ export function registerRemoteCommunityConductRoutes(router: Hono<ApiEnv>): void
     if (target instanceof Response) return target;
     const input = RemoteCommunityReportRequestSchema.safeParse(readJsonBody(c));
     if (!input.success) {
-      return c.json({ error: 'Pick a reason. Notes are up to 1,000 characters.' }, 400);
+      return validationProblem(c, input.error, {
+        detail: 'Pick a reason. Notes are up to 1,000 characters.',
+      });
     }
     try {
       await verifiedConnection(target.ref, target.owner, 'post');

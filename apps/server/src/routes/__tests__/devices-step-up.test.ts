@@ -26,7 +26,7 @@ describe('signed-in device confirmation', () => {
         other
       );
       expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
         ok: true,
@@ -50,7 +50,7 @@ describe('signed-in device confirmation', () => {
     const held = await owner.call('post', '/api/devices/sign-out-all', 'own-tunnel').send({});
     expect(held.status).toBe(428);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
   });
 

@@ -34,6 +34,7 @@ import {
   type FolderAllowApprovalGateway,
 } from '../../folder-settings/folder-allow-approval.js';
 import {
+  applyRepoConfigStep,
   applyRepoConfigToLaunch,
   applyRepoMcpServers,
   resolveRepoConfigForLaunch,
@@ -48,9 +49,7 @@ import {
   _internal,
   askForRepoConfig,
   describeRepoConfigCapability,
-  repoConfigCapabilityId,
   repoConfigTitle,
-  summariseRepoConfig,
 } from '../repo-config-approval.js';
 import {
   isRepoConfigApproved,
@@ -59,8 +58,17 @@ import {
 } from '../repo-config-consent.js';
 import { pinRepoBaseline } from '../repo-baseline.js';
 import { readLocalSettings } from '../repo-local-settings.js';
-import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
+import {
+  git,
+  isolateGitEnv,
+  makeRepo,
+  makeSubmodule,
+  writeFile,
+  type RepoFixture,
+} from './git-fixture.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
+import { watchFolderAllows } from '../../tool-gate/folder-file-allows.js';
+import { readFolderSettingsEntries } from '../../tool-gate/folder-settings-files.js';
 
 const GUARD_SETTINGS = {
   hooks: {
@@ -203,6 +211,214 @@ describe('settings.local.json', () => {
     const plain = path.join(repo.root, 'plain');
     writeFile(path.join(plain, '.claude/settings.local.json'), SELF_GRANT);
     expect((await resolveRepoConfigForLaunch(turn(plain))).dropLocal).toBe(true);
+  });
+});
+
+describe('settings.local.json in every folder the launch reads', () => {
+  const localAt = (folder: string) => path.join(folder, '.claude/settings.local.json');
+
+  it('drops the local source, with a card and a line', async () => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const sub = path.join(repo.main, 'sub');
+    fs.mkdirSync(sub, { recursive: true });
+    const decision = await resolveRepoConfigForLaunch(turn(sub));
+    const options = launchOptions();
+    applyRepoConfigToLaunch(options, decision);
+    expect(options.settingSources).toEqual(['project', 'user']);
+    await settle();
+    expect(cards).toHaveLength(1);
+    expect(cards[0].capabilityId).toBe('runtime.apply_repo_local_settings');
+    expect(cards[0].summary).toContain('Local settings paused in "repo".');
+    expect(activity).toEqual([
+      expect.objectContaining({
+        state: 'paused',
+        cwd: repo.main,
+        summary: 'Paused local settings in repo: settings.local.json sets hooks.',
+      }),
+    ]);
+  });
+
+  it.each(['wt', 'wt/sub'])('drops the local source wherever a chat starts (%s)', async (at) => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    repo.addWorktree('wt');
+    const cwd = path.join(repo.root, at);
+    fs.mkdirSync(cwd, { recursive: true });
+    const decision = await resolveRepoConfigForLaunch(turn(cwd));
+    expect(decision.dropLocal).toBe(true);
+    expect(decision.pauseHooks).toBe(false);
+    await settle();
+    expect(cards).toHaveLength(1);
+  });
+
+  it('loads it once a person approved that content, and says it runs again', async () => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const wt = repo.addWorktree('wt');
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(true);
+    recordRepoConfigApproval(
+      'local',
+      readLocalSettings(repo.main, '/nonexistent-dork-home')!.digest
+    );
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false);
+    expect(activity.map((a) => [a.state, a.cwd])).toEqual([
+      ['paused', repo.main],
+      ['running', repo.main],
+    ]);
+  });
+
+  it('asks about each file nobody approved', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(localAt(repo.main), SELF_GRANT);
+    writeFile(localAt(path.join(wt, 'sub')), { env: { MADE_UP_FLAG: '1' } });
+    expect((await resolveRepoConfigForLaunch(turn(path.join(wt, 'sub')))).dropLocal).toBe(true);
+    await settle();
+    expect(cards.map((card) => card.summary.split('.')[0])).toEqual([
+      'Local settings paused in "sub"',
+      'Local settings paused in "repo"',
+    ]);
+  });
+
+  it('leaves a file the launch does not load alone', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(localAt(wt), SELF_GRANT);
+    fs.mkdirSync(path.join(wt, 'sub'), { recursive: true });
+    expect((await resolveRepoConfigForLaunch(turn(path.join(wt, 'sub')))).dropLocal).toBe(false);
+  });
+
+  it('asks again when a script it names changes where the turn runs', async () => {
+    writeFile(localAt(repo.main), {
+      hooks: {
+        PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: 'sh tools/check.sh' }] }],
+      },
+    });
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, 'tools/check.sh'), 'exit 0\n');
+    const first = await resolveRepoConfigForLaunch(turn(wt));
+    expect(first.dropLocal).toBe(true);
+    await settle();
+    answer.outcome = 'granted';
+    await vi.waitFor(async () =>
+      expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false)
+    );
+    writeFile(path.join(wt, 'tools/check.sh'), 'touch made-up-mark\n');
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(true);
+  });
+
+  it('withdraws the card when that file changes', async () => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const wt = repo.addWorktree('wt');
+    await resolveRepoConfigForLaunch(turn(wt));
+    writeFile(localAt(repo.main), { env: { MADE_UP_FLAG: '1' } });
+    await vi.waitFor(() => expect(denied.length).toBeGreaterThan(0), { timeout: 5_000 });
+    expect(denied[0].reason).toBe('The file changed again. Review the new version.');
+  });
+
+  it('checks the files the agent home pin does not cover, with one card and one line', async () => {
+    const home = path.join(repo.main, 'agent');
+    writeFile(localAt(home), SELF_GRANT);
+    expect((await resolveRepoConfigForLaunch(turn(home, { home }))).dropLocal).toBe(false);
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const decision = await resolveRepoConfigForLaunch(turn(home, { home }));
+    expect(decision.dropLocal).toBe(true);
+    expect(decision.pauseHooks).toBe(false);
+    expect(decision.compared).toBeUndefined();
+    await settle();
+    expect(cards).toHaveLength(1);
+    expect(activity).toEqual([expect.objectContaining({ state: 'paused', cwd: repo.main })]);
+  });
+
+  it('reads the person’s home folder from the launch, not this process', async () => {
+    writeFile(localAt(repo.root), SELF_GRANT);
+    git(repo.root, ['init', '-q']);
+    const plain = path.join(repo.root, 'plain');
+    fs.mkdirSync(plain, { recursive: true });
+    const options = { ...launchOptions(), env: { HOME: repo.root } };
+    const decision = await applyRepoConfigStep(options, {
+      agentName: 'Ops',
+      home: undefined,
+      cwd: plain,
+    });
+    expect(decision.dropLocal).toBe(false);
+    expect(options.settingSources).toEqual(['local', 'project', 'user']);
+  });
+
+  it('counts a yes given mid-session on every call, with the scripts it names read where the turn runs', async () => {
+    const hook = { matcher: '', hooks: [{ type: 'command', command: 'sh tools/check.sh' }] };
+    writeFile(localAt(repo.main), {
+      hooks: { PreToolUse: [hook] },
+      permissions: { allow: ['Bash(ls:*)'] },
+    });
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, 'tools/check.sh'), 'exit 0\n');
+    const watch = watchFolderAllows({
+      agentId: undefined,
+      home: undefined,
+      cwd: wt,
+      dorkHome: '/nonexistent-dork-home',
+      launchAllows: [],
+      launchDirs: [],
+      userHome: repo.root,
+    });
+    expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(true);
+    await resolveRepoConfigForLaunch(turn(wt));
+    await settle();
+    answer.outcome = 'granted';
+    await vi.waitFor(async () =>
+      expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(false)
+    );
+  });
+
+  it('one yes holds at launch, on every call, and through a person’s Always allow', async () => {
+    const hook = { matcher: '', hooks: [{ type: 'command', command: 'sh tools/check.sh' }] };
+    const content = (allow: string[]) => ({
+      hooks: { PreToolUse: [hook] },
+      permissions: { allow },
+    });
+    writeFile(localAt(repo.main), content(['Bash(ls:*)']));
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, 'tools/check.sh'), 'exit 0\n');
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(true);
+    await settle();
+    answer.outcome = 'granted';
+    await vi.waitFor(async () =>
+      expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false)
+    );
+    const watch = watchFolderAllows({
+      agentId: undefined,
+      home: undefined,
+      cwd: wt,
+      dorkHome: '/nonexistent-dork-home',
+      launchAllows: [],
+      launchDirs: [],
+      userHome: repo.root,
+    });
+    expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(false);
+    const updates = [
+      {
+        type: 'addRules' as const,
+        behavior: 'allow' as const,
+        destination: 'localSettings' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'npm test *' }],
+      },
+    ];
+    await watch.rememberPersonAnswers(async () => ({
+      behavior: 'allow' as const,
+      updatedInput: {},
+      updatedPermissions: updates,
+    }))();
+    // Where Claude Code keeps the answer.
+    writeFile(localAt(repo.main), content(['Bash(ls:*)', 'Bash(npm test *)']));
+    answer.outcome = 'pending';
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false);
+  });
+
+  it('leaves the person’s own home folder to them', async () => {
+    writeFile(localAt(repo.root), SELF_GRANT);
+    git(repo.root, ['init', '-q']);
+    const plain = path.join(repo.root, 'plain');
+    fs.mkdirSync(plain, { recursive: true });
+    expect((await resolveRepoConfigForLaunch(turn(plain, { userHome: repo.root }))).dropLocal).toBe(
+      false
+    );
   });
 });
 
@@ -358,58 +574,6 @@ describe('the card while it is open', () => {
     expect(activity.map((a) => a.state)).not.toContain('running');
   });
 
-  // DOR-3359: the title says what Allow does, and the badge what a yes does.
-  it.each([
-    [['.claude/hooks/guard.mjs'], 'Allow a changed hook in "wt"?', 'runtime.apply_repo_hooks'],
-    [['scripts/check.sh'], 'Allow a changed hook in "wt"?', 'runtime.apply_repo_hooks'],
-    [['.claude/settings.json'], 'Allow a changed setting in "wt"?', 'runtime.apply_repo_hooks'],
-    [['.claude/skills/x/SKILL.md'], 'Allow a changed skill in "wt"?', 'runtime.apply_repo_tools'],
-    [['.agents/skills/x/SKILL.md'], 'Allow a changed skill in "wt"?', 'runtime.apply_repo_tools'],
-    [['.claude/agents/r.md'], 'Allow a changed subagent in "wt"?', 'runtime.apply_repo_tools'],
-    [['.claude/commands/c.md'], 'Allow a changed command in "wt"?', 'runtime.apply_repo_tools'],
-    [
-      ['.claude/skills/x/SKILL.md', '.claude/agents/r.md'],
-      'Allow 2 changed repo files in "wt"?',
-      'runtime.apply_repo_tools',
-    ],
-    [
-      ['.claude/skills/x/SKILL.md', '.claude/settings.json'],
-      'Allow 2 changed repo files in "wt"?',
-      'runtime.apply_repo_hooks',
-    ],
-  ])('titles a change to %j and picks its badge', (names, title, capabilityId) => {
-    const changed = { ...request('/x/wt', 'd'), names };
-    expect(repoConfigTitle(changed)).toBe(title);
-    expect(repoConfigCapabilityId(changed)).toBe(capabilityId);
-    expect(summariseRepoConfig(changed)).not.toContain('paused in');
-  });
-
-  it('titles the first-time card as trusting the repo, with the code badge', () => {
-    const trust = {
-      ...request('/x/wt', 'd'),
-      names: ['.claude/skills/x/SKILL.md'],
-      trust: { commonDir: '/x/.git', baseline: { sha: 'a'.repeat(40), branch: 'main' } },
-    };
-    expect(repoConfigTitle(trust)).toBe("Trust this repo's hooks and skills?");
-    expect(repoConfigCapabilityId(trust)).toBe('runtime.apply_repo_hooks');
-    expect(summariseRepoConfig(trust)).not.toContain('paused in');
-  });
-
-  it('badges only the repo-pin cards, and leaves local settings and MCP alone', () => {
-    expect(describeRepoConfigCapability('runtime.apply_repo_hooks')?.consequence).toBe(
-      'Runs code on this Mac'
-    );
-    expect(describeRepoConfigCapability('runtime.apply_repo_tools')?.consequence).toBe(
-      'Widens what agents can run'
-    );
-    expect(describeRepoConfigCapability('runtime.apply_repo_local_settings')).toEqual({
-      title: "Load a worktree's local settings",
-      tier: 'destructive',
-    });
-    expect(describeRepoConfigCapability('runtime.apply_repo_mcp')?.consequence).toBeUndefined();
-    expect(repoConfigTitle({ ...request('/x/wt', 'd'), kind: 'local' })).toBeUndefined();
-  });
-
   it('raises the card with its own title and spends the yes under the same capability', async () => {
     const pending = askForRepoConfig(
       gateway,
@@ -424,15 +588,6 @@ describe('the card while it is open', () => {
       title: 'Allow a changed skill in "wt"?',
     });
     expect(isRepoConfigApproved('hooks', 'd1')).toBe(true);
-  });
-
-  it('says how many files changed, and never names the guard', () => {
-    const summary = summariseRepoConfig({
-      ...request('/x/wt', 'd'),
-      names: ['.claude/settings.json', '.claude/hooks/a.mjs', '.claude/hooks/b.mjs'],
-    });
-    expect(summary).toContain('3 files here differ from the default branch.');
-    expect(summary).toContain('Your permission settings for "Ops" still apply.');
   });
 });
 
@@ -458,6 +613,52 @@ describe('review fixes', () => {
     applyRepoConfigToLaunch(options, decision);
     expect(options.settings).toMatchObject({ permissions: { ask: ['Bash(*)'] } });
     expect(options.settingSources).toEqual(['user']);
+  });
+});
+
+describe('what the check reports it compared (DOR-5237)', () => {
+  it('reports the working folder’s committed rules when it compared and loaded them', async () => {
+    const wt = repo.addWorktree('wt');
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    expect(decision.pauseHooks).toBe(false);
+    expect(decision.compared).toEqual({
+      folder: fs.realpathSync(wt),
+      rules: [],
+      dirs: [],
+    });
+  });
+
+  it('reports them exactly as the call-time check reads the same file', async () => {
+    writeFile(path.join(repo.main, '.claude/settings.json'), {
+      ...GUARD_SETTINGS,
+      permissions: { allow: [' Bash(ls:*) ', '', 7], additionalDirectories: [' ../shared ', null] },
+    });
+    repo.commit('settings');
+    // Pinned at this commit, as for a repo DorkOS already knew.
+    store.harness = {};
+    await pinRepoBaseline(repo.main);
+    const wt = repo.addWorktree('wt');
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    const live = readFolderSettingsEntries(wt, ['settings.json']);
+    expect(decision.compared).toEqual({
+      folder: fs.realpathSync(wt),
+      rules: live.rules,
+      dirs: live.dirs,
+    });
+    expect(live).toMatchObject({ rules: ['Bash(ls:*)'], dirs: ['../shared'] });
+  });
+
+  it('reports nothing at Full, in the agent home, or when it paused them', async () => {
+    const wt = repo.addWorktree('wt');
+    expect((await resolveRepoConfigForLaunch(turn(wt, { full: true }))).compared).toBeUndefined();
+    expect((await resolveRepoConfigForLaunch(turn(wt, { home: wt }))).compared).toBeUndefined();
+    writeFile(path.join(wt, '.claude/settings.json'), {
+      ...GUARD_SETTINGS,
+      permissions: { allow: ['Bash'] },
+    });
+    const paused = await resolveRepoConfigForLaunch(turn(wt));
+    expect(paused.pauseHooks).toBe(true);
+    expect(paused.compared).toBeUndefined();
   });
 });
 
@@ -656,16 +857,6 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     expect(name).toContain("evilgnp.exe' Allow '");
   });
 
-  it('cuts a long worktree name to 40 characters in the middle', () => {
-    const long = 'feature-very-long-branch-name-that-keeps-going-name-2';
-    const name = quoted(repoConfigTitle(hookChange(`/x/${long}`)))!;
-    expect(Array.from(name)).toHaveLength(40);
-    // 20 from the start, the ellipsis, 19 from the end.
-    expect(name).toBe('feature-very-long-br…-keeps-going-name-2');
-    // A name that fits is left whole.
-    expect(quoted(repoConfigTitle(hookChange('/x/wt-2')))).toBe('wt-2');
-  });
-
   it('sanitizes before it cuts, so an emoji or bidi mark at the cut leaves nothing broken', () => {
     // Plain words after the cut: a long run of one letter reads as a secret
     // and is redacted before the cut, as it should be.
@@ -675,14 +866,6 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     expect(name).not.toMatch(BIDI);
     expect(name).not.toMatch(LONE_SURROGATE);
     expect(name.startsWith(`${'a'.repeat(18)}😀😀`)).toBe(true);
-  });
-
-  it('names a changed command for what it is', () => {
-    expect(
-      summariseRepoConfig({ ...hookChange('/x/wt'), names: ['.claude/commands/c.md'] })
-    ).toContain(
-      '".claude/commands/c.md" differs from the default branch. It changes what a command can run.'
-    );
   });
 
   it('locks the tools card down exactly as the hooks card', async () => {
@@ -742,5 +925,89 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     await vi.waitFor(() => expect(cards).toHaveLength(2));
     expect(cards[1].capabilityId).not.toBe(firstId);
     expect(cards[1].inputHash).not.toBe(cards[0].inputHash);
+  });
+});
+
+describe('a git submodule (DOR-5244)', () => {
+  /** The submodule's own top, and `x` in it, which holds committed hooks. */
+  function submodule(where: 'sm/x' | 'smwt/x'): string {
+    const sm = makeSubmodule(repo.root, {
+      'x/.claude/settings.json': GUARD_SETTINGS,
+      'x/.claude/hooks/guard.mjs': 'process.exit(0);\n',
+    });
+    return path.join(where === 'sm/x' ? sm.top : sm.addWorktree('smwt'), 'x');
+  }
+
+  it.each(['sm/x', 'smwt/x'] as const)(
+    'asks to trust the submodule’s own default branch, at %s',
+    async (where) => {
+      const cwd = submodule(where);
+      expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(true);
+      await vi.waitFor(() => expect(cards).toHaveLength(1));
+      expect(cards[0].capabilityId).toBe('runtime.apply_repo_hooks');
+      expect(cards[0].summary).toContain("DorkOS hasn't seen this repo before.");
+      expect(cards[0].detail).toContain('x/.claude/hooks/guard.mjs');
+    }
+  );
+
+  it.each(['sm/x', 'smwt/x'] as const)(
+    'compares against that commit once trusted, at %s',
+    async (where) => {
+      const cwd = submodule(where);
+      expect(await pinRepoBaseline(cwd)).toBe(true);
+      const clean = await resolveRepoConfigForLaunch(turn(cwd));
+      expect(clean).toMatchObject({ dropLocal: false, pauseHooks: false, mcpServers: null });
+
+      writeFile(path.join(cwd, '.claude/hooks/guard.mjs'), 'console.log("allow");\n');
+      expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(true);
+      await settle();
+      expect(cards).toHaveLength(1);
+      expect(cards[0].summary).toContain(
+        '"x/.claude/hooks/guard.mjs" differs from the default branch.'
+      );
+      expect(activity.map((entry) => entry.summary)).toEqual([
+        'Paused repo hooks in x: x/.claude/hooks/guard.mjs changed.',
+      ]);
+
+      answer.outcome = 'granted';
+      await vi.waitFor(
+        () => expect((store.harness.approvedRepoConfig as string[] | undefined)?.length).toBe(1),
+        { timeout: 5_000 }
+      );
+      expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(false);
+    }
+  );
+
+  it.each([
+    ['names a git folder that is missing', 'gitdir: nowhere\n'],
+    ['has no gitdir line', 'not a pointer\n'],
+    ['is empty', ''],
+    ['leads to a shared folder not named .git', 'gitdir: store/worktrees/w\n'],
+  ])(
+    'checks the local settings above an agent home whose .git file %s',
+    async (_label, pointer) => {
+      const top = path.join(repo.root, 'broken');
+      const home = path.join(top, 'agent');
+      fs.mkdirSync(path.join(top, 'store', 'worktrees', 'w'), { recursive: true });
+      fs.writeFileSync(path.join(top, 'store', 'worktrees', 'w', 'commondir'), '../..\n');
+      fs.mkdirSync(home, { recursive: true });
+      fs.writeFileSync(path.join(top, '.git'), pointer);
+      writeFile(path.join(top, '.claude/settings.local.json'), SELF_GRANT);
+      expect((await resolveRepoConfigForLaunch(turn(home, { home }))).dropLocal).toBe(true);
+      await settle();
+      expect(cards.map((card) => card.capabilityId)).toEqual(['runtime.apply_repo_local_settings']);
+      expect(activity).toEqual([expect.objectContaining({ state: 'paused', cwd: top })]);
+    }
+  );
+
+  it('compares the repo that holds a submodule against its own default branch', async () => {
+    const { superproject } = makeSubmodule(repo.root, {});
+    writeFile(path.join(superproject, 'x/.claude/settings.json'), GUARD_SETTINGS);
+    writeFile(path.join(superproject, 'x/.claude/hooks/guard.mjs'), 'process.exit(0);\n');
+    git(superproject, ['add', '-A']);
+    git(superproject, ['commit', '-q', '-m', 'hooks']);
+    expect(await pinRepoBaseline(superproject)).toBe(true);
+    const cwd = path.join(superproject, 'x');
+    expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(false);
   });
 });

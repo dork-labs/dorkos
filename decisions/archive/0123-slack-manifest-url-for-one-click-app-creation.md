@@ -1,7 +1,7 @@
 ---
 number: 123
 title: Use Slack Manifest URL for One-Click App Creation
-status: draft
+status: archived
 created: 2026-03-14
 spec: adapter-setup-experience
 superseded-by: null

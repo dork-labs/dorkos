@@ -2,7 +2,7 @@ import {
   sessionBillingPrediction,
   observedSessionRoot,
   observedSessionBilling,
-  failedSessionAuthority,
+  failedSeatAuthorityOf,
   requiredLaunchOwnerFromSettings,
 } from './sessions/identity/failed-seat-authority.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
@@ -84,7 +84,6 @@ import {
   resolveActiveClaudeRoot,
   resolveLaunchAccountRoot,
   accountIdForRoot,
-  type LaunchAccountResolution,
 } from './claude-config-dir.js';
 import { isCreditsClaudeRoot } from './credits-root.js';
 import {
@@ -110,6 +109,7 @@ import { attachTranscriptImages } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
+import { commandsKeyFor, commandsWithHome, knownCommands } from './tooling/home-skills-folder.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import type { McpServerFactory, MessageSenderOpts } from './messaging/message-sender-shared.js';
 import { PersistentDispatch } from './sessions/persistent-dispatch.js';
@@ -122,6 +122,7 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
+import type { LaunchAccountResolution } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { getOrCreateProjector, streamGenerationOf } from '../../session/index.js';
 import { peekLiveProjector } from './live-projector.js';
@@ -590,7 +591,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Resolve the selected model's capabilities once: thinking config + whether it
     // supports auto permission mode (undefined when the model isn't cached yet).
     const modelCapability = this.cache.resolveModelCapability(session.model);
-    const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
+    const commandsKey = commandsKeyFor(cwdKey, turnAgent);
+    const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey, commandsKey);
 
     return {
       requiredLaunches: this.requiredLaunches,
@@ -635,14 +637,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       lookupModel: (value) => this.cache.resolveModelCapability(value),
       rememberSessionModel: (model) => this.sessionStore.rememberModel(session, sessionId, model),
       plugins: this.activatedPlugins,
-      getKnownCommands: async () => {
-        // Cold SDK cache → null: built-ins are unknowable before the first
-        // query for this cwd, so the sender passes command-shaped content
-        // through unverified (DOR-107).
-        if (!this.cache.hasSdkCommands(cwdKey)) return null;
-        const { commands } = await this.cache.getCommands(this.getOrCreateRegistry(cwdKey), cwdKey);
-        return commands.map((c) => c.fullCommand);
-      },
+      // Cold SDK cache → null: built-ins are unknowable before the first query for this cwd,
+      // so the sender passes command-shaped content through unverified (DOR-107).
+      getKnownCommands: () =>
+        knownCommands(this.cache, this.getOrCreateRegistry(cwdKey), commandsKey),
     };
   }
 
@@ -680,7 +678,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       sessionId,
       cwd: cwdKey,
     });
-    session.connectorTurn = connectorTurn;
     // Who may be asked, how far the turn reaches, and which room a teammate's
     // turn is fenced to: all per turn, all assigned on every send.
     assignTurnBounds(session, opts);
@@ -707,6 +704,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let sawRuntimeError = false;
     try {
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
+      senderOpts.toolTurnOwner = connectorTurn;
       const persistent = this.persistent.shouldDispatch(sessionId);
       // The resume path keeps no process between turns, so a turn there can
       // never end background work by restarting one (DOR-2065).
@@ -1791,14 +1789,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   readObservedBilling(sessionId: string) {
     return observedSessionBilling(this.sessionStore.findSession(sessionId));
   }
-  /** Existing crash/current guards plus the exact previous terminal SDK witness. */
+  /** Live crash/current guards and terminal witness; a later process reads the durable record. */
   readFailedSeatAuthority(sessionId: string) {
-    return failedSessionAuthority(
+    return failedSeatAuthorityOf(
+      this,
+      sessionId,
       this.sessionStore.findSession(sessionId),
-      this.isLocked(sessionId) ||
-        this.holdsBackgroundWork(sessionId) ||
-        this.isHelperWorking(sessionId) ||
-        !this.persistent.failedSeatCrashAllows(sessionId)
+      this.requiredLaunches,
+      this.persistent.failedSeatCrashAllows(sessionId)
     );
   }
 
@@ -1867,20 +1865,17 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // ---------------------------------------------------------------------------
 
   /** @inheritdoc */
-  async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
+  async getCommands(force?: boolean, cwd?: string, agentPath?: string): Promise<CommandRegistry> {
     const root = cwd || this.cwd;
     const registry = this.getOrCreateRegistry(root);
-    // Plugin commands (e.g. `/flow:*`) live in the SDK, not on the filesystem,
-    // so the cold-cache fallback (`command-registry` scans `.claude/commands/`
-    // only) can't surface them. When this cwd has no SDK command list yet, warm
-    // it in the background so the palette shows those commands before the
-    // session's first message. Whether any plugins actually apply (global OR
-    // project-scoped under `<cwd>/.dork/plugins/`) is decided inside
-    // `warmCommands` — it exits before booting a probe when none do.
-    // Fire-and-forget: the probe broadcasts `commands_changed` on completion,
-    // which re-fetches the palette.
+    // Plugin commands (e.g. `/flow:*`) live in the SDK, not on the filesystem, so the cold-cache
+    // fallback (`command-registry` scans `.claude/commands/` only) can't surface them. When this
+    // cwd has no SDK command list yet, warm it in the background so the palette shows those
+    // commands before the session's first message. Whether any plugins apply (global OR
+    // project-scoped under `<cwd>/.dork/plugins/`) is decided inside `warmCommands`, which exits
+    // before booting a probe when none do. The probe broadcasts `commands_changed` when done.
     if (!this.cache.hasSdkCommands(root)) void this.warmCommands(root);
-    return this.cache.getCommands(registry, root, forceRefresh);
+    return commandsWithHome(this.cache, registry, root, agentPath, force);
   }
 
   /**

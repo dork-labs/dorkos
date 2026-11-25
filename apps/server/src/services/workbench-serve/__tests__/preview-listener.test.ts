@@ -890,7 +890,8 @@ describe('PreviewListenerManager — socket lifetime', () => {
       client.on('error', reject);
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    // An absence check, so it has to wait: two and a half idle windows.
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     expect((await fetchPreview(origin.listenPort, '/__dorkos_preview/health')).status).toBe(204);
     client.terminate();

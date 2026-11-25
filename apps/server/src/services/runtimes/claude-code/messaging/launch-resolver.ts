@@ -38,6 +38,7 @@
  * @module services/runtimes/claude-code/messaging/launch-resolver
  */
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { turnReferenceEnv } from '../../shared/references/turn-reference-env.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
@@ -73,8 +74,9 @@ import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
 import { transcriptIdTaken } from '../sessions/session-root-index.js';
-import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
+import { applyHomeSkillsFolder } from '../tooling/home-skills-folder.js';
+import { homeOutside } from '../../shared/home-skills-block.js';
 import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool-guards.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
@@ -93,11 +95,7 @@ import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,
 } from '../../shared/permission-tool-filter.js';
-import {
-  AUTO_DOWNGRADE_STATUS,
-  UNKNOWN_MODE_STATUS,
-  resolveEffectivePermissionMode,
-} from './permission-mode-guard.js';
+import { prepareClaudeLaunchPermission } from '../tool-turn/launch-permission.js';
 import { resolveThinkingOptions } from './thinking-config.js';
 import {
   createEditBaselineCapture,
@@ -108,6 +106,7 @@ import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { watchLaunchFolderAllows } from '../tool-gate/folder-file-allows.js';
 import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { heldFolderMatchers } from '../tool-gate/dev-link-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
@@ -182,9 +181,7 @@ export async function resolveLaunch(args: {
   // Stamp agent last_seen_at when a message is dispatched
   const meshAgent = turnAgentPath ? opts.meshCore?.getByPath(turnAgentPath) : undefined;
   const meshAgentId = meshAgent?.id;
-  if (opts.meshCore && meshAgentId) {
-    opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
-  }
+  if (opts.meshCore && meshAgentId) opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
 
   // Load the agent manifest for the settings a launch is pinned to (its account,
   // below) — from the HOME, never the folder the turn stands in, whose
@@ -401,6 +398,9 @@ export async function resolveLaunch(args: {
       onCredits ? creditsEnv : undefined,
       runtimeEnvironment('claude-code', 'turn', {
         DORKOS_SESSION_ID: sessionId,
+        // The agent the token below is minted for, and this install's space,
+        // for signatures (provenance v2); left out when unknown.
+        ...turnReferenceEnv(meshAgent?.id),
         CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
         // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
         // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
@@ -605,67 +605,13 @@ export async function resolveLaunch(args: {
     }
   }
 
-  // Reconcile the permission mode against the active model: `'auto'` only works on
-  // models KNOWN to support it, so coerce it to `'default'` here (the runtime is the
-  // authoritative chokepoint) rather than letting the SDK 400. This is a per-query
-  // coercion only — we deliberately do NOT mutate `session.permissionMode`, so the
-  // operator's Auto choice isn't silently destroyed: the displayed mode stays honest,
-  // the status note fires each send the model can't be trusted with Auto, and Auto
-  // resumes automatically once it can be. The note's wording follows the REASON —
-  // an unconfirmed model must not be described as one that lacks Auto.
-  //
-  // The session's own id is checked into the SDK's vocabulary FIRST, because a
-  // mode id is whatever its runtime declared (DOR-885): the session may be
-  // sitting in one this runtime has since retired, or in one only another
-  // runtime ever offered, and a name the SDK has never heard of fails the entire
-  // turn with a 400. `'default'` — ask about everything — is the only safe
-  // reading of a mode nothing here can weigh.
-  //
-  // And it is announced, for the same reason the auto downgrade below is: this
-  // coercion is per query and never rewrites `session.permissionMode`, so the
-  // panel keeps showing the saved mode while the agent asks about everything.
-  // Silence there is the whole complaint — a person watching it ask would have
-  // no way to learn why. The note is user-facing and says what changes for them;
-  // the log line beside it carries the id, which is the half a person cannot use
-  // and an operator reading logs needs.
-  //
-  // The turn's ceiling is applied FIRST, for the same reason and in the same
-  // per-query way: a turn another agent's post or a stranger's message started
-  // runs no looser than its sender, and the session's own choice is never
-  // rewritten (spec `trusted-by-default-flip` §4). On a warm process the mode
-  // this resolves is what the fingerprint compares, so the live process is moved
-  // down for this turn and back up for the next one.
-  const turnMode = turnPermissionMode(session);
-  const declaredMode = narrowToClaudeCodeMode(turnMode, 'default');
-  if (declaredMode !== turnMode) {
-    logger.warn('[sendMessage] saved permission mode is not one this runtime offers', {
-      session: sessionId,
-      stored: turnMode,
-      running: declaredMode,
-    });
-    statusEvents.push({ type: 'system_status', data: { message: UNKNOWN_MODE_STATUS } });
-  }
-  const { permissionMode: effectivePermissionMode, autoDowngrade } = resolveEffectivePermissionMode(
-    {
-      permissionMode: declaredMode,
-      modelSupportsAutoMode,
-    }
-  );
-  if (autoDowngrade) {
-    statusEvents.push({
-      type: 'system_status',
-      data: { message: AUTO_DOWNGRADE_STATUS[autoDowngrade] },
-    });
-  }
-  // Which model Auto is confirmed for, recorded for what reads the mode this
-  // turn REALLY runs at (the `session_start` ceiling): the coercion above leaves
-  // `session.permissionMode` at `'auto'` on purpose, so the stored choice alone
-  // would overstate the turn. Confirmed only on a definite `true`, so a model
-  // nothing could vouch for counts as no Auto at all.
-  session.autoModeConfirmedFor = modelSupportsAutoMode === true ? (launchModel ?? '') : undefined;
-  // Every value that reaches here is one the SDK accepts: `narrowToClaudeCodeMode`
-  // checked the id and the guard above resolved Auto, so no allowlist is needed.
-  sdkOptions.permissionMode = effectivePermissionMode;
+  const toolTurnSettings = prepareClaudeLaunchPermission(session, sdkOptions, {
+    sessionId,
+    modelSupportsAutoMode,
+    launchModel,
+    statusEvents,
+  });
+  const effectivePermissionMode = toolTurnSettings.sdkPermissionMode;
   // Always launch with the bypass capability (ADR-0261). The flag is a pure
   // capability gate the SDK consults ONLY when permissionMode is
   // 'bypassPermissions' — verified inert in default/acceptEdits/plan, which
@@ -702,14 +648,10 @@ export async function resolveLaunch(args: {
       fastMode: true,
     };
   }
-  // This turn's folder grants, merged into the same settings object, and the
-  // variable that would make a granted folder's CLAUDE.md load stripped from the
-  // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
-  const turnGrants = marksHold(
-    marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined)
-  )
-    ? undefined
-    : messageOpts?.additionalDirectories;
+  // This turn's folder grants, merged into the same settings object, and the CLAUDE.md variable
+  // stripped from the env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
+  const marked = marksHold(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined));
+  const turnGrants = marked ? undefined : messageOpts?.additionalDirectories;
   // None for a marked turn (DOR-2956), whatever a caller passed: a grant widens what the turn
   // may touch, which a mark still holds back (Security, #3280), and this is the last place a
   // grant could reach the CLI.
@@ -754,8 +696,10 @@ export async function resolveLaunch(args: {
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
   applyCreditsSettingsEnv(sdkOptions, creditsSettings);
-  // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
-  // folder it has not been told to trust.
+  // Outside its home, its own skills load from it (DOR-5250); a marked turn's reach stays put.
+  applyHomeSkillsFolder(sdkOptions, marked ? undefined : homeOutside(effectiveCwd, forAgent));
+  // The agent's own folder allow list (DOR-3039), as a person approved it; below Full the rest
+  // of the folder's settings allow only what a person approved (`folderAllows` below, DOR-5237).
   await applyFolderAllowsToLaunch({
     agent: meshAgent
       ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
@@ -817,14 +761,24 @@ export async function resolveLaunch(args: {
   });
   // One launch's heavy-job hooks (DOR-4209), built here because a card gives its call's slot back.
   const loadGate = loadGateHooks(session, { sessionId, agentName: agentDisplayName });
-  sdkOptions.canUseTool = createCanUseTool(
-    session,
-    logger,
-    editBaselineCapture,
-    resolveIdentity,
-    { cwd: effectiveCwd, roots: readRoots },
-    outsideChecks,
-    loadGate.releaseCall
+  // Below Full, an agent's folder settings allow only what a person approved (DOR-5237); a
+  // person's Always allow counts as approved from that answer on.
+  const folderAllows = watchLaunchFolderAllows(sdkOptions, {
+    agentId: meshAgent?.id,
+    home: turnAgentPath ?? undefined,
+    cwd: effectiveCwd,
+    compared: repoConfig.compared,
+  });
+  sdkOptions.canUseTool = folderAllows.rememberPersonAnswers(
+    createCanUseTool(
+      session,
+      logger,
+      editBaselineCapture,
+      resolveIdentity,
+      { cwd: effectiveCwd, roots: readRoots },
+      outsideChecks,
+      loadGate.releaseCall
+    )
   );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
@@ -869,8 +823,12 @@ export async function resolveLaunch(args: {
         audit: auditTurn,
       }),
       // A held turn (DOR-3204): the folder's allow rules become cards, its deny
-      // rules still refuse. Answers nothing on any other turn.
-      { hooks: [createHeldTurnHook(session, resolveIdentity, logger, heldReadFolders)] },
+      // rules still refuse. Below Full, so does a rule nobody approved (DOR-5237).
+      {
+        hooks: [
+          createHeldTurnHook(session, resolveIdentity, logger, heldReadFolders, folderAllows),
+        ],
+      },
       // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
       // DorkOS's own safe tools are let through here, with the gate's own
       // per-call decision. Answers nothing in any other mode.
@@ -953,6 +911,8 @@ export async function resolveLaunch(args: {
           // The ANCHORED agent, not the directory: two launches standing in the
           // same worktree for the same agent are the same identity.
           agentPath: turnAgentPath,
+          // The Mesh id the env's `DORKOS_AGENT_ID` names, so a changed id relaunches.
+          agentId: meshAgent.id,
           // The same string the mint above was given: the pin describes who this
           // launch was minted FOR, so a second name here would be a fingerprint
           // of something that never happened.
@@ -970,6 +930,7 @@ export async function resolveLaunch(args: {
       : undefined;
 
   return {
+    toolTurnSettings,
     sdkOptions,
     enrichedContent,
     meshAgentId,

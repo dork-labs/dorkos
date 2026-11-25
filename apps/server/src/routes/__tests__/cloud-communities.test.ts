@@ -8,6 +8,7 @@
  * leaves this process (headers, bodies, the exported bytes) and what actually
  * reaches the browser. No test here reaches a real service.
  */
+import { problemBody } from '@dorkos/http-kit';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
@@ -436,7 +437,7 @@ describe('GET /api/cloud/communities/sign-in', () => {
     script.signIn = { servers: [{ origin: 'https://community.example.invalid/c/x' }] };
     const logged = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const res = await request(server).get('/api/cloud/communities/sign-in').expect(502);
-    expect(res.body).toEqual({ error: expect.any(String) });
+    expect(res.body).toMatchObject({ code: 'upstream_unavailable', detail: expect.any(String) });
     logged.mockRestore();
   });
 
@@ -497,7 +498,11 @@ describe('GET /api/cloud/communities', () => {
   it('answers 502 in plain words when the service breaks', async () => {
     script.list = '<html>proxy error</html>';
     const res = await request(server).get('/api/cloud/communities').expect(502);
-    expect(res.body).toEqual({ error: 'Couldn’t reach your DorkOS account. Try again.' });
+    expect(res.body).toEqual(
+      problemBody('upstream_unavailable', {
+        detail: 'Couldn’t reach your DorkOS account. Try again.',
+      })
+    );
   });
 
   // Purpose: a refused read names the service's own code and status in the
@@ -906,7 +911,7 @@ describe('moving a community in', () => {
       .set('content-type', 'application/zip')
       .send(Buffer.alloc(0))
       .expect(400);
-    expect(res.body.ok).toBe(false);
+    expect(res.body.code).toBe('invalid_request');
     expect(serviceRequests()).toHaveLength(0);
   });
 
@@ -961,10 +966,11 @@ describe('moving a community in', () => {
   it('refuses an export the disk has no room for, before a move starts', async () => {
     disk.free = archive.length + MOVE_STAGING_HEADROOM_BYTES - 1;
     const res = await startMoveRequest().expect(507);
-    expect(res.body).toEqual({
-      ok: false,
-      message:
-        'This computer doesn’t have room to hold the export. It needs 537 MB free and has 536 MB. Free up some space, then try again.',
+    expect(res.body).toMatchObject({
+      code: 'disk_full',
+      detail: 'This computer needs more free space to hold the export.',
+      neededBytes: archive.length + MOVE_STAGING_HEADROOM_BYTES,
+      freeBytes: archive.length + MOVE_STAGING_HEADROOM_BYTES - 1,
     });
     expect(serviceRequests()).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
@@ -981,7 +987,11 @@ describe('moving a community in', () => {
   it('refuses safely when the free space cannot be read', async () => {
     disk.fail = true;
     const res = await startMoveRequest().expect(507);
-    expect(res.body).toMatchObject({ ok: false, message: expect.stringMatching(/free space/) });
+    expect(res.body).toMatchObject({
+      code: 'disk_space_unknown',
+      detail: expect.stringMatching(/free space/),
+    });
+    expect(res.body.detail).not.toContain('DORK_HOME');
     expect(serviceRequests()).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
   });
@@ -1011,7 +1021,7 @@ describe('moving a community in', () => {
       client.end(archive);
     });
     expect(answer.status).toBe(411);
-    expect(JSON.parse(answer.body)).toMatchObject({ ok: false });
+    expect(JSON.parse(answer.body)).toMatchObject({ code: 'length_required', status: 411 });
     expect(serviceRequests()).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
   });
@@ -1031,10 +1041,9 @@ describe('moving a community in', () => {
 
     script.moveStartBody = { move: moveCancelledFixture, upload: null, replayed: true };
     const again = await startMoveRequest().expect(409);
-    expect(again.body).toEqual({
-      ok: false,
-      message:
-        'That move was already cancelled, so nothing was sent on to DorkOS. Press Start moving to begin a new one.',
+    expect(again.body).toMatchObject({
+      code: 'conflict',
+      detail: 'That move was already cancelled. Press Start moving to begin a new one.',
     });
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(uploads.progress('move_0001')).toBeNull();
@@ -1071,10 +1080,13 @@ describe('moving a community in', () => {
       upload: { ...answer.upload, maxBytes: archive.length - 1 },
     };
     const res = await startMoveRequest().expect(413);
-    expect(res.body).toEqual({
-      ok: false,
-      message: `This export is too large to move. It is ${archive.length} bytes, and the most DorkOS takes is ${archive.length - 1} bytes.`,
+    expect(res.body).toMatchObject({
+      code: 'request_too_large',
+      detail: 'This export is larger than DorkOS can move.',
+      archiveBytes: archive.length,
+      limitBytes: archive.length - 1,
     });
+    expect(res.body.mayExist).toBeUndefined();
     expect(res.text).not.toContain(UPLOAD_TOKEN);
     expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true);
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
@@ -1093,7 +1105,7 @@ describe('moving a community in', () => {
     };
     script.cancelStatus = 503;
     const res = await startMoveRequest().expect(413);
-    expect(res.body).toMatchObject({ ok: false, mayExist: true });
+    expect(res.body).toMatchObject({ code: 'request_too_large', mayExist: true });
     expect(received.some((r) => r.path === '/v1/communities/moves/move_0001/cancel')).toBe(true);
     expect(received.filter((r) => r.method === 'PUT')).toHaveLength(0);
     expect(stagedCopies()).toHaveLength(0);
@@ -1205,9 +1217,9 @@ describe('GET /api/cloud/communities/sign-in with spaces off', () => {
   it('refuses while there is no official space, and refuses hosting either way', async () => {
     gated.officialOrigin = null;
     const none = await request(gatedServer).get('/api/cloud/communities/sign-in').expect(404);
-    expect(none.body.code).toBe('SPACES_DISABLED');
+    expect(none.body.code).toBe('spaces_disabled');
     gated.officialOrigin = 'https://community.example.invalid';
     const hosted = await request(gatedServer).get('/api/cloud/communities').expect(404);
-    expect(hosted.body.code).toBe('SPACES_DISABLED');
+    expect(hosted.body.code).toBe('spaces_disabled');
   });
 });

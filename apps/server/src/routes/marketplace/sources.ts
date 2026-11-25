@@ -16,11 +16,14 @@ import {
   refreshSourceListing,
 } from '../../services/marketplace/sources/source-listing.js';
 import type { MarketplaceSource } from '../../services/marketplace/types.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { readQuery } from '../../http/request-query.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
-import { validationFailed } from './shared.js';
+import { unsupportedSourceProblem, validationFailed } from './shared.js';
+
+/** The refusal for a source name already in use. */
+const SOURCE_NAME_TAKEN = 'A package source with that name already exists. Pick another name.';
 import { runFrontDoorWrite } from '../front-door-step-up.js';
 
 /** Body schema for `POST /api/marketplace/sources`. */
@@ -38,18 +41,20 @@ export const AddSourceBodySchema = z.object({
  */
 function addRefused(c: MarketplaceContext, name: string, err: unknown): Response {
   if (err instanceof InvalidSourceNameError) {
-    return c.json({ error: err.message }, 400);
+    return problem(c, 'invalid_request', {
+      detail: "That name can't be used. Use letters, numbers, dots, dashes and underscores.",
+    });
   }
   if (err instanceof UnsupportedSourceUrlError) {
     logger.warn('[Marketplace] Refused an unsupported source address', { name, url: err.url });
-    return c.json({ error: err.message }, 400);
+    return sendProblem(c, unsupportedSourceProblem());
   }
   const message = err instanceof Error ? err.message : 'Failed to add marketplace source';
   if (message.includes('already exists')) {
-    return c.json({ error: message }, 409);
+    return problem(c, 'conflict', { detail: SOURCE_NAME_TAKEN });
   }
   logger.error('[Marketplace] Failed to add source', err);
-  return c.json({ error: 'Failed to add marketplace source' }, 500);
+  return problem(c, 'internal_error', { detail: "Couldn't add the package source. Try again." });
 }
 
 /**
@@ -82,7 +87,7 @@ export function mountSourceRoutes(
       return c.json({ sources: listed });
     } catch (err) {
       logger.error('[Marketplace] Failed to list sources', err);
-      return c.json({ error: 'Failed to list marketplace sources' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t list the marketplace sources.' });
     }
   });
 
@@ -112,7 +117,7 @@ export function mountSourceRoutes(
     try {
       assertSupportedMarketplaceSourceUrl(input.source);
       if ((await sourceManager.get(input.name)) !== null) {
-        return c.json({ error: `Marketplace source '${input.name}' already exists` }, 409);
+        return problem(c, 'conflict', { detail: SOURCE_NAME_TAKEN });
       }
     } catch (err) {
       return addRefused(c, input.name, err);
@@ -157,7 +162,8 @@ export function mountSourceRoutes(
   const removeSource = async (c: MarketplaceContext, name: string | null) => {
     const refused = refuseUntrustedSourceWrite(c, 'remove');
     if (refused) return refused;
-    if (name === null) return c.json({ error: 'Missing required parameter: name' }, 400);
+    if (name === null)
+      return problem(c, 'invalid_request', { detail: 'Name the source to remove.' });
 
     let existed: boolean;
     try {
@@ -165,7 +171,9 @@ export function mountSourceRoutes(
       await sourceManager.remove(name);
     } catch (err) {
       logger.error(`[Marketplace] Failed to remove source ${name}`, err);
-      return c.json({ error: 'Failed to remove marketplace source' }, 500);
+      return problem(c, 'internal_error', {
+        detail: "Couldn't remove the package source. Try again.",
+      });
     }
     // Removing a name that was never a source changes nothing, and never names
     // a cache folder: the name is the caller's text, so `.` would otherwise be
@@ -189,11 +197,12 @@ export function mountSourceRoutes(
   // POST /sources/:name/refresh, POST /sources/refresh?name= -- force refetch of
   // a source's marketplace.json
   const refreshSource = async (c: MarketplaceContext, name: string | null) => {
-    if (name === null) return c.json({ error: 'Missing required parameter: name' }, 400);
+    if (name === null)
+      return problem(c, 'invalid_request', { detail: 'Name the source to refresh.' });
     try {
       const source = await sourceManager.get(name);
       if (!source) {
-        return c.json({ error: `Marketplace source '${name}' not found` }, 404);
+        return problem(c, 'not_found', { detail: 'There is no package source by that name.' });
       }
 
       // "Check now": an unreachable source answers with its last copy marked
@@ -205,8 +214,9 @@ export function mountSourceRoutes(
       return c.json(refreshed);
     } catch (err) {
       logger.error(`[Marketplace] Failed to refresh source ${name}`, err);
-      const message = err instanceof Error ? err.message : 'Failed to refresh marketplace source';
-      return c.json({ error: message }, 502);
+      return problem(c, 'upstream_unavailable', {
+        detail: "Couldn't fetch that source's listing, and none is saved. Try again.",
+      });
     }
   };
   app.post('/sources/refresh', (c) => refreshSource(c, sourceNameFromQuery(c)));

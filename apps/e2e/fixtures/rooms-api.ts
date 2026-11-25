@@ -732,7 +732,7 @@ export class RoomsApi {
     const alreadyHad =
       enabled.status() === 409 &&
       ((await enabled.json().catch(() => null)) as { code?: string } | null)?.code ===
-        'ROOM_REPO_EXISTS';
+        'room_repo_exists';
     if (!enabled.ok() && !alreadyHad) {
       throw new Error(`Could not give room ${roomId} files: ${await enabled.text()}`);
     }

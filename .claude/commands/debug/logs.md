@@ -68,11 +68,11 @@ AskUserQuestion:
     - label: "Recent errors"
       description: "Find all errors and warnings in recent logs"
     - label: "Specific component"
-      description: "Filter by component tag (e.g., Relay, Mesh, Pulse, AgentManager)"
+      description: "Filter by component tag (e.g., Relay, Mesh, Tasks, AgentManager)"
     - label: "API failures"
       description: "Find failed HTTP requests and route errors"
     - label: "Subsystem issues"
-      description: "Focus on Relay, Mesh, or Pulse subsystem logs"
+      description: "Focus on Relay, Mesh, or Tasks subsystem logs"
     - label: "Full log review"
       description: "Review the entire recent log"
 ```
@@ -118,7 +118,7 @@ Other common tags in the codebase:
 | -------------------- | ------------------------ |
 | `DB`                 | Database initialization  |
 | `Startup`            | Server startup sequence  |
-| `Pulse`              | Pulse scheduler          |
+| `Tasks`              | Task scheduler           |
 | `Relay`              | Relay message bus        |
 | `Mesh`               | Mesh agent discovery     |
 | `AgentManager`       | Claude SDK sessions      |
@@ -187,7 +187,7 @@ for line in sys.stdin:
 | **Adapter error**      | `AdapterManager: adapter .* failed`             | Adapter start/stop lifecycle issue      |
 | **SDK error**          | `AgentManager: SDK query failed`                | Claude Agent SDK call failure           |
 | **Mesh discovery**     | `Mesh: scan failed`                             | Discovery scan error                    |
-| **Pulse execution**    | `Pulse: run .* failed`                          | Scheduled task execution failure        |
+| **Task execution**     | `Tasks: run .* failed`                          | Scheduled task execution failure        |
 | **DB error**           | `DB: migration failed`                          | Database schema issue                   |
 | **Boundary violation** | `403.*boundary`                                 | Path outside configured boundary        |
 | **Session lock**       | `SESSION_LOCKED`                                | Concurrent write attempt                |
@@ -235,12 +235,12 @@ Based on the component tag and error message:
 
 ### 4.3 Check SQLite Database State
 
-For Pulse/Relay/Mesh errors, query the consolidated database:
+For Tasks/Relay/Mesh errors, query the consolidated database:
 
 ```bash
 DORK_HOME="apps/server/.temp/.dork"
 
-# Check recent pulse runs for failures
+# Check recent task runs for failures
 sqlite3 "$DORK_HOME/dork.db" "SELECT id, schedule_id, status, error, started_at FROM pulse_runs WHERE status = 'failed' ORDER BY started_at DESC LIMIT 10;"
 
 # Check relay message traces
@@ -274,7 +274,7 @@ AskUserQuestion:
     - label: "Add better logging"
       description: "Add more context to help debug this"
     - label: "Check subsystem state"
-      description: "Inspect relay/mesh/pulse state files and database"
+      description: "Inspect relay/mesh/tasks state files and database"
     - label: "Investigate more"
       description: "I need more information before fixing"
 ```
@@ -345,7 +345,7 @@ print('\n'.join(sorted(tags)))
 | `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.log`   | Daily rotated logs                   |
 | `{DORK_HOME}/logs/dorkos.YYYY-MM-DD.N.log` | Size-rotated within a day            |
 | `{DORK_HOME}/config.json`                  | Server configuration                 |
-| `{DORK_HOME}/dork.db`                      | SQLite database (pulse, relay, mesh) |
+| `{DORK_HOME}/dork.db`                      | SQLite database (tasks, relay, mesh) |
 | `{DORK_HOME}/relay/adapters.json`          | Adapter configurations               |
 | `{DORK_HOME}/relay/bindings.json`          | Adapter-agent bindings               |
 | `{DORK_HOME}/relay/sessions.json`          | Active session mappings              |

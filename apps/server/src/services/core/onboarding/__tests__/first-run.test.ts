@@ -162,7 +162,7 @@ describe('applyFirstRun', () => {
         h.deps
       ).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(FirstRunError);
-      expect(error).toMatchObject({ status: 400, code: 'invalid_key' });
+      expect(error).toMatchObject({ code: 'invalid_key' });
       expect(h.config()).toBe(before);
       expect(h.storeCredential).not.toHaveBeenCalled();
     });
@@ -192,7 +192,7 @@ describe('applyFirstRun', () => {
     const before = h.config();
     await expect(
       applyFirstRun({ path: 'own', choice: { kind: 'anthropic', apiKey: 'sk-ant-oat-1' } }, h.deps)
-    ).rejects.toMatchObject({ status: 400, code: 'invalid_key' });
+    ).rejects.toMatchObject({ code: 'invalid_key' });
     expect(h.fetch).not.toHaveBeenCalled();
     expect(h.config()).toBe(before);
   });
@@ -259,7 +259,6 @@ describe('applyFirstRun', () => {
       h.edit({ onboarding: { ...h.config().onboarding, [closed]: '2026-10-01T00:00:00.000Z' } });
       const before = h.config();
       await expect(applyFirstRun({ path: 'dorkos' }, h.deps)).rejects.toMatchObject({
-        status: 409,
         code: 'onboarding_complete',
       });
       expect(h.config()).toBe(before);
@@ -346,7 +345,7 @@ describe('applyFirstRun', () => {
       h.edit({ onboarding: { ...h.config().onboarding, [closed]: '2026-10-10T13:00:00.000Z' } });
       const before = h.config();
       release();
-      await expect(pending).rejects.toMatchObject({ status: 409, code: 'onboarding_complete' });
+      await expect(pending).rejects.toMatchObject({ code: 'onboarding_complete' });
       expect(h.config()).toBe(before);
       expect(h.storeCredential).not.toHaveBeenCalled();
     });

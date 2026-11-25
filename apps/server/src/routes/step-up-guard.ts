@@ -17,6 +17,8 @@
  */
 import type { Context } from 'hono';
 
+import { problem } from '@dorkos/http-kit';
+
 import { STEP_UP_REQUIRED_CODE, type StepUpRequiredBody } from '@dorkos/shared/step-up';
 
 import type { ApiEnv } from '../http/api-chain.js';
@@ -30,7 +32,6 @@ import {
 } from '../services/core/auth/step-up/step-up-holds.js';
 import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
 import { ApprovalInputNotBindableError } from '../services/core/approvals/approval-input-hash.js';
-import { errorBody } from '../lib/route-utils.js';
 
 /**
  * Whether the person at this computer goes on with no "Confirm it's you"
@@ -55,23 +56,26 @@ export function deskGoesOnWithoutSheet(facts: RequestFacts): boolean {
  *
  * @param c - The request that asked for the action.
  * @param action - What to hold. See {@link StepUpActionInput}.
- * @returns The `428` answer, or a `403` when an owner exists and the caller has
- *   no browser session: every such caller would share one held-action owner, so
- *   any of them could confirm another's.
+ * @returns The `428` answer, or a `403` `person_only` problem when an owner
+ *   exists and the caller has no browser session: every such caller would
+ *   share one held-action owner, so any of them could confirm another's.
  */
 export function holdForStepUp(c: Context<ApiEnv>, action: StepUpActionInput): Response {
   const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
   if (sessionId === null && readOwnerAccount() !== null) {
-    return c.json(errorBody('Only you can confirm this, in the DorkOS app.', 'not-a-person'), 403);
+    return problem(c, 'person_only', { detail: 'Only you can confirm this, in the DorkOS app.' });
   }
   let statement;
   try {
     statement = holdStepUp(action, sessionId);
   } catch (error) {
-    if (error instanceof HeldStepUpCapacityError)
-      return c.json(errorBody(error.message, 'too-many-actions'), 429);
+    if (error instanceof HeldStepUpCapacityError) {
+      return problem(c, 'rate_limited', {
+        detail: 'Too many actions are waiting. Try again shortly.',
+      });
+    }
     if (error instanceof ApprovalInputNotBindableError) {
-      return c.json(errorBody('That can’t be confirmed as asked.', 'NOT_BINDABLE'), 400);
+      return problem(c, 'invalid_request', { detail: 'That can’t be confirmed as asked.' });
     }
     throw error;
   }

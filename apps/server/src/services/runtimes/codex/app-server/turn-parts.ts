@@ -5,6 +5,7 @@
  * @module services/runtimes/codex/app-server/turn-parts
  */
 import type { StreamEvent } from '@dorkos/shared/types';
+import { resolveApprovalDecision } from '../../shared/policy/approvals.js';
 import { codexPermissionProfile } from '../policy/protected-profile.js';
 export { codexPermissionProfile };
 import { EFFORT_TO_REASONING, promptToSend } from '../turn-input.js';
@@ -68,7 +69,10 @@ export class EventQueue {
 export function approvalPolicyFor(
   settings: Pick<CodexTurnRequest['settings'], 'permissionMode'>
 ): AskForApproval {
-  return settings.permissionMode === 'bypassPermissions' ? 'never' : 'on-request';
+  // Codex classifies edits itself. At launch we choose the policy for every request.
+  return resolveApprovalDecision(settings.permissionMode, 'other') === 'auto-approve'
+    ? 'never'
+    : 'on-request';
 }
 
 /** Project a resolved turn into sticky app-server settings on every start. */

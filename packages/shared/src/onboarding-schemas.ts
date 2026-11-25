@@ -80,7 +80,8 @@ export const FirstRunResultSchema = z.object({
 export type FirstRunResult = z.infer<typeof FirstRunResultSchema>;
 
 /**
- * Why `POST /api/onboarding/first-run` refused, beside its sentence. Every
+ * Why the first run refused. The route answers each with a problem
+ * (`already_resolved`, `invalid_request` or `upstream_unavailable`). Every
  * refusal leaves the previous pick exactly as it was:
  *
  * - `onboarding_complete`: the first run is finished or dismissed.

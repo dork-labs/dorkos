@@ -146,8 +146,8 @@ describe('creating a marketplace agent in the app', () => {
 
     const res = await create({ name: 'x', package: { name: 'valid-agent', ...seen } });
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('disclosure_changed');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(await exists(path.join(dorkHome, 'agents', 'valid-agent'))).toBe(false);
   });
 
@@ -188,7 +188,7 @@ describe('creating a marketplace agent in the app', () => {
     await mkdir(path.join(dorkHome, 'agents', 'valid-agent'), { recursive: true });
     const res = await create({ name: 'x', package: { name: 'valid-agent', ...(await shown()) } });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('COLLISION');
+    expect(res.body.code).toBe('conflict');
   });
 
   it.each(['./valid-agent', 'github:someone/agent', '../../escape'])(

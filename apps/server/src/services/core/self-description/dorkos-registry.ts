@@ -13,7 +13,7 @@
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
  * domain, `roomDeps` the rooms domain, `sessionCompactionDeps` the session
- * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, `agentPauseDeps` the agent pause domain, `localBrowserDeps` the local browser domain, and the memory, `ui` and self-description
+ * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, `agentPauseDeps` the agent pause domain, `linkDeps` the link domain, `localBrowserDeps` the local browser domain, and the memory, `ui` and self-description
  * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
@@ -30,6 +30,7 @@ import {
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
+import { operatorActivityDomain } from '../../activity/activity-capability.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { connectorExecutionDomain } from '../../connectors/execution/execution-capabilities.js';
@@ -42,7 +43,10 @@ import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
 import { todoPromisesDomain } from '../../todos/todo-promise-capabilities.js';
 import { env } from '../../../env.js';
 import { todosDomain } from '../../todos/todo-capabilities.js';
+import { todoPromiseHttpDomain, todoViewDomain } from '../../todos/todo-http-capabilities.js';
+import { todoPromiseWriteDomain, todoWriteDomain } from '../../todos/todo-write-capabilities.js';
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
+import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
@@ -52,7 +56,12 @@ import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
+import { linkDomain } from '../links/link-capabilities.js';
 import { createLocalBrowserDomain } from '../../session/local-browser/capabilities.js';
+import { directoryDomain } from '../directory/directory-capabilities.js';
+import { diffDomain } from '../../diff/diff-capabilities.js';
+import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
+import { templatesDomain } from '../agent-templates/template-catalog.js';
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -73,7 +82,9 @@ export function composeDorkOsCapabilityRegistry(
   onInvocation?: CapabilityInvocationObserver
 ): CapabilityRegistry {
   const domains: CapabilityDomain[] = [];
+  // The feed is on every server; `operatorDomain` carries it when it starts.
   if (deps.operatorDeps) domains.push(operatorDomain);
+  else if (deps.activityDeps) domains.push(operatorActivityDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain, connectorHoldDomain);
@@ -82,13 +93,21 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
   if (deps.todoPromiseDeps) domains.push(todoPromisesDomain);
+  // The promise list and a person's "add a promise", on their REST paths (DOR-4978).
+  if (deps.todoPromiseHttpDeps) domains.push(todoPromiseHttpDomain);
   // Behind the flag here as well as at boot, so the docs composer below can match it (DOR-3088).
   if (deps.todoDeps && env.DORKOS_TODOS_ENABLED) domains.push(todosDomain);
+  if (deps.todoViewDeps && env.DORKOS_TODOS_ENABLED) domains.push(todoViewDomain);
+  // A person's to-do writes and promise changes (DOR-4978).
+  if (deps.todoPromiseWriteDeps) domains.push(todoPromiseWriteDomain);
+  if (deps.todoWriteDeps && env.DORKOS_TODOS_ENABLED) domains.push(todoWriteDomain);
   if (deps.workQueueDeps) domains.push(workQueueDomain);
+  if (deps.workQueuePersonDeps) domains.push(workQueuePersonDomain);
   if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.approvalWithdrawDeps) domains.push(approvalsDomain);
+  if (deps.linkDeps) domains.push(linkDomain);
   if (deps.localBrowserDeps) domains.push(createLocalBrowserDomain(deps.localBrowserDeps));
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
@@ -110,6 +129,12 @@ export function composeDorkOsCapabilityRegistry(
   // Unconditional too: `end_beat` needs no service handle, and outside a beat
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
+  // Unconditional too: the folder picker, the diff review and the workspace
+  // reads read the filesystem and process-wide stores every server has, so
+  // their paths answer wherever the hand routes used to.
+  domains.push(directoryDomain, diffDomain, workspacesDomain);
+  // The template list reads the data directory the template routes write.
+  if (deps.templateDeps) domains.push(templatesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
   // Back-write the composed registry so `capabilities.list` can serialize it.
@@ -161,14 +186,18 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionDomain,
     chatDomain,
     todoPromisesDomain,
+    todoPromiseHttpDomain,
+    todoPromiseWriteDomain,
     // Left out when `DORKOS_TODOS_ENABLED` is set to false (on by default since DOR-5071), so the
     // generated docs do not describe tools nobody can call.
-    ...(env.DORKOS_TODOS_ENABLED ? [todosDomain] : []),
+    ...(env.DORKOS_TODOS_ENABLED ? [todosDomain, todoViewDomain, todoWriteDomain] : []),
     workQueueDomain,
+    workQueuePersonDomain,
     workClaimDomain,
     auditDomain,
     agentPauseDomain,
     approvalsDomain,
+    linkDomain,
     createLocalBrowserDomain({} as NonNullable<CapabilityDeps['localBrowserDeps']>),
     memoryDomain,
     uiDomain,
@@ -176,6 +205,10 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     instructionsDomain,
     permissionsDomain,
     heartbeatDomain,
+    directoryDomain,
+    diffDomain,
+    workspacesDomain,
+    templatesDomain,
   ];
   const deps: CapabilityDeps = {
     logger: noopLogger,
@@ -189,11 +222,18 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
     todoPromiseDeps: {} as CapabilityDeps['todoPromiseDeps'],
     todoDeps: {} as CapabilityDeps['todoDeps'],
+    todoPromiseHttpDeps: {} as CapabilityDeps['todoPromiseHttpDeps'],
+    todoViewDeps: {} as CapabilityDeps['todoViewDeps'],
+    todoPromiseWriteDeps: {} as CapabilityDeps['todoPromiseWriteDeps'],
+    todoWriteDeps: {} as CapabilityDeps['todoWriteDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
+    workQueuePersonDeps: {} as CapabilityDeps['workQueuePersonDeps'],
     workClaimDeps: {} as CapabilityDeps['workClaimDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
     approvalWithdrawDeps: {} as CapabilityDeps['approvalWithdrawDeps'],
+    linkDeps: {} as CapabilityDeps['linkDeps'],
+    templateDeps: {} as CapabilityDeps['templateDeps'],
   };
   return composeRegistry(domains, deps);
 }

@@ -786,6 +786,96 @@ describe('AdapterSetupWizard', () => {
     });
   });
 
+  // The add answers by code, never by its words (review on DOR-4979).
+  it.each([
+    ['connection_saved_not_started', 'toast'],
+    ['connection_id_taken', 'configure'],
+  ] as const)('answers a refused add with %s by its code', async (code, outcome) => {
+    const { Wrapper, mockTransport } = createWrapper({
+      agents: [{ id: 'agent-1', name: 'My Agent' }],
+    });
+    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.addRelayAdapter = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('Something else.'), { code, status: 409 }));
+    mockTransport.createBinding = vi.fn().mockResolvedValue({ binding: { id: 'b-1' } });
+
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
+    await advanceToConfigure();
+
+    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+
+    await waitFor(() => expect(mockTransport.addRelayAdapter).toHaveBeenCalled());
+    if (outcome === 'toast') {
+      // Saved, so setup finishes: the agent is linked, and the person is told
+      // to fix the token rather than left with a connection nobody answers.
+      await waitFor(() => {
+        expect(mockTransport.createBinding).toHaveBeenCalledWith(
+          expect.objectContaining({ adapterId: 'slack', agentId: 'agent-1' })
+        );
+      });
+      await waitFor(() => {
+        expect(toastError).toHaveBeenCalledWith(
+          expect.stringContaining('Couldn’t reach'),
+          expect.objectContaining({
+            description: expect.stringMatching(
+              /go to My Agent once it connects\. Check your token/
+            ),
+          })
+        );
+      });
+    } else {
+      await waitFor(() => {
+        expect(screen.getByLabelText(/api token/i)).toBeInTheDocument();
+      });
+      expect(mockTransport.createBinding).not.toHaveBeenCalled();
+    }
+  });
+
+  // A refused setting comes back by key, and the form marks that field (DOR-4979).
+  it('marks the settings a refused add names, back on the settings step', async () => {
+    const { Wrapper, mockTransport } = createWrapper({
+      agents: [{ id: 'agent-1', name: 'My Agent' }],
+    });
+    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.addRelayAdapter = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Check this connection’s settings, then save again.'), {
+        code: 'invalid_request',
+        status: 400,
+        body: { code: 'invalid_request', fields: ['token'] },
+      })
+    );
+
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
+    await advanceToConfigure();
+    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+
+    expect(await screen.findByText('DorkOS couldn’t use this. Check it.')).toBeInTheDocument();
+    expect(screen.getByLabelText(/api token/i)).toBeInTheDocument();
+  });
+
   it('takes the connection back out when the agent could not be set', async () => {
     const { Wrapper, mockTransport } = createWrapper({
       agents: [{ id: 'agent-1', name: 'My Agent' }],

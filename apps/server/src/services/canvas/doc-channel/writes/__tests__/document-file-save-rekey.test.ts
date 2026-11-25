@@ -19,6 +19,12 @@ import { saveOriginalDocumentFile } from '../installation-file-writes.js';
 import { readSessionDocSourceDescriptor } from '../../doc-source-policy.js';
 import { sameOriginalFileSaveSource } from '../file-save-recovery/applied-source.js';
 import { createDocChannelHttpComposition } from '../../http-composition.js';
+import { saved } from './saved-outcome.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -55,7 +61,8 @@ async function setup() {
     content: 'Original saved replacement',
     documentSave: { documentId, eventId: randomUUID(), incarnation },
   };
-  const save = () => saveOriginalDocumentFile(h.http.fileWrites, input, { headers: {} });
+  const save = async () =>
+    saved(await saveOriginalDocumentFile(h.http.fileWrites, input, { headers: {} }));
   const row = () =>
     h.db
       .select()
@@ -145,7 +152,9 @@ it('two successful canonical moves retain the original physical birth and never 
     installationId: 'authority-install',
   });
   cleanup.push(() => restarted.fileWrites.stop());
-  const recovered = await saveOriginalDocumentFile(restarted.fileWrites, f.input, { headers: {} });
+  const recovered = saved(
+    await saveOriginalDocumentFile(restarted.fileWrites, f.input, { headers: {} })
+  );
   expect(f.receipt(recovered.body)).toMatchObject({
     status: 'duplicate',
     incarnation: f.input.documentSave.incarnation,

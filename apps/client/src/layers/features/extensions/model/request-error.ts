@@ -9,6 +9,9 @@ import { readResponseError } from '@/layers/shared/lib';
  * An Error carrying the server's own sentence and code, so an extension can
  * tell "not running" from "already settled" (`err.code`).
  *
+ * The server answers a problem document (DOR-4979); its `code` is the one an
+ * extension matches on (`not_running`, `already_resolved`, `not_found`).
+ *
  * @param res - The refused response.
  * @param method - Which API member asked, for the fallback message.
  */

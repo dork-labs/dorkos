@@ -6,11 +6,15 @@
  * inputs, same bytes.
  *
  *   node scripts/release/release-commit.ts --repo <P checkout> --previous 0.141.0 \
- *     --date 2026-11-24 [--version X.Y.Z] [--commits <file>] [--out <dir>] [--json]
+ *     --date 2026-11-24 [--version X.Y.Z | --rollback X.Y.Z] [--commits <file>] [--out <dir>] [--json]
  *
  * - `--previous`: the last released version; P's VERSION must equal it.
  * - `--date`: the release date. Required, never taken from the clock.
  * - `--version`: overrides the bump; must be greater than `--previous`.
+ * - `--rollback`: the published version this release rolls back (design §6).
+ *   `--repo` is then the commit the release before it was cut at, so its
+ *   fragments are that release's; the version is the next patch after the
+ *   rolled-back one, and the section opens with "Rolled back X.Y.Z."
  * - `--commits`: one line per commit in `v<previous>..P`, which the workflow
  *   writes: `<sha> <subject>`, then optionally a tab and the tab-separated
  *   paths the commit added. The PR body lists its `feat`/`fix` commits that
@@ -129,6 +133,7 @@ export function summarize(plan: ReleasePlan): string {
   return [
     `Release v${plan.version} (from ${plan.previous}, ${decision.bump}: ${decision.reason})`,
     `  breaking: ${decision.breaking ? 'yes' : 'no'}`,
+    `  config migration key: ${decision.migrationKey ?? 'none pending'}${decision.raisedFrom ? ` (raised from ${decision.raisedFrom})` : ''}`,
     `  fragments: ${plan.fragments.length}`,
     `  files: ${plan.changes.map((change) => `${change.status} ${change.path}`).join('\n         ')}`,
     `  commits with no fragment: ${plan.unfragmented.length}`,
@@ -141,6 +146,7 @@ const OPTIONS = {
   previous: { type: 'string' },
   date: { type: 'string' },
   version: { type: 'string' },
+  rollback: { type: 'string' },
   commits: { type: 'string' },
   out: { type: 'string' },
   json: { type: 'boolean' },
@@ -172,6 +178,7 @@ export function main(argv: readonly string[]): number {
       previous: values.previous,
       date: values.date,
       ...(values.version === undefined ? {} : { version: values.version }),
+      ...(values.rollback === undefined ? {} : { rollback: values.rollback }),
       ...(values.commits === undefined ? {} : { commits: readFileSync(values.commits, 'utf8') }),
     });
     if (values.out) writeOutputs(plan, values.out, values.repo);

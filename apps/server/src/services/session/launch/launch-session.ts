@@ -26,15 +26,8 @@ import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import {
-  SessionBirthWriteError,
-  type SessionBirthWriteContext,
-} from '../../core/runtime-seam/session-birth-write.js';
-import type {
-  PersonChatBinding,
-  PersonDraftWitness,
-} from '../../core/runtime-seam/person-draft-settings.js';
-import { configManager } from '../../core/config-manager.js';
+import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
+import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
 import {
   homeOf,
   isInsideRoomsDir,
@@ -42,7 +35,6 @@ import {
   resolveAgentHome,
 } from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
-import { runtimeUnlessHeld } from '../../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { fullChatOf, getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
@@ -52,11 +44,15 @@ import { runInDispatch } from '../../../lib/dispatch-context.js';
 import { dispatchMessage, type MessageDispatchResult } from '../message-dispatcher.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
+import { claudeCodeFacts } from '../resolution/claude-code-facts.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
-import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
-import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
+import type {
+  AccountNotAllowedError,
+  LaunchAccountResolution,
+} from '../../core/usage/account-eligibility.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { agentLaunchCapMessage, claimCappedLaunch, isAgentLaunchCapFull } from './launch-cap.js';
 import {
   launchedByOf,
   launchPlaceRefusal,
@@ -65,8 +61,8 @@ import {
   type SessionLauncher,
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
-import { matchesPersonChatPlace, resolveChatPlace } from './resolve-chat-place.js';
-import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
+import { launchBindingSourceArgs, resolveChatPlace } from './resolve-chat-place.js';
+import { registeredChatAgentPath } from './verify-chat-agent.js';
 import { recordedAgentOf, sessionToolWarnings } from './session-tool-warnings.js';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 
@@ -89,6 +85,8 @@ export interface DispatchSessionMessageOpts {
   origin: TurnOrigin;
   /** Exact source prepared by the person-authenticated route for an acknowledged chat. */
   personChatSource?: PersonChatBinding;
+  /** The original receipt for a direct chat newly reserved by its sender. */
+  freshDmBirth?: FreshDmBirth;
   /**
    * Fires once, when the detached turn this message started (or joined the
    * queue for) ends. Called after the dispatch buffer records the end.
@@ -123,6 +121,13 @@ export interface DispatchSessionMessageOpts {
    */
   messageId?: string;
   /**
+   * The run the turn port saved for this message, and whether its words stay
+   * at their source rather than in the queue. Passed straight through; see
+   * `DispatchMessageOpts.runId` and `DispatchMessageOpts.wordsAtSource`.
+   */
+  runId?: string;
+  wordsAtSource?: true;
+  /**
    * The loosest level this first turn may run at. Passed straight through;
    * `MessageOpts.permissionCeiling` is the authority on what it means. Sent by
    * `session_start` when the calling turn read an outsider's words, so the new
@@ -143,53 +148,13 @@ export interface DispatchSessionMessageOpts {
   launcher?: SessionLauncher;
 }
 
-/**
- * How many sessions nobody typed into (see
- * {@link DispatchSessionMessageOpts.countsTowardLaunchCap}) may have a live turn
- * at once, when `runtimes.maxAgentChats` cannot be read. The 2026-09-25 drain
- * reached a machine load near 500 (spec `claude-account-fleet` D5 "Load cap",
- * D9 "Automatic handoff").
- */
-export const AGENT_LAUNCH_MAX_LIVE = 8;
-
-/** The setting a person raises the cap with, as the refusals name it. */
-export const AGENT_LAUNCH_CAP_SETTING = 'runtimes.maxAgentChats';
-
-/**
- * The cap in force right now: `runtimes.maxAgentChats` (DOR-3413), read at each
- * launch so a change applies to the next one without a restart.
- */
-export function agentLaunchMaxLive(): number {
-  try {
-    const configured = configManager.get('runtimes')?.maxAgentChats;
-    if (typeof configured === 'number' && Number.isInteger(configured) && configured > 0) {
-      return configured;
-    }
-  } catch (err) {
-    logger.debug('[launch-session] config unavailable, using the default chat cap', {
-      err: String(err),
-    });
-  }
-  return AGENT_LAUNCH_MAX_LIVE;
-}
-
-/** The sentence a launch refused by the cap answers with. */
-export function agentLaunchCapMessage(): string {
-  return (
-    `Too many spin-off chats are running (${agentLaunchMaxLive()}). Try again when one finishes. ` +
-    `A person can raise the limit with the ${AGENT_LAUNCH_CAP_SETTING} setting.`
-  );
-}
-
-/** One entry per capped launch whose turn has not settled yet. */
-const liveCappedLaunches = new Set<symbol>();
-
-/**
- * Whether every slot under {@link agentLaunchMaxLive} is taken right now.
- */
-export function isAgentLaunchCapFull(): boolean {
-  return liveCappedLaunches.size >= agentLaunchMaxLive();
-}
+export {
+  AGENT_LAUNCH_CAP_SETTING,
+  AGENT_LAUNCH_MAX_LIVE,
+  agentLaunchCapMessage,
+  agentLaunchMaxLive,
+  isAgentLaunchCapFull,
+} from './launch-cap.js';
 
 /**
  * Why {@link dispatchSessionMessage} started nothing, with the sentence the
@@ -300,7 +265,7 @@ export async function resolveRuntimeTypeForNewSession(opts: {
       // 'claude-code' (the AgentRuntime enum has no test-mode member), so
       // without this guard no agent-seeded session can ever start there.
       // A runtime the agent itself changed waits for a person (DOR-3068 M3).
-      const runtime = runtimeUnlessHeld(manifest, manifestDir);
+      const runtime = claudeCodeFacts().runtimeUnlessHeld(manifest, manifestDir);
       if (manifest?.runtime && !runtime) {
         logger.warn('[POST /messages] manifest runtime is held; using default', {
           manifestDir,
@@ -346,11 +311,7 @@ export async function dispatchSessionMessage(
   if (isAgentLaunchCapFull()) {
     return { refused: 'LAUNCH_CAP_FULL', message: agentLaunchCapMessage() };
   }
-  const slot = Symbol('capped-launch');
-  liveCappedLaunches.add(slot);
-  const release = () => {
-    liveCappedLaunches.delete(slot);
-  };
+  const release = claimCappedLaunch();
   try {
     const result = await launchSessionMessage({
       ...opts,
@@ -470,30 +431,29 @@ async function launchSessionMessage(
   if (named) return named;
 
   // `agentPath` is durable ownership provenance, not an ordinary cwd hint. A
-  // caller may name it only when Mesh currently knows that exact registered
-  // agent directory. This keeps the first-write session binding authoritative
-  // without letting client metadata manufacture an agent owner.
+  // caller may name it only when Mesh currently knows that registered agent
+  // directory, and it is recorded in Mesh's own spelling (a symlinked spelling
+  // of the same folder is the same agent, DOR-5117). This keeps the first-write
+  // session binding authoritative without letting client metadata manufacture
+  // an agent owner.
   const agentRegistration = {
     registeredAgentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath),
   };
   let verifiedAgentPath: string | undefined;
   if (agentPath !== undefined) {
-    if (!isRegisteredChatAgentPath(agentPath, agentRegistration)) {
+    verifiedAgentPath = registeredChatAgentPath(agentPath, agentRegistration);
+    if (verifiedAgentPath === undefined) {
       return {
         refused: 'INVALID_AGENT_PATH',
         message: 'Choose a registered agent before starting this chat',
       };
     }
-    verifiedAgentPath = agentPath;
   }
   // An agent's own chat is recorded as its own, as `session_start` records it;
   // every turn of a recorded chat then carries that agent (see `forAgent`
   // below). A chat with no recorded agent is not pinned (R3, still open).
   if (verifiedAgentPath === undefined && opts.launcher?.kind === 'agent') {
-    const own = opts.launcher.agentPath;
-    if (isRegisteredChatAgentPath(own, agentRegistration)) {
-      verifiedAgentPath = own;
-    }
+    verifiedAgentPath = registeredChatAgentPath(opts.launcher.agentPath, agentRegistration);
   }
 
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
@@ -516,12 +476,12 @@ async function launchSessionMessage(
   }
   let effectiveCwd = resolvedChatPlace.cwd;
   const existing = resolvedChatPlace.session;
-  const source = opts.personChatSource;
-  if (
-    source &&
-    (existing.bound || !matchesPersonChatPlace(source, resolvedChatPlace, verifiedAgentPath))
-  )
-    throw new SessionBirthWriteError('source');
+  const sourceArgs = launchBindingSourceArgs(
+    resolvedChatPlace,
+    verifiedAgentPath,
+    opts.personChatSource,
+    opts.freshDmBirth
+  );
   // A room-bound session's agent and grants, when the room answered for it
   // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
   // `forAgent` and the same folder grants a room turn carries.
@@ -577,8 +537,9 @@ async function launchSessionMessage(
     return {
       refused: 'DESK_NOT_OWN',
       message:
-        `This chat would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
-        `which is never where an agent works. Start it in the agent's own folder instead.`,
+        // No path: this sentence reaches a problem's `detail`, which never carries one.
+        "This chat's folder is inside a room's files, which is never where an agent works. " +
+        "Start it in the agent's own folder instead.",
     };
   }
 
@@ -670,11 +631,6 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
-  const sourceArgs: [SessionBirthWriteContext?, PersonDraftWitness?] = source
-    ? 'birth' in source
-      ? [source.birth]
-      : [undefined, source.draft]
-    : [];
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,
@@ -760,6 +716,9 @@ async function launchSessionMessage(
   // expire at the 202 and correlate nothing; see
   // `routes/__tests__/sessions-dispatch-correlation.test.ts`, which fails if it
   // moves.
+  // Known before the turn starts, so its `started` fact carries them (DOR-5232).
+  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
+  const { warnings } = await sessionToolWarnings(runtimeType, runtime, tools);
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
     dispatchMessage({
       turnStarter: personTyped
@@ -767,10 +726,14 @@ async function launchSessionMessage(
         : origin.kind === 'chat-message'
           ? 'agent-message'
           : 'agent',
+      origin,
       sessionId,
       clientId,
       content,
       messageId,
+      ...(opts.runId !== undefined ? { runId: opts.runId } : {}),
+      ...(opts.wordsAtSource ? { wordsAtSource: true as const } : {}),
+      ...(warnings ? { launchWarnings: warnings } : {}),
       cwd: effectiveCwd,
       context,
       // Background this turn's opener attached to it. It rides the neutral
@@ -824,8 +787,7 @@ async function launchSessionMessage(
     });
   }
 
-  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
-  return { ...result, ...(await sessionToolWarnings(runtimeType, runtime, tools)) };
+  return { ...result, ...(warnings ? { warnings } : {}) };
 }
 
 /** @internal Exported for testing only. */

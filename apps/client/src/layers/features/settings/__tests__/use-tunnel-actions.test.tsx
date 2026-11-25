@@ -88,19 +88,14 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setShowSetup).toHaveBeenCalledWith(false);
   });
 
-  it('shows the field problem a rejected patch names, not "Validation failed"', async () => {
+  it('shows the field problem a rejected patch names', async () => {
     const { transport, machine, actions } = setup();
-    // The REAL 400: `applyConfigPatch` answers with the constant headline
-    // `'Validation failed'` and puts the per-field text in `details[]`, so the
-    // only useful sentence is in the body. `fetchJSON` builds `.message` from
-    // `error`, which is the headline.
+    // The REAL 400: a problem document whose `detail` names the first field and
+    // what was wrong with it, which `fetchJSON` makes the message.
     vi.mocked(transport.updateConfig).mockRejectedValue(
-      Object.assign(new Error('Validation failed'), {
+      Object.assign(new Error('tunnel.authtoken: Expected string, received number'), {
         status: 400,
-        body: {
-          error: 'Validation failed',
-          details: ['tunnel.authtoken: Expected string, received number'],
-        },
+        code: 'invalid_request',
       })
     );
 
@@ -113,9 +108,8 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setTokenError).not.toHaveBeenCalledWith('Couldn’t save token. Try again.');
   });
 
-  it('shows a 4xx’s own sentence when it wrote one instead of details', async () => {
+  it('shows a 4xx’s own sentence', async () => {
     const { transport, machine, actions } = setup();
-    // `applyConfigPatch`'s other 400 sends a real sentence and no `details`.
     vi.mocked(transport.updateConfig).mockRejectedValue(
       Object.assign(new Error('Request body must be a JSON object'), { status: 400 })
     );
@@ -153,47 +147,15 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     expect(machine.setTokenError).toHaveBeenLastCalledWith('Couldn’t save token. Try again.');
   });
 
-  it('tells a caller with no session cookie to sign in', async () => {
+  it('tells a caller that is not a person signed in to DorkOS what to do', async () => {
     const { transport, machine, actions } = setup();
-    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_cookie_required'));
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('person_only'));
 
     await actions.current.handleSaveToken();
 
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS to change Remote access.'
+      'Nothing changed. Only you can change Remote access, signed in to DorkOS.'
     );
-  });
-
-  it('tells an agent that Remote Access settings are not its to change', async () => {
-    const { transport, machine, actions } = setup();
-    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_only_config'));
-
-    await actions.current.handleSaveToken();
-
-    expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Nothing changed. Only you can change Remote access, not an agent.'
-    );
-  });
-
-  it('keeps the two operator refusals apart, which the server sentence cannot', async () => {
-    const cookie = setup();
-    vi.mocked(cookie.transport.updateConfig).mockRejectedValue(
-      configRefusal('operator_cookie_required')
-    );
-    await cookie.actions.current.handleSaveToken();
-
-    const agent = setup();
-    vi.mocked(agent.transport.updateConfig).mockRejectedValue(
-      configRefusal('operator_only_config')
-    );
-    await agent.actions.current.handleSaveToken();
-
-    const [cookieMessage] = vi.mocked(cookie.machine.setTokenError).mock.lastCall ?? [];
-    const [agentMessage] = vi.mocked(agent.machine.setTokenError).mock.lastCall ?? [];
-    expect(cookieMessage).not.toBe(agentMessage);
-    // Neither one repeats the single sentence the route sends for both.
-    expect(cookieMessage).not.toBe('Only a person can change those settings');
-    expect(agentMessage).not.toBe('Only a person can change those settings');
   });
 
   it('falls back to the generic line when the failure carries no message', async () => {
@@ -256,9 +218,9 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
   it('shows the field problem a rejected domain patch names', async () => {
     const { transport, machine, actions } = setup();
     vi.mocked(transport.updateConfig).mockRejectedValue(
-      Object.assign(new Error('Validation failed'), {
+      Object.assign(new Error('tunnel.domain: must be a hostname'), {
         status: 400,
-        body: { error: 'Validation failed', details: ['tunnel.domain: must be a hostname'] },
+        code: 'invalid_request',
       })
     );
 
@@ -269,12 +231,12 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
 
   it('applies the operator-refusal copy to the domain save too', async () => {
     const { transport, machine, actions } = setup();
-    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('operator_cookie_required'));
+    vi.mocked(transport.updateConfig).mockRejectedValue(configRefusal('person_only'));
 
     await actions.current.handleSaveDomain();
 
     expect(machine.setDomainError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS to change Remote access.'
+      'Nothing changed. Only you can change Remote access, signed in to DorkOS.'
     );
   });
 

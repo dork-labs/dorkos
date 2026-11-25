@@ -6,9 +6,8 @@
  * with no JSON body falls back to its status text or "HTTP 500". Only a
  * message the server wrote is passed through — the request got an answer (a
  * numeric `status`), the answer's own words about this failure are the
- * message (a problem document's `detail`, or the older body's `error`; never a
- * problem's generic `title`), and it is a sentence (status texts and bare codes
- * never end in one).
+ * message (a problem document's `detail`, never its generic `title`), and it
+ * is a sentence (status texts and bare codes never end in one).
  *
  * @module shared/lib/server-sentence
  */
@@ -24,31 +23,19 @@ export function serverSentence(error: unknown): string | null {
   const { status, body } = error as Error & { status?: unknown; body?: unknown };
   const written =
     typeof status === 'number' &&
-    typeof body === 'object' &&
-    body !== null &&
-    writtenSentenceOf(body) === error.message &&
+    isProblem(body) &&
+    body.detail === error.message &&
     /[.!?]$/.test(error.message.trim());
   return written ? error.message : null;
 }
 
 /**
- * What the server wrote about THIS failure: a problem document's `detail`, or
- * the older body's `error`. Never a problem's `title`, which is the same
- * generic line for every failure with that code, so a surface's own fallback
- * reads better than it ("DorkOS hit an error on its side." for every 500).
- */
-function writtenSentenceOf(body: object): string | undefined {
-  if (isProblem(body)) return body.detail;
-  const said = (body as { error?: unknown }).error;
-  return typeof said === 'string' ? said : undefined;
-}
-
-/**
  * Refusal codes for an action this device may not take by design: the Wi-Fi
- * level (`NOT_FROM_WIFI`) and the owner-at-this-computer bar. Neither is a
- * fault, so a surface shows the server's sentence calmly, never as an error.
+ * level (`not_from_wifi`) and the owner-at-this-computer bar (`operator_only`).
+ * Neither is a fault, so a surface shows the server's sentence calmly, never
+ * as an error.
  */
-const AWAY_FROM_THE_COMPUTER_CODES = new Set(['NOT_FROM_WIFI', 'NEEDS_PERSON_AT_THIS_COMPUTER']);
+const AWAY_FROM_THE_COMPUTER_CODES = new Set(['not_from_wifi', 'operator_only']);
 
 /**
  * The server's sentence for an action refused because of where this device

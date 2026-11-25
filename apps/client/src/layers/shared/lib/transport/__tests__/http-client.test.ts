@@ -120,10 +120,13 @@ describe('fetchJSON', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: 'The local owner changed.',
-          code: 'COMMUNITY_OWNER_CHANGED',
+          type: 'urn:dorkos:problem:owner_changed',
+          title: 'The owner of this DorkOS changed. Reload.',
+          status: 412,
+          code: 'owner_changed',
+          detail: 'The local owner changed.',
         }),
-        { status: 409 }
+        { status: 412, headers: { 'content-type': 'application/problem+json' } }
       )
     );
 
@@ -179,7 +182,15 @@ describe('fetchJSON', () => {
 
   it('does not flip the auth-required signal on other 401s', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Bad token' }), { status: 401 })
+      new Response(
+        JSON.stringify({
+          title: 'DorkOS couldn’t confirm which agent sent this.',
+          status: 401,
+          code: 'agent_identity_unverified',
+          detail: 'Bad token',
+        }),
+        { status: 401 }
+      )
     );
 
     await expect(fetchJSON(BASE_URL, '/api/sessions')).rejects.toThrow('Bad token');
@@ -197,7 +208,15 @@ describe('fetchJSON', () => {
 
   it('throws on non-OK responses with error message', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })
+      new Response(
+        JSON.stringify({
+          title: 'That doesn’t exist here.',
+          status: 404,
+          code: 'not_found',
+          detail: 'Not found',
+        }),
+        { status: 404 }
+      )
     );
 
     await expect(fetchJSON(BASE_URL, '/api/missing')).rejects.toThrow('Not found');
@@ -266,9 +285,17 @@ describe('fetchNoContent', () => {
 
   it('rejects with the server’s own sentence, exactly as fetchJSON does', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Only you can change who is in a room' }), {
-        status: 403,
-      })
+      new Response(
+        JSON.stringify({
+          title: 'Only the owner of this DorkOS can do that.',
+          status: 403,
+          code: 'owner_only',
+          detail: 'Only you can change who is in a room',
+        }),
+        {
+          status: 403,
+        }
+      )
     );
 
     await expect(

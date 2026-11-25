@@ -219,7 +219,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
         .send({ lastReadSeq: 1 })
         .expect(404);
 
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
       expect(store.get(callerId(), 'room', '01JQZZZZZZZZZZZZZZZZZZZZZZ')).toBeNull();
     });
   });
@@ -341,7 +341,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     const frames = await stream.frames;
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.body.code).toBe('person_only');
     // Nothing stored under EITHER identity: not the agent's own author id, and
     // not the operator's — a refused write must not fall back to the human.
     expect(db.select().from(readCursors).all(), 'a refused write leaves nothing behind').toEqual(
@@ -456,9 +456,9 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     expect(
       path.put.description,
       'the refusal a client will actually hit has to be documented, not only returned'
-    ).toContain('PEOPLE_ONLY');
+    ).toContain('person_only');
     expect(path.put.description, 'and so does the one that only applies to rooms').toContain(
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
   });
 });
@@ -558,7 +558,7 @@ describe('GET /api/read-cursors/:kind/:id', () => {
       .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.body.code).toBe('person_only');
 
     resetAgentIdentityService();
   });

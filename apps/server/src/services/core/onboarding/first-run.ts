@@ -86,17 +86,15 @@ export interface FirstRunDeps {
   now?: () => Date;
 }
 
-/** A refusal the route answers with its status, code and sentence. */
+/** A refusal the route answers as a problem, by its code. */
 export class FirstRunError extends Error {
   /**
    * Build a refusal.
    *
-   * @param status - The HTTP status.
-   * @param code - Why, for the client to act on.
-   * @param message - The sentence a person reads.
+   * @param code - Why; the route answers each with its own problem.
+   * @param message - The sentence a person reads: written here, never a service's own text.
    */
   constructor(
-    readonly status: number,
     readonly code: FirstRunRefusalCode,
     message: string
   ) {
@@ -200,7 +198,7 @@ async function pickFromList(
   } catch (error) {
     if (!(error instanceof PresetModelsUnreachableError)) throw error;
     if (secret && error.keyRefused) {
-      throw new FirstRunError(400, 'invalid_key', `${preset.service} didn't accept the key.`);
+      throw new FirstRunError('invalid_key', `${preset.service} didn't accept the key.`);
     }
     if (secret) {
       return {
@@ -211,7 +209,6 @@ async function pickFromList(
       };
     }
     throw new FirstRunError(
-      502,
       'models_unreachable',
       `Couldn't reach ${preset.service}. Check that it is running.`
     );
@@ -223,7 +220,7 @@ function checkKey(secret: string): void {
   try {
     validateDoeSecret(secret);
   } catch (error) {
-    if (error instanceof ConnectError) throw new FirstRunError(400, 'invalid_key', error.message);
+    if (error instanceof ConnectError) throw new FirstRunError('invalid_key', error.message);
     throw error;
   }
 }
@@ -232,7 +229,7 @@ function checkKey(secret: string): void {
 function checkInference(inference: DoeInferenceConfig): DoeInferenceConfig {
   const parsed = DoeInferenceConfigSchema.safeParse(inference);
   if (!parsed.success) {
-    throw new FirstRunError(400, 'invalid_setup', 'Check the model, endpoint, and token limits.');
+    throw new FirstRunError('invalid_setup', 'Check the model, endpoint, and token limits.');
   }
   return parsed.data;
 }
@@ -267,7 +264,7 @@ async function prepareOwnChoice(deps: FirstRunDeps, choice: OwnAiChoice): Promis
       if (inference.source === 'local') {
         return { model: inference.model, write: async () => writeInference(deps, inference) };
       }
-      if (!choice.apiKey) throw new FirstRunError(400, 'invalid_key', 'Enter an API key.');
+      if (!choice.apiKey) throw new FirstRunError('invalid_key', 'Enter an API key.');
       const secret = choice.apiKey;
       checkKey(secret);
       return {
@@ -325,7 +322,7 @@ async function applyFirstRunNow(
   deps: FirstRunDeps
 ): Promise<FirstRunResult> {
   if (firstRunClosed(deps.config.get('onboarding'))) {
-    throw new FirstRunError(409, 'onboarding_complete', 'Setup is already finished.');
+    throw new FirstRunError('onboarding_complete', 'Setup is already finished.');
   }
   // Everything that can refuse runs before the first write.
   const prepared =
@@ -333,7 +330,7 @@ async function applyFirstRunNow(
 
   const onboarding = deps.config.get('onboarding');
   if (firstRunClosed(onboarding)) {
-    throw new FirstRunError(409, 'onboarding_complete', 'Setup is already finished.');
+    throw new FirstRunError('onboarding_complete', 'Setup is already finished.');
   }
   // What to undo back to, kept from the FIRST call: a later call reads the
   // default this route already moved. A runtime that is no longer registered

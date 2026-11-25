@@ -107,7 +107,7 @@ import {
   type PendingAction,
   type StoredOffer,
 } from './extension-inbox-rows.js';
-import { projectSettingsStore } from './extension-project-settings.js';
+import { applyOfferSettingsPatch } from './offer-settings-patch.js';
 
 const nextId = monotonicFactory();
 
@@ -824,15 +824,19 @@ export class ExtensionInboxService {
       projectName: string;
     } | null = null;
     if (offer.settingsPatch) {
-      const applied = await this.applySettingsPatch(row.extensionId, offer.settingsPatch);
-      if (!applied) {
+      const applied = await applyOfferSettingsPatch(
+        this.deps,
+        row.extensionId,
+        offer.settingsPatch
+      );
+      if (!applied.ok) {
         // Nothing else happens: the offer is open again, the handler is not called.
         this.deps.db
           .update(extensionDecisions)
           .set({ offerUsedAt: null })
           .where(eq(extensionDecisions.id, row.id))
           .run();
-        return refuse(422, 'offer_failed', "Couldn't change that. Try again.");
+        return applied;
       }
       settingsChanged = {
         extensionId: row.extensionId,
@@ -1217,31 +1221,6 @@ export class ExtensionInboxService {
       return await this.deps.projects.report(dir, extensionId);
     } catch (err) {
       logger.warn(`[ext:${extensionId}] could not resolve a decision's project`, {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
-  }
-
-  /** Apply an offer's settings patch as the person, or null when refused. */
-  private async applySettingsPatch(
-    extensionId: string,
-    patch: NonNullable<StoredOffer['settingsPatch']>
-  ): Promise<{ name: string } | null> {
-    try {
-      const resolved = await this.deps.projects.resolveWithin(patch.project, extensionId);
-      if (!resolved || resolved === 'outside') return null;
-      const allowed = await this.deps.projects.listForExtension(extensionId);
-      if (!allowed.some((p) => p.root === resolved.root)) return null;
-      await projectSettingsStore(this.deps.dorkHome).merge(
-        extensionId,
-        resolved.root,
-        patch.patch,
-        'person'
-      );
-      return { name: resolved.name };
-    } catch (err) {
-      logger.warn(`[ext:${extensionId}] could not apply an offer's settings`, {
         error: err instanceof Error ? err.message : String(err),
       });
       return null;

@@ -28,6 +28,35 @@
 # scripts/ or ci/) runs every suite. The workflow runs a copy of this script
 # read from the base commit, so a change to it does not grade itself either.
 #
+# EXCEPT WHAT CANNOT CHANGE A TEST (DOR-5130, ledger 261124-015041). In the
+# week of Nov 16-22, 41% of merged pull requests touched a path above, and
+# about half of those touched only files like these, which choose and run
+# nothing, and paid every suite for it. Such a path is planned by hash like
+# any other file: the suites that declare it as a turbo input (ci-steward reads
+# ci/** and scripts/**, the server reads .github/**) run, and the rest do not.
+# The list, deny by default, so anything it does not name still runs every
+# suite:
+#
+#   ci/ledger/**                CI ledger entries. test.yml reads ci/config.yaml
+#                               and ci/space-server.env, never the ledger.
+#   .github/workflows/*.yml     every workflow EXCEPT test.yml (it chooses and
+#                               runs the suites, and a pull request runs its own
+#                               copy), security-gate.yml (test.yml's text-only
+#                               lane reads it) and build-cache.yml (it writes
+#                               the builds the shards restore).
+#   scripts/__tests__/**        the scripts' own vitest suites and fixture
+#   scripts/test-*.sh           suites. Other workflows run them (scripts-test,
+#                               typecheck), test.yml runs none, and no package
+#                               test imports one. Never the scripts they test, and
+#                               never a scripts/test-*/ folder.
+#   *.md under .github/, ci/    prose: the PR template, proposals, READMEs.
+#   or scripts/
+#
+# Any package.json stays a control path wherever it sits. A suite that reads one
+# of these files without declaring it is the gap named above, pinned by
+# packages/ci-steward/src/__tests__/turbo-test-reads.test.ts, and the merge
+# queue still runs every suite.
+#
 # EVERY DOUBT RUNS EVERYTHING. A base or head git cannot resolve, a checkout
 # that is not at the head, a turbo run that fails or prints something that is
 # not its JSON, or a plan that selects nothing: each prints `full`. A non-zero
@@ -64,8 +93,22 @@ head=$(git rev-parse --verify --quiet "$head^{commit}") || full "the head $2 is 
 
 changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$head") ||
   full 'git could not diff the base against the head'
+# True when <path> is on the list above: it cannot change how any suite is
+# chosen or run, so the hash plan decides it.
+inert() {
+  case $1 in
+    package.json | */package.json) return 1 ;;
+    .github/workflows/test.yml | .github/workflows/security-gate.yml | .github/workflows/build-cache.yml) return 1 ;;
+    scripts/test-*/*) return 1 ;;
+    ci/ledger/* | scripts/__tests__/* | scripts/test-*.sh) return 0 ;;
+    .github/*.md | ci/*.md | scripts/*.md) return 0 ;;
+  esac
+  [[ $1 =~ ^\.github/workflows/[^/]+\.ya?ml$ ]]
+}
+
 control=$(printf '%s\n' "$changed" |
-  grep -E '^(turbo\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|vitest\.config\.ts|\.github/.*|scripts/.*|ci/.*)$|(^|/)package\.json$')
+  grep -E '^(turbo\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|vitest\.config\.ts|\.github/.*|scripts/.*|ci/.*)$|(^|/)package\.json$' |
+  while IFS= read -r path; do inert "$path" || printf '%s\n' "$path"; done)
 [ -z "$control" ] || full "this change touches how tests are chosen or run: $(printf '%s' "$control" | head -n 5 | tr '\n' ' ')"
 
 turbo=${TURBO:-pnpm exec turbo}

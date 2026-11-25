@@ -16,6 +16,7 @@ import { batchFixture, FROM, TO, NOW } from './batch-fixtures.js';
 import { DocRouteGrantError } from '../grant-policy.js';
 import type { PrivateSessionMessageSourceAdapter } from '../../../session/private-messages/acceptance.js';
 import { renderDocEvents, docEventsPromptBytes } from '../prompt.js';
+import { installRunRecord, uninstallRunRecord } from '../../../runs/index.js';
 // The new final hooks cannot type-check an async function as a void callback.
 const synchronousHooks: Pick<PrivateSessionMessageSourceAdapter, 'onAccepted' | 'revalidate'> = {
   // @ts-expect-error Async acceptance must be rejected by the public typed contract.
@@ -66,7 +67,8 @@ describe('fixed owning-session document source', () => {
     f.admission.acceptance.markTurnStarted(accepted.receipt.id, 42);
     f.admission.acceptance.settle(accepted.receipt.id, 'ok');
     expect(f.store.getBatch(batch)?.status).toBe('turn_done');
-    expect(f.queue.get(accepted.receipt.queueMessageId)).toBeUndefined();
+    // Out of line once its turn started; the dispatcher deletes it when the runtime reads it.
+    expect(f.queue.getWaiting(accepted.receipt.queueMessageId)).toBeUndefined();
   });
   it('refuses revoked authority after prepare with zero claim effects', async () => {
     const f = fixture();
@@ -111,6 +113,23 @@ describe('fixed owning-session document source', () => {
     expect(f.db.select().from(sessionMessageQueue).all()).toEqual([]);
     expect(f.store.getBatch(batch)?.status).toBe('pending');
     expect(f.store.getBatch(batch)?.admissionReceiptId).toBeNull();
+  });
+  it('a batch’s run moves with its queue row when the document’s session is rekeyed (DOR-5230)', () => {
+    const f = fixture();
+    const runs = installRunRecord(f.db, {
+      epoch: '01DOCBOOT00000000000000000',
+      ownerHolds: () => true,
+    });
+    try {
+      const accepted = f.admission.admit(f.batchId());
+      const run = runs.findByQueueMessage(accepted.receipt.queueMessageId)!;
+      expect(run).toMatchObject({ status: 'queued', origin: { kind: 'extension-message' } });
+      expect(f.documents.rekeyScope(FROM, TO)).toBe(1);
+      expect(queueSession(f.db, accepted.receipt.queueMessageId)).toBe('canonical');
+      expect(runs.get(run.id)?.sessionId).toBe('canonical');
+    } finally {
+      uninstallRunRecord();
+    }
   });
   it('rebinds actual grant authority and restarts the original accepted receipt in one canonical session', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'doc-batch-restart-'));

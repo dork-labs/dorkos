@@ -1,17 +1,14 @@
 /** Contracts for per-request runtime approval confirmation. */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import {
-  ApprovalRequestSchema,
-  BatchApprovalRequestSchema,
-  ErrorResponseSchema,
-} from '@dorkos/shared/schemas';
+import { ApprovalRequestSchema, BatchApprovalRequestSchema } from '@dorkos/shared/schemas';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 /** Register individual and batch runtime-tool grants. */
 export function registerSessionApprovalOpenApi(registry: OpenAPIRegistry): void {
   const json = <T extends z.ZodType>(schema: T) => ({ 'application/json': { schema } });
-  const failure = (description: string) => ({ description, content: json(ErrorResponseSchema) });
+  const failure = problemResponse;
   const confirmation = {
     description: 'Fresh confirmation for this request is required before granting it',
     content: json(StepUpRequiredBodySchema),
@@ -29,10 +26,13 @@ export function registerSessionApprovalOpenApi(registry: OpenAPIRegistry): void 
     },
     responses: {
       200: { description: 'Approved', content: json(z.object({ ok: z.boolean() })) },
-      400: failure('Validation error'),
-      403: failure('Only a person may answer; standing yeses are refused from Wi-Fi'),
-      404: failure('No pending approval'),
-      409: failure('The pending interaction was already resolved'),
+      400: failure('`invalid_request`: the body or the chat id failed its checks'),
+      401: failure('`unauthenticated`: sign-in is on and nobody is signed in'),
+      403: failure(
+        'Only a person may answer (`person_only`); a yes is refused from the network (`not_from_wifi`)'
+      ),
+      404: failure('`not_found`: no request is waiting for an answer'),
+      409: failure('`already_resolved`: it was already answered'),
       428: confirmation,
     },
   });
@@ -54,11 +54,12 @@ export function registerSessionApprovalOpenApi(registry: OpenAPIRegistry): void 
           z.object({ results: z.array(z.object({ toolCallId: z.string(), ok: z.boolean() })) })
         ),
       },
-      400: failure('Validation error'),
+      400: failure('`invalid_request`: the body or the chat id failed its checks'),
+      401: failure('`unauthenticated`: sign-in is on and nobody is signed in'),
       403: failure(
-        'Only a person may answer; remote multi-item batches need separate confirmations'
+        'Only a person may answer (`person_only`); a yes is refused from Wi-Fi (`not_from_wifi`); remote multi-item batches need separate confirmations (`forbidden`)'
       ),
-      404: failure('No pending approval'),
+      404: failure('`not_found`: no request is waiting for an answer'),
       428: confirmation,
     },
   });

@@ -23,8 +23,13 @@ const ORIGIN = 'http://localhost:4242';
 /** The refusal a change answers with before the step-up. */
 function needsStepUp(): Response {
   return new Response(
-    JSON.stringify({ error: 'Enter your password.', code: PERSON_SESSION_REQUIRED_CODE }),
-    { status: 401 }
+    JSON.stringify({
+      title: 'Enter your password to confirm it’s you.',
+      status: 401,
+      code: PERSON_SESSION_REQUIRED_CODE,
+      detail: 'Enter your password.',
+    }),
+    { status: 401, headers: { 'Content-Type': 'application/problem+json' } }
   );
 }
 

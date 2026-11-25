@@ -156,7 +156,7 @@ describe('a person cloning a repository over HTTP', () => {
 
     expect(shown.status).toBe(409);
     expect(shown.body).toMatchObject({
-      code: 'workspace_needs_review',
+      code: 'needs_review',
       workspace: {
         reviewHash: expect.stringMatching(/^sha256:/),
         findings: [expect.objectContaining({ path: '.claude/settings.json' })],
@@ -230,7 +230,7 @@ describe('removing a workspace made before its removal commands were recorded (D
     const asked = await request(testServer.server).delete(`/api/workspaces/${id}?force=true`);
     expect(asked.status).toBe(409);
     expect(asked.body).toMatchObject({
-      code: 'remove_hooks_need_review',
+      code: 'needs_review',
       commands: [`touch ${path.join(base, 'CLEANUP')}`],
     });
 

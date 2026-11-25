@@ -331,7 +331,7 @@ describe('TodoPromiseList', () => {
     const user = userEvent.setup();
     const transport = renderList([], { agentId: 'agent-ana', canAdd: true });
     vi.mocked(transport.createTodoPromise).mockRejectedValue(
-      Object.assign(new Error('That due date has passed.'), { code: 'PAST_DUE' })
+      Object.assign(new Error('That due date has passed.'), { code: 'past_due' })
     );
     await user.click(await screen.findByRole('button', { name: 'Add to-do' }));
     await user.type(screen.getByLabelText('What was promised'), 'Reply');

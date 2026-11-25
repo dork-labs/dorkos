@@ -68,7 +68,7 @@ describe('scheduled task credits confirmation', () => {
       expect(held.status).toBe(428);
       expect(creation.createScheduledTask).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
       expect(creation.createScheduledTask).not.toHaveBeenCalled();
       const confirmed = await owner.confirm(held.body.heldActionId, via);
@@ -129,8 +129,8 @@ describe('scheduled task credits confirmation', () => {
     expect(view.body.notes).toContain('Prompt: Check stock.');
     store.updateTask(task.id, { prompt: 'Different work.' });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
-      status: 409,
-      result: { code: 'TASK_CHANGED' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(store.getTask(task.id)?.enabled).toBe(false);
   });

@@ -12,7 +12,8 @@ import {
   CreateConnectionEventSubscriptionSchema,
 } from '@dorkos/shared/connector-event-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
+import { SUBSCRIPTION_PROBLEM, sendConnectorProblem } from './connector-problems.js';
 import { readQuery } from '../http/request-query.js';
 import {
   ConnectorSubscriptionError,
@@ -195,38 +196,18 @@ export function createConnectorEventsRoutes(deps: ConnectorEventsRouterDeps): Ho
 /** The one answer for every error a notification route throws. */
 function answerEventsError(error: Error, c: Context<ApiEnv>): Response {
   if (error instanceof z.ZodError) {
-    return c.json(
-      { code: 'invalid_event_request', error: 'Check the notification settings and try again.' },
-      400
-    );
+    // No `issues`: a refused signing secret must never echo back in a field's message.
+    return problem(c, 'invalid_request', {
+      detail: 'Check the notification settings and try again.',
+    });
   }
   // A DorkOS account refusal says which one, before the generic outage.
   const managed = managedCloudErrorResponse(c, error);
   if (managed) return managed;
   if (!(error instanceof ConnectorSubscriptionError)) {
-    return c.json(
-      { code: 'events_unavailable', error: 'Notifications are temporarily unavailable.' },
-      503
-    );
+    return problem(c, 'temporarily_unavailable', {
+      detail: 'Notifications aren’t available right now. Try again later.',
+    });
   }
-  const status =
-    error.code === 'not_found'
-      ? 404
-      : error.code === 'invalid_filter'
-        ? 400
-        : error.code === 'events_unavailable'
-          ? 503
-          : error.code === 'destination_unavailable'
-            ? 403
-            : 409;
-  return c.json(
-    {
-      code: error.code,
-      error:
-        status === 409
-          ? 'These notification settings changed. Review them again.'
-          : 'This notification action is unavailable.',
-    },
-    status
-  );
+  return sendConnectorProblem(c, SUBSCRIPTION_PROBLEM[error.code], error);
 }

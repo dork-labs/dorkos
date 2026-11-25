@@ -2,7 +2,7 @@
  * room-collect: collecting a burst into one turn, without interrupting or dropping.
  * The suite's full rationale is on `room-collect.fixtures.ts`.
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
 import { scriptedRunner, settleUntil } from '../room-test-harness.js';
 
@@ -18,24 +18,54 @@ import {
   service,
 } from './room-collect.fixtures.js';
 
+/**
+ * Put the room on a fake clock, so a gathering window passes in no real time. Only
+ * `setTimeout` and `Date` are faked; `setImmediate` stays real for the runner's yields.
+ */
+function onFakeClock(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+}
+
+/** Let `ms` of fake time pass, as a person pausing between messages. */
+async function typingPause(ms = 40): Promise<void> {
+  await vi.advanceTimersByTimeAsync(ms);
+}
+
+/** `service.triggersIdle()` on the fake clock: walk time forward until the room settles. */
+async function idle(): Promise<void> {
+  let settled = false;
+  const settling = service.triggersIdle().then(() => {
+    settled = true;
+  });
+  while (!settled) {
+    await vi.advanceTimersByTimeAsync(10);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  await settling;
+}
+
 describe('a room gathers a burst into one turn', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   describe('collect, do not interrupt or drop', () => {
     it('turns three posts inside the window into one turn carrying the other two', async () => {
       // **The gaps are the measurement, not a guess**, which is the one place a
       // sleep belongs in this suite. Three posts fired in the same tick would
       // gather under ANY window length, zero included — a sweep is a macrotask
       // whatever it is waiting for — so a test written that way could not tell a
-      // working window from an absent one. Real time has to pass between them,
-      // and the window is a second wide so the margin is not a race.
+      // working window from an absent one. Time has to pass between them (fake
+      // time here, so the window costs nothing), and the window is a second wide.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: 1_000, maxEntries: 20 });
-      const typingPause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
 
       service.post(room.id, { authorId: human, text: '@ana the build is red' });
       await typingPause();
       service.post(room.id, { authorId: human, text: '@ana it is the migration step' });
       await typingPause();
       service.post(room.id, { authorId: human, text: '@ana can you look?' });
-      await service.triggersIdle();
+      await idle();
 
       expect(runner.turns).toHaveLength(1);
       // The newest message is what the turn answers as its own content; the two
@@ -68,15 +98,15 @@ describe('a room gathers a burst into one turn', () => {
       // was never the problem: this pins the whole chain the model sees — the
       // collector gathers, the dispatcher marks, the context partitions, and the
       // block says out loud that every one of them is owed an answer.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: 1_000, maxEntries: 20 });
-      const typingPause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
 
       service.post(room.id, { authorId: human, text: '@ana what is 2+2?' });
       await typingPause();
       service.post(room.id, { authorId: human, text: '@ana name a primary colour' });
       await typingPause();
       service.post(room.id, { authorId: human, text: '@ana what day comes after Tuesday?' });
-      await service.triggersIdle();
+      await idle();
 
       expect(runner.turns).toHaveLength(1);
       const turn = runner.turns[0];
@@ -121,8 +151,8 @@ describe('a room gathers a burst into one turn', () => {
       // The messages between them are the room's own cap-sized chatter, so this
       // is not an exotic setup — it is one person asking twice across a busy
       // minute.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: 1_000, maxEntries: 20 });
-      const typingPause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
 
       service.post(room.id, { authorId: human, text: '@ana what is 2+2?' });
       for (let i = 1; i <= 35; i += 1) {
@@ -130,7 +160,7 @@ describe('a room gathers a burst into one turn', () => {
       }
       await typingPause();
       service.post(room.id, { authorId: human, text: '@ana what day is it?' });
-      await service.triggersIdle();
+      await idle();
 
       const turn = runner.turns.at(-1);
       expect(turn?.prompt).toBe('@ana what day is it?');
@@ -151,12 +181,13 @@ describe('a room gathers a burst into one turn', () => {
     });
 
     it('starts a second turn for a post that lands after the window closed', async () => {
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: DEBOUNCE_MS, maxEntries: 20 });
 
       service.post(room.id, { authorId: human, text: '@ana the build is red' });
-      await service.triggersIdle();
+      await idle();
       service.post(room.id, { authorId: human, text: '@ana and now the cache' });
-      await service.triggersIdle();
+      await idle();
 
       expect(runner.turns.map((turn) => turn.prompt)).toEqual([
         '@ana the build is red',
@@ -237,6 +268,7 @@ describe('a room gathers a burst into one turn', () => {
     it('gathers per agent, so one burst is one turn each and neither waits for the other', async () => {
       // No arbitration (I1): two agents addressed by the same burst both answer,
       // and the collect window never orders one against the other.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, [
         '/agents/ana',
         '/agents/bo',
@@ -245,7 +277,7 @@ describe('a room gathers a burst into one turn', () => {
 
       service.post(room.id, { authorId: human, text: '@ana @bo the build is red' });
       service.post(room.id, { authorId: human, text: '@ana @bo can you both look?' });
-      await service.triggersIdle();
+      await idle();
 
       expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
       expect(runner.turns.filter((turn) => turn.authorId === bo)).toHaveLength(1);
@@ -255,12 +287,13 @@ describe('a room gathers a burst into one turn', () => {
       // The half of this that shows up on a bill. Three messages, one turn, one
       // reservation — a room that charged per message would let two people
       // talking at once burn an hour's automatic turns on one answer.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: DEBOUNCE_MS, maxEntries: 20 });
 
       for (const text of ['one', 'two', 'three']) {
         service.post(room.id, { authorId: human, text: `@ana ${text}` });
       }
-      await service.triggersIdle();
+      await idle();
       const afterBurst = runner.turns[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
       // `null` is the limits-off reading, and this harness counts. Narrowed
       // here rather than asserted away, so a regression that stopped counting
@@ -268,7 +301,7 @@ describe('a room gathers a burst into one turn', () => {
       if (afterBurst === null) throw new Error('the room reported no automatic-turn count');
 
       service.post(room.id, { authorId: human, text: '@ana four' });
-      await service.triggersIdle();
+      await idle();
 
       expect(runner.turns).toHaveLength(2);
       expect(runner.turns[1].roomContext.budget.automaticRepliesLeftInThisRoomThisHour).toBe(
@@ -277,14 +310,15 @@ describe('a room gathers a burst into one turn', () => {
     });
 
     it('advances the read cursor over the whole gathered window, so nothing repeats', async () => {
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: DEBOUNCE_MS, maxEntries: 20 });
 
       for (const text of ['one', 'two', 'three']) {
         service.post(room.id, { authorId: human, text: `@ana ${text}` });
       }
-      await service.triggersIdle();
+      await idle();
       service.post(room.id, { authorId: human, text: '@ana four' });
-      await service.triggersIdle();
+      await idle();
 
       // The second turn's window starts where the first one's claim left the
       // cursor: past all three of the messages it gathered.
@@ -302,19 +336,20 @@ describe('a room gathers a burst into one turn', () => {
       // Gathering must not lose that: an agent told its window is `null` by the
       // very burst that kept it engaged would have no way to tell being spoken
       // to from overhearing.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: DEBOUNCE_MS, maxEntries: 20 });
       // `engaged` is what a channel seeds, and what these tests otherwise
       // override away from; this is the one scenario about it.
       service.updateMembership(room.id, human, ana, 'engaged');
 
       service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
-      await service.triggersIdle();
+      await idle();
 
       // Nobody is named now: these reach Ana only because she is inside her
       // window, and they reach her as ONE turn.
       service.post(room.id, { authorId: human, text: 'the logs are in the ticket' });
       service.post(room.id, { authorId: human, text: 'what do you think?' });
-      await service.triggersIdle();
+      await idle();
 
       const ambient = runner.turns.at(-1);
       expect(runner.turns).toHaveLength(2);
@@ -333,9 +368,10 @@ describe('a room gathers a burst into one turn', () => {
       // DOR-1207's scope, unchanged by RP8: a thread turn reads its thread. The
       // gathering is per `(room, agent)`, so a burst inside one thread must not
       // be answered with the channel's own messages in `pending`.
+      onFakeClock();
       open(scriptedRunner(), { debounceMs: DEBOUNCE_MS, maxEntries: 20 });
       const root = service.post(room.id, { authorId: human, text: 'the release checklist' });
-      await service.triggersIdle();
+      await idle();
 
       service.post(room.id, {
         authorId: human,
@@ -347,7 +383,7 @@ describe('a room gathers a burst into one turn', () => {
         text: '@ana and step four',
         replyTo: root.id,
       });
-      await service.triggersIdle();
+      await idle();
 
       const threadTurn = runner.turns.at(-1);
       expect(threadTurn?.prompt).toBe('@ana and step four');

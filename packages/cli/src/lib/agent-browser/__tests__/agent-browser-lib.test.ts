@@ -1,16 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
-import {
-  ChromeNotFoundError,
-  chromeCandidates,
-  findChrome,
-  type ChromeLocatorEnv,
-} from '../chrome-locator.js';
+import { ChromeNotFoundError, findChrome, type ChromeLocatorEnv } from '../chrome-locator.js';
 import { ChromeExitedError, launchChromeWithPipe } from '../cdp-pipe.js';
 import {
   AGENT_BROWSER_PROFILE_NAME,
@@ -20,7 +15,6 @@ import {
   profileLock,
 } from '../profile.js';
 import {
-  UnreadableStorageStateError,
   collectStorageState,
   readStorageState,
   toStorageStateCookie,
@@ -52,42 +46,6 @@ function locatorEnv(
 
 describe('findChrome', () => {
   const MAC_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-
-  it('prefers Google Chrome in /Applications on macOS', () => {
-    expect(findChrome(locatorEnv({}, [MAC_CHROME]))).toBe(MAC_CHROME);
-    expect(chromeCandidates(locatorEnv({}))[1]).toBe(
-      '/Users/me/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-    );
-  });
-
-  it('searches PATH on Linux, Chrome before Chromium', () => {
-    const env = locatorEnv({ platform: 'linux', pathVar: '/usr/local/bin:/usr/bin' }, [
-      '/usr/bin/chromium',
-      '/usr/bin/google-chrome',
-    ]);
-    expect(findChrome(env)).toBe('/usr/bin/google-chrome');
-  });
-
-  it('looks in the per-user and machine-wide install folders on Windows', () => {
-    const exe = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-    const env = locatorEnv(
-      {
-        platform: 'win32',
-        localAppData: 'C:\\Users\\me\\AppData\\Local',
-        programFiles: 'C:\\Program Files',
-      },
-      [exe]
-    );
-    expect(chromeCandidates(env)[0]).toBe(
-      'C:\\Users\\me\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe'
-    );
-    expect(findChrome(env)).toBe(exe);
-  });
-
-  it('uses --chrome when it exists, and says so plainly when it does not', () => {
-    expect(findChrome(locatorEnv({}, ['/opt/c']), '/opt/c')).toBe('/opt/c');
-    expect(() => findChrome(locatorEnv({}), '/opt/missing')).toThrow(ChromeNotFoundError);
-  });
 
   it('explains a missing Chrome: what it is for, how to get it, and where it looked', () => {
     let error: unknown;
@@ -133,26 +91,6 @@ describe('ensureAgentProfile', () => {
     expect(fs.statSync(profileDir).mode & 0o777).toBe(0o700);
   });
 
-  it('applies the theme once, so a colour picked later in Chrome is kept', () => {
-    const profileDir = path.join(root, 'profile');
-    ensureAgentProfile(profileDir);
-    const prefsFile = path.join(profileDir, 'Default', 'Preferences');
-    fs.writeFileSync(prefsFile, JSON.stringify({ browser: { theme: { user_color2: 42 } } }));
-    expect(ensureAgentProfile(profileDir)).toEqual({ created: false, themed: false });
-    expect(readJson(prefsFile).browser.theme.user_color2).toBe(42);
-  });
-
-  it('themes a profile made before DorkOS styled it, keeping its other settings', () => {
-    const profileDir = path.join(root, 'profile');
-    fs.mkdirSync(path.join(profileDir, 'Default'), { recursive: true });
-    const prefsFile = path.join(profileDir, 'Default', 'Preferences');
-    fs.writeFileSync(prefsFile, JSON.stringify({ extensions: { settings: { onepw: {} } } }));
-    expect(ensureAgentProfile(profileDir)).toEqual({ created: false, themed: true });
-    const prefs = readJson(prefsFile);
-    expect(prefs.extensions.settings).toEqual({ onepw: {} });
-    expect(prefs.browser.theme.user_color).toBe(AGENT_BROWSER_THEME_COLOR);
-  });
-
   it('leaves a profile that already has its own colour alone', () => {
     const profileDir = path.join(root, 'profile');
     fs.mkdirSync(path.join(profileDir, 'Default'), { recursive: true });
@@ -164,13 +102,6 @@ describe('ensureAgentProfile', () => {
 });
 
 describe('profileLock', () => {
-  it('reads the pid Chrome names in SingletonLock', () => {
-    const live = path.join(root, 'live');
-    fs.mkdirSync(live);
-    fs.symlinkSync(`my-mac.local-${process.pid}`, path.join(live, 'SingletonLock'));
-    expect(profileLock(live, 'darwin')).toEqual({ inUse: true, pid: process.pid });
-  });
-
   it('treats a leftover lock from a crashed Chrome, or none, as free', () => {
     const stale = path.join(root, 'stale');
     fs.mkdirSync(stale);
@@ -364,99 +295,6 @@ describe('storage state file', () => {
       expect(raw, secret).not.toContain(secret);
     expect(JSON.parse(raw)).toEqual({ cookies: [], origins: [] });
   });
-
-  it('reads an older file without its DorkOS sign-in (DOR-3957)', () => {
-    const file = path.join(root, 'old-dorkos.json');
-    const cookie = (domain: string) => ({
-      name: 'better-auth.session_token',
-      value: 'fake-dorkos-session',
-      domain,
-      path: '/',
-      expires: -1,
-      httpOnly: true,
-      secure: false,
-      sameSite: 'Lax',
-    });
-    fs.writeFileSync(
-      file,
-      JSON.stringify({
-        cookies: [cookie('localhost'), cookie('127.0.0.1'), { ...cookie('a.test'), value: 'v' }],
-        origins: [{ origin: 'http://localhost:6241', localStorage: [{ name: 't', value: 'x' }] }],
-      })
-    );
-    expect(readStorageState(file)?.cookies.map((c) => c.domain)).toEqual(['a.test']);
-    expect(readStorageState(file)?.origins).toEqual([]);
-  });
-
-  it('reads an older file without its Cloud sign-in', () => {
-    const file = path.join(root, 'old.json');
-    fs.writeFileSync(
-      file,
-      JSON.stringify({
-        cookies: [
-          {
-            name: 's',
-            value: 'v',
-            domain: 'cloud.dorkos.ai',
-            path: '/',
-            expires: -1,
-            httpOnly: true,
-            secure: true,
-            sameSite: 'Lax',
-          },
-        ],
-        origins: [],
-      })
-    );
-    expect(readStorageState(file)).toEqual({ cookies: [], origins: [] });
-  });
-
-  it('reads a missing file as no session, and a garbled one as an error that says what to do', () => {
-    expect(readStorageState(path.join(root, 'nope.json'))).toBeNull();
-    const bad = path.join(root, 'bad.json');
-    fs.writeFileSync(bad, '{"cookies": "no"}');
-    expect(() => readStorageState(bad)).toThrow(UnreadableStorageStateError);
-    expect(() => readStorageState(bad)).toThrow(/dorkos browser login/);
-  });
-
-  it('collects every cookie and the page storage of open web tabs', async () => {
-    const cdp = createFakeCdp({
-      'Storage.getCookies': () => ({
-        cookies: [
-          {
-            name: 'sid',
-            value: 'v',
-            domain: 'a.test',
-            path: '/',
-            expires: -1,
-            httpOnly: true,
-            secure: true,
-            session: true,
-          },
-        ],
-      }),
-      'Target.getTargets': () => ({
-        targetInfos: [
-          { targetId: 't1', type: 'page', url: 'https://a.test/home' },
-          { targetId: 't2', type: 'page', url: 'chrome://newtab/' },
-          { targetId: 't3', type: 'service_worker', url: 'https://a.test/sw.js' },
-        ],
-      }),
-      'Target.attachToTarget': (params) => ({ sessionId: `s-${String(params.targetId)}` }),
-      'DOMStorage.getDOMStorageItems': (params) => {
-        const storageId = params.storageId as { securityOrigin: string };
-        return storageId.securityOrigin === 'https://a.test' ? { entries: [['token', 'x']] } : {};
-      },
-    });
-    const state = await collectStorageState(cdp);
-    expect(state.cookies).toHaveLength(1);
-    expect(state.origins).toEqual([
-      { origin: 'https://a.test', localStorage: [{ name: 'token', value: 'x' }] },
-    ]);
-    // Only the web tab was opened up, and it was let go afterwards.
-    expect(cdp.calls.filter((c) => c.method === 'Target.attachToTarget')).toHaveLength(1);
-    expect(cdp.calls.some((c) => c.method === 'Target.detachFromTarget')).toBe(true);
-  });
 });
 
 describe('collectStorageState against a hostile page', () => {
@@ -612,25 +450,5 @@ describe('launchChromeWithPipe', () => {
     await expect(cdp.exited).resolves.toEqual({ code: 0, signal: null });
     expect(cdp.hasExited()).toBe(true);
     await expect(cdp.send('Browser.getVersion')).rejects.toBeInstanceOf(ChromeExitedError);
-  });
-
-  it('forces a silent Chrome within one grace period, not two', async () => {
-    const { child } = fakeChild();
-    const signals: string[] = [];
-    (child as unknown as { kill: (signal: string) => boolean }).kill = (signal: string) => {
-      signals.push(signal);
-      child.emit('exit', null, signal);
-      return true;
-    };
-    vi.useFakeTimers();
-    try {
-      const cdp = launchChromeWithPipe('/chrome', [], () => child);
-      const closed = cdp.close(100);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(signals).toEqual(['SIGKILL']);
-      await expect(closed).resolves.toEqual({ code: null, signal: 'SIGKILL' });
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

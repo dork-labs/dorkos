@@ -113,8 +113,11 @@ function expectTerminal(response: {
 }) {
   expect(response.status).toBe(503);
   expect(response.body).toEqual({
-    code: 'SERVER_STOPPING',
-    error: 'The server is stopping. Try again after it restarts.',
+    type: 'urn:dorkos:problem:temporarily_unavailable',
+    title: 'That’s not available right now. Try again soon.',
+    status: 503,
+    code: 'temporarily_unavailable',
+    detail: 'The server is stopping. Try again after it restarts.',
   });
   expect(response.headers).toMatchObject({
     'cache-control': 'no-store',
@@ -222,7 +225,7 @@ describe('main HTTP admission through the real app', () => {
       const second = await rawGet('/admission-late', agent);
       expect(second.socket).toBe(socket);
       expect(second.statusCode).toBe(503);
-      expect(JSON.parse(await body(second))).toMatchObject({ code: 'SERVER_STOPPING' });
+      expect(JSON.parse(await body(second))).toMatchObject({ code: 'temporarily_unavailable' });
       expect(entered).toHaveBeenCalledTimes(1);
     } finally {
       agent.destroy();
@@ -253,11 +256,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
     expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
-    expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
     // 70 -> 72: `/api/todo-promises` and `/api/agents/:id/todo-promises` (spec
-    // `heartbeats` §12).
-    expect(mounts).toContain('/api/todo-promises');
+    // `heartbeats` §12); both are capabilities the mount serves now (DOR-4978).
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
     // `http/client-files.ts`, and is asked for by hand below.
     // 71 -> 72: `/api/remote-access`, the remote access report and actions (DOR-2086).
@@ -318,24 +319,27 @@ describe('main HTTP admission through the real app', () => {
     // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
     expect(mounts).toContain('/api/tasks');
     // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
-    expect(mounts).toContain('/api/sessions/running');
-    // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462).
-    expect(mounts).toContain('/api/work-queues');
-    // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
-    expect(mounts).toContain('/api/todos');
+    // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462);
+    // both are capabilities the mount serves now (DOR-4978).
+    // 86 -> 87: to-dos (DOR-3088); a capability the mount serves now (DOR-4978).
     // The off-by-default discovery route remains mounted and must meet admission too.
     expect(mounts).toContain('/api/your-browser');
     // 88 -> 89: the empty, sandboxed document every app's screens run in (DOR-3293).
     expect(mounts).toContain('/api/extension-frame');
     // 89 -> 90: every schedule and heartbeat that cannot wake (DOR-3641).
-    expect(mounts).toContain('/api/heartbeats/wakers-off');
     // 90 -> 91: the owner-only browser watch stream (DOR-2667).
     expect(mounts).toContain('/api/browser-viewers');
     // 91 -> 92: the owner's passkeys and authenticator apps (DOR-3647).
     expect(mounts).toContain('/api/owner-factors');
     // 92 -> 93: the person's own backup copies, ahead of `/api/config` (DOR-4253).
     expect(mounts).toContain('/api/config/backups');
-    expect(mounts).toHaveLength(93);
+    // 93 -> 90: the activity feed, the audit reads and every chat running now
+    // are capabilities the mount serves (DOR-4978), so they are asked for by
+    // hand below. 90 -> 88: a person's work queue doors moved there too.
+    // 88 -> 86: what cannot wake and a person's "add a promise" moved there
+    // too (DOR-4978). 86 -> 84: a person's to-do writes and promise changes
+    // moved there too, so `/api/todos` and `/api/todo-promises` are asked for by hand.
+    expect(mounts).toHaveLength(84);
     const byHand = [
       '/',
       '/x/fixture',
@@ -347,6 +351,15 @@ describe('main HTTP admission through the real app', () => {
       '/.well-known/agent.json',
       '/a2a',
       '/api/relay/webhooks/admission-fixture',
+      '/api/activity',
+      '/api/audit',
+      '/api/sessions/running',
+      '/api/agents/admission-fixture/work-queue',
+      '/api/work-queues/stop',
+      '/api/heartbeats/wakers-off',
+      '/api/agents/admission-fixture/todo-promises',
+      '/api/todos',
+      '/api/todo-promises',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

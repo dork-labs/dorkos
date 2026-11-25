@@ -61,10 +61,7 @@
 import { z } from 'zod';
 import { createDocChannelDownstreamCapabilities } from '../../canvas/doc-channel/downstream/capabilities.js';
 import { createDocChannelGrantCapabilities } from '../../canvas/doc-channel/grant-capabilities.js';
-import {
-  CONTROL_UI_DESCRIPTION,
-  CONTROL_UI_INPUT,
-} from '../../runtimes/shared/ui-tool-contract.js';
+import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from './ui-tool-contract.js';
 import {
   CapabilityImageResult,
   defineCapability,

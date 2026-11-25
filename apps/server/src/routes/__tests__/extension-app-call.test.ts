@@ -175,7 +175,11 @@ describe('a call from one app to another', () => {
     expect((await asReports('patch', '/entries/e-17', { memo: 'x' })).status).toBe(200);
     const refused = await asReports('post', '/entries', { memo: 'x' });
     expect(refused.status).toBe(403);
-    expect(refused.body).toMatchObject({ code: 'app_call_refused', reason: 'method-not-exported' });
+    expect(refused.headers['content-type']).toBe('application/problem+json');
+    expect(refused.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'That app does not export this method on this route.',
+    });
     expect(seen).toHaveLength(1);
   });
 
@@ -186,14 +190,14 @@ describe('a call from one app to another', () => {
     async (path) => {
       const res = await asReports('get', path);
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: 'app_call_refused', reason: 'not-exported' });
+      expect(res.body).toMatchObject({ code: 'forbidden' });
       expect(seen).toHaveLength(0);
     }
   );
 
   it('refuses a route the target does not export, and a personOnly one', async () => {
-    expect((await asReports('get', '/secrets')).body.reason).toBe('not-exported');
-    expect((await asReports('post', '/approve')).body.reason).toBe('person-only');
+    expect((await asReports('get', '/secrets')).body.code).toBe('forbidden');
+    expect((await asReports('post', '/approve')).body.code).toBe('forbidden');
     expect(seen).toHaveLength(0);
   });
 
@@ -201,7 +205,7 @@ describe('a call from one app to another', () => {
     expect((await asReports('get', '/approvals')).status).toBe(200);
     const refused = await asReports('post', '/approvals', { yes: true });
     expect(refused.status).toBe(403);
-    expect(refused.body).toMatchObject({ code: 'app_call_refused', reason: 'person-only' });
+    expect(refused.body).toMatchObject({ code: 'forbidden' });
     expect(seen).toEqual([
       { method: 'GET', path: '/approvals', caller: 'reports', token: undefined },
     ]);
@@ -215,7 +219,7 @@ describe('a call from one app to another', () => {
         .get('/api/ext/ledger/entries')
         .set('X-DorkOS-Caller-Token', token);
       expect(res.status).toBe(403);
-      expect(res.body.reason).toBe('target-unavailable');
+      expect(res.body.code).toBe('forbidden');
     } finally {
       running.add('ledger');
     }
@@ -247,7 +251,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
       .get('/api/ext/ledger/entries')
       .set('X-DorkOS-Caller-App', 'reports');
     expect(res.status).toBe(403);
-    expect(res.body.reason).toBe('no-token');
+    expect(res.body.code).toBe('forbidden');
     expect(seen).toHaveLength(0);
   });
 
@@ -255,7 +259,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
     const res = await request(server)
       .get('/api/ext/ledger/entries')
       .set('X-DorkOS-Extension', 'reports');
-    expect(res.body.reason).toBe('no-token');
+    expect(res.body.code).toBe('forbidden');
     expect(seen).toHaveLength(0);
   });
 
@@ -274,7 +278,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
         .set('X-DorkOS-Caller-Token', forQuill)
         .set('X-DorkOS-Caller-App', 'reports');
       expect(res.status).toBe(403);
-      expect(res.body.reason).toBe('mismatch');
+      expect(res.body.code).toBe('forbidden');
       // With no header at all, the call is Quill's, never Reports'.
       await request(server).get('/api/ext/ledger/entries').set('X-DorkOS-Caller-Token', forQuill);
       expect(appCalls().at(-1)?.change).toContainEqual({
@@ -294,7 +298,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
       .get('/api/ext/ledger/entries')
       .set('X-DorkOS-Caller-Token', token);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('caller_token_invalid');
+    expect(res.body).toMatchObject({ code: 'caller_token_invalid' });
     user = { userId: 'u1', credential: 'cookie', sessionId: 'sess-1' };
     // Refused once means forgotten: the old session cannot use it either.
     const again = await request(server)
@@ -314,7 +318,7 @@ describe('who the calling app is (Security 2026-11-10)', () => {
         .get('/api/ext/ledger/entries')
         .set('X-DorkOS-Caller-Token', token);
       expect(res.status).toBe(403);
-      expect(res.body.reason).toBe('not-declared');
+      expect(res.body.code).toBe('forbidden');
       expect(seen).toHaveLength(0);
     } finally {
       manifests.reports = before;
@@ -336,11 +340,11 @@ describe('who the calling app is (Security 2026-11-10)', () => {
     const withToken = await request(server)
       .get('/api/ext/ledger/entries')
       .set('X-DorkOS-Caller-Token', token);
-    expect(withToken.body.reason).toBe('not-a-window');
+    expect(withToken.body.code).toBe('forbidden');
     const withHeader = await request(server)
       .get('/api/ext/ledger/entries')
       .set('X-DorkOS-Caller-App', 'reports');
-    expect(withHeader.body.reason).toBe('not-a-window');
+    expect(withHeader.body.code).toBe('forbidden');
     expect(seen).toHaveLength(0);
   });
 

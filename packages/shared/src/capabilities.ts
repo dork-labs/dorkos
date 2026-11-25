@@ -130,6 +130,33 @@ export interface CliSurface {
 export type HttpSuccessStatus = 200 | 201 | 202 | 204;
 
 /**
+ * Who may call a capability. `person` means only a person: an agent caller is
+ * refused with `person_only` before the handler runs, inside
+ * `registry.invoke` whatever door it came through, and the capability may not
+ * declare an MCP surface. Absent means anyone the tier gate lets through.
+ */
+export type HttpAudience = 'person';
+
+/** The refusal code a person-only capability answers an agent or program with (`403 person_only` over HTTP). */
+export const PERSON_ONLY_CODE = 'PERSON_ONLY';
+
+/** The sentence a person-only capability refuses an agent or program with. */
+export const PERSON_ONLY_MESSAGE = 'Only a person can do this, not an agent.';
+
+/**
+ * The fixed sentences a person-only capability may refuse an agent with instead of
+ * {@link PERSON_ONLY_MESSAGE}, each naming the tool the agent uses for the same job
+ * ({@link HttpSurface.agentsUse}). Only these are ever sent, so a new one is an edit here.
+ */
+export const PERSON_ONLY_AGENT_HINTS = [
+  'Agents make and change to-dos with todo_add and todo_update.',
+  'Agents change their own promises with todo_promise_update.',
+] as const;
+
+/** One of {@link PERSON_ONLY_AGENT_HINTS}. */
+export type PersonOnlyAgentHint = (typeof PERSON_ONLY_AGENT_HINTS)[number];
+
+/**
  * The HTTP projection of a capability: a route the server serves (the generic
  * capability mount, `routes/capability-http.ts`) and the OpenAPI document
  * describes, both from this one declaration (ADR 261123-170830).
@@ -139,8 +166,8 @@ export type HttpSuccessStatus = 200 | 201 | 202 | 204;
  * (see {@link HttpSurface.query}) and, for `post`/`put`/`patch`, the JSON body.
  *
  * Still to come, each in its own change: the error codes a route may answer,
- * its page shape, its stability and its audience. Each joins this interface as
- * a field of its own.
+ * its page shape and its stability. Each joins this interface as a field of
+ * its own.
  */
 export interface HttpSurface {
   /** HTTP method for the route. */
@@ -165,6 +192,18 @@ export interface HttpSurface {
    * this says.
    */
   success?: HttpSuccessStatus;
+  /**
+   * Only a person may call it (`person`): the dispatcher refuses an agent
+   * caller with `403 person_only` before the handler runs, on this path and on
+   * `POST /api/capabilities/{id}/invoke` alike. See {@link HttpAudience}.
+   */
+  audience?: HttpAudience;
+  /**
+   * For a person-only capability, the sentence its `person_only` refusal says
+   * instead of the generic one: the tool an agent uses for the same job. One of
+   * a fixed list ({@link PERSON_ONLY_AGENT_HINTS}).
+   */
+  agentsUse?: PersonOnlyAgentHint;
 }
 
 /**

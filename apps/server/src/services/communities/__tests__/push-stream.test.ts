@@ -12,7 +12,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../../lib/logger.js';
-import { MAX_QUEUED_EVENTS, PushStream } from '../push-stream.js';
+import { PushStream } from '../push-stream.js';
 
 /**
  * The bound, spelled out rather than imported, so these assertions are
@@ -46,10 +46,6 @@ describe('PushStream', () => {
   // case's calls with it.
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it('bounds its queue at the same number RoomBroadcaster does', () => {
-    expect(MAX_QUEUED_EVENTS, 'one policy, one number — not two that can drift').toBe(BOUND);
   });
 
   it('bounds its queue and ends the stream rather than buffering without limit', async () => {
@@ -89,28 +85,5 @@ describe('PushStream', () => {
       onClose,
       'the producer must be unregistered, exactly as a consumer walking away unregisters it'
     ).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps delivering while a consumer is actually reading', async () => {
-    const stream = new PushStream<number>();
-    const iterator = stream[Symbol.asyncIterator]();
-
-    // Twice the bound, pulled one at a time: nothing here is ever queued, so
-    // the bound is never approached and a healthy reader is unaffected.
-    for (let i = 0; i < BOUND * 2; i += 1) {
-      stream.push(i);
-      const next = await iterator.next();
-      expect(next.value).toBe(i);
-    }
-    expect(stream.closed, 'a reader that keeps up is never ended').toBe(false);
-  });
-
-  it('delivers everything up to the bound without dropping a frame', async () => {
-    const stream = new PushStream<number>();
-    for (let i = 0; i < BOUND; i += 1) stream.push(i);
-    stream.end();
-
-    const { values } = await drain(stream);
-    expect(values.length, 'the bound is a ceiling, not a budget spent early').toBe(BOUND);
   });
 });

@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
-import { useCopyFeedback } from '@/layers/shared/lib';
+import { shareableAppUrl, useCopyFeedback } from '@/layers/shared/lib';
 import { useAppTabs, useAppTabsStore } from '@/layers/shared/model';
-import { tabLinkUrl } from '../lib/tab-link';
 import { useAppTabActions } from '../model/use-app-tab-actions';
 import type { AppTabMenuActions } from './AppTabContextMenu';
 import { AppTabStrip } from './AppTabStrip';
@@ -44,7 +43,7 @@ export function AppTabBar({ className }: AppTabBarProps) {
       reopenClosed,
       copyLink: (id) => {
         const tab = useAppTabsStore.getState().tabs.find((t) => t.id === id);
-        if (tab) void copy(tabLinkUrl(tab.href));
+        if (tab) void copy(shareableAppUrl(tab.href));
       },
     }),
     [togglePin, duplicate, closeOthers, close, reopenClosed, copy]

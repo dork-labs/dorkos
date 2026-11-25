@@ -12,8 +12,7 @@ import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { defuseSystemTags, defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
+import { defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
 // One answer to "is this error the turn failing?", shared with the scheduled-run
 // tracker that reads the same streams (DOR-1658). The denylist and the reasoning
 // behind its direction live there.
@@ -24,21 +23,24 @@ import type {
   DeliveryResult,
   TraceStoreLike,
 } from '../../types.js';
-import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
+import { extractPayloadContent } from '../../lib/payload-utils.js';
+import { formatPromptWithContext } from './relay-context-block.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { buildResponseFormatBlock, type ResponseContext } from './response-format.js';
 import { relayMessageStarter } from './turn-starter.js';
+import { followLateResults, QUERY_INBOX_PREFIX } from './late-results.js';
 import { isTurnShapingSender, turnPowerOptions } from './turn-shaping-sender.js';
+import { resolveTurnPlace } from './turn-place.js';
+import { requestedAccountOf, resolveTurnSettings } from './turn-settings.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
+  ChatPlaceRecall,
   ExecutionSettingsResolver,
-  LateFollowEnd,
   LateTurnSource,
   SessionRuntimeBinder,
   TurnStartNote,
   TurnDeskCheck,
-  TurnExecutionSettings,
 } from './types.js';
 import {
   publishAgentResult,
@@ -102,6 +104,10 @@ export interface AgentHandlerDeps {
    * session the cockpit binds.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
+  /** Where a new chat the server placed records its runtime and agent, on any subject. */
+  bindNewChat?: SessionRuntimeBinder;
+  /** Where a relay chat that has run before stands — see {@link ChatPlaceRecall}. */
+  recallChatPlace?: ChatPlaceRecall;
   /** Told before the turn starts — see {@link TurnStartNote}. */
   noteTurnStart?: TurnStartNote;
   /** Whether a bound chat's unproven sender marks the turn (DOR-3858's boot flag). */
@@ -251,76 +257,6 @@ function abortText(signal: AbortSignal, started: boolean): string | undefined {
     : 'The message expired before the agent could start';
 }
 
-/** The inbox `relay_send_and_wait` reads, which it takes down once answered. */
-const QUERY_INBOX_PREFIX = 'relay.inbox.query.';
-
-/**
- * Publish each turn the agent starts on its own, after this message's turn
- * ended, to the same inbox as a result marked `late` (DOR-2717).
- *
- * Registered in `lateFollowers` under the conversation's stable scope — not the
- * session key, which a first turn renames — so the next message to that
- * conversation ends it. The host also ends it: after a turn the agent finishes
- * holding no more work (`final`), when its window passes, or when anyone gives
- * the session new work. Every ending but `final` publishes one closing result
- * marked `ended` — never `error`, which keeps meaning "the turn failed" — so a
- * caller told `continuing` is never left polling for something that will not
- * come. Publishes are chained, so the inbox reads them in the order they
- * happened.
- *
- * @param deps - The handler's dependencies, for the follower map and runtime type
- * @param lateTurns - Where the later turns come from
- * @param envelope - The message whose inbox hears the later turns
- * @param follow - The session the turn ran under, the conversation's scope, and
- *   the dispatch mark read when the turn ended
- * @param relay - The publisher
- * @param log - Where a failed publish is reported
- */
-function followLateResults(
-  deps: AgentHandlerDeps,
-  lateTurns: LateTurnSource,
-  envelope: RelayEnvelope,
-  follow: { sessionKey: string; scope: string; sinceMark: number | undefined },
-  relay: RelayPublisher,
-  log: Pick<Console, 'warn'>
-): void {
-  const { sessionKey, scope, sinceMark } = follow;
-  const followers = deps.lateFollowers;
-  let published: Promise<void> = Promise.resolve();
-  const publishInOrder = (
-    text: string,
-    error: string | undefined,
-    marks: { continuing?: boolean; ended?: Exclude<LateFollowEnd, 'final'> }
-  ): void => {
-    published = published
-      .then(() =>
-        publishAgentResult(envelope, text, sessionKey, relay, error, { late: true, ...marks })
-      )
-      .catch((err: unknown) => {
-        log.warn(`[CCA] could not publish a late result for ${sessionKey}:`, describeError(err));
-      });
-  };
-  // Assigned once `follow` has returned. `onEnd` CAN run inside `follow` — a
-  // stale mark ends the follow at once — which is what `ended` records.
-  let stopFollowing: () => void = () => {};
-  let ended = false;
-  const unfollow = lateTurns.follow({
-    runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
-    sessionKey,
-    ...(sinceMark !== undefined ? { sinceMark } : {}),
-    onTurn: (turn) => publishInOrder(turn.text, turn.error, { continuing: turn.continuing }),
-    onEnd: (reason) => {
-      ended = true;
-      if (followers?.get(scope) === stopFollowing) followers.delete(scope);
-      if (reason !== 'final') publishInOrder('', undefined, { ended: reason });
-    },
-  });
-  stopFollowing = unfollow;
-  // A follow the host ended inside `follow` itself (work already reached the
-  // session) is over; registering it would leave a dead entry behind.
-  if (!ended) followers?.set(scope, stopFollowing);
-}
-
 /** Why a turn was stopped before it started: its folder is not its agent's desk. */
 class DeskRefusal extends Error {
   constructor(message: string) {
@@ -439,15 +375,25 @@ export async function handleAgentMessage(
     { permissionMode?: PermissionMode } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
-  // Resolve CWD: payload cwd > Mesh agent context directory > deferred
-  const payloadCwd = shaping?.cwd as string | undefined;
-  const effectiveCwd = payloadCwd ?? context?.agent?.directory;
-  // The agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2
-  // row 12). Read off the same payload as `cwd`, which alone already decides
-  // whose identity a turn carries — so this can only NARROW what a forged
+  // Where the turn stands and as whom (`turn-place.ts`): the sender's folder >
+  // the Mesh agent's home > the server's place for a new chat > the chat's own
+  // recorded place > deferred. The
+  // agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2 row
+  // 12) rides the same payload as `cwd`, so it can only NARROW what a forged
   // payload could claim: a `cwd` resolving to another agent's home is refused.
-  const payloadForAgent =
-    typeof shaping?.forAgent === 'string' && shaping.forAgent !== '' ? shaping.forAgent : undefined;
+  const place = await resolveTurnPlace(
+    {
+      shaping,
+      payload: envelope.payload,
+      from: envelope.from,
+      sessionKey: identity.key,
+      persisted: persistedSdkSessionId !== undefined,
+      contextDirectory: context?.agent?.directory,
+    },
+    deps,
+    log
+  );
+  const { senderCwd: payloadCwd, cwd: effectiveCwd, forAgent: turnForAgent } = place;
   // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
   // off the relay bus, so the field can be absent for reasons the binding never
   // controls (an older publisher, a hand-built envelope). It lands on the
@@ -456,13 +402,8 @@ export async function handleAgentMessage(
   const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
 
   // Which model an agent is, is a property of the AGENT — so the manifest is
-  // looked for where the agent lives, and NOT at `effectiveCwd`. The two differ
-  // exactly when a payload names its own working directory: that moves where
-  // the turn runs, which is a fact about this message, and it must not silently
-  // re-decide who the answering agent is. Never the payload's directory, either:
-  // a checkout can carry a `.dork/agent.json` of its own. When the subject named
-  // no agent, the host reads the chat's own agent instead (DOR-5057).
-  const agentManifestDir = context?.agent?.directory;
+  // looked for where the agent lives, and NOT at `effectiveCwd` (`turn-place.ts`).
+  const agentManifestDir = place.agentDirectory;
 
   // What this turn runs on. Asked BEFORE `ensureSession`, because that call is
   // the only one that can answer it: the claude-code runtime reads
@@ -533,12 +474,17 @@ export async function handleAgentMessage(
   // folder. Refused through the same door as an expired message: nothing starts,
   // and the reply reader still gets its terminal error. A check that throws
   // refuses too — a folder nobody could vouch for is not a desk.
+  // A place the turn may not take (`turn-place.ts`) is refused through the same door.
+  if (place.refusal !== undefined && !controller.signal.aborted) {
+    log.warn(`[CCA] refusing ${envelope.id} for ${agentId}: ${place.refusal}`);
+    controller.abort(new DeskRefusal(place.refusal));
+  }
   if (payloadCwd !== undefined && deps.checkTurnDesk && !controller.signal.aborted) {
     const refusal = await deps
       .checkTurnDesk({
         cwd: payloadCwd,
         agentDirectory: context?.agent?.directory,
-        forAgent: payloadForAgent,
+        forAgent: turnForAgent,
         sessionKey: ccaSessionKey,
       })
       .catch((err: unknown) =>
@@ -641,13 +587,15 @@ export async function handleAgentMessage(
     ? NO_EVENTS
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
-        // The sender bounds the turn, or marks it, never both ways at once (`turnPowerOptions`).
+        // The sender bounds or marks the turn, plus what its own turns carry (`turnPowerOptions`).
         ...turnPowerOptions(
           trustedShaper,
-          deps.markStrangerTurns === true && shaping?.__untrustedWords === true
+          deps.markStrangerTurns === true,
+          payloadObj,
+          envelope.from
         ),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
-        ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
+        ...(turnForAgent ? { forAgent: turnForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),
         // Sent again, for the same reason the permission mode and the cwd are:
         // the runtime contract resolves a turn as per-send override → persisted
@@ -894,10 +842,13 @@ export async function handleAgentMessage(
   //   out. A `SQLITE_BUSY` here must not turn an answered turn into a failed
   //   delivery — what is lost is one attribution row, which the next turn on
   //   this conversation writes again.
-  // With no agent the relay resolved, there is nobody to record (DOR-5057).
-  if (deps.bindSessionRuntime && contentEventCount > 0 && agentManifestDir) {
+  // With no agent the relay resolved, there is nobody to record (DOR-5057). A
+  // new chat the server placed records its agent whatever the subject's shape,
+  // so its later turns find their folder and agent again (DOR-5245).
+  const bind = (place.newChat ? deps.bindNewChat : undefined) ?? deps.bindSessionRuntime;
+  if (bind && contentEventCount > 0 && agentManifestDir) {
     try {
-      await deps.bindSessionRuntime({
+      await bind({
         sessionId: durableSessionKey,
         runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
         agentDirectory: agentManifestDir,
@@ -934,139 +885,4 @@ export async function handleAgentMessage(
     deadLettered: aborted,
     durationMs: now() - startTime,
   };
-}
-
-// === Private: pure helpers ===
-
-/**
- * Ask the host what this turn should run on, and never let the answer stop it.
- *
- * Two ways to get nothing, and both mean the same thing — no preference, so the
- * runtime picks, which is what every relay turn did before this existed: a host
- * that wired no resolver, and a lookup that threw. With no agent from the
- * subject, the host reads the chat's own agent itself (DOR-5057). The last one is the reason this is a function rather than
- * an inline `await`: reading a manifest or a settings row can fail for reasons
- * that have nothing to do with the message, and a dropped agent-to-agent
- * message is a far worse outcome than a turn on the default model.
- *
- * @param deps - The handler's dependencies; the resolver is optional on them.
- * @param sessionId - The key this turn runs under (`ccaSessionKey`).
- * @param agentDirectory - The agent the relay resolved from the subject, whose
- *   manifest this is; never the folder the turn runs in.
- * @param requestedAccount - The account the message asked a new conversation to
- *   launch on, for the host to allow or refuse.
- * @param log - Where a failed lookup is reported.
- */
-async function resolveTurnSettings(
-  deps: AgentHandlerDeps,
-  sessionId: string,
-  agentDirectory: string | undefined,
-  requestedAccount: string | undefined,
-  log: NonNullable<AgentHandlerDeps['logger']> | Console
-): Promise<TurnExecutionSettings> {
-  if (!deps.resolveExecutionSettings) return {};
-  try {
-    return await deps.resolveExecutionSettings({
-      sessionId,
-      runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
-      ...(agentDirectory ? { agentDirectory } : {}),
-      ...(requestedAccount ? { requestedAccount } : {}),
-    });
-  } catch (err) {
-    log.warn(
-      `[CCA] could not resolve execution settings for ${sessionId}; running on the runtime default`,
-      describeError(err)
-    );
-    return {};
-  }
-}
-
-/**
- * The account a payload asks a new conversation to launch on: its `account`
- * when that is a non-empty string, else nothing. Anything else is ignored
- * rather than refused, because a malformed billing preference is never a reason
- * to drop a message.
- *
- * @param payload - The envelope payload, when it is an object.
- */
-function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
-  const account = payload?.account;
-  return typeof account === 'string' && account.length > 0 ? account : undefined;
-}
-
-/**
- * Tags that mean something to a runtime and must not be forgeable by a stranger
- * on Telegram or Slack.
- *
- * Driven off the shared {@link CONTEXT_TAG} map plus `system-reminder`, exactly
- * as the rooms preamble does, so a new context kind is covered here the day it
- * is added rather than the day somebody remembers this list exists.
- */
-const SYSTEM_TAGS = [...Object.values(CONTEXT_TAG), 'system-reminder'];
-
-/**
- * Format the user prompt with a <relay_context> XML block.
- *
- * When the envelope's payload carries a sender name and/or chat title
- * (Telegram/Slack inbound), a `Sender:`/`Chat:` line is inserted right after
- * `From:` so the agent knows who it is talking to. Absent either field, the
- * block is byte-identical to the plain envelope-metadata format.
- *
- * ## The message body is somebody else's words
- *
- * Everything after the block is written by whoever sent the message, and a
- * chat platform will happily carry `</relay_context>` or `<system-reminder>` in
- * a message. Written straight through, those close the block early and let a
- * stranger add lines the agent reads as DorkOS's own instructions. The body is
- * therefore run through {@link defuseSystemTags}, which escapes the opening `<`
- * of a system tag and leaves ordinary prose and code (`Vec<T>`, `a < b`,
- * `<div>`) exactly as written — people paste code into chat, and mangling it
- * would be a real cost. The identity lines are a different job and were already
- * handled: {@link extractSenderIdentity} runs `sanitizeIdentity` over them.
- *
- * ## Known residual: no nonce fence here
- *
- * The strongest form of this boundary is a per-turn nonce fence — markers a
- * writer cannot predict, which is what makes the boundary unforgeable rather
- * than merely hard to spell. Rooms have one; relay does not, because the fence
- * helper currently lives in the server's runtime layer
- * (`services/runtimes/shared/room-context-block.ts`) and is not importable from
- * this package. Defusal is the whole boundary here rather than defence in
- * depth, so this is a real gap, narrowed but not closed. Extracting the fence
- * into `@dorkos/shared` so both callers share it is filed as follow-up.
- */
-function formatPromptWithContext(
-  content: string,
-  envelope: RelayEnvelope,
-  agentId: string,
-  sdkSessionId: string,
-  now: () => number
-): string {
-  const { sender, chat } = extractSenderIdentity(envelope.payload);
-  const lines = [
-    `Agent-ID: ${agentId}`,
-    `Session-ID: ${sdkSessionId}`,
-    `From: ${envelope.from}`,
-    ...(sender !== undefined ? [`Sender: ${sender}`] : []),
-    ...(chat !== undefined ? [`Chat: ${chat}`] : []),
-    `Message-ID: ${envelope.id}`,
-    `Subject: ${envelope.subject}`,
-    `Sent: ${envelope.createdAt}`,
-    '',
-    'Budget remaining:',
-    `- Hops: ${envelope.budget.hopCount} of ${envelope.budget.maxHops} used`,
-    `- TTL: ${Math.max(0, Math.round((envelope.budget.ttl - now()) / 1000))} seconds remaining`,
-    `- Max turns: ${envelope.budget.callBudgetRemaining}`,
-  ];
-  if (envelope.replyTo) {
-    lines.push(
-      '',
-      `Reply to: ${envelope.replyTo}`,
-      "If you cannot complete the task within the budget, summarize what you've done and stop."
-    );
-  }
-  return (
-    `<${CONTEXT_TAG.relay_context}>\n${lines.join('\n')}\n</${CONTEXT_TAG.relay_context}>\n\n` +
-    defuseSystemTags(content, SYSTEM_TAGS)
-  );
 }

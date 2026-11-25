@@ -12,7 +12,7 @@
  */
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import { RELAY_CLIENT_PREFIX } from '../../core/session-relay/relay-client-id.js';
-import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
+import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import { HAND_BACK_CLIENT_ID } from '../local-browser/hand-back-wake/client-id.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { launchCarriesHold, launchCarriesWords, launchCeiling } from './state.js';

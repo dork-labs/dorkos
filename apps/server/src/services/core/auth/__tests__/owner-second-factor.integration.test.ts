@@ -366,7 +366,7 @@ describe('sign-in checks change only at this computer', () => {
       ];
       for (const res of await Promise.all(changes)) {
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+        expect(res.body.code).toBe('operator_only');
       }
       // Reading them is still the owner's, from there too.
       const read = await request(target.server)
@@ -475,7 +475,7 @@ describe('sign-in checks change only at this computer', () => {
       .set('Origin', `http://${at127}`)
       .send({ label: 'Phone' });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('PASSKEY_ON_OTHER_ADDRESS');
+    expect(res.body.code).toBe('passkey_on_other_address');
     expect(res.body.secret).toBeUndefined();
   });
 
@@ -533,7 +533,7 @@ describe('sign-in checks change only at this computer', () => {
       },
     });
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('PASSKEY_REFUSED');
+    expect(res.body.code).toBe('passkey_refused');
   });
 
   /** Start an authenticator app up to its first code: a passkey check, then the password. */
@@ -586,7 +586,7 @@ describe('sign-in checks change only at this computer', () => {
       const refused = await confirmAuthenticator(id, fresh);
       expect(failing).toHaveBeenCalled();
       expect(refused.status).toBe(500);
-      expect(refused.body.code).toBe('SIGN_OUT_FAILED');
+      expect(refused.body.code).toBe('internal_error');
     } finally {
       failing.mockRestore();
     }
@@ -619,7 +619,7 @@ describe('sign-in checks change only at this computer', () => {
     try {
       const refused = await confirmAuthenticator(id, fresh);
       expect(refused.status).toBe(500);
-      expect(refused.body.code).toBe('SIGN_OUT_FAILED');
+      expect(refused.body.code).toBe('internal_error');
     } finally {
       failing.mockRestore();
     }

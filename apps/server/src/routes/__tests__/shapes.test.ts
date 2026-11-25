@@ -184,7 +184,11 @@ describe('shapes router', () => {
     const { app } = await buildApp();
     const res = await request(fixtureTarget.mount(app)).post('/api/shapes/ghost/apply').send({});
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe("Shape 'ghost' is not installed");
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'not_found',
+      detail: "No Shape called 'ghost' is installed.",
+    });
   });
 
   it('POST /api/shapes/:name/fork clones with lineage (201)', async () => {
@@ -251,7 +255,7 @@ describe('shapes router', () => {
       .post('/api/shapes/linear-ops/fork')
       .send({ as: 'Not A Slug!' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/kebab-case slug/);
+    expect(res.body.detail).toMatch(/isn’t a Shape name/);
   });
 
   // The route's LAST catch arm: `forkShape` re-validates the manifest it built
@@ -272,7 +276,10 @@ describe('shapes router', () => {
         .send({ as });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/^Forked manifest failed validation:/);
+      expect(res.body).toMatchObject({
+        code: 'invalid_request',
+        detail: 'The forked Shape’s manifest isn’t valid.',
+      });
     });
 
     it('leaves nothing behind on disk when it refuses', async () => {
@@ -299,7 +306,7 @@ describe('shapes router', () => {
         .post('/api/shapes/..%2F..%2Fsecret/apply')
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/kebab-case slug/);
+      expect(res.body.detail).toMatch(/isn’t a Shape name/);
     });
 
     it('POST /api/shapes/:name/fork rejects a traversal name with 400 and copies nothing', async () => {
@@ -316,7 +323,7 @@ describe('shapes router', () => {
         .post('/api/shapes/..%2Fsecret/fork')
         .send({});
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/kebab-case slug/);
+      expect(res.body.detail).toMatch(/isn’t a Shape name/);
 
       // Nothing was cloned into shapes/ and no fork target appeared anywhere.
       const shapeEntries = await readdir(path.join(dorkHome, 'shapes'));
@@ -469,7 +476,11 @@ describe('shapes router', () => {
         .send({});
 
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ status: 'denied', reason: 'enforcement_unavailable' });
+      expect(res.body).toMatchObject({
+        status: 403,
+        code: 'forbidden',
+        capabilityId: 'shapes.apply',
+      });
       expect(createSchedule).not.toHaveBeenCalled();
     });
   });

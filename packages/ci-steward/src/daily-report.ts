@@ -37,6 +37,8 @@ import { floorValues } from './floors.ts';
 import { fill, h, raw, sparkline, type Html } from './html.ts';
 import type { HandFiles } from './load.ts';
 import type { Slos } from './schemas.ts';
+import { releaseLeadPanel } from './release-lead.ts';
+import { snapshotLoader } from './snapshot-loader.ts';
 import { computeSlos, sloRuler } from './slo.ts';
 import { addDays, count, dayRange, daysBetween, round } from './time.ts';
 import { ejectionLegs, legName } from './ejections.ts';
@@ -239,17 +241,6 @@ function thresholdText(
     .join(' · ');
 }
 
-/** A snapshot loader that reads each day at most once. */
-function loader(dataDir: string): (days: readonly string[]) => Snapshot[] {
-  const cache = new Map<string, Snapshot | null>();
-  return (days) =>
-    days.flatMap((d) => {
-      if (!cache.has(d)) cache.set(d, readData(dataDir, snapshotPath(d), SnapshotSchema));
-      const s = cache.get(d)!;
-      return s ? [s] : [];
-    });
-}
-
 /**
  * Each SLO's headline statistic for every day in the sparkline window, read
  * over that day's own trailing 7-day window. A day with no reading is `null`,
@@ -269,7 +260,7 @@ export function dailySeries(
   const out = new Map<string, (number | null)[]>();
   const slos = files.slos;
   if (!slos) return out;
-  const load = loader(dataDir);
+  const load = snapshotLoader(dataDir);
   const floors = floorValues(slos, readData(dataDir, 'floors.json', FloorsSchema));
   for (const slo of slos.slos) out.set(slo.id, []);
   for (const d of daysBetween(addDays(day, -(days - 1)), day)) {
@@ -595,6 +586,7 @@ export function renderDailyReport(inp: DailyReportInput): {
     headline: head.text,
     headline_why: head.why,
     constraint: constraintBlock(inp),
+    release_lead: releaseLeadPanel(snapshotLoader(inp.dataDir), inp.day),
     slos: sloTable(inp, series),
     triggers: triggerBlock(inp),
     yesterday: yesterdayBlock(inp, snap),

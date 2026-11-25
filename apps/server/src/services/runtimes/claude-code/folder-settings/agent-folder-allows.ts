@@ -2,11 +2,11 @@
  * A registered agent folder's own allow list, as DorkOS passes it to Claude
  * Code (DOR-3039).
  *
- * Claude Code drops a project's `permissions.allow` in a folder it has not
- * been told to trust, and DorkOS never records that trust. So an agent
- * folder's allow list did nothing under DorkOS, and a run in Don't ask mode
- * was refused every command on it. Its deny rules and hooks were always
- * applied; only allows are dropped, because an allow is a widening.
+ * DorkOS does not leave a folder's allow list to Claude Code: it passes the
+ * list a person approved itself, so a run in Don't ask mode can use it. Its
+ * deny rules and hooks were always applied. Below Full, a call that only a
+ * rule nobody approved could allow is put to a person
+ * (`tool-gate/folder-file-allows.ts`, DOR-5237).
  *
  * DorkOS now passes that one array itself, through the launch's own flag-layer
  * `settings`, never `allowedTools` (DOR-519). Security's conditions:

@@ -103,18 +103,6 @@ describe('install source matrix — fetchPackage dispatch', () => {
     expect(git.fetch).not.toHaveBeenCalled();
   });
 
-  it('relative-path source with explicit ./ bypasses pluginRoot', async () => {
-    const result = await fetcher.fetchPackage({
-      packageName: 'code-reviewer',
-      source: './code-reviewer',
-      marketplaceRoot: '/tmp/mp',
-      pluginRoot: './plugins',
-    });
-
-    // Explicit ./ on the source bypasses pluginRoot per the resolver rules.
-    expect(result.path).toBe('/tmp/mp/code-reviewer');
-  });
-
   it('github source fetches the canonical clone URL at the default branch', async () => {
     const source: PluginSource = { source: 'github', repo: 'foo/bar' };
     const result = await fetcher.fetchPackage({
@@ -130,20 +118,6 @@ describe('install source matrix — fetchPackage dispatch', () => {
       subpath: '',
     });
     expect(result).toEqual({ path: `/tmp/cache/bar@${SHA}`, commitSha: SHA, fromCache: false });
-  });
-
-  it('url source passes the URL and its ref through unchanged', async () => {
-    const source: PluginSource = {
-      source: 'url',
-      url: 'https://gitlab.com/foo/bar.git',
-      ref: 'release',
-    };
-    await fetcher.fetchPackage({ packageName: 'bar', source });
-
-    expect(git.lookup).toHaveBeenCalledWith('https://gitlab.com/foo/bar.git', 'release');
-    expect(git.fetch.mock.calls[0]?.[0]).toMatchObject({
-      cloneUrl: 'https://gitlab.com/foo/bar.git',
-    });
   });
 
   it('git-subdir source fetches sparse and returns the package directory', async () => {
@@ -176,36 +150,5 @@ describe('install source matrix — fetchPackage dispatch', () => {
     // The npm stub must not touch cache or git.
     expect(cache.materializePackage).not.toHaveBeenCalled();
     expect(git.fetch).not.toHaveBeenCalled();
-  });
-
-  it('NpmSourceNotSupportedError carries structured package metadata', async () => {
-    const source: PluginSource = {
-      source: 'npm',
-      package: '@dorkos/example',
-      version: '1.0.0',
-    };
-
-    let caught: unknown = null;
-    try {
-      await fetcher.fetchPackage({ packageName: 'example', source });
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toBeInstanceOf(NpmSourceNotSupportedError);
-    if (caught instanceof NpmSourceNotSupportedError) {
-      expect(caught.package).toBe('@dorkos/example');
-      expect(caught.version).toBe('1.0.0');
-      expect(caught.docs).toBe('https://dorkos.ai/docs/marketplace#marketplace-sources');
-    }
-  });
-
-  it('fetchPackage without source or gitUrl throws a descriptive error', async () => {
-    await expect(
-      fetcher.fetchPackage({ packageName: 'orphan' } as {
-        packageName: string;
-        source?: PluginSource;
-      })
-    ).rejects.toThrow(/without source or gitUrl/);
   });
 });

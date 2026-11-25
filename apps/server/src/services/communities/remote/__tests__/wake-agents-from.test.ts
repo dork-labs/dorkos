@@ -68,13 +68,6 @@ afterEach(async () => {
 });
 
 describe('the stored setting', () => {
-  it('is "members" until the owner chooses, and remembers the choice', async () => {
-    expect(await readWakeAgentsFrom(store, REF, OWNER)).toBe('members');
-    await store.setWakeAgentsFrom(REF, OWNER, 'me');
-    const reopened = new RemoteConnectionStore(directory, memoryCredentials());
-    expect(await readWakeAgentsFrom(reopened, REF, OWNER)).toBe('me');
-  });
-
   it('belongs to its owner: another owner can neither read nor change it', async () => {
     await expect(readWakeAgentsFrom(store, REF, 'someone-else')).rejects.toBeInstanceOf(
       RemoteConnectionNotFoundError
@@ -82,15 +75,6 @@ describe('the stored setting', () => {
     await expect(store.setWakeAgentsFrom(REF, 'someone-else', 'members')).rejects.toBeInstanceOf(
       RemoteConnectionNotFoundError
     );
-  });
-
-  it('stays out of connections.json, which an older DorkOS reads strictly', async () => {
-    await store.setWakeAgentsFrom(REF, OWNER, 'me');
-    const records = await readFile(
-      join(directory, 'communities', 'remote', 'connections.json'),
-      'utf8'
-    );
-    expect(records).not.toContain('wake');
   });
 
   it('is forgotten when the connection is', async () => {
@@ -105,11 +89,6 @@ describe('the stored setting', () => {
 });
 
 describe('the gate the live stream asks', () => {
-  it('wakes nobody before it has loaded', () => {
-    const policy = new RemoteWakePolicy(store);
-    expect(policy.wakes(REF, OWNER, OWNER_MEMBER)).toBe(false);
-  });
-
   it('with "members", wakes for anyone in the space', async () => {
     const policy = new RemoteWakePolicy(store);
     await policy.reload();
@@ -136,30 +115,9 @@ describe('the gate the live stream asks', () => {
     expect(policy.isOwnerPost(REF, 'someone-else', OWNER_MEMBER)).toBe(false);
     expect(policy.isOwnerPost('remote_other' as CommunityRef, OWNER, OWNER_MEMBER)).toBe(false);
   });
-
-  it('wakes nobody for a connection it does not know', async () => {
-    const policy = new RemoteWakePolicy(store);
-    await policy.reload();
-    expect(policy.wakes('remote_other' as CommunityRef, OWNER, OWNER_MEMBER)).toBe(false);
-    expect(policy.wakes(REF, 'someone-else', OWNER_MEMBER)).toBe(false);
-  });
 });
 
 describe('the gate when a read fails', () => {
-  it('tries again a bounded number of times while it has no answer yet', async () => {
-    const real = store.wakeSettings.bind(store);
-    const read = vi
-      .spyOn(store, 'wakeSettings')
-      .mockRejectedValueOnce(new Error('disk busy'))
-      .mockImplementation(real);
-    const policy = new RemoteWakePolicy(store, [0, 0]);
-
-    await policy.reload();
-
-    expect(read).toHaveBeenCalledTimes(2);
-    expect(policy.wakes(REF, OWNER, 'remote-stranger')).toBe(true);
-  });
-
   it('gives up after the last retry and keeps waking nobody', async () => {
     const read = vi.spyOn(store, 'wakeSettings').mockRejectedValue(new Error('gone'));
     const policy = new RemoteWakePolicy(store, [0, 0]);

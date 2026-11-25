@@ -41,9 +41,14 @@ export const REPO_WIDE_SUITES = [
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
+  '__tests__/check-test-ratio.test.ts',
+  // Reads apps/server/src/services and the turn port's baseline (DOR-5232).
+  '__tests__/check-turn-port-boundary.test.ts',
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
+  // Reads codex-binary-macos.yml and scripts/codex-macos-scope.sh (DOR-4402).
+  '__tests__/codex-macos-workflow.test.ts',
   '__tests__/codex-sandbox-job.test.ts',
   // Reads docker/seccomp/, apps/site/public/, docs/self-hosting/docker.mdx and
   // the cli-smoke-test workflow (DOR-3800).
@@ -76,6 +81,8 @@ export const REPO_WIDE_SUITES = [
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
   '__tests__/pr-related-step.test.ts',
   '__tests__/release-branch-ci.test.ts',
+  // Reads release-publish.yml: publish needs the npm gate job (DOR-5123).
+  '__tests__/release-publish-gate.test.ts',
   // The guard over these two lists. It reads only scripts/, but a new suite
   // can land from any PR, so it must run in the queue too (DOR-4224).
   '__tests__/repo-wide-suites.test.ts',
@@ -87,12 +94,20 @@ export const REPO_WIDE_SUITES = [
   '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
+  // Imports packages/shared/src/config-schema.ts and reads the migrations table:
+  // a config schema change without `pnpm check:config-migration -- --update`
+  // turns it red (DOR-5123).
+  'config-migration/__tests__/check-config-migration.test.ts',
+  // Imports packages/shared/src/provenance.ts: a change there can turn it red (DOR-5047).
+  'provenance/__tests__/provenance-line.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',
   // Import packages/cli/scripts/release-branch/rules.ts: the release commit must
   // pass the release-branch-contents rule, so a change there can turn these red.
   'release/__tests__/release-commit-cli.test.ts',
   'release/__tests__/release-commit-git-data.test.ts',
   'release/__tests__/release-commit.test.ts',
+  // Reads the server's agent-release-notes.ts: a change to its shape can turn it red.
+  'release/__tests__/stamp-release-notes.test.ts',
 ] as const;
 
 /**

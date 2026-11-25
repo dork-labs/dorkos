@@ -1,7 +1,7 @@
 ---
 number: 113
 title: Observed Chats Derived from Trace Store
-status: draft
+status: archived
 created: 2026-03-11
 spec: adapter-binding-ux-overhaul
 superseded-by: null

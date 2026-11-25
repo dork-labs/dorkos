@@ -55,9 +55,7 @@ export function useSetForwardAgents(extensionId: string) {
         body: JSON.stringify({ agentIds }),
       });
       if (!res.ok) {
-        const body = await readResponseError(res, 'Couldn’t save the agents. Try again.', {
-          oldMessageFirst: true,
-        });
+        const body = await readResponseError(res, 'Couldn’t save the agents. Try again.');
         throw new Error(body.message);
       }
       return (await res.json()) as ForwardAgentsChoice;

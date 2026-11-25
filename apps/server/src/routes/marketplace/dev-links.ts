@@ -15,10 +15,10 @@ import { DevLinkPackageNameSchema } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
-import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
+import { readCallerAuthority } from '../../lib/caller-authority.js';
 import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import type { DevLinkService } from '../../services/marketplace/dev-links/index.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
@@ -99,13 +99,15 @@ export function mountDevLinkRoutes(
 ): void {
   /** The 503 that says the dev link service is not running here. */
   const unavailable = (c: MarketplaceContext): Response =>
-    c.json({ error: "Dev links aren't available on this server right now." }, 503);
+    problem(c, 'temporarily_unavailable', {
+      detail: "Dev links aren't available on this server right now.",
+    });
 
   /** Answer a refusal, or log anything else and answer 500. */
   const fail = (c: MarketplaceContext, err: unknown, what: string): Response => {
-    if (err instanceof DevLinkError) return c.json(err.toBody(), err.status);
+    if (err instanceof DevLinkError) return sendProblem(c, err.toProblem());
     logger.error(`[Marketplace] Failed to ${what}`, err);
-    return c.json({ error: `Failed to ${what}` }, 500);
+    return problem(c, 'internal_error', { detail: `Couldn't ${what}. Try again.` });
   };
 
   /** Parse a body, or the 400 that says it does not fit. */
@@ -227,23 +229,19 @@ export function mountDevLinkRoutes(
     const authority = readCallerAuthority(honoRequestFacts(c));
     if (!trustedCaller(authority)) {
       if (!resolveDecisionAuthority(authority).allowed) {
-        return c.json(
-          { error: 'Only you can unlink a dev link, not an agent.', code: 'operator_only' },
-          403
-        );
+        return problem(c, 'operator_only', {
+          detail: 'Only you can unlink a dev link, not an agent.',
+        });
       }
-      return c.json(
-        {
-          error: 'DorkOS requires sign-in, so only a person signed in to the app can unlink this.',
-          code: OPERATOR_COOKIE_REQUIRED_CODE,
-        },
-        403
-      );
+      return problem(c, 'person_only', {
+        detail: 'DorkOS requires sign-in. Unlink this in the app.',
+      });
     }
     const devLinks = deps.devLinks;
     if (!devLinks) return unavailable(c);
     const name = DevLinkPackageNameSchema.safeParse(c.req.param('name'));
-    if (!name.success) return c.json({ error: 'That is not a package name.' }, 400);
+    if (!name.success)
+      return problem(c, 'invalid_request', { detail: 'That is not a package name.' });
     const parsed = parse(DevLinkUnlinkBodySchema, c);
     if (parsed.refused) return parsed.refused;
     const body = parsed.data;

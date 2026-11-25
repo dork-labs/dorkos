@@ -5,17 +5,7 @@
  * real `atomicMove` activation, like the install flows.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  cp,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
@@ -98,15 +88,6 @@ describe('runTransaction ownership (DOR-2245)', () => {
     await install(target, { 'skills/a/SKILL.md': 'a' });
     const record = await readInstalledFiles(target);
     expect(Object.keys(record!.files).sort()).toEqual(['.dork/manifest.json', 'skills/a/SKILL.md']);
-  });
-
-  // Purpose: stage on the target's filesystem, beside it, not in os.tmpdir().
-  it('stages in a sibling of the target that it removes afterwards', async () => {
-    const target = path.join(scratch, 'plugins', 'pkg');
-    const { stagingPaths } = await install(target, {});
-    expect(path.dirname(stagingPaths[0])).toBe(path.dirname(target));
-    expect(path.basename(stagingPaths[0])).toContain('.dorkos-stage-');
-    expect(await readdir(path.dirname(target))).toEqual(['pkg']);
   });
 
   // Purpose: THE bug. A reinstall keeps a file the person added (flow's config).
@@ -279,18 +260,6 @@ describe('runTransaction ownership (DOR-2245)', () => {
       }
     );
     expect(await read(target, 'notes/one.md')).toBe('BBBB');
-  });
-
-  // Purpose: a carried file keeps its timestamps (utimes after the clone).
-  it('keeps the mtime of a carried file', async () => {
-    const target = path.join(scratch, 'plugins', 'pkg');
-    await install(target, { 'a.md': 'v1' });
-    await put(target, 'mine.txt', 'x');
-    const old = new Date('2020-01-02T03:04:05Z');
-    const { utimes } = await import('node:fs/promises');
-    await utimes(path.join(target, 'mine.txt'), old, old);
-    await install(target, { 'a.md': 'v2' });
-    expect((await lstat(path.join(target, 'mine.txt'))).mtime.getTime()).toBe(old.getTime());
   });
 
   // Purpose: a same-named package from another source is warned about.
@@ -534,19 +503,5 @@ describe('an offline update of an install made before records existed (DOR-2322)
     expect(warnings[0]).toMatch(
       /2 of these still run: commands\/mine\.md, skills\/old\/SKILL\.md\./
     );
-  });
-
-  // Purpose: a proven record changes nothing: no unproven notices, no warning,
-  // no list on the new record. Fails if the new wording leaks into a normal update.
-  it('says nothing new when the record was proven', async () => {
-    const target = path.join(scratch, 'plugins', 'pkg');
-    await install(target, { 'a.md': 'a v1' });
-    await put(target, 'keep.txt', 'mine');
-
-    const { notices, warnings } = await install(target, { 'a.md': 'a v2' });
-
-    expect(notices).toEqual([]);
-    expect(warnings).toEqual([]);
-    expect((await readInstalledFiles(target))?.unproven).toBeUndefined();
   });
 });

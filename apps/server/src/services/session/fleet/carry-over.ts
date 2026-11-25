@@ -37,11 +37,8 @@ import { carrySessionMarks } from '../../core/turn-power/seat-marks.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../extensions/start-work.js';
-import {
-  claudeTranscriptPath,
-  gatherCarryOverSummary,
-  runGitForSummary,
-} from './carry-over-summary.js';
+import { gatherCarryOverSummary, runGitForSummary } from './carry-over-summary.js';
+import { claudeCodeFacts } from '../resolution/claude-code-facts.js';
 import {
   PlanChangedError,
   cwdOf,
@@ -157,7 +154,7 @@ async function seedFor(
       window: source.limit.window,
       resetsAt: source.limit.resetsAt,
       cwd,
-      transcriptPath: claudeTranscriptPath(source.accountPath, cwd, source.sessionId),
+      transcriptPath: claudeCodeFacts().transcriptPath(source.accountPath, cwd, source.sessionId),
     },
     {
       runGit: runGitForSummary,

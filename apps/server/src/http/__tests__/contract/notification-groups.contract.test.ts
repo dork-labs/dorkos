@@ -68,31 +68,32 @@ const APPROVAL_TOKEN = { 'X-DorkOS-Approval': 'some-token' };
 /** A ULID nothing in a fresh install has. */
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
 
-const NOTIFICATIONS_OPERATOR_ONLY = {
-  error: 'Marking a notification read has to happen inside DorkOS, by the person it was for.',
-  code: 'NOTIFICATIONS_OPERATOR_ONLY',
-};
-const PUSH_OPERATOR_ONLY = {
-  error:
+const NOTIFICATIONS_OPERATOR_ONLY = problemBody('operator_only', {
+  detail: 'Only the person a notification was for can mark it read, in DorkOS.',
+});
+const PUSH_OPERATOR_ONLY = problemBody('operator_only', {
+  detail:
     'Deciding which devices DorkOS may reach is something only you can do, from inside DorkOS.',
-  code: 'PUSH_OPERATOR_ONLY',
-};
-const AGENT_CANNOT_DECIDE = {
-  error: 'Approvals are decided by a person in DorkOS, not by an agent',
-  code: 'AGENT_CANNOT_DECIDE',
-};
-const REQUESTER_CANNOT_DECIDE = {
-  error: 'The caller holding an approval token cannot also decide that approval',
-  code: 'REQUESTER_CANNOT_DECIDE',
-};
-const UNKNOWN_APPROVAL = { error: 'No such approval', code: 'UNKNOWN_APPROVAL' };
-const ONLY_A_PERSON = 'Only a person can change permissions. Agents can ask the person.';
-const DECISION_AGENT_REFUSAL = {
-  error: 'Only a person can answer this.',
-  code: 'decision_person_required',
-  message:
-    'DorkOS changed nothing. Only a person can answer this. Ask them to answer it in DorkOS.',
-};
+});
+const AGENT_CANNOT_DECIDE = problemBody('person_only', {
+  detail: 'Approvals are decided by a person in DorkOS, not by an agent',
+});
+const REQUESTER_CANNOT_DECIDE = problemBody('person_only', {
+  detail: 'The caller holding an approval token cannot also decide that approval',
+});
+const UNKNOWN_APPROVAL = problemBody('not_found', { detail: 'No such approval.' });
+const PERMISSIONS_PERSON_ONLY = problemBody('person_only', {
+  detail: 'Only a person can change permissions. Agents can ask the person.',
+});
+const ALREADY_DECIDED = problemBody('already_resolved', {
+  detail: 'This approval was already decided.',
+});
+const DECISION_AGENT_REFUSAL = problemBody('person_only', {
+  detail: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
+});
+const PROBLEM_CODE = (code: string) =>
+  z.object({ code: z.literal(code), detail: z.string() }).loose();
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
 const VALIDATION_FAILED = z
   .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
@@ -313,9 +314,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     body: { answer: 'forever' },
     expect: {
       status: 400,
-      schema: z
-        .object({ error: z.literal('Validation failed'), code: z.literal('INVALID_GRANT_BODY') })
-        .loose(),
+      schema: VALIDATION_FAILED,
     },
   },
   {
@@ -347,9 +346,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     body: { reason: 42 },
     expect: {
       status: 400,
-      schema: z
-        .object({ error: z.literal('Validation failed'), code: z.literal('INVALID_DENY_BODY') })
-        .loose(),
+      schema: VALIDATION_FAILED,
     },
   },
   {
@@ -420,7 +417,10 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/extension-decisions/not-a-ulid/action',
     headers: AGENT,
     body: { action: 'approve' },
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'There is no such decision.' }),
+    },
   },
   {
     name: 'POST /api/extension-decisions/:id/action refuses an agent',
@@ -452,7 +452,12 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     headers: { origin: SERVER_ORIGIN },
     expect: {
       status: 400,
-      body: { error: 'Send an action, and keep notes under 2000 characters.' },
+      schema: z
+        .object({
+          code: z.literal('invalid_request'),
+          detail: z.literal('Send an action, and keep notes under 2000 characters.'),
+        })
+        .loose(),
     },
   },
   {
@@ -460,14 +465,22 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: `/api/extension-decisions/${UNKNOWN_ULID}/action`,
     body: { action: 'approve' },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }) },
+    expect: { status: 404, schema: PROBLEM_CODE('not_found') },
   },
   {
     name: 'POST /api/extension-decisions/:id/offer refuses a body with no answer',
     method: 'POST',
     path: `/api/extension-decisions/${UNKNOWN_ULID}/offer/`,
     body: { accept: 'yes' },
-    expect: { status: 400, body: { error: 'Send { accept: true | false }.' } },
+    expect: {
+      status: 400,
+      schema: z
+        .object({
+          code: z.literal('invalid_request'),
+          detail: z.literal('Send { accept: true | false }.'),
+        })
+        .loose(),
+    },
   },
   {
     name: 'POST /api/extension-decisions/:id/offer refuses an agent',
@@ -482,7 +495,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: `/api/extension-decisions/${UNKNOWN_ULID}/offer`,
     body: { accept: false },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }) },
+    expect: { status: 404, schema: PROBLEM_CODE('not_found') },
   },
 
   // permissions
@@ -526,7 +539,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/permissions/preset',
     headers: AGENT,
     body: { preset: 'reckless' },
-    expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'AGENT_CANNOT_DECIDE' } },
+    expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
   },
   {
     name: 'PUT /api/permissions/preset refuses the caller holding an approval token',
@@ -534,7 +547,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/permissions/preset',
     headers: APPROVAL_TOKEN,
     body: { preset: 'balanced', surface: 'settings' },
-    expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'REQUESTER_CANNOT_DECIDE' } },
+    expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
   },
   {
     name: 'PATCH /api/permissions/defaults refuses an empty body',
@@ -548,7 +561,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/permissions/defaults',
     headers: AGENT,
     body: { surface: 'settings' },
-    expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'AGENT_CANNOT_DECIDE' } },
+    expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
   },
   {
     name: 'PATCH /api/permissions/defaults with nothing to change changes nothing',
@@ -565,7 +578,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: '/api/permissions/history/no-such-event/undo',
     headers: AGENT,
-    expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'AGENT_CANNOT_DECIDE' } },
+    expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
   },
   {
     name: 'POST /api/permissions/history/:eventId/undo refuses a force that is not a flag',
@@ -578,12 +591,20 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     name: 'POST /api/permissions/history/:eventId/undo answers the service’s refusal for an unknown change',
     method: 'POST',
     path: '/api/permissions/history/no-such-event/undo',
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+    expect: {
+      status: 404,
+      headers: PROBLEM_TYPE,
+      schema: z.object({ code: z.literal('not_found') }).loose(),
+    },
   },
   {
     name: 'GET /api/agents/:id/permissions answers the service’s refusal for an unknown agent',
     path: '/api/agents/no-such-agent/permissions',
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+    expect: {
+      status: 404,
+      headers: PROBLEM_TYPE,
+      schema: z.object({ code: z.literal('agent_not_found') }).loose(),
+    },
   },
   {
     name: 'PATCH /api/agents/:id/permissions refuses an agent',
@@ -591,7 +612,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     path: '/api/agents/no-such-agent/permissions',
     headers: AGENT,
     body: { surface: 'agent-page' },
-    expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'AGENT_CANNOT_DECIDE' } },
+    expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
   },
   {
     name: 'PATCH /api/agents/:id/permissions refuses an empty body',
@@ -604,7 +625,11 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'PATCH',
     path: '/api/agents/no-such-agent/permissions',
     body: { surface: 'agent-page' },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+    expect: {
+      status: 404,
+      headers: PROBLEM_TYPE,
+      schema: z.object({ code: z.literal('agent_not_found') }).loose(),
+    },
   },
   {
     name: 'GET /api/permissions/nothing-here is the /api 404, not a permission route',
@@ -640,7 +665,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: '/api/agents/no-such-agent/pause',
     body: { reason: 'Contract check' },
-    expect: { status: 404, schema: z.object({ code: z.literal('AGENT_NOT_FOUND') }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('agent_not_found') }).loose() },
   },
   {
     name: 'POST /api/agents/:id/pause refuses a reason that is not text',
@@ -653,7 +678,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     name: 'POST /api/agents/:id/resume answers 404 for an unknown agent with no body',
     method: 'POST',
     path: '/api/agents/no-such-agent/resume',
-    expect: { status: 404, schema: z.object({ code: z.literal('AGENT_NOT_FOUND') }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('agent_not_found') }).loose() },
   },
 ]);
 
@@ -785,7 +810,7 @@ describe('contract: approvals, permissions and pause, with a registered agent (l
       body: { answer: 'once' },
       expect: {
         status: 409,
-        body: { error: 'This approval was already decided', code: 'APPROVAL_NOT_PENDING' },
+        body: ALREADY_DECIDED,
       },
     });
     await check(server, {
@@ -793,7 +818,7 @@ describe('contract: approvals, permissions and pause, with a registered agent (l
       path: `/api/approvals/${approvalId}/deny`,
       expect: {
         status: 409,
-        body: { error: 'This approval was already decided', code: 'APPROVAL_NOT_PENDING' },
+        body: ALREADY_DECIDED,
       },
     });
   });
@@ -819,11 +844,8 @@ describe('contract: approvals, permissions and pause, with a registered agent (l
       path: `/api/approvals/${approvalId}/grant`,
       body: { answer: 'always' },
       expect: {
-        status: 409,
-        body: {
-          error: 'There is no action called "contract.no_such_action".',
-          code: 'UNKNOWN_ACTION',
-        },
+        status: 400,
+        body: problemBody('invalid_request', { detail: 'There’s no action by that name.' }),
       },
     });
     await check(server, {
@@ -864,7 +886,7 @@ describe('contract: approvals, permissions and pause, with a registered agent (l
       path: `/api/agents/${agent.agentId}/permissions`,
       headers: { 'X-DorkOS-Agent': agent.token },
       body: { surface: 'agent-page', actions: { 'agent.pause': 'allowed' } },
-      expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'AGENT_CANNOT_DECIDE' } },
+      expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
     });
     await check(server, {
       method: 'PATCH',
@@ -901,7 +923,7 @@ describe('contract: approvals, permissions and pause, with a registered agent (l
       method: 'POST',
       path: `/api/agents/${agent.agentId}/resume`,
       headers: { 'X-DorkOS-Agent': agent.token },
-      expect: { status: 403, schema: z.object({ code: z.literal('CANNOT_RESUME_SELF') }).loose() },
+      expect: { status: 403, schema: z.object({ code: z.literal('forbidden') }).loose() },
     });
     await check(server, {
       method: 'POST',
@@ -1018,12 +1040,9 @@ describe('contract: the same groups with login on', () => {
   it('refuses an API key a decision on a card, and lets the owner’s cookie make it', async () => {
     const grantId = await seedApprovalSignedIn();
     const denyId = await seedApprovalSignedIn();
-    const cookieRefusal = {
-      error:
-        'Approving or refusing a risky action has to happen inside DorkOS, by a person who is signed in. ' +
-        'A program holding an API key cannot answer for you. Open DorkOS and answer it there.',
-      code: 'operator_cookie_required',
-    };
+    const cookieRefusal = problemBody('person_only', {
+      detail: 'Answer this inside DorkOS, signed in. An API key can’t answer for you.',
+    });
     for (const id of [grantId, denyId]) {
       for (const verb of ['grant', 'deny', 'dismiss-suggestion']) {
         await check(server, {
@@ -1069,14 +1088,14 @@ describe('contract: the same groups with login on', () => {
       path: '/api/permissions/defaults',
       headers: apiKey,
       body: { surface: 'settings' },
-      expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'operator_cookie_required' } },
+      expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
     });
     await check(server, {
       method: 'PATCH',
       path: `/api/agents/${agent.agentId}/permissions`,
       headers: apiKey,
       body: { surface: 'agent-page' },
-      expect: { status: 403, body: { error: ONLY_A_PERSON, code: 'operator_cookie_required' } },
+      expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
     });
     await check(server, {
       method: 'PATCH',
@@ -1098,12 +1117,7 @@ describe('contract: the same groups with login on', () => {
       body: { action: 'approve' },
       expect: {
         status: 403,
-        schema: z
-          .object({
-            error: z.literal('Only a person can answer this.'),
-            code: z.literal('operator_cookie_required'),
-          })
-          .loose(),
+        schema: z.object({ code: z.literal('person_only'), detail: z.string() }).loose(),
       },
     });
   });

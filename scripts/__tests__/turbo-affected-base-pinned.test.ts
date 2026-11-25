@@ -22,9 +22,9 @@
  * `shell-suite-parity.test.ts` beside it gives: `scripts/vitest.config.ts` globs
  * every `*.test.ts` under a `__tests__` directory, and that run is the last link
  * of `test:scripts` (what `pnpm verify` runs) and the final `harness` step of
- * `.github/workflows/scripts-test.yml`. A `scripts/test-*.sh` would have to name
- * itself in the `test:scripts` chain and in the workflow's step list to run at
- * all; this file registers itself in both with no wiring.
+ * `.github/workflows/scripts-test.yml`, so this file runs in both with no
+ * wiring. (Since ledger fixture-suites-by-glob a `scripts/test-*.sh` needs none
+ * either; when this was written it had to be listed in both.)
  *
  * `lefthook.yml` was added to that workflow's path filters in the same change,
  * because a PR that edits ONLY `lefthook.yml` — the exact regression this guards

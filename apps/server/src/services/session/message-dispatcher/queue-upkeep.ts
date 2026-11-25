@@ -5,6 +5,7 @@
  *
  * @module services/session/message-dispatcher/queue-upkeep
  */
+import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import {
   getMessageQueueStore,
@@ -143,8 +144,10 @@ export function sweepOrphanedMessageQueues(opts?: {
  * Rows survive a restart; the entries that run them do not. Until this ran at
  * boot and on the health-check cadence, only a NEWER message to the same chat
  * re-armed them, so an idle chat's messages sat for days while their senders
- * read "queued" (DOR-3287). Only rows another chat sent: nobody is watching
- * those to notice, while a person's own leftover rows are in their composer.
+ * read "queued" (DOR-3287). Only rows another chat or a mini app sent: nobody
+ * is watching those to notice, while a person's own leftover rows are in their
+ * composer. A mini app's rows are adopted only by a resume that asks for them
+ * (`orFromApps`, DOR-5232).
  *
  * One at a time, so a boot with many such chats does not resolve every runtime
  * at once, and one chat that cannot be resumed never stops the rest. The log
@@ -164,7 +167,10 @@ export async function rearmChatQueues(opts: {
     const stranded = store
       .list(sessionId)
       .some(
-        (row) => isChatClientId(row.enqueuedBy) && !pending.has(row.id) && !launching.has(row.id)
+        (row) =>
+          (isChatClientId(row.enqueuedBy) || isExtensionClientId(row.enqueuedBy)) &&
+          !pending.has(row.id) &&
+          !launching.has(row.id)
       );
     if (!stranded) continue;
     try {

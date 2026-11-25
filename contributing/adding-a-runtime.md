@@ -247,6 +247,8 @@ See [ADR 260908-153657](../decisions/260908-153657-a-live-runtime-turn-renews-co
 
   **The same is true of staging, and getting it wrong costs more.** `canStageSession(id)` is the optional companion to `supportsContextStaging`: `true` when a stage sent to THAT session right now could reach your transcript. Claude-code needed it for the same reason (DOR-1307) — a native stage appends to the persistent pump's held input stream, so a resume-path session has nothing to append to, and the only way the adapter could answer `true` was to BOOT a process the operator never opted into, which also moved that session onto the persistent path for every later message. Omit it and your static flag stands. Implement it and C9 holds you to C7's three claims, with `supportsContextStaging` in place of `supportsSteer`. The one difference from steering is what a `false` means to the person: **nothing**. The server folds the words into the next dispatch (ADR-0273) with a `context_staged` receipt and `degradedBecause: 'not-stageable'`, so Add context stays offered on both paths and this answer never reaches the client — it exists to keep the server from asking for a native stage that would have to be manufactured.
 
+- **Two restart flags are required** (spec `turns-survive-restarts` §7.2). `wakesForLostBackgroundWork` says a chat whose turn had already ended, but whose process still held background work, is woken after a restart (only Claude Code today). `continuesInterruptedTurn` says a turn killed in the middle can be continued by a new turn in the same chat; a real runtime declares `true` only after a measured run against the real program. Your conformance run passes exactly one of `restartContinueTurn` (a driver, required with `true`) or `restartContinueUnprovenReason` (a sentence, required with `false`).
+
 - **`features` is a typed extension point** (`Record<string, unknown>`, ADR-0256) for runtime-specific metadata that does not merit a first-class field. Consumers must validate what they read.
 
 ### Labels are budgeted: `STATUS_VALUE_MAX_CHARS`
@@ -412,7 +414,7 @@ Pin it the same way claude-code does: build your live tool server in a test, lis
 
 ### 4. Wire the conformance suite
 
-Every adapter must clear the shared behavioral gate before its UI activates. Add `__tests__/conformance.test.ts`:
+Every adapter must clear the shared behavioral gate before its UI activates. Add `__tests__/conformance.test.ts` (the computer-local runtime, OpenCode inside an agent computer, has its own at `opencode/computer/__tests__/conformance.test.ts`, with the VM faked):
 
 ```typescript
 import { vi } from 'vitest';
@@ -556,8 +558,11 @@ DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/confor
 
 **A live smoke that spends money needs its own second flag.** `DORKOS_<NAME>_LIVE`
 is the FREE smoke — a local model, nothing billed — and it must never be able to
-arm a paid one. OpenCode is the worked example: `DORKOS_OPENCODE_LIVE=1` runs the
-suite against a local Ollama model, and a separate `DORKOS_OPENCODE_LIVE_PAID=1`
+arm a paid one. OpenCode is the worked example: `DORKOS_OPENCODE_LIVE=1` with
+`DORKOS_OPENCODE_LOCAL_MODEL` runs the suite against a local Ollama model. "Free" is
+enforced, not hoped for: the run writes its own config enabling only a loopback
+provider, hides the person's OpenCode config and logins, and drops hosted keys
+(`free-local/free-local-run.ts`). A separate `DORKOS_OPENCODE_LIVE_PAID=1`
 runs it against a pinned cheap model on OpenRouter. The paid flag needs
 `OPENROUTER_API_KEY` as well, and a flag with no key fails collection loudly
 rather than falling back to the mocked run — a paid smoke that silently ran mocked

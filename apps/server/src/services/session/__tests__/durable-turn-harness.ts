@@ -504,6 +504,7 @@ export async function driveQueueDurability(
       },
     ]);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: failSession,
       clientId: 'c3',
       content: 'a turn that will fail',
@@ -512,6 +513,7 @@ export async function driveQueueDurability(
       runtime,
     });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: failSession,
       clientId: 'c3',
       content: 'queued behind the failure',
@@ -551,6 +553,7 @@ export async function driveQueueDurability(
     ]);
     const projector = getOrCreateProjector(interactionSession, cwd);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: interactionSession,
       clientId: 'c3',
       content: 'runs something that asks',
@@ -559,6 +562,7 @@ export async function driveQueueDurability(
       runtime: runtime2,
     });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: interactionSession,
       clientId: 'c3',
       content: 'queued behind the approval',

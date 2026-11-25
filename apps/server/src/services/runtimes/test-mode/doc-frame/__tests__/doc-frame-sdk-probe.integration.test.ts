@@ -19,6 +19,11 @@ import { runtimeDocMcpFixture } from '../../../../canvas/doc-channel/__tests__/r
 import { createAgentRuntimeMcpServer } from '../../../connector-mcp/agent-runtime-server.js';
 import { startConnectorRuntimeMcpListener } from '../../../connector-mcp/listener.js';
 import { createDocFrameSdkProbe, type DocFrameSdkReady } from '../doc-frame-sdk-probe.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();

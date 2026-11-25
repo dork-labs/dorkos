@@ -1,7 +1,7 @@
 ---
 number: 144
 title: Use HTML Parse Mode for Telegram Formatting
-status: draft
+status: archived
 created: 2026-03-18
 spec: relay-adapter-code-quality
 superseded-by: null

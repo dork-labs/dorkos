@@ -144,7 +144,7 @@ import type {
   MessageDisposition,
 } from '@dorkos/shared/schemas';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
-import { getMessageQueueStore } from './message-queue-store.js';
+import { getMessageQueueStore, type QueuedMessageRecord } from './message-queue-store.js';
 import { queuedLimitsOf } from './message-dispatcher/carried-limits.js';
 import { onProjectorRekey, onProjectorTurnBoundary } from './session-state-projector.js';
 import {
@@ -199,6 +199,7 @@ import { adoptMessagesForDispatch } from './message-dispatcher/adopt.js';
 import { hasHeldMessage, noteTurnBoundary, schedulePump } from './message-dispatcher/pump.js';
 import { clearCompactionTimers } from './message-dispatcher/agent-compaction.js';
 import { noteSessionOrphaned } from './message-dispatcher/queue-upkeep.js';
+import { acceptRun, recordRunRow, recordTurnEnd } from './message-dispatcher/run-feed.js';
 import type {
   DeliverStageOpts,
   DeliverSteerOpts,
@@ -241,6 +242,7 @@ export {
   cancelPendingDispatch,
   listQueuedMessages,
   noteSessionOrphaned,
+  rearmChatQueues,
   suspendPrivateDispatches,
   sweepOrphanedMessageQueues,
 } from './message-dispatcher/queue-upkeep.js';
@@ -563,21 +565,36 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // composer — one that outlives the process and fires into a conversation that
   // ended days ago. See the module doc; the in-memory plan below is all the
   // memory such a trigger gets.
-  const record =
-    whenBusy === 'queue'
-      ? getMessageQueueStore()?.enqueue({
-          ...(opts.messageId !== undefined ? { id: opts.messageId } : {}),
-          sessionId: queueKey,
-          content,
-          clientId,
-          disposition: requested,
-          context: opts.context ?? null,
-          ...(heldToDefault ? { heldToDefault: true } : {}),
-          // What the turn carries only in memory goes on the row, so a pause or a restart keeps
-          // it (DOR-4350).
-          carriedLimits: queuedLimitsOf(opts),
-        })
-      : undefined;
+  //
+  // The run record gets the message's run in the same transaction as its row
+  // (spec `turns-survive-restarts` §4.7, transition 1); a rowless one, alone.
+  const queueStore =
+    whenBusy === 'queue' && !opts.wordsAtSource ? getMessageQueueStore() : undefined;
+  let runId = opts.runId;
+  const record = queueStore?.atomically((): QueuedMessageRecord | undefined => {
+    const row = queueStore.enqueue({
+      ...(opts.messageId !== undefined ? { id: opts.messageId } : {}),
+      sessionId: queueKey,
+      content,
+      clientId,
+      disposition: requested,
+      context: opts.context ?? null,
+      ...(heldToDefault ? { heldToDefault: true } : {}),
+      // What the turn carries only in memory goes on the row, so a pause or a restart keeps
+      // it (DOR-4350).
+      carriedLimits: queuedLimitsOf(opts),
+    });
+    // A run the turn port saved gets its row; any other caller's run is written now.
+    if (runId === undefined) runId = acceptRun({ sessionId, turn: opts }, row.id);
+    else if (!recordRunRow(runId, row.id)) {
+      // Taken back while it was being handed over (its app stopped): no row
+      // stays, and its launch finds the run gone.
+      queueStore.remove(row.id);
+      return undefined;
+    }
+    return row;
+  });
+  runId ??= acceptRun({ sessionId, turn: opts }, undefined);
   // **The person first** (spec `spin-off-chats` §3): a message a person (or
   // anything but another chat) queues goes ahead of every row another chat
   // sent, so a busy agent answers its person before its peers. Done as a real
@@ -620,6 +637,8 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     clientId,
     content,
     messageId,
+    ...(runId !== undefined ? { runId } : {}),
+    ...(opts.wordsAtSource ? { wordsAtSource: true as const } : {}),
     projector,
     runtime,
     budgetMs,
@@ -989,6 +1008,8 @@ onProjectorTurnBoundary(noteTurnBoundary);
 // The early context warning reads each turn's final reading (DOR-2732). Wired
 // here for the same reason, and after the pump's listener, which only defers.
 onProjectorTurnBoundary(noteContextWarningBoundary);
+// The ending a turn's `turn_end` showed goes on its run at once (spec `turns-survive-restarts` §4.7).
+onProjectorTurnBoundary(recordTurnEnd);
 onProjectorRekey(linkSessionId);
 // A bridged chat's record of whose words it holds follows the link as it is learned (DOR-4593).
 onProjectorRekey(carryBridgedSender);

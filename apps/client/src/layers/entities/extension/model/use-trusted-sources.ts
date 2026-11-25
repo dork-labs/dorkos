@@ -23,9 +23,7 @@ export const trustedSourcesQueryKey = [...extensionQueryKeys.all, 'trusted-sourc
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<Error> {
-  const body = await readResponseError(res, `The server answered ${res.status}`, {
-    oldMessageFirst: true,
-  });
+  const body = await readResponseError(res, `The server answered ${res.status}`);
   return new Error(body.message);
 }
 

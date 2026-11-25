@@ -160,15 +160,7 @@ export class InstallationFileWrites {
         input.expectedHash ??
         (input.expectedContent !== undefined ? sha256(input.expectedContent) : undefined);
       if (expected !== undefined && expected !== currentHash) {
-        return {
-          status: 409 as const,
-          body: {
-            error: 'File changed on disk since it was opened',
-            code: 'CONFLICT',
-            currentHash,
-            currentContent: current,
-          },
-        };
+        return { stale: { currentHash, currentContent: current } };
       }
       const hash = sha256(input.content);
       if (hash === currentHash)

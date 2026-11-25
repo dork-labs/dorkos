@@ -5,7 +5,7 @@
  * ## Why a second copy exists, and what stops it drifting
  *
  * The canonical answer is `isContentEvent` in
- * `apps/server/src/services/runtimes/claude-code/messaging/empty-stream-guard.ts`
+ * `apps/server/src/services/runtimes/shared/empty-stream-guard.ts`
  * — the single place that decides whether a claude-code turn said anything a
  * person can see, and the set `message-sender.ts` keeps its own
  * `contentEventCount` against. This package cannot import it: `@dorkos/relay`

@@ -8,7 +8,6 @@
  * @module startup/steps/core-routes
  */
 import { setInstructionsReader } from '../../services/runtimes/context-preview/instructions-capability.js';
-import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { approvedByField } from '../../services/connectors/access/access-change-ledger.js';
 import path from 'node:path';
@@ -113,7 +112,6 @@ export interface MountCoreRoutesInput {
   roomAuthors: WireRoomsResult['roomAuthors'];
   notifyDm: WireTeamRoomAndRelayAdaptersResult['notifyDm'];
   todoPromises: WireSessionServicesResult['todoPromises'];
-  workQueue: WireSessionServicesResult['workQueue'];
   auditAccounts: WireCoreStoresResult['auditAccounts'];
   dorkHome: ClaimDataDirectoryResult['dorkHome'];
   roomWorktrees: WireRoomsResult['roomWorktrees'];
@@ -163,7 +161,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     roomAuthors,
     notifyDm,
     todoPromises,
-    workQueue,
     auditAccounts,
     dorkHome,
     roomWorktrees,
@@ -242,6 +239,10 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       // refused too.
       isRoomSession: (sessionId) =>
         roomStore.sessionLedger.bindingForSession(sessionId) !== undefined,
+      // Read at request time, as an agent registers after these routes mount.
+      agentSubjectOf: (agentPath) => refs.meshCore?.getSubjectByPath(agentPath)?.subject,
+      chatMesh: () => refs.meshCore,
+      agentSessions: () => refs.adapterManager?.getAgentSessionStore(),
     };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).
@@ -694,14 +695,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   };
   mountedRouters.push('permissions');
 
-  // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
-  // app: the list at `/api/todo-promises`, a person's new one per agent at
-  // `/api/agents/:id/todo-promises`.
-  deps.todoPromises = todoPromises.routeDeps;
-  // To-dos (DOR-3088) at `/api/todos`, behind their flag until v1 is complete.
-  if (env.DORKOS_TODOS_ENABLED) deps.todos = todoPromises.todoRouteDeps;
-  // An agent's work queue, for a person (DOR-3462).
-  deps.workQueue = workQueue.routeDeps;
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.
   deps.agentInstructions = {

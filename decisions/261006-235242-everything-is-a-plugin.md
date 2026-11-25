@@ -14,6 +14,8 @@ amends: [260721-221810, 0230]
 
 Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: one package type is after-launch work; the five types still ship today.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): the phrase "one package type is after-launch work" in the Status line is retired. The decision stands, and its place in the order is in `meta/ROADMAP.md`. The five package types still ship today.
+
 **Amends** (each stays Accepted and keeps governing until one package type lands):
 
 - [260721-221810](260721-221810-shape-is-fifth-package-type-composition-manifest-affinity-not-ownership.md): retires Shape as a fifth package type; a Shape's contents become **mini apps** and other contents of a plugin.

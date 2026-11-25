@@ -40,11 +40,12 @@ import { wakeAgent } from '../../heartbeats/event-wakes.js';
 import { hasMarks } from '../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
 import { createHash } from 'node:crypto';
-import path from 'node:path';
 import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
 import { onProjectorStatusChange } from '../../session/session-state-projector.js';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
+import { sessionLabelFor } from '../notification-copy.js';
+import { claimTurnFinished } from '../../runs/index.js';
 import { armEscalation, cancelEscalationByKey } from '../escalation-service.js';
 import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
 import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
@@ -52,20 +53,6 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { canonicalAccountPath } from '../../core/usage/runtime-accounts.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
-
-/**
- * What to call a session in a sentence.
- *
- * The working directory's last segment, which is the identity fallback every
- * other session surface uses. A notification title has to stand on its own in a
- * desktop banner or a chat message, so it cannot be an id.
- *
- * @param cwd - The session's working directory, when the projector knew one.
- */
-export function sessionLabelFor(cwd: string | undefined): string {
-  if (!cwd) return 'A chat';
-  return path.basename(cwd) || 'A chat';
-}
 
 /**
  * Describe one error episode, for both edges of it.
@@ -257,7 +244,7 @@ export function watchSessionLifecycle(): () => void {
   /** When each session's CURRENT error episode started. Absent when it is fine. */
   const errorSince = new Map<string, string>();
 
-  return onProjectorStatusChange(({ sessionId, cwd, retiredSessionId, status }) => {
+  return onProjectorStatusChange(({ sessionId, cwd, retiredSessionId, turnRef, status }) => {
     // A rekey re-announce carries the id this projector streamed under before
     // its canonical id resolved. Its state MOVES to the new id rather than being
     // dropped: an error episode armed under the old id would otherwise keep a
@@ -291,13 +278,25 @@ export function watchSessionLifecycle(): () => void {
       // A beat finishing is not news either: only what the agent raises through
       // `end_beat` reaches a person (spec `heartbeats` §7.4).
       if (isBeatTurn(sessionId)) return;
+      const agentId = resolveAgentIdForPath(cwd);
+      // A turn the run record holds, named by the turn this transition
+      // belongs to, is told by its run's `notify_person` effect, with the same
+      // name and agent this row would carry: it survives a restart and is never
+      // said for a turn a pause put back (spec `turns-survive-restarts` §6.2).
+      // A turn with no run is told here.
+      if (
+        claimTurnFinished(sessionId, turnRef, {
+          ...(cwd ? { cwd } : {}),
+          ...(agentId ? { agentId } : {}),
+        })
+      )
+        return;
       // Deliberately raised for every finished turn, including one the operator
       // started by typing here. The seam carries no principal — a turn can be
       // started from the composer, a room, a bridge or a schedule, and the
       // projector knows none of them — so an own-action drop here would be a
       // guess. Presence filtering (spec task 4.1) is what will keep this quiet
       // for somebody watching the session it happened in.
-      const agentId = resolveAgentIdForPath(cwd);
       void notify('turn.completed', {
         sessionId,
         sessionLabel: sessionLabelFor(cwd),

@@ -8,10 +8,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type Role = 'computer' | 'hub' | 'agent-computer';
-const role = vi.hoisted(() => ({ value: 'agent-computer' as Role }));
-vi.mock('../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
-vi.mock('../../env.js', () => ({ env: {} }));
+// The real role checks read this, so only the role decides what starts.
+const env = vi.hoisted(() => ({ DORKOS_SERVER_ROLE: 'agent-computer' }));
+vi.mock('../../env.js', () => ({ env }));
 vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
   logError: (err: unknown) => ({ err }),
@@ -45,8 +44,6 @@ vi.mock('../../services/runtimes/claude-code/credits-root.js', () => ({
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: () => undefined, onChange: () => () => {} },
 }));
-vi.mock('../../services/core/tunnel-manager.js', () => ({ tunnelManager: { on: vi.fn() } }));
-vi.mock('../../services/core/event-fan-out.js', () => ({ eventFanOut: { broadcast: vi.fn() } }));
 vi.mock('../../services/core/remote/managed-remote-coordinator.js', () => ({
   managedRemoteCoordinator: { withdrawOnUnlink: vi.fn() },
 }));
@@ -67,6 +64,9 @@ vi.mock('@dorkos/db', async (original) => ({
 }));
 
 const { startAfterListen } = await import('../steps/after-listen.js');
+const { createTestDb } = await import('@dorkos/test-utils/db');
+const { getRunRecord, installRunRecord, uninstallRunRecord } =
+  await import('../../services/runs/index.js');
 
 const resolved = () => ({ catch: () => undefined, then: () => ({ catch: () => undefined }) });
 /** Everything `startAfterListen` reads, as inert stubs. */
@@ -109,7 +109,7 @@ afterEach(() => {
 
 describe('startAfterListen on an agent computer', () => {
   it('starts no scheduler, tunnel, account link or credits', async () => {
-    role.value = 'agent-computer';
+    env.DORKOS_SERVER_ROLE = 'agent-computer';
     await startAfterListen(refs as never, built());
     expect(refs.schedulerService.start).not.toHaveBeenCalled();
     expect(started.autostartOwnTunnel).not.toHaveBeenCalled();
@@ -120,11 +120,25 @@ describe('startAfterListen on an agent computer', () => {
   });
 
   it('starts each of them on a person`s own computer', async () => {
-    role.value = 'computer';
+    env.DORKOS_SERVER_ROLE = 'computer';
     await startAfterListen(refs as never, built());
     expect(refs.schedulerService.start).toHaveBeenCalledTimes(1);
     expect(started.autostartOwnTunnel).toHaveBeenCalledTimes(1);
     expect(started.initOnStartup).toHaveBeenCalledTimes(1);
     expect(started.startCreditsLifecycle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the outbox worker at startAfterListen', () => {
+  it('starts before anything that can throw, so a failing step never leaves it stopped', async () => {
+    env.DORKOS_SERVER_ROLE = 'computer';
+    installRunRecord(createTestDb(), { epoch: '01AFTERLISTENBOOT000000000' });
+    try {
+      refs.schedulerService.start.mockRejectedValueOnce(new Error('scheduler down'));
+      await expect(startAfterListen(refs as never, built())).rejects.toThrow('scheduler down');
+      expect(getRunRecord()?.worker.isRunning).toBe(true);
+    } finally {
+      uninstallRunRecord();
+    }
   });
 });

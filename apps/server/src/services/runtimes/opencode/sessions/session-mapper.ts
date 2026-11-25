@@ -117,8 +117,26 @@ export interface OpenCodeClientProvider {
   /** A turn ended; a switch that was waiting for it may now happen. */
   turnSettled?(): Promise<void>;
 
-  /** Bind server-owned chat metadata before dispatch; never used as authentication. */
-  bindSessionEnvironment?(sessionId: string, openCodeSessionId: string): Promise<void>;
+  /**
+   * Stop the running sidecar now, so the next use starts a fresh process.
+   * Called when a folder gains its own plugins during a turn (DOR-4412).
+   * Optional for test providers; without it a needed restart counts as failed
+   * and OpenCode turns are held.
+   *
+   * @param opts - `immediate` kills the whole process group with SIGKILL at
+   *   once, with no grace window a loaded plugin could use.
+   */
+  recycle?(opts?: { immediate?: boolean }): Promise<void>;
+
+  /**
+   * Bind server-owned chat metadata before dispatch; never used as authentication.
+   * `agentId` is the chat's agent's Mesh ULID, or `undefined` when it has none.
+   */
+  bindSessionEnvironment?(
+    sessionId: string,
+    openCodeSessionId: string,
+    agentId?: string
+  ): Promise<void>;
 }
 
 /**

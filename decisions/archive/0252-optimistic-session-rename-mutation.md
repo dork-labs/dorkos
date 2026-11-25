@@ -1,7 +1,7 @@
 ---
 number: 252
 title: Optimistic Session Rename via Shared useMutation Hook
-status: draft
+status: archived
 created: 2026-04-13
 spec: session-rename-fork
 superseded-by: null

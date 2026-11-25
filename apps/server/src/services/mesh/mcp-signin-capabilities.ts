@@ -27,10 +27,11 @@ import {
 } from './mcp-capability-deps.js';
 
 /**
- * Re-raise a failed sign-in start as the caller-facing error shape: the plain
+ * Re-raise a failed sign-in start as the MCP tool's error shape: the plain
  * family as `error`, the machine-readable family as `code`, and the raw OAuth
- * text demoted to `detail` so a surface can put it behind a disclosure instead
- * of leading with it (DOR-982).
+ * text demoted to `detail` rather than leading with it (DOR-982). Over HTTP the
+ * dispatcher answers the lower-case problem code with a fixed sentence instead,
+ * so the raw text stays on the MCP side.
  *
  * @param err - Whatever `startSignin` threw.
  */

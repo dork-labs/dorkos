@@ -252,7 +252,7 @@ test.describe('The request card @permissions', () => {
       title,
     });
     expect(direct.status()).toBe(403);
-    expect(((await direct.json()) as { message: string }).message).toContain('request_permission');
+    expect(((await direct.json()) as { detail: string }).detail).toContain('request_permission');
 
     const request_ = {
       action: 'create_room',
@@ -272,7 +272,7 @@ test.describe('The request card @permissions', () => {
       arguments: { kind: 'channel', title: `${title}-other` },
     });
     expect(second.status()).toBe(403);
-    expect(((await second.json()) as { reason: string }).reason).toBe('request_pending');
+    expect(((await second.json()) as { code: string }).code).toBe('needs_approval');
 
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
@@ -327,7 +327,7 @@ test.describe('The request card @permissions', () => {
 
     const again = await invokeAsAgent(request, token, 'permissions.request_access', request_);
     expect(again.status()).toBe(403);
-    expect(((await again.json()) as { reason: string }).reason).toBe('recently_denied');
+    expect(((await again.json()) as { code: string }).code).toBe('declined');
     const pending = (await (await request.get('/api/approvals/pending')).json()) as {
       approvals: { approvalId: string }[];
     };
@@ -358,7 +358,7 @@ test.describe('The request card @permissions', () => {
       data: { answer: 'always' },
     });
     expect(always.status()).toBe(409);
-    expect(((await always.json()) as { code: string }).code).toBe('ALWAYS_NOT_OFFERED');
+    expect(((await always.json()) as { code: string }).code).toBe('always_not_offered');
 
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
@@ -390,7 +390,7 @@ test.describe('The request card @permissions', () => {
         data: { answer },
       });
       expect(granted.status()).toBe(409);
-      expect((await granted.json()).code).toBe('APPROVAL_INCOMPLETE');
+      expect((await granted.json()).code).toBe('conflict');
     }
     await basePage.page.setViewportSize({ width: 390, height: 844 });
     await gotoActivity(basePage);

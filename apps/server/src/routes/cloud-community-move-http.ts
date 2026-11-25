@@ -7,7 +7,7 @@ import type {
   CloudCommunityRefusal,
 } from '@dorkos/shared/cloud-schemas';
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -24,14 +24,13 @@ import {
   hostLimitBytes,
   type CommunityMoveUploads,
 } from '../services/core/cloud/community-move-upload.js';
-import { envelopeRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
+import { problemRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import {
   NOT_LINKED,
   OWNER_ONLY,
   MOVE_ALREADY_CANCELLED,
   declaredLength,
-  describeBytes,
-  stagingRefusal,
+  stagingProblem,
   writeFailed,
   nobodyToAnswer,
 } from './cloud-communities-common.js';
@@ -54,16 +53,16 @@ export async function startHostedSpaceMove(
 ): Promise<Response> {
   // The export itself: the chain's JSON parser leaves any other body unread.
   const { incoming: req, outgoing: res } = c.env;
-  const ownerRefusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
+  const ownerRefusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
   if (ownerRefusal) {
     // Let the export go by unread, so the browser gets this answer.
     req.resume();
-    return c.json(ownerRefusal, 403);
+    return sendProblem(c, ownerRefusal);
   }
   const frontDoor = refuseFrontDoorChange(honoRequestFacts(c), 'moving a space');
   if (frontDoor) {
     req.resume();
-    return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
+    return problem(c, 'operator_only', { detail: frontDoor.error });
   }
   if (!isCloudLinked()) {
     req.resume();
@@ -72,12 +71,12 @@ export async function startHostedSpaceMove(
   const query = MoveQuerySchema.safeParse(readQuery(c));
   if (!query.success) {
     req.resume();
-    return c.json({ ok: false, message: 'Give the space a name.' }, 400);
+    return validationProblem(c, query.error, { detail: 'Give the space a name.' });
   }
   const browser = c.get('user')?.sessionId ?? 'first-run';
   if (pendingMoves.has(browser) || pendingMoves.size >= MAX_HELD_STEP_UPS) {
     req.resume();
-    return c.json({ ok: false, message: 'Confirm or cancel the pending move first.' }, 409);
+    return problem(c, 'move_pending', { detail: 'Confirm or cancel the pending move first.' });
   }
   const reservation = Symbol();
   pendingMoves.set(browser, reservation);
@@ -102,16 +101,12 @@ export async function startHostedSpaceMove(
       // (it reads it once it has sent the file). A mismatch has already
       // closed the connection, so nobody is left to answer.
       req.resume();
-      const refusal = stagingRefusal(error);
-      return c.json(
-        { ok: false, message: refusal.message } satisfies CloudCommunityRefusal,
-        refusal.status as ContentfulStatusCode
-      );
+      return stagingProblem(c, error);
     }
     // The browser stopped sending (a cancel, a closed tab). Nobody is left to answer.
     logger.warn('[Cloud] A community export did not arrive', logError(error));
     if (!res.headersSent && !req.destroyed) {
-      return c.json({ ok: false, message: 'The file didn’t arrive. Try again.' }, 400);
+      return problem(c, 'invalid_request', { detail: 'The file didn’t arrive. Try again.' });
     }
     return nobodyToAnswer();
   }
@@ -180,14 +175,15 @@ export async function startHostedSpaceMove(
               return false;
             }
           );
-          return c.json(
-            {
-              ok: false,
-              message: `This export is too large to move. It is ${describeBytes(staged.bytes, 'up')}, and the most DorkOS takes is ${describeBytes(limit, 'down')}.`,
-              ...(cancelled ? {} : { mayExist: true as const }),
-            } satisfies CloudCommunityRefusal,
-            413
-          );
+          // `mayExist`: the move could not be cancelled, so a retry with the same key finds it.
+          return problem(c, 'request_too_large', {
+            detail: 'This export is larger than DorkOS can move.',
+            extensions: {
+              archiveBytes: staged.bytes,
+              limitBytes: limit,
+              ...(cancelled ? {} : { mayExist: true }),
+            },
+          });
         }
         if (started.upload === null && started.move.state === 'cancelled') {
           // A replay of a move that was cancelled, most often by the refusal just
@@ -195,10 +191,7 @@ export async function startHostedSpaceMove(
           // cancelled move in place of a reason, so say what happened.
           discard();
           await cleanup;
-          return c.json(
-            { ok: false, message: MOVE_ALREADY_CANCELLED } satisfies CloudCommunityRefusal,
-            409
-          );
+          return problem(c, 'conflict', { detail: MOVE_ALREADY_CANCELLED });
         }
         if (started.upload !== null) {
           void uploads.begin(started.move.moveId, staged, started.upload);

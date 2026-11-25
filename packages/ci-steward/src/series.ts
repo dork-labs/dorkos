@@ -36,6 +36,9 @@ export function trimRun(r: Record<string, unknown>): Run {
     run_attempt: Number(r.run_attempt ?? 1),
     head_branch: typeof r.head_branch === 'string' ? r.head_branch : null,
     head_sha: String(r.head_sha),
+    ...(/^bisect [0-9a-f]{40} for run \d+$/.test(String(r.display_title ?? ''))
+      ? { bisect: true as const }
+      : {}),
   };
 }
 
@@ -194,6 +197,8 @@ export function canaryRuns(
       (r) =>
         r.status === 'completed' &&
         CANARY_EVENTS.has(r.event) &&
+        // A rolling-bisect dispatch tests an older merge, so its red is not main's.
+        !r.bisect &&
         r.head_branch === defaultBranch &&
         wanted.has(r.path.slice(r.path.lastIndexOf('/') + 1)) &&
         r.conclusion !== 'cancelled' &&

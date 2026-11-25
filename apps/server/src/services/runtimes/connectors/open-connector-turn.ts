@@ -11,13 +11,13 @@
  * @module services/runtimes/connectors/open-connector-turn
  */
 import { logger } from '../../../lib/logger.js';
-import { ConnectorRuntimeAuthorityError } from '../../connectors/principal/runtime-principal-service.js';
-import type {
-  ConnectorRuntime,
-  ConnectorRuntimePrincipalPort,
-  ConnectorTurnOwnership,
-  OpenConnectorTurnInput,
-  OpenConnectorTurnResult,
+import {
+  ConnectorRuntimeAuthorityError,
+  type ConnectorRuntime,
+  type ConnectorRuntimePrincipalPort,
+  type ConnectorTurnOwnership,
+  type OpenConnectorTurnInput,
+  type OpenConnectorTurnResult,
 } from '../../connectors/runtime-principal-port.js';
 import {
   connectorRuntimeHeaders,

@@ -9,6 +9,7 @@ import {
   type BodyRule,
   type RequestBodyEnv,
 } from '../request-body.js';
+import { problemBody } from '../problem.js';
 import { serve } from './serve.js';
 
 /** An app that parses with `rules` then echoes what it read. */
@@ -99,5 +100,21 @@ describe('parseRequestBody', () => {
     const refused = await post(`${base}/big`, JSON.stringify({ text: 'x'.repeat(2000) }));
     expect(refused.status).toBe(413);
     expect(await refused.json()).toEqual({ refused: true });
+  });
+
+  it('sends a rule’s problem answer as a problem document', async () => {
+    const rule: BodyRule = {
+      matches: (_method, path) => underMount(path, '/big'),
+      parse: jsonBodyParser(1024),
+      answerFailure: () => ({
+        status: 413,
+        body: problemBody('request_too_large', { detail: 'Too big.' }),
+      }),
+    };
+    const base = await serve(echoApp([rule]));
+    const refused = await post(`${base}/big`, JSON.stringify({ text: 'x'.repeat(2000) }));
+    expect(refused.status).toBe(413);
+    expect(refused.headers.get('content-type')).toBe('application/problem+json');
+    expect(await refused.json()).toMatchObject({ code: 'request_too_large', detail: 'Too big.' });
   });
 });

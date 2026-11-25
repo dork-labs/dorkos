@@ -56,14 +56,14 @@ async function ranAtFull(sessionId: string) {
 }
 
 /** Fire the hook for one call in this chat; what it answered. */
-async function call(sessionId: string, toolName: string) {
+async function call(sessionId: string, toolName: string, toolInput: object = {}) {
   const matcher = outsideTextHookMatcher(() => sessionId, AGENT);
   if (!cliWouldRunHook(matcher.matcher!, toolName)) return 'not on the wire';
   return matcher.hooks[0]!(
     {
       hook_event_name: 'PreToolUse',
       tool_name: toolName,
-      tool_input: {},
+      tool_input: toolInput,
       tool_use_id: 'call-1',
       session_id: sessionId,
       transcript_path: '/tmp/made-up.jsonl',
@@ -116,7 +116,7 @@ describe('which tool calls read outside text', () => {
     ['doe', 'read'],
     ['doe', 'search'],
     ['doe', 'mcp_dorkos_connections_connectors_execut_0123456789abcdef0123'],
-  ])('%s %s does not', (runtime, name) => {
+  ])('%s %s does not by its name alone', (runtime, name) => {
     expect(toolReadsOutsideText(runtime, name)).toBe(false);
   });
 });
@@ -140,11 +140,19 @@ describe("Claude Code's hook marks the turn before the tool runs", () => {
 
   it('is a pattern the CLI reads as one, not a list of exact names', () => {
     expect(/^[a-zA-Z0-9_|, -]+$/.test(CLAUDE_CODE_OUTSIDE_TEXT_MATCHER)).toBe(false);
-    const reached = ['WebFetch', 'WebSearch', 'ReadMcpResourceTool', 'mcp__notion__search'];
+    const reached = [
+      'WebFetch',
+      'WebSearch',
+      'ReadMcpResourceTool',
+      'mcp__notion__search',
+      'Bash',
+      'Read',
+      'Grep',
+    ];
     for (const name of reached) {
       expect(cliWouldRunHook(CLAUDE_CODE_OUTSIDE_TEXT_MATCHER, name), name).toBe(true);
     }
-    for (const name of ['Read', 'Grep', 'Bash', 'WebFetchLater', 'xmcp__notion__search']) {
+    for (const name of ['Glob', 'Edit', 'BashOutput', 'WebFetchLater', 'xmcp__notion__search']) {
       expect(cliWouldRunHook(CLAUDE_CODE_OUTSIDE_TEXT_MATCHER, name), name).toBe(false);
     }
   });
@@ -176,8 +184,23 @@ describe("Claude Code's hook marks the turn before the tool runs", () => {
   it('a turn that only reads local files stays clean', async () => {
     const chat = fresh();
     await ranAtFull(chat);
-    for (const name of ['Read', 'Grep', 'Glob', 'Bash']) await call(chat, name);
+    await call(chat, 'Read', { file_path: `${AGENT}/notes.md` });
+    await call(chat, 'Grep', { pattern: 'garden', path: AGENT });
+    await call(chat, 'Glob', { pattern: '**/*.md' });
+    await call(chat, 'Bash', { command: 'git status && git diff && pnpm test' });
     expect(held(chat)).toBe(false);
+  });
+
+  it.each([
+    ['Bash', { command: 'curl -s https://example.com' }],
+    ['Bash', { command: "bash -c 'gh issue view 12'" }],
+    ['Read', { file_path: '/tmp/made-up-page.html' }],
+    ['Grep', { pattern: 'x', path: '/tmp' }],
+  ])('%s %o marks the turn', async (name, input) => {
+    const chat = fresh();
+    await ranAtFull(chat);
+    expect(await call(chat, name, input)).toEqual({});
+    expect(held(chat)).toBe(true);
   });
 
   it("DorkOS's own tools are left to the server, which marks the ones that return outside text", async () => {

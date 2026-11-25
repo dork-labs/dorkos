@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Wi-Fi access in Settings (DOR-2930): the switch, the addresses and QR code
+ * Network access in Settings (DOR-2930, worded by DOR-5135): the switch, the addresses and QR code
  * once it is open, the owner-setup walk when login is off, and the note when
  * `DORKOS_HOST` decides instead.
  */
@@ -37,9 +37,11 @@ function renderWith(transport: Transport) {
 describe('LanAccessSection', () => {
   it('shows the switch off, says the connection is not encrypted, and shows no address', async () => {
     renderWith(createMockTransport());
-    const toggle = await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' });
+    const toggle = await screen.findByRole('switch', { name: 'Let devices on my network in' });
     expect(toggle).not.toBeChecked();
     expect(screen.getByText(/isn’t encrypted yet/)).toBeInTheDocument();
+    // Wired computers and VPNs count too, so a device can be far away (DOR-5135).
+    expect(screen.getByText(/wired computers and VPNs like Tailscale/)).toBeInTheDocument();
     expect(screen.queryByTestId('qr-code')).not.toBeInTheDocument();
   });
 
@@ -49,7 +51,7 @@ describe('LanAccessSection', () => {
     renderWith(transport);
 
     await userEvent.click(
-      await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' })
+      await screen.findByRole('switch', { name: 'Let devices on my network in' })
     );
 
     expect(transport.setLanAccess).toHaveBeenCalledWith(true);
@@ -59,7 +61,7 @@ describe('LanAccessSection', () => {
 
   it('walks into owner setup when login is off, and switches on once it is done', async () => {
     const refusal = Object.assign(new Error('Exposing DorkOS requires a login.'), {
-      code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      code: 'auth_required_for_exposure',
     });
     const setLanAccess = vi
       .fn()
@@ -68,11 +70,13 @@ describe('LanAccessSection', () => {
     renderWith(createMockTransport({ setLanAccess }));
 
     await userEvent.click(
-      await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' })
+      await screen.findByRole('switch', { name: 'Let devices on my network in' })
     );
 
     await waitFor(() => expect(getOwnerSetupRequest()).not.toBeNull());
-    expect(getOwnerSetupRequest()?.message).toBe('Wi-Fi access needs a login.');
+    expect(getOwnerSetupRequest()?.message).toBe(
+      'Letting devices on your network in needs a login.'
+    );
     getOwnerSetupRequest()?.onComplete();
     await waitFor(() => expect(setLanAccess).toHaveBeenCalledTimes(2));
     expect(await screen.findByTestId('qr-code')).toBeInTheDocument();
@@ -83,12 +87,12 @@ describe('LanAccessSection', () => {
       getLanAccess: vi.fn().mockResolvedValue(
         createLanAccessStatus({
           supported: false,
-          error: 'Wi-Fi access works on a Mac for now. Elsewhere, set DORKOS_HOST.',
+          error: 'Network access works on a Mac for now. Elsewhere, set DORKOS_HOST.',
         })
       ),
     });
     renderWith(transport);
-    const toggle = await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' });
+    const toggle = await screen.findByRole('switch', { name: 'Let devices on my network in' });
     expect(toggle).toBeDisabled();
     expect(screen.getByText(/works on a Mac for now/)).toBeInTheDocument();
   });
@@ -102,7 +106,7 @@ describe('LanAccessSection', () => {
         ),
     });
     renderWith(transport);
-    const toggle = await screen.findByRole('switch', { name: 'Let devices on my Wi-Fi in' });
+    const toggle = await screen.findByRole('switch', { name: 'Let devices on my network in' });
     expect(toggle).toBeDisabled();
     expect(
       screen.getByText('DORKOS_HOST=0.0.0.0 is set, so it decides where DorkOS listens.')

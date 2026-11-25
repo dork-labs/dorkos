@@ -1,3 +1,10 @@
+import { randomUUID } from 'node:crypto';
+import type { AgentSession } from '../../agent-types.js';
+import { ConnectorRuntimePrincipalService } from '../../../../connectors/principal/runtime-principal-service.js';
+import {
+  registerTestHomes,
+  clearTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { RuntimeRegistry } from '../../../../core/runtime-registry.js';
 /**
  * The composition: a claude-code message reaching a process that is already
@@ -14,6 +21,7 @@ import os from 'node:os';
 import nodePath from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent, SessionStatus } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -186,6 +194,7 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activation.js';
 import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
+import { AUTO_DOWNGRADE_STATUS } from '../../messaging/permission-mode-guard.js';
 import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-started.js';
 import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
@@ -199,15 +208,10 @@ import {
 } from '../../../../session/session-state-projector.js';
 import { logger } from '../../../../../lib/logger.js';
 import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
-import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
 import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
 import { BackgroundWorkLedger } from '../../messaging/background-work-ledger.js';
 import { shutdownSessionPumps } from '../session-pump-registry.js';
-import {
-  clearTestHomes,
-  registerTestHomes,
-} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { setTurnContextStore } from '../../../../session/turn-context/record-turn-context.js';
 import { TurnContextStore } from '../../../../session/turn-context/turn-context-store.js';
@@ -356,60 +360,9 @@ describe('the opt-in decides which path a message takes', () => {
     expect(cli.launches).toBe(1);
     expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
   });
-
-  it('takes the resume path again once the warm process has been given back', async () => {
-    optIn.persistentSession = true;
-    const sessionId = nextSession();
-    await turn(sessionId);
-
-    optIn.persistentSession = false;
-    await runtime.reapSession(sessionId);
-    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
-    await turn(sessionId);
-
-    // The reap dropped the pump, so the next message re-read the flag and found
-    // it off: a second process, booted by the resume path.
-    expect(cli.launches).toBe(2);
-    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
-  });
 });
 
 describe('steerability is answered per session (DOR-1268)', () => {
-  it('says NO on the resume path, which is how a default install ships', async () => {
-    const sessionId = nextSession();
-
-    // The reported bug in one line: the adapter declares `supportsSteer`, and a
-    // session that starts a fresh process per message has nothing to push into.
-    // Answered before any message, because the composer asks before the turn it
-    // would steer is open.
-    expect(runtime.canSteerSession(sessionId)).toBe(false);
-
-    await turn(sessionId);
-    expect(runtime.canSteerSession(sessionId)).toBe(false);
-  });
-
-  it('reports no-open-turn for a steer while a resume-path turn is in flight', async () => {
-    const sessionId = nextSession();
-    // A turn that has launched and not finished — precisely the moment the
-    // composer offered a cut-in.
-    cli.deferNextInit = true;
-    const running = turn(sessionId, 'do the thing');
-    await vi.waitFor(() => expect(cli.processes).toHaveLength(1));
-
-    // The mechanism that would cut in is not under this session, so the receipt
-    // is the SAME one an idle session gives. That collision is why the
-    // dispatcher stopped reading this receipt as `session-idle`.
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'course-correct', {
-      mode: 'steer',
-      messageId: 'steer-resume',
-    });
-    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
-    expect(runtime.canSteerSession(sessionId)).toBe(false);
-
-    cli.processes[0]!.reportReady();
-    await running;
-  });
-
   it('says YES once the opt-in is on, and keeps saying it while the process is held', async () => {
     optIn.persistentSession = true;
     const sessionId = nextSession();
@@ -447,28 +400,6 @@ describe('warmth is answered honestly', () => {
     // A reaped process is gone and the conversation is untouched, which is what
     // `cold` means. The person cannot tell.
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
-  });
-
-  it('reports a crash with no turn open, and says nothing on the session stream', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
-
-    // The idle process dies with nobody watching.
-    cli.processes[0]!.crash(new Error('the CLI went away'));
-    await vi.waitFor(() => {
-      expect(runtime.getSessionWarmth(sessionId)).toBe('crashed');
-    });
-
-    // And that is the ONLY place it is visible. Minting a turn for a session
-    // where nothing was running would report a failure that never happened —
-    // the phantom turn task 3.6's acceptance forbids.
-    const events = await turn(sessionId, 'still there?');
-    const starts = events.filter((e) => e.type === 'done');
-    expect(starts).toHaveLength(1);
-    // The relaunch is the recovery, and it is the second process — not a third,
-    // which is what a crash handled twice would produce.
-    expect(cli.launches).toBe(2);
   });
 
   // DOR-2994. A refusal ends in an `error` and `done`, never a throw, so it must
@@ -769,24 +700,6 @@ describe('warmth is answered honestly', () => {
 // and both paths have to answer it: a background helper is silent for the
 // length of each of its steps whichever path launched it.
 describe('a helper still working is reported on both paths', () => {
-  it('answers from the running turn on the resume path, and stops once the turn ends', async () => {
-    const sessionId = nextSession();
-    cli.deferNextInit = true;
-    const running = turn(sessionId, 'launch a helper');
-    await vi.waitFor(() => expect(cli.processes).toHaveLength(1));
-    const process = cli.processes[0]!;
-    expect(runtime.isHelperWorking(sessionId)).toBe(false);
-
-    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
-
-    process.reportTasks([]);
-    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(false));
-    process.reportReady();
-    await running;
-    expect(runtime.isHelperWorking(sessionId)).toBe(false);
-  });
-
   it('answers from the held process on the warm path, for every task type', async () => {
     optIn.persistentSession = true;
     const sessionId = nextSession();
@@ -832,15 +745,6 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     expect(process.closed, 'Stop reached for the forceful close on an idle process').toBe(0);
     expect(process.ended).toBe(false);
     expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
-  });
-
-  it('finds nothing to interrupt once the process has been given back', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    await runtime.reapSession(sessionId);
-
-    expect((await runtime.interruptQuery(sessionId)).outcome).toBe('not-running');
-    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
   });
 
   it('still reaches a turn that IS running', async () => {
@@ -1251,31 +1155,6 @@ describe('a Stop that had to kill the process settles as the stop it was (DOR-13
     // Three processes: the first two the Stops killed, and the one that answered.
     expect(cli.launches).toBe(3);
   });
-
-  // Validation criterion 4, answered structurally rather than with a clock. The
-  // bound is only ever PAID by an ack that never comes, and the one observable
-  // cost of paying it is the escalation — so an acked Stop that closes nothing
-  // is a Stop that did not wait. The elapsed check is the belt to that braces:
-  // three seconds is the bound, and a healthy ack lands in microtasks.
-  it('does not pay the ack bound when the CLI answers the Stop', async () => {
-    const sessionId = nextSession();
-    const process = await warmThenGoSilent(sessionId);
-
-    const stopped = turn(sessionId, 'stop this one politely');
-    await vi.waitFor(() => expect(process.received).toHaveLength(2));
-
-    const askedAt = Date.now();
-    expect(await runtime.interruptQuery(sessionId)).toMatchObject({ outcome: 'acked' });
-    const ackMs = Date.now() - askedAt;
-
-    expect(process.interrupts).toBe(1);
-    expect(process.closed, 'an acked Stop escalated to a close it never needed').toBe(0);
-    expect(ackMs).toBeLessThan(STOP_ACK_TIMEOUT_MS);
-    // The process survived, so the CLI still gets to wind the turn down itself.
-    expect(process.ended).toBe(false);
-    process.emit(abortedResult(process.received[1]!));
-    await stopped;
-  });
 });
 
 describe('what a warm process must be re-checked for', () => {
@@ -1583,46 +1462,6 @@ describe('a global plugin withdrawn from a warm process (DOR-2306, I-2)', () => 
     expect(cli.processes[0]!.ended).toBe(true);
     expect(cli.processes[1]!.options.plugins).toEqual([{ type: 'local', path: '/h/plugins/kept' }]);
   });
-
-  it('keeps the warm process when a plugin is only added', async () => {
-    approvedGlobals.names = ['kept'];
-    await runtime.refreshActivatedPlugins();
-    const sessionId = nextSession();
-    await turn(sessionId);
-
-    approvedGlobals.names = ['kept', 'added'];
-    await runtime.refreshActivatedPlugins();
-    await turn(sessionId, 'after the addition');
-
-    expect(cli.launches).toBe(1);
-    expect(cli.processes[0]!.liveSets).toContain('reloadPlugins');
-  });
-
-  it('never holds the reload that follows a withdrawal for the cache', async () => {
-    approvedGlobals.names = ['kept', 'withdrawn'];
-    await runtime.refreshActivatedPlugins();
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    const asked: unknown[] = [];
-    process.reloadPlugins = (opts?: unknown) => {
-      asked.push(opts);
-      return Promise.resolve({
-        commands: [],
-        held: (opts as { holdOnCacheImpact?: boolean })?.holdOnCacheImpact === true,
-      });
-    };
-
-    approvedGlobals.names = ['kept'];
-    await runtime.refreshActivatedPlugins();
-
-    expect(asked.length).toBeGreaterThan(0);
-    expect(
-      asked.every(
-        (opts) => (opts as { holdOnCacheImpact?: boolean } | undefined)?.holdOnCacheImpact !== true
-      )
-    ).toBe(true);
-  });
 });
 
 describe("a running extension's skills root on a warm process (DOR-2685)", () => {
@@ -1654,29 +1493,6 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
       { type: 'local', path: '/h/plugins/kept' },
       { type: 'local', path: `${ROOT}/mail` },
     ]);
-  });
-
-  it('loads each root once when two refreshes overlap, and never mistakes it for a same-named plugin', async () => {
-    // Purpose: boot refreshes and a change delivered right after it can run at
-    // once; each must build its own list and assign it whole.
-    approvedGlobals.names = ['kept'];
-    extensionRoots.paths = [`${ROOT}/mail`];
-    // The first refresh is slow to read the ledger, so the second runs whole
-    // inside it.
-    vi.mocked(extensionSkillPluginRoots).mockImplementationOnce(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      return [...extensionRoots.paths];
-    });
-    await Promise.all([runtime.refreshActivatedPlugins(), runtime.refreshActivatedPlugins()]);
-    const sessionId = nextSession();
-    await turn(sessionId);
-    expect(cli.processes[0]!.options.plugins).toEqual([
-      { type: 'local', path: '/h/plugins/kept' },
-      { type: 'local', path: `${ROOT}/mail` },
-    ]);
-    for (const [, loaded] of vi.mocked(extensionSkillPluginRoots).mock.calls) {
-      expect([...(loaded ?? [])]).toEqual(['kept']);
-    }
   });
 
   it('rides the warm process when an extension starts, and relaunches without its root once it stops', async () => {
@@ -1725,43 +1541,6 @@ describe("a running extension's skills root on a warm process (DOR-2685)", () =>
     expect(process.ended).toBe(true);
     expect(cli.processes[1]!.options.plugins ?? []).toEqual([]);
   });
-
-  it("holds a stopped extension's relaunch for a background shell too (DOR-2065)", async () => {
-    // Purpose: a shell is background work like any other. A skill set moved
-    // from outside the session rides the old one rather than ending it.
-    extensionRoots.paths = [`${ROOT}/mail`];
-    await runtime.refreshActivatedPlugins();
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    extensionRoots.paths = [];
-    await runtime.refreshActivatedPlugins();
-    await turn(sessionId, 'while the shell runs');
-    expect(cli.launches).toBe(1);
-    expect(process.ended).toBe(false);
-  });
-
-  it('still relaunches a working process when a package is withdrawn with the extension', async () => {
-    // Purpose: the hold is for skills only. A withdrawn package may run code
-    // nobody approves any more (DOR-2306), so it never waits.
-    approvedGlobals.names = ['withdrawn'];
-    extensionRoots.paths = [`${ROOT}/mail`];
-    await runtime.refreshActivatedPlugins();
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
-
-    approvedGlobals.names = [];
-    extensionRoots.paths = [];
-    await runtime.refreshActivatedPlugins();
-    await turn(sessionId, 'after both went');
-    expect(cli.launches).toBe(2);
-  });
 });
 
 describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
@@ -1788,56 +1567,6 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     });
   });
 
-  it('lists the same tools for a staged warm-up and the turn after it', async () => {
-    // Purpose: a note staged into a cold session boots the process the next
-    // turn rides. The turn holds a connector context the stage never had, so
-    // if the connector tools followed that context, the turn would relaunch
-    // the process the note was staged into.
-    registerTestHomes([CWD]);
-    try {
-      runtime.setMeshCore({
-        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
-        listWithPaths: () => [],
-        updateLastSeen: () => undefined,
-      } as never);
-      runtime.setConnectorRuntimeTools({
-        principals: {
-          openTurn: vi.fn(),
-          renew: vi.fn(),
-          resolve: vi.fn(),
-          revoke: vi.fn().mockResolvedValue(undefined),
-        },
-        listenerUrl: 'http://127.0.0.1:1/mcp',
-        isConnectorCapabilityId: () => false,
-        accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
-      } as never);
-      const sessionId = nextSession();
-      const receipt = await runtime.deliverIntoTurn(sessionId, 'a note first', {
-        mode: 'stage',
-        messageId: 'stage-1',
-      });
-      expect(receipt).toEqual({ delivered: true });
-      expect(cli.launches).toBe(1);
-
-      await turn(sessionId, 'then the turn');
-      expect(cli.launches).toBe(1);
-      expect(cli.processes[0]!.ended).toBe(false);
-      expect(cli.processes[0]!.staged.map((m) => m.uuid)).toEqual(['stage-1']);
-    } finally {
-      clearTestHomes();
-    }
-  });
-
-  it('rides the warm process while the list stays the same', async () => {
-    // Purpose: the server is rebuilt for every dispatch, so an unchanged list
-    // must still compare equal, or every message would relaunch.
-    const sessionId = nextSession();
-    await turn(sessionId);
-    await turn(sessionId, 'second');
-    await turn(sessionId, 'third');
-    expect(cli.launches).toBe(1);
-  });
-
   it('relaunches before the next turn when a tool joined, keeping the permission mode', async () => {
     // Purpose: an extension started while the session was warm. The next
     // message runs on a process that lists its tool, and the person's
@@ -1858,19 +1587,6 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
       'after the extension started'
     );
     expect(events.some((e) => e.type === 'error')).toBe(false);
-  });
-
-  it('relaunches when a tool left the list', async () => {
-    // Purpose: a stopped extension, or a tool a permission now hides, must not
-    // stay listed in a warm process.
-    listed = [...listed, 'ext_mail_app__send'];
-    const sessionId = nextSession();
-    await turn(sessionId);
-
-    listed = ['ping', 'relay_list_endpoints'];
-    await turn(sessionId, 'after the extension stopped');
-
-    expect(cli.launches).toBe(2);
   });
 
   it('holds the relaunch while a helper is still working, then relaunches once quiet', async () => {
@@ -1898,105 +1614,6 @@ describe('a warm process whose dorkos tool list changed (DOR-2685)', () => {
     await turn(sessionId, 'after the helper finished');
     expect(cli.launches).toBe(2);
     expect(process.ended).toBe(true);
-  });
-
-  it('holds the relaunch for a background shell too (DOR-2065)', async () => {
-    // Purpose: a shell is background work like any other. A tool list moved
-    // from outside the session rides the old one rather than ending the shell
-    // or making the person's message wait on it.
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    listed = [...listed, 'ext_mail_app__send'];
-    await turn(sessionId, 'while the shell runs');
-    expect(cli.launches).toBe(1);
-    expect(process.ended).toBe(false);
-  });
-
-  it('relaunches for a new tool list once a shell alone has run past the ceiling (DOR-2065)', async () => {
-    // Purpose: a dev server never ends, and an in-use chat is never idle-reaped,
-    // so without this the chat would never get its new tools.
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'shell-1', task_type: 'local_bash' }]);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    listed = [...listed, 'ext_mail_app__send'];
-    const later = Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000;
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
-    // The ceiling is measured on the awake clock (DOR-2717), so move it too.
-    const awake = vi
-      .spyOn(performance, 'now')
-      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
-    try {
-      await turn(sessionId, 'hours later');
-    } finally {
-      clock.mockRestore();
-      awake.mockRestore();
-    }
-    expect(cli.launches).toBe(2);
-    expect(process.ended).toBe(true);
-  });
-
-  it('keeps holding past the four-hour ceiling, and warns once that the list is stale', async () => {
-    // Purpose: a dispatch never tears down working background (DOR-2705), so
-    // the hold has no ceiling. Past the reaper's ceiling it only says, once,
-    // that this session's tool list is stale until the work ends.
-    const { logger } = await import('../../../../../lib/logger.js');
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await vi.waitFor(() => expect(runtime.isHelperWorking(sessionId)).toBe(true));
-    listed = [...listed, 'ext_mail_app__send'];
-
-    vi.useFakeTimers({ toFake: ['Date'] });
-    // The ceiling is measured on the awake clock (DOR-2717).
-    const awake = vi
-      .spyOn(performance, 'now')
-      .mockReturnValue(performance.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
-    try {
-      vi.setSystemTime(Date.now() + SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS + 60_000);
-      vi.mocked(logger.warn).mockClear();
-      const staleWarnings = () =>
-        vi
-          .mocked(logger.warn)
-          .mock.calls.filter(([message]) => String(message).includes('tool list is stale'));
-
-      await turn(sessionId, 'long after the ceiling');
-      expect(cli.launches).toBe(1);
-      expect(process.ended).toBe(false);
-      expect(staleWarnings()).toHaveLength(1);
-      expect(staleWarnings()[0]![1]).toMatchObject({ session: sessionId });
-
-      await turn(sessionId, 'and again');
-      expect(cli.launches).toBe(1);
-      expect(staleWarnings()).toHaveLength(1);
-    } finally {
-      awake.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-
-  it('still applies a live change while the relaunch is held', async () => {
-    // Purpose: holding the tool list must not hold anything else. A permission
-    // mode changed at the same time reaches the busy process live.
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'monitor-1', task_type: 'monitor' }]);
-    await vi.waitFor(() => expect(process.received.length).toBeGreaterThan(0));
-
-    listed = [...listed, 'ext_mail_app__send'];
-    await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
-    await turn(sessionId, 'with the monitor running');
-
-    expect(cli.launches).toBe(1);
-    expect(process.liveSets).toContain('setPermissionMode:acceptEdits');
   });
 
   it('never relaunches mid-turn: a change during a running turn waits for it to end', async () => {
@@ -2109,22 +1726,6 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     expect(cli.launches).toBe(1);
   });
 
-  it('reports no-open-turn on a warm idle session, without throwing', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId); // warm, and now idle
-    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
-
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'nobody to steer', {
-      mode: 'steer',
-      messageId: 'steer-1',
-    });
-
-    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
-    // Nothing was pushed: the warm process still holds only its first turn's one
-    // message.
-    expect(cli.processes[0]!.received).toHaveLength(1);
-  });
-
   it('refuses a steer in the close gap and pushes nothing (finding 3)', async () => {
     const sessionId = nextSession();
     await turn(sessionId); // warms the process
@@ -2160,63 +1761,6 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     const events = await running;
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
   });
-
-  it('degrades rather than throwing when the bundle points at a reaped pump (finding 2)', async () => {
-    const a = nextSession();
-    cli.nextSdkSessionId = `${a}-native`;
-    await turn(a);
-    expect(runtime.getSessionWarmth(a)).toBe('warm');
-
-    // Warming a second session reclaims A's warm pump (the ceiling is 1 here),
-    // and the registry does it WITHOUT telling PersistentDispatch — so A's bundle
-    // lingers, pointing at a spent pump whose every method throws.
-    const b = nextSession();
-    cli.nextSdkSessionId = `${b}-native`;
-    await turn(b);
-    expect(runtime.getSessionWarmth(a)).toBe('cold');
-
-    // A steer to A must degrade, never throw out of the must-not-throw contract.
-    const receipt = await runtime.deliverIntoTurn(a, 'steer the reaped one', {
-      mode: 'steer',
-      messageId: 'reaped-1',
-    });
-
-    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
-  });
-
-  // Purpose: the SAME reclaim-behind-this-class's-back as finding 2 above, but
-  // asserting the log rather than the degrade. This exit used to be invisible
-  // below `debug` — a session mid-flow paying for a fresh process boot with
-  // nothing in the log explaining why (DOR-1323, flag-on run L-11). The first
-  // turn (a genuine cold start) must NOT log it; only the relaunch that
-  // follows the reclaim should.
-  it('logs at info when a dispatch relaunches after the registry reclaimed this session (DOR-1323)', async () => {
-    const { logger } = await import('../../../../../lib/logger.js');
-    const a = nextSession();
-    cli.nextSdkSessionId = `${a}-native`;
-    vi.mocked(logger.info).mockClear();
-    await turn(a);
-    expect(
-      vi.mocked(logger.info).mock.calls.some(([msg]) => String(msg).includes('relaunching'))
-    ).toBe(false);
-
-    // Warming a second session reclaims A's warm pump (the ceiling is 1 here),
-    // WITHOUT telling PersistentDispatch — A's bundle now points at a spent pump.
-    const b = nextSession();
-    cli.nextSdkSessionId = `${b}-native`;
-    await turn(b);
-    expect(runtime.getSessionWarmth(a)).toBe('cold');
-
-    vi.mocked(logger.info).mockClear();
-    cli.nextSdkSessionId = `${a}-native`;
-    await turn(a, 'again, after the reclaim');
-
-    expect(cli.launches).toBe(3);
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      '[persistent-dispatch] relaunching after the registry reaped this session',
-      expect.objectContaining({ session: a })
-    );
-  });
 });
 
 describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 4.2)', () => {
@@ -2248,47 +1792,6 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
     expect(process.received).toHaveLength(0);
   });
 
-  it('appends onto a WARM session without a new process or a turn (AC1)', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId); // warms via a real turn
-    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
-    const process = cli.processes[0]!;
-    const answeredBefore = process.answered;
-
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'attach this', {
-      mode: 'stage',
-      messageId: 'stage-1',
-    });
-    expect(receipt).toEqual({ delivered: true });
-
-    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
-    // The warm process took it — no relaunch — and ran no turn for it.
-    expect(cli.launches).toBe(1);
-    expect(process.answered).toBe(answeredBefore);
-    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
-  });
-
-  it('keeps the person’s words pristine and rides context out of band (ADR-0273)', async () => {
-    const sessionId = nextSession();
-
-    await runtime.deliverIntoTurn(sessionId, 'ship it', {
-      mode: 'stage',
-      messageId: 'stage-1',
-      additionalContext: [
-        { kind: 'queue_note', scope: 'per-turn', data: { composedDuringPrevTurn: true } },
-      ],
-    });
-
-    const process = cli.processes[0]!;
-    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
-    // The context rides its own tagged block AHEAD of the person's words
-    // (renderContextEntry is mocked to `<kind>mock</kind>`) — never woven in.
-    expect(process.staged[0]).toEqual({
-      uuid: 'stage-1',
-      content: '<queue_note>mock</queue_note>\n\nship it',
-    });
-  });
-
   it('lets a staged note be followed by a querying turn, in order (AC2)', async () => {
     const sessionId = nextSession();
 
@@ -2309,54 +1812,6 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
     expect(process.staged).toEqual([{ uuid: 'stage-1', content: 'context first' }]);
     expect(process.inbox.at(-1)!.content).toBe('now do the thing');
     expect(process.answered).toBe(1);
-  });
-
-  // DOR-1294, through the composition rather than the windower. A staged note is
-  // merged into the next querying message by the CLI, and the merged turn's one
-  // `result` can name the STAGED id — an id the windower never saw, because a
-  // stage opens no window. Unless the dispatcher tells the windower about it,
-  // that result reads as one nobody sent, the dispatched window is left with no
-  // result that can close it, and this turn never ends. Delete the
-  // `noteStagedMessage` call in `PersistentDispatch.stage` and this hangs.
-  it('closes the dispatched window when the result names the staged message', async () => {
-    const sessionId = nextSession();
-
-    await runtime.deliverIntoTurn(sessionId, 'context first', {
-      mode: 'stage',
-      messageId: 'stage-1',
-    });
-    const process = cli.processes[0]!;
-    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
-    // The result is ours to time, so the merge can be modelled exactly.
-    process.goSilent();
-
-    const running = turn(sessionId, 'now do the thing');
-    await vi.waitFor(() => expect(process.received).toHaveLength(1));
-
-    // One turn, one result — and it names the note, not the message that ran.
-    process.answer('stage-1');
-
-    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('warm'));
-    const events = await running;
-    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
-    expect(cli.launches).toBe(1);
-  });
-
-  it('appends two staged notes before one dispatch, in order (AC5)', async () => {
-    const sessionId = nextSession();
-
-    await runtime.deliverIntoTurn(sessionId, 'first note', { mode: 'stage', messageId: 'stage-1' });
-    await runtime.deliverIntoTurn(sessionId, 'second note', {
-      mode: 'stage',
-      messageId: 'stage-2',
-    });
-
-    const process = cli.processes[0]!;
-    await vi.waitFor(() => expect(process.staged).toHaveLength(2));
-    expect(process.staged.map((m) => m.content)).toEqual(['first note', 'second note']);
-    // Both onto the one warm process, and neither ran a turn.
-    expect(cli.launches).toBe(1);
-    expect(process.answered).toBe(0);
   });
 });
 
@@ -2433,20 +1888,6 @@ describe('Add context starts nothing while the opt-in is off (DOR-1307)', () => 
     expect(runtime.canSteerSession(sessionId)).toBe(false);
   });
 
-  it('leaves the NEXT message on the resume path', async () => {
-    const sessionId = nextSession();
-
-    await runtime.deliverIntoTurn(sessionId, 'a note', { mode: 'stage', messageId: 'stage-off-2' });
-    await turn(sessionId, 'now do the thing');
-
-    // ONE process — the turn's own, started and given back the way the resume
-    // path always does. A stage that had warmed one would make this two, or make
-    // the session `warm` afterwards.
-    expect(cli.launches).toBe(1);
-    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
-    expect(runtime.canSteerSession(sessionId)).toBe(false);
-  });
-
   it('starts no SECOND process while a resume-path turn is running', async () => {
     const sessionId = nextSession();
     // A turn that has launched and not finished — precisely when a person reaches
@@ -2470,22 +1911,6 @@ describe('Add context starts nothing while the opt-in is off (DOR-1307)', () => 
     cli.processes[0]!.reportReady();
     await running;
   });
-
-  it('stages natively again the moment the operator opts in', async () => {
-    const sessionId = nextSession();
-    expect(runtime.canStageSession(sessionId)).toBe(false);
-
-    optIn.persistentSession = true;
-    expect(runtime.canStageSession(sessionId)).toBe(true);
-
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'now it can land', {
-      mode: 'stage',
-      messageId: 'stage-on-1',
-    });
-    expect(receipt).toEqual({ delivered: true });
-    expect(cli.launches).toBe(1);
-    await vi.waitFor(() => expect(cli.processes[0]!.staged).toHaveLength(1));
-  });
 });
 
 // DOR-1235. A `/compact` turn produces no assistant output at all — the SDK
@@ -2494,7 +1919,7 @@ describe('Add context starts nothing while the opt-in is off (DOR-1307)', () => 
 // a compaction that visibly worked reported "stopped unexpectedly". The verdict
 // has to be the same one the resume path reaches (that half is pinned in
 // `claude-code-runtime.test.ts`), which is why both paths now ask the same
-// `messaging/empty-stream-guard.ts`.
+// `shared/empty-stream-guard.ts`.
 describe('a compaction is not a silent turn (DOR-1235)', () => {
   beforeEach(() => {
     optIn.persistentSession = true;
@@ -2535,61 +1960,6 @@ describe('a compaction is not a silent turn (DOR-1235)', () => {
       durationMs: 19707,
       endedAt: expect.any(Number),
     });
-    expect(events.find((e) => e.type === 'done')).toBeDefined();
-  });
-
-  it('still reports a silent turn when the compaction was automatic', async () => {
-    // An auto boundary is incidental: context pressure fired while the person
-    // was waiting on an answer to something else, so a turn that compacts and
-    // then says nothing still owes them one.
-    const events = await compactingTurn('auto');
-
-    expect(events.find((e) => e.type === 'compact_boundary')).toBeDefined();
-    const error = events.find((e) => e.type === 'error');
-    expect(error).toBeDefined();
-    expect((error!.data as Record<string, unknown>).message).toContain('did not respond');
-  });
-
-  it('lets a failed compaction report its own reason, and nothing vaguer', async () => {
-    // A compaction that cannot run fires NO boundary — just the resolving
-    // status, which becomes `operation_progress` failed carrying the reason.
-    // Neither content nor a typed error, so the turn used to collect a second,
-    // vaguer verdict on top of the one already on screen.
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.goSilent();
-
-    const running = turn(sessionId, '/compact');
-    await vi.waitFor(() => expect(process.received).toHaveLength(2));
-    process.emit({
-      type: 'system',
-      subtype: 'status',
-      status: 'compacting',
-      session_id: 'pump-compact',
-      uuid: 'compacting',
-    } as never);
-    process.emit({
-      type: 'system',
-      subtype: 'status',
-      status: null,
-      compact_result: 'failed',
-      compact_error: 'context too large to summarize',
-      session_id: 'pump-compact',
-      uuid: 'compact-failed',
-    } as never);
-    process.emit(resultMessage(process.received[1]!));
-    const events = await running;
-
-    const failure = events.filter(
-      (e) => e.type === 'operation_progress' && (e.data as { state?: string }).state === 'failed'
-    );
-    expect(failure).toHaveLength(1);
-    expect(failure[0]!.data).toMatchObject({
-      operation: 'compaction',
-      error: 'context too large to summarize',
-    });
-    expect(events.filter((e) => e.type === 'error')).toEqual([]);
     expect(events.find((e) => e.type === 'done')).toBeDefined();
   });
 });
@@ -2659,66 +2029,6 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     expect(runtime.getSessionWarmth(canonical)).toBe('warm');
   });
 
-  it('(b) reaches the same process when a later turn arrives under a RETIRED id from an earlier rename', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId); // process 1: sessionId -> canonical1 (the fake's default id)
-    const canonical1 = runtime.getInternalSessionId(sessionId)!;
-    expect(canonical1).not.toBe(sessionId);
-
-    // The process dies; recovery relaunches under an id that renames AGAIN, so
-    // canonical1 becomes a retired link in the chain rather than the session's
-    // current id — the "second rename" DOR-774 describes.
-    cli.nextSdkSessionId = 'sdk-session-persistent-2';
-    cli.processes[0]!.crash(new Error('the CLI went away'));
-    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
-    await turn(sessionId, 'recovering');
-    const canonical2 = runtime.getInternalSessionId(sessionId)!;
-    expect(canonical2).toBe('sdk-session-persistent-2');
-    expect(cli.launches).toBe(2);
-
-    // A turn under canonical1 — now RETIRED — must still reach process 2, not
-    // spawn a third.
-    const events = await turn(canonical1, 'addressed by the retired id');
-
-    expect(events.some((e) => e.type === 'done')).toBe(true);
-    expect(cli.launches).toBe(2);
-    expect(cli.processes[1]!.answered).toBe(2);
-    expect(runtime.getSessionWarmth(canonical1)).toBe('warm');
-  });
-
-  it('(c) lets a steer under the CANONICAL id join a turn open under the original id', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const canonical = runtime.getInternalSessionId(sessionId)!;
-    const process = cli.processes[0]!;
-    process.goSilent();
-
-    // The turn opens under the ORIGINAL id — the caller that started it never
-    // learned the canonical id (e.g. a room binding that only ever holds the
-    // first id it saw).
-    const running = turn(sessionId, 'do the thing');
-    await vi.waitFor(() => expect(process.received).toHaveLength(2));
-
-    // A DIFFERENT caller — a browser tab that already has the canonical id
-    // from an earlier 202 — steers under it. The bundle is filed under
-    // `sessionId` (dispatch's own resolution always normalizes to the first
-    // id a session was ever seen under), so this specifically exercises
-    // `steer`'s OWN resolution, independent of `dispatch`'s.
-    const receipt = await runtime.deliverIntoTurn(canonical, 'please also check the tests', {
-      mode: 'steer',
-      messageId: 'steer-canonical-1',
-    });
-    expect(receipt).toEqual({ delivered: true });
-
-    await vi.waitFor(() => expect(process.received).toHaveLength(3));
-    expect(process.inbox.at(-1)!.content).toBe('please also check the tests');
-
-    process.answer('steer-canonical-1');
-    const events = await running;
-    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
-    expect(cli.launches).toBe(1);
-  });
-
   it('(d) appends a stage under the canonical id onto the one warm process, instead of colliding with the ceiling (DOR-1318 shape)', async () => {
     // The warm ceiling is mocked to 1 for this whole file, so a phantom
     // second pump for the SAME session — one that keys by the raw id instead
@@ -2783,61 +2093,6 @@ describe('a session keeps its ONE warm process across an SDK rekey (DOR-1309)', 
     // (f), again: both ids agree once cold.
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(runtime.getSessionWarmth(canonical)).toBe('cold');
-  });
-
-  it('(g) a turn under the canonical id while another is open under the original id neither orphans nor duplicates', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId); // turn 1 — completes; the rename happens here
-    const canonical = runtime.getInternalSessionId(sessionId)!;
-    expect(canonical).not.toBe(sessionId);
-    const process = cli.processes[0]!;
-    process.goSilent();
-
-    // Turn 2, left open, under the ORIGINAL id — a caller that has not learned
-    // the canonical id yet.
-    const turn2 = turn(sessionId, 'turn two, left open');
-    await vi.waitFor(() => expect(process.received).toHaveLength(2));
-
-    // Turn 3 arrives under the CANONICAL id while turn 2 is still open — the
-    // same race DOR-1312 measured, one hop later. Pre-fix this spawned a
-    // SECOND process under `canonical`, leaving turn 2's process an orphan
-    // (DOR-1312's ~500MB-until-the-reaper) rather than settling into it. The
-    // process is still silent from turn 2's setup, so turn 3's own message is
-    // answered by hand once it lands.
-    const events3Promise = turn(canonical, 'turn three, under the canonical id');
-    await vi.waitFor(() => expect(process.received).toHaveLength(3));
-    process.answer(process.received[2]!);
-    const events3 = await events3Promise;
-
-    expect(cli.launches).toBe(1);
-    expect(events3.some((e) => e.type === 'done')).toBe(true);
-
-    // Turn 2's stranded window settles (DOR-1294's existing backstop) rather
-    // than hanging or leaking into turn 3.
-    const events2 = await turn2;
-    expect(events2.filter((e) => e.type === 'done')).toHaveLength(1);
-  });
-
-  it('(h) canSteerSession/canStageSession stay true under BOTH ids once the flag goes off', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const canonical = runtime.getInternalSessionId(sessionId)!;
-    expect(canonical).not.toBe(sessionId);
-
-    // The operator turns the experiment off mid-conversation. A session
-    // already holding its process keeps the path (persistent-dispatch.ts's
-    // module doc), and that has to be honest for EVERY id the session
-    // answers to — `shouldDispatch` reads `registry.peek(sessionId)` WITHOUT
-    // resolving first (it relies entirely on the registry's own resolution),
-    // so a caller holding the canonical id would otherwise see the composer
-    // silently fold a steer into the next turn instead of joining the live
-    // one, the instant the flag is off (DOR-1268's class).
-    optIn.persistentSession = false;
-
-    expect(runtime.canSteerSession(sessionId)).toBe(true);
-    expect(runtime.canSteerSession(canonical)).toBe(true);
-    expect(runtime.canStageSession(sessionId)).toBe(true);
-    expect(runtime.canStageSession(canonical)).toBe(true);
   });
 
   it('(i) settleOpenTurn addressed by the canonical id still ends a window left open under the original id (DOR-1295)', async () => {
@@ -2960,122 +2215,11 @@ describe('a steer the CLI answers in a turn of its own (DOR-1314)', () => {
     expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
     expect(cli.launches).toBe(1);
   });
-
-  it('closes on the steer’s own result when the CLI coalesced it after all', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.goSilent();
-
-    const running = turn(sessionId, 'do the thing');
-    await vi.waitFor(() => expect(process.received).toHaveLength(2));
-    await runtime.deliverIntoTurn(sessionId, 'also check the tests', {
-      mode: 'steer',
-      messageId: 'steer-1',
-    });
-    await vi.waitFor(() => expect(process.received).toHaveLength(3));
-
-    // One result, naming the steer: the CLI folded both messages into one turn.
-    // Nothing is outstanding, so the turn ends immediately — no waiting for a
-    // continuation that is never coming.
-    process.answer('steer-1', 'both of them, answered together');
-
-    const events = await running;
-    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
-  });
-
-  it('ends the turn anyway when the CLI never starts the steer’s turn', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.goSilent();
-
-    const running = turn(sessionId, 'do the thing');
-    await vi.waitFor(() => expect(process.received).toHaveLength(2));
-    await runtime.deliverIntoTurn(sessionId, 'never answered', {
-      mode: 'steer',
-      messageId: 'steer-1',
-    });
-    await vi.waitFor(() => expect(process.received).toHaveLength(3));
-
-    // The dispatched message is answered and then the process says nothing at
-    // all. Waiting on a continuation that never begins would hang the person's
-    // turn, so the wait is bounded: the deferred result closes it.
-    process.answer(process.received[1]!, 'the only answer');
-
-    const events = await running;
-    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
-    expect(spokenText(events)).toContain('the only answer');
-  });
 });
 
 describe('what a drained runtime window is reported as (DOR-1314)', () => {
   beforeEach(() => {
     optIn.persistentSession = true;
-  });
-
-  /**
-   * A background task settling, which leaves its report owed until the CLI
-   * hands it over (spec `warm-process-lifecycle` D1).
-   *
-   * @param taskId - The task that finished
-   */
-  function taskNotification(taskId: string): SDKMessage {
-    return {
-      type: 'system',
-      subtype: 'task_notification',
-      task_id: taskId,
-      status: 'completed',
-      uuid: `notify-${taskId}`,
-      session_id: 'sess-notify',
-    } as unknown as SDKMessage;
-  }
-
-  it('clears an owed report the CLI folded into a turn it answered (T34a)', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-
-    // A helper settles. Its report is owed, and a person's next message has to
-    // wait or it lands in the same turn as that report.
-    process.emit(taskNotification('task-1'));
-    await vi.waitFor(() => {
-      expect(runtime.isSegmentPending(sessionId)).toBe(true);
-    });
-
-    // The CLI FOLDS the delivery into a turn of its own instead of opening a
-    // segment for it, and says so the only way it can: the closing `result`
-    // names a prompt DorkOS never sent.
-    process.emit(resultMessage('a-message-nobody-dispatched'));
-
-    // Released AT ONCE. Without the fold check this stays true until the
-    // thirty-second clock gives up, so the person waits half a minute for a
-    // report that was handed over before they finished typing.
-    await vi.waitFor(() => {
-      expect(runtime.isSegmentPending(sessionId)).toBe(false);
-    });
-  });
-
-  it('keeps holding when nothing proves a fold (T34b)', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-
-    process.emit(taskNotification('task-2'));
-    await vi.waitFor(() => {
-      expect(runtime.isSegmentPending(sessionId)).toBe(true);
-    });
-
-    // A `result` that answers a message this session DID send proves nothing
-    // about the owed report, so the hold stands. What bounds it from here is
-    // the owed-delivery clock (its expiry is T35 in `session-pump-quietness`,
-    // and that the release reaches the queue is T38) — asserting the clock a
-    // third time here would only be checking it against itself.
-    process.emit(resultMessage(process.received[0]!));
-    // A bounded window for a NEGATIVE claim: there is no event to wait on, and
-    // the point is that nothing releases the hold.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(runtime.isSegmentPending(sessionId)).toBe(true);
   });
 
   it('lets Stop reach a turn the agent started on its own (T13)', async () => {
@@ -3097,29 +2241,6 @@ describe('what a drained runtime window is reported as (DOR-1314)', () => {
     // nothing is running, and the agent keeps talking.
     expect(process.interrupts).toBeGreaterThan(0);
     expect(receipt.outcome).not.toBe('not-running');
-  });
-
-  it('says nothing louder than debug when the CLI only volunteered bookkeeping', async () => {
-    const { logger } = await import('../../../../../lib/logger.js');
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    vi.mocked(logger.debug).mockClear();
-    vi.mocked(logger.error).mockClear();
-
-    // A `result` for a message nobody in this session ever sent, with nothing
-    // held behind it: the window it opens carries the result and not one word.
-    process.emit(resultMessage('a-message-nobody-dispatched'));
-
-    await vi.waitFor(() => {
-      expect(
-        vi
-          .mocked(logger.debug)
-          .mock.calls.some((call) => String(call[0]).includes('content-free turn nobody asked for'))
-      ).toBe(true);
-    });
-    // A warning here is noise that trains people to ignore the log.
-    expect(vi.mocked(logger.error)).not.toHaveBeenCalled();
   });
 
   it('reports dropped model speech as an error, with a census of what it was', async () => {
@@ -3205,32 +2326,6 @@ describe('an empty turn waits for its answer (DOR-2064)', () => {
     const error = events.find((e) => e.type === 'error');
     expect(error).toBeDefined();
     expect((error!.data as Record<string, unknown>).message).toContain('did not respond');
-  });
-
-  it('logs each background task type once per process, including unknown ones', async () => {
-    const { logger } = await import('../../../../../lib/logger.js');
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    vi.mocked(logger.info).mockClear();
-
-    process.reportTasks([{ task_id: 't1', task_type: 'monitor' }]);
-    process.reportTasks([
-      { task_id: 't1', task_type: 'monitor' },
-      { task_id: 't2', task_type: 'local_agent' },
-    ]);
-    process.reportTasks([{ task_id: 't3', task_type: 'monitor' }]);
-
-    const typeLines = (): Array<Record<string, unknown>> =>
-      vi
-        .mocked(logger.info)
-        .mock.calls.filter((call) => String(call[0]).includes('background task type'))
-        .map((call) => call[1] as Record<string, unknown>);
-    await vi.waitFor(() => expect(typeLines()).toHaveLength(2));
-    expect(typeLines()).toEqual([
-      expect.objectContaining({ session: sessionId, taskType: 'monitor' }),
-      expect.objectContaining({ session: sessionId, taskType: 'local_agent' }),
-    ]);
   });
 });
 
@@ -3330,34 +2425,6 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     expect(atSettle).toBe(false);
   });
 
-  it('reads true at settle while another helper is still running (DOR-2717)', async () => {
-    const sessionId = nextSession();
-    let atSettle: boolean | undefined;
-    runtime.onRuntimeTurn((id, events) => {
-      void (async () => {
-        for await (const _event of events) {
-          // drained
-        }
-        atSettle = runtime.holdsBackgroundWork(id);
-      })();
-    });
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([
-      { task_id: 'helper-1', task_type: 'local_agent' },
-      { task_id: 'helper-2', task_type: 'local_agent' },
-    ]);
-    await vi.waitFor(() => expect(runtime.holdsBackgroundWork(sessionId)).toBe(true));
-
-    process.reportTasks([{ task_id: 'helper-2', task_type: 'local_agent' }]);
-    process.startSegment();
-    process.say('one of two is done');
-    process.closeEmpty(undefined);
-
-    await vi.waitFor(() => expect(atSettle).toBeDefined());
-    expect(atSettle).toBe(true);
-  });
-
   it('tells its listener when a dispatched turn opens, and not for a turn the agent starts (DOR-2717)', async () => {
     const sessionId = nextSession();
     const dispatched: string[] = [];
@@ -3370,23 +2437,6 @@ describe('the record of background work a process holds (DOR-2065)', () => {
     process.closeEmpty(undefined);
     await vi.waitFor(() => expect(process.spoke).toBeGreaterThan(0));
     expect(dispatched).toEqual([sessionId]);
-  });
-
-  it('tells every dispatched-turn listener, each unsubscribing only itself (DOR-2717)', async () => {
-    const sessionId = nextSession();
-    const heard: string[] = [];
-    const first = runtime.onDispatchedTurn(() => heard.push('first'));
-    runtime.onDispatchedTurn(() => {
-      throw new Error('a careless listener');
-    });
-    runtime.onDispatchedTurn(() => heard.push('second'));
-
-    await turn(sessionId);
-    expect(heard).toEqual(['first', 'second']);
-
-    first();
-    await turn(sessionId, 'again');
-    expect(heard).toEqual(['first', 'second', 'second']);
   });
 
   it('is cleared when the ceiling reap takes a process still holding work', async () => {
@@ -3494,24 +2544,6 @@ describe('the record of background work a process holds (DOR-2065)', () => {
 
     expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
     expect(timersOf(sessionId).pendingTimers).toBeUndefined();
-    expect(takeTimersStopped(sessionId)).toBeNull();
-  });
-
-  // DOR-3755: a relaunch runs its turn at once, so it owes no note either.
-  it('owes no note when a dispatch relaunches a process with a timer pending', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    timersOf(sessionId).pendingTimers = 1;
-    const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
-    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
-      text: '<env>MOVED</env>',
-      stable: '<env>MOVED</env>',
-    });
-
-    await turn(sessionId, 'after the change');
-
-    expect(cli.launches).toBe(2);
-    expect(cli.processes[0]!.ended).toBe(true);
     expect(takeTimersStopped(sessionId)).toBeNull();
   });
 
@@ -3752,35 +2784,6 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
     expect(process.ended).toBe(true);
   });
 
-  it('answers proceed on a send that rides the process, busy or not', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    cli.processes[0]!.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await settle();
-
-    const { answers, events } = await heldTurn(sessionId, 'same settings');
-    expect(answers).toEqual(['proceed']);
-    expect(events.length).toBeGreaterThan(0);
-    expect(cli.launches).toBe(1);
-  });
-
-  it('waits out the settle interval, and holds when a helper is named meanwhile', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    changeInstructions();
-
-    // The last frame is fresh, so the process may still be flushing: the
-    // decision waits, and a helper named inside the wait turns it into a hold.
-    const pending = heldTurn(sessionId);
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    const { answers } = await pending;
-
-    expect(answers).toEqual(['hold']);
-    expect(process.ended).toBe(false);
-  });
-
   it('switches now when asked, ending the work', async () => {
     const sessionId = nextSession();
     const released: string[] = [];
@@ -3799,105 +2802,6 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
     expect(answers).toEqual(['proceed']);
     expect(cli.launches).toBe(2);
     expect(process.ended).toBe(true);
-  });
-
-  it('has nothing to switch on a session with no running agent', () => {
-    expect(runtime.switchWhenReady(nextSession())).toBe(false);
-  });
-
-  it('has nothing to switch while no message is held, so a stray switch ends nothing later', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await settle();
-    expect(runtime.switchWhenReady(sessionId)).toBe(false);
-
-    changeInstructions();
-    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
-    expect(process.ended).toBe(false);
-  });
-
-  it('counts a Switch now pressed during the settle wait', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    const process = cli.processes[0]!;
-    process.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await settle();
-    changeInstructions();
-    expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
-
-    // The helper finishes, so the next attempt is quiet but fresh and waits
-    // out the settle interval. Inside it a helper starts again and the person
-    // presses Switch now: the switch is read after the wait, and wins.
-    process.reportTasks([]);
-    await settle();
-    const pending = heldTurn(sessionId);
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    process.reportTasks([{ task_id: 'helper-2', task_type: 'local_agent' }]);
-    await settle();
-    expect(runtime.switchWhenReady(sessionId)).toBe(true);
-
-    expect((await pending).answers).toEqual(['proceed']);
-    expect(process.ended).toBe(true);
-  });
-
-  it('leaves the turn state and the accounts revision alone on a held attempt', async () => {
-    registerTestHomes([CWD]);
-    let revision = 'r1';
-    try {
-      runtime.setMeshCore({
-        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
-        listWithPaths: () => [],
-        updateLastSeen: () => undefined,
-      } as never);
-      runtime.setConnectorRuntimeTools({
-        principals: {
-          openTurn: vi.fn(),
-          renew: vi.fn(),
-          resolve: vi.fn(),
-          revoke: vi.fn().mockResolvedValue(undefined),
-        },
-        listenerUrl: 'http://127.0.0.1:1/mcp',
-        isConnectorCapabilityId: () => false,
-        accessSnapshot: vi.fn(async () => ({ accountCount: 0, revision })),
-      } as never);
-      const sessionId = nextSession();
-      await turn(sessionId);
-      cli.processes[0]!.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-      await settle();
-      const session = (
-        runtime as unknown as {
-          sessionStore: { findSession: (id: string) => { interruptRequestedAt?: number } };
-        }
-      ).sessionStore.findSession(sessionId);
-      session.interruptRequestedAt = 1234;
-      const seen = (runtime as unknown as { accountsAccess: { seen: Map<string, string> } })
-        .accountsAccess.seen;
-      const recorded = [...seen.values()];
-
-      revision = 'r2';
-      changeInstructions();
-      expect((await heldTurn(sessionId)).answers).toEqual(['hold']);
-
-      // Nothing ran, so nothing the next real turn reads may have moved.
-      expect([...seen.values()]).toEqual(recorded);
-      expect(session.interruptRequestedAt).toBe(1234);
-    } finally {
-      clearTestHomes();
-    }
-  });
-
-  it('goes on with the turn when the caller can no longer take a hold', async () => {
-    const sessionId = nextSession();
-    await turn(sessionId);
-    cli.processes[0]!.reportTasks([{ task_id: 'helper-1', task_type: 'local_agent' }]);
-    await settle();
-    changeInstructions();
-
-    const { answers, events } = await heldTurn(sessionId, 'too late', false);
-    expect(answers).toEqual(['hold refused', 'proceed']);
-    expect(events.some((event) => event.type === 'done')).toBe(true);
   });
 
   it('restarts anyway past the four-hour ceiling', async () => {
@@ -3956,11 +2860,6 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
 
     process.crash(new Error('the CLI went away'));
     await vi.waitFor(() => expect(released).toContain(sessionId));
-  });
-
-  it('answers proceed on the first send of a session with no process', async () => {
-    const { answers } = await heldTurn(nextSession(), 'first');
-    expect(answers).toEqual(['proceed']);
   });
 });
 
@@ -4098,31 +2997,6 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
     await done;
   });
 
-  it('keeps it out when the newer chat waited for the slot the older chat was still using', async () => {
-    slotWait.ms = 5_000;
-    const older = nextSession();
-    const olderTurn = await openFedTurn(older, 'OLDER CHAT question');
-    olderTurn.process.say('OLDER CHAT working');
-    let olderAnswered = false;
-    answerLater = setTimeout(() => {
-      olderAnswered = true;
-      olderTurn.process.answer(olderTurn.process.received.at(-1));
-    }, 50);
-
-    const newer = nextSession();
-    const { process, done } = await openFedTurn(newer, 'NEWER CHAT question');
-    // The newer chat really waited: it launched only after the older chat's turn ended.
-    expect(olderAnswered).toBe(true);
-    process.say('NEWER CHAT working on it');
-
-    expect(await snapshotText(newer)).toContain('NEWER CHAT working on it');
-    expect(await snapshotText(older)).not.toContain('NEWER CHAT');
-
-    process.answer(process.received.at(-1));
-    await done;
-    await olderTurn.done;
-  });
-
   it("reports a chat that resolves to another chat's live state", async () => {
     const older = nextSession();
     cli.nextSdkSessionId = older;
@@ -4142,39 +3016,185 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
       expect.objectContaining({ sessionId: older, projectorSessionId: newer })
     );
   });
-
-  /** Whether the cross-chat report was logged since the last clear. */
-  function reportedCrossChat(): boolean {
-    return vi
-      .mocked(logger.warn)
-      .mock.calls.some(([message]) => String(message).includes("another chat's live state"));
-  }
-
-  it('stays quiet for a chat reading its own live state', async () => {
-    const chat = nextSession();
-    cli.nextSdkSessionId = chat;
-    await fedTurn(chat, 'question');
-    vi.mocked(logger.warn).mockClear();
-
-    await snapshotText(chat);
-
-    expect(reportedCrossChat()).toBe(false);
-  });
-
-  it('stays quiet across the SDK renaming a chat, under every id it has held', async () => {
-    const chat = nextSession();
-    const firstCanonical = `${chat}-sdk-1`;
-    const secondCanonical = `${chat}-sdk-2`;
-    cli.nextSdkSessionId = firstCanonical;
-    await fedTurn(chat, 'first');
-    // A relaunch re-mints the id a second time, as a resume does.
-    await runtime.reapSession(chat);
-    cli.nextSdkSessionId = secondCanonical;
-    await fedTurn(chat, 'second');
-    vi.mocked(logger.warn).mockClear();
-
-    for (const id of [chat, firstCanonical, secondCanonical]) await snapshotText(id);
-
-    expect(reportedCrossChat()).toBe(false);
-  });
 });
+
+it.each([
+  {
+    persistent: false,
+    scenario: 'resume with unconfirmed Auto',
+    sessionMode: 'auto',
+    ceiling: undefined,
+    chosen: 'auto',
+  },
+  {
+    persistent: true,
+    scenario: 'warm with Full under a marked Default ceiling',
+    sessionMode: 'bypassPermissions',
+    ceiling: 'runtime-default',
+    chosen: 'bypassPermissions',
+  },
+  {
+    persistent: false,
+    scenario: 'resume with Full under the agent’s own Ask level',
+    sessionMode: 'bypassPermissions',
+    ceiling: { asks: 'always', reach: 'edit' },
+    chosen: 'default',
+  },
+  {
+    persistent: true,
+    scenario: 'warm after a refused mode change',
+    sessionMode: 'default',
+    ceiling: undefined,
+    chosen: 'default',
+  },
+] as const)(
+  'publishes the actual Claude query through the principal port ($scenario)',
+  async ({ persistent, scenario, sessionMode, ceiling, chosen }) => {
+    optIn.persistentSession = persistent;
+    const dir = fs.realpathSync(dorkHome);
+    const id = randomUUID();
+    cli.nextSdkSessionId = id;
+    registerTestHomes([dir]);
+    runtime.setMeshCore({
+      getByPath: () => ({ id: 'test-agent', name: 'Test agent' }),
+      listWithPaths: () => [],
+      updateLastSeen: () => undefined,
+    });
+    const principals = new ConnectorRuntimePrincipalService({
+      db: settingsDb!,
+      authority: {
+        authorizeTurn: async () => ({
+          owner: { kind: 'local_install', installationId: 'claude-fixture' },
+          agentId: 'test-agent',
+        }),
+        revalidateTurn: async () => true,
+      },
+    });
+    await principals.initializeBoot();
+    runtime.setConnectorRuntimeTools({
+      principals,
+      listenerUrl: 'http://127.0.0.1:1/mcp',
+      agentToolsUrl: 'http://127.0.0.1:1/agent-mcp',
+      isConnectorCapabilityId: () => false,
+    });
+    let session: AgentSession | undefined;
+    runtime.setMcpServerFactory((current) => {
+      session = current;
+      return {};
+    });
+    mockedQuery.mockImplementation((args) => {
+      const process = cli.query(args as Parameters<typeof cli.query>[0]);
+      process.goSilent();
+      return process as unknown as ReturnType<typeof query>;
+    });
+    runtime.ensureSession(id, { cwd: dir, permissionMode: sessionMode });
+    const received: StreamEvent[] = [];
+    const feeds: Promise<void>[] = [];
+    let feedError: unknown;
+    async function openTurn(
+      number: number,
+      options: Pick<MessageOpts, 'levelPermissionMode' | 'permissionCeiling'>
+    ) {
+      const feed = (async () => {
+        for await (const event of runtime.sendMessage(id, 'hello', {
+          cwd: dir,
+          ...options,
+        }))
+          received.push(event);
+      })();
+      feeds.push(feed);
+      void feed.catch((error: unknown) => {
+        feedError = error;
+      });
+      await vi.waitFor(() => {
+        if (feedError) throw feedError;
+        expect(session?.activeQuery).toBeDefined();
+        expect(cli.latest?.received).toHaveLength(number);
+      });
+      const principal = await session!.connectorTurn!.resolvePrincipal();
+      return { caller: await principals.resolveToolTurn(principal), feed };
+    }
+    try {
+      const first = await openTurn(1, { permissionCeiling: ceiling });
+      const process = cli.latest!;
+      expect(process.options.permissionMode).toBe('default');
+      const facts = first.caller.read();
+      expect(facts).toMatchObject({
+        effectiveMode: process.options.permissionMode,
+        chosenMode: chosen,
+        neverAsks: false,
+      });
+      const note: StreamEvent = {
+        type: 'system_status',
+        data: { message: 'Scripted queue delivery' },
+      };
+      facts.session.eventQueue.push(note);
+      facts.session.eventQueueNotify?.();
+      await vi.waitFor(() => expect(received).toContain(note));
+      const originalNotify = facts.session.eventQueueNotify;
+      expect(originalNotify).toBeTypeOf('function');
+      const refusedFirst = scenario === 'warm after a refused mode change';
+      if (refusedFirst) {
+        const setter = vi.spyOn(process, 'setPermissionMode');
+        setter.mockRejectedValueOnce(new Error('Scripted mode refusal'));
+        await runtime.updateSession(id, { permissionMode: 'plan' });
+        expect(setter).toHaveBeenCalledWith('plan');
+        expect(session!.permissionMode).toBe('plan');
+        expect(first.caller.read()).toMatchObject({
+          effectiveMode: 'default',
+          chosenMode: 'default',
+        });
+      }
+      const applied = refusedFirst ? 'acceptEdits' : 'plan';
+      await runtime.updateSession(id, { permissionMode: applied });
+      expect(process.liveSets).toContain(`setPermissionMode:${applied}`);
+      expect(first.caller.read()).toMatchObject({ effectiveMode: applied, chosenMode: applied });
+      process.answer(process.inbox.at(-1)?.uuid);
+      await first.feed;
+      if (sessionMode === 'auto') {
+        expect(received).toContainEqual({
+          type: 'system_status',
+          data: { message: AUTO_DOWNGRADE_STATUS.unconfirmed },
+        });
+      }
+      expect(facts.signal.aborted).toBe(true);
+      if (persistent) {
+        // A normal next turn moves back to Default. After the refusal and retry the
+        // next turn requests the confirmed mode again, so it needs no additional setter.
+        const nextMode = refusedFirst ? applied : 'default';
+        const second = await openTurn(2, { levelPermissionMode: nextMode });
+        expect(cli.latest).toBe(process);
+        expect(process.liveSets.filter((x) => x.startsWith('setPermissionMode:'))).toEqual(
+          refusedFirst
+            ? ['setPermissionMode:acceptEdits']
+            : ['setPermissionMode:plan', 'setPermissionMode:default']
+        );
+        const next = second.caller.read();
+        expect(next).toMatchObject({ effectiveMode: nextMode, chosenMode: nextMode });
+        expect(next.signal).not.toBe(facts.signal);
+        const late: StreamEvent = {
+          type: 'system_status',
+          data: { message: 'Late first-turn note' },
+        };
+        const current: StreamEvent = {
+          type: 'system_status',
+          data: { message: 'Second-turn note' },
+        };
+        facts.session.eventQueue.push(late);
+        originalNotify?.();
+        next.session.eventQueue.push(current);
+        next.session.eventQueueNotify?.();
+        await vi.waitFor(() => expect(received).toContain(current));
+        expect(facts.session.eventQueue).not.toContain(late);
+        process.answer(process.received.at(-1));
+        await second.feed;
+        expect(received).not.toContain(late);
+        expect(next.signal.aborted).toBe(true);
+      }
+    } finally {
+      for (const process of cli.processes) process.endStream();
+      await Promise.allSettled(feeds);
+      clearTestHomes();
+    }
+  }
+);

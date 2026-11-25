@@ -179,8 +179,11 @@ function needsContentReview(source: string): boolean {
     node !== undefined &&
     ts.isStringLiteralLike(node) &&
     node.text.toLowerCase() === 'content-type';
+  // `PROBLEM_CONTENT_TYPE` is the fixed `application/problem+json` (`@dorkos/shared/problem`).
   const dynamic = (node: ts.Node | undefined): boolean =>
-    node !== undefined && !ts.isStringLiteralLike(node);
+    node !== undefined &&
+    !ts.isStringLiteralLike(node) &&
+    !(ts.isIdentifier(node) && node.text === 'PROBLEM_CONTENT_TYPE');
   const visit = (node: ts.Node): void => {
     if (found) return;
     if (

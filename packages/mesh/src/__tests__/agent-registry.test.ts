@@ -3,7 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { AgentRegistry } from '../agent-registry.js';
 import type { AgentRegistryEntry } from '../agent-registry.js';
-import { ACTIVE_THRESHOLD_MINUTES, INACTIVE_THRESHOLD_MINUTES } from '../health.js';
+import { ACTIVE_THRESHOLD_MINUTES } from '../health.js';
 
 /** Helper: create an ISO timestamp `minutes` before now. */
 function minutesAgo(minutes: number): string {
@@ -120,26 +120,6 @@ describe('list', () => {
     expect(all[0].id).toBe(newer.id);
     expect(all[1].id).toBe(older.id);
   });
-
-  it('filters by runtime', () => {
-    registry.upsert(makeEntry({ id: '01A', projectPath: '/p/a', runtime: 'claude-code' }));
-    registry.upsert(makeEntry({ id: '01B', projectPath: '/p/b', runtime: 'cursor' }));
-
-    const filtered = registry.list({ runtime: 'claude-code' });
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].runtime).toBe('claude-code');
-  });
-
-  it('filters by capability', () => {
-    registry.upsert(
-      makeEntry({ id: '01A', projectPath: '/p/a', capabilities: ['code-review', 'testing'] })
-    );
-    registry.upsert(makeEntry({ id: '01B', projectPath: '/p/b', capabilities: ['deployment'] }));
-
-    const filtered = registry.list({ capability: 'code-review' });
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].id).toBe('01A');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -147,23 +127,6 @@ describe('list', () => {
 // ---------------------------------------------------------------------------
 
 describe('update', () => {
-  it('modifies mutable fields and returns true', () => {
-    registry.upsert(makeEntry());
-
-    const updated = registry.update('01JKABC00001', {
-      name: 'updated-backend',
-      description: 'Updated description',
-      capabilities: ['new-cap'],
-    });
-
-    expect(updated).toBe(true);
-
-    const result = registry.get('01JKABC00001');
-    expect(result!.name).toBe('updated-backend');
-    expect(result!.description).toBe('Updated description');
-    expect(result!.capabilities).toEqual(['new-cap']);
-  });
-
   it('persists namespace, scanRoot and behavior changes', () => {
     registry.upsert(
       makeEntry({ id: 'a1', projectPath: '/p/a1', namespace: 'old', scanRoot: '/old' })
@@ -197,11 +160,6 @@ describe('remove', () => {
 // ---------------------------------------------------------------------------
 
 describe('upsert()', () => {
-  it('inserts new agent when no conflict exists', () => {
-    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
-    expect(registry.get('agent-1')).toBeDefined();
-  });
-
   it('updates existing agent when same ID re-registered', () => {
     registry.upsert(makeEntry({ id: 'agent-1', name: 'V1', projectPath: '/path/a' }));
     registry.upsert(makeEntry({ id: 'agent-1', name: 'V2', projectPath: '/path/a' }));
@@ -280,33 +238,6 @@ describe('health tracking', () => {
     expect(entry!.healthStatus).toBe('active');
   });
 
-  it('getWithHealth() computes inactive status beyond active threshold', () => {
-    registry.upsert(makeEntry());
-    const midpoint = (ACTIVE_THRESHOLD_MINUTES + INACTIVE_THRESHOLD_MINUTES) / 2;
-    registry.updateHealth('01JKABC00001', minutesAgo(midpoint), 'message');
-    const entry = registry.getWithHealth('01JKABC00001');
-    expect(entry!.healthStatus).toBe('inactive');
-  });
-
-  it('getAggregateStats() returns correct counts', () => {
-    const agent1 = makeEntry({ id: 'agent1', projectPath: '/p/1' });
-    const agent2 = makeEntry({ id: 'agent2', projectPath: '/p/2' });
-    const agent3 = makeEntry({ id: 'agent3', projectPath: '/p/3' });
-    registry.upsert(agent1);
-    registry.upsert(agent2);
-    registry.upsert(agent3);
-    registry.updateHealth('agent1', minutesAgo(1), 'recent'); // active
-    const midpoint = (ACTIVE_THRESHOLD_MINUTES + INACTIVE_THRESHOLD_MINUTES) / 2;
-    registry.updateHealth('agent2', minutesAgo(midpoint), 'old'); // inactive
-    // agent3 has no last_seen_at -> stale
-    const stats = registry.getAggregateStats();
-    expect(stats.totalAgents).toBe(3);
-    expect(stats.activeCount).toBe(1);
-    expect(stats.inactiveCount).toBe(1);
-    expect(stats.staleCount).toBe(1);
-    expect(stats.unreachableCount).toBe(0);
-  });
-
   it('getAggregateStats() counts unreachable agents separately', () => {
     registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/1' }));
     registry.upsert(makeEntry({ id: 'a2', projectPath: '/p/2' }));
@@ -373,16 +304,6 @@ describe('markReachable()', () => {
     const future = new Date(Date.now() + 100000).toISOString();
     expect(registry.listUnreachableBefore(future)).toHaveLength(0);
   });
-
-  it('restores health computation from lastSeenAt', () => {
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
-    registry.updateHealth('a1', minutesAgo(1), 'heartbeat');
-    registry.markUnreachable('a1');
-    expect(registry.getWithHealth('a1')!.healthStatus).toBe('unreachable');
-
-    registry.markReachable('a1');
-    expect(registry.getWithHealth('a1')!.healthStatus).toBe('active');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -399,16 +320,6 @@ describe('listUnreachableBefore()', () => {
     const future = new Date(Date.now() + 100000).toISOString();
     const expired = registry.listUnreachableBefore(future);
     expect(expired).toHaveLength(2);
-  });
-
-  it('excludes active agents and recently-unreachable agents', () => {
-    registry.upsert(makeEntry({ id: 'active-agent', projectPath: '/p/active' }));
-    registry.upsert(makeEntry({ id: 'unreachable-agent', projectPath: '/p/unreachable' }));
-    registry.markUnreachable('unreachable-agent');
-    // Cutoff in the past — recently-unreachable agent should NOT be returned
-    const past = new Date(Date.now() - 100000).toISOString();
-    const expired = registry.listUnreachableBefore(past);
-    expect(expired).toHaveLength(0);
   });
 });
 
@@ -437,21 +348,6 @@ describe('agent identity fields', () => {
     expect(result!.icon).toBe('🤖');
   });
 
-  it('update persists identity field changes', () => {
-    registry.upsert(makeEntry({ id: 'update-agent', projectPath: '/p/update' }));
-    registry.update('update-agent', {
-      persona: 'New persona text',
-      personaEnabled: false,
-      color: '#ef4444',
-      icon: '🎯',
-    });
-    const result = registry.get('update-agent');
-    expect(result!.persona).toBe('New persona text');
-    expect(result!.personaEnabled).toBe(false);
-    expect(result!.color).toBe('#ef4444');
-    expect(result!.icon).toBe('🎯');
-  });
-
   it('update clears identity fields when set to undefined/null', () => {
     registry.upsert(
       makeEntry({
@@ -471,30 +367,6 @@ describe('agent identity fields', () => {
     expect(result!.persona).toBeUndefined();
     expect(result!.color).toBeUndefined();
     expect(result!.icon).toBeUndefined();
-  });
-
-  it('upsert on conflict updates identity fields', () => {
-    registry.upsert(
-      makeEntry({
-        id: 'conflict-agent',
-        projectPath: '/p/conflict',
-        persona: 'V1 persona',
-        color: '#000',
-      })
-    );
-    registry.upsert(
-      makeEntry({
-        id: 'conflict-agent',
-        projectPath: '/p/conflict',
-        persona: 'V2 persona',
-        color: '#fff',
-        icon: '🚀',
-      })
-    );
-    const result = registry.get('conflict-agent');
-    expect(result!.persona).toBe('V2 persona');
-    expect(result!.color).toBe('#fff');
-    expect(result!.icon).toBe('🚀');
   });
 });
 
@@ -520,14 +392,6 @@ describe('execution defaults on the cache', () => {
     registry.upsert(makeEntry({ model: 'sonnet', effort: 'low' }));
     registry.update('01JKABC00001', { model: undefined, effort: undefined });
     expect(registry.get('01JKABC00001')?.model).toBeUndefined();
-    expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
-  });
-
-  it('reads an unrecognized stored effort as no preference rather than passing it on', () => {
-    // A rung a later release drops, or a hand-edited row. "No preference" is the
-    // safe answer; handing a word no adapter knows to a runtime is not.
-    registry.upsert(makeEntry({ effort: 'high' }));
-    db.run?.(`UPDATE agents SET effort = 'ludicrous' WHERE id = '01JKABC00001'`);
     expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
   });
 });

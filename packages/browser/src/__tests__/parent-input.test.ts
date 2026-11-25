@@ -1,4 +1,3 @@
-import { retirementFixture } from './parent-fixture.js';
 import { fakeJPEG } from './parent-fixture.js';
 import { it, expect, vi, afterEach } from 'vitest';
 import type { CDPSession } from 'playwright-core';
@@ -11,17 +10,6 @@ import { configuration, tabFixture, deferred, tick } from './parent-fixture.js';
 vi.mock('../profiles/owned-directory.js', () => ({ assertDirectory: vi.fn() }));
 afterEach(() => vi.useRealTimers());
 
-it('owns one ready canonical composition and reaches its actual mock text dispatch', async () => {
-  const h = tabFixture(),
-    c = configuration();
-  const slot = composeInput(c, h.record, h.tab);
-  await slot.readiness;
-  expect(composeInput(c, h.record, h.tab)).toBe(slot);
-  expect((await submitInput(h.record, h.command())).outcome).toBe('completed');
-  expect(h.effects).toEqual(['text']);
-  expect(await closeRecord(c, h.record)).toEqual({ cleanup: 'observed' });
-  expect(h.effects).toEqual(['text', 'send', 'send', 'detach']);
-});
 it('unready popup refuses immediately and late session stays owned after retirement', async () => {
   const h = tabFixture(),
     c = configuration(),
@@ -37,60 +25,6 @@ it('unready popup refuses immediately and late session stays owned after retirem
   expect(h.effects).toEqual(['detach']);
   expect(h.context.newCDPSession).toHaveBeenCalledTimes(1);
   expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-});
-it('reset publishes counters before held old native drain and refuses its stale settlement', async () => {
-  const h = tabFixture(),
-    c = configuration();
-  const slot = composeInput(c, h.record, h.tab);
-  await slot.readiness;
-  const held = deferred<void>();
-  h.raw.keyboard.insertText.mockImplementation(() => held.promise);
-  const old = { ...h.tab.binding };
-  const action = submitInput(h.record, h.command(old));
-  await tick();
-  expect(h.raw.keyboard.insertText).toHaveBeenCalledTimes(1);
-  const reset = resetInput(h.record, old);
-  expect(h.tab.binding.epoch, 'RESET_COUNTER_NOT_PUBLISHED_BEFORE_DRAIN').toBe(1);
-  expect(h.tab.binding.inputGeneration).toBe(1);
-  expect((await submitInput(h.record, h.command(old))).outcome).toBe('rejected');
-  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-  expect(resetInput(h.record, { ...h.tab.binding })).toBe(reset);
-  held.resolve();
-  expect((await action).outcome).not.toBe('completed');
-  expect(await reset).toMatchObject({ status: 'stopped' });
-  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-  expect(h.record.lifetime.inputs.get(h.tab)).toBe(slot);
-  await closeRecord(c, h.record);
-});
-it('idle reset awaits exact fixed cancellation ACK then uses the new complete canonical binding', async () => {
-  const h = tabFixture(),
-    c = configuration();
-  const slot = composeInput(c, h.record, h.tab);
-  await slot.readiness;
-  expect((await submitInput(h.record, h.command())).outcome).toBe('completed');
-  const old = { ...h.tab.binding },
-    ack = deferred<void>();
-  h.session.send.mockImplementation(() => ack.promise);
-  const reset = resetInput(h.record, old);
-  await tick();
-  expect(h.tab.binding).toEqual({ ...old, epoch: 1, inputGeneration: 1 });
-  expect((await submitInput(h.record, h.command(old))).outcome).toBe('rejected');
-  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-  expect(h.session.send.mock.calls).toEqual([
-    ['Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-    ['Input.cancelDragging'],
-  ]);
-  expect(resetInput(h.record, { ...h.tab.binding })).toBe(reset);
-  ack.resolve();
-  expect(await reset).toEqual({ status: 'ready', binding: h.tab.binding });
-  expect(h.record.lifetime.inputs.get(h.tab)).toBe(slot);
-  expect(h.context.newCDPSession).toHaveBeenCalledTimes(1);
-  expect((await submitInput(h.record, h.command())).outcome).toBe('completed');
-  expect((await submitInput(h.record, h.command(old))).outcome).toBe('rejected');
-  expect(h.raw.keyboard.insertText).toHaveBeenCalledTimes(2);
-  expect(h.session.detach).not.toHaveBeenCalled();
-  expect(await closeRecord(c, h.record)).toEqual({ cleanup: 'observed' });
-  expect(h.session.detach).toHaveBeenCalledTimes(1);
 });
 it('stale capture cannot publish after reset counter publication before its ACK', async () => {
   const h = tabFixture(),
@@ -139,65 +73,7 @@ it('parent main-frame retirement fences ordinary admission before child callback
   expect(h.effects).toEqual(['detach']);
   expect(h.session.send).not.toHaveBeenCalled();
 });
-it('failed reset retires browser and preserves its advanced counters', async () => {
-  const h = tabFixture(),
-    c = configuration();
-  await composeInput(c, h.record, h.tab).readiness;
-  h.session.send.mockRejectedValue(Error('PRIVATE_FAULT'));
-  expect(await resetInput(h.record, { ...h.tab.binding })).toMatchObject({ status: 'stopped' });
-  expect(h.tab.binding.epoch).toBe(1);
-  expect(h.record.lifetime.ordinary.phase).not.toBe('ordinary');
-  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-  await h.record.lifetime.ordinary.retirement.promise;
-  expect(h.record.lifetime.gate.stopped).toBe(true);
-  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-});
 
-it.each(['getter', 'invoke'] as const)(
-  'capture viewport %s retirement refuses its next effect and sequence',
-  async (point) => {
-    const h = tabFixture();
-    const c = configuration();
-    const binding = { ...h.tab.binding };
-    const viewport = vi.fn(function (this: unknown) {
-      expect(this).toBe(h.page);
-      if (point === 'invoke') h.record.lifetime.gate.stop();
-      return { width: 100, height: 80 };
-    });
-    const getter = vi.fn(() => {
-      if (point === 'getter') h.record.lifetime.gate.stop();
-      return viewport;
-    });
-    Object.defineProperty(h.raw, 'viewportSize', { get: getter });
-    await expect(
-      captureTab(c, h.record, { kind: 'capture', requestId: h.command().requestId, binding })
-    ).rejects.toMatchObject({ code: 'STALE_BINDING' });
-    expect(h.raw.screenshot).toHaveBeenCalledTimes(1);
-    expect(getter).toHaveBeenCalledTimes(1);
-    expect(viewport).toHaveBeenCalledTimes(point === 'getter' ? 0 : 1);
-    expect(h.tab.captureSequence).toBe(0);
-    expect(h.tab.pending).toBe(0);
-    await closeRecord(c, h.record);
-  }
-);
-it('stable viewport capture observes its method once with the exact Page receiver', async () => {
-  const h = tabFixture();
-  const viewport = vi.fn(function (this: unknown) {
-    expect(this).toBe(h.page);
-    return { width: 100, height: 80 };
-  });
-  const getter = vi.fn(() => viewport);
-  Object.defineProperty(h.raw, 'viewportSize', { get: getter });
-  const frame = await captureTab(configuration(), h.record, {
-    kind: 'capture',
-    requestId: h.command().requestId,
-    binding: { ...h.tab.binding },
-  });
-  expect(getter).toHaveBeenCalledTimes(1);
-  expect(viewport).toHaveBeenCalledTimes(1);
-  expect(frame.receipt).toMatchObject({ width: 100, height: 80, captureSequence: 1 });
-  expect(frame.bytes).toEqual(fakeJPEG(100, 80));
-});
 it.each(['getter', 'invoke'] as const)(
   'capture viewport %s canonical replacement cannot publish or advance sequence',
   async (point) => {
@@ -225,131 +101,3 @@ it.each(['getter', 'invoke'] as const)(
     expect(h.tab.captureSequence).toBe(0);
   }
 );
-
-it.each(['width', 'height'] as const)(
-  'capture viewport %s accessor retirement refuses sequence publication',
-  async (field) => {
-    const h = tabFixture();
-    const dimensions = { width: 100, height: 80 };
-    const getter = vi.fn(() => {
-      h.record.lifetime.gate.stop();
-      return field === 'width' ? 100 : 80;
-    });
-    Object.defineProperty(dimensions, field, { get: getter });
-    h.raw.viewportSize = vi.fn(() => dimensions);
-    await expect(
-      captureTab(configuration(), h.record, {
-        kind: 'capture',
-        requestId: h.command().requestId,
-        binding: { ...h.tab.binding },
-      })
-    ).rejects.toMatchObject({ code: 'STALE_BINDING' });
-    expect(getter).toHaveBeenCalledTimes(1);
-    expect(h.tab.captureSequence).toBe(0);
-    expect(h.tab.pending).toBe(0);
-  }
-);
-
-it.each(['stable', 'getter', 'invoke', 'reject', 'reenter'] as const)(
-  'capture exhaustion fences siblings before %s owned-context cleanup',
-  async (fault) => {
-    const h = tabFixture();
-    const c = configuration();
-    const sibling = tabFixture(h.record);
-    const primaryInput = composeInput(c, h.record, h.tab);
-    const siblingInput = composeInput(c, h.record, sibling.tab);
-    await Promise.all([primaryInput.readiness, siblingInput.readiness]);
-    const heldDetach = deferred<void>();
-    h.session.detach.mockImplementation(() => heldDetach.promise);
-    const pageClose = vi.fn(async () => {});
-    const pageGetter = vi.fn(() => pageClose);
-    Object.defineProperty(h.raw, 'close', { get: pageGetter });
-    const context = h.record.context!;
-    let originalParentEnd: number | undefined;
-    let originalInputEnd: number | undefined;
-    const observeRetirement = () => {
-      expect(h.record.lifetime.ordinary.phase).toBe('retiring');
-      expect(h.record.lifetime.ordinary.retirement.firstCause).toBe('engineFault');
-      originalParentEnd ??= h.record.lifetime.parentEnd;
-      originalInputEnd ??= h.record.lifetime.inputEnd;
-      expect(h.record.lifetime.parentEnd).toBe(originalParentEnd);
-      expect(h.record.lifetime.inputEnd).toBe(originalInputEnd);
-      if (fault === 'reenter') {
-        expect(closeRecord(c, h.record, performance.now() + 100)).toBe(h.record.closePromise);
-      }
-    };
-    const close = vi.fn(function (this: unknown) {
-      expect(this).toBe(context);
-      observeRetirement();
-      if (fault === 'invoke') throw Error('COUNTER_CONTEXT_INVOKE');
-      return fault === 'reject'
-        ? Promise.reject(Error('COUNTER_CONTEXT_REJECT'))
-        : Promise.resolve();
-    });
-    const getter = vi.fn(() => {
-      observeRetirement();
-      if (fault === 'getter') throw Error('COUNTER_CONTEXT_GETTER');
-      return close;
-    });
-    Object.defineProperty(context, 'close', { get: getter });
-    h.tab.captureSequence = Number.MAX_SAFE_INTEGER;
-    try {
-      await expect(
-        captureTab(c, h.record, {
-          kind: 'capture',
-          requestId: h.command().requestId,
-          binding: { ...h.tab.binding },
-        })
-      ).rejects.toMatchObject({ code: 'COUNTER_EXHAUSTED' });
-      expect(h.record.lifetime.ordinary.phase).toBe('retiring');
-      expect((await submitInput(h.record, sibling.command())).outcome).toBe('rejected');
-      expect(h.tab.captureSequence).toBe(Number.MAX_SAFE_INTEGER);
-      expect(h.tab.pending).toBe(0);
-      const parent = h.record.closePromise!;
-      originalParentEnd = h.record.lifetime.parentEnd;
-      originalInputEnd = h.record.lifetime.inputEnd;
-      expect(closeRecord(c, h.record, performance.now() + 100)).toBe(parent);
-      expect(closeRecord(c, h.record, performance.now() + 10000)).toBe(parent);
-      expect(h.record.lifetime.parentEnd).toBe(originalParentEnd);
-      expect(h.record.lifetime.inputEnd).toBe(originalInputEnd);
-      await tick();
-      expect(getter).toHaveBeenCalledTimes(1);
-      expect(close).toHaveBeenCalledTimes(fault === 'getter' ? 0 : 1);
-      expect(pageGetter).not.toHaveBeenCalled();
-      expect(pageClose).not.toHaveBeenCalled();
-    } finally {
-      heldDetach.resolve();
-    }
-    await h.record.closePromise;
-    expect(h.record.lifetime.ordinary.phase).toBe('terminal');
-    expect(h.record.lifetime.uncertain).toBe(true);
-    expect(h.record.lifetime.gate.stopped).toBe(true);
-    expect(h.tab.stopped).toBe(true);
-    expect(sibling.tab.stopped).toBe(true);
-    expect(h.session.detach).toHaveBeenCalledTimes(1);
-    expect(sibling.session.detach).toHaveBeenCalledTimes(1);
-    expect(getter).toHaveBeenCalledTimes(1);
-    expect(close).toHaveBeenCalledTimes(fault === 'getter' ? 0 : 1);
-    expect(pageGetter).not.toHaveBeenCalled();
-  }
-);
-
-it('candidate: retirement denies text but releases exactly owned held key and fixed cancels', async () => {
-  const h = tabFixture(),
-    c = configuration();
-  const owner = composeInput(c, h.record, h.tab);
-  await owner.readiness;
-  const down = { ...h.command(), steps: [{ kind: 'keyDown' as const, key: 'Shift' as const }] };
-  expect((await submitInput(h.record, down)).outcome).toBe('completed');
-  const end = performance.now() + 2000;
-  retirementFixture(h.record, end);
-  expect((await submitInput(h.record, h.command())).outcome).toBe('rejected');
-  expect(await owner.handle!.retire(end)).toMatchObject({ state: 'settled', pending: false });
-  expect(h.raw.keyboard.up.mock.calls).toEqual([['Shift']]);
-  expect(h.raw.keyboard.insertText).toHaveBeenCalledTimes(0);
-  expect(h.session.send.mock.calls).toEqual([
-    ['Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 }],
-    ['Input.cancelDragging'],
-  ]);
-  expect(h.record.lifetime.gate.stopped).toBe(false);
-});

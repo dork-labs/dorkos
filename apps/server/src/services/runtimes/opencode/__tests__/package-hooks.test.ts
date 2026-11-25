@@ -16,6 +16,7 @@ import { createOpencodeClient } from '@opencode-ai/sdk';
 import {
   enforceApprovals,
   PendingApprovalStore,
+  REASON_REPLY_TIMEOUT_MS,
   rejectPermissionWithReason,
 } from '../messaging/approvals.js';
 import { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
@@ -56,6 +57,7 @@ describe('OpenCode: shell guards', () => {
       sessionId: 'oc-session',
       ocSessionId: 'ses_1',
       cwd: project.dir,
+      directory: project.dir,
       permissions: { pendingPermissionSessions: new Map() },
     };
     const events: StreamEvent[] = [];
@@ -78,12 +80,15 @@ describe('OpenCode: shell guards', () => {
       });
       const reason = (events[0]!.data as { reason: string }).reason;
       expect(reason).toMatch(/^Blocked: /);
-      // DOR-4447: the reply route that carries a message, with the guard's own words.
+      // DOR-4447: the reply route that carries a message, with the guard's own words,
+      // in the session's own folder (DOR-5248).
       expect(respond).toHaveBeenCalledTimes(1);
       expect(respond).toHaveBeenCalledWith({
         url: '/permission/{requestID}/reply',
         path: { requestID: 'perm-1' },
+        query: { directory: project.dir },
         body: { reply: 'reject', message: reason },
+        signal: expect.any(AbortSignal),
       });
     });
   }
@@ -134,12 +139,19 @@ describe('OpenCode: shell guards', () => {
 });
 
 describe('OpenCode: the reasoned reject on the wire (DOR-4447)', () => {
-  it('posts the reason to /permission/{id}/reply through the real SDK client', async () => {
+  const target = {
+    ocSessionId: 'ses_1',
+    cwd: '/demo/projects/northwind',
+    directory: '/demo/projects/northwind',
+  };
+
+  it('posts the reason to /permission/{id}/reply in the session folder, through the real SDK client', async () => {
     const seen: Array<{ method: string; path: string; body: unknown }> = [];
     const fetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
       seen.push({
         method: request.method,
-        path: new URL(request.url).pathname,
+        path: `${url.pathname}${url.search}`,
         body: JSON.parse(await request.text()),
       });
       return new Response('true', { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -148,16 +160,52 @@ describe('OpenCode: the reasoned reject on the wire (DOR-4447)', () => {
     const provider = { getClient: async () => client } as unknown as OpenCodeClientProvider;
     await rejectPermissionWithReason(
       provider,
-      { ocSessionId: 'ses_1', cwd: '/demo/projects/northwind' },
+      target,
       'perm-1',
       'Blocked: git stash is not allowed here.'
     );
+    // No session in this route's path: without the folder, OpenCode looks for the
+    // ask in the folder the sidecar started in, and finds nothing (DOR-5248).
     expect(seen).toEqual([
       {
         method: 'POST',
-        path: '/permission/perm-1/reply',
+        path: '/permission/perm-1/reply?directory=%2Fdemo%2Fprojects%2Fnorthwind',
         body: { reply: 'reject', message: 'Blocked: git stash is not allowed here.' },
       },
     ]);
+  });
+
+  it('rejects plainly once the reason route has not answered in time', async () => {
+    vi.useFakeTimers();
+    try {
+      let reasonSignal: AbortSignal | undefined;
+      const respond = vi.fn((options: { url?: string; signal?: AbortSignal }) => {
+        if (options.url === undefined) return Promise.resolve({ data: true });
+        reasonSignal = options.signal;
+        return new Promise(() => {}); // a sidecar that never answers
+      });
+      const provider = {
+        getClient: async () => ({ postSessionIdPermissionsPermissionId: respond }),
+      } as unknown as OpenCodeClientProvider;
+      let done = false;
+      const refused = rejectPermissionWithReason(provider, target, 'perm-1', 'Blocked.').then(
+        () => (done = true)
+      );
+
+      await vi.advanceTimersByTimeAsync(REASON_REPLY_TIMEOUT_MS - 1);
+      expect(done).toBe(false);
+      expect(respond).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await refused;
+      expect(reasonSignal?.aborted).toBe(true);
+      expect(respond).toHaveBeenCalledTimes(2);
+      expect(respond).toHaveBeenLastCalledWith({
+        path: { id: 'ses_1', permissionID: 'perm-1' },
+        body: { response: 'reject' },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

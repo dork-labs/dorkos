@@ -53,16 +53,24 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+import { noopLogger } from '@dorkos/shared/logger';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { directoryDomain } from '../../services/core/directory/directory-capabilities.js';
 
 // Import the mocked BoundaryError for instanceof checks
 import { BoundaryError } from '../../lib/boundary.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 
 // The routes are served from the Hono `/api` app, so the test serves the
-// server's real routing rather than the Express app alone.
+// server's real routing rather than the Express app alone. The reads are
+// capabilities (`directory.browse`, `directory.default`) the mount serves.
 const admission = new MainRequestAdmission();
-const testServer = listeningServer(composedListener(admission));
+const testServer = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([directoryDomain], { logger: noopLogger }),
+  })
+);
 const BOUNDARY = '/Users/testuser';
 const AGENTS_ROOT = '/home/node/.dork/agents';
 
@@ -114,8 +122,11 @@ describe('Directory Routes', () => {
       const res = await request(testServer).get('/api/directory?path=/etc/passwd');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('outside directory boundary');
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.code).toBe('outside_boundary');
+      // The boundary's own message names the path; the answer never does.
+      expect(res.body.detail).toBe('Pick a folder inside the ones DorkOS may use.');
+      expect(res.body).not.toHaveProperty('error');
     });
 
     it('returns 404 for non-existent path', async () => {
@@ -126,7 +137,8 @@ describe('Directory Routes', () => {
       const res = await request(testServer).get('/api/directory?path=/nonexistent');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('not found');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toBe('That folder doesn’t exist.');
     });
 
     it('returns 403 for permission errors', async () => {
@@ -137,7 +149,7 @@ describe('Directory Routes', () => {
       const res = await request(testServer).get('/api/directory?path=/restricted');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('Permission denied');
+      expect(res.body.code).toBe('forbidden');
     });
 
     it('returns 400 for null byte paths', async () => {
@@ -148,7 +160,7 @@ describe('Directory Routes', () => {
       const res = await request(testServer).get('/api/directory?path=/foo%00bar');
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('NULL_BYTE');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('filters hidden directories by default', async () => {
@@ -315,7 +327,25 @@ describe('Directory Routes', () => {
         .send({ parentPath, folderName: 'existing-dir' });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('already exists');
+      expect(res.body.code).toBe('already_exists');
+      expect(res.body.detail).toBe('A folder with that name is already there.');
+    });
+
+    it('answers a failed mkdir with a fixed sentence, never the error text', async () => {
+      const parentPath = `${BOUNDARY}/projects`;
+      mockValidateBoundary.mockResolvedValue(parentPath);
+      mockAccess.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      mockMkdir.mockRejectedValue(new Error(`EIO: i/o error, mkdir '${parentPath}/new-one'`));
+
+      const res = await request(testServer)
+        .post('/api/directory')
+        .send({ parentPath, folderName: 'new-one' });
+
+      expect(res.status).toBe(500);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.code).toBe('internal_error');
+      expect(res.body.detail).toBe('Couldn’t make that folder. Try again.');
+      expect(JSON.stringify(res.body)).not.toContain(parentPath);
     });
 
     it('returns 400 for invalid folder names (uppercase)', async () => {
@@ -324,7 +354,10 @@ describe('Directory Routes', () => {
         .send({ parentPath: `${BOUNDARY}/projects`, folderName: 'MyAgent' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Invalid folder name');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe(
+        'Use lowercase letters, numbers and hyphens, starting with a letter.'
+      );
     });
 
     it('returns 400 for invalid folder names (special chars)', async () => {
@@ -333,7 +366,10 @@ describe('Directory Routes', () => {
         .send({ parentPath: `${BOUNDARY}/projects`, folderName: 'my_agent!' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Invalid folder name');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe(
+        'Use lowercase letters, numbers and hyphens, starting with a letter.'
+      );
     });
 
     it('returns 403 for paths outside boundary', async () => {
@@ -346,7 +382,7 @@ describe('Directory Routes', () => {
         .send({ parentPath: '/etc', folderName: 'my-agent' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('returns 400 when parentPath is missing', async () => {

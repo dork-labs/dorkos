@@ -14,9 +14,18 @@ status: specified
 **Carries out:** ADR [261015-042933](../../decisions/261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md)
 **Ideation:** [01-ideation.md](01-ideation.md) (the agreed design and Dorian's decisions; read it first)
 
+> **Changed 2026-11-24 by ADR `261124-150515` (sequence, not dates).** The dates, the launch and the "before launch / after launch" split in this document are retired. What it decided to build, and the order where one step needs another, stand. The live order is `meta/ROADMAP.md`.
+> ADR `261124-150516` changes steps A7 and A8: the agent computer runs the computer side only, not the whole server in a sealed role. The contract they carry stands, and a Mac will use it too.
+
 > **Changed 2026-11-22 by ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** P4 is the launch answer, not the end state: after launch the private space becomes a tenant on the space store (PGlite once it passes its gates), domain by domain, agents last, and a hub is a one-tenant space server. A space holds its members' data; only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. P1's "no runtimes" on a hub is a hosting policy read from the role setting; the wall that stays is that a shared host never holds a member's credentials or a key to a member's computer. B8's "older rooms stay on the Mac" holds until the rooms domain moves.
 
+> **Changed 2026-11-24 by ADR [`261124-194115`](../../decisions/261124-194115-your-mac-is-the-home-of-your-private-space.md) (your Mac is home).** P4 holds only for a person with no computer of their own. For a person with a Mac, the Mac is the home of their private space and the cloud hub is a way in. Steps B7 and B10 (the sidebar and search) and every step that has the cloud hub own "Private" must be re-read against that record before they are built.
+
+> **Changed 2026-11-25 by ADR [`261125-113808`](../../decisions/261125-113808-an-agent-that-runs-in-the-cloud-has-its-home-in-the-cloud.md) (each agent has one home).** For a person with a Mac, the cloud hub is a way in and is also the home of the agents they run on cloud agent computers, as `design-agent-computers.md` sections 0 and 1 describe. It holds no copy of an agent that lives on the Mac.
+
 ## Overview
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 The design is decided (ideation §2, ADR 261015-042933). This document turns it into ordered, sized steps for **three app chats** starting after the weekend usage reset (Saturday, October 17), so that:
 
@@ -40,6 +49,8 @@ DorkOS Cloud builds its half in four chats of its own (the hub fleet and front d
 - Everything the app needs is in the public repo: the hub role, the relay protocol, the space server. A self-hoster runs all of it with no DorkOS account.
 
 ## Non-goals (before launch)
+
+_"Before launch" and "after launch" are retired as reasons (ADR 261124-150515). Read these as the non-goals of this plan._
 
 - Access levels and guests at invite time (DOR-2743, after launch).
 - Claude Code and Codex on cloud agent computers (OpenCode at launch; Doe if the spike says yes).
@@ -125,6 +136,8 @@ Sizes: **S** under a day, **M** one to three days, **L** three to six days, each
 
 ### Launch gate (all chats)
 
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
+
 | Step    | What                                                                                                                                                                                                                                                                                                       | Size | Depends on                            |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------- |
 | **L1a** | **End to end, about December 22 to January 5.** Sign up on the web, land in your own DorkOS, a credits turn on a cloud agent, a relayed chat with a Mac agent, full control by page move, a teammate's mention in a team space; browser tests for each.                                                    | M    | A1 to A9, B1 to B8, C4b, C5 to C7, C9 |
@@ -135,6 +148,8 @@ Sizes: **S** under a day, **M** one to three days, **L** three to six days, each
 **Tickets** (project "Everything is a space", umbrella DOR-2932): A1 to A11 are DOR-2933 to DOR-2943; B1 to B10 are DOR-2944 to DOR-2953; C1 DOR-2875, C2 DOR-2877, C3 DOR-2878, C4 DOR-2876, C4b DOR-2881; C5 to C12 are DOR-2954 to DOR-2961; C13 DOR-2879; L1a DOR-2962; L1b DOR-2963. The accounts-and-devices steps: S1 DOR-2964, F0 DOR-2965, F3 DOR-2966, F1 DOR-2967, F5 DOR-2968, F4 DOR-2969, D DOR-2970, and the after-launch follow-ups DOR-2971. Every "Depends on" is a blocking link in Linear.
 
 ## Build order for the three chats
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 Weeks start on Monday. Each chat takes the next step in its column when the last one merges.
 
@@ -165,6 +180,8 @@ The dates above are the 2026-10-15 re-plan with the accounts-and-devices steps (
 - The client sidebar is B7's. A6 and C5 land earlier and add their rows to today's sidebar; B7 then moves them into the new layout.
 - C5 changes the sign-in surface that C1 freezes, so it updates C1's tests on purpose.
 - Server-merge step 5 (the space as a library, DOR-2880) is not a must-have; it waits until after launch unless chat C has room after C12.
+
+_Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._
 
 **No Show HN over the holidays.** **Cut list if a chat falls a week behind** (Dorian decides, in this order): C12 (the self-hosted wake channel; self-hosters reach the Mac by page move), B10's reach into computers (rooms-only search), A11's "everything" export (one agent only).
 

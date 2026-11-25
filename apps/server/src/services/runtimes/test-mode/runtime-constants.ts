@@ -63,6 +63,16 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   // `context_staged` that surface them (task 4.4).
   supportsSteer: true,
   supportsContextStaging: true,
+  // Scripted turns start no background work and write no background-work
+  // record, so a restart has nothing to wake a chat for. Spec
+  // `turns-survive-restarts` K13 wants this `true`; that needs test-mode to
+  // write a record first, which is T15's fixture, not a flag flip.
+  wakesForLostBackgroundWork: false,
+  // A scripted stand-in, `true` for the restart proofs (spec
+  // `turns-survive-restarts` §8), not a measured resume: nothing
+  // of a turn lives in the runtime, so a fresh instance takes the next turn on
+  // the same chat. Its conformance run drives that with a cut tool turn.
+  continuesInterruptedTurn: true,
   // Test-mode injects nothing natively; the assembler bag is rendered verbatim.
   nativeContext: [],
   // Stateless: completed history lives only in the DorkOS EventLog, so the

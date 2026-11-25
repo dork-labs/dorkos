@@ -70,7 +70,7 @@ describe('useAgentQueueActions', () => {
   it('stays quiet when the message already left the queue', async () => {
     const { transport, view } = mount();
     vi.mocked(transport.removeQueuedMessage).mockRejectedValueOnce(
-      Object.assign(new Error('gone'), { code: 'QUEUED_MESSAGE_NOT_FOUND' })
+      Object.assign(new Error('gone'), { code: 'queued_message_not_found' })
     );
     act(() => view.result.current.dontDeliver('row-1', 'Security'));
     await waitFor(() => expect(transport.removeQueuedMessage).toHaveBeenCalled());
@@ -82,7 +82,7 @@ describe('Don’t deliver while Send now carries it', () => {
   it('says it is already on its way, not that something failed', async () => {
     const { transport, view } = mount();
     vi.mocked(transport.removeQueuedMessage).mockRejectedValueOnce(
-      Object.assign(new Error('starting'), { code: 'QUEUED_MESSAGE_LAUNCHING' })
+      Object.assign(new Error('starting'), { code: 'queued_message_launching' })
     );
     act(() => view.result.current.dontDeliver('row-1', 'Security'));
     await waitFor(() => expect(toast).toHaveBeenCalledWith('It’s already on its way.'));
@@ -108,7 +108,7 @@ describe('a second Send now press', () => {
   it('treats "already on its way" as the send it is, not a failure', async () => {
     const { transport, view } = mount();
     vi.mocked(transport.steerQueuedChatMessage).mockRejectedValueOnce(
-      Object.assign(new Error('starting'), { code: 'QUEUED_MESSAGE_LAUNCHING' })
+      Object.assign(new Error('starting'), { code: 'queued_message_launching' })
     );
     act(() => view.result.current.sendNow('row-1'));
     await waitFor(() => expect(view.result.current.sending.has('row-1')).toBe(false));
@@ -126,7 +126,7 @@ describe('telling the queue an action failed', () => {
 
     const onItsWay = vi.fn();
     vi.mocked(transport.removeQueuedMessage).mockRejectedValueOnce(
-      Object.assign(new Error('starting'), { code: 'QUEUED_MESSAGE_LAUNCHING' })
+      Object.assign(new Error('starting'), { code: 'queued_message_launching' })
     );
     act(() => view.result.current.dontDeliver('row-2', 'Security', onItsWay));
     await waitFor(() => expect(toast).toHaveBeenCalledWith('It’s already on its way.'));

@@ -14,6 +14,8 @@ amends: [0204]
 
 Accepted (Dorian, 2026-11-23). Supersedes the window recorded on 2026-11-21 in [`research/20261121_rest-api-review.md`](../research/20261121_rest-api-review.md) §8 ("the later of 20 minors and 90 days"), which was never written as an ADR. Feeds DOR-4983.
 
+**Amended by** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (accepted 2026-11-24): "breaking changes land at once with every caller fixed" stands for the HTTP API and its streams. It does not cover the contract between two computers, where the caller is another machine on another version: that wire negotiates a version and a feature list from its first build.
+
 **Amends** [0204](0204-consolidate-sse-connections-into-unified-stream.md), which stays Accepted: its consequence "old endpoints must be deprecated carefully if external consumers use them directly" is retired for every HTTP endpoint and stream. Its consolidation onto one stream stands. The precedent is ADR 0193, which migrated in one change "with no deprecation period" because every consumer lived in the repo.
 
 ## Context

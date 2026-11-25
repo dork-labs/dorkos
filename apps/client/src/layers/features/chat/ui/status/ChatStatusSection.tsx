@@ -84,7 +84,7 @@ interface ChatStatusSectionProps {
   /**
    * Draw no status line (DOR-3074): a chat drawn as a direct message keeps the
    * model, account, permission mode, usage and git behind its session view
-   * instead. Safety and limits stay: the Wi-Fi notice and a nearly full
+   * instead. Safety and limits stay: the network notice and a nearly full
    * context show on a quiet line of their own (`DirectMessageSafetyLine`), and
    * what a typed command opens (`/context`, the Full-autonomy question) still
    * opens. The session shortcut does nothing, having no popover to open.
@@ -355,7 +355,7 @@ export function ChatStatusSection({
     // Holds the item on the line while its picker is open, so choosing the
     // safest stop does not pull the popover out from under the person.
     permissionPickerOpen: pickerOpen,
-    // From Wi-Fi the chip says what every turn runs at, so it always shows.
+    // From the network the chip says what every turn runs at, so it always shows.
     onWifi,
     // `null` on a runtime with no way of working to offer, which is most of them.
     plan: workingMode ? { active: planActive } : null,
@@ -388,7 +388,7 @@ export function ChatStatusSection({
   // Gated on `compaction.visible`, never re-derived: the hook already folds in
   // runtime support, the 85% threshold, AND `isStreaming`. A separately-derived
   // condition drifted from it once already, offering an enabled Compact button
-  // mid-turn that could only ever 409 `SESSION_LOCKED` (DOR-112 requirement 1).
+  // mid-turn that could only ever 409 `session_locked` (DOR-112 requirement 1).
   const inlineCompact = compaction.visible && budget.density === 'full';
   const promotedCompactAction = compaction.visible && !inlineCompact;
 
@@ -458,7 +458,7 @@ export function ChatStatusSection({
           nameFirst={isPhoneDensity(budget.density)}
           trailing={
             <span className="flex items-center gap-2">
-              {/* From Wi-Fi every turn asks before acting (DOR-3037): outside the
+              {/* From a device on the network every turn asks before acting (DOR-3037): outside the
                 budget, so a busy line never hides it. */}
               <WifiTurnCapPill compact={budget.density !== 'full'} />
               <SessionPopover

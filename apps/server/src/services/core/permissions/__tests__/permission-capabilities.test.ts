@@ -16,10 +16,12 @@ import {
   defineCapability,
   initCapabilityTierGate,
   initPermissionGate,
+  personCaller,
   resetCapabilityTierGate,
   resetPermissionGate,
   type CapabilityDeps,
   type CapabilityRegistry,
+  type PersonCaller,
 } from '../../capabilities/index.js';
 import { invokeCapabilityAsMcpResult } from '../../capabilities/mcp-projection.js';
 import { ApprovalService, BLOCKED_REQUEST_DENY_COOLDOWN_MS } from '../../approvals/index.js';
@@ -83,6 +85,21 @@ const DOMAINS = [
       reachProbe('reach.in_session', 'in_session_only', ['in-session']),
       reachProbe('reach.external', 'external_only', ['external']),
       reachProbe('reach.unlisted', null, []),
+      // Only a person may run it (ADR 261123-170830), so no agent may ask for it.
+      defineCapability({
+        id: 'reach.person_only',
+        title: 'Probe reach.person_only',
+        description: 'A person-only probe.',
+        tier: 'observe',
+        area: null,
+        input: z.object({ title: z.string() }),
+        output: z.unknown(),
+        surfaces: { http: { method: 'post', path: '/api/reach/person-only', audience: 'person' } },
+        invoke: async (_deps, input) => {
+          ran.push({ id: 'reach.person_only', input });
+          return { created: input.title };
+        },
+      }),
     ],
   },
   permissionsDomain,
@@ -428,6 +445,47 @@ describe('permissions.request_access and permissions.list', () => {
       };
       const result = await tool.handler({ ...REQUEST, action: 'external_only' }, {});
       expect(payloadOf(result)).toMatchObject({ code: 'UNKNOWN_ACTION' });
+    });
+
+    it('never reaches a person-only action, on any surface, HTTP included', async () => {
+      expect(await askOn(null, 'reach.person_only')).toBe('UNKNOWN_ACTION');
+      expect(await askOn('in-session', 'reach.person_only')).toBe('UNKNOWN_ACTION');
+      expect(ran).toEqual([]);
+      expect(approvals.listPending()).toEqual([]);
+    });
+
+    it('refuses a person-only action inside registry.invoke, for any caller but a proven person', async () => {
+      const refused = { payload: { code: 'PERSON_ONLY' } };
+      const args = { title: 'x' };
+      await expect(
+        registry.invoke('reach.person_only', args, { identity: dorkbot() })
+      ).rejects.toMatchObject(refused);
+      // An in-process caller that names nobody, as the request tool's re-invoke did.
+      await expect(registry.invoke('reach.person_only', args, {})).rejects.toMatchObject(refused);
+      await expect(
+        registry.invoke('reach.person_only', args, {
+          blockedRequest: { reason: 'please' },
+          agentIdentityPresented: true,
+        })
+      ).rejects.toMatchObject(refused);
+      // A look-alike proof is not one.
+      await expect(
+        registry.invoke('reach.person_only', args, {
+          person: { proves: 'person' } as unknown as PersonCaller,
+        })
+      ).rejects.toMatchObject(refused);
+      expect(ran).toEqual([]);
+
+      const person = personCaller({
+        agentIdentityPresented: false,
+        approvalTokenPresented: false,
+        loginEnabled: () => false,
+        authorizationPresented: false,
+      });
+      expect(person).toBeDefined();
+      await expect(registry.invoke('reach.person_only', args, { person })).resolves.toEqual({
+        created: 'x',
+      });
     });
 
     it('never runs an action the surface does not list', async () => {

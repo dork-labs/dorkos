@@ -13,8 +13,11 @@
  */
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { homeOf, readHomeManifest, resolveAgentHome } from '../../core/agent-identity/index.js';
-import { projectOfFolder } from '../../core/usage/account-eligibility.js';
-import { resolveLaunchAccountRoot, type LaunchAccountResolution } from './claude-config-dir.js';
+import {
+  projectOfFolder,
+  type LaunchAccountResolution,
+} from '../../core/usage/account-eligibility.js';
+import { resolveLaunchAccountRoot } from './claude-config-dir.js';
 import { accountUnlessHeld } from './folder-settings/folder-config-consent.js';
 
 /** Re-exported for `ClaudeCodeRuntime.accountRootForSession`, which predicts the same account. */

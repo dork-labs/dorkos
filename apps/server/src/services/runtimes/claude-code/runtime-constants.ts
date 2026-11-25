@@ -68,6 +68,13 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // adapter DOES, and it now does both.
   supportsSteer: true,
   supportsContextStaging: true,
+  // Shipped (DOR-2065): a warm process holding background work is written to
+  // `messaging/background-work-ledger.ts`, and the boot after a restart wakes
+  // each chat it names (`session/runtime-turns/wake-cut-short-work.ts`).
+  wakesForLostBackgroundWork: true,
+  // `--resume` after a restart and the CLI's own "didn't finish" notice cover
+  // work after a FINISHED turn; a turn cut mid-tool is unmeasured (T18 flips it).
+  continuesInterruptedTurn: false,
   // The FLOOR, not the answer: `ClaudeCodeRuntime.getCapabilities` overrides it
   // to `'attachments'` whenever the composition root handed the runtime a
   // `SessionAttachmentStore`. Wired without one there is nowhere to put a

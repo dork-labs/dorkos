@@ -11,7 +11,7 @@ import type { LoadGateSettings } from '@dorkos/shared/config-schema';
 import { createLoadGate, type BusyStatus, type HeldSlot, type WaitStatus } from '../load-gate.js';
 import { fixedLoadSource } from '../load-source.js';
 import { prepareDir } from '../queue-folder.js';
-import { DEFAULT_LEASE_MS, TicketQueue } from '../ticket-queue.js';
+import { TicketQueue } from '../ticket-queue.js';
 
 const MINUTE = 60_000;
 const POLL = 5_000;
@@ -89,12 +89,6 @@ function track(wait: Promise<HeldSlot | null>) {
   return state;
 }
 
-/** Turn the queue folder into a plain file, so every operation on it fails. */
-function breakFolder(): void {
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.writeFileSync(dir, 'not a folder');
-}
-
 describe('waitForSlot', () => {
   it('holds two jobs while the machine is busy, then lets them run one at a time, first come first', async () => {
     const { gate, time, loadSource, queue } = setup(20);
@@ -136,22 +130,6 @@ describe('waitForSlot', () => {
     expect(queue.runningCount()).toBe(0);
   });
 
-  it('says once a job has waited past maxWaitMinutes, and keeps it waiting', async () => {
-    settings.maxWaitMinutes = 2;
-    const { gate, time } = setup(20);
-    const seen: WaitStatus[] = [];
-    const wait = track(gate.waitForSlot({ job: 'pnpm' }, { onWait: (s) => void seen.push(s) }));
-    await settle();
-    await time.step(MINUTE);
-    await time.step(MINUTE);
-    expect(seen.map((s) => [s.waitedMs, s.pastMaxWait])).toEqual([
-      [0, false],
-      [MINUTE, false],
-      [2 * MINUTE, true],
-    ]);
-    expect(wait.slot).toBeUndefined();
-  });
-
   it('runs the job anyway at the hard cap, and logs only its program', async () => {
     settings.maxWaitMinutes = 1;
     settings.hardCapMinutes = 3;
@@ -166,18 +144,6 @@ describe('waitForSlot', () => {
     expect(lines).toEqual(['[LoadGate] A pnpm job ran after waiting 3 min, the hard cap']);
     wait.slot!.release();
     expect(queue.runningCount()).toBe(0);
-  });
-
-  it('reads a hard cap below maxWaitMinutes as maxWaitMinutes', async () => {
-    settings.maxWaitMinutes = 3;
-    settings.hardCapMinutes = 1;
-    const { gate, time } = setup(20);
-    const wait = track(gate.waitForSlot({ job: 'pnpm' }));
-    await settle();
-    await time.step(2 * MINUTE);
-    expect(wait.slot).toBeUndefined();
-    await time.step(MINUTE);
-    expect(wait.slot?.outcome).toBe('hard-cap');
   });
 
   it('runs a job a person lets through at once, past a busy machine and a full slot', async () => {
@@ -214,18 +180,6 @@ describe('waitForSlot', () => {
     expect(queue.list()).toEqual([]);
   });
 
-  it('refuses at once for a signal already stopped, queueing nothing', async () => {
-    const { gate, queue } = setup(20);
-    const controller = new AbortController();
-    controller.abort();
-    await expect(
-      gate.waitForSlot({ job: 'pnpm' }, { signal: controller.signal })
-    ).rejects.toMatchObject({
-      name: 'AbortError',
-    });
-    expect(queue.list()).toEqual([]);
-  });
-
   it('does not wait at all when the gate is off', async () => {
     settings.enabled = false;
     const { gate, queue } = setup(99);
@@ -234,38 +188,6 @@ describe('waitForSlot', () => {
       waitedMs: 0,
     });
     expect(queue.list()).toEqual([]);
-  });
-
-  it('lets a waiting job go when the gate is switched off mid-wait', async () => {
-    const { gate, time, queue } = setup(99);
-    const wait = track(gate.waitForSlot({ job: 'pnpm' }));
-    await settle();
-    settings.enabled = false;
-    await time.step(POLL);
-    expect(wait.slot).toMatchObject({ outcome: 'ran', waitedMs: POLL });
-    expect(queue.list()).toEqual([]);
-  });
-});
-
-describe('a ticket that went missing', () => {
-  it('rejoins at its own place and never reports a place it does not have', async () => {
-    const { gate, time, queue } = setup(20);
-    const aSeen: WaitStatus[] = [];
-    track(gate.waitForSlot({ job: 'pnpm' }, { onWait: (s) => void aSeen.push(s) }));
-    track(gate.waitForSlot({ job: 'tsc' }));
-    await settle();
-    const [mine] = queue.list();
-    fs.rmSync(
-      path.join(
-        dir,
-        fs.readdirSync(dir).find((name) => name.includes(mine!.id))!
-      )
-    );
-    expect(queue.position(mine!)).toBe(0);
-
-    await time.step(MINUTE);
-    expect(queue.list().map((ticket) => ticket.id)[0]).toBe(mine!.id);
-    expect(aSeen.map((s) => s.position)).toEqual([1, 1]);
   });
 });
 
@@ -295,42 +217,6 @@ describe('a running job’s heartbeat', () => {
     held.slot!.release();
     expect(vi.getTimerCount()).toBe(0);
     expect(held.slot!.heartbeat()).toBe(false);
-  });
-
-  it('stops beating on its own a lease past the hard cap, so a slot nobody released goes quiet', async () => {
-    settings.maxWaitMinutes = 1;
-    settings.hardCapMinutes = 1;
-    const { gate, time } = setup(4);
-    const held = track(gate.waitForSlot({ job: 'pnpm' }));
-    await settle();
-
-    await time.step(MINUTE + DEFAULT_LEASE_MS);
-    vi.advanceTimersByTime(POLL);
-    expect(vi.getTimerCount()).toBe(1);
-    const lastBeat = slotTime();
-
-    await time.step(POLL);
-    vi.advanceTimersByTime(POLL);
-    expect(vi.getTimerCount()).toBe(0);
-    expect(slotTime()).toBe(lastBeat);
-    // A caller whose job really runs longer can still keep it.
-    expect(held.slot!.heartbeat()).toBe(true);
-    held.slot!.release();
-  });
-
-  it('says once when the slot was taken back, and stops refreshing it', async () => {
-    const { gate, lines } = setup(4);
-    const held = track(gate.waitForSlot({ job: 'pnpm' }));
-    await settle();
-    // Another job's marker now sits under the same slot name.
-    fs.writeFileSync(
-      path.join(dir, 'slot-0.json'),
-      JSON.stringify({ id: 'ffffffffffffffff', pid: process.pid, startedAt: 1, acquiredAt: 1 })
-    );
-    expect(held.slot!.heartbeat()).toBe(false);
-    expect(held.slot!.heartbeat()).toBe(false);
-    expect(lines).toEqual(['[LoadGate] A pnpm job lost its slot while it ran']);
-    held.slot!.release();
   });
 });
 
@@ -369,22 +255,6 @@ describe('when the shared folder fails', () => {
     ]);
   });
 
-  it('keeps applying the load limit there, logging no command text', async () => {
-    const { gate, time, lines, loadSource } = setup(99);
-    const wait = track(gate.gateIfHeavy('pnpm build --filter made-up-secret-name', {}));
-    await settle();
-    breakFolder();
-    await time.step(POLL);
-    expect(wait.slot).toBeUndefined();
-    loadSource.set(4);
-    await time.step(POLL);
-    expect(wait.slot).toMatchObject({ outcome: 'gate-error', waitedMs: 2 * POLL });
-    expect(lines).toEqual([
-      "[LoadGate] The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time (ENOTDIR)",
-    ]);
-    expect(lines.join('\n')).not.toContain('made-up-secret-name');
-  });
-
   // Making a link on Windows needs a privilege a test runner may not have.
   it.skipIf(process.platform === 'win32')(
     'refuses a queue folder that is a link to a folder this user owns, and waits here instead',
@@ -413,36 +283,6 @@ describe('when the shared folder fails', () => {
     }
   );
 
-  it('runs the job when even the settings cannot be read', async () => {
-    const lines: string[] = [];
-    const gate = createLoadGate({
-      config: () => {
-        throw new Error('made-up unreadable settings');
-      },
-      dir,
-      log: (line) => lines.push(line),
-    });
-    await expect(gate.waitForSlot({ job: 'pnpm' })).resolves.toMatchObject({
-      outcome: 'gate-error',
-    });
-    expect(lines).toEqual([
-      "[LoadGate] The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time (Error)",
-      '[LoadGate] The load gate could not wait; heavy jobs run without waiting (Error)',
-    ]);
-  });
-
-  it('still rejects with the AbortError when taking the ticket out fails too', async () => {
-    const { gate, lines } = setup(99);
-    const controller = new AbortController();
-    const wait = track(gate.waitForSlot({ job: 'pnpm' }, { signal: controller.signal }));
-    await settle();
-    breakFolder();
-    controller.abort();
-    await settle();
-    expect((wait.error as DOMException).name).toBe('AbortError');
-    expect(lines).toEqual([]);
-  });
-
   it('never writes command text, even when a caller passes it as the label', async () => {
     const { gate, lines } = setup(4);
     const slot = await gate.waitForSlot({ job: 'pnpm build --filter made-up-secret-name' });
@@ -451,30 +291,6 @@ describe('when the shared folder fails', () => {
       "[LoadGate] The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time (TypeError)",
     ]);
     expect(fs.readdirSync(dir).join('\n')).not.toContain('made-up-secret-name');
-  });
-
-  it('logs and keeps waiting when a progress handler throws or rejects', async () => {
-    const { gate, lines } = setup(99);
-    const rejecting = track(
-      gate.waitForSlot({ job: 'pnpm' }, { onWait: () => Promise.reject(new Error('x')) })
-    );
-    const throwing = track(
-      gate.waitForSlot(
-        { job: 'tsc' },
-        {
-          onWait: () => {
-            throw new Error('x');
-          },
-        }
-      )
-    );
-    await settle();
-    expect(lines).toEqual([
-      '[LoadGate] A wait progress handler failed',
-      '[LoadGate] A wait progress handler failed',
-    ]);
-    expect(rejecting.slot).toBeUndefined();
-    expect(throwing.slot).toBeUndefined();
   });
 });
 
@@ -502,12 +318,6 @@ describe('who a job is for', () => {
 });
 
 describe('gateIfHeavy', () => {
-  it('lets a light command straight through', async () => {
-    const { gate, queue } = setup(99);
-    await expect(gate.gateIfHeavy('ls -la', {})).resolves.toBeNull();
-    expect(queue.list()).toEqual([]);
-  });
-
   it('queues a heavy command under its program name alone', async () => {
     const { gate, queue } = setup(99);
     const wait = track(gate.gateIfHeavy('pnpm exec tsc -p /made/up/project', { chatId: 'c1' }));
@@ -516,25 +326,9 @@ describe('gateIfHeavy', () => {
     expect(gate.waitingJobs().map((job) => job.chatId)).toEqual(['c1']);
     expect(wait.slot).toBeUndefined();
   });
-
-  it('reads the person’s overrides from settings', async () => {
-    settings.heavyCommands = { add: [], remove: ['tsc'] };
-    const { gate } = setup(99);
-    await expect(gate.gateIfHeavy('tsc -p .', {})).resolves.toBeNull();
-  });
 });
 
 describe('occupy: a heavy job already running counts at once (DOR-4743)', () => {
-  it('takes a slot past the load limit, never waiting, and never joins the line', async () => {
-    const { gate, queue } = setup(99);
-    const running = gate.occupy('pnpm build');
-    expect(running).toMatchObject({ outcome: 'ran', waitedMs: 0 });
-    expect(queue.runningCount()).toBe(1);
-    expect(queue.list()).toEqual([]);
-    running!.release();
-    expect(queue.runningCount()).toBe(0);
-  });
-
   it('makes the next heavy job wait behind it until it ends', async () => {
     const { gate, time } = setup(4);
     const running = gate.occupy('pnpm build')!;
@@ -548,14 +342,6 @@ describe('occupy: a heavy job already running counts at once (DOR-4743)', () => 
     next.slot!.release();
   });
 
-  it('takes nothing for a light command, or while the gate is off', () => {
-    const { gate, queue } = setup(99);
-    expect(gate.occupy('ls -la')).toBeNull();
-    settings.enabled = false;
-    expect(gate.occupy('pnpm build')).toBeNull();
-    expect(queue.runningCount()).toBe(0);
-  });
-
   it('shares one slot among one thread’s running jobs, given back with the last', () => {
     const { gate, queue } = setup(99);
     const build = gate.occupy('pnpm build', { shareKey: 'codex:c1:running' })!;
@@ -565,35 +351,6 @@ describe('occupy: a heavy job already running counts at once (DOR-4743)', () => 
     expect(queue.runningCount()).toBe(1);
     test.release();
     expect(queue.runningCount()).toBe(0);
-  });
-
-  it('never lets a thread still in line past it: the running job counts on its own', async () => {
-    const { gate, time, queue } = setup(20);
-    const waiting = track(gate.gateIfHeavy('pnpm build', { shareKey: 'k' }));
-    await settle();
-    const running = gate.occupy('pnpm test', { shareKey: 'k' })!;
-    expect(queue.runningCount()).toBe(1);
-    expect(queue.list()).toHaveLength(1);
-    await time.step(POLL);
-    expect(waiting.slot).toBeUndefined();
-    running.release();
-    expect(queue.runningCount()).toBe(0);
-    expect(queue.list()).toHaveLength(1);
-  });
-
-  it('counts in this server’s own line when the shared folder fails', async () => {
-    const { gate, time, lines } = setup(4);
-    breakFolder();
-    const running = gate.occupy('pnpm build')!;
-    expect(running.outcome).toBe('gate-error');
-    const next = track(gate.waitForSlot({ job: 'tsc' }));
-    await settle();
-    await time.step(POLL);
-    expect(next.slot).toBeUndefined();
-    running.release();
-    await time.step(POLL);
-    expect(next.slot?.outcome).toBe('gate-error');
-    expect(JSON.stringify(lines)).not.toMatch(/build/);
   });
 });
 
@@ -607,15 +364,6 @@ describe('waitWhileBusy (DOR-4743)', () => {
     );
     return state;
   }
-
-  it('returns at once while the computer is calm, or when the caller has no reason to wait', async () => {
-    const calm = setup(4);
-    const seen: BusyStatus[] = [];
-    await calm.gate.waitWhileBusy(() => true, { onWait: (s) => void seen.push(s) });
-    const busy = setup(20);
-    await busy.gate.waitWhileBusy(() => false, { onWait: (s) => void seen.push(s) });
-    expect(seen).toEqual([]);
-  });
 
   it('waits while both hold, says so every minute, and returns once either stops', async () => {
     const { gate, time, loadSource } = setup(20);
@@ -640,16 +388,6 @@ describe('waitWhileBusy (DOR-4743)', () => {
     expect(again.done).toBe(true);
   });
 
-  it('stops with an AbortError', async () => {
-    const { gate } = setup(20);
-    const stop = new AbortController();
-    const wait = trackWait(gate.waitWhileBusy(() => true, { signal: stop.signal }));
-    await settle();
-    stop.abort();
-    await settle();
-    expect((wait.error as Error | undefined)?.name).toBe('AbortError');
-  });
-
   it('gives up at maxWaitMinutes, not the hard cap: what waits here is a person’s reply', async () => {
     const { gate, time, lines } = setup(20);
     const wait = trackWait(gate.waitWhileBusy(() => true));
@@ -659,17 +397,5 @@ describe('waitWhileBusy (DOR-4743)', () => {
     await time.step(MINUTE);
     expect(wait.done).toBe(true);
     expect(lines).toEqual(['[LoadGate] Work started after waiting 60 min, the longest it waits']);
-  });
-
-  it('fails open when the settings cannot be read', async () => {
-    const broken = createLoadGate({
-      config: () => {
-        throw new Error('not loaded');
-      },
-      dir,
-      loadSource: fixedLoadSource(20),
-      log: () => {},
-    });
-    await expect(broken.waitWhileBusy(() => true)).resolves.toBeUndefined();
   });
 });

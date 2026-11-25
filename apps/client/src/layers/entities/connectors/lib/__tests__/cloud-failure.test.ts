@@ -4,7 +4,6 @@ import { cloudFailure } from '../cloud-failure';
 describe('cloudFailure', () => {
   it.each([
     ['cloud_link_required', 'relink'],
-    ['cloud_link_needs_update', 'relink'],
     ['cloud_unavailable', undefined],
     ['cloud_refused', undefined],
   ])('gives %s its own copy, offering a relink only for a link problem', (code, action) => {

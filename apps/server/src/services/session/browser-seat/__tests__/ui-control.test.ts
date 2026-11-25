@@ -5,9 +5,14 @@ import type { UiState } from '@dorkos/shared/types';
 import { CanvasDocumentStore, CanvasService, setCanvasService } from '../../../canvas/index.js';
 import { CapabilityToolError } from '../../../core/capabilities/index.js';
 import { logger } from '../../../../lib/logger.js';
-import { STATUS_BY_CODE } from '../../../../routes/room-error-response.js';
+import { roomErrorStatus } from '../../../../routes/room-error-response.js';
 import { controlUi, getUiState, type UiCallerContext } from '../ui-control.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 // The window these verbs reach is a session's durable stream. Captured rather
 // than stood up: what every assertion below is about is WHICH event the handler
@@ -403,7 +408,7 @@ describe('control_ui when the canvas writer faults', () => {
     // status does not have to match on prose — so the code has to mean what
     // happened. `ROOM_NOT_FOUND` said "that thing does not exist" about a write
     // that failed on a canvas that does.
-    expect(STATUS_BY_CODE.CANVAS_UNAVAILABLE).toBe(503);
-    expect(STATUS_BY_CODE.ROOM_NOT_FOUND).toBe(404);
+    expect(roomErrorStatus('CANVAS_UNAVAILABLE')).toBe(503);
+    expect(roomErrorStatus('ROOM_NOT_FOUND')).toBe(404);
   });
 });

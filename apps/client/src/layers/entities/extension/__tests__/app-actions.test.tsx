@@ -118,4 +118,44 @@ describe('useAppActions', () => {
     await act(() => fixed.result.current.tryAgain('w'));
     expect(openSettings).not.toHaveBeenCalled();
   });
+
+  it('shows the person bar’s own sentence when turning an app on is refused', async () => {
+    const detail = 'Nothing changed. Only a person turns extensions on or off, in Settings.';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          {
+            type: 'urn:dorkos:problem:person_only',
+            title: 'Only a person can do that, not an agent.',
+            status: 403,
+            code: 'person_only',
+            detail,
+          },
+          { status: 403, headers: { 'Content-Type': 'application/problem+json' } }
+        )
+      )
+    );
+    try {
+      const { result } = setup();
+      await act(() => result.current.setOn('board', true));
+      expect(toast).toHaveBeenCalledWith(detail);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('says it could not turn the app off when the server sends no sentence', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 502 }))
+    );
+    try {
+      const { result } = setup();
+      await act(() => result.current.setOn('board', false));
+      expect(toast).toHaveBeenCalledWith('Couldn’t turn it off. Try again.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

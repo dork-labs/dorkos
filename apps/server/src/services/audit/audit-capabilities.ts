@@ -47,6 +47,7 @@ import {
   type RunningChatSources,
 } from '../session/running-chats/running-chats.js';
 import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
+import type { MeshCore } from '@dorkos/mesh';
 import type { AuditLog } from './audit-log.js';
 import type { AccountIds } from './account-ids.js';
 import { isPlainSessionId } from './plain-session-id.js';
@@ -79,6 +80,8 @@ declare module '../core/capabilities/capability-definition.js' {
         sessionId: string,
         page: { offset: number; limit: number }
       ) => Promise<TranscriptPage | undefined>;
+      /** The agent roster `running_chats` lists, read per call; none when the mesh did not start. */
+      roster?: () => Pick<MeshCore, 'listWithPaths'> | undefined;
       /** Where `running_chats` reads live chats; the server's own projectors when absent. */
       runningChatSources?: RunningChatSources;
     };
@@ -113,7 +116,7 @@ function requireAuditDeps(deps: CapabilityDeps): AuditDeps {
  * @param context - The invocation context.
  */
 export function readerFor(
-  audit: AuditDeps,
+  audit: Pick<AuditDeps, 'accounts'>,
   context: CapabilityInvocationContext | undefined
 ): AuditReader {
   if (context?.identity) {
@@ -227,7 +230,7 @@ export const auditDomain: CapabilityDomain = {
         if (!found) {
           throw new CapabilityToolError({
             error: 'No audit event with that id.',
-            code: 'NOT_FOUND',
+            code: 'AUDIT_EVENT_NOT_FOUND',
           });
         }
         return found;
@@ -333,7 +336,7 @@ export const auditDomain: CapabilityDomain = {
         const audit = requireAuditDeps(deps);
         const withoutTitles = context?.narrowedReads === true;
         const running = await listRunningChats(
-          deps.operatorDeps?.meshCore,
+          audit.roster?.(),
           readerFor(audit, context),
           audit.runningChatSources,
           { withoutTitles }

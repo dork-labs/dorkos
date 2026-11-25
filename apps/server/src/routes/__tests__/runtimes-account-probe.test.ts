@@ -61,11 +61,12 @@ describe('POST /api/runtimes/claude-code/accounts/:id/probe (spec claude-account
     expect(store.record).not.toHaveBeenCalled();
   });
 
-  it('answers 404 UNKNOWN_ACCOUNT for an id nobody registered', async () => {
+  it('answers 404 not_found for an id nobody registered', async () => {
     installStore([work]);
     const res = await request(server).post('/api/runtimes/claude-code/accounts/nobody/probe');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('UNKNOWN_ACCOUNT');
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('not_found');
   });
 
   it('refuses a caller that names itself an agent, and starts nothing', async () => {
@@ -74,7 +75,7 @@ describe('POST /api/runtimes/claude-code/accounts/:id/probe (spec claude-account
       .post('/api/runtimes/claude-code/accounts/work/probe')
       .set(AGENT_IDENTITY_HEADER, 'any-agent-token');
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PERSON_ONLY');
+    expect(res.body.code).toBe('person_only');
     expect(store.listAccounts).not.toHaveBeenCalled();
     expect(store.record).not.toHaveBeenCalled();
   });

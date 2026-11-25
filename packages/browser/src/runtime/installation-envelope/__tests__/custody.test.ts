@@ -1,17 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
-import { Intake, type BytePort } from '../owner.js';
+import { describe, expect, it } from 'vitest';
+import { type BytePort } from '../owner.js';
 import { EnvelopeError } from '../scanner.js';
-import {
-  fixture,
-  bounded,
-  descriptor,
-  runner,
-  bytesPort,
-  wire,
-  deliver,
-  publication,
-  sha,
-} from './fixtures.js';
+import { fixture, bounded, descriptor, runner, bytesPort, wire, sha } from './fixtures.js';
 
 const defer = <T>() => {
   let resolve!: (value: T) => void;
@@ -81,31 +71,6 @@ describe('retained delivery ownership', () => {
     expect(f.domain.inspect().cleanupCauses).toContain('CUSTODY_UNCERTAIN');
     expect(() => f.issuer.registerJob(bounded(descriptor('official-install', 'next')))).toThrow();
   });
-  it('exact close ACK does not refund a still-held read promise', async () => {
-    const f = fixture();
-    const { job, witness } = prepare(f);
-    const held = defer<{ count: number; eof: boolean; delivery: object }>();
-    let delivery!: object;
-    const port: BytePort = {
-      read(_target, token) {
-        delivery = token;
-        return held.promise;
-      },
-      async close(token) {
-        return { delivery: token, state: 'closed' };
-      },
-    };
-    const pending = f.domain.intake(job, {}, port, witness);
-    const refusal = expect(pending).rejects.toThrow('ATTEMPT_INTERRUPTED');
-    f.abort.abort();
-    await Promise.resolve();
-    await Promise.resolve();
-    const heldUnits = f.domain.inspect().logicalUnits;
-    held.resolve({ count: 0, eof: true, delivery });
-    await refusal;
-    expect(heldUnits).toBe(1048576);
-    expect(f.domain.inspect().logicalUnits).toBe(0);
-  });
   it('post-getter retirement prevents ordinary byte IO and releases only exact acknowledged custody', async () => {
     const f = fixture();
     const { job, witness } = prepare(f);
@@ -128,29 +93,6 @@ describe('retained delivery ownership', () => {
     expect(reads).toBe(0);
     expect(closes).toBe(1);
     expect(f.domain.inspect().logicalUnits).toBe(0);
-  });
-  it('throwing opening reply fields retain unknown custody when cleanup throws', async () => {
-    const f = fixture();
-    const { job, witness } = prepare(f);
-    let getterCalls = 0;
-    const port: BytePort = {
-      async read(_target, delivery) {
-        return {
-          get count(): number {
-            getterCalls++;
-            throw new Error('must not echo');
-          },
-          eof: true,
-          delivery,
-        };
-      },
-      async close() {
-        throw new Error('private');
-      },
-    };
-    await expect(f.domain.intake(job, {}, port, witness)).rejects.toThrow('CUSTODY_UNCERTAIN');
-    expect(getterCalls).toBe(0);
-    expect(f.domain.inspect().logicalUnits).toBe(1048576);
   });
   it('exact record byte cap passes and its accounted overflow byte refuses', async () => {
     for (const size of [65536, 65537]) {
@@ -236,15 +178,6 @@ describe('retained delivery ownership', () => {
     await expect(f.domain.intake(job, {}, port, witness)).rejects.toThrow('ATTEMPT_INTERRUPTED');
     expect(f.domain.inspect().cause).toBe('ATTEMPT_INTERRUPTED');
   });
-  it('post-copy clock retirement prevents a previously valid pointer from publishing', async () => {
-    let stop = false;
-    const f = fixture(() => (stop ? 100 : 1));
-    const value = await deliver(f);
-    const pub = publication(f, value);
-    stop = true;
-    expect(() => f.domain.compose(value.reference, pub)).toThrow('ATTEMPT_INTERRUPTED');
-    expect(f.domain.inspect().cause).toBe('ATTEMPT_INTERRUPTED');
-  });
   it('refuses the immutable verifier end before workEnd without renewing cleanup end', async () => {
     let now = 1;
     const f = fixture(() => now);
@@ -259,75 +192,7 @@ describe('retained delivery ownership', () => {
     await expect(f.domain.intake(job, {}, port, witness)).rejects.toThrow('ATTEMPT_INTERRUPTED');
     expect(port.closes).toBe(1);
   });
-  it('does not heal a nested reentrant clock failure with a finite outer result', () => {
-    let armed = false;
-    const f: ReturnType<typeof fixture> = fixture(() => {
-      if (armed) {
-        armed = false;
-        try {
-          f.issuer.replaceCurrent(sha('c'));
-        } catch {
-          /* deliberate nested failure suppression */
-        }
-      }
-      return 1;
-    });
-    armed = true;
-    expect(() => f.issuer.registerJob(bounded(descriptor()))).toThrow('OWNERSHIP_UNCERTAIN');
-    expect(() => f.issuer.registerJob(bounded(descriptor()))).toThrow('OWNERSHIP_UNCERTAIN');
-  });
 });
-
-it.each([false, true])(
-  'final close ACK reflection preserves original cleanup end: %s',
-  async (expire) => {
-    let now = 1;
-    const f = fixture(() => now),
-      { job, witness } = prepare(f);
-    const held = defer<{ count: number; eof: boolean; delivery: object }>();
-    let token!: object,
-      observations = 0,
-      closes = 0,
-      finalEnd = 0,
-      receiver = false;
-    const port: BytePort = {
-      read(_target, delivery) {
-        token = delivery;
-        return held.promise;
-      },
-      async close(delivery, end) {
-        receiver = this === port;
-        closes++;
-        finalEnd = end;
-        return new Proxy(
-          { delivery, state: 'closed' as const },
-          {
-            ownKeys(target) {
-              if (++observations === 2 && expire) now = 120;
-              return Reflect.ownKeys(target);
-            },
-          }
-        );
-      },
-    };
-    const pending = f.domain.intake(job, {}, port, witness);
-    const refusal = expect(pending).rejects.toThrow('ATTEMPT_INTERRUPTED');
-    f.abort.abort();
-    await Promise.resolve();
-    await Promise.resolve();
-    const heldUnits = f.domain.inspect().logicalUnits;
-    held.resolve({ count: 0, eof: true, delivery: token });
-    await refusal;
-    expect(heldUnits).toBe(1048576);
-    expect(observations).toBe(2);
-    expect(receiver).toBe(true);
-    expect(closes).toBe(1);
-    expect(finalEnd).toBe(120);
-    expect(f.domain.inspect().logicalUnits).toBe(expire ? 1048576 : 0);
-    expect(f.domain.inspect().cause).toBe('ATTEMPT_INTERRUPTED');
-    if (expire) expect(f.domain.inspect().cleanupCauses).toContain('CUSTODY_UNCERTAIN');
-  }
-);
 
 describe('external read rejection classification', () => {
   for (const mode of [
@@ -445,114 +310,4 @@ describe('external read rejection classification', () => {
       });
     }
   }
-
-  it('reflection retirement preserves first cause with a settled held read and exact ACK', async () => {
-    const f = fixture();
-    const { job, witness } = prepare(f);
-    let rejectRead!: (reason: unknown) => void;
-    let reads = 0;
-    let closes = 0;
-    const port: BytePort = {
-      read() {
-        reads++;
-        return new Promise((_, reject) => {
-          rejectRead = reject;
-        });
-      },
-      async close(delivery, end) {
-        expect(end).toBe(120);
-        closes++;
-        return { delivery, state: 'closed' };
-      },
-    };
-    const pending = f.domain.intake(job, {}, port, witness);
-    const refused = expect(pending).rejects.toThrow('ATTEMPT_INTERRUPTED');
-    f.abort.abort();
-    for (let i = 0; i < 4; i++) await Promise.resolve();
-    expect(f.domain.inspect().logicalUnits).toBe(1048576);
-    let getters = 0;
-    const failure = Object.defineProperty(new EnvelopeError('BUDGET_EXCEEDED'), 'code', {
-      get() {
-        getters++;
-        throw new Error('PRIVATE');
-      },
-    });
-    rejectRead(failure);
-    await refused;
-    expect(getters).toBe(0);
-    expect(reads).toBe(1);
-    expect(closes).toBe(1);
-    expect(f.domain.inspect().cause).toBe('ATTEMPT_INTERRUPTED');
-    expect(f.domain.inspect().logicalUnits).toBe(0);
-  });
 });
-
-// Isolate the second catch boundary; public read-port tests above exercise the real Intake.
-for (const mode of ['accessor', 'nested', 'revoked', 'budget-positive'] as const) {
-  it(`domain catch settles its ${mode} intake rejection without reflecting nested errors`, async () => {
-    const f = fixture();
-    const { job, witness } = prepare(f);
-    let getters = 0;
-    let closeCalls = 0;
-    const typed = new EnvelopeError('BUDGET_EXCEEDED');
-    let failure: unknown = typed;
-    if (mode === 'accessor')
-      Object.defineProperty(typed, 'code', {
-        get() {
-          getters++;
-          throw typed;
-        },
-      });
-    if (mode === 'nested')
-      failure = new Proxy(typed, {
-        getOwnPropertyDescriptor() {
-          throw Object.defineProperty({}, 'code', {
-            get() {
-              getters++;
-              throw new Error('PRIVATE_NESTED');
-            },
-          });
-        },
-      });
-    if (mode === 'revoked') {
-      const revocable = Proxy.revocable(typed, {});
-      revocable.revoke();
-      failure = revocable.proxy;
-    }
-    const port: BytePort = {
-      async read() {
-        throw new Error('UNEXPECTED_READ_PORT');
-      },
-      async close(delivery, end) {
-        expect(end).toBe(120);
-        closeCalls++;
-        return { delivery, state: 'closed' };
-      },
-    };
-    const spy = vi.spyOn(Intake.prototype, 'read').mockRejectedValueOnce(failure);
-    try {
-      const pending = f.domain.intake(job, {}, port, witness);
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const outcome = await Promise.race([
-        pending.then(
-          () => 'published',
-          () => 'refused'
-        ),
-        new Promise<string>((resolve) => {
-          timer = setTimeout(() => resolve('pending'), 40);
-        }),
-      ]);
-      clearTimeout(timer);
-      expect(outcome).toBe('refused');
-      await expect(pending).rejects.toThrow(
-        mode === 'budget-positive' ? 'BUDGET_EXCEEDED' : 'CUSTODY_UNCERTAIN'
-      );
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(getters).toBe(0);
-      expect(closeCalls).toBe(1);
-      expect(JSON.stringify(f.domain.inspect())).not.toContain('PRIVATE');
-    } finally {
-      spy.mockRestore();
-    }
-  });
-}

@@ -376,10 +376,13 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       await dialog.getByRole('button', { name: /^(Continue|Skip)$/ }).click();
       await dialog.getByRole('button', { name: 'Save changes' }).click();
 
-      // The specific sentence, and ONLY it — the app-wide "That didn't work.
-      // Try again." would talk over the reason and invite a retry of the same
-      // broken input.
-      await expect(page.getByText(/expected JSON/)).toBeVisible();
+      // The server's own sentence, and ONLY it — the app-wide "That didn't
+      // work. Try again." would talk over the reason and invite a retry of the
+      // same broken input. The refusal names the field, never the parser's text
+      // (DOR-4979: the answer is a problem document with `fields`).
+      await expect(
+        page.getByText('Check this connection’s settings, then save again.')
+      ).toBeVisible();
       await expect(page.getByText('That didn’t work. Try again.')).toHaveCount(0);
 
       // The stored rules are still there.

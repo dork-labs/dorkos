@@ -10,7 +10,7 @@ const NONE: ReadonlySet<string> = new Set();
  *
  * A row can outlive its turn (DOR-2065), so a stop that does not land leaves
  * the row on screen: the person is told, not only the console. A task the
- * server says is no longer running (`TASK_NOT_RUNNING`) had already finished,
+ * server says is no longer running (`task_not_running`) had already finished,
  * so trying again cannot help: its row is dropped and a quiet note says so,
  * and the "try again" error is kept for stops that really failed.
  *
@@ -26,7 +26,7 @@ export function useStopTask(sessionId: string, transport: Transport) {
       try {
         await transport.stopTask(sessionId, taskId);
       } catch (err) {
-        if ((err as { code?: unknown }).code === 'TASK_NOT_RUNNING') {
+        if ((err as { code?: unknown }).code === 'task_not_running') {
           setFinishedTaskIds((prev) => new Set(prev).add(taskId));
           toast.info('That task had already finished.');
           return;

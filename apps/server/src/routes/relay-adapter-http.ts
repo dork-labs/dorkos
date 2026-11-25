@@ -11,8 +11,10 @@ import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
+import { problem, problemBody, readJsonBody, sendProblem } from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
+import { logger } from '../lib/logger.js';
+import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { holdForStepUp } from './step-up-guard.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
@@ -20,34 +22,80 @@ import {
   refuseUnlessAccountOwner,
   requirePersonAtThisComputer,
 } from '../lib/caller-authority.js';
-import { errorBody } from '../lib/route-utils.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
+import type { AdapterErrorCode } from '../services/relay/adapter-error.js';
 import type { SecretWriter } from '../services/relay/adapter-secret-policy.js';
 
-/** Map adapter error codes to HTTP status codes. */
-const ADAPTER_ERROR_STATUS: Record<string, number> = {
-  DUPLICATE_ID: 409,
-  UNKNOWN_TYPE: 400,
-  MULTI_INSTANCE_DENIED: 400,
-  NOT_FOUND: 404,
-  REMOVE_BUILTIN_DENIED: 400,
+/**
+ * The problem each adapter refusal answers with (DOR-4979): one code and one
+ * fixed sentence, never the error's own message, which can name a field, a
+ * value or another connection. That message goes to the log. Total by type,
+ * so a new adapter code cannot reach a response without one.
+ */
+const ADAPTER_PROBLEM: Record<AdapterErrorCode, { code: ProblemCode; detail: string }> = {
+  DUPLICATE_ID: {
+    code: 'connection_id_taken',
+    detail: 'A connection with that name already exists. Choose another name.',
+  },
+  NOT_FOUND: { code: 'not_found', detail: 'That connection doesn’t exist.' },
+  UNKNOWN_TYPE: { code: 'invalid_request', detail: 'DorkOS doesn’t know that kind of connection.' },
+  MULTI_INSTANCE_DENIED: {
+    code: 'invalid_request',
+    detail: 'This kind of connection can be added only once.',
+  },
+  REMOVE_BUILTIN_DENIED: {
+    code: 'invalid_request',
+    detail: 'A built-in connection can’t be removed. Turn it off instead.',
+  },
   // A config its schema refuses — a webhook aimed at a DorkOS address among
-  // them (DOR-2432). The caller's mistake, so a 400 that says which rule.
-  INVALID_CONFIG: 400,
+  // them (DOR-2432). The caller's mistake; the log names which rule.
+  INVALID_CONFIG: {
+    code: 'invalid_request',
+    detail: 'Check this connection’s settings, then save again.',
+  },
+  NO_AGENT_RUNTIMES: {
+    code: 'internal_error',
+    detail: 'DorkOS couldn’t start this connection. Restart DorkOS, then try again.',
+  },
+  // Saved, but its start failed: fixing the token and turning it on is the way out.
+  START_FAILED: {
+    code: 'connection_saved_not_started',
+    detail: 'Saved, but couldn’t connect. Check the token, then turn it on.',
+  },
   // What the owner confirmed no longer matches the connection (DOR-3271).
-  CONFIRMATION_STALE: 409,
+  CONFIRMATION_STALE: {
+    code: 'precondition_failed',
+    detail: 'This connection changed since you looked. Check it, then confirm again.',
+  },
 };
 
 /**
- * Answer an AdapterError, mapping its code to an HTTP status via ADAPTER_ERROR_STATUS.
+ * The problem document for an adapter refusal. Its own message is logged,
+ * never sent.
+ *
+ * @param err - The adapter refusal.
+ * @returns The problem.
+ */
+export function adapterProblem(err: AdapterError): Problem {
+  logger.info('[relay] a connection change was refused', { code: err.code, message: err.message });
+  const mapped = ADAPTER_PROBLEM[err.code];
+  // Which settings were refused, by key, so the form can mark them; never a value.
+  const fields = err.code === 'INVALID_CONFIG' && err.fields?.length ? [...err.fields] : undefined;
+  return problemBody(mapped.code, {
+    detail: mapped.detail,
+    ...(fields ? { extensions: { fields } } : {}),
+  });
+}
+
+/**
+ * Answer an AdapterError as its problem document ({@link adapterProblem}).
  *
  * @param c - The Hono context
  * @param err - The AdapterError to answer
  */
 export function sendAdapterError(c: Context<ApiEnv>, err: AdapterError): Response {
-  const status = (ADAPTER_ERROR_STATUS[err.code] ?? 500) as ContentfulStatusCode;
-  return c.json({ error: err.message, code: err.code }, status);
+  return sendProblem(c, adapterProblem(err));
 }
 
 /**
@@ -211,7 +259,7 @@ export function confirmReason(shown: PausedView): string {
  * and body, or the refusal an {@link AdapterError} maps to.
  *
  * @param run - The adapter call.
- * @param failed - What to say when it throws something else.
+ * @param failed - The fixed sentence for anything else it throws.
  */
 export async function adapterResult(
   run: () => Promise<{ status: number; body: unknown }>,
@@ -220,14 +268,21 @@ export async function adapterResult(
   try {
     return await run();
   } catch (err) {
-    if (err instanceof AdapterError) {
-      return {
-        status: ADAPTER_ERROR_STATUS[err.code] ?? 500,
-        body: { error: err.message, code: err.code },
-      };
-    }
-    return { status: 500, body: { error: err instanceof Error ? err.message : failed } };
+    const body = err instanceof AdapterError ? adapterProblem(err) : failedProblem(err, failed);
+    return { status: body.status, body };
   }
+}
+
+/**
+ * The `500` for an adapter call that threw something other than a refusal:
+ * the fixed sentence, with the error itself in the log.
+ *
+ * @param err - What the call threw.
+ * @param failed - The sentence to answer with.
+ */
+export function failedProblem(err: unknown, failed: string): Problem {
+  logger.error('[relay] a connection change failed', { err });
+  return problemBody('internal_error', { detail: failed });
 }
 
 /**
@@ -245,9 +300,21 @@ export async function adapterResult(
 export function noOwnerRefusal(c: Context<ApiEnv>, personOnly: string): Response | undefined {
   const facts = honoRequestFacts(c);
   if (presentsProgramCredential(facts) || requirePersonAtThisComputer(facts) !== undefined) {
-    return c.json(errorBody(personOnly, 'person_only'), 403);
+    return problem(c, 'person_only', { detail: personOnly });
   }
   return undefined;
+}
+
+/**
+ * Send an adapter call's answer: a refusal as its problem document, anything
+ * else as JSON with its own status.
+ *
+ * @param c - The request.
+ * @param result - What {@link adapterResult} gave.
+ */
+function answer(c: Context<ApiEnv>, result: { status: number; body: unknown }): Response {
+  if (result.status >= 400) return sendProblem(c, result.body as Problem);
+  return c.json(result.body, result.status as ContentfulStatusCode);
 }
 
 /** How the confirm routes word a refusal: to anything but a person, and to a non-owner. */
@@ -283,19 +350,18 @@ export function registerConfirmReferencesRoute(
     adapterResult(async () => {
       await adapterManager.confirmReferences(id, fingerprint, undo);
       return { status: 200, body: { ok: true } };
-    }, 'Confirm failed');
+    }, 'Couldn’t confirm that setting. Try again.');
   const handle = async (c: Context<ApiEnv>, undo: boolean) => {
-    const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), CONFIRM_WORDING);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), CONFIRM_WORDING);
+    if (refusal) return sendProblem(c, refusal);
     const id = c.req.param('id') ?? '';
     if (undo) {
       // Undo only narrows (it pauses the connection again), so it asks for nothing.
-      const { status, body } = await run(id, null, true);
-      return c.json(body, status as ContentfulStatusCode);
+      return answer(c, await run(id, null, true));
     }
     const body = readJsonBody(c) as { fingerprint?: unknown } | undefined;
     if (typeof body?.fingerprint !== 'string') {
-      return c.json({ error: 'Missing what you confirmed.', code: 'INVALID_CONFIG' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Say which settings you confirmed.' });
     }
     const fingerprint = body.fingerprint;
     const shown = pausedView(adapterManager, id);
@@ -305,8 +371,7 @@ export function registerConfirmReferencesRoute(
     if (!ownerExists()) {
       const refused = noOwnerRefusal(c, CONFIRM_WORDING.personOnly);
       if (refused) return refused;
-      const { status, body: answer } = await run(id, fingerprint, false);
-      return c.json(answer, status as ContentfulStatusCode);
+      return answer(c, await run(id, fingerprint, false));
     }
     // "Confirm it's you" (DOR-3234, DOR-3467): held until the owner's step-up
     // passes. The commit re-checks the owner bar on the request that confirmed
@@ -318,8 +383,8 @@ export function registerConfirmReferencesRoute(
       input: { id, fingerprint },
       reason: confirmReason(shown),
       commit: async (confirming) => {
-        const stale = errorRefusalUnlessOwner(confirming, CONFIRM_WORDING);
-        if (stale) return { status: 403, body: stale };
+        const stale = problemRefusalUnlessOwner(confirming, CONFIRM_WORDING);
+        if (stale) return { status: stale.status, body: stale };
         return run(id, fingerprint, false);
       },
     });
@@ -345,7 +410,8 @@ export function registerEnableRoute(router: Hono<ApiEnv>, adapterManager: Adapte
         await adapterManager.enable(id);
         return c.json({ ok: true });
       } catch (err) {
-        return c.json({ error: err instanceof Error ? err.message : 'Enable failed' }, 400);
+        if (err instanceof AdapterError) return sendAdapterError(c, err);
+        return sendProblem(c, failedProblem(err, 'Couldn’t turn that connection on. Try again.'));
       }
     };
     // Already on: nothing to do, and calling enable here could undo a person's switch-off

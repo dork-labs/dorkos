@@ -136,13 +136,13 @@ export function BrowserViewer({ chatId, connectionId, tabId, visible }: BrowserV
           if (signal.aborted) return;
           clear();
           const code = (error as { code?: string }).code;
-          reconnect = code === 'viewer_unavailable';
+          reconnect = code === 'temporarily_unavailable';
           setPhase({
             key,
             value:
-              code === 'viewer_person_only' || code === 'viewer_denied'
+              code === 'person_only' || code === 'owner_only'
                 ? 'owner-only'
-                : code === 'viewer_local_only'
+                : code === 'operator_only'
                   ? 'local-only'
                   : 'unavailable',
           });

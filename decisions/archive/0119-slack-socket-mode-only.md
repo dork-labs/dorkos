@@ -1,7 +1,7 @@
 ---
 number: 119
 title: Use Socket Mode Only for Slack Adapter
-status: draft
+status: archived
 created: 2026-03-13
 spec: slack-adapter
 superseded-by: null

@@ -32,7 +32,7 @@ describe('checks credits confirmation', () => {
     expect(choice).toBeNull();
     expect(record).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(choice).toBeNull();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -67,7 +67,7 @@ describe('checks credits confirmation', () => {
       method: 'PUT',
     });
     expect(result.status).toBe(403);
-    expect(result.body).toMatchObject({ code: 'NEEDS_PERSON_AT_THIS_COMPUTER' });
+    expect(result.body).toMatchObject({ code: 'operator_only' });
     expect(choice).toBeNull();
     expect(record).not.toHaveBeenCalled();
   });

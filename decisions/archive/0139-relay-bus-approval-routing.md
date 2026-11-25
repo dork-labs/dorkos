@@ -1,7 +1,7 @@
 ---
 number: 139
 title: Route Chat Adapter Approvals via Relay Message Bus
-status: proposed
+status: archived
 created: 2026-03-18
 spec: slack-tool-approval
 superseded-by: null

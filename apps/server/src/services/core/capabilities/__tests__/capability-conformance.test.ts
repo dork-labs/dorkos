@@ -65,10 +65,26 @@ vi.mock('../../update-checker.js', () => ({
 }));
 // update_agent validates its target cwd against the filesystem boundary, which
 // throws when uninitialized; stub it to pass the sandbox path through.
-vi.mock('../../../../lib/boundary.js', () => ({
-  validateBoundaryOrDorkHome: (p: string) => p,
-  BoundaryError: class BoundaryError extends Error {},
-}));
+vi.mock('../../../../lib/boundary.js', () => {
+  class BoundaryError extends Error {
+    constructor(
+      message: string,
+      readonly code: string
+    ) {
+      super(message);
+    }
+  }
+  return {
+    validateBoundaryOrDorkHome: (p: string) => p,
+    // The diff review's paths land outside, so each answers its own refusal.
+    validateBoundary: async () => {
+      throw new BoundaryError('outside', 'OUTSIDE_BOUNDARY');
+    },
+    getBoundary: () => '/conformance-boundary',
+    resolveAgentsRoot: async () => '/conformance-agents',
+    BoundaryError,
+  };
+});
 // update_agent reads the target agent's manifest off disk; stub it to "no agent
 // here" so the handler returns its structured NOT_FOUND (a CapabilityToolError),
 // never a raw filesystem throw.
@@ -109,6 +125,9 @@ const { createCapabilityMcpClient } =
 const { registerCapabilitiesAsMcpTools } =
   await import('../../external-mcp/capability-mcp-tools.js');
 const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-security.js');
+const { createDorkLinkLookups } = await import('../../links/link-lookups.js');
+const { callerAuthor } = await import('../../../rooms/service/room-caller-author.js');
+import type { CapabilityDeps } from '../capability-definition.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
@@ -315,6 +334,55 @@ const roomMerges = new RoomMergeService({
 
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
+  // A data directory with no user templates, so the list is the built-in ones.
+  templateDeps: { dorkHome: '/conformance-no-such-dork-home' },
+  // The to-do and promise reads and a person's "add a promise" serve REST paths
+  // (DOR-4978), so the boot registry carries them for the docs/boot parity check.
+  // Empty lists, no agents and nobody the owner: every call answers on its own.
+  todoViewDeps: {
+    todos: { list: () => ({ todos: [], doneCount: 0, badge: 0 }), get: () => undefined },
+  },
+  todoPromiseHttpDeps: {
+    service: {
+      list: () => [],
+      create: () => {
+        throw new Error('no promise is made in conformance');
+      },
+    },
+    agentExists: () => false,
+    isOwner: () => false,
+    personProven: () => false,
+    ownerExists: () => true,
+  },
+  // A person's to-do writes and promise changes (DOR-4978): person-only, so an anonymous
+  // conformance call is refused `PERSON_ONLY` before any of these is reached.
+  todoWriteDeps: {
+    todos: {
+      create: () => {
+        throw new Error('no to-do is made in conformance');
+      },
+      update: () => {
+        throw new Error('no to-do is changed in conformance');
+      },
+    },
+    ownerExists: () => true,
+    readSource: () => undefined,
+  },
+  todoPromiseWriteDeps: {
+    service: {
+      update: () => {
+        throw new Error('no promise is changed in conformance');
+      },
+    },
+    confirm: {
+      answer: () => {
+        throw new Error('no promise is confirmed in conformance');
+      },
+    },
+    isOwner: () => false,
+    personProven: () => false,
+    ownerExists: () => true,
+  },
   operatorDeps,
   marketplaceDeps,
   connectorDeps,
@@ -356,6 +424,35 @@ const registry = composeDorkOsCapabilityRegistry({
       resume: () => ({ agentId: 'a', paused: false, changed: true }),
       list: () => [],
     },
+  },
+  // The person's work queue domain serves its doors (`/api/agents/{id}/work-queue/*`,
+  // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
+  // The agents' own work queue tools (`work-queue.*`, DOR-3462), checked
+  // beside the person's doors. The prober is the one agent on this team, with
+  // an empty queue and one ended item, so its destructive calls reach the gate
+  // (and an anonymous call meets the tool's own NO_AGENT first).
+  workQueueDeps: {
+    service: {
+      read: () => ({ enabled: false, target: 1, dailyStartCap: 1, items: [] }),
+      item: () => ({ agentId: 'prober', title: 'Probe', prompt: 'A probe.', state: 'done' }),
+    } as unknown as NonNullable<CapabilityDeps['workQueueDeps']>['service'],
+    agentIdForPath: () => 'prober',
+    agentName: (id: string) => (id === 'prober' ? 'Prober' : undefined),
+  },
+  workQueuePersonDeps: {
+    service: {} as NonNullable<CapabilityDeps['workQueuePersonDeps']>['service'],
+    agentExists: () => false,
+    isOwner: () => true,
+  },
+  // The link domain serves `GET /api/links/target` (DOR-5046), over the
+  // harness's real rooms; it holds no chats and no agents.
+  linkDeps: {
+    lookups: createDorkLinkLookups({
+      db: roomHarness.db,
+      rooms: roomHarness.service,
+      roomCaller: (context) => callerAuthor(roomHarness.service, context),
+      chatExists: async () => false,
+    }),
   },
 });
 
@@ -587,6 +684,16 @@ capabilityConformance(registry, {
       error instanceof DocDownstreamError &&
       error.code === 'DOC_CHANNEL_UNAVAILABLE' &&
       error.status === 503,
+    // No workspace subsystem starts in this suite; the real server sets it up at boot.
+    'workspaces.list': (error) => error.message === 'WorkspaceManager not initialized',
+    'workspaces.scan': (error) => error.message === 'Workspace root not initialized',
+  },
+  // The agents' destructive queue tools refuse an unidentified caller before
+  // the gate (NO_AGENT, no card), so the gate probe calls them as an agent.
+  sampleContexts: {
+    'work-queue.add': { identity: PROBE_IDENTITY },
+    'work-queue.configure': { identity: PROBE_IDENTITY },
+    'work-queue.requeue': { identity: PROBE_IDENTITY },
   },
   sampleInputs: {
     'operator.update_agent': { cwd: SANDBOX_CWD, displayName: 'Conformance' },
@@ -641,6 +748,35 @@ capabilityConformance(registry, {
     // The pause verbs reach the (stub) pause service with a parseable id.
     'agent.pause': { agentId: 'conformance-agent' },
     'agent.resume': { agentId: 'conformance-agent' },
+    // A room the operator is in, so the link reaches the real rooms service and opens it.
+    'link.resolve': { uri: `dork:room:${CONFORMANCE_ROOM_ID}` },
+    // No such to-do, so the handler answers its own `TODO_NOT_FOUND`.
+    'todos.view_card': { id: 'conformance-no-such-todo' },
+    // A person's writes, valid input for each; the person-only door refuses the anonymous call.
+    'todos.add_as_person': { what: 'Conformance', assignee: { kind: 'person', account: 'owner' } },
+    'todos.change_as_person': { id: 'conformance-no-such-todo', state: 'kept' },
+    'todos.change_promise': { id: 'conformance-no-such-promise', state: 'kept' },
+    'todos.confirm_promise': { id: 'conformance-no-such-promise', answer: 'yes' },
+    // A folder that is not there, so the handler answers its own `FOLDER_MISSING`.
+    'directory.browse': { path: '/conformance-no-such-folder' },
+    // Paths outside the boundary, so each answers its own path refusal.
+    'diff.baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
+    'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    // The agents' queue tools, parseable so the gate or the handler answers:
+    // with no identity each refuses `NO_AGENT`; the destructive ones meet the gate.
+    'work-queue.add': { title: 'Conformance', prompt: 'A conformance probe.' },
+    'work-queue.remove': { id: 'conformance-item' },
+    'work-queue.read_agent': { agentId: 'conformance-agent' },
+    'work-queue.configure': {
+      before: { enabled: false, target: 1, dailyStartCap: 1 },
+      changes: { enabled: true },
+    },
+    'work-queue.reorder': { itemIds: ['conformance-item'] },
+    'work-queue.requeue': { id: 'conformance-item' },
+    // No workspace subsystem here, so the pin answers its own `WORKSPACE_NOT_FOUND`.
+    'workspaces.pin': { id: 'conformance-workspace', pinned: true },
     // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
     'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // Anonymous here, so the handler refuses with its own structured error

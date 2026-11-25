@@ -192,6 +192,54 @@ export const ConfigSchema = z
       })
       .strict(),
     data_ruleset_id: z.number().int().positive(),
+    /**
+     * The deployment environments that alone hold the secrets a workflow
+     * outside its own ref must never read (DOR-4030). The collector checks them
+     * daily: each environment exists, lets no admin bypass its rules, deploys
+     * exactly `refs`, needs exactly `reviewers` to approve (empty: no reviewer
+     * rule), and has "Prevent self-review" set to `prevent_self_review`; and
+     * none of its `secrets` is back at repository level, which needs a token
+     * with Secrets: read and is reported as not checked without one. The census
+     * also refuses a job that reads one of `secrets` without naming the
+     * environment. Empty: nothing is checked.
+     */
+    secret_environments: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            reviewers: z.array(z.string().min(1)),
+            /** Whether whoever started a run is stopped from approving it. */
+            prevent_self_review: z.boolean(),
+            refs: z
+              .array(
+                z.object({ name: z.string().min(1), type: z.enum(['branch', 'tag']) }).strict()
+              )
+              .min(1),
+            secrets: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'a secret name')).min(1),
+          })
+          .strict()
+      )
+      .default([]),
+    /**
+     * Publishing only from a gated ref, in structure (DOR-4030). In each of
+     * `workflows`, a job that names one of `environments` (or an environment
+     * expression) must open its job-level `if:` with `dispatch_condition` and
+     * refuse, in its first step, any copy of the file but main's. Any other
+     * job whose GITHUB_TOKEN may write contents or packages must open it with
+     * `condition` (a `v*` tag push) or with `dispatch_condition`, and on the
+     * dispatch refuse any copy but main's too. Never a top-level `||` after
+     * either. Absent: nothing is checked.
+     */
+    tag_gate: z
+      .object({
+        workflows: z.array(z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name')).min(1),
+        environments: z.array(z.string().min(1)),
+        condition: z.string().min(1),
+        dispatch_condition: z.string().min(1),
+      })
+      .strict()
+      .optional(),
     hand_files: z
       .object({
         required_checks: RepoPath,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# scripts-suite-lane: harness (needs node_modules; see scripts/run-scripts-suites.sh)
 # Fixture suite for scripts/pre-push-format-check.sh, the pre-push gate that
 # refuses a push whose changed files are not Prettier-formatted (DOR-1839).
 #

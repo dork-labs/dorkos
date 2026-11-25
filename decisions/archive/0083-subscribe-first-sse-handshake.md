@@ -1,7 +1,7 @@
 ---
 number: 83
 title: Subscribe-First SSE Handshake for Relay Delivery
-status: proposed
+status: archived
 created: 2026-03-06
 spec: fix-relay-sse-delivery-pipeline
 superseded-by: null

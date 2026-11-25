@@ -1,7 +1,7 @@
 ---
 number: 243
 title: Context Menu as Unified Agent Action Surface
-status: draft
+status: archived
 created: 2026-04-11
 spec: agent-sidebar-redesign
 superseded-by: null

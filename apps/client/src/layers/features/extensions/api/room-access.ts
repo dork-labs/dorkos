@@ -43,9 +43,7 @@ export function useSetRoomAccess(extensionId: string) {
         body: JSON.stringify({ roomIds }),
       });
       if (!res.ok) {
-        const body = await readResponseError(res, 'Couldn’t save the rooms. Try again.', {
-          oldMessageFirst: true,
-        });
+        const body = await readResponseError(res, 'Couldn’t save the rooms. Try again.');
         throw new Error(body.message);
       }
       return ((await res.json()) as { roomIds: string[] }).roomIds;

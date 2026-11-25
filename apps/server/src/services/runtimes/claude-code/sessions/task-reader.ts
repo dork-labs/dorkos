@@ -92,23 +92,3 @@ export function createTaskParser(): TaskParser {
 
   return { pushRecord, result: () => Array.from(state.tasks.values()) };
 }
-
-/**
- * Parse task state from JSONL transcript lines in one pass; see
- * {@link createTaskParser}.
- *
- * @param lines - The transcript's JSONL lines.
- */
-export function parseTasks(lines: string[]): TaskItem[] {
-  const parser = createTaskParser();
-  for (const line of lines) {
-    let parsed: TranscriptLine;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    parser.pushRecord(parsed);
-  }
-  return parser.result();
-}

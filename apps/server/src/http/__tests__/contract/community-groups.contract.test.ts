@@ -78,17 +78,23 @@ const OTHER_ID = '22222222-2222-4222-8222-222222222222';
 const PROXIED_HOST = 'dorkos.contract.example';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const SPACES_DISABLED = {
-  error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
-  code: 'SPACES_DISABLED',
-};
-const NO_CONNECTION = { error: 'Space connection not found.' };
+const SPACES_DISABLED = problemBody('spaces_disabled', {
+  detail: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
+});
+const NO_CONNECTION = problemBody('not_found', {
+  detail: 'That space connection doesn’t exist.',
+});
+/** A refusal whose sentence is fixed; the rest of the problem (`issues`) is the parser's. */
+const DETAIL = (detail: string) => z.object({ detail: z.literal(detail) }).loose();
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const AGENT_REFUSED = { error: 'An agent cannot manage space connections.' };
+const AGENT_REFUSED = problemBody('person_only', {
+  detail: 'An agent can’t manage space connections.',
+});
 /**
  * The session gate's 401. A caller at another name is another device, which
  * needs a person session even with the this-computer password off (ADR
@@ -96,14 +102,12 @@ const AGENT_REFUSED = { error: 'An agent cannot manage space connections.' };
  * suite.
  */
 const GATE_REFUSED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-const OWNER_CHANGED = {
-  error: 'The local owner changed. Reload to see spaces for the current account.',
-  code: 'COMMUNITY_OWNER_CHANGED',
-};
-const PERSON_REQUIRED = {
-  code: 'COMMUNITY_PERSON_REQUIRED',
-  error: 'Only you can do this in a space, not an agent.',
-};
+const OWNER_CHANGED = problemBody('owner_changed', {
+  detail: 'The owner of this DorkOS changed. Reload to see their spaces.',
+});
+const PERSON_REQUIRED = problemBody('person_only', {
+  detail: 'Only you can do this in a space, not an agent.',
+});
 const NAVIGATION_STATE = CommunityNavigationStateSchema;
 const EMPTY_LIST = { connections: [] };
 
@@ -253,7 +257,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
         body,
         expect: {
           status: 404,
-          ...(method === 'HEAD' ? { body: '' } : { headers: JSON_TYPE, body: SPACES_DISABLED }),
+          ...(method === 'HEAD' ? { body: '' } : { headers: PROBLEM_TYPE, body: SPACES_DISABLED }),
         },
       });
     }
@@ -273,7 +277,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'POST',
       path: '/api/community-connections',
       body: { url: fake.link(OFFICIAL_ID) },
-      expect: { status: 400, body: { error: 'Enter a valid space address and install name.' } },
+      expect: { status: 400, schema: DETAIL('Enter a valid space address and install name.') },
     });
     await check(server, {
       path: '/api/community-connections/navigation',
@@ -291,7 +295,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       body: { destination: 'nowhere' },
       expect: {
         status: 400,
-        body: { error: 'Choose a valid local installation destination.' },
+        schema: DETAIL('Choose a valid local installation destination.'),
       },
     });
   });
@@ -300,7 +304,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       path: '/api/community-connections',
       headers: AGENT,
-      expect: { status: 403, headers: JSON_TYPE, body: AGENT_REFUSED },
+      expect: { status: 403, headers: PROBLEM_TYPE, body: AGENT_REFUSED },
     });
     await check(server, {
       path: '/api/community-connections/navigation',
@@ -315,12 +319,12 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       path: '/api/community-connections',
       headers: { 'x-dorkos-community-owner': 'someone-else' },
-      expect: { status: 409, body: OWNER_CHANGED },
+      expect: { status: 412, body: OWNER_CHANGED },
     });
     await check(server, {
       path: '/api/community-connections',
       headers: { host: 'evil.example.com' },
-      expect: { status: 403, headers: JSON_TYPE },
+      expect: { status: 403, headers: { 'content-type': /^application\/problem\+json\b/ } },
     });
   });
 
@@ -397,13 +401,13 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'POST',
       path: '/api/community-connections',
       body: { url: 'https://', installName: 'Mine' },
-      expect: { status: 400, body: { error: 'Enter a valid space address and install name.' } },
+      expect: { status: 400, schema: DETAIL('Enter a valid space address and install name.') },
     });
     await check(server, {
       method: 'POST',
       path: '/api/community-connections',
       body: { url: 'http://example.com/c/x', installName: 'Mine' },
-      expect: { status: 400, body: { error: 'Enter an accessible HTTPS space address.' } },
+      expect: { status: 400, schema: DETAIL('Enter an accessible HTTPS space address.') },
     });
     await check(server, {
       method: 'POST',
@@ -445,7 +449,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       body: { wakeAgentsFrom: 'everyone' },
       expect: {
         status: 400,
-        body: { error: 'Choose who can wake your agents: me or members.' },
+        schema: DETAIL('Choose who can wake your agents: me or members.'),
       },
     });
     await check(server, {
@@ -464,7 +468,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       body: { answerIn: ['not a name'] },
       expect: {
         status: 400,
-        body: { error: 'List up to 20 channel names, like help or welcome.' },
+        schema: DETAIL('List up to 20 channel names, like help or welcome.'),
       },
     });
     await check(server, {
@@ -477,13 +481,13 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'PUT',
       path: '/api/community-connections/navigation/destination',
       body: { ref: otherRef },
-      expect: { status: 400, body: { error: 'Choose a valid space to open.' } },
+      expect: { status: 400, schema: DETAIL('Choose a valid space to open.') },
     });
     await check(server, {
       method: 'POST',
       path: '/api/community-connections/navigation/move',
       body: { ref: otherRef, direction: 'sideways' },
-      expect: { status: 400, body: { error: 'Choose a connected space and move direction.' } },
+      expect: { status: 400, schema: DETAIL('Choose a connected space and move direction.') },
     });
     await check(server, {
       path: `/api/community-connections/navigation/${otherRef}/destination`,
@@ -545,7 +549,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     });
     await check(server, {
       path: `${base}/rooms/not-a-room`,
-      expect: { status: 404, body: { error: 'Room not found.' } },
+      expect: { status: 404, schema: DETAIL('That room isn’t in this space.') },
     });
     await check(server, {
       path: `${room}/entries`,
@@ -558,7 +562,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     for (const limit of ['0', '101', 'many']) {
       await check(server, {
         path: `${room}/entries?limit=${limit}`,
-        expect: { status: 400, body: { error: 'Use a history limit from 1 through 100.' } },
+        expect: { status: 400, schema: DETAIL('Use a history limit from 1 through 100.') },
       });
     }
     await check(server, {
@@ -575,7 +579,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'PUT',
       path: `${room}/read-cursor`,
       body: {},
-      expect: { status: 400, body: { error: 'A cursor is required.' } },
+      expect: { status: 400, schema: DETAIL('Send the cursor you last read.') },
     });
     await check(server, {
       method: 'POST',
@@ -601,7 +605,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'POST',
       path: `${room}/entries`,
       body: { text: '' },
-      expect: { status: 400, body: { error: 'Enter a message with a valid retry key.' } },
+      expect: { status: 400, schema: DETAIL('Enter a message with a valid retry key.') },
     });
     const file = {
       'content-type': 'application/octet-stream',
@@ -622,14 +626,14 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       path: `${room}/attachments`,
       headers: { ...file, 'content-type': 'text/plain' },
       body: 'hello',
-      expect: { status: 400, body: { error: 'Provide valid file metadata and a retry key.' } },
+      expect: { status: 400, schema: DETAIL('Send the file’s details and a retry key.') },
     });
     await check(server, {
       method: 'POST',
       path: `${room}/attachments`,
       headers: { ...file, 'x-file-name': '%E0%A4%A' },
       body: 'hello',
-      expect: { status: 400, body: { error: 'Provide valid file metadata and a retry key.' } },
+      expect: { status: 400, schema: DETAIL('Send the file’s details and a retry key.') },
     });
     await check(server, {
       path: `${room}/attachments/attachment-1`,
@@ -647,12 +651,12 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       method: 'POST',
       path: `${room}/deliveries/unknown-key/retry`,
-      expect: { status: 404, body: { error: 'Delivery not found.' } },
+      expect: { status: 404, schema: DETAIL('That message isn’t waiting to send.') },
     });
     await check(server, {
       method: 'POST',
       path: `${room}/deliveries/${'k'.repeat(129)}/retry`,
-      expect: { status: 400, body: { error: 'Use valid space, room, and delivery identifiers.' } },
+      expect: { status: 400, schema: DETAIL('Use valid space, room and delivery identifiers.') },
     });
     await check(server, {
       method: 'POST',
@@ -676,24 +680,24 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       method: 'POST',
       path: `${base}/agents/agent-x/enroll`,
-      expect: { status: 404, body: { error: 'Local agent not found.' } },
+      expect: { status: 404, schema: DETAIL('That agent isn’t on this computer.') },
     });
     await check(server, {
       method: 'POST',
       path: `${base}/agents/agent-x/enroll`,
       body: { handle: 'Not A Handle' },
-      expect: { status: 400, body: { error: 'Use a valid space handle.' } },
+      expect: { status: 400, schema: DETAIL('Use a valid space handle.') },
     });
     await check(server, {
       method: 'DELETE',
       path: `${base}/agents/agent-x`,
-      expect: { status: 404, body: { error: 'Agent enrollment not found.' } },
+      expect: { status: 404, schema: DETAIL('That agent isn’t in this space.') },
     });
     for (const method of ['POST', 'DELETE']) {
       await check(server, {
         method,
         path: `${room}/agents/agent-x/membership`,
-        expect: { status: 404, body: { error: 'Active agent enrollment not found.' } },
+        expect: { status: 404, schema: DETAIL('That agent isn’t in this space.') },
       });
     }
     // The person's own side of the space's moderation.
@@ -711,7 +715,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'POST',
       path: `${base}/rules/accept`,
       body: { version: 0 },
-      expect: { status: 400, body: { error: 'Read the rules first.' } },
+      expect: { status: 400, schema: DETAIL('Read the rules first.') },
     });
     await check(server, {
       method: 'PUT',
@@ -726,7 +730,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       method: 'PUT',
       path: `${base}/me/display-name`,
       body: { displayName: '' },
-      expect: { status: 400, body: { error: 'Use letters, numbers and spaces, up to 128.' } },
+      expect: { status: 400, schema: DETAIL('Use letters, numbers and spaces, up to 128.') },
     });
     await check(server, {
       method: 'POST',
@@ -740,7 +744,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
       body: { reason: 'boredom' },
       expect: {
         status: 400,
-        body: { error: 'Pick a reason. Notes are up to 1,000 characters.' },
+        schema: DETAIL('Pick a reason. Notes are up to 1,000 characters.'),
       },
     });
     // An approval token is not the person: the conduct routes refuse it, the others do not.
@@ -775,7 +779,7 @@ describe('contract: the space routes, driven by hand (login off)', () => {
     await check(server, {
       path: `${base}/rooms`,
       headers: { 'x-dorkos-community-owner': 'someone-else' },
-      expect: { status: 409, body: OWNER_CHANGED },
+      expect: { status: 412, body: OWNER_CHANGED },
     });
     // A ref with no connection.
     for (const path of [
@@ -906,10 +910,9 @@ describe('contract: the space routes with login on', () => {
     password: 'a-long-password-1',
   };
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-  const COOKIE_REQUIRED = {
-    error: 'Only a person signed in to DorkOS can change community connections',
-    code: 'operator_cookie_required',
-  };
+  const COOKIE_REQUIRED = problemBody('person_only', {
+    detail: 'Only a person signed in to DorkOS can change space connections.',
+  });
 
   beforeAll(async () => {
     server = await bootComposedServer({ DORKOS_TRUSTED_HOSTS: PROXIED_HOST });
@@ -972,7 +975,7 @@ describe('contract: the space routes with login on', () => {
         method,
         path,
         headers: apiKey,
-        expect: { status: 403, headers: JSON_TYPE, body: COOKIE_REQUIRED },
+        expect: { status: 403, headers: PROBLEM_TYPE, body: COOKIE_REQUIRED },
       });
     }
     await check(server, {

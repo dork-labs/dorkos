@@ -59,7 +59,7 @@ function invalidateFeed(queryClient: ReturnType<typeof useQueryClient>) {
 
 /**
  * Set the agent that answers an unclaimed chat, creating the binding that
- * routes it. Rejects with `CHAT_ALREADY_BOUND` when another binding took the
+ * routes it. Rejects with `chat_already_bound` when another binding took the
  * chat in the meantime — the same refusal any binding create would give.
  *
  * `input.bridge: true` is "Answer in a channel" — the claim, the binding, and

@@ -1,103 +1,33 @@
 /**
- * Template catalog routes — CRUD for agent project templates.
- *
- * Merges built-in DEFAULT_TEMPLATES with user-defined templates stored
- * in `{dorkHome}/agent-templates.json`. Built-in templates cannot be
- * deleted or overwritten.
+ * Template catalog routes: add and remove a user template, kept in
+ * `{dorkHome}/agent-templates.json` (`services/core/agent-templates/template-catalog.ts`).
+ * Built-in templates cannot be deleted or overwritten. The catalog's read,
+ * `GET /api/templates`, is the capability `templates.list`.
  *
  * @module routes/templates
  */
 import { Hono } from 'hono';
-import { z } from 'zod';
-import fs from 'fs/promises';
-import path from 'path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
-import {
-  DEFAULT_TEMPLATES,
-  TemplateCatalogSchema,
-  TemplateEntrySchema,
-} from '@dorkos/shared/template-catalog';
-import type { TemplateCatalog, TemplateEntry } from '@dorkos/shared/template-catalog';
+import { DEFAULT_TEMPLATES, TemplateEntrySchema } from '@dorkos/shared/template-catalog';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
-
-/** Filename for user-defined templates within the dorkHome directory. */
-const USER_CATALOG_FILENAME = 'agent-templates.json';
-
-/**
- * Read user templates from disk. Returns an empty array if the file
- * is missing or malformed.
- */
-async function readUserTemplates(catalogPath: string): Promise<TemplateEntry[]> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(catalogPath, 'utf-8');
-  } catch {
-    // File doesn't exist yet — not an error
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    const result = TemplateCatalogSchema.safeParse(parsed);
-    if (!result.success) {
-      logger.warn('[templates] Malformed catalog file, treating as empty', {
-        path: catalogPath,
-        errors: z.flattenError(result.error),
-      });
-      return [];
-    }
-    return result.data.templates;
-  } catch {
-    logger.warn('[templates] Failed to parse catalog JSON, treating as empty', {
-      path: catalogPath,
-    });
-    return [];
-  }
-}
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import {
+  readUserTemplates,
+  userTemplateCatalogPath,
+  writeUserTemplates,
+} from '../services/core/agent-templates/template-catalog.js';
 
 /**
- * Serialize user templates through the enclosing lock's writer.
- *
- * The write must be atomic as well as serialised (DOR-697): the old plain
- * `fs.writeFile` truncated in place, so a reader catching the mid-truncation
- * state parse-failed to `[]` — and because {@link readUserTemplates} treats
- * every read failure as an empty catalog, the *next* write would then silently
- * erase every user template.
- *
- * @param write - The atomic writer supplied by the enclosing `withFileLock`.
- * @param templates - The user templates to persist.
- */
-async function writeUserTemplates(
-  write: (data: string) => Promise<void>,
-  templates: TemplateEntry[]
-): Promise<void> {
-  const catalog: TemplateCatalog = { version: 1, templates };
-  await write(JSON.stringify(catalog, null, 2));
-}
-
-/**
- * The template catalog routes (CRUD).
+ * The template catalog's writes: add and remove a user template. Reading the
+ * catalog is the capability `templates.list`, which the mount serves.
  *
  * @param dorkHome - Resolved DorkOS data directory path
  * @returns The routes, for `app.route('/api/templates', …)`.
  */
 export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
-  const catalogPath = path.join(dorkHome, USER_CATALOG_FILENAME);
-
-  // GET /api/templates — merged catalog (builtin + user)
-  router.get('/', async (c) => {
-    try {
-      const userTemplates = await readUserTemplates(catalogPath);
-      const templates = [...DEFAULT_TEMPLATES, ...userTemplates];
-      return c.json({ version: 1, templates });
-    } catch (err) {
-      logger.error('[templates] GET / failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
-    }
-  });
+  const catalogPath = userTemplateCatalogPath(dorkHome);
 
   // POST /api/templates — add a user template
   router.post('/', async (c) => {
@@ -115,10 +45,9 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       // Check for ID conflict with built-in templates
       const builtinConflict = DEFAULT_TEMPLATES.find((t) => t.id === entry.id);
       if (builtinConflict) {
-        return c.json(
-          { error: `Template ID '${entry.id}' conflicts with a built-in template` },
-          409
-        );
+        return problem(c, 'conflict', {
+          detail: `A built-in template is called '${entry.id}'. Pick another id.`,
+        });
       }
 
       // Read-modify-write: the conflict check reads the same file the write
@@ -136,13 +65,15 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       });
 
       if (!added) {
-        return c.json({ error: `Template ID '${entry.id}' already exists` }, 409);
+        return problem(c, 'conflict', {
+          detail: `A template called '${entry.id}' already exists. Pick another id.`,
+        });
       }
 
       return c.json(entry, 201);
     } catch (err) {
       logger.error('[templates] POST / failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t save the template. Try again.' });
     }
   });
 
@@ -154,7 +85,7 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       // Cannot delete built-in templates
       const isBuiltin = DEFAULT_TEMPLATES.some((t) => t.id === id);
       if (isBuiltin) {
-        return c.json({ error: `Cannot delete built-in template '${id}'` }, 403);
+        return problem(c, 'forbidden', { detail: 'Built-in templates can’t be deleted.' });
       }
 
       // Same read-modify-write shape as POST: lookup and removal must be one
@@ -171,13 +102,13 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       });
 
       if (!removed) {
-        return c.json({ error: `Template '${id}' not found` }, 404);
+        return problem(c, 'not_found', { detail: `No template is called '${id}'.` });
       }
 
       return c.json({ deleted: id });
     } catch (err) {
       logger.error('[templates] DELETE /:id failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t delete the template. Try again.' });
     }
   });
 

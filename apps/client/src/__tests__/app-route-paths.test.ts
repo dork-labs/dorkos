@@ -6,7 +6,12 @@ import { QueryClient } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { Transport } from '@dorkos/shared/transport';
 import { createAppRouter } from '../router';
-import { APP_ROUTE_PATHS, EXTENSION_PAGE_ROUTE_PATHS, classifyLink } from '@/layers/shared/lib';
+import {
+  APP_ROUTE_PATHS,
+  DORK_LINK_ROUTE_PATHS,
+  EXTENSION_PAGE_ROUTE_PATHS,
+  classifyLink,
+} from '@/layers/shared/lib';
 
 /** The paths the real router serves, sorted. */
 function routerPaths(): string[] {
@@ -16,12 +21,13 @@ function routerPaths(): string[] {
 }
 
 /**
- * The router's paths without the extension-page family, which the link seam
- * matches by shape (`parseExtensionPagePath`) rather than by listing.
+ * The router's paths without the two families the link seam matches by shape
+ * rather than by listing: extension pages (`parseExtensionPagePath`) and
+ * `/r/` links (`dorkUriFromLink`).
  */
 function staticRouterPaths(): string[] {
-  const extensionRoutes: readonly string[] = EXTENSION_PAGE_ROUTE_PATHS;
-  return routerPaths().filter((path) => !extensionRoutes.includes(path));
+  const shapedRoutes: readonly string[] = [...EXTENSION_PAGE_ROUTE_PATHS, ...DORK_LINK_ROUTE_PATHS];
+  return routerPaths().filter((path) => !shapedRoutes.includes(path));
 }
 
 describe('APP_ROUTE_PATHS', () => {
@@ -47,6 +53,22 @@ describe('APP_ROUTE_PATHS', () => {
     // An id no extension could have is not an extension page.
     expect(classifyLink('/x/Not_An_Id', from).kind).toBe('external');
     expect(classifyLink('/x', from).kind).toBe('external');
+  });
+
+  it('serves the /r/ link route the link seam matches by shape (DOR-5046)', () => {
+    // A `/r/` link written in a room or a chat must open in the app, not in the
+    // system browser, so the seam has to call it internal.
+    const served = routerPaths();
+    for (const path of DORK_LINK_ROUTE_PATHS) expect(served).toContain(path);
+    const from = 'http://localhost/';
+    expect(classifyLink('/r/dork:chat:7c1e4b2a', from)).toMatchObject({
+      kind: 'internal',
+      path: '/r/dork:chat:7c1e4b2a',
+    });
+    expect(classifyLink('/r/dork%3Aroom%3A01JD3G', from).kind).toBe('internal');
+    // Not a dork: link, so not a route the app serves.
+    expect(classifyLink('/r/banana', from).kind).toBe('external');
+    expect(classifyLink('/r/dork%253Achat%253Aabc', from).kind).toBe('external');
   });
 
   it('rejects a router route with a dynamic segment', () => {
@@ -77,15 +99,17 @@ describe('route headers', () => {
     return createAppRouter(new QueryClient(), createMockTransport() as Transport);
   }
 
-  // Two addressable routes have no bar of their own. `/agents` is a
+  // Three addressable routes have no bar of their own. `/agents` is a
   // `beforeLoad` redirect to `/team` and never renders a page, so the shell
   // never draws a header for it. `/signed-in` is the page a sign-in's browser
-  // tab lands on, outside the app shell on purpose (DOR-2985). Excluded by name
-  // rather than by loosening the guard, so a route that genuinely forgets its
-  // header still fails.
-  const HEADERLESS_ROUTES: readonly string[] = ['/agents', '/signed-in'];
+  // tab lands on, outside the app shell on purpose (DOR-2985). `/r/$` is a
+  // `beforeLoad` redirect to whatever a link opens, outside the shell so a
+  // link that opens nothing gets the same not-found page as an unknown
+  // address (DOR-5046). Excluded by name rather than by loosening the guard,
+  // so a route that genuinely forgets its header still fails.
+  const HEADERLESS_ROUTES: readonly string[] = ['/agents', '/signed-in', '/r/$'];
 
-  it('declares a component header for every addressable route except the headerless two', () => {
+  it('declares a component header for every addressable route except the headerless three', () => {
     // Asserts the POSITIVE shape, not the absence of one wrong value. `.not
     // .toBeNull()` was the first spelling here and it was no guard at all: a
     // route that omitted `staticData` entirely reads `undefined`, which is not

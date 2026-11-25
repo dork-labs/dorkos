@@ -30,12 +30,17 @@ function stubFetch(status: number, body: unknown) {
 
 const methods = createCloudMethods('http://localhost:4242/api');
 
+/** A refusal as the server sends one: a problem document (DOR-4979). */
+function problemBody(code: string, detail: string) {
+  return { type: `urn:dorkos:problem:${code}`, title: 'Refused.', status: 403, code, detail };
+}
+
 describe('the cloud transport methods', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('hands over the person-only refusal of a deletion as its own sentence', async () => {
     const message = 'Only you can delete your DorkOS account, from the DorkOS app while signed in.';
-    stubFetch(403, { ok: false, code: 'person_only', message });
+    stubFetch(403, problemBody('person_only', message));
     await expect(methods.requestCloudAccountDeletion()).resolves.toEqual({ ok: false, message });
   });
 
@@ -57,12 +62,17 @@ describe('the cloud transport methods', () => {
     ['resending a move', () => methods.retryHostedCommunityMoveUpload('move_1')],
   ])('hands over the owner-only refusal of %s as its own sentence', async (_name, call) => {
     const message = 'Only the owner of this DorkOS can do that.';
-    stubFetch(403, { ok: false, code: 'owner_only', message });
+    stubFetch(403, problemBody('owner_only', message));
     await expect(call()).resolves.toEqual({ ok: false, message });
   });
 
   it('still throws a deletion failure that carries no sentence', async () => {
-    stubFetch(500, { error: 'boom' });
+    stubFetch(500, {
+      title: 'DorkOS hit an error on its side.',
+      status: 500,
+      code: 'internal_error',
+      detail: 'boom',
+    });
     await expect(methods.requestCloudAccountDeletion()).rejects.toThrow('boom');
   });
 

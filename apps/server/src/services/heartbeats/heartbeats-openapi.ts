@@ -6,11 +6,10 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { HeartbeatStatusSchema, TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
-import { WakersOffSchema } from '@dorkos/shared/waker-schemas';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
- * Register `GET /api/agents/{id}/heartbeat`, `PUT /api/heartbeats/triage-credits` and
- * `GET /api/heartbeats/wakers-off`.
+ * Register `GET /api/agents/{id}/heartbeat` and `PUT /api/heartbeats/triage-credits`.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -41,8 +40,8 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The heartbeat',
         content: { 'application/json': { schema: HeartbeatStatusSchema } },
       },
-      400: { description: '`days` is not a whole number from 1 to 90' },
-      404: { description: 'No agent with that id' },
+      400: problemResponse('`invalid_request`: `days` is not a whole number from 1 to 90'),
+      404: problemResponse('`not_found`: no agent with that id'),
     },
   });
   registry.registerPath({
@@ -61,24 +60,10 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The answer, stored',
         content: { 'application/json': { schema: TriageCreditsChoiceSchema } },
       },
-      400: { description: 'The body is not an answer' },
-      403: { description: 'Only the owner of this DorkOS can answer' },
-    },
-  });
-  registry.registerPath({
-    method: 'get',
-    path: '/api/heartbeats/wakers-off',
-    tags: ['Heartbeats'],
-    summary: 'Every schedule and heartbeat that cannot wake',
-    description:
-      'Each schedule that is switched off, waiting for approval or paused, each heartbeat set ' +
-      'to off, each paused agent, and heartbeats as a whole when they are off. Each says since ' +
-      'when, when DorkOS knows, and the person who can turn it back on. Longest off first.',
-    responses: {
-      200: {
-        description: 'The wakers that cannot wake',
-        content: { 'application/json': { schema: WakersOffSchema } },
-      },
+      400: problemResponse('`invalid_request`: the body is not an answer'),
+      403: problemResponse(
+        '`owner_only` or `person_only`: only the owner of this DorkOS can answer, in the app'
+      ),
     },
   });
 }

@@ -14,19 +14,18 @@ import {
   RelayLinkRequestSchema,
   RelayLinkResponseSchema,
 } from '@dorkos/shared/session-relay-link';
+import { problemResponse } from '../openapi/problem-openapi.js';
 
 const TAGS = ['Hub'];
-
-const ErrorSchema = z.object({ error: z.string(), code: z.string() });
 
 const json = (schema: z.ZodType, description: string) => ({
   description,
   content: { 'application/json': { schema } },
 });
 
-const OWNER_ONLY = json(
-  ErrorSchema,
-  "Not the person's own browser sign-in: an agent or an API key never reaches these routes"
+const OWNER_ONLY = problemResponse(
+  "Not the person's own browser sign-in (`person_only`): an agent or an API key never " +
+    'reaches these routes'
 );
 
 /**
@@ -47,8 +46,8 @@ export function registerHubLinkOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: json(HubLinkCodeSchema, 'The code, and when it stops working'),
       403: OWNER_ONLY,
-      404: json(ErrorSchema, 'Not a hub'),
-      503: json(ErrorSchema, 'The hub is not serving yet'),
+      404: problemResponse('Not a hub (`not_found`)'),
+      503: problemResponse('The hub is not serving yet (`temporarily_unavailable`)'),
     },
   });
 
@@ -64,7 +63,7 @@ export function registerHubLinkOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       204: { description: 'Unlinked' },
       403: OWNER_ONLY,
-      404: json(ErrorSchema, 'Not a hub, or no such linked computer'),
+      404: problemResponse('Not a hub, or no such linked computer (`not_found`)'),
     },
   });
 
@@ -84,17 +83,19 @@ export function registerHubLinkOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: json(RelayLinkResponseSchema, 'Linked'),
-      400: json(ErrorSchema, 'Not a link request'),
-      401: json(ErrorSchema, 'The code or the signature did not check out'),
-      403: json(ErrorSchema, 'A browser sent it'),
-      404: json(ErrorSchema, 'Not a hub'),
-      409: json(
-        ErrorSchema,
-        'That computer id is already linked under another key, or the hub cannot link another'
+      400: problemResponse('Not a link request (`invalid_request`, `malformed_request`)'),
+      401: problemResponse('The code or the signature did not check out (`link_code_refused`)'),
+      403: problemResponse('A browser sent it (`forbidden`)'),
+      404: problemResponse('Not a hub (`not_found`)'),
+      409: problemResponse(
+        'That computer id is already linked under another key (`already_linked`), or the hub ' +
+          'cannot link another (`computer_limit_reached`)'
       ),
-      413: json(ErrorSchema, 'The body is over 4 KB'),
-      429: json(ErrorSchema, 'Too many wrong codes lately, from anywhere'),
-      503: json(ErrorSchema, 'The hub is not serving, or has no signing key yet'),
+      413: problemResponse('The body is over 4 KB (`request_too_large`)'),
+      429: problemResponse('Too many wrong codes lately, from anywhere (`rate_limited`)'),
+      503: problemResponse(
+        'The hub is not serving, or has no signing key yet (`temporarily_unavailable`)'
+      ),
     },
   });
 }

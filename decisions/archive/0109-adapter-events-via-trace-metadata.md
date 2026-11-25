@@ -1,7 +1,7 @@
 ---
 number: 109
 title: Store Adapter Events in Trace Table via JSON Metadata
-status: draft
+status: archived
 created: 2026-03-11
 spec: relay-mesh-quality-improvements
 superseded-by: null

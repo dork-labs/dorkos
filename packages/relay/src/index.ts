@@ -174,6 +174,18 @@ export { SlackAdapter, SLACK_MANIFEST } from './adapters/slack/index.js';
 // Built-in adapters
 export { ClaudeCodeAdapter, CLAUDE_CODE_MANIFEST } from './adapters/claude-code/index.js';
 export type { ApprovalAuthorizer } from './adapters/claude-code/index.js';
+export {
+  HTTP_RELAY_SENDER,
+  TURN_SHAPING_PAYLOAD_FIELDS,
+  resolveAgentTurnIdentity,
+} from './adapters/claude-code/index.js';
+export {
+  CARRIED_TURN_LIMITS_FIELD,
+  isSealedTurnLimits,
+  sealTurnLimits,
+  withoutCarriedTurnLimits,
+} from './lib/carried-turn-limits.js';
+export type { NewChatPlace } from './lib/carried-turn-limits.js';
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
@@ -186,6 +198,8 @@ export type {
   TurnDeskCheck,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
+  ChatPlaceRecall,
+  RecalledChatPlace,
   TurnStartNote,
   TurnExecutionSettings,
 } from './adapters/claude-code/index.js';

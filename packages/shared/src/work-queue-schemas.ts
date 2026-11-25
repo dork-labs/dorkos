@@ -131,6 +131,25 @@ export const AddWorkItemRequestSchema = z
 /** Adding one item to a queue. */
 export type AddWorkItemRequest = z.infer<typeof AddWorkItemRequestSchema>;
 
+/**
+ * Whether a queue change changes anything: at least one of its fields is sent.
+ * Shared by every schema that carries a change, so they refuse the same body.
+ *
+ * @param body - The change's fields.
+ */
+export function changesWorkQueue(body: {
+  enabled?: boolean | undefined;
+  target?: number | undefined;
+  dailyStartCap?: number | undefined;
+}): boolean {
+  return (
+    body.enabled !== undefined || body.target !== undefined || body.dailyStartCap !== undefined
+  );
+}
+
+/** What {@link changesWorkQueue} refuses with. */
+export const WORK_QUEUE_CHANGE_REQUIRED = 'Send enabled, target or dailyStartCap.';
+
 /** Changing how a queue runs: a person's call. */
 export const UpdateWorkQueueRequestSchema = z
   .object({
@@ -138,11 +157,7 @@ export const UpdateWorkQueueRequestSchema = z
     target: z.number().int().min(1).max(WORK_QUEUE_TARGET_MAX).optional(),
     dailyStartCap: z.number().int().min(1).max(WORK_QUEUE_DAILY_CAP_MAX).optional(),
   })
-  .refine(
-    (body) =>
-      body.enabled !== undefined || body.target !== undefined || body.dailyStartCap !== undefined,
-    { message: 'Send enabled, target or dailyStartCap.' }
-  )
+  .refine(changesWorkQueue, { message: WORK_QUEUE_CHANGE_REQUIRED })
   .openapi('UpdateWorkQueueRequest');
 
 /** Changing how a queue runs. */

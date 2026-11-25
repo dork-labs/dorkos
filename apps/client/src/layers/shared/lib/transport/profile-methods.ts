@@ -12,7 +12,7 @@
 import type { ProfileAvatarResponse, ProfileUpdateResponse } from '@dorkos/shared/team-schemas';
 import { fetchJSON, fetchNoContent } from './http-client';
 
-/** The multipart field the avatar route reads. Wrong name, and the route answers `AVATAR_MISSING`. */
+/** The multipart field the avatar route reads. Wrong name, and the route answers `avatar_missing`. */
 const AVATAR_FIELD = 'avatar';
 
 /** Create the profile-write methods bound to a base URL. */
@@ -30,7 +30,7 @@ export function createProfileMethods(baseUrl: string) {
       body.append(AVATAR_FIELD, file, filename);
       // No Content-Type here: `fetchJSON` leaves a FormData body untyped so
       // `fetch` writes `multipart/form-data; boundary=…` itself. Under a JSON
-      // header the parser finds no boundary and answers `AVATAR_MISSING`.
+      // header the parser finds no boundary and answers `malformed_request`.
       return fetchJSON<ProfileAvatarResponse>(baseUrl, '/profile/avatar', {
         method: 'POST',
         body,

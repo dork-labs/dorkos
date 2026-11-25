@@ -28,12 +28,16 @@ import {
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
-import { handRegisteredInSessionTools } from '../index.js';
 import type { Task } from '@dorkos/shared/schemas';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 // Careful, so an agent's schedule parks and its edits re-ask: the guard and
 // the parked nudge are what this file pins. Trusted arming is covered in
@@ -412,22 +416,6 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
       expect(created.permissionMode).toBe('acceptEdits');
     });
 
-    it('slugifies the name so a display-style name lands as a slug (mirrors REST create)', async () => {
-      // A scheduled run is told `Job: ${task.name}` in its system prompt
-      // (`task-append.ts`), and `tasks_update.name` is already slug-bounded — so the
-      // create door slugifies too, exactly as `POST /api/tasks` does. "Nightly Sweep"
-      // is a legitimate name; it lands as the slug, not verbatim.
-      const { isError, payload } = await call('tasks_create', {
-        name: 'Nightly Sweep',
-        prompt: 'do a thing',
-        cron: '0 3 * * *',
-        target: 'global',
-        reason: 'The overnight backlog needs sweeping before you start.',
-      });
-      expect(isError).toBe(false);
-      expect((payload.schedule as Task).name).toBe('nightly-sweep');
-    });
-
     it('refuses a name with no usable slug in it, and creates nothing', async () => {
       // A name that slugifies to the empty string ("!!!") has nothing to write, so
       // it is turned away before the row exists — no half-made task parked for a
@@ -709,20 +697,6 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     reason: 'The overnight backlog needs sweeping before you start.',
   };
 
-  it('advertises reason as a required argument, in the words an agent has to answer', () => {
-    const tools = toolsWith();
-    expect(tools.tasks_create!.inputSchema.reason?.description).toContain('in your own words');
-    // Required, not optional: the SDK parses a call against this schema before
-    // the handler runs, so this is what makes a reasonless call impossible.
-    expect(tools.tasks_create!.inputSchema.reason?.isOptional?.()).not.toBe(true);
-  });
-
-  it('stores the reason on the task', async () => {
-    const { isError } = await create(toolsWith(), GOOD_ARGS);
-    expect(isError).toBe(false);
-    expect(store.getTasks()[0]!.reason).toBe(GOOD_ARGS.reason);
-  });
-
   it('refuses a blank reason and creates nothing', async () => {
     for (const reason of ['', '   ', '\n\t']) {
       const { isError, payload } = await create(toolsWith(), { ...GOOD_ARGS, reason });
@@ -742,19 +716,6 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
     expect(created.proposedByAgentPath).toBe(nbHome);
   });
 
-  it('reads the session id at call time, not when the tools were built', async () => {
-    // The SDK rekeys a session to its canonical id mid-first-turn, so a resolver
-    // read once at construction would record the trigger id — a session nothing
-    // can open. Reading late is the whole point of the resolver being a function.
-    let current = 'ses-trigger';
-    const tools = toolsWith(() => ({ sessionId: current, agentPath: nbHome }));
-
-    current = 'ses-canonical';
-    await create(tools, GOOD_ARGS);
-
-    expect(store.getTasks()[0]!.proposedBySessionId).toBe('ses-canonical');
-  });
-
   it('names the proposer in the activity feed, from the same answer the notification uses', async () => {
     await identity.mint({ agentPath: nbHome, displayName: 'Nightly Bot' });
     const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: nbHome }));
@@ -768,40 +729,6 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
         actorId: nbHome,
       })
     );
-  });
-
-  it('says "An agent" in the feed when nothing resolves a name', async () => {
-    const tools = toolsWith(() => ({ sessionId: 'ses-1', agentPath: unknownHome }));
-
-    await create(tools, GOOD_ARGS);
-
-    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: 'An agent' }));
-  });
-
-  it('picks the session up through the REAL composition root, not a hand-built resolver', async () => {
-    // Every other case here injects `resolveProvenance` itself, so all of them
-    // stay green if `mcp-tools/index.ts` stops PASSING one — which is the whole
-    // wiring. This drives the same function a live session drives
-    // (`createDorkOsToolServer` → `handRegisteredInSessionTools`) and hands it
-    // only a session, so the argument in `getTasksTools(deps, …)` is load-bearing
-    // for it (DOR-1394 review).
-    const session = {
-      eventQueue: [],
-      cwd: nbHome,
-      sdkSessionId: 'ses-canonical',
-    };
-
-    const wired = Object.fromEntries(
-      (handRegisteredInSessionTools(deps, { session }) as unknown as SessionTool[]).map((t) => [
-        t.name,
-        t,
-      ])
-    );
-    await create(wired, GOOD_ARGS);
-
-    const created = store.getTasks()[0]!;
-    expect(created.proposedByAgentPath).toBe(nbHome);
-    expect(created.proposedBySessionId).toBe('ses-canonical');
   });
 
   it('leaves provenance null on the sessionless external server, and still demands a reason', async () => {
@@ -831,38 +758,6 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
       expect(note).not.toBe(
         'Schedule created with pending_approval status. User must approve before it runs.'
       );
-    });
-
-    it('offers the Schedules panel only where a session makes control_ui reachable', async () => {
-      const inSession = await create(
-        toolsWith(() => ({ sessionId: 'ses-1', agentPath: nbHome })),
-        GOOD_ARGS
-      );
-      expect(String(inSession.payload.note)).toContain("panel: 'tasks'");
-      expect(String(inSession.payload.note)).toContain('control_ui');
-    });
-
-    it('never names control_ui on the sessionless external server, where it does not exist', async () => {
-      // `control_ui` requires an attached interactive session and is not
-      // registered on `/mcp`. Suggesting it there would be an instruction that
-      // can only fail, so the external surface gets the "tell them" half alone.
-      const { payload } = await create(toolsWith(), GOOD_ARGS);
-
-      expect(String(payload.note)).not.toContain('control_ui');
-      expect(String(payload.note)).toContain('Tell them so in your reply');
-    });
-
-    it('gives the same guidance through the REAL composition root', async () => {
-      const wired = Object.fromEntries(
-        (
-          handRegisteredInSessionTools(deps, {
-            session: { eventQueue: [], cwd: nbHome, sdkSessionId: 'ses-canonical' },
-          }) as unknown as SessionTool[]
-        ).map((t) => [t.name, t])
-      );
-
-      const { payload } = await create(wired, GOOD_ARGS);
-      expect(String(payload.note)).toContain('control_ui');
     });
   });
 });

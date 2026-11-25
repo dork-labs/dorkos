@@ -211,7 +211,7 @@ describe('Wi-Fi takes no password', () => {
   it.each(['/api/auth/sign-in/email', '/api/auth/sign-up/email'])('refuses %s', async (url) => {
     const res = await post(url, 'wifi').send({ email: EMAIL, password: PASSWORD, name: 'x' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('WIFI_SIGN_IN_NEEDS_CODE');
+    expect(res.body.code).toBe('not_from_wifi');
     expect(cookiesOf(res)).not.toMatch(/session_token/);
   });
 
@@ -380,7 +380,7 @@ describe('a one-time code from this computer', () => {
       deskCookie
     ).send({ passkey });
     expect(reused.status).toBe(401);
-    expect(reused.body.code).toBe('PASSKEY_REFUSED');
+    expect(reused.body.code).toBe('passkey_refused');
   });
 
   it('without a passkey on this computer, says to add one and approves nothing', async () => {
@@ -393,7 +393,7 @@ describe('a one-time code from this computer', () => {
         .set('X-DorkOS-Password', PASSWORD)
         .send({ password: PASSWORD });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('PASSKEY_NEEDED');
+      expect(res.body.code).toBe('passkey_needed');
       expect(res.body.code).not.toBe('STEP_UP_REQUIRED');
     } finally {
       for (const row of saved) db.insert(ownerFactors).values(row).run();
@@ -436,7 +436,7 @@ describe('what a Wi-Fi device may do', () => {
       .set('X-DorkOS-Agent', 'agent-token')
       .send({ on: true });
     expect(fromWifi.status).toBe(403);
-    expect(fromWifi.body.code).toBe('NOT_FROM_WIFI');
+    expect(fromWifi.body.code).toBe('not_from_wifi');
     expect(asAgent.status).toBe(403);
     expect((await turnFrom(device, true)).body.held).toBe(true);
 
@@ -624,7 +624,7 @@ describe('each step only where it belongs', () => {
         cookie
       ).send({});
       expect(approve.status).toBe(403);
-      expect(approve.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(approve.body.code).toBe('operator_only');
       const opt = await post(
         `/api/devices/sessions/${row.id}/runs-agents`,
         via,
@@ -632,7 +632,7 @@ describe('each step only where it belongs', () => {
         'put'
       ).send({ on: true });
       expect(opt.status).toBe(403);
-      expect(opt.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(opt.body.code).toBe('operator_only');
       expect(device).toMatch(/session_token/);
     }
   );
@@ -666,7 +666,7 @@ describe('each step only where it belongs', () => {
       'localhost:4999'
     ).send({});
     expect(forged.status).toBe(403);
-    expect(forged.body.code).toBe('NOT_FROM_OWN_PAGE');
+    expect(forged.body.code).toBe('origin_not_allowed');
   });
 });
 

@@ -6,8 +6,8 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 import { DirectChatSchema, OpenDirectChatRequestSchema } from '@dorkos/shared/room-schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 /**
  * Register the Direct chat routes.
@@ -15,10 +15,6 @@ import { DirectChatSchema, OpenDirectChatRequestSchema } from '@dorkos/shared/ro
  * @param registry - The server's OpenAPI registry.
  */
 export function registerDirectChatOpenApi(registry: OpenAPIRegistry): void {
-  const refusal = (description: string) => ({
-    description,
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  });
   registry.registerPath({
     method: 'post',
     path: '/api/direct-chats',
@@ -37,10 +33,15 @@ export function registerDirectChatOpenApi(registry: OpenAPIRegistry): void {
         description: 'The Direct chat',
         content: { 'application/json': { schema: DirectChatSchema } },
       },
-      400: refusal('The body named neither an agent nor a room'),
-      403: refusal('The caller is an agent, or a person other than the owner'),
-      404: refusal('No registered agent lives in that directory'),
-      409: refusal('That room is not the owner’s two-member direct message with one agent'),
+      400: problemResponse('`invalid_request`: the body named neither an agent nor a room'),
+      403: problemResponse(
+        '`operator_only`: the caller is an agent, or a person other than the owner'
+      ),
+      404: problemResponse('`not_found`: no registered agent lives in that directory'),
+      409: problemResponse(
+        '`conflict`: that room is not the owner’s two-member direct message with one agent'
+      ),
+      503: problemResponse('`temporarily_unavailable`: rooms are not running'),
     },
   });
   registry.registerPath({
@@ -57,8 +58,10 @@ export function registerDirectChatOpenApi(registry: OpenAPIRegistry): void {
         description: 'The Direct chat',
         content: { 'application/json': { schema: DirectChatSchema } },
       },
-      403: refusal('The caller is an agent, or a person other than the owner'),
-      404: refusal('This chat is not a Direct chat'),
+      403: problemResponse(
+        '`operator_only`: the caller is an agent, or a person other than the owner'
+      ),
+      404: problemResponse('`not_found`: this chat is not a Direct chat'),
     },
   });
 }

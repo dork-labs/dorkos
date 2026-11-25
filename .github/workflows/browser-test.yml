@@ -163,6 +163,26 @@ on:
         options:
           - '1'
           - '2'
+      # ROLLING BISECT (DOR-5122): rolling-bisect.yml dispatches this workflow
+      # on main with one merge already on main, to find the merge that broke a
+      # rolling push run. Every checkout below takes this commit instead of
+      # main's head, and the run is titled "bisect <sha> for run <id>", which
+      # is how rolling-bisect.sh finds it and how the canary collector leaves it
+      # out. Its checks still post on main's head (a dispatch's head), so
+      # nothing may read a bisect run as a verdict on main: after-merge-alert
+      # and auto-revert read push runs only. Empty on every other run.
+      bisect_sha:
+        description: (rolling-bisect.yml) A merge on main to test instead of main's head
+        required: false
+        type: string
+        default: ''
+      bisect_of:
+        description: (rolling-bisect.yml) The failed push run this bisects
+        required: false
+        type: string
+        default: ''
+
+run-name: ${{ inputs.bisect_sha && format('bisect {0} for run {1}', inputs.bisect_sha, inputs.bisect_of) || '' }}
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -181,7 +201,11 @@ concurrency:
   # and the two are correlated in time, because the reason to dispatch by hand
   # is usually the reason a round is already running. The suffix is constant
   # for `pull_request` and `merge_group`, so neither changes behaviour.
-  group: browser-test-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
+  #
+  # A bisect run (inputs.bisect_sha) gets a group of its own per merge, so it
+  # never waits behind, cancels or replaces the rolling push run (`gate`) or a
+  # hand-dispatched canary (`dispatch`).
+  group: browser-test-${{ github.ref }}-${{ inputs.bisect_sha && format('bisect-{0}', inputs.bisect_sha) || (github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate') }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -228,6 +252,8 @@ jobs:
       # Depth 2 so the test-merge commit's first parent is here to diff against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           fetch-depth: 2
           persist-credentials: false
       # THE TEXT-ONLY LANE (DOR-4834, ledger 261120-043306). Decides, from
@@ -703,6 +729,30 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run (DOR-5122) tests one merge that is already on main, or
+      # nothing: its checks post on main's head, so any other tree would be a
+      # verdict on a commit main never had. A no-op on every other run.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       # No saved credential: nothing here pushes or fetches after checkout. The
       # specs make git repositories inside this checkout, and DorkOS's audited
       # git runner reads every settings file above one, refusing an include,
@@ -710,6 +760,8 @@ jobs:
       # 261030-062000).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           persist-credentials: false
 
       # The unit shards log this too (test.yml). The same tests take up to 1.65x
@@ -906,7 +958,8 @@ jobs:
       # deletes the cache and nothing is saved.
       - name: Keep only this run's build entries in the turbo cache
         id: turbo-trim
-        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+        # Never from a bisect run: its tree is not main's head, whose sha keys the save.
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 && !inputs.bisect_sha }}
         run: |
           if bash scripts/keep-build-cache-only.sh; then
             echo 'save=true' >> "$GITHUB_OUTPUT"
@@ -1170,8 +1223,32 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: browser-shard says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1379,6 +1456,9 @@ jobs:
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
+        with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
 
       # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
       # seconds — so it cannot run the engine to read the lane itself. The

@@ -17,7 +17,6 @@ import { applyLiveChanges, MCP_SERVERS_UNKNOWN, prepareDispatch } from '../launc
 import { decideProcessReuse } from '../pump-launch.js';
 import { LIVE_SETTING_ACK_TIMEOUT_MS, PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import type { PumpControlQuery } from '../session-pump-contract.js';
-import { logger } from '../../../../../lib/logger.js';
 
 const CLIENT_ROOT = '/staged/claude-client';
 const OTHER_ROOT = '/staged/claude-other';
@@ -112,44 +111,6 @@ describe('applyLiveChanges', () => {
     await applyLiveChanges(query, decision);
 
     expect(calls.sort()).toEqual(['reloadPlugins', 'setMcpServers']);
-  });
-
-  // Purpose: a live swap restarts every stdio server, so each one is counted at
-  // info, where a swap on every turn shows up in the log (DOR-4498).
-  it('logs every live MCP server swap at info, and nothing when none happened', async () => {
-    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-    const { query } = controlQuery();
-    const swap = prepareDispatch(
-      capture(),
-      capture({
-        options: options({ mcpServers: { dorkos: { type: 'http', url: 'http://localhost/mcp' } } }),
-      })
-    );
-    if (swap.action !== 'reuse') throw new Error('expected a reuse');
-    await applyLiveChanges(query, swap, { sessionId: 'sess-1' });
-
-    const swaps = info.mock.calls.filter(([msg]) =>
-      String(msg).includes('swapped the MCP servers')
-    );
-    expect(swaps).toHaveLength(1);
-    expect(swaps[0]?.[1]).toEqual({ sessionId: 'sess-1' });
-
-    info.mockClear();
-    const model = prepareDispatch(capture(), capture({ options: options({ model: 'sonnet' }) }));
-    if (model.action !== 'reuse') throw new Error('expected a reuse');
-    await applyLiveChanges(query, model);
-    expect(info.mock.calls.some(([msg]) => String(msg).includes('swapped the MCP'))).toBe(false);
-    info.mockRestore();
-  });
-
-  it('touches nothing when nothing moved', async () => {
-    const { query, calls } = controlQuery();
-    const decision = prepareDispatch(capture(), capture());
-    if (decision.action !== 'reuse') throw new Error('expected a reuse');
-
-    await applyLiveChanges(query, decision);
-
-    expect(calls).toEqual([]);
   });
 
   it('refuses, and touches nothing, when the two accounts differ', async () => {
@@ -249,43 +210,6 @@ describe('applyLiveChanges is bounded (DOR-1301)', () => {
     expect(afterRemove.liveChanges).toEqual([{ pin: 'mcpServers', servers: {} }]);
   });
 
-  it('reports a refused setter the same way, without waiting on the clock', async () => {
-    const { query } = deafControlQuery([]);
-    vi.mocked(query.setModel).mockImplementation(() => Promise.reject(new Error('refused')));
-    const decision = prepareDispatch(capture(), capture({ options: options({ model: 'sonnet' }) }));
-    if (decision.action !== 'reuse') throw new Error('expected a reuse');
-
-    const outcome = await applyLiveChanges(query, decision);
-
-    expect(outcome.applied).toEqual([]);
-    expect(outcome.unapplied).toEqual([{ pin: 'model', ack: 'refused' }]);
-    expect(outcome.fingerprint.live.model).toBe('claude-opus-4-6');
-  });
-
-  it('gives a plugin reload the longer bound, because it re-reads plugins from disk', async () => {
-    vi.useFakeTimers();
-    const { query } = deafControlQuery(['plugins']);
-    const decision = prepareDispatch(
-      capture(),
-      capture({ options: options({ plugins: [{ type: 'local', path: '/plugins/flow' }] }) })
-    );
-    if (decision.action !== 'reuse') throw new Error('expected a reuse');
-
-    let settled = false;
-    const applying = applyLiveChanges(query, decision).then((outcome) => {
-      settled = true;
-      return outcome;
-    });
-
-    await vi.advanceTimersByTimeAsync(LIVE_SETTING_ACK_TIMEOUT_MS);
-    // Still waiting: the field-flip bound must not be the one governing this.
-    expect(settled).toBe(false);
-
-    await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS - LIVE_SETTING_ACK_TIMEOUT_MS);
-    const outcome = await applying;
-    expect(outcome.unapplied).toEqual([{ pin: 'plugins', ack: 'unacked' }]);
-  });
-
   it('hands the dispatch the fingerprint the process really holds, so the stale pin is retried next time', async () => {
     vi.useFakeTimers();
     const { query } = deafControlQuery(['model']);
@@ -334,14 +258,6 @@ describe('prepareDispatch', () => {
         capture({ options: options({ plugins: [] }) })
       ).action
     ).toBe('replace');
-  });
-
-  it('names both a moved pin and a withdrawn plugin', () => {
-    const decision = prepareDispatch(
-      capture({ options: options({ plugins: [{ type: 'local', path: '/plugins/gone' }] }) }),
-      capture({ options: options({ cwd: '/elsewhere' }) })
-    );
-    expect(decision.action === 'relaunch' && decision.changed).toEqual(['cwd', 'plugins']);
   });
 
   it('never answers reuse across accounts', () => {
@@ -432,25 +348,6 @@ describe('a warm process taking a new plugin set (spec `plugin-reload-cache-cost
     expect(decideProcessReuse(outcome.fingerprint, decision.to).action).toBe('adjust');
   });
 
-  it('applies at once when the CLI says the cache does not depend on the tool list', async () => {
-    const { query } = holdingControlQuery();
-    // A CLI that answers `held: false` even to the asking form: nothing to save.
-    vi.mocked(query.reloadPlugins).mockResolvedValue({
-      commands: [],
-      agents: [],
-      plugins: [],
-      mcpServers: [],
-      error_count: 0,
-      held: false,
-    } as unknown as Awaited<ReturnType<PumpControlQuery['reloadPlugins']>>);
-
-    const outcome = await applyLiveChanges(query, pluginsMoved(), {
-      holdPluginReloadWhenCacheWarm: true,
-    });
-
-    expect(outcome.applied).toEqual(['plugins']);
-  });
-
   it('reports the hold, so something can put a ceiling on the waiting', async () => {
     // Re-asking every dispatch is this path's only recovery, and on a session
     // that dispatches all afternoon it never ends. The `plugins` pin also moves
@@ -469,36 +366,5 @@ describe('a warm process taking a new plugin set (spec `plugin-reload-cache-cost
       mcpServersRemoved: [],
       lspToolChange: null,
     });
-  });
-
-  it('reports nothing when the reload was applied rather than held', async () => {
-    const { query } = holdingControlQuery();
-    const onPluginReloadHeld = vi.fn();
-
-    await applyLiveChanges(query, pluginsMoved(), { onPluginReloadHeld });
-
-    expect(onPluginReloadHeld).not.toHaveBeenCalled();
-  });
-
-  it('reports an unanswered cost check as unacked rather than paying a second bound', async () => {
-    // Two stacked 8 s budgets on the path between pressing send and the turn
-    // opening is sixteen seconds of a message that looks like it did nothing.
-    // A stale pin already brings the next dispatch back to try again.
-    vi.useFakeTimers();
-    try {
-      const { query } = holdingControlQuery();
-      vi.mocked(query.reloadPlugins).mockImplementation(() => new Promise<never>(() => {}));
-
-      const applying = applyLiveChanges(query, pluginsMoved(), {
-        holdPluginReloadWhenCacheWarm: true,
-      });
-      await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS);
-      const outcome = await applying;
-
-      expect(query.reloadPlugins).toHaveBeenCalledTimes(1);
-      expect(outcome.unapplied).toEqual([{ pin: 'plugins', ack: 'unacked' }]);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

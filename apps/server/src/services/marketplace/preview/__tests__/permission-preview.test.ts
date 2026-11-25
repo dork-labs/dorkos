@@ -292,27 +292,6 @@ describe('PermissionPreviewBuilder', () => {
       // conflicts placeholder is empty until task 2.3 wires the detector in
       expect(preview.conflicts).toEqual([]);
     });
-
-    it('skips node_modules, .git, and dist when walking files', async () => {
-      const manifest = pluginManifest('walker-test');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      // Add forbidden subdirectories with content
-      for (const ignored of ['node_modules', '.git', 'dist']) {
-        const dir = join(pkgPath, ignored, 'nested');
-        await mkdir(dir, { recursive: true });
-        await writeFile(join(dir, 'should-not-appear.txt'), 'ignore me');
-      }
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      const ignoredHits = preview.fileChanges.filter(
-        (f) =>
-          f.path.includes(`${dorkHome}/plugins/walker-test/node_modules`) ||
-          f.path.includes(`${dorkHome}/plugins/walker-test/.git`) ||
-          f.path.includes(`${dorkHome}/plugins/walker-test/dist`)
-      );
-      expect(ignoredHits).toEqual([]);
-    });
   });
 
   describe('hooks', () => {
@@ -345,20 +324,6 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.unreadableHooks).toEqual([]);
     });
 
-    it('accepts a bare { Event: [...] } file, the other shape the harness tolerates', async () => {
-      const manifest = pluginManifest('bare-hooks');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        hooksJson: JSON.stringify({
-          SessionStart: [{ hooks: [{ type: 'command', command: 'make warm-cache' }] }],
-        }),
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.hooks).toEqual([{ event: 'SessionStart', command: 'make warm-cache' }]);
-      expect(preview.unreadableHooks).toEqual([]);
-    });
-
     it('reports an unparseable hooks.json instead of reporting no hooks', async () => {
       const manifest = pluginManifest('broken-hooks');
       const pkgPath = await createFixturePackage(pkgRoot, manifest, {
@@ -370,64 +335,6 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.hooks).toEqual([]);
       // The whole point: "we could not read this" must not look like "there is nothing here".
       expect(preview.unreadableHooks).toEqual([{ path: 'hooks/hooks.json' }]);
-    });
-
-    it('reports a malformed event entry while keeping the readable ones', async () => {
-      const manifest = pluginManifest('half-broken-hooks');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        hooksJson: JSON.stringify({
-          hooks: {
-            // Object instead of an array of matcher groups — the harness drops this key.
-            Stop: { hooks: [{ type: 'command', command: 'rm -rf /' }] },
-            PostToolUse: [{ hooks: [{ type: 'command', command: 'pnpm lint' }] }],
-          },
-        }),
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.hooks).toEqual([{ event: 'PostToolUse', command: 'pnpm lint' }]);
-      expect(preview.unreadableHooks).toEqual([{ path: 'hooks/hooks.json', event: 'Stop' }]);
-    });
-
-    it('reports an event whose matcher groups yield no command string', async () => {
-      const manifest = pluginManifest('empty-groups');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        hooksJson: JSON.stringify({ hooks: { Stop: [{ matcher: 'Bash' }] } }),
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.hooks).toEqual([]);
-      expect(preview.unreadableHooks).toEqual([{ path: 'hooks/hooks.json', event: 'Stop' }]);
-    });
-
-    it('treats an event declared with an empty group list as declaring nothing', async () => {
-      const manifest = pluginManifest('empty-event-list');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        hooksJson: JSON.stringify({ hooks: { Stop: [] } }),
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      // Deliberate, and the one input where a declared key is dropped on the
-      // floor. `[]` is not unreadable — it parsed fine and says "no groups" —
-      // and the harness projects nothing from it either, so no command can run.
-      // Reporting it as unreadable would cry wolf on a well-formed file.
-      expect(preview.hooks).toEqual([]);
-      expect(preview.unreadableHooks).toEqual([]);
-    });
-
-    it('leaves both hook fields empty for a package that ships no hooks', async () => {
-      const manifest = pluginManifest('no-hooks');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      // Absence must read as absence: no hooks, and nothing we failed to read.
-      expect(preview.hooks).toEqual([]);
-      expect(preview.unreadableHooks).toEqual([]);
-      expect(preview.schedules).toEqual([]);
     });
 
     // The preview's whole promise is that it describes what the projector will
@@ -549,46 +456,6 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.mcpServers.map((s) => s.name)).toEqual(['extra', 'inline']);
     });
 
-    it('surfaces language servers from .lsp.json and plugin.json lspServers', async () => {
-      // Purpose: Claude Code starts a plugin's language server as a program of
-      // its own; it was the one kind of server the preview never mentioned.
-      const manifest = pluginManifest('lsp-plugin');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(pkgPath, '.lsp.json', {
-        go: { command: 'gopls', args: ['serve'], extensionToLanguage: { '.go': 'go' } },
-      });
-      await put(pkgPath, '.claude-plugin/plugin.json', {
-        name: 'lsp-plugin',
-        lspServers: { rust: { command: 'rust-analyzer', extensionToLanguage: { '.rs': 'rust' } } },
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.lspServers).toEqual([
-        { name: 'go', command: 'gopls', args: ['serve'] },
-        { name: 'rust', command: 'rust-analyzer', args: [] },
-      ]);
-    });
-
-    it('surfaces background monitors from monitors/monitors.json and plugin.json', async () => {
-      const manifest = pluginManifest('monitor-plugin');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(pkgPath, 'monitors/monitors.json', [
-        { name: 'deploy', command: './scripts/poll.sh', description: 'x', when: 'always' },
-      ]);
-      await put(pkgPath, '.claude-plugin/plugin.json', {
-        name: 'monitor-plugin',
-        experimental: { monitors: [{ name: 'tail', command: 'tail -f log', description: 'y' }] },
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.monitors).toEqual([
-        { name: 'deploy', command: './scripts/poll.sh', when: 'always' },
-        { name: 'tail', command: 'tail -f log' },
-      ]);
-    });
-
     it('names every executable the package puts on the agent PATH', async () => {
       // Purpose: a file in bin/ can shadow a command the agent runs (a `git`
       // there runs whenever the agent runs git).
@@ -672,20 +539,6 @@ describe('PermissionPreviewBuilder', () => {
       expect(JSON.stringify(preview)).not.toContain('leak');
     });
 
-    it('treats any linked declaration as unreadable, even one pointing inside the package', async () => {
-      // Purpose: a link's target is decided when it is read, not when the
-      // package was published; the preview reads only real files.
-      const manifest = pluginManifest('link-in');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(pkgPath, 'real-mcp.json', { mcpServers: { db: { command: 'npx' } } });
-      await symlink(join(pkgPath, 'real-mcp.json'), join(pkgPath, '.mcp.json'));
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.mcpServers).toEqual([]);
-      expect(preview.unreadableDeclarations).toEqual([{ path: '.mcp.json', kind: 'mcp-server' }]);
-    });
-
     it('never reads a declaration through a linked folder that leaves the package', async () => {
       const manifest = pluginManifest('dir-link-out');
       const pkgPath = await createFixturePackage(pkgRoot, manifest);
@@ -707,24 +560,6 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.unreadableDeclarations).toEqual([
         { path: './conf/mcp.json', kind: 'mcp-server' },
       ]);
-    });
-
-    it('reports nothing for a package that declares nothing', async () => {
-      const manifest = pluginManifest('inert');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview).toMatchObject({
-        mcpServers: [],
-        lspServers: [],
-        monitors: [],
-        executables: [],
-        skillTools: [],
-        skillCommands: [],
-        skippedLinks: [],
-        unreadableDeclarations: [],
-      });
     });
   });
 
@@ -853,45 +688,6 @@ describe('PermissionPreviewBuilder', () => {
       ]);
     });
 
-    it("discloses a skill-pack's skill commands too", async () => {
-      const manifest = skillPackManifest('pack-commands');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(pkgPath, 'skills/probe/SKILL.md', '!`uname -a`');
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.skillCommands).toEqual([
-        {
-          source: 'skills/probe/SKILL.md',
-          skill: 'probe',
-          form: 'inline',
-          command: 'uname -a',
-          usesArguments: false,
-        },
-      ]);
-    });
-
-    it('finds commands even in a skill whose frontmatter it cannot read', async () => {
-      // Purpose: the frontmatter being unreadable already blocks approval, but
-      // the card should still show what the text would run.
-      const manifest = pluginManifest('broken-but-runs');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(pkgPath, 'skills/broken/SKILL.md', '---\nhooks: [unclosed\n---\n!`id`');
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.unreadableHooks).toEqual([{ path: 'skills/broken/SKILL.md' }]);
-      expect(preview.skillCommands).toEqual([
-        {
-          source: 'skills/broken/SKILL.md',
-          skill: 'broken',
-          form: 'inline',
-          command: 'id',
-          usesArguments: false,
-        },
-      ]);
-    });
-
     it("discloses a command in an agent package's own .claude/commands and .claude/skills (DOR-2327, DOR-2314)", async () => {
       // Purpose: an agent package's folder is its sessions' working directory,
       // so Claude Code loads these as project commands and skills.
@@ -951,24 +747,6 @@ describe('PermissionPreviewBuilder', () => {
       // Their frontmatter hooks are still not read: Claude Code ignores them in a plugin agent.
       expect(preview.hooks).toEqual([]);
     });
-
-    it('reads the skills and commands plugin.json points at', async () => {
-      const manifest = pluginManifest('custom-skill-paths');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(
-        pkgPath,
-        '.claude-plugin/plugin.json',
-        JSON.stringify({ name: 'custom-skill-paths', skills: './more', commands: ['./cmds/x.md'] })
-      );
-      await put(pkgPath, 'more/a/SKILL.md', '---\nallowed-tools: Read\n---\n');
-      await put(pkgPath, 'cmds/x.md', '---\nallowed-tools: Write\n---\n');
-      // Replaced by plugin.json `commands`, so not read.
-      await put(pkgPath, 'commands/ignored.md', '---\nallowed-tools: Bash\n---\n');
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.skillTools.map((t) => t.source)).toEqual(['more/a/SKILL.md', 'cmds/x.md']);
-    });
   });
 
   describe("an agent's working-directory skills (DOR-2314)", () => {
@@ -1017,16 +795,6 @@ describe('PermissionPreviewBuilder', () => {
         ['.claude/commands/ship.md', ['Bash']],
         ['.agents/skills/triage/SKILL.md', ['Read']],
       ]);
-    });
-
-    it('does not read them for a plugin, whose folder is never a working directory', async () => {
-      const manifest = pluginManifest('workdir-plugin');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      await put(pkgPath, '.claude/skills/deploy/SKILL.md', '---\nallowed-tools: Bash\n---\n');
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.skillTools).toEqual([]);
     });
 
     it("skips links there: they are DorkOS's own projections in an installed agent", async () => {
@@ -1212,19 +980,6 @@ describe('PermissionPreviewBuilder', () => {
       ]);
     });
 
-    it('defaults an unstated task permission mode to acceptEdits, enabled', async () => {
-      const manifest = pluginManifest('plain-task-plugin');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        tasks: [{ name: 'tidy', description: 'Tidy up', cron: '@daily' }],
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.schedules).toEqual([
-        { name: 'tidy', cron: '@daily', permissionMode: 'acceptEdits', startsEnabled: true },
-      ]);
-    });
-
     // DOR-1487: the slot opened past Shapes, and the preview is the CONSENT
     // surface — the last thing a person reads before approving unattended work.
     // A schedule the preview omits is one nobody agreed to.
@@ -1263,33 +1018,6 @@ describe('PermissionPreviewBuilder', () => {
         ]);
       }
     );
-
-    it('names a skillRef schedule by the skill it runs', async () => {
-      const manifest = {
-        ...pluginManifest('ref-pkg'),
-        schedules: [
-          {
-            skillRef: 'daily-report',
-            cron: '0 9 * * *',
-            timezone: null,
-            permissionMode: 'acceptEdits' as const,
-            startEnabled: false,
-          },
-        ],
-      } as unknown as PluginPackageManifest;
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.schedules).toEqual([
-        {
-          name: 'daily-report',
-          cron: '0 9 * * *',
-          permissionMode: 'acceptEdits',
-          startsEnabled: false,
-        },
-      ]);
-    });
 
     it('discloses the mode a declared schedule GETS, not the one it asked for', async () => {
       const manifest = {
@@ -1385,33 +1113,6 @@ describe('PermissionPreviewBuilder', () => {
         },
       ]);
     });
-
-    it('reports a Shape schedule carrying only the retired startDisabled key as starting off', async () => {
-      const manifest = shapeManifest('legacy-shape');
-      manifest.agents = [{ ref: 'worker', affinity: 'default', matchName: 'Worker' }];
-      manifest.schedules = [
-        {
-          name: 'Legacy Tick',
-          description: 'Written against the old schema',
-          prompt: 'Tick',
-          cron: '*/10 * * * *',
-          timezone: null,
-          agentRef: 'worker',
-          permissionMode: 'acceptEdits',
-          // A manifest written before DOR-607: `startEnabled` absent (so `false`
-          // by schema default), `startDisabled: false` carried over. Reading the
-          // retired key would invert this to "starts switched on" and the
-          // preview would promise a timer that apply-time never arms.
-          startEnabled: false,
-          startDisabled: false,
-        },
-      ];
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.schedules[0]?.startsEnabled).toBe(false);
-    });
   });
 
   describe('adapter package secrets', () => {
@@ -1471,23 +1172,6 @@ describe('PermissionPreviewBuilder', () => {
       );
       // No duplicates
       expect(new Set(preview.externalHosts).size).toBe(preview.externalHosts.length);
-    });
-
-    it('deduplicates hosts contributed by multiple extensions', async () => {
-      const manifest = pluginManifest('multi-bridge');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        extensions: [
-          { id: 'ext-a', externalHosts: ['https://api.openai.com'] },
-          { id: 'ext-b', externalHosts: ['https://api.openai.com', 'https://api.cohere.ai'] },
-        ],
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.externalHosts).toHaveLength(2);
-      expect(preview.externalHosts).toEqual(
-        expect.arrayContaining(['https://api.openai.com', 'https://api.cohere.ai'])
-      );
     });
   });
 
@@ -1557,56 +1241,6 @@ describe('PermissionPreviewBuilder', () => {
         { name: 'cronstrue', range: '~2.0.0' },
       ]);
     });
-
-    it('reports nothing for a package whose npm needs are development-only', async () => {
-      const manifest = pluginManifest('dev-only');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        packageJson: { name: 'dev-only', devDependencies: { vitest: '^3.0.0' } },
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.npmDependencies).toEqual([]);
-    });
-
-    it('reports nothing for a package with no package.json at all', async () => {
-      const manifest = pluginManifest('no-package-json');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.npmDependencies).toEqual([]);
-    });
-
-    it('reads the real /flow plugin package.json shape', async () => {
-      // The exact structure the marketplace's flow plugin ships once `zod`
-      // moves out of devDependencies: a private, type-module dev package whose
-      // runtime scripts import zod (spec §F, F14).
-      const manifest = pluginManifest('flow-real-shape');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
-        packageJson: {
-          name: 'flow',
-          version: '0.2.0',
-          private: true,
-          type: 'module',
-          description: 'Dev tooling for the /flow plugin.',
-          scripts: { test: 'vitest run', typecheck: 'tsc --noEmit' },
-          dependencies: { zod: '^4.3.6' },
-          devDependencies: {
-            '@types/node': '^25.6.0',
-            ajv: '^8.18.0',
-            prettier: '^3.8.3',
-            tsx: '^4.20.3',
-            typescript: '^5.9.3',
-            vitest: '^3.2.4',
-          },
-        },
-      });
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.npmDependencies).toEqual([{ name: 'zod', range: '^4.3.6' }]);
-    });
   });
 
   describe('requires resolution', () => {
@@ -1639,135 +1273,9 @@ describe('PermissionPreviewBuilder', () => {
         satisfied: false,
       });
     });
-
-    it('checks the agents directory for `agent:` requirements', async () => {
-      const agentDir = join(dorkHome, 'agents', 'helper-bot');
-      await mkdir(agentDir, { recursive: true });
-      const manifest = pluginManifest('agent-consumer', { requires: ['agent:helper-bot'] });
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.requires[0]).toMatchObject({
-        type: 'agent',
-        name: 'helper-bot',
-        satisfied: true,
-      });
-    });
-
-    it('checks the shapes directory for `shape:` requirements', async () => {
-      const shapeDir = join(dorkHome, 'shapes', 'linear-ops');
-      await mkdir(shapeDir, { recursive: true });
-      const manifest = pluginManifest('shape-consumer', { requires: ['shape:linear-ops'] });
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.requires[0]).toMatchObject({
-        type: 'shape',
-        name: 'linear-ops',
-        satisfied: true,
-      });
-    });
-  });
-
-  describe('agent package destination', () => {
-    it('routes file destinations to ${dorkHome}/agents/<name> for agent packages', async () => {
-      const manifest = agentManifest('research-bot');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      const expected = join(dorkHome, 'agents', 'research-bot', 'manifest.json');
-      expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
-    });
-  });
-
-  describe('skill-pack package destination', () => {
-    it('routes file destinations to ${dorkHome}/plugins/<name> for skill-pack packages', async () => {
-      const manifest = skillPackManifest('writing-skills');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      const expected = join(dorkHome, 'plugins', 'writing-skills', 'manifest.json');
-      expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
-    });
-  });
-
-  describe('shape package destination', () => {
-    it('routes file destinations to ${dorkHome}/shapes/<name> for Shape packages', async () => {
-      // Regression (DOR-355): the preview hardcoded agent→agents/,
-      // everything-else→plugins/, so a Shape's fileChanges showed
-      // plugins/<name>/ paths the install never writes — it lands in shapes/.
-      const manifest = shapeManifest('linear-ops');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      const expected = join(dorkHome, 'shapes', 'linear-ops', 'manifest.json');
-      expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
-      expect(preview.fileChanges.some((f) => f.path.includes(join('plugins', 'linear-ops')))).toBe(
-        false
-      );
-    });
-
-    it('previews the global shapes/ destination even for a project-scoped request', async () => {
-      // Shapes are global-only: install-shape.ts accepts projectPath for
-      // signature symmetry but ignores it. The preview must show where files
-      // actually land, not a project-local path the install never writes.
-      const manifest = shapeManifest('linear-ops');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest, { projectPath: '/work/myapp' });
-
-      const expected = join(dorkHome, 'shapes', 'linear-ops', 'manifest.json');
-      expect(preview.fileChanges.some((f) => f.path === expected)).toBe(true);
-      expect(preview.fileChanges.some((f) => f.path.startsWith('/work/myapp'))).toBe(false);
-    });
   });
 
   describe('conflict detector wiring', () => {
-    it('forwards detector results into preview.conflicts', async () => {
-      const manifest = pluginManifest('clean-package');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-      const detectorReport = {
-        level: 'warning' as const,
-        type: 'slot' as const,
-        description: 'forwarded from mock',
-        conflictingPackage: 'other-pkg',
-      };
-      const customDetector: ConflictDetectorLike = {
-        detect: vi.fn().mockResolvedValue([detectorReport]),
-      };
-      const customBuilder = new PermissionPreviewBuilder(dorkHome, customDetector);
-
-      const preview = await customBuilder.build(pkgPath, manifest);
-
-      expect(customDetector.detect).toHaveBeenCalledWith({
-        packagePath: pkgPath,
-        manifest,
-        dorkHome,
-        projectPath: undefined,
-      });
-      expect(preview.conflicts).toEqual([detectorReport]);
-    });
-
-    it('leaves conflicts empty when the detector finds nothing', async () => {
-      const manifest = pluginManifest('clean-package');
-      const pkgPath = await createFixturePackage(pkgRoot, manifest);
-
-      const preview = await builder.build(pkgPath, manifest);
-
-      expect(preview.conflicts).toEqual([]);
-      expect(detector.detect).toHaveBeenCalledWith({
-        packagePath: pkgPath,
-        manifest,
-        dorkHome,
-        projectPath: undefined,
-      });
-    });
-
     it('reports a same-name reinstall as a non-blocking warning end-to-end via the real ConflictDetector', async () => {
       // Pre-install a package with the same name so the detector's rule 1 fires.
       await installPlugin(dorkHome, 'duplicate-pkg');

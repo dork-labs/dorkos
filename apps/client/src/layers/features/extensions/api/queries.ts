@@ -1,9 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import {
-  STALE_APPROVAL_CODE,
-  type ApproveExtensionRequest,
-} from '@dorkos/shared/extension-approval-schemas';
+import type { ApproveExtensionRequest } from '@dorkos/shared/extension-approval-schemas';
 import { extensionQueryKeys, useExtensionList } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { readResponseError } from '@/layers/shared/lib';
@@ -53,8 +50,7 @@ export function useEnableExtension() {
         // throw that away and leave "403" on screen.
         const body = await readResponseError(
           res,
-          `Couldn’t turn on ${id}. The server answered ${res.status}.`,
-          { oldMessageFirst: true }
+          `Couldn’t turn on ${id}. The server answered ${res.status}.`
         );
         // The code rides along, so a cancelled "Confirm it's you" is told
         // apart from a failure and said once (DOR-4909).
@@ -87,8 +83,7 @@ export function useDisableExtension() {
         // throw that away and leave "403" on screen.
         const body = await readResponseError(
           res,
-          `Couldn’t turn off ${id}. The server answered ${res.status}.`,
-          { oldMessageFirst: true }
+          `Couldn’t turn off ${id}. The server answered ${res.status}.`
         );
         throw new Error(body.message);
       }
@@ -120,7 +115,7 @@ export interface RunApprovalTarget {
 
 /**
  * A refused approve or revoke: the server's sentence, and whether the card
- * went out of date while it was on screen (`stale_approval`).
+ * went out of date while it was on screen (`reason: stale_approval`).
  */
 export class RunApprovalError extends Error {
   constructor(
@@ -161,7 +156,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
     mutationFn: async ({ id, version, plugin, permissions, expectedDigest }: RunApprovalTarget) => {
       // Approving binds the copy the card shows — its version and carrying
       // plugin — so a copy that took its place since the card was drawn is
-      // refused with `stale_approval` instead of approved (DOR-2517). The card
+      // refused with `412 precondition_failed` instead of approved (DOR-2517). The card
       // is never told a path; the server compares what it is sent.
       const res = await fetch(
         extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
@@ -183,7 +178,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
           res,
           `Couldn’t update ${id}. The server answered ${res.status}.`
         );
-        throw new RunApprovalError(body.message, body.code === STALE_APPROVAL_CODE, body.code);
+        throw new RunApprovalError(body.message, body.code === 'precondition_failed', body.code);
       }
       return res.json() as Promise<ExtensionApprovalResponse>;
     },

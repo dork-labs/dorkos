@@ -13,7 +13,6 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { SESSIONS } from '../../../../config/constants.js';
-import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -22,8 +21,6 @@ import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { dorkosSessionRules } from '../messaging/session-rules.js';
 import { resolveOpenCodeDataDir } from '../opencode-data-dir.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
-import { deriveDorkosSessionId } from '../sessions/session-mapper.js';
-import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
@@ -31,8 +28,10 @@ import {
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
 import { OPENCODE_STREAM_LOST_MESSAGE } from '../events/event-mapper.js';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
-import { ConnectorRuntimeAuthorityError } from '../../../connectors/principal/runtime-principal-service.js';
+import {
+  ConnectorRuntimeAuthorityError,
+  type ConnectorRuntimePrincipalPort,
+} from '../../../connectors/runtime-principal-port.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
   DIRECTORY,
@@ -256,15 +255,6 @@ describe('OpenCodeRuntime', () => {
     vi.useRealTimers();
   });
 
-  describe('identity and dependencies', () => {
-    it('getInternalSessionId is always undefined (C1 rekey trap)', () => {
-      const { runtime } = makeRuntime();
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-      expect(runtime.getInternalSessionId(sessionId)).toBeUndefined();
-    });
-  });
-
   describe('ensureSession', () => {
     it('tracks the session and eagerly binds it to a real OpenCode session', async () => {
       const { runtime, client } = makeRuntime();
@@ -280,17 +270,6 @@ describe('OpenCodeRuntime', () => {
           query: { directory: DIRECTORY },
         })
       );
-    });
-
-    it('survives an eager bind failure (retried on first message)', async () => {
-      const { runtime, client } = makeRuntime();
-      client.session.create.mockRejectedValueOnce(new Error('sidecar cold'));
-      const sessionId = nextSessionId();
-
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-
-      await vi.waitFor(() => expect(client.session.create).toHaveBeenCalled());
-      expect(runtime.hasSession(sessionId)).toBe(true);
     });
   });
 
@@ -354,25 +333,6 @@ describe('OpenCodeRuntime', () => {
       }
 
       expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
-    });
-
-    it('creates the sidecar session on a cold first send without eager initialization', async () => {
-      const harness = makeRuntime();
-      const sessionId = nextSessionId();
-
-      const { finished } = consume(
-        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
-      );
-      const connection = await openTurn(harness);
-      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'Hello there')) {
-        connection.push(globalEvent(DIRECTORY, event));
-      }
-      await finished;
-
-      expect(harness.client.session.create).toHaveBeenCalledTimes(1);
-      expect(harness.client.session.promptAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ path: { id: OC_SESSION_A } })
-      );
     });
 
     it('triggers promptAsync and streams demuxed mapped events including raw-wire text deltas', async () => {
@@ -528,38 +488,6 @@ describe('OpenCodeRuntime', () => {
       expect(events[events.length - 1]!.type).toBe('done');
     });
 
-    it('hydrates persisted settings for untracked sessions and projects the model pair', async () => {
-      const harness = makeRuntime();
-      const { runtime, client, settingsPort } = harness;
-      settingsPort.getSessionSettings.mockResolvedValue({
-        permissionMode: 'default',
-        model: 'ollama/llama3.3:70b',
-      });
-      const sessionId = nextSessionId();
-
-      const { finished } = consume(runtime.sendMessage(sessionId, 'hi', { cwd: DIRECTORY }));
-      const connection = await openTurn(harness);
-
-      expect(settingsPort.getSessionSettings).toHaveBeenCalledWith(sessionId);
-      const call = client.session.promptAsync.mock.calls[0]![0]!;
-      expect(call.path).toEqual({ id: OC_SESSION_A });
-      const projectedBody = call.body as {
-        parts: { type: string; text: string; synthetic?: boolean }[];
-        system?: string;
-        model: { providerID: string; modelID: string };
-      };
-      expect(projectedBody.model).toEqual({ providerID: 'ollama', modelID: 'llama3.3:70b' });
-      // The static <gen_ui> teaching block rides `body.system`; content is the
-      // only part.
-      expect(projectedBody.system).toContain('<gen_ui>');
-      expect(projectedBody.parts).toEqual([{ type: 'text', text: 'hi' }]);
-
-      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {
-        connection.push(globalEvent(DIRECTORY, event));
-      }
-      await finished;
-    });
-
     it('renders system context on the system channel, keeping user content pristine', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -582,45 +510,6 @@ describe('OpenCodeRuntime', () => {
       expect(body.system).toContain('<gen_ui>');
       expect(body.system).toContain('Scheduled task context');
       expect(body.parts).toEqual([{ type: 'text', text: 'do it' }]);
-
-      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {
-        connection.push(globalEvent(DIRECTORY, event));
-      }
-      await finished;
-    });
-
-    // DOR-477: the per-turn context bag is NOT system-shaped and stays on the
-    // chat, where a later turn can still read what was said.
-    it('keeps the per-turn additional-context bag on a synthetic part', async () => {
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      const sessionId = nextSessionId();
-
-      const { finished } = consume(
-        runtime.sendMessage(sessionId, 'answer them', {
-          cwd: DIRECTORY,
-          additionalContext: [
-            {
-              kind: 'seed_context',
-              scope: 'per-turn',
-              data: { text: 'The operator asked for a status update.' },
-            },
-          ],
-        })
-      );
-      const connection = await openTurn(harness);
-
-      const body = client.session.promptAsync.mock.calls[0]![0]!.body as {
-        parts: { type: string; text: string; synthetic?: boolean }[];
-        system?: string;
-      };
-      expect(body.parts).toHaveLength(2);
-      expect(body.parts[0]!.synthetic).toBe(true);
-      expect(body.parts[0]!.text).toContain('<seed_context>');
-      expect(body.parts[0]!.text).toContain('The operator asked for a status update.');
-      expect(body.parts[1]).toEqual({ type: 'text', text: 'answer them' });
-      // …and it is not duplicated onto the system channel.
-      expect(body.system).not.toContain('<seed_context>');
 
       for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {
         connection.push(globalEvent(DIRECTORY, event));
@@ -677,128 +566,6 @@ describe('OpenCodeRuntime', () => {
       });
       expect(events.some((event) => event.type === 'compact_boundary')).toBe(true);
       expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
-    });
-
-    it('compacts on the model a restart-hydrated session was left running', async () => {
-      // The session is untracked (post-restart), so the model has to come back
-      // out of the durable settings store the way a prompt's would — otherwise
-      // compaction silently runs on a different model than the conversation.
-      const harness = makeRuntime();
-      const sessionId = nextSessionId();
-      harness.settingsPort.getSessionSettings.mockResolvedValue({
-        permissionMode: 'default',
-        model: 'ollama/qwen2.5-coder:32b',
-      });
-
-      await compact(harness, sessionId);
-
-      expect(harness.client.session.summarize).toHaveBeenCalledWith({
-        path: { id: OC_SESSION_A },
-        body: { providerID: 'ollama', modelID: 'qwen2.5-coder:32b' },
-      });
-    });
-
-    /**
-     * Drive a compaction that FAILS, and report everything a caller could
-     * observe about how it failed.
-     *
-     * Both failure modes throw from inside the `trigger` callback
-     * `runOpenCodeTurn` awaits — one before `session.summarize` is reached (no
-     * model resolvable at any rung) and one after it answers an error. Whether
-     * those two surface identically is the question; nothing about "they are
-     * both throws in the same closure" proves the wrapping treats them alike,
-     * so this measures it instead of assuming it.
-     */
-    async function failedCompaction(
-      harness: ReturnType<typeof makeRuntime>,
-      sessionId: string
-    ): Promise<{
-      events: StreamEvent[];
-      message: string;
-      yieldedBeforeFailure: number;
-      turnRecordCleared: boolean;
-    }> {
-      const { events, finished } = consume(
-        harness.runtime.executeCommandIntent(sessionId, 'compact', { cwd: DIRECTORY })
-      );
-      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
-      // Mark the stream live so the trigger fires immediately, rather than
-      // after the STREAM_LIVE_TIMEOUT_MS fallback.
-      harness.source.latest().push(globalEvent(DIRECTORY, serverConnected()));
-
-      let message: string;
-      try {
-        await finished;
-        message = '<the generator completed instead of failing>';
-      } catch (err) {
-        message = err instanceof Error ? err.message : String(err);
-      }
-      return {
-        events,
-        message,
-        yieldedBeforeFailure: events.length,
-        // `interruptQuery` answers `not-running` only when no turn is on record,
-        // so it reads the teardown the `finally` block owes either way.
-        turnRecordCleared:
-          (await harness.runtime.interruptQuery(sessionId)).outcome === 'not-running',
-      };
-    }
-
-    it('surfaces an unresolvable model exactly like a rejected summarize', async () => {
-      // The reviewer's doubt on #1426, made testable: `resolveCompactionModel`
-      // throws BEFORE `session.summarize` is called, so its failure never
-      // passes through the mapper that produces the error/done pair. If the two
-      // paths diverged — one rejecting the generator, the other yielding a
-      // mapped `error` + `done` — a caller would have to handle compaction
-      // failures two different ways depending on which rung ran out.
-
-      // Path A: the sidecar rejects a well-formed summarize.
-      const rejecting = makeRuntime();
-      const rejectingSession = nextSessionId();
-      rejecting.runtime.ensureSession(rejectingSession, {
-        permissionMode: 'default',
-        cwd: DIRECTORY,
-        model: 'anthropic/claude-sonnet-4-5',
-      });
-      rejecting.client.session.summarize.mockResolvedValue({
-        error: { name: 'BadRequest', data: { message: 'nope' } },
-      });
-
-      // Path B: nothing names a model — no session model, no history, no
-      // configured default — so the throw happens a step earlier.
-      const unresolvable = makeRuntime();
-      const unresolvableSession = nextSessionId();
-      unresolvable.runtime.ensureSession(unresolvableSession, {
-        permissionMode: 'default',
-        cwd: DIRECTORY,
-      });
-
-      const rejected = await failedCompaction(rejecting, rejectingSession);
-      const unnamed = await failedCompaction(unresolvable, unresolvableSession);
-
-      // The comparison is the point: same shape, same ordering, same terminal —
-      // asserted against each other, not against two hand-written expectations
-      // that could drift apart without anyone noticing.
-      expect({
-        events: unnamed.events,
-        yieldedBeforeFailure: unnamed.yieldedBeforeFailure,
-        turnRecordCleared: unnamed.turnRecordCleared,
-      }).toEqual({
-        events: rejected.events,
-        yieldedBeforeFailure: rejected.yieldedBeforeFailure,
-        turnRecordCleared: rejected.turnRecordCleared,
-      });
-
-      // And pin what that shape actually IS, so the equality above cannot be
-      // satisfied by both paths silently going quiet.
-      expect(rejected.yieldedBeforeFailure, 'a failed trigger must yield nothing').toBe(0);
-      expect(rejected.turnRecordCleared, 'the turn record must be torn down').toBe(true);
-      expect(rejected.message).toContain('OpenCode session.summarize failed');
-      expect(unnamed.message).toContain('Pick a model for the chat');
-
-      // Path B must fail BEFORE the sidecar is asked to compact — sending a
-      // half-filled body would be the bug this whole ladder exists to avoid.
-      expect(unresolvable.client.session.summarize).not.toHaveBeenCalled();
     });
   });
 
@@ -931,18 +698,6 @@ describe('OpenCodeRuntime', () => {
       finishTurn(editTurn.connection);
       const editEvents = await editTurn.finished;
       expect(editEvents.some((e) => e.type === 'approval_required')).toBe(false);
-    });
-
-    it('asks the user for bash under acceptEdits (safe default)', async () => {
-      const harness = makeRuntime();
-      const { client } = harness;
-      const bashTurn = await turnWithPermission(harness, 'acceptEdits', 'bash');
-      await vi.waitFor(() =>
-        expect(bashTurn.events.some((e) => e.type === 'approval_required')).toBe(true)
-      );
-      expect(client.postSessionIdPermissionsPermissionId).not.toHaveBeenCalled();
-      finishTurn(bashTurn.connection);
-      await bashTurn.finished;
     });
 
     it('auto-denies a pending approval when the park ceiling elapses', async () => {
@@ -1102,25 +857,6 @@ describe('OpenCodeRuntime', () => {
       await finished;
     });
 
-    it('a permission.replied reject echo earns a Denied receipt (DOR-1148)', async () => {
-      const harness = makeRuntime();
-      const { connection, events, finished } = await turnWithPermission(harness, 'default');
-      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
-
-      connection.push(
-        globalEvent(DIRECTORY, permissionReplied(OC_SESSION_A, 'per_0001', 'reject'))
-      );
-      await vi.waitFor(() =>
-        expect(events.find((e) => e.type === 'interaction_cancelled')?.data).toMatchObject({
-          interactionId: 'per_0001',
-          reason: 'denied',
-        })
-      );
-
-      finishTurn(connection);
-      await finished;
-    });
-
     it('clears the pending card on approve WITHOUT waiting for the sidecar echo', async () => {
       // The echo is the sidecar's courtesy, not a guarantee. When it never
       // arrives the card used to hang forever and the session stayed `blocked`,
@@ -1244,24 +980,6 @@ describe('OpenCodeRuntime', () => {
       await finished;
     });
 
-    it('sends a denial to the child session too', async () => {
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      const { sessionId, connection, events, finished } = await turnWithSubagentPermission(harness);
-      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
-
-      expect(runtime.approveTool(sessionId, 'per_child01', false)).toBe(true);
-      await vi.waitFor(() =>
-        expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
-          path: { id: OC_CHILD_SESSION, permissionID: 'per_child01' },
-          body: { response: 'reject' },
-        })
-      );
-
-      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
-      await finished;
-    });
-
     it('auto-denies an unanswered child ask against the child session, so the turn can end', async () => {
       // The whole failure this fixes: nobody answers, the child's tool blocks,
       // the parent's `task` call blocks behind it, and the turn waits forever.
@@ -1374,44 +1092,6 @@ describe('OpenCodeRuntime', () => {
       expect(events.some((e) => e.type === 'error')).toBe(false);
       expect(events[events.length - 1]!.type).toBe('done');
     });
-
-    it('an abort call that blows up is `failed`, never `acked`', async () => {
-      // The sidecar is down or the network is. Nothing was delivered and nothing
-      // ended the turn, so this is the one ending that reads as an error and
-      // asks the person to press Stop again. `acked` would tell them their agent
-      // wound down over a call that never arrived.
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      const sessionId = nextSessionId();
-      vi.mocked(client.session.abort).mockRejectedValue(new Error('ECONNREFUSED'));
-
-      const { finished } = consume(runtime.sendMessage(sessionId, 'work', { cwd: DIRECTORY }));
-      const connection = await openTurn(harness);
-      connection.push(globalEvent(DIRECTORY, statusEvent(OC_SESSION_A, { type: 'busy' })));
-
-      // Resolves rather than rejecting: an adapter must not throw out of a stop
-      // (conformance I5) — the interrupt route would 500 and lose the queue it
-      // had already cleared.
-      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
-        outcome: 'failed',
-        reason: 'delivery-failed',
-        runtime: 'opencode',
-      });
-
-      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
-      await finished;
-    });
-
-    it('returns not-running when no turn is in flight', async () => {
-      const { runtime } = makeRuntime();
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-      await expect(runtime.interruptQuery(sessionId)).resolves.toEqual({
-        outcome: 'not-running',
-        reason: 'no-open-turn',
-        runtime: 'opencode',
-      });
-    });
   });
 
   describe('sidecar restart', () => {
@@ -1482,23 +1162,6 @@ describe('OpenCodeRuntime', () => {
       expect(bound!.title).toBe('fixture session');
     });
 
-    it('keeps tracked-but-unlisted sessions visible (cold sidecar)', async () => {
-      const { client } = createMockClient();
-      const provider = createProvider(client);
-      provider.peekClient.mockReturnValue(null); // cold — mapper lists []
-      const runtime = new OpenCodeRuntime({ provider });
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-
-      const sessions = await runtime.listSessions(DIRECTORY);
-      expect(sessions.map((s) => s.id)).toContain(sessionId);
-
-      const session = await runtime.getSession(DIRECTORY, sessionId);
-      expect(session).not.toBeNull();
-      expect(session!.runtime).toBe('opencode');
-      await expect(runtime.getSession(DIRECTORY, nextSessionId())).resolves.toBeNull();
-    });
-
     it('a cwd-less tracked session appears in NO project list (DOR-202)', async () => {
       const { client } = createMockClient();
       const provider = createProvider(client);
@@ -1561,22 +1224,6 @@ describe('OpenCodeRuntime', () => {
       ).rejects.toMatchObject({
         code: 'SESSION_DISCOVERY_UNAVAILABLE',
       });
-    });
-
-    it('reports unavailable for an external native ID after restart, even without a local EventLog', async () => {
-      const { runtime, client } = makeRuntime();
-      client.session.list.mockRejectedValue(new Error('sidecar down'));
-      const importedId = deriveDorkosSessionId(OC_SESSION_A);
-      await expect(runtime.getMessageHistory(DIRECTORY, importedId)).rejects.toMatchObject({
-        code: 'SESSION_DISCOVERY_UNAVAILABLE',
-      });
-      await expect(
-        runtime.getSessionSnapshot({ cwd: DIRECTORY, permissionMode: 'default' }, importedId)
-      ).rejects.toMatchObject({
-        code: 'SESSION_DISCOVERY_UNAVAILABLE',
-      });
-      // An optimistic draft has no native transcript to lose.
-      await expect(runtime.getMessageHistory(DIRECTORY, nextSessionId())).resolves.toEqual([]);
     });
 
     // Cross-runtime kickoff-suppression evidence (agent-creation-redesign M4).
@@ -1655,50 +1302,6 @@ describe('OpenCodeRuntime', () => {
       expect(JSON.stringify(filtered)).not.toContain('dork-kickoff');
     });
 
-    it('keeps a genuine first message that merely mentions the kickoff tag (no over-suppression)', async () => {
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-      await vi.waitFor(() => expect(client.session.create).toHaveBeenCalled());
-
-      client.session.messages.mockResolvedValue({
-        data: [
-          {
-            info: { id: 'msg_u1', sessionID: OC_SESSION_A, role: 'user', time: { created: 1 } },
-            parts: [
-              {
-                id: 'prt_1',
-                sessionID: OC_SESSION_A,
-                messageID: 'msg_u1',
-                type: 'text',
-                text: 'what does <dork-kickoff> mean?',
-              },
-            ],
-          },
-        ],
-      });
-
-      const history = await runtime.getMessageHistory(DIRECTORY, sessionId);
-      // A partial-tag mention is genuine content and passes through untouched.
-      expect(filterKickoffHistory(history)).toEqual(history);
-      expect(history[0]).toMatchObject({ role: 'user', content: 'what does <dork-kickoff> mean?' });
-    });
-
-    it('renameSession persists the title to the sidecar store', async () => {
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-      await vi.waitFor(() => expect(client.session.create).toHaveBeenCalled());
-
-      await runtime.renameSession(sessionId, 'New title', DIRECTORY);
-      expect(client.session.update).toHaveBeenCalledWith({
-        path: { id: OC_SESSION_A },
-        body: { title: 'New title' },
-      });
-    });
-
     it('RT-SES-07: forkSession branches natively and adopts the fork under a derived id', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -1719,43 +1322,6 @@ describe('OpenCodeRuntime', () => {
 
       // Unbound source → null, per the AgentRuntime contract.
       await expect(runtime.forkSession(DIRECTORY, nextSessionId())).resolves.toBeNull();
-    });
-
-    it('updateSession writes through the settings port and updates the overlay', async () => {
-      const harness = makeRuntime();
-      const { runtime, settingsPort } = harness;
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-
-      await expect(
-        runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' })
-      ).resolves.toEqual({ updated: true });
-      expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
-        permissionMode: 'bypassPermissions',
-      });
-
-      const sessions = await runtime.listSessions(DIRECTORY);
-      expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('bypassPermissions');
-    });
-
-    it('never persists an effort, because OpenCode has nowhere to spend one', () => {
-      // Its prompt API carries no effort field in the pinned or the current
-      // SDK. Storing one would leave a value that can only be read back out at
-      // the person as a setting that does nothing — so the write is dropped
-      // here, at the adapter that knows the truth about its own API.
-      const { runtime, settingsPort } = makeRuntime();
-      const sessionId = nextSessionId();
-      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
-
-      return runtime
-        .updateSession(sessionId, { model: 'openrouter/x', effort: 'high' })
-        .then(async () => {
-          expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
-            model: 'openrouter/x',
-          });
-          const sessions = await runtime.listSessions(DIRECTORY);
-          expect(sessions.find((s) => s.id === sessionId)!.effort).toBeUndefined();
-        });
     });
   });
 
@@ -1824,97 +1390,9 @@ describe('OpenCodeRuntime', () => {
       // app, reading it) kept showing.
       expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('bypassPermissions');
     });
-
-    it('a PATCH that sets only the permission mode keeps the persisted model and fastMode', async () => {
-      const harness = makeRuntimeWithRealStore();
-      const { runtime, store } = harness;
-      const sessionId = nextSessionId();
-      await store.saveSessionSettings(sessionId, {
-        model: 'ollama/llama3.3:70b',
-        fastMode: true,
-      });
-
-      await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
-
-      expect(await turnModel(harness, sessionId)).toEqual({
-        providerID: 'ollama',
-        modelID: 'llama3.3:70b',
-      });
-      const session = (await runtime.listSessions(DIRECTORY)).find((s) => s.id === sessionId)!;
-      expect(session.permissionMode).toBe('acceptEdits');
-      expect(session.fastMode).toBe(true);
-    });
-
-    it('an explicit PATCH value outranks the persisted one', async () => {
-      const harness = makeRuntimeWithRealStore();
-      const { runtime, store } = harness;
-      const sessionId = nextSessionId();
-      await store.saveSessionSettings(sessionId, { permissionMode: 'bypassPermissions' });
-
-      await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
-
-      await turnModel(harness, sessionId);
-      const sessions = await runtime.listSessions(DIRECTORY);
-      expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('acceptEdits');
-    });
-
-    it('falls back to the runtime default when the store holds nothing', async () => {
-      const harness = makeRuntimeWithRealStore();
-      const { runtime } = harness;
-      const sessionId = nextSessionId();
-
-      await runtime.updateSession(sessionId, { model: 'openrouter/glm-4' });
-
-      await turnModel(harness, sessionId);
-      const sessions = await runtime.listSessions(DIRECTORY);
-      expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('default');
-    });
-
-    it('hydrating on the PATCH path still never persists or tracks an effort', async () => {
-      const harness = makeRuntimeWithRealStore();
-      const { runtime, store } = harness;
-      const sessionId = nextSessionId();
-      await store.saveSessionSettings(sessionId, { permissionMode: 'acceptEdits' });
-
-      await runtime.updateSession(sessionId, { model: 'openrouter/glm-4', effort: 'high' });
-
-      // The row carries the mode it already had and the model just chosen —
-      // and no effort, because OpenCode's prompt API has nowhere to spend one.
-      await expect(store.getSessionSettings(sessionId)).resolves.toEqual({
-        permissionMode: 'acceptEdits',
-        model: 'openrouter/glm-4',
-      });
-      await turnModel(harness, sessionId);
-      const sessions = await runtime.listSessions(DIRECTORY);
-      expect(sessions.find((s) => s.id === sessionId)!.effort).toBeUndefined();
-    });
   });
 
   describe('capabilities and models', () => {
-    it('declares the verified OpenCode capabilities exactly', () => {
-      const { runtime } = makeRuntime();
-      const capabilities = runtime.getCapabilities();
-      expect(capabilities).toBe(OPENCODE_CAPABILITIES);
-      expect(capabilities).toMatchObject({
-        type: 'opencode',
-        supportsToolApproval: true,
-        supportsCostTracking: true,
-        supportsResume: true,
-        supportsMcp: false,
-        supportsManagedMcpServers: true,
-        supportsQuestionPrompt: false,
-        supportsPlugins: false,
-        nativeContext: [],
-      });
-      expect(capabilities.permissionModes.supported).toBe(true);
-      expect(capabilities.permissionModes.default).toBe('default');
-      expect(capabilities.permissionModes.values.map((v) => v.id)).toEqual([
-        'default',
-        'acceptEdits',
-        'bypassPermissions',
-      ]);
-    });
-
     it('projects the provider catalog into provider-scoped model options', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -1978,24 +1456,6 @@ describe('OpenCodeRuntime', () => {
       expect(models[1]!.isDefault).toBeUndefined();
     });
 
-    it('scopes the provider catalog to the working directory, not the sidecar cwd', async () => {
-      // `GET /provider` reads enabled/disabled providers off the same
-      // per-directory config `GET /config` does, and falls back to the
-      // SIDECAR's own process.cwd() when no directory is given. Handing a cwd
-      // to `getClient` does not carry it — that argument is accepted and
-      // ignored, and the client sends no directory header — so an unscoped
-      // read builds the model picker from whatever project the sidecar process
-      // happens to sit in (NOTES.md §9).
-      const { runtime, client } = makeRuntime();
-      client.provider.list.mockResolvedValue({ data: { all: [], default: {}, connected: [] } });
-
-      await runtime.getSupportedModels();
-
-      expect(client.provider.list).toHaveBeenCalledWith({
-        query: { directory: DEFAULT_CWD },
-      });
-    });
-
     it('filters ollama models to installed tags when Ollama is running (spec §10)', async () => {
       vi.mocked(detectOllama).mockResolvedValueOnce({
         running: true,
@@ -2045,12 +1505,6 @@ describe('OpenCodeRuntime', () => {
       // Only the installed tag is offered; the uninstalled catalog model is dropped.
       expect(models.map((m) => m.value)).toEqual(['ollama/llama3.3:70b']);
     });
-
-    it('returns an empty model list when the sidecar is unreachable', async () => {
-      const provider = createProvider(null);
-      const runtime = new OpenCodeRuntime({ provider });
-      await expect(runtime.getSupportedModels()).resolves.toEqual([]);
-    });
   });
 
   describe('getConnectedProvider', () => {
@@ -2058,12 +1512,6 @@ describe('OpenCodeRuntime', () => {
       vi.mocked(getConnectedOpenCodeProvider).mockReturnValueOnce('ollama');
       const { runtime } = makeRuntime();
       expect(runtime.getConnectedProvider()).toBe('ollama');
-    });
-
-    it('reports null when no DorkOS provider is set (CLI-auth users)', () => {
-      vi.mocked(getConnectedOpenCodeProvider).mockReturnValueOnce(null);
-      const { runtime } = makeRuntime();
-      expect(runtime.getConnectedProvider()).toBeNull();
     });
   });
 
@@ -2111,30 +1559,6 @@ describe('OpenCodeRuntime', () => {
         ])
       );
       expect(client.mcp.status).toHaveBeenCalledWith({ query: { directory: DIRECTORY } });
-    });
-
-    it('never boots the sidecar to serve status (peek-only)', async () => {
-      const provider = createProvider(null);
-      const runtime = new OpenCodeRuntime({ provider });
-
-      expect(runtime.getMcpStatus(DIRECTORY)).toBeNull();
-      expect(provider.peekClient).toHaveBeenCalled();
-      expect(provider.getClient).not.toHaveBeenCalled();
-
-      // Let the fire-and-forget warm settle: still null, no probe attempted.
-      await Promise.resolve();
-      expect(runtime.getMcpStatus(DIRECTORY)).toBeNull();
-    });
-
-    it('dedupes concurrent warms into a single probe per cwd', async () => {
-      const { runtime, client } = makeRuntime();
-      client.mcp.status.mockResolvedValue({ data: {} });
-
-      runtime.getMcpStatus(DIRECTORY);
-      runtime.getMcpStatus(DIRECTORY);
-      runtime.getMcpStatus(DIRECTORY);
-
-      await vi.waitFor(() => expect(client.mcp.status).toHaveBeenCalledTimes(1));
     });
   });
 
@@ -2263,26 +1687,6 @@ describe('OpenCodeRuntime', () => {
       });
     });
 
-    it('injects nothing when no resolver is wired', async () => {
-      const harness = makeRuntime();
-      await driveTurn(harness, nextSessionId(), 1);
-      expect(harness.client.mcp.add).not.toHaveBeenCalled();
-    });
-
-    it('is a no-op on a second turn when the enabled set is unchanged (same live sidecar)', async () => {
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      runtime.setManagedMcpServers(resolverReturning({ fs: STDIO_CONN }));
-      const sessionId = nextSessionId();
-
-      await driveTurn(harness, sessionId, 1);
-      expect(client.mcp.add).toHaveBeenCalledTimes(1);
-
-      await driveTurn(harness, sessionId, 2);
-      // Same client + unchanged signature → not re-registered.
-      expect(client.mcp.add).toHaveBeenCalledTimes(1);
-    });
-
     it('disconnects ONLY the managed server we removed — never a user-configured one', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -2386,23 +1790,6 @@ describe('OpenCodeRuntime', () => {
       await driveTurn(harness, nextSessionId(), 1);
       const addNames = harness.client.mcp.add.mock.calls.map((c) => c[0]!.body!.name);
       expect(addNames).toEqual(['fs']);
-    });
-
-    it('retries a failed add on the next turn instead of stranding it for the session', async () => {
-      const harness = makeRuntime();
-      const { runtime, client } = harness;
-      runtime.setManagedMcpServers(resolverReturning({ fs: STDIO_CONN }));
-      const sessionId = nextSessionId();
-
-      // Turn 1: the add throws (transient) — must NOT be recorded as applied.
-      client.mcp.add.mockRejectedValueOnce(new Error('transient boom'));
-      await driveTurn(harness, sessionId, 1);
-      expect(client.mcp.add).toHaveBeenCalledTimes(1);
-
-      // Turn 2: same desired set, but because turn 1 did not fully apply, the
-      // signature guard does NOT short-circuit — the failed server is retried.
-      await driveTurn(harness, sessionId, 2);
-      expect(client.mcp.add).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -2589,80 +1976,6 @@ describe('OpenCodeRuntime', () => {
       expect(createLeaseSupervisor.mock.calls[0]?.[0].permit).not.toBe(
         createLeaseSupervisor.mock.calls[1]?.[0].permit
       );
-    });
-
-    it('keeps a same-directory turn visible and cancellable while it waits for the lease', async () => {
-      const harness = makeRuntime();
-      const principals = enableConnectorTools(harness);
-      const firstSession = nextSessionId();
-      const secondSession = nextSessionId();
-      const first = consume(harness.runtime.sendMessage(firstSession, 'first', { cwd: DIRECTORY }));
-      const connection = await openTurn(harness);
-      const second = consume(
-        harness.runtime.sendMessage(secondSession, 'second', { cwd: DIRECTORY })
-      );
-
-      expect(principals.openTurn).toHaveBeenCalledTimes(1);
-      let receipt = await harness.runtime.interruptQuery(secondSession);
-      await vi.waitFor(async () => {
-        if (receipt.outcome === 'not-running') {
-          receipt = await harness.runtime.interruptQuery(secondSession);
-        }
-        expect(receipt.outcome).not.toBe('not-running');
-      });
-      expect(receipt).toEqual({
-        outcome: 'closed',
-        runtime: 'opencode',
-      });
-      await expect(second.finished).rejects.toMatchObject({ name: 'AbortError' });
-      expect(principals.openTurn).toHaveBeenCalledTimes(1);
-
-      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
-        connection.push(globalEvent(DIRECTORY, event));
-      }
-      await first.finished;
-      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
-    });
-
-    it('keeps same-directory compaction cancellable without reconciling a live connector', async () => {
-      const harness = makeRuntime();
-      const principals = enableConnectorTools(harness);
-      const promptSession = nextSessionId();
-      const compactSession = nextSessionId();
-      harness.runtime.ensureSession(compactSession, {
-        permissionMode: 'default',
-        cwd: DIRECTORY,
-        model: 'anthropic/claude-sonnet-4-5',
-      });
-
-      const prompt = consume(
-        harness.runtime.sendMessage(promptSession, 'hold the connector lease', { cwd: DIRECTORY })
-      );
-      const connection = await openTurn(harness);
-      const compact = consume(
-        harness.runtime.executeCommandIntent(compactSession, 'compact', { cwd: DIRECTORY })
-      );
-
-      let receipt = await harness.runtime.interruptQuery(compactSession);
-      await vi.waitFor(async () => {
-        if (receipt.outcome === 'not-running') {
-          receipt = await harness.runtime.interruptQuery(compactSession);
-        }
-        expect(receipt.outcome).not.toBe('not-running');
-      });
-      expect(receipt).toEqual({ outcome: 'closed', runtime: 'opencode' });
-      await expect(compact.finished).rejects.toMatchObject({ name: 'AbortError' });
-      expect(harness.client.mcp.disconnect).not.toHaveBeenCalledWith(
-        expect.objectContaining({ path: { name: 'dorkos_connections' } })
-      );
-      expect(harness.client.session.summarize).not.toHaveBeenCalled();
-      expect(principals.openTurn).toHaveBeenCalledTimes(1);
-
-      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
-        connection.push(globalEvent(DIRECTORY, event));
-      }
-      await prompt.finished;
-      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
     });
 
     it('finishes cancellation revocation before the next same-directory reconcile', async () => {

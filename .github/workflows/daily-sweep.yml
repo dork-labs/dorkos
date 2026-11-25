@@ -1,23 +1,40 @@
 name: daily-sweep
 
-# The day's merges, for QA's and the designer's batch review (DOR-5120, under
-# DOR-5098; Dorian, Nov 23: no local agent reviews an open PR, so QA and the
-# designer review everything merged since the last release, once a day).
+# The day's merges, for QA's, the designer's and Security's batch review
+# (DOR-5120, under DOR-5098; Dorian, Nov 23: no local agent reviews an open PR,
+# so QA, the designer and Security review everything merged since the last
+# release, once a day).
 #
 # One GitHub issue per release window, labelled daily-sweep and titled
 # "Daily sweep: merged since vX.Y.Z", is rewritten each run with the PRs that
-# design-ok.sh or qa-real-data.sh flag (scripts/daily-sweep.sh). Ticks survive
-# the rewrite. The QA and designer agents pick it up from their heartbeats, fix
+# design-ok.sh or qa-real-data.sh flag, and the PRs that touched a path on the
+# security gate's list (security-gate.yml's SECURITY_PATH_PATTERN, matched by
+# security-gate.mjs) (scripts/daily-sweep.sh). Ticks survive the rewrite. The
+# QA, designer and Security agents pick it up from their heartbeats, fix
 # forward, tick, and close it when every item is ticked. Nothing here gates a
 # merge or a release.
 #
 # Runs main's copy of its scripts. No secret. Writes only that issue and its
-# label. Public text only: PR numbers, titles, authors and file paths.
+# label. Public text only: PR numbers, titles, authors and file paths, never a
+# finding (Security files those privately).
+
+# WHEN IT RUNS (ledger 261124-161126): once a day at 17:13 UTC,
+# mid-morning US Pacific, off minute 0, GitHub's busiest. GitHub may start the
+# cron late or drop it, so a backstop runs this file (main's copy) whenever CLI
+# Smoke Test finishes on main, after every push. Both go through the `due` job:
+# scripts/timed-slot.sh lets the run on only once today's slot has passed and no
+# cron or backstop run has swept yet (the sweep uploads the
+# timed-slot-daily-sweep-<date> artifact when it has). A dispatch sweeps at
+# once, as before.
 
 on:
   schedule:
-    # Once a day, mid-morning US Pacific. GitHub may start it late.
-    - cron: '0 17 * * *'
+    # The slot. `due` names the same one.
+    - cron: '13 17 * * *'
+  workflow_run:
+    workflows: [CLI Smoke Test]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -33,7 +50,48 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  due:
+    # The cron and the backstop only. Read-only: it lists this workflow's runs
+    # and artifacts.
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+      marker: ${{ steps.due.outputs.marker }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/timed-slot.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Is today's slot due and not yet done?
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          answer=$(bash scripts/timed-slot.sh due daily-sweep.yml 17:13)
+          echo "$answer"
+          read -r verdict marker _ <<<"$answer"
+          if [ "$verdict" = DUE ]; then
+            echo "due=true" >>"$GITHUB_OUTPUT"
+            echo "marker=$marker" >>"$GITHUB_OUTPUT"
+          else
+            echo "due=false" >>"$GITHUB_OUTPUT"
+          fi
+
   sweep:
+    needs: due
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'workflow_dispatch' || needs.due.outputs.due == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -45,6 +103,11 @@ jobs:
             scripts/daily-sweep.sh
             scripts/design-ok.sh
             scripts/qa-real-data.sh
+            .github/workflows/security-gate.yml
+            .github/scripts/security-gate.mjs
+            .github/scripts/security-verdict.mjs
+            .github/scripts/security-label-at-head.mjs
+            .github/scripts/security-required-checks.mjs
           sparse-checkout-cone-mode: false
 
       - name: Build and post the sweep list
@@ -61,7 +124,7 @@ jobs:
           title="Daily sweep: merged since $tag"
           gh api "repos/$REPO/labels/daily-sweep" >/dev/null 2>&1 ||
             gh api --method POST "repos/$REPO/labels" -f name=daily-sweep -f color=0e8a16 \
-              -f description="QA's and the designer's daily review list (DOR-5120)" >/dev/null || true
+              -f description="QA's, the designer's and Security's daily review list (DOR-5120)" >/dev/null || true
           n=$(gh api --paginate "repos/$REPO/issues?state=open&labels=daily-sweep&per_page=100" \
             --jq ".[] | select(.pull_request == null and .title == $(jq -Rn --arg t "$title" '$t')) | .number" | head -n 1)
           if [ -n "$n" ]; then
@@ -83,3 +146,17 @@ jobs:
             echo "Opened #$n"
           fi
           cat "$work/body.md" >>"$GITHUB_STEP_SUMMARY"
+
+      # Today's slot is done: no later cron or backstop run sweeps again today
+      # (timed-slot.sh reads this artifact back). A dispatch records nothing.
+      - name: Write the slot record
+        if: needs.due.outputs.due == 'true'
+        run: echo "run $GITHUB_RUN_ID ($GITHUB_EVENT_NAME) swept at $(date -u +%FT%TZ)" >"$RUNNER_TEMP/slot.txt"
+
+      - if: needs.due.outputs.due == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ needs.due.outputs.marker }}
+          path: ${{ runner.temp }}/slot.txt
+          retention-days: 3
+          if-no-files-found: error

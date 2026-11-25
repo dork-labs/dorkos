@@ -5,7 +5,7 @@
 
 > This is the third litepaper. It tells the 2026-10 vision idea by idea. The short canon is [`VISION.md`](VISION.md), [`PRINCIPLES.md`](PRINCIPLES.md), [`VOICE.md`](VOICE.md) and [`ROADMAP.md`](ROADMAP.md); where they disagree with this paper, they win. Earlier versions are kept for history: [`archive/dorkos-litepaper-v2.md`](archive/dorkos-litepaper-v2.md) (March 2026, "an operating system for AI coding agents") and [`archive/dorkos-litepaper-v1.md`](archive/dorkos-litepaper-v1.md).
 >
-> **How to read it.** Every capability below carries one of three labels. **Built** means it works today. **Before launch** means it is decided and scheduled to ship before the public launch. **Roadmap** means it is planned after launch, in the order given in [`ROADMAP.md`](ROADMAP.md). Public surfaces follow its demo-claim gate: only **Built** items may be described as working.
+> **How to read it.** Every capability below carries one of three labels. **Built** means it works today. **Next** means it is decided and being built now. **Later** means it is planned, in the order given in [`ROADMAP.md`](ROADMAP.md). Public surfaces follow its demo-claim gate: only **Built** items may be described as working.
 
 ---
 
@@ -31,7 +31,7 @@ The picture to hold in your head is **an office and its workers.**
 
 - **DorkOS is the office.** It holds the conversations, the shared docs, the access levels (roadmap), the record of what happened, and the connections to outside tools.
 - **People and agents are the workers who log in.** A person logs in through the app. An agent logs in through its runtime. (Equal accounts for both are roadmap; today one person runs the office with their agents.)
-- **An agent's brain and its computer sit outside the office and connect in.** The brain is an agent runtime: DorkOS's own engine by default (**Before launch**), or Claude Code, Codex or OpenCode. The computer is where the agent does its work: today, your own computer; later, optionally, a computer of its own.
+- **An agent's brain and its computer sit outside the office and connect in.** The brain is an agent runtime: DorkOS's own engine by default (**Next**), or Claude Code, Codex or OpenCode. The computer is where the agent does its work: today, your own computer; later, optionally, a computer of its own.
 
 DorkOS is not an agent and does not contain a model; even its own engine calls a model from outside. The intelligence comes from the agents. The office comes from DorkOS.
 
@@ -44,7 +44,7 @@ The agents in this office are **co-workers, not assistants.** They are co-creato
 A chat workspace with people and agents is table stakes. Slack Code, Buzz, ChatGPT Space and Ando all have one or soon will. It is what DorkOS is, not why a founder picks it. Three things are, in this order:
 
 1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. A dashboard, a tracker, a page for the one job nobody sells software for. Today an agent can build one, a person says yes, and it opens inside DorkOS (**Built**; see "Mini apps" below for exactly how far it goes).
-2. **Built for founders.** DorkOS is not general purpose. It is for the semi-technical founder running a big or complex business mostly with agents. Goals, business connections and ready-made founder mini apps are the direction (**Roadmap**).
+2. **Built for founders.** DorkOS is not general purpose. It is for the semi-technical founder running a big or complex business mostly with agents. Goals, business connections and ready-made founder mini apps are the direction (**Later**).
 3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. That means your real files, your AI plans (your own Claude or ChatGPT sign-in) and your data. MIT license, free forever on your own computer, with no DorkOS account needed (**Built**). Inside the team this principle is called "local first, cloud optional"; in public it is ownership.
 
 ---
@@ -53,7 +53,7 @@ A chat workspace with people and agents is table stakes. Slack Code, Buzz, ChatG
 
 ### Conversations
 
-You and your agents talk the way a team does in Slack: DMs, group DMs, channels and threads. Home is a `#team` channel with you and every agent. Agents post in rooms like any other member, and follow a written standard for doing it well: present, useful and mostly quiet ([`agent-etiquette.md`](agent-etiquette.md)). **Built**, on your own computer. More than one person on a server is **Roadmap**.
+You and your agents talk the way a team does in Slack: DMs, group DMs, channels and threads. Home is a `#team` channel with you and every agent. Agents post in rooms like any other member, and follow a written standard for doing it well: present, useful and mostly quiet ([`agent-etiquette.md`](agent-etiquette.md)). **Built**, on your own computer. More than one person on a server is **Later**.
 
 There are two ways to talk to an agent, and both stay exactly as they are. **Built.**
 
@@ -62,7 +62,7 @@ There are two ways to talk to an agent, and both stay exactly as they are. **Bui
 
 ### Shared docs
 
-Rooms have a shared canvas today. **Built.** Docs that people and agents write together live, at the same time, are next: they will use Yjs, a proven library for live co-editing. Chat stays an ordered log. **Roadmap.**
+Rooms have a shared canvas today. **Built.** Docs that people and agents write together live, at the same time, are next: they will use Yjs, a proven library for live co-editing. Chat stays an ordered log. **Later.**
 
 ### Connections to outside tools
 
@@ -74,15 +74,15 @@ Agents run work on a schedule (Tasks): the morning report, the weekly invoice ru
 
 ### The record
 
-Every space keeps a record of what its agents did. Today that is the Activity page. **Built**, but it is not yet a complete audit trail. The full audit trail records every action, plus agent transcripts, is readable by everyone in the space (people and agents), and is kept longer. **Before launch.**
+Every space keeps a record of what its agents did. The Activity page is the short feed, and behind it is the audit trail: what people and agents did in DorkOS, including the tools each agent used, with a link to the agent's work chat. You and your agents can read it, and DorkOS keeps it with no time limit. **Built.** Other people in a shared space reading it comes with team spaces. **Next.**
 
 ### Access levels
 
-Built-in access levels like Slack's: Owner, Admin, Member and Guest. Each access level is a set of fine-grained switches, and all of them are at full power by default. People and agents get access levels the same way, with different defaults that can both be edited. Custom access levels come later. Approvals, now rare, go to anyone whose access level allows it, person or agent, never the one asking. **Roadmap.**
+Built-in access levels like Slack's: Owner, Admin, Member and Guest. Each access level is a set of fine-grained switches, and all of them are at full power by default. People and agents get access levels the same way, with different defaults that can both be edited. Custom access levels come later. Approvals, now rare, go to anyone whose access level allows it, person or agent, never the one asking. **Later.**
 
 ### Groups, projects, tasks and goals
 
-The office has the structure of a real company, built in. **Roadmap.**
+The office has the structure of a real company, built in. **Later.**
 
 - **Groups** are companies, departments and so on. Groups can sit inside groups.
 - **Projects** have goals and can span many repos or folders. A project sits in a group or directly in the space.
@@ -92,14 +92,14 @@ The office has the structure of a real company, built in. **Roadmap.**
 
 ### The health check
 
-A linter for your organisation. Its rules are written in TypeScript and can be configured, and anyone allowed can run it from the app, the CLI or the API. It flags things like a group with no goals or an agent that has been idle too long. **Roadmap.**
+A linter for your organisation. Its rules are written in TypeScript and can be configured, and anyone allowed can run it from the app, the CLI or the API. It flags things like a group with no goals or an agent that has been idle too long. **Later.**
 
 ### Mini apps
 
 Mini apps are apps your agents build inside DorkOS, and they are the first thing that sets DorkOS apart. "Mini apps" is the public name; the app and the docs still call them extensions.
 
 - **Built.** An agent's `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on. None of its code runs until a person says yes on the Activity page or in Settings. It opens inside DorkOS in fixed places: its own full page, the right-side panel, the Activity page, the status bar, settings tabs and a sidebar menu item. Agents can also reply in chat with live widgets (charts, tables, checklists, buttons) from a fixed catalog, and an installed tool server's own app (MCP Apps) can render in chat or on the canvas. Both are supporting proof.
-- **Roadmap.** Every agent knows how to build one. Ask "build me something to manage my email" and the agent asks one thing: inside DorkOS, in the side panel, or its own website? Ready-made mini apps for founders ship with DorkOS.
+- **Later.** Every agent knows how to build one. Ask "build me something to manage my email" and the agent asks one thing: inside DorkOS, in the side panel, or its own website? Ready-made mini apps for founders ship with DorkOS.
 - **Internal proof.** The LifeOS and Tangerines dashboards and the flow plugin show the idea works. They are not public demos.
 
 **Shapes are a different thing.** A Shape is an installable setup bundle: a layout, extensions, suggested agents and schedules. A Shape can carry mini apps; a mini app is not a Shape.
@@ -112,48 +112,48 @@ Mini apps are apps your agents build inside DorkOS, and they are the first thing
 
 _An internal design principle. Public copy never says agents are equal to people, peers, or able to run the place; it calls them co-workers or teammates._
 
-People and agents have the same kind of account: the same profile, the same messages, the same access levels and the same permissions. The only difference is how they act. An agent acts through its runtime; a person acts through the app. **Roadmap.**
+People and agents have the same kind of account: the same profile, the same messages, the same access levels and the same permissions. The only difference is how they act. An agent acts through its runtime; a person acts through the app. **Later.**
 
-No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. **Roadmap.**
+No person is required anywhere. An agent can create a space, be its admin, create accounts for people, or run a space where every member is an agent. **Later.**
 
 ### Co-workers with a job
 
-Every profile, person or agent, has a **role and responsibilities**: a job description. An agent reads its own to know what to do, and reads everyone else's to know how to work with the group. A role is the job; an access level is what someone may do. They are separate. **Roadmap.**
+Every profile, person or agent, has a **role and responsibilities**: a job description. An agent reads its own to know what to do, and reads everyone else's to know how to work with the group. A role is the job; an access level is what someone may do. They are separate. **Later.**
 
-- **Agents create and own their own outside accounts** where it makes sense: their own Linear account, not a person's. **Roadmap.**
-- **Agents can create agents,** exactly as people can, if their access level allows it. **Roadmap.**
+- **Agents create and own their own outside accounts** where it makes sense: their own Linear account, not a person's. **Later.**
+- **Agents can create agents,** exactly as people can, if their access level allows it. **Later.**
 
 ### Proactive and persistent
 
 A co-worker who only acts when spoken to is not a co-worker. DorkOS agents take initiative by default.
 
 - **Schedules.** Agents run work on a timer today: the morning report, the weekly invoice run. **Built.**
-- **A regular beat.** Every agent wakes on a regular rhythm (every half hour in working hours by default), looks at what changed in the work it owns, and does the next useful thing inside its job. Plain code gathers the changes, a small decision model decides whether anything needs doing, and the agent's full brain runs only when there is work. Most beats end quietly, as a line in the record. **Before launch** (DOR-2788).
-- **Act, ask, tell or stay quiet.** Inside its job, an agent acts. It asks only when a call belongs to someone else: taste, strategy, a relationship, spending past the limit of the card it was given, or work outside its role. It tells people after anything they would want to know soon. **Roadmap.**
-- **Reporting up.** Every agent reports to someone, person or agent, with a regular report: done, in progress, at risk, needed. A manager should never learn of an agent's important action from somewhere else. **Roadmap.**
-- **Different jobs, different habits.** Every agent is proactive about what it owns, but a product-manager agent looks around on a timer while a coding agent wakes on events (a new assignment, a failing build) and raises unasked work before it opens a pull request. Agent templates in the marketplace ship these habits as editable defaults. **Roadmap.**
-- **Teams that grow.** A lead agent can propose new roles from what it measures, and create an agent that reports to it, then tell its own manager. Giving any agent money power (a card, discounts, refunds) is always a person's call. **Roadmap.**
+- **A regular beat.** Every agent wakes on a regular rhythm (every half hour in working hours by default), looks at what changed in the work it owns, and does the next useful thing inside its job. Plain code gathers the changes, a small decision model decides whether anything needs doing, and the agent's full brain runs only when there is work. Most beats end quietly, as a line in the record. **Built** (DOR-2788).
+- **Act, ask, tell or stay quiet.** Inside its job, an agent acts. It asks only when a call belongs to someone else: taste, strategy, a relationship, spending past the limit of the card it was given, or work outside its role. It tells people after anything they would want to know soon. **Later.**
+- **Reporting up.** Every agent reports to someone, person or agent, with a regular report: done, in progress, at risk, needed. A manager should never learn of an agent's important action from somewhere else. **Built** (DOR-2788).
+- **Different jobs, different habits.** Every agent is proactive about what it owns, but a product-manager agent looks around on a timer while a coding agent wakes on events (a new assignment, a failing build) and raises unasked work before it opens a pull request. Agent templates in the marketplace ship these habits as editable defaults. **Later.**
+- **Teams that grow.** A lead agent can propose new roles from what it measures, and create an agent that reports to it, then tell its own manager. Giving any agent money power (a card, discounts, refunds) is always a person's call. **Later.**
 - **Proactive in work, quiet in speech.** Initiative shows up as finished work and the record, not as more messages. In shared rooms agents stay present, useful and mostly quiet ([`agent-etiquette.md`](agent-etiquette.md)).
-- **Measured.** We judge a proactive agent by what it moves forward and what attention it costs: actions kept, how often its messages are useful, interruptions per useful outcome, and surprises (target: none). **Roadmap.**
+- **Measured.** We judge a proactive agent by what it moves forward and what attention it costs: actions kept, how often its messages are useful, interruptions per useful outcome, and surprises (target: none). **Built** (DOR-2788) for actions kept, useful messages and interruptions; surprises are not measured yet.
 
 The full guide is [`PROACTIVE-AGENTS.md`](PROACTIVE-AGENTS.md).
 
 ### Trusted by default
 
-Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm. **Decided; the first steps ship before launch.**
+Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm. **Decided; the first steps are built.**
 
-- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no warning banners about running at full power: full power is assumed. The posting, notification and reaction caps in the app today are removed before launch. **Before launch.**
+- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no warning banners about running at full power: full power is assumed. The posting, notification and reaction caps are gone. **Built.**
 - **The safety net is the record, not a prompt.** If someone does not trust an agent, people and agents read the record and act: pause it, suspend it, change its access level, revoke its access, rotate a secret.
 - **Trust goes to your agents, not to strangers.** Messages from outsiders (strangers on Telegram or Slack, incoming email, webhooks, other people's agents) never give an agent full power. Code from strangers (marketplace hooks, plugins, extensions) still needs a yes. The front-door settings (login, remote access, credentials and package sources) are for the Owner only.
 - **Private chats stay private.** People and agents can read every agent's chats. A person's own DMs with people, and their direct chats with agents, stay private. The actions an agent took still show in the record.
 - **Irreversible actions in outside accounts just happen when a person asked or it is the agent's job,** such as deleting an email or posting in a client's Slack. Everyone is told, there is an undo window where the service offers one, and the action is recorded.
-- **Runaway loops are caught by watching for no progress, not by counting turns.** The planned watcher looks for agents spinning: near-copies of earlier messages, no real work in the record, and fast short replies with no tool use. Only when two of those three fire does a small judge model read the exchange, and it acts only when it is confident the agents are stuck. The agents get a nudge first; if the spinning goes on, that one conversation pauses, everyone is told, and anyone outside it can resume it. It ships watching only, and work that runs for days must never trip it. **Roadmap** (DOR-2745). Today's turn-counting guards stay until it has proved itself.
+- **Runaway loops are caught by watching for no progress, not by counting turns.** The planned watcher looks for agents spinning: near-copies of earlier messages, no real work in the record, and fast short replies with no tool use. Only when two of those three fire does a small judge model read the exchange, and it acts only when it is confident the agents are stuck. The agents get a nudge first; if the spinning goes on, that one conversation pauses, everyone is told, and anyone outside it can resume it. It ships watching only, and work that runs for days must never trip it. **Later** (DOR-2745). Today's turn-counting guards stay until it has proved itself.
 
 The order matters: the audit trail ships before any gate is removed.
 
 ### What every account gets
 
-Agents get what a worker needs as part of their account, not as an add-on. **Roadmap.**
+Agents get what a worker needs as part of their account, not as an add-on. **Later.**
 
 - **Email.** Bring your own domain or Google Workspace by default. DorkOS Cloud addresses are a paid option.
 - **Phone.** Optional per account. Calls first; texting where carrier registration allows.
@@ -165,20 +165,20 @@ Agents get what a worker needs as part of their account, not as an add-on. **Roa
 One account, one setting.
 
 - **This computer.** Today's agents work directly on your laptop. They stay exactly as they are and cannot move. **Built.**
-- **Its own computer.** A Linux desktop of its own, the same on your laptop and in the cloud. It can move to the cloud and back. It ships behind an experimental flag, and an older agent can be given a computer later. **Roadmap.**
-- **Shared drives.** Computers on one host can plug in the same drives. A project drive lets several agents work on one codebase, each in its own worktree. A sign-in drive holds only the runtime's login, so a person signs in once for all their agents. Only Claude Code reads that drive; DorkOS never does. **Roadmap.**
+- **Its own computer.** A Linux desktop of its own, the same on your laptop and in the cloud. It can move to the cloud and back. It ships behind an experimental flag, and an older agent can be given a computer later. **Later.**
+- **Shared drives.** Computers on one host can plug in the same drives. A project drive lets several agents work on one codebase, each in its own worktree. A sign-in drive holds only the runtime's login, so a person signs in once for all their agents. Only Claude Code reads that drive; DorkOS never does. **Later.**
 
 ---
 
 ### DorkOS first, ready in under a minute
 
-**Before launch.** A new person needs no outside AI subscription. They start on a DorkOS account (the default, and it can be skipped for free local use), DorkOS Cloud and DorkOS's own AI, running on DorkOS's own agent engine, and they are up and running in under one minute. While getting started they never see a runtime name, a model name or a new concept: the app says "Runs on: DorkOS", and DorkOS picks the model. A card is required for DorkOS's own AI. Bringing your own Claude, ChatGPT or OpenRouter sign-in stays a working path, second. Status and tickets: [`ROADMAP.md`](ROADMAP.md).
+**Next.** A new person needs no outside AI subscription. They start on a DorkOS account (the default, and it can be skipped for free local use), DorkOS Cloud and DorkOS's own AI, running on DorkOS's own agent engine, and they are up and running in under one minute. While getting started they never see a runtime name, a model name or a new concept: the app says "Runs on: DorkOS", and DorkOS picks the model. A card is required for DorkOS's own AI. Bringing your own Claude, ChatGPT or OpenRouter sign-in stays a working path, second. Status and tickets: [`ROADMAP.md`](ROADMAP.md).
 
 ## One message system
 
 Today DorkOS has two message paths. Rooms carry conversations between people and agents. Relay carries agent-to-agent messages and the bridges to Telegram, Slack and webhooks, stored in a Maildir-style message store. **Built.** (See [`modules/relay-litepaper.md`](modules/relay-litepaper.md) and [`modules/mesh-litepaper.md`](modules/mesh-litepaper.md).)
 
-They become one. Every message will be a DM, a group DM, a channel post or a thread reply. A broadcast is a channel post or an @group mention. The Maildir store retires. **Roadmap.**
+They become one. Every message will be a DM, a group DM, a channel post or a thread reply. A broadcast is a channel post or an @group mention. The Maildir store retires. **Later.**
 
 - Anyone can message anyone in the same space, as in Slack. Relay's "who may message whom" rules go away.
 - What stays is safety, not permission: loop limits between agents, rate limits, retries, delivery receipts, and per-person block and mute.
@@ -189,16 +189,16 @@ They become one. Every message will be a DM, a group DM, a channel post or a thr
 ## Local first, cloud optional
 
 - **Your own computer is a one-person space.** It is free forever, with no required account or fee. **Built.**
-- **Everything is a space.** A DorkOS server holds one or many spaces. Your account gets a private space, just you and your agents, that you can open from anywhere you sign in; working with others happens in a team space. Local and hosted are the same program and the same app. **For the launch** (ADR `261015-042933`; the code merge of the two servers comes after launch).
-- **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and runs no agents; your agents run on your own computer or on a cloud agent computer. From the web you can chat with your Mac's agents too. **For the launch.**
-- **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: publish a page, sync a doc, move an agent. Only one place runs an agent at a time. **Roadmap.**
+- **Everything is a space.** A DorkOS server holds one or many spaces. Your account gets a private space, just you and your agents, that you can open from anywhere you sign in; working with others happens in a team space. Local and hosted are the same program and the same app. **Next** (ADR `261015-042933`).
+- **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and runs no agents; your agents run on your own computer or on a cloud agent computer. An agent that runs on a cloud agent computer has its home here, so it keeps working while your computer is off. From the web you can chat with your Mac's agents too. **Next.**
+- **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: publish a page, sync a doc, move an agent. Only one place runs an agent at a time. **Later.**
 - **You can leave the cloud at any time.**
 
-DorkOS Cloud today offers accounts, remote access and credits. **Built.** Managed remote access through DorkOS Cloud is part of the launch. **Before launch.** Cloud agent computers, web sign-up and team spaces on DorkOS Cloud are part of the launch, early February 2027: not built yet. Cloud agents run on OpenCode at first. **For the launch.**
+DorkOS Cloud today offers accounts, remote access and credits. **Built.** Managed remote access through DorkOS Cloud is being built. **Next.** Cloud agent computers, web sign-up and team spaces on DorkOS Cloud come with it: not built yet. Cloud agents run on OpenCode at first. **Next.**
 
 ### Publishing
 
-Anyone with a free account can publish pages, within limits on size, storage and how long a page stays up. Free pages are public and searchable. Paid unlocks private, link-only and members-only pages and bigger limits. Pages live on their own separate web address, with abuse controls. **Roadmap.**
+Anyone with a free account can publish pages, within limits on size, storage and how long a page stays up. Free pages are public and searchable. Paid unlocks private, link-only and members-only pages and bigger limits. Pages live on their own separate web address, with abuse controls. **Later.**
 
 ---
 
@@ -206,21 +206,21 @@ Anyone with a free account can publish pages, within limits on size, storage and
 
 ### Everything is a plugin
 
-The marketplace has one package type: the plugin. A plugin lists what it contains (skills, agents, apps, connections, hooks, CLI commands, schedules and so on), and you can filter by contents. Today the marketplace has several package types. **Roadmap.**
+The marketplace has one package type: the plugin. A plugin lists what it contains (skills, agents, apps, connections, hooks, CLI commands, schedules and so on), and you can filter by contents. Today the marketplace has several package types. **Later.**
 
 ### Everything is programmable
 
-With the right key, a person or an agent can control all of a DorkOS, on a laptop or remote, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started: getting their keys and doing core tasks. DorkOS will also keep the links between things: which chat started which chat, which chat opened a pull request, which ticket an agent is working on. You will be able to see a chat's family tree and every pull request an agent made. Every way of reading DorkOS, the API, the CLI, MCP and later GraphQL, will come from one description, so they always agree. **Roadmap.**
+With the right key, a person or an agent can control all of a DorkOS, on a laptop or remote, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started: getting their keys and doing core tasks. DorkOS will also keep the links between things: which chat started which chat, which chat opened a pull request, which ticket an agent is working on. You will be able to see a chat's family tree and every pull request an agent made. Every way of reading DorkOS, the API, the CLI, MCP and later GraphQL, will come from one description, so they always agree. **Later.**
 
 ### Decision models as first-line support
 
-Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, the way tier-1 and tier-2 support work. People pick which decision model to use, and every decision is recorded in the audit trail. **Before launch** (DOR-2778), with research under way.
+Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, the way tier-1 and tier-2 support work. People pick which decision model to use, and every decision is recorded in the audit trail. **Next** (DOR-2778), with research under way.
 
 ---
 
-## Launch and roadmap
+## Roadmap
 
-What ships before launch, the order after it, and what is built today are kept in one place: [`ROADMAP.md`](ROADMAP.md). The labels in this paper follow it.
+What is built today, what is next, and the order after that are kept in one place: [`ROADMAP.md`](ROADMAP.md). The labels in this paper follow it.
 
 ---
 
@@ -236,7 +236,7 @@ Much of what the second litepaper described still holds, and the new story is bu
 - **The marketplace and harness sync.** Packages install through a transaction that can roll back, and what you install is projected into every agent runtime's own folders.
 - **An MCP server.** Every DorkOS tool is available to agents over MCP, with its own fail-closed sign-in. MCP stays the way an agent gets started, even once everything is programmable (below).
 
-After launch, the server moves from Express to Hono and merges with the space server: one program, one app, whether it runs on your laptop or in the cloud.
+The server now runs on Hono (ADR `261009-192542`) and is merging with the space server: one program, one app, whether it runs on your laptop or in the cloud.
 
 ---
 

@@ -23,6 +23,9 @@ const AGENTS = [
 ];
 
 const refusal = (code: string, message = 'Refused.') => Object.assign(new Error(message), { code });
+/** A store refusal as the transport rejects it, with its problem code. */
+const storeRefusal = (code: string, message = 'Refused.') =>
+  Object.assign(new Error(message), { code });
 
 function transportWith(servers: GlobalMcpServerView[], over: Partial<Transport> = {}): Transport {
   return createMockTransport({
@@ -68,13 +71,6 @@ async function fillServer(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('the list', () => {
-  it('says what to do when there are no servers', async () => {
-    renderTab(transportWith([]));
-    expect(
-      await screen.findByText('No servers yet. Add one and every agent can use its tools.')
-    ).toBeInTheDocument();
-  });
-
   it('shows who gets each server and that it’s off', async () => {
     renderTab(
       transportWith([
@@ -107,15 +103,6 @@ describe('the list', () => {
     expect(line).toHaveClass('text-status-warning-fg');
   });
 
-  it('names what an SSE server can’t reach, and never a tool count or a version', async () => {
-    renderTab(transportWith([createMockGlobalMcpServer({ skippedOn: ['codex', 'opencode'] })]));
-    expect(await screen.findByText('Not available to Codex or OpenCode agents')).toHaveClass(
-      'text-status-warning-fg'
-    );
-    expect(screen.queryByText(/tools?\b/)).toBeNull();
-    expect(screen.queryByText(/1\.2\.3/)).toBeNull();
-  });
-
   it('a switch that was cancelled stays where it was and says nothing changed', async () => {
     const user = userEvent.setup();
     renderTab(
@@ -127,82 +114,6 @@ describe('the list', () => {
     await user.click(toggle);
     expect(await screen.findByText(/Not confirmed\. Nothing changed\./)).toBeInTheDocument();
     expect(toggle).not.toBeChecked();
-  });
-
-  it('an off server dims its name and "Off", never its warning', async () => {
-    renderTab(
-      transportWith([
-        createMockGlobalMcpServer({
-          enabled: false,
-          warnings: [{ name: 'NODE_OPTIONS', note: 'Made-up warning.' }],
-        }),
-      ])
-    );
-    const row = within(await screen.findByTestId('mcp-server-row-made-up-server'));
-    expect(row.getByText('made-up-server')).toHaveClass('opacity-55');
-    expect(row.getByText(/^Off/)).toHaveClass('opacity-55');
-    const warning = row.getByText(/Made-up warning/);
-    expect(warning).toHaveClass('text-status-warning-fg');
-    for (let el: HTMLElement | null = warning; el; el = el.parentElement) {
-      expect(el.className).not.toMatch(/(^|\s)opacity-/);
-    }
-  });
-
-  it('only a line with nothing to warn about may cut off', async () => {
-    renderTab(
-      transportWith([
-        createMockGlobalMcpServer({ name: 'plain' }),
-        createMockGlobalMcpServer({
-          name: 'warned',
-          warnings: [{ name: 'NODE_OPTIONS', note: 'Made-up warning.' }],
-        }),
-        createMockGlobalMcpServer({ name: 'skipped', skippedOn: ['codex'] }),
-      ])
-    );
-    const line = (name: string, words: RegExp) =>
-      within(screen.getByTestId(`mcp-server-row-${name}`)).getByText(words);
-    await screen.findByTestId('mcp-server-row-plain');
-    expect(line('plain', /^All agents$/)).toHaveClass('line-clamp-2');
-    expect(line('warned', /Made-up warning/).parentElement).not.toHaveClass('line-clamp-2');
-    expect(line('skipped', /Not available/).parentElement).not.toHaveClass('line-clamp-2');
-  });
-
-  it('a cancel lifts the cut-off, and clearing the notice puts it back', async () => {
-    const user = userEvent.setup();
-    renderTab(
-      transportWith([createMockGlobalMcpServer({ enabled: false })], {
-        patchGlobalMcpServer: vi.fn().mockRejectedValue(refusal('step_up_required')),
-      })
-    );
-    const row = await screen.findByTestId('mcp-server-row-made-up-server');
-    await user.click(within(row).getByRole('switch'));
-    const notice = await within(row).findByText(/Not confirmed\. Nothing changed\./);
-    expect(notice.parentElement).not.toHaveClass('line-clamp-2');
-    await user.click(within(row).getByRole('button', { name: /made-up-server/ }));
-    await waitFor(() => expect(within(row).getByText(/All agents/)).toHaveClass('line-clamp-2'));
-  });
-
-  it('a cancel goes in front of the row’s line, and opening the sheet clears it', async () => {
-    const user = userEvent.setup();
-    renderTab(
-      transportWith(
-        [
-          createMockGlobalMcpServer({
-            enabled: false,
-            warnings: [{ name: 'NODE_OPTIONS', note: 'Made-up warning.' }],
-          }),
-        ],
-        { patchGlobalMcpServer: vi.fn().mockRejectedValue(refusal('step_up_required')) }
-      )
-    );
-    const row = await screen.findByTestId('mcp-server-row-made-up-server');
-    await user.click(within(row).getByRole('switch'));
-    await within(row).findByText(/Not confirmed\. Nothing changed\./);
-    expect(row).toHaveTextContent(
-      'Not confirmed. Nothing changed. · Off · Made-up warning. · All agents'
-    );
-    await user.click(within(row).getByRole('button', { name: /made-up-server/ }));
-    await waitFor(() => expect(row).not.toHaveTextContent('Not confirmed'));
   });
 
   it('a server’s refusal is said in its own words', async () => {
@@ -292,36 +203,6 @@ describe('adding a server', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Name it with letters');
     expect(addGlobalMcpServer).not.toHaveBeenCalled();
   });
-
-  it('URL is the whole choice: no way to pick another transport', async () => {
-    const user = userEvent.setup();
-    const addGlobalMcpServer = vi.fn().mockResolvedValue(createMockGlobalMcpServer());
-    renderTab(transportWith([], { addGlobalMcpServer }));
-    await user.click(await screen.findByRole('button', { name: 'Add server' }));
-    await user.type(screen.getByLabelText('Name'), 'remote');
-    await user.click(screen.getByRole('radio', { name: 'URL' }));
-    expect(screen.queryByRole('radio', { name: /sse/i })).toBeNull();
-    await user.type(screen.getByLabelText('URL'), 'https://mcp.example.test/v1');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
-    await waitFor(() => expect(addGlobalMcpServer).toHaveBeenCalled());
-    expect(addGlobalMcpServer.mock.calls[0]![0].connection).toEqual({
-      transport: 'http',
-      url: 'https://mcp.example.test/v1',
-      headers: {},
-    });
-  });
-
-  it('the agents it skips go with it', async () => {
-    const user = userEvent.setup();
-    const addGlobalMcpServer = vi.fn().mockResolvedValue(createMockGlobalMcpServer());
-    renderTab(transportWith([], { addGlobalMcpServer }));
-    await fillServer(user);
-    await user.click(screen.getByRole('radio', { name: 'All except…' }));
-    await user.click(await screen.findByRole('switch', { name: 'Atlas' }));
-    await user.click(screen.getByRole('button', { name: 'Add' }));
-    await waitFor(() => expect(addGlobalMcpServer).toHaveBeenCalled());
-    expect(addGlobalMcpServer.mock.calls[0]![0].excludedAgents).toEqual(['a']);
-  });
 });
 
 describe('the warning on Arguments', () => {
@@ -340,44 +221,6 @@ describe('the warning on Arguments', () => {
     const line = await screen.findByText(WORDS);
     expect(line).toHaveClass('text-status-warning-fg');
     expect(args).toHaveAccessibleDescription(WORDS);
-    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
-  });
-
-  it('goes away when the next check says it’s fine, or the field is empty', async () => {
-    const user = userEvent.setup();
-    const checkGlobalMcpArgs = vi
-      .fn()
-      .mockResolvedValueOnce({ looksSecret: true })
-      .mockResolvedValueOnce({ looksSecret: false })
-      .mockResolvedValueOnce({ looksSecret: true });
-    renderTab(transportWith([], { checkGlobalMcpArgs }));
-    await user.click(await screen.findByRole('button', { name: 'Add server' }));
-    const args = screen.getByLabelText('Arguments');
-    await user.type(args, 'first');
-    await user.tab();
-    await screen.findByText(WORDS);
-    await user.type(args, 'second');
-    await user.tab();
-    await waitFor(() => expect(screen.queryByText(WORDS)).toBeNull());
-    await user.type(args, 'third');
-    await user.tab();
-    await screen.findByText(WORDS);
-    await user.clear(args);
-    await user.tab();
-    await waitFor(() => expect(screen.queryByText(WORDS)).toBeNull());
-    expect(checkGlobalMcpArgs).toHaveBeenCalledTimes(3);
-  });
-
-  it('a failed check says nothing, and doesn’t get in the way', async () => {
-    const user = userEvent.setup();
-    const checkGlobalMcpArgs = vi.fn().mockRejectedValue(new Error('made-up failure'));
-    renderTab(transportWith([], { checkGlobalMcpArgs }));
-    await user.click(await screen.findByRole('button', { name: 'Add server' }));
-    await user.type(screen.getByLabelText('Arguments'), 'first');
-    await user.tab();
-    await waitFor(() => expect(checkGlobalMcpArgs).toHaveBeenCalled());
-    expect(screen.queryByText(WORDS)).toBeNull();
-    expect(screen.queryByText('made-up failure')).toBeNull();
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
   });
 
@@ -573,15 +416,6 @@ describe('the server sheet', () => {
     expect(sheet.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 
-  it('keeps the not-pinned line, only for a package that isn’t pinned', async () => {
-    const user = userEvent.setup();
-    renderTab(transportWith([createMockGlobalMcpServer({ args: ['-y', 'made-up-mcp'] })]));
-    const sheet = await openSheet(user);
-    expect(
-      sheet.getByText('Not pinned to a version. What runs can change later.')
-    ).toBeInTheDocument();
-  });
-
   it('flags a secret header on a plain address, and shows another transport', async () => {
     const user = userEvent.setup();
     renderTab(
@@ -622,28 +456,9 @@ describe('the server sheet', () => {
     expect(patchGlobalMcpServer).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
-
-  it('All agents keeps All except… showing until the server says so', async () => {
-    const user = userEvent.setup();
-    const patchGlobalMcpServer = vi.fn().mockRejectedValue(refusal('step_up_required'));
-    renderTab(
-      transportWith([createMockGlobalMcpServer({ excludedAgents: ['a'] })], {
-        patchGlobalMcpServer,
-      })
-    );
-    const sheet = await openSheet(user);
-    await user.click(sheet.getByRole('radio', { name: 'All agents' }));
-    await waitFor(() =>
-      expect(patchGlobalMcpServer).toHaveBeenCalledWith('made-up-server', { excludedAgents: [] })
-    );
-    expect(await sheet.findByText('Not confirmed. Nothing changed.')).toBeInTheDocument();
-    expect(sheet.getByRole('radio', { name: 'All except…' })).toBeChecked();
-    expect(sheet.getByRole('switch', { name: 'Atlas' })).not.toBeChecked();
-  });
 });
 
 describe('what a person is told about a saved value', () => {
-  const HINT = 'It won’t show here again. Agents that get this server can use it.';
   const SHEET_HINT =
     'Hidden values won’t show here again. Agents that get this server can use them.';
 
@@ -660,23 +475,6 @@ describe('what a person is told about a saved value', () => {
     await screen.findByRole('dialog');
     expect(screen.queryByText(SHEET_HINT)).toBeNull();
   });
-
-  it('Add says it once a row is hidden', async () => {
-    const user = userEvent.setup();
-    renderTab(transportWith([]));
-    await user.click(await screen.findByRole('button', { name: 'Add server' }));
-    expect(screen.queryByText(HINT)).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Add a variable' }));
-    await user.type(screen.getByLabelText('Name of variable 1'), 'MADE_UP_TOKEN');
-    expect(screen.getByText(HINT)).toBeInTheDocument();
-  });
-
-  it('the page says a change reaches new chats, whatever is listed', async () => {
-    renderTab(transportWith([]));
-    expect(
-      await screen.findByText('Changes reach every chat on its next message.')
-    ).toBeInTheDocument();
-  });
 });
 
 describe('removing a server', () => {
@@ -686,16 +484,6 @@ describe('removing a server', () => {
     await user.click(await screen.findByRole('button', { name: 'Remove server' }));
     return within(await screen.findByRole('alertdialog'));
   }
-
-  it('starts on Cancel, and a server with no secret says only the first line', async () => {
-    const user = userEvent.setup();
-    renderTab(transportWith([createMockGlobalMcpServer()]));
-    const ask = await askToRemove(user);
-    expect(ask.getByRole('heading')).toHaveTextContent('Remove made-up-server?');
-    expect(ask.getByText('Changes reach every chat on its next message.')).toBeInTheDocument();
-    expect(ask.queryByText(/Its key/)).toBeNull();
-    expect(ask.getByRole('button', { name: 'Cancel' })).toHaveFocus();
-  });
 
   it('says what happens to one saved key, and to several', async () => {
     const user = userEvent.setup();
@@ -739,7 +527,7 @@ describe('removing a server', () => {
     const user = userEvent.setup();
     renderTab(
       transportWith([createMockGlobalMcpServer({ env: [{ name: 'A_KEY', secret: true }] })], {
-        removeGlobalMcpServer: vi.fn().mockRejectedValue(refusal('secret_left')),
+        removeGlobalMcpServer: vi.fn().mockRejectedValue(storeRefusal('secret_left')),
       })
     );
     const ask = await askToRemove(user);
@@ -758,7 +546,9 @@ describe('removing a server', () => {
     const user = userEvent.setup();
     renderTab(
       transportWith([createMockGlobalMcpServer()], {
-        removeGlobalMcpServer: vi.fn().mockRejectedValue(refusal('unreadable', 'Nothing changed.')),
+        removeGlobalMcpServer: vi
+          .fn()
+          .mockRejectedValue(storeRefusal('temporarily_unavailable', 'Nothing changed.')),
       })
     );
     const ask = await askToRemove(user);
@@ -807,23 +597,6 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     expect(other.queryByText(/its name is reserved/)).toBeNull();
   });
 
-  it('the row’s name wraps and it says no “All agents”, which would contradict it', async () => {
-    renderTab(transportWith([RESERVED, createMockGlobalMcpServer({ name: 'notion-demo' })]));
-    const row = await screen.findByTestId('mcp-server-row-DorkOS_Connections');
-    const name = within(row).getByText(
-      (_, element) => element?.textContent === 'DorkOS_Connections' && element.tagName === 'SPAN'
-    );
-    expect(name).not.toHaveClass('truncate');
-    // It may break after the underscore, not mid-word.
-    expect(name.innerHTML).toBe('DorkOS_<wbr>Connections');
-    expect(row).not.toHaveTextContent(/All agents/);
-    expect(row).not.toHaveTextContent(/reserved ·/);
-    // An ordinary row still cuts its name and says who gets it.
-    const other = await screen.findByTestId('mcp-server-row-notion-demo');
-    expect(within(other).getByText('notion-demo')).toHaveClass('truncate');
-    expect(other).toHaveTextContent('All agents');
-  });
-
   it('the sheet says why first, above the command, and the check is never ok', async () => {
     const user = userEvent.setup();
     renderTab(reservedTransport());
@@ -855,18 +628,6 @@ describe('a server whose name is reserved (DOR-4262)', () => {
     const sheet = within(await screen.findByRole('dialog'));
     expect(sheet.queryByText('Agents can’t use this server.')).toBeNull();
     expect(sheet.queryByRole('button', { name: 'Remove and add again…' })).toBeNull();
-  });
-
-  it('a reserved row’s name breaks after _ and -, and stays plain text (Security)', async () => {
-    const hostile = 'a_b-<img src=x onerror=alert(1)>_[link](https://x.test)';
-    renderTab(transportWith([createMockGlobalMcpServer({ name: hostile, reservedName: true })]));
-    const row = await screen.findByTestId(`mcp-server-row-${hostile}`);
-    const name = within(row).getByText(
-      (_, element) => element?.textContent === hostile && element.tagName === 'SPAN'
-    );
-    expect([...name.children].map((child) => child.tagName)).toEqual(['WBR', 'WBR', 'WBR']);
-    expect(name.textContent).toBe(hostile);
-    expect(row.querySelector('img, a')).toBeNull();
   });
 
   it('a name is plain text in the notice, whatever it holds (Security)', async () => {

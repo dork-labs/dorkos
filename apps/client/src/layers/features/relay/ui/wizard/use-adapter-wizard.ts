@@ -40,6 +40,9 @@ interface UseAdapterWizardOptions {
   onOpenChange: (open: boolean) => void;
 }
 
+/** What a setting the server refused says under its field. */
+const REFUSED_FIELD = 'DorkOS couldn’t use this. Check it.';
+
 /** Encapsulates all state machine logic for the adapter setup wizard. */
 export function useAdapterWizard({
   manifest,
@@ -138,6 +141,41 @@ export function useAdapterWizard({
     }
     return valid;
   }, [form, visibleFields]);
+
+  /**
+   * Mark the settings a refused save named (`fields`, by key; DOR-4979) and
+   * go back to the settings step that holds the first of them.
+   *
+   * @returns Whether the refusal named any setting.
+   */
+  const markRefusedFields = useCallback(
+    (error: unknown): boolean => {
+      const named = (error as { body?: { fields?: unknown } } | null)?.body?.fields;
+      const fields = Array.isArray(named)
+        ? named.filter((key): key is string => typeof key === 'string')
+        : [];
+      if (fields.length === 0) return false;
+      for (const key of fields) {
+        // Dynamic field keys from manifest don't satisfy the typed path constraint.
+        form.setFieldMeta(key as never, (meta) => ({
+          ...meta,
+          isTouched: true,
+          errors: [REFUSED_FIELD],
+          errorMap: { onSubmit: REFUSED_FIELD },
+        }));
+      }
+      const steps = manifest.setupSteps?.length ?? 1;
+      for (let index = 0; index < steps; index++) {
+        if (setupStepFields(manifest, index).some((field) => fields.includes(field.key))) {
+          setSetupStepIndex(index);
+          break;
+        }
+      }
+      setStep('configure');
+      return true;
+    },
+    [form, manifest]
+  );
 
   const handleContinue = useCallback(() => {
     if (step === 'agent') {
@@ -240,7 +278,7 @@ export function useAdapterWizard({
     if (isEditMode && existingInstance) {
       updateConfig.mutate(
         { id: existingInstance.id, config: configWithLabel },
-        { onSuccess: () => onOpenChange(false) }
+        { onSuccess: () => onOpenChange(false), onError: markRefusedFields }
       );
       return;
     }
@@ -248,54 +286,66 @@ export function useAdapterWizard({
       setStep('agent');
       return;
     }
+    /**
+     * Link the new connection to its agent. `started` is false when it was
+     * saved but couldn't connect: it still gets its agent, so nothing is left
+     * that nobody answers, and the person is told to fix the token.
+     */
+    const bindAgent = (started: boolean) =>
+      createBinding.mutate(
+        {
+          adapterId,
+          agentId: bindAgentId,
+          sessionStrategy: bindStrategy,
+          label: '',
+        },
+        {
+          onSuccess: () => {
+            const agentName = agentOptions.find((a) => a.id === bindAgentId)?.name ?? bindAgentId;
+            if (started) {
+              toast.success(`${manifest.displayName} is connected`, {
+                description: `Messages here go to ${agentName}.`,
+              });
+            } else {
+              toast.error(`Couldn’t reach ${manifest.displayName}`, {
+                description: `Saved. It will go to ${agentName} once it connects. Check your token.`,
+              });
+            }
+            onOpenChange(false);
+          },
+          onError: (error) => {
+            setStep('agent');
+            // The undo is a network call of its own. Wait for it before
+            // choosing what to tell the person: "nothing was set up" is
+            // only true if the undo succeeded, and a rejected undo leaves
+            // an agent-less connection live on the server that they now
+            // have to remove by hand.
+            void rollbackAdapter(adapterId).then((undone) => {
+              if (undone) {
+                toast.error('Nothing was set up', {
+                  description: `${manifest.displayName} couldn’t be linked to an agent, so it wasn’t saved. ${error.message}`,
+                });
+              } else {
+                toast.error('Couldn’t finish undoing', {
+                  description: `${manifest.displayName} was added with no agent to answer it. Remove it from Messaging. ${error.message}`,
+                });
+              }
+            });
+          },
+        }
+      );
     addAdapter.mutate(
       { type: manifest.type, id: adapterId, config: configWithLabel },
       {
-        onSuccess: () => {
-          createBinding.mutate(
-            {
-              adapterId,
-              agentId: bindAgentId,
-              sessionStrategy: bindStrategy,
-              label: '',
-            },
-            {
-              onSuccess: () => {
-                const agentName =
-                  agentOptions.find((a) => a.id === bindAgentId)?.name ?? bindAgentId;
-                toast.success(`${manifest.displayName} is connected`, {
-                  description: `Messages here go to ${agentName}.`,
-                });
-                onOpenChange(false);
-              },
-              onError: (error) => {
-                setStep('agent');
-                // The undo is a network call of its own. Wait for it before
-                // choosing what to tell the person: "nothing was set up" is
-                // only true if the undo succeeded, and a rejected undo leaves
-                // an agent-less connection live on the server that they now
-                // have to remove by hand.
-                void rollbackAdapter(adapterId).then((undone) => {
-                  if (undone) {
-                    toast.error('Nothing was set up', {
-                      description: `${manifest.displayName} couldn’t be linked to an agent, so it wasn’t saved. ${error.message}`,
-                    });
-                  } else {
-                    toast.error('Couldn’t finish undoing', {
-                      description: `${manifest.displayName} was added with no agent to answer it. Remove it from Messaging. ${error.message}`,
-                    });
-                  }
-                });
-              },
-            }
-          );
-        },
+        onSuccess: () => bindAgent(true),
         onError: (error) => {
-          if (error.message?.includes('timed out')) {
-            toast.error(`Couldn’t reach ${manifest.displayName}`, {
-              description: 'Check your token and network, then try again.',
-            });
-          } else if (error.message?.includes('duplicate') || error.message?.includes('exists')) {
+          // By code, never by the server's words (DOR-4979).
+          const code = (error as { code?: string }).code;
+          if (markRefusedFields(error)) return;
+          if (code === 'connection_saved_not_started') {
+            // Saved already, so adding it again would only clash: finish setup.
+            bindAgent(false);
+          } else if (code === 'connection_id_taken') {
             setStep('configure');
             setSetupStepIndex(0);
           }
@@ -317,6 +367,7 @@ export function useAdapterWizard({
     agentOptions,
     rollbackAdapter,
     onOpenChange,
+    markRefusedFields,
   ]);
 
   const handleOpenChange = useCallback(

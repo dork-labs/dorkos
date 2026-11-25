@@ -7,7 +7,7 @@
  */
 import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
-import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import { chatTitleOf, maySeeChat } from '../chat-messages/chat-message-wiring.js';
@@ -57,7 +57,7 @@ export function wireWorkClaims(deps: {
         if (!maySee(caller, sessionId)) return { title: null, link: null, private: true };
         const raw = await titleOf(sessionId);
         const title = raw ? (sanitizeIdentity(raw) ?? null) : null;
-        return { title, link: chatMarkdownLink(sessionId, title), private: false };
+        return { title, link: chatRefMarkdownLink(sessionId, title), private: false };
       },
     },
     stop: () => {

@@ -30,7 +30,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport, mockCanvasDocument } from '@dorkos/test-utils/mock-factories';
 import type { CanvasDocument, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { Transport } from '@dorkos/shared/transport';
-import { useRoomFollowStore, useRoomOpenThreadStore } from '@/layers/entities/room';
+import {
+  ROOM_FOLLOW_PUBLISH_MS,
+  ROOM_FOLLOW_REFRESH_MS,
+  useRoomFollowStore,
+  useRoomOpenThreadStore,
+} from '@/layers/entities/room';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { BrowserContent } from '../index';
 
@@ -131,15 +136,27 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   useAppStore.setState({ roomCanvasLiveRoomId: null });
 });
 
+/**
+ * Run, on the fake clock, every timer a position or a follow could have armed:
+ * the publish debounce and a whole refresh beat past it. An absence asserted
+ * after this is not an absence that only a short window could see.
+ */
+async function runPastEveryTimer(): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ROOM_FOLLOW_REFRESH_MS + ROOM_FOLLOW_PUBLISH_MS * 2);
+  });
+}
+
 describe('sharing where you are looking', () => {
   it('sends nothing at all while nobody is following', async () => {
+    vi.useFakeTimers();
     seed({ id: 'page', title: 'localhost' });
     renderBrowserTab();
-    // Long enough for a debounce to have fired several times over.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await runPastEveryTimer();
     expect(transport.publishRoomView).not.toHaveBeenCalled();
   });
 
@@ -157,14 +174,18 @@ describe('sharing where you are looking', () => {
   });
 
   it('stops sending when the last follower lets go', async () => {
+    // Fake from the start, so a send armed while followed is on the same clock
+    // as the window that has to see it.
+    vi.useFakeTimers();
     seed({ id: 'page', title: 'localhost' });
     renderBrowserTab();
     signal({ authorId: KAI, follows: VIEWER });
-    await waitFor(() => expect(transport.publishRoomView).toHaveBeenCalled());
+    await runPastEveryTimer();
+    expect(transport.publishRoomView).toHaveBeenCalled();
 
     vi.mocked(transport.publishRoomView).mockClear();
     signal({ authorId: KAI, follows: null });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await runPastEveryTimer();
     expect(transport.publishRoomView).not.toHaveBeenCalled();
   });
 });
@@ -216,9 +237,10 @@ describe('being moved by somebody you follow', () => {
       useRoomFollowStore.getState().startFollowing(ROOM, KAI, Date.now());
     });
     const before = useAppStore.getState().roomCanvasActive[ROOM]?.browser;
+    vi.useFakeTimers();
     signal({ authorId: KAI, view: { documentId: 'other' } });
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await runPastEveryTimer();
     expect(useAppStore.getState().roomCanvasActive[ROOM]?.browser).toBe(before);
   });
 
@@ -249,9 +271,10 @@ describe('being moved by somebody you follow', () => {
       useRoomFollowStore.getState().startFollowing(ROOM, KAI, Date.now());
     });
 
+    vi.useFakeTimers();
     signal({ authorId: KAI, view: { documentId: 'gone-from-here', scrollY: 240 } });
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await runPastEveryTimer();
     expect(panel.scrollTop).toBe(90);
     expect(useAppStore.getState().roomCanvasActive[ROOM]?.browser).toBe('page');
   });

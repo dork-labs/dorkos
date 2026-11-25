@@ -18,11 +18,6 @@
 import type { HistoryMessage, HistoryRead } from '@dorkos/shared/types';
 import { HISTORY_PAGE_LIMIT, HISTORY_WINDOW_LIMIT } from '@dorkos/shared/schemas';
 import { historyRead } from '../chat-messages/history-read.js';
-import { errorBody } from '../../../lib/route-utils.js';
-
-/** The answer to a `?before=` naming a message the history does not hold. */
-export const UNKNOWN_CURSOR = errorBody('No message has that id.', 'HISTORY_CURSOR_UNKNOWN');
-
 /**
  * The newest `limit` messages, and how many come before them.
  *

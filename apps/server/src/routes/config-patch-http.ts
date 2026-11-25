@@ -1,9 +1,9 @@
 /** The HTTP settings write, including confirmation for lasting access changes. */
 import type { Context } from 'hono';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, type ProblemStatus } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import {
@@ -15,6 +15,7 @@ import {
   applyGuardedConfigWrite,
   refuseDedicatedConfigPaths,
   type ConfigWriteAuthority,
+  type ConfigWriteRefusal,
 } from '../services/core/operator/config-write.js';
 import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
 import { findOperatorOnlyPaths } from '../services/core/operator/config-write-policy.js';
@@ -95,7 +96,7 @@ export async function patchConfig(
       isFromWifi(honoRequestFacts(c)) &&
       trustStopPatchRaises(patch, configManager.get('runtimes'))
     ) {
-      return c.json(wifiRaiseRefusal(), 403);
+      return problem(c, 'not_from_wifi', { detail: wifiRaiseRefusal().error });
     }
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
@@ -103,16 +104,10 @@ export async function patchConfig(
     // adds is who the caller is and what a refusal looks like over HTTP.
     const facts = honoRequestFacts(c);
     const dedicated = refuseDedicatedConfigPaths(patch);
-    if (dedicated) {
-      const { status, error, code, paths, message } = dedicated;
-      return c.json({ error, code, paths, message }, status as ContentfulStatusCode);
-    }
+    if (dedicated) return configRefusalProblem(c, dedicated);
     const paths = findOperatorOnlyPaths(patch);
     const refusal = paths.length > 0 ? authorityFor(facts).refuseOperatorOnly(paths) : undefined;
-    if (refusal) {
-      const { status, error, code, paths, message } = refusal;
-      return c.json({ error, code, paths, message }, status as ContentfulStatusCode);
-    }
+    if (refusal) return configRefusalProblem(c, refusal);
     const run = async (confirming: RequestFacts): Promise<Response> => {
       try {
         const accountsBefore = claudeAccountFields();
@@ -132,13 +127,10 @@ export async function patchConfig(
 
         if (!result.ok) {
           if (result.kind === 'invalid') {
-            return c.json(
-              { error: result.error, ...(result.details && { details: result.details }) },
-              400
-            );
+            // The first field's problem says more than the headline.
+            return problem(c, 'invalid_request', { detail: result.details?.[0] ?? result.error });
           }
-          const { status, error, code, paths, message } = result.refusal;
-          return c.json({ error, code, paths, message }, status as ContentfulStatusCode);
+          return configRefusalProblem(c, result.refusal);
         }
 
         for (const warning of result.warnings) {
@@ -187,7 +179,9 @@ export async function patchConfig(
         patch as Record<string, unknown>
       )
     );
-    if (!valid.success) return c.json({ error: 'Check the settings and try again.' }, 400);
+    if (!valid.success) {
+      return problem(c, 'invalid_request', { detail: 'Check the settings and try again.' });
+    }
     return await runFrontDoorWrite(c, {
       kind: 'config.front-door',
       target: 'settings',
@@ -204,5 +198,29 @@ export async function patchConfig(
 /** Preserve the settings route's error response during immediate and deferred writes. */
 function configPatchFailed(c: Context<ApiEnv>, error: unknown): Response {
   logger.error('[Config] PATCH failed', logError(error));
-  return c.json({ error: 'Internal server error' }, 500);
+  return problem(c, 'internal_error', { detail: 'The settings weren’t saved. Try again.' });
+}
+
+/** Each settings refusal code, as the problem code it answers with. */
+const CONFIG_PROBLEM_CODES: Readonly<Record<string, ProblemCode>> = {
+  operator_only_config: 'person_only',
+  operator_cookie_required: 'person_only',
+  owner_only: 'owner_only',
+  NEEDS_PERSON_AT_THIS_COMPUTER: 'operator_only',
+  USE_PERMISSIONS_API: 'invalid_request',
+  USE_REMOTE_ACCESS_API: 'invalid_request',
+};
+
+/**
+ * Answer a settings refusal as a problem document: its headline as `detail`,
+ * and the settings it names and its longer paragraph as `paths` and `message`.
+ */
+function configRefusalProblem(c: Context<ApiEnv>, refusal: ConfigWriteRefusal): Response {
+  const { status, error, code, paths, message } = refusal;
+  const mapped = CONFIG_PROBLEM_CODES[code] ?? (status === 400 ? 'invalid_request' : 'forbidden');
+  return problem(c, mapped, {
+    detail: error,
+    status: status as ProblemStatus,
+    extensions: { paths, message },
+  });
 }

@@ -7,6 +7,7 @@ import {
   folderSettingsFiles,
 } from '../credits-launch.js';
 import type { RequiredRoomLaunch } from '../../../../rooms/reseat/required-launch-store.js';
+import type { FailedSeatLedger } from '../../../../rooms/reseat/failed-seat-ledger.js';
 import { projectOfFolder } from '../../../../core/usage/account-eligibility.js';
 import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
 import { envBillsPerToken } from '../per-token-billing.js';
@@ -15,6 +16,8 @@ import { envBillsPerToken } from '../per-token-billing.js';
 export interface RequiredLaunchReader {
   forSession(sessionId: string): RequiredRoomLaunch | null;
   hasOwnedAttempt(sessionId: string): boolean;
+  /** Failed room chats an earlier process recorded; absent means none can be restored. */
+  readonly failures?: Pick<FailedSeatLedger, 'restore'>;
 }
 export type RequiredLaunchOwner = () => RequiredLaunchReader;
 

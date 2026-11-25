@@ -10,6 +10,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
@@ -44,14 +45,13 @@ export function createHeartbeatRoutes(deps: HeartbeatRouterDeps): Hono<ApiEnv> {
   router.get('/', async (c) => {
     const days = DaysQuerySchema.safeParse(c.req.query('days'));
     if (!days.success) {
-      return c.json(
-        { error: 'days must be a whole number from 1 to 90.', code: 'INVALID_DAYS' },
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: '`days` must be a whole number from 1 to 90.',
+      });
     }
     const viewerIsOwner = refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined;
     const status = await deps.status(c.req.param('id') ?? '', viewerIsOwner, days.data);
-    if (!status) return c.json({ error: 'No agent with that id.', code: 'NOT_FOUND' }, 404);
+    if (!status) return problem(c, 'not_found', { detail: 'No agent with that id.' });
     return c.json(status);
   });
   return router;

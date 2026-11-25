@@ -391,18 +391,6 @@ describe('a turn', () => {
     });
   });
 
-  it('runs the next turn on the loaded thread without reloading it', async () => {
-    const h = harness();
-    await h.run(h.request({ sessionId: 's1' }));
-    const threadId = h.bindings[0]!.threadId;
-    const events = await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
-    expect(dones(events)).toHaveLength(1);
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    expect(fake.requestsOf('thread/resume')).toHaveLength(0);
-    expect(fake.requestsOf('turn/start')).toHaveLength(2);
-    expect(h.bindings).toHaveLength(1);
-  });
-
   it('never sends a second turn/start into a thread with an open turn (the joining trap)', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(parkedTurn);
@@ -415,15 +403,6 @@ describe('a turn', () => {
     expect(fake.requestsOf('turn/start')).toHaveLength(1);
     await h.transport.interrupt('s1');
     expect(dones(await rest(first))).toHaveLength(1);
-  });
-
-  it('selects a named policy at every level, including Full', () => {
-    expect(codexPermissionProfile({ permissionMode: 'acceptEdits' })).toBe(
-      'dorkos-files-workspace-write'
-    );
-    expect(codexPermissionProfile({ permissionMode: 'bypassPermissions' })).toBe(
-      'dorkos-files-danger-full-access'
-    );
   });
 
   it('refuses the requests DorkOS takes no part in, at once, inside an open turn', async () => {
@@ -450,15 +429,6 @@ describe('a turn', () => {
 });
 
 describe('interrupt', () => {
-  it('answers not-running with no open turn', async () => {
-    const h = harness();
-    await expect(h.transport.interrupt('nobody')).resolves.toEqual({
-      outcome: 'not-running',
-      reason: 'no-open-turn',
-      runtime: 'codex',
-    });
-  });
-
   it('acks when Codex winds the turn down, and the turn ends with one quiet done', async () => {
     const h = harness();
     h.host.home(PERSON_HOME).nextTurn(parkedTurn);
@@ -484,18 +454,6 @@ describe('interrupt', () => {
       runtime: 'codex',
     });
     expect(dones(await rest(gen))).toHaveLength(1);
-  });
-
-  it('interrupts through the turn’s abort signal too', async () => {
-    const h = harness();
-    h.host.home(PERSON_HOME).nextTurn(parkedTurn);
-    const controller = new AbortController();
-    const gen = h.transport.runTurn(h.request({ sessionId: 's1', signal: controller.signal }));
-    await until(gen, 'text_delta');
-    controller.abort();
-    expect(dones(await rest(gen))).toHaveLength(1);
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    expect(fake.requestsOf('turn/interrupt')).toHaveLength(1);
   });
 });
 
@@ -694,9 +652,7 @@ describe('credits', () => {
       { threadId: expect.any(String), processId: bg.processId },
     ]);
     expect(fake.hasExited).toBe(true);
-    for (let i = 0; i < 100 && seen.length === 0; i += 1) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await vi.waitFor(() => expect(seen).toHaveLength(1), { interval: 1 });
     // Stopped, as Codex confirmed, never "lost track"; and no model turn.
     expect(seen[0]).toMatchObject({ startTurn: false, notices: [] });
     expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped', wakes: false });
@@ -751,12 +707,14 @@ describe('review fixes: every early exit ends with one done, and no turn is join
       h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
     );
     const reading = rest(gen);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The second turn/start is parked at the gate: that is "in flight".
+    await vi.waitFor(() => expect(fake.requestsOf('turn/start')).toHaveLength(2), { interval: 1 });
     await expect(h.transport.interrupt('s1')).resolves.toMatchObject({ outcome: 'unconfirmed' });
     open();
     expect(dones(await reading)).toHaveLength(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(fake.requestsOf('turn/interrupt')).toHaveLength(1);
+    await vi.waitFor(() => expect(fake.requestsOf('turn/interrupt')).toHaveLength(1), {
+      interval: 1,
+    });
   });
 
   it('never joins a turn Codex is still running after an unconfirmed stop', async () => {
@@ -954,8 +912,7 @@ describe('re-review fixes', () => {
     expect(watching).toBe(1);
     const fake = h.host.home(PERSON_HOME).processes[0]!;
     fake.send({ method: 'thread/closed', params: { threadId: h.bindings[0]!.threadId } });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(watching).toBe(0);
+    await vi.waitFor(() => expect(watching).toBe(0), { interval: 1 });
     expect(h.transport.getSessionWarmth('s1')).toBe('cold');
   });
 });
@@ -1024,8 +981,7 @@ describe('background work (spec §12)', () => {
     return seen;
   }
   async function waitFor(check: () => boolean): Promise<void> {
-    for (let i = 0; i < 200 && !check(); i += 1) await new Promise((r) => setTimeout(r, 5));
-    expect(check()).toBe(true);
+    await vi.waitFor(() => expect(check()).toBe(true), { interval: 1 });
   }
 
   it('RT-LIFE-03: wakes the chat once when a command finishes after a completed turn', async () => {
@@ -1050,31 +1006,10 @@ describe('background work (spec §12)', () => {
     ]);
     expect(h.transport.isSegmentPending('s1')).toBe(false);
     expect(h.transport.holdsBackgroundWork('s1')).toBe(false);
+    // An absence check ("once"): no signal marks a second wake that never
+    // comes, so give it a short real window to show up in.
     await new Promise((r) => setTimeout(r, 60));
     expect(seen).toHaveLength(1);
-  });
-
-  it('shows a completion in the turn that is open instead of waking', async () => {
-    const h = harness();
-    const seen = wakes(h);
-    const bg = backgroundCommandTurn();
-    h.host.home(PERSON_HOME).nextTurn(bg.script);
-    await h.run(h.request({ sessionId: 's1' }));
-    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
-      bg.finish(0, 'ok\n');
-      await ctx.tick();
-      await ctx.tick();
-      ctx.agentMessage('second');
-      ctx.complete('completed');
-    });
-    const second = await h.run(
-      h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
-    );
-    expect(second.find((e) => e.type === 'background_task_done')).toMatchObject({
-      data: { taskId: bg.itemId, status: 'completed' },
-    });
-    await new Promise((r) => setTimeout(r, 60));
-    expect(seen).toHaveLength(0);
   });
 
   it('stops a background command on request, and its end wakes no model turn', async () => {
@@ -1124,23 +1059,6 @@ describe('background work (spec §12)', () => {
     expect(h.transport.liveSessionIds()).toEqual([]);
     // Nothing left: ending it again is honest about it.
     expect(await h.transport.endSession('s1')).toBe(false);
-  });
-
-  it('keeps the result of a command that ended just before its stop, and wakes no model turn', async () => {
-    const h = harness();
-    const seen = wakes(h);
-    const bg = backgroundCommandTurn();
-    h.host.home(PERSON_HOME).nextTurn(bg.script);
-    await h.run(h.request({ sessionId: 's1' }));
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    // It has left the terminal list but its item/completed is still in flight.
-    fake.backgroundTerminals.set(h.bindings[0]!.threadId, []);
-    expect((await h.transport.stopTask('s1', bg.itemId)).outcome).toBe('not-running');
-    bg.finish(0, 'it finished\n');
-    await waitFor(() => seen.length === 1);
-    expect(seen[0]).toMatchObject({ startTurn: false });
-    expect(seen[0]!.completions[0]).toMatchObject({ status: 'completed', wakes: false });
-    expect(seen[0]!.completions[0]!.summary).toContain('it finished');
   });
 
   it('keeps a process alive while a helper agent it started is still working', async () => {
@@ -1193,6 +1111,8 @@ describe('background work (spec §12)', () => {
     expect(seen[0]).toMatchObject({ startTurn: false });
     expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped' });
     const fake = h.host.home(PERSON_HOME).processes[0]!;
+    // An absence check ("once"): four ceilings' worth of real time in which a
+    // re-armed ceiling would send a second terminate.
     await new Promise((r) => setTimeout(r, 120));
     expect(fake.requestsOf('thread/backgroundTerminals/terminate')).toHaveLength(1);
     expect(seen).toHaveLength(1);

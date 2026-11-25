@@ -21,6 +21,7 @@ import {
 import { marksOf, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
 import {
   chatReadOutsideWords,
+  readChatOutsideWords,
   sendingChatHolds,
 } from '../../core/turn-power/chat-outside-words.js';
 import { primaryOf } from '../resolution/session-key-registry.js';
@@ -191,7 +192,8 @@ export function holdBlocksSteer(fromSessionId: string, toSessionId: string): boo
   if (marksHold(marksOf(fromSessionId, undefined)) && !marksHold(marksOf(toSessionId, undefined))) {
     return true;
   }
-  return chatReadOutsideWords(fromSessionId) && !chatReadOutsideWords(toSessionId);
+  // A running turn whose record cannot be read is not known to be noted, so it is kept out of too.
+  return chatReadOutsideWords(fromSessionId) && readChatOutsideWords(toSessionId) !== true;
 }
 
 /**

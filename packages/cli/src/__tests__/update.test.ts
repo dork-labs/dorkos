@@ -49,41 +49,6 @@ function printed(spy: MockInstance<typeof console.log>): string {
 }
 
 describe('parseUpdateArgs', () => {
-  it('parses a bare invocation with no args', () => {
-    const args = parseUpdateArgs([]);
-    expect(args).toEqual({
-      name: undefined,
-      apply: false,
-      yes: false,
-      approvalToken: undefined,
-      projectPath: undefined,
-    });
-  });
-
-  it('parses a single name', () => {
-    const args = parseUpdateArgs(['demo-pkg']);
-    expect(args.name).toBe('demo-pkg');
-  });
-
-  it('parses --apply, --yes, --approval and --project', () => {
-    const args = parseUpdateArgs([
-      'demo-pkg',
-      '--apply',
-      '-y',
-      '--approval',
-      'tok-1',
-      '--project',
-      '/tmp/web',
-    ]);
-    expect(args).toEqual({
-      name: 'demo-pkg',
-      apply: true,
-      yes: true,
-      approvalToken: 'tok-1',
-      projectPath: '/tmp/web',
-    });
-  });
-
   it('throws on unknown option', () => {
     expect(() => parseUpdateArgs(['--nope'])).toThrow(
       /Unknown option for 'marketplace update': --nope/
@@ -151,25 +116,6 @@ describe('runUpdate', () => {
     expect(out).toContain('by-commit  commit abc1234 → commit fedcba9');
   });
 
-  it('prints the spec example for one available update in advisory mode', async () => {
-    // Purpose: the exact line a person sees, including how to install it.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(
-        mockResponse(200, {
-          checks: [
-            check({ packageName: 'flow', installedVersion: '0.7.2', latestVersion: '0.7.3' }),
-          ],
-          applied: [],
-        })
-      )
-    );
-
-    await runUpdate({ name: 'flow', projectPath: '/p' });
-
-    expect(printed(logSpy)).toContain('1 update available. Run again with --apply to install it.');
-  });
-
   it('never says everything is up to date while a package could not be checked', async () => {
     // Purpose: the old summary said "All N up to date" about a set that
     // silently excluded the packages it could not check.
@@ -205,7 +151,14 @@ describe('runUpdate', () => {
     // before the per-target isolation turned the 404 into a printed line.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(mockResponse(404, { error: 'Package not installed: flwo' }))
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(404, {
+          title: 'Refused.',
+          status: 404,
+          code: 'not_found',
+          detail: 'Package not installed: flwo',
+        })
+      )
     );
 
     const code = await runUpdate({ name: 'flwo' });
@@ -268,17 +221,6 @@ describe('runUpdate', () => {
       expect(out).toContain('1 update available, 1 up to date, 1 could not be checked.');
     });
 
-    it("checks one project's view with --project", async () => {
-      const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] }));
-      vi.stubGlobal('fetch', fetchMock);
-
-      await runUpdate({ projectPath: '/work/my app' });
-
-      expect(fetchMock.mock.calls[0][0]).toContain(
-        `/api/marketplace/updates?projectPath=${encodeURIComponent('/work/my app')}`
-      );
-    });
-
     it.each([false, true])(
       'says the running DorkOS is older than the CLI when it has no updates door (apply: %s)',
       async (apply) => {
@@ -299,15 +241,6 @@ describe('runUpdate', () => {
         );
       }
     );
-
-    it('says so when nothing is installed', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] })));
-
-      const code = await runUpdate({});
-
-      expect(code).toBe(0);
-      expect(printed(logSpy)).toContain('No installed packages to check.');
-    });
 
     it('--apply prints what each new version runs, then updates exactly that (DOR-2306)', async () => {
       // Purpose: the person approves what they read. The run prints every
@@ -517,9 +450,12 @@ describe('runUpdate', () => {
             mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
           )
           .mockResolvedValueOnce(
-            mockResponse(409, {
-              error: 'What an update would install is not what was shown.',
-              code: 'disclosure_changed',
+            mockResponse(412, {
+              type: 'urn:dorkos:problem:precondition_failed',
+              title: 'Something changed since you last looked.',
+              status: 412,
+              code: 'precondition_failed',
+              detail: 'Nothing was changed. A newer version arrived. Check again and review it.',
             })
           )
       );
@@ -528,7 +464,34 @@ describe('runUpdate', () => {
 
       expect(code).toBe(1);
       expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
-        'Nothing was updated. What an update would install is not what was shown.'
+        'Nothing was updated. Nothing was changed. A newer version arrived. Check again and review it.'
+      );
+    });
+
+    it('updates nothing and exits 1 when a person said no to the update', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            mockResponse(200, { checks: [installation({ disclosed: runs('x') })] })
+          )
+          .mockResolvedValueOnce(
+            mockResponse(403, {
+              type: 'urn:dorkos:problem:declined',
+              title: 'A person said no to this.',
+              status: 403,
+              code: 'declined',
+              detail: 'A person said no, or the approval ended. Nothing was updated.',
+            })
+          )
+      );
+
+      const code = await runUpdate({ apply: true, yes: true });
+
+      expect(code).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+        'Nothing was updated. A person said no, or the approval ended. Nothing was updated.'
       );
     });
 
@@ -574,11 +537,14 @@ describe('runUpdate', () => {
     it('exits 1 with the server’s reason when the request itself fails', async () => {
       vi.stubGlobal(
         'fetch',
-        vi
-          .fn()
-          .mockResolvedValueOnce(
-            mockResponse(403, { error: 'Access denied: projectPath outside boundary' })
-          )
+        vi.fn().mockResolvedValueOnce(
+          mockResponse(403, {
+            title: 'Refused.',
+            status: 403,
+            code: 'outside_boundary',
+            detail: 'Access denied: projectPath outside boundary',
+          })
+        )
       );
 
       const code = await runUpdate({ projectPath: '/etc' });

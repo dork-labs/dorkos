@@ -36,6 +36,7 @@ import {
 import { EndBeatInputSchema, type EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import { endBeatTurn, liveBeatTurn, noteBeatBypass, noteBeatChatSend } from './beat-turns.js';
 import { heartbeatStatusCapability } from './measures/status-capability.js';
+import { wakersOffCapability } from './wakers-off/wakers-off-capability.js';
 
 /** The MCP tool name, exported so prose that names it reads it from here. */
 export const END_BEAT_TOOL = 'end_beat';
@@ -143,6 +144,7 @@ export const heartbeatDomain: CapabilityDomain = {
       },
     }),
     heartbeatStatusCapability,
+    wakersOffCapability,
   ],
 };
 

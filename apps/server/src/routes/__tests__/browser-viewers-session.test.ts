@@ -257,7 +257,11 @@ describe('viewer sessions on the real HTTP chain', () => {
           .set('X-Viewer-Nonce', viewer.nonce);
         expect(reading).toHaveBeenCalledExactlyOnceWith('fixture-chat');
         expect(response.status).toBe(403);
-        expect(response.body.code).toBe('viewer_denied');
+        expect(response.headers['content-type']).toContain('application/problem+json');
+        expect(response.body).toMatchObject({
+          code: 'forbidden',
+          detail: 'Open the browser view again.',
+        });
         expect(response.body).not.toHaveProperty('viewerAddress');
         expect(response.body).not.toHaveProperty('url');
       } finally {
@@ -318,7 +322,7 @@ describe('viewer sessions on the real HTTP chain', () => {
           receipt: capturedReceipt,
         });
         expect(replay.status).toBe(403);
-        expect(replay.body.code).toBe('viewer_denied');
+        expect(replay.body.code).toBe('owner_only');
         publish({
           sequence: 2,
           generation: 1,
@@ -420,8 +424,8 @@ describe('viewer sessions on the real HTTP chain', () => {
           clickCount: 1,
         },
       });
-      expect(edge.status).toBe(409);
-      expect(edge.body.code).toBe('viewer_stale');
+      expect(edge.status).toBe(412);
+      expect(edge.body.code).toBe('precondition_failed');
       const input = await post('input', {
         ...op,
         input: { kind: 'text', text: 'made-up typed marker' },
@@ -482,8 +486,8 @@ describe('viewer sessions on the real HTTP chain', () => {
       )
         .set('X-Viewer-Control', JSON.stringify({ ...op, sequence: 5, ticketId: 't'.repeat(43) }))
         .attach('files', Buffer.from('made-up file'), 'fixture.txt');
-      expect(files.status).toBe(409);
-      expect(files.body.code).toBe('viewer_stale');
+      expect(files.status).toBe(412);
+      expect(files.body.code).toBe('precondition_failed');
       const ended = await post('hand-back', {
         nonce: viewer.nonce,
         controllerId: op.controllerId,
@@ -542,8 +546,8 @@ describe('viewer sessions on the real HTTP chain', () => {
         const refused = await asOwner(
           request(target.server).post(`/api/browser-viewers/${viewer.viewerId}/take-over`)
         ).send({ nonce: viewer.nonce });
-        expect(refused.status).toBe(409);
-        expect(refused.body.code).toBe('viewer_unavailable');
+        expect(refused.status).toBe(503);
+        expect(refused.body.code).toBe('temporarily_unavailable');
         expect(refused.body.metadata?.control).toBeUndefined();
         await expect(f.observe('fixture-chat')).rejects.toBeDefined();
         const resumed = await asOwner(
@@ -575,7 +579,7 @@ describe('viewer sessions on the real HTTP chain', () => {
         )
         .send('{malformed');
       expect(response.status).toBe(403);
-      expect(response.body.code).toBe('viewer_local_only');
+      expect(response.body.code).toBe('operator_only');
       expect(resolvePage).not.toHaveBeenCalled();
     }
   );
@@ -589,7 +593,7 @@ describe('viewer sessions on the real HTTP chain', () => {
       .set('Content-Type', 'application/json')
       .send('{malformed');
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('viewer_person_only');
+    expect(response.body.code).toBe('person_only');
     expect(resolvePage).not.toHaveBeenCalled();
   });
   it.each(verbs)('refuses no cookie before malformed %s JSON', async (verb) => {
@@ -602,7 +606,7 @@ describe('viewer sessions on the real HTTP chain', () => {
       .set('Content-Type', 'application/json')
       .send('{malformed');
     expect([401, 403]).toContain(response.status);
-    expect(response.body.code).not.toBe('viewer_bad_request');
+    expect(response.body.code).not.toBe('invalid_request');
     expect(resolvePage).not.toHaveBeenCalled();
   });
   it.each(verbs)('keeps input flag off before parsing %s', async (verb) => {
@@ -612,8 +616,8 @@ describe('viewer sessions on the real HTTP chain', () => {
     )
       .set('Content-Type', 'application/json')
       .send('{malformed');
-    expect(response.status).toBe(404);
-    expect(response.body.code).toBe('viewer_unavailable');
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('temporarily_unavailable');
     expect(resolvePage).not.toHaveBeenCalled();
   });
   it.each(
@@ -636,7 +640,7 @@ describe('viewer sessions on the real HTTP chain', () => {
         .set('Content-Type', 'application/json')
         .send('x'.repeat(17 * 1024));
       expect([401, 403]).toContain(response.status);
-      expect(response.body.code).not.toBe('viewer_bad_request');
+      expect(response.body.code).not.toBe('invalid_request');
       expect(resolvePage).not.toHaveBeenCalled();
     }
   );
@@ -667,7 +671,7 @@ describe('viewer sessions on the real HTTP chain', () => {
       request(target.server).post('/api/local-browser/navigate?sessionId=fixture-chat')
     ).send({ url: 'https://example.test/' });
     expect(navigated.status).toBe(200);
-    expect((await pending).status).toBe(409);
+    expect((await pending).status).toBe(503);
     const next = await subscribe();
     frame();
     const delivered = await asOwner(
@@ -700,7 +704,7 @@ describe('viewer sessions on the real HTTP chain', () => {
       chatId: 'fixture-chat',
     });
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('viewer_local_only');
+    expect(response.body.code).toBe('operator_only');
   });
 
   it('delivers pixels only beside the live owner cookie and app proof', async () => {
@@ -740,7 +744,7 @@ describe('viewer sessions on the real HTTP chain', () => {
       .set('X-Client-Id', 'owner-window')
       .send({ chatId: 'fixture-chat' });
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('viewer_person_only');
+    expect(response.body.code).toBe('person_only');
   });
 
   it('rechecks a session that ends during a pending frame request', async () => {
@@ -758,7 +762,7 @@ describe('viewer sessions on the real HTTP chain', () => {
     frame();
     const response = await waiting;
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('viewer_denied');
+    expect(response.body.code).toBe('owner_only');
     expect(JSON.stringify(response.body)).not.toContain(marker);
   });
 
@@ -768,6 +772,6 @@ describe('viewer sessions on the real HTTP chain', () => {
       padding: 'x'.repeat(16 * 1024),
     });
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('viewer_bad_request');
+    expect(response.body.code).toBe('invalid_request');
   });
 });

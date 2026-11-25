@@ -62,10 +62,9 @@ export async function runMarketplaceRemove(args: MarketplaceRemoveArgs): Promise
     if (err instanceof ApiError) {
       if (err.status === 404) {
         console.error(`Error: marketplace '${args.name}' not found.`);
-      } else if (err.status === 403 && err.body.message) {
-        // The operator-only refusal (DOR-502) — see marketplace-add.ts.
-        console.error(`Error: ${err.message}\n${err.body.message}`);
       } else {
+        // The operator-only refusal (DOR-502) reads as its `detail`, which says
+        // what to do instead — see marketplace-add.ts.
         console.error(`Error: ${err.message}`);
       }
       return 1;

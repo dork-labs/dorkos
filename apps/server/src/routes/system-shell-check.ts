@@ -18,7 +18,7 @@ import type { ShellCheckStatus } from '@dorkos/shared/notification-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import {
@@ -28,8 +28,7 @@ import {
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 const COPY: PersonBarCopy = {
-  error: 'Only you can turn this check off.',
-  code: 'person_required',
+  code: 'person_only',
   subject: 'this check',
   crossSite: (origin) => `A page from ${origin} tried to turn this check off. Nothing changed.`,
   agent: 'An agent can’t turn this check off. Ask a person to do it in the DorkOS app.',
@@ -47,13 +46,12 @@ export function mountShellCheckRoutes(router: Hono<ApiEnv>): void {
     const refused = refusedNotAPerson(c, COPY);
     if (refused) return refused;
     if (classifyRequest(honoRequestFacts(c), currentServerRole()).kind !== 'this-computer') {
-      return c.json(errorBody('Do this at the computer running DorkOS.', 'local_only'), 403);
+      return problem(c, 'operator_only', { detail: 'Do this at the computer running DorkOS.' });
     }
     if (!continueWithoutCheck()) {
-      return c.json(
-        errorBody('The check isn’t down, or a restart hasn’t been tried.', 'conflict'),
-        409
-      );
+      return problem(c, 'conflict', {
+        detail: 'The check isn’t down, or a restart hasn’t been tried.',
+      });
     }
     recordAudit({
       action: 'shell-check.continue-without',

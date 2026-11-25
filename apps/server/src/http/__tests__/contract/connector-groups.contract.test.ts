@@ -70,43 +70,34 @@ const VALIDATION_FAILED = z
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
-const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
-const OWNER_REQUIRED = {
-  error: 'Programs and agents cannot make account decisions.',
-  code: 'connector_owner_required',
-  message: 'Programs and agents cannot make account decisions.',
-};
-const REVIEW_TOKEN_REFUSED = {
-  error: 'An agent or approval token cannot make account decisions.',
-  code: 'connector_owner_required',
-  message: 'An agent or approval token cannot make account decisions.',
-};
-const PROGRAM_KEY_REQUIRED = {
-  error: 'This program needs a verified API key to request an account change.',
-  code: 'connector_program_credential_required',
-};
-const EXECUTION_KEY_REQUIRED = {
-  error: 'Use a verified API key to call this service.',
-  code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
-};
-const AGENT_SESSION_DENIED = {
-  error:
-    'This service call cannot run from an active agent session. Use an API key outside the session.',
-  code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
-  message: 'Run this service call with an API key outside an active agent session.',
-};
-const KEY_CHANGE_PERSON_ONLY = {
-  code: 'person_only',
-  error: 'Only you can change the keys DorkOS uses to reach your apps, from the DorkOS app.',
-};
-const NOTIFICATION_UNAVAILABLE = {
-  code: 'not_found',
-  error: 'This notification action is unavailable.',
-};
-const NOTIFICATION_INVALID = {
-  code: 'invalid_event_request',
-  error: 'Check the notification settings and try again.',
-};
+const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
+const OWNER_REQUIRED = problemBody('person_only', {
+  detail: 'Programs and agents can’t make account decisions.',
+});
+const REVIEW_TOKEN_REFUSED = problemBody('person_only', {
+  detail: 'Agents and approval tokens can’t make account decisions.',
+});
+const PROGRAM_KEY_REQUIRED = problemBody('unauthenticated', {
+  detail: 'Use a verified API key to ask for an account change.',
+});
+const EXECUTION_KEY_REQUIRED = problemBody('unauthenticated', {
+  detail: 'Use a verified API key to call this service.',
+});
+const AGENT_SESSION_DENIED = problemBody('forbidden', {
+  detail: 'Run this with an API key, outside an agent’s chat.',
+});
+const KEY_CHANGE_PERSON_ONLY = problemBody('person_only', {
+  detail: 'Only you can change the keys DorkOS uses to reach apps, in the app.',
+});
+const NOTIFICATION_UNAVAILABLE = problemBody('not_found', {
+  detail: 'That notification isn’t set up anymore.',
+});
+const NOTIFICATION_INVALID = problemBody('invalid_request', {
+  detail: 'Check the notification settings and try again.',
+});
+const CONNECTION_GONE = problemBody('not_found', {
+  detail: 'That app isn’t connected anymore. Pick it again from the list.',
+});
 const EXECUTION_INVALID = z
   .object({
     code: z.literal('invalid_request'),
@@ -121,18 +112,11 @@ const RESOURCE_INVALID = z
     issues: z.object({ formErrors: z.array(z.string()), fieldErrors: z.unknown() }).strict(),
   })
   .loose();
-const GRANT_REQUIRED = {
-  error: 'This agent is not granted the selected operation.',
-  code: 'CONNECTOR_GRANT_REQUIRED',
-};
-// No level includes a destructive action, so its refusal says how to get it (DOR-4678).
-const OUTSIDE_LEVELS_GRANT_REQUIRED = {
-  error:
-    'No access level includes this action, so "Read and write" doesn\'t cover it. It has to ' +
-    'be given to this agent on its own: the person chooses it under exact actions for Gmail ' +
-    'on the Connections page.',
-  code: 'CONNECTOR_GRANT_REQUIRED',
-};
+const GRANT_REQUIRED = problemBody('forbidden', {
+  detail: 'This agent isn’t given that action. A person gives it on the Connections page.',
+});
+// No level includes a destructive action; the answer names the same fix (DOR-4678).
+const OUTSIDE_LEVELS_GRANT_REQUIRED = GRANT_REQUIRED;
 const PROVIDER_LIST = z
   .object({
     providers: z.array(
@@ -146,10 +130,18 @@ const PROVIDER_LIST = z
 const CATALOG = z
   .object({ services: z.array(z.object({ serviceSlug: z.string() }).loose()) })
   .loose();
-const EVENT_SIGNATURE_REFUSED = { error: 'INVALID_EVENT_SIGNATURE' };
-const EVENT_ENCODING_REFUSED = { error: 'UNSUPPORTED_EVENT_ENCODING' };
-const EVENT_REQUEST_INVALID = { error: 'INVALID_EVENT_REQUEST' };
-const EVENT_TOO_LARGE = { error: 'EVENT_TOO_LARGE' };
+const EVENT_SIGNATURE_REFUSED = problemBody('invalid_signature', {
+  detail: 'This event’s signature didn’t check out.',
+});
+const EVENT_ENCODING_REFUSED = problemBody('unsupported_media_type', {
+  detail: 'Send the event as uncompressed application/json.',
+});
+const EVENT_REQUEST_INVALID = problemBody('malformed_request', {
+  detail: 'The event’s body couldn’t be read.',
+});
+const EVENT_TOO_LARGE = problemBody('request_too_large', {
+  detail: 'That event is over the size limit.',
+});
 
 /** Webhook headers that are present and well formed, but sign nothing this server knows. */
 function unknownSignature(id = 'evt_contract'): Record<string, string> {
@@ -186,7 +178,9 @@ contractSuite('the connector groups, login off, nothing set up', [
     body: { secret: 'whatever' },
     expect: {
       status: 400,
-      body: { error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.' },
+      body: problemBody('invalid_request', {
+        detail: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
+      }),
     },
   },
   {
@@ -224,7 +218,9 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/providers/not-a-provider/credential',
     expect: {
       status: 400,
-      body: { error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.' },
+      body: problemBody('invalid_request', {
+        detail: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
+      }),
     },
   },
   {
@@ -273,7 +269,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     expect: {
       status: 404,
       headers: { 'cache-control': 'private, max-age=300' },
-      body: { error: 'This app has no logo.' },
+      body: problemBody('not_found', { detail: 'This app has no logo.' }),
     },
   },
   {
@@ -325,12 +321,12 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /connections/:id that does not exist is a 404',
     path: '/api/connectors/connections/not-a-connection',
-    expect: { status: 404, body: { error: 'Connection not found.', code: 'connection_not_found' } },
+    expect: { status: 404, body: CONNECTION_GONE },
   },
   {
     name: 'GET /connections/:id/disconnect-impact that does not exist is a 404',
     path: '/api/connectors/connections/not-a-connection/disconnect-impact',
-    expect: { status: 404, body: { error: 'Connection not found.', code: 'connection_not_found' } },
+    expect: { status: 404, body: CONNECTION_GONE },
   },
   {
     name: 'POST /connections with no body is a validation failure',
@@ -372,12 +368,15 @@ contractSuite('the connector groups, login off, nothing set up', [
     name: 'POST /connections/:id/pause that does not exist is a 404',
     method: 'POST',
     path: '/api/connectors/connections/not-a-connection/pause',
-    expect: { status: 404, body: { error: 'Connection not found.', code: 'connection_not_found' } },
+    expect: { status: 404, body: CONNECTION_GONE },
   },
   {
     name: 'GET /authentication-flows/:id that does not exist is a 404',
     path: '/api/connectors/authentication-flows/not-a-flow',
-    expect: { status: 404, schema: z.object({ code: z.literal('flow_not_found') }).loose() },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That sign-in isn’t here anymore. Start again.' }),
+    },
   },
   {
     name: 'GET /every-agent-grants lists none',
@@ -387,12 +386,15 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /agents/:id/connections for no agent is a 404',
     path: '/api/connectors/agents/not-an-agent/connections',
-    expect: { status: 404, body: { error: 'Agent not found.', code: 'agent_not_found' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'That agent isn’t here.' }) },
   },
   {
     name: 'GET /sessions/:id/connections for no chat is a 404',
     path: '/api/connectors/sessions/not-a-session/connections',
-    expect: { status: 404, body: { error: 'Session not found.', code: 'session_not_found' } },
+    expect: {
+      status: 404,
+      body: problemBody('session_not_found', { detail: 'That chat isn’t here anymore.' }),
+    },
   },
   {
     name: 'PUT /sessions/:id/connections/:id with the wrong body is a validation failure',
@@ -424,7 +426,10 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /reviews/:id that does not exist is a 404',
     path: '/api/connectors/reviews/not-a-review',
-    expect: { status: 404, body: { error: 'Review not found.', code: 'review_not_found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That review isn’t here anymore.' }),
+    },
   },
   {
     name: 'POST /reviews/:id/decision with no body is a validation failure',
@@ -475,7 +480,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     path: '/api/connectors/agent-requests/not-a-request',
     expect: {
       status: 404,
-      body: { error: 'Service request not found.', code: 'request_not_found' },
+      body: problemBody('not_found', { detail: 'That request isn’t here anymore.' }),
     },
   },
   {
@@ -511,7 +516,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     name: 'DELETE /connections/:id/every-agent that does not exist is a 404',
     method: 'DELETE',
     path: '/api/connectors/connections/not-a-connection/every-agent',
-    expect: { status: 404, body: { error: 'Connection not found.', code: 'connection_not_found' } },
+    expect: { status: 404, body: CONNECTION_GONE },
   },
   {
     name: 'GET notification definitions for no connection is unavailable',
@@ -668,7 +673,11 @@ contractSuite('the connector groups, login off, nothing set up', [
     method: 'POST',
     path: '/api/connectors/webhooks/any-instance',
     body: {},
-    expect: { status: 401, headers: JSON_TYPE, body: EVENT_SIGNATURE_REFUSED },
+    expect: {
+      status: 401,
+      headers: { 'content-type': /^application\/problem\+json\b/ },
+      body: EVENT_SIGNATURE_REFUSED,
+    },
   },
   {
     name: 'a webhook missing one signature header is refused',
@@ -1135,11 +1144,12 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
         }
       )
     );
-    expect(changed.status).toBe(409);
-    expect(changed.json).toEqual({
-      code: 'definition_changed',
-      error: 'These notification settings changed. Review them again.',
-    });
+    expect(changed.status).toBe(412);
+    expect(changed.json).toEqual(
+      problemBody('updates_changed', {
+        detail: 'These updates changed since you looked. Choose them again.',
+      })
+    );
     const created = await confirmed(
       await call(
         server,
@@ -1275,11 +1285,12 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       grants,
     });
     const stale = await apply();
-    expect(stale.status).toBe(409);
-    expect(stale.json).toEqual({
-      error: 'This permission review is stale. Refresh and review the current actions.',
-      code: 'preview_stale',
-    });
+    expect(stale.status).toBe(412);
+    expect(stale.json).toEqual(
+      problemBody('precondition_failed', {
+        detail: 'Access changed since you looked. Review it again.',
+      })
+    );
     await check(server, {
       path: `/api/connectors/agents/${agent.agentId}/connections`,
       expect: {
@@ -1316,7 +1327,7 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     await check(server, {
       path: '/api/connectors/accessible?agentId=not-an-agent',
       headers: apiKey,
-      expect: { status: 404, body: { error: 'Agent not found.', code: 'agent_not_owned' } },
+      expect: { status: 404, body: problemBody('not_found', { detail: 'That agent isn’t here.' }) },
     });
     await check(server, {
       path: '/api/connectors/accessible',
@@ -1411,8 +1422,8 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       headers: apiKey,
       body: target(revisions.read, 'not-an-agent'),
       expect: {
-        status: 409,
-        body: { error: 'That agent isn’t one of yours.', code: 'CONNECTOR_AGENT_NOT_OWNED' },
+        status: 403,
+        body: problemBody('forbidden', { detail: 'That agent isn’t one of yours.' }),
       },
     });
     await check(server, {
@@ -1555,10 +1566,9 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       body: {},
       expect: {
         status: 409,
-        body: {
-          error: 'Disconnect this account before removing it.',
-          code: 'connection_not_disconnected',
-        },
+        body: problemBody('still_connected', {
+          detail: 'Disconnect this app before removing it.',
+        }),
       },
     });
     await check(server, {
@@ -1691,7 +1701,9 @@ describe('contract: the connector groups with login on', () => {
       body: { secret: 'whatever' },
       expect: {
         status: 400,
-        body: { error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.' },
+        body: problemBody('invalid_request', {
+          detail: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
+        }),
       },
     });
     await check(server, {
@@ -1712,7 +1724,10 @@ describe('contract: the connector groups with login on', () => {
     await check(server, {
       path: '/api/connectors/program/reviews/not-a-review',
       headers: apiKey,
-      expect: { status: 404, body: { error: 'Review not found.', code: 'review_not_found' } },
+      expect: {
+        status: 404,
+        body: problemBody('not_found', { detail: 'That review isn’t here anymore.' }),
+      },
     });
     await check(server, {
       path: '/api/connectors/program/reviews/not-a-review',
@@ -1722,7 +1737,7 @@ describe('contract: the connector groups with login on', () => {
     await check(server, {
       path: '/api/connectors/accessible?agentId=not-an-agent',
       headers: apiKey,
-      expect: { status: 404, body: { error: 'Agent not found.', code: 'agent_not_owned' } },
+      expect: { status: 404, body: problemBody('not_found', { detail: 'That agent isn’t here.' }) },
     });
     await check(server, {
       path: '/api/connectors/accessible?agentId=not-an-agent',

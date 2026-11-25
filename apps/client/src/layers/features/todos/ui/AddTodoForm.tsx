@@ -33,9 +33,9 @@ export function AddTodoForm({ agentId, onDone }: AddTodoFormProps) {
   const whatId = useId();
   const dueId = useId();
   const trimmed = what.trim();
-  // The server judges the date again, by its own clock (`PAST_DUE`).
-  const serverSaysPast =
-    create.isError && (create.error as { code?: string } | null)?.code === 'PAST_DUE';
+  // The server judges the date again, by its own clock (`past_due`).
+  const refusedCode = create.isError ? (create.error as { code?: string } | null)?.code : undefined;
+  const serverSaysPast = refusedCode === 'past_due';
   // `datetime-local` is the person's own clock; a Date reads it as local time.
   const dueMs = due ? new Date(due).getTime() : null;
   // Judged when the time is picked, not on every render: a clock read during

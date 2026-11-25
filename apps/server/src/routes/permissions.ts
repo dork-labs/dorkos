@@ -28,7 +28,6 @@
  * @module routes/permissions
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   type AgentLevelResponse,
   PatchAgentPermissionsBodySchema,
@@ -39,7 +38,14 @@ import {
 } from '@dorkos/shared/permissions';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import {
+  problem,
+  problemBody,
+  readJsonBody,
+  sendProblem,
+  validationProblem,
+} from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -49,7 +55,7 @@ import {
 } from '../services/core/approvals/index.js';
 import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { configManager } from '../services/core/config-manager.js';
-import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import {
   agentPatchRaises,
   defaultsPatchRaises,
@@ -62,6 +68,7 @@ import type { RequestUser } from '../services/core/auth/session-gate.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import {
   PermissionError,
+  type PermissionErrorCode,
   listPermissionHistory,
   personWriter,
   type PermissionService,
@@ -93,23 +100,13 @@ function requirePerson(
     ...readCallerAuthority(facts),
     ...(isLoginEnabled ? { loginEnabled: isLoginEnabled } : {}),
   });
+  // An agent, the caller holding the approval token, or nobody signed in.
   if (!authority.allowed) {
-    return {
-      refusal: c.json(
-        { error: ONLY_A_PERSON, code: authority.code },
-        authority.status as ContentfulStatusCode
-      ),
-    };
+    const code = authority.code === 'AUTH_REQUIRED' ? 'unauthenticated' : 'person_only';
+    return { refusal: problem(c, code, { detail: ONLY_A_PERSON }) };
   }
   const cookie = requireOperatorCookieUnderLogin(facts, 'permissions', isLoginEnabled);
-  if (cookie) {
-    return {
-      refusal: c.json(
-        { error: ONLY_A_PERSON, code: cookie.code },
-        cookie.status as ContentfulStatusCode
-      ),
-    };
-  }
+  if (cookie) return { refusal: problem(c, 'person_only', { detail: ONLY_A_PERSON }) };
   return { writer: writerForPosture(authority.posture, facts.user) };
 }
 
@@ -153,14 +150,60 @@ function ownerLabel(ownerId: string): string {
   );
 }
 
+/**
+ * The problem code and fixed sentence for each refusal of the permission
+ * service. The service's own sentences name the caller's input, so they stay
+ * with the MCP tools and the log.
+ */
+const PERMISSION_PROBLEM: Record<PermissionErrorCode, { code: ProblemCode; detail: string }> = {
+  UNKNOWN_AREA: { code: 'invalid_request', detail: 'There’s no permission area by that name.' },
+  INVALID_STATE: { code: 'invalid_request', detail: 'Choose Allowed, Ask or Blocked.' },
+  FLOOR_NEVER_ALLOWED: {
+    code: 'invalid_request',
+    detail: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
+  },
+  UNKNOWN_ACTION: { code: 'invalid_request', detail: 'There’s no action by that name.' },
+  ACTION_HAS_NO_AREA: {
+    code: 'invalid_request',
+    detail: 'That action is always allowed, so it has no permission to set.',
+  },
+  ALWAYS_ASKS: {
+    code: 'invalid_request',
+    detail: 'That action always shows its changes first. Choose Ask or Blocked.',
+  },
+  INVALID_STOP: { code: 'invalid_request', detail: 'That isn’t a Files & commands stop.' },
+  UNKNOWN_AGENT: { code: 'agent_not_found', detail: 'No agent with that id.' },
+  UNKNOWN_EVENT: { code: 'not_found', detail: 'That change isn’t in the history.' },
+  NOT_UNDOABLE: {
+    code: 'conflict',
+    detail: 'This change can’t be undone. Change the setting instead.',
+  },
+  PERMISSIONS_CHANGED: {
+    code: 'precondition_failed',
+    detail: 'Permissions changed while you were choosing. Look again, then choose.',
+  },
+  // With `conflicts`: what changed since, so the person can set it back anyway.
+  UNDO_CONFLICT: {
+    code: 'precondition_failed',
+    detail: 'This has changed since. Set it back anyway?',
+  },
+};
+
+/**
+ * The problem document for a refusal of the permission service. Shared with
+ * the approval grant route, whose Always allow writes a permission too.
+ *
+ * @param err - The refusal.
+ * @returns The problem document, with any `conflicts` the refusal carries.
+ */
+export function permissionProblemBody(err: PermissionError): Problem {
+  const { code, detail } = PERMISSION_PROBLEM[err.code];
+  return problemBody(code, { detail, ...(err.details ? { extensions: err.details } : {}) });
+}
+
 /** Answer a service refusal, or rethrow anything else. */
 function sendPermissionError(c: Context<ApiEnv>, err: unknown): Response {
-  if (err instanceof PermissionError) {
-    return c.json(
-      { error: err.message, code: err.code, ...err.details },
-      err.status as ContentfulStatusCode
-    );
-  }
+  if (err instanceof PermissionError) return sendProblem(c, permissionProblemBody(err));
   throw err;
 }
 
@@ -229,7 +272,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if (!body.success) return validationProblem(c, body.error);
     const now = await permissions.getOverview();
     const raises = presetRaises(body.data.preset, body.data.applyToAgents, now);
-    if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
+    if (fromWifi(c) && raises) {
+      return problem(c, 'not_from_wifi', { detail: wifiRaiseRefusal().error });
+    }
     const run = async () => {
       try {
         // The direction was judged against `now`; a move made meanwhile is refused (409).
@@ -256,7 +301,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     const body = PatchPermissionDefaultsBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return validationProblem(c, body.error);
     const raises = defaultsPatchRaises(body.data, await permissions.getOverview());
-    if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
+    if (fromWifi(c) && raises) {
+      return problem(c, 'not_from_wifi', { detail: wifiRaiseRefusal().error });
+    }
     const run = async () => {
       try {
         const changes = await permissions.setDefaults(body.data, caller.writer);
@@ -283,7 +330,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if (!body.success) return validationProblem(c, body.error);
     // An Undo can put back a looser setting, and which way it goes is only
     // known once it runs, so from Wi-Fi it is refused (DOR-3037).
-    if (fromWifi(c)) return c.json({ error: WIFI_UNDO_REFUSAL, code: NOT_FROM_WIFI }, 403);
+    if (fromWifi(c)) return problem(c, 'not_from_wifi', { detail: WIFI_UNDO_REFUSAL });
     const eventId = c.req.param('eventId');
     const run = async () => {
       try {
@@ -315,7 +362,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     router.get('/agents/:id/level', async (c) => {
       const id = c.req.param('id');
       const level = await readAgentLevel(id);
-      if (!level) return c.json({ error: `No agent with id "${id}".`, code: 'UNKNOWN_AGENT' }, 404);
+      if (!level) return problem(c, 'agent_not_found', { detail: 'No agent with that id.' });
       return c.json(level);
     });
   }
@@ -332,7 +379,9 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     } catch (err) {
       return sendPermissionError(c, err);
     }
-    if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
+    if (fromWifi(c) && raises) {
+      return problem(c, 'not_from_wifi', { detail: wifiRaiseRefusal().error });
+    }
     const run = async () => {
       try {
         const changes = await permissions.setAgent(id, body.data, caller.writer);

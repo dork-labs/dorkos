@@ -72,19 +72,27 @@ describe('isolated child failures (real child processes)', () => {
     await cleanup(h);
   });
 
-  // Purpose: the watchdog with the spec's own timings (ping 5 s, pong 15 s)
-  // kills a child stuck in a synchronous loop within 20 s, as unresponsive.
-  it('kills a hung child as unresponsive within 20 s', async () => {
+  // Purpose: the watchdog kills a real child stuck in a synchronous loop, as
+  // unresponsive, within one ping and one pong timeout. Short timings: the
+  // spec's own (ping 5 s, pong 15 s) are walked on a fake clock in
+  // watchdog.test.ts, so this real-process half need not wait 20 s.
+  it('kills a hung child as unresponsive within a ping and a pong timeout', async () => {
     const { onExit, exited } = exitOf();
-    const host = makeHost(h, { onExit });
+    const host = makeHost(h, {
+      onExit,
+      overrides: {
+        timings: { pingIntervalMs: 100, pongTimeoutMs: 500 },
+        testSeams: { probes: true },
+      },
+    });
     await startOk(host);
     const started = Date.now();
     await host.probe('hang');
     const exit = await exited;
     expect(exit.reason).toBe('server_unresponsive');
-    expect(Date.now() - started).toBeLessThan(20_500);
+    expect(Date.now() - started).toBeLessThan(loadCeilingMs(2_000));
     expect(host.running).toBe(false);
-  }, 30_000);
+  });
 
   // Purpose: a responsive child is never killed by the watchdog (short
   // timings, several intervals): the kill above is about the hang.

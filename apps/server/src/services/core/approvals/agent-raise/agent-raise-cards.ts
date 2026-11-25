@@ -24,7 +24,10 @@
  *
  * @module services/core/approvals/agent-raise/agent-raise-cards
  */
+import { PROBLEM_CODES, problemType } from '@dorkos/shared/problem';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import type { ApprovalService } from '../approval-service.js';
+import { logger } from '../../../../lib/logger.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 import { recordAudit } from '../../../audit/audit-trail.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
@@ -86,11 +89,12 @@ export interface AgentRaiseCaller {
   sessionId?: string;
 }
 
-/** What a route answers. */
-export interface AgentRaiseAnswer {
-  status: 403 | 428 | 429 | 503;
-  body: Record<string, unknown>;
-}
+/**
+ * What a route answers: the `428` card (a held request, not an error), or a
+ * refusal as a problem document.
+ */
+export type AgentRaiseAnswer =
+  { status: 428; body: Record<string, unknown>; refused?: undefined } | AgentRaiseRefusal;
 
 interface PendingRaise {
   readonly approvalId: string;
@@ -164,29 +168,19 @@ function retire(raise: PendingRaise, reason: string): void {
 export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite): AgentRaiseAnswer {
   const identity = caller.identity && !caller.identity.inactive ? caller.identity : undefined;
   if (!identity) {
-    return {
-      status: 403,
-      body: {
-        error: "DorkOS couldn't tell which agent asked, so nobody was asked.",
-        code: 'agent_raise_unidentified',
-      },
-    };
+    return raiseRefusal(
+      'agent_identity_unverified',
+      'DorkOS couldn’t tell which agent asked, so nobody was asked.'
+    );
   }
   if (turnMarked(identity.agentPath, caller.sessionId)) {
-    return {
-      status: 403,
-      body: {
-        error:
-          'This turn read words from outside your team, so DorkOS changed nothing and asked nobody.',
-        code: 'agent_raise_marked',
-      },
-    };
+    return raiseRefusal(
+      'forbidden',
+      'This turn read words from outside your team, so DorkOS changed nothing and asked nobody.'
+    );
   }
   if (!approvalService) {
-    return {
-      status: 503,
-      body: { error: 'DorkOS can’t raise a card right now.', code: 'agent_raise_unavailable' },
-    };
+    return raiseRefusal('temporarily_unavailable', 'DorkOS can’t raise a card right now.');
   }
   const mine = [...pending.values()].filter((p) => p.agentPath === identity.agentPath);
   // A newer ask for the same thing replaces the older card.
@@ -195,13 +189,10 @@ export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite)
   }
   const waiting = [...pending.values()].filter((p) => p.agentPath === identity.agentPath).length;
   if (waiting >= MAX_PENDING_PER_AGENT) {
-    return {
-      status: 429,
-      body: {
-        error: `This agent already has ${MAX_PENDING_PER_AGENT} cards waiting. Wait for an answer first.`,
-        code: 'agent_raise_cap',
-      },
-    };
+    return raiseRefusal(
+      'rate_limited',
+      `This agent already has ${MAX_PENDING_PER_AGENT} cards waiting. Wait for an answer first.`
+    );
   }
   const inputHash = hashApprovalInput({
     kind: write.kind,
@@ -250,8 +241,17 @@ export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite)
   };
 }
 
-/** Why a card can't be answered yes, in the words the person reads. */
-export type AgentRaiseRefusal = { status: 409; body: { error: string; code: string } };
+/** Why a card can't be raised or answered yes: a problem document, with its status. */
+export type AgentRaiseRefusal = { status: number; body: Problem; refused: true };
+
+/** A refusal, as a route hands it back. */
+function raiseRefusal(code: ProblemCode, detail: string): AgentRaiseRefusal {
+  // Built from the shared code list, not @dorkos/http-kit: the space server's
+  // test image reaches this module and does not carry that package.
+  const { status, title } = PROBLEM_CODES[code];
+  const body: Problem = { type: problemType(code), title, status, code, detail };
+  return { status, body, refused: true };
+}
 
 /**
  * Check a card before the person's yes is recorded: it still waits, it hasn't
@@ -263,25 +263,21 @@ export type AgentRaiseRefusal = { status: 409; body: { error: string; code: stri
  */
 export function refuseAgentRaiseYes(approvalId: string): AgentRaiseRefusal | undefined {
   const raise = pending.get(approvalId);
-  const askAgain = (error: string, code: string): AgentRaiseRefusal => ({
-    status: 409,
-    body: { error, code },
-  });
   if (!raise) {
-    return askAgain(
-      'This card can no longer be answered. Ask the agent to ask again.',
-      'agent_raise_gone'
+    return raiseRefusal(
+      'already_resolved',
+      'This card can no longer be answered. Ask the agent to ask again.'
     );
   }
   if (Date.now() >= raise.expiresAt) {
     retire(raise, 'Nobody answered in time. The agent has to ask again.');
-    return askAgain('This card expired. Ask the agent to ask again.', 'agent_raise_expired');
+    return raiseRefusal('expired', 'This card expired. Ask the agent to ask again.');
   }
   if (turnMarked(raise.agentPath, raise.sessionId)) {
     retire(raise, 'The agent’s turn read words from outside your team since it asked.');
-    return askAgain(
-      'The agent read outside words since asking, so this card no longer counts.',
-      'agent_raise_marked'
+    return raiseRefusal(
+      'precondition_failed',
+      'The agent read outside words since asking, so this card no longer counts.'
     );
   }
   return undefined;
@@ -293,7 +289,7 @@ export function refuseAgentRaiseYes(approvalId: string): AgentRaiseRefusal | und
  *
  * @param approvalId - The card the person said yes to.
  * @param approvedBy - The person, as the audit trail names them.
- * @returns The write's own answer, or a 409 when the card is gone.
+ * @returns The write's own answer, or a problem when the card is gone or the write threw.
  */
 export async function commitAgentRaise(
   approvalId: string,
@@ -301,13 +297,10 @@ export async function commitAgentRaise(
 ): Promise<{ status: number; body: unknown }> {
   const raise = pending.get(approvalId);
   if (!raise) {
-    return {
-      status: 409,
-      body: {
-        error: 'This card was already used. Ask the agent to ask again.',
-        code: 'agent_raise_gone',
-      },
-    };
+    return raiseRefusal(
+      'already_resolved',
+      'This card was already used. Ask the agent to ask again.'
+    );
   }
   // Single use: forget it before running, so a second yes finds nothing.
   clearTimeout(raise.timer);
@@ -317,10 +310,9 @@ export async function commitAgentRaise(
   try {
     result = await raise.run();
   } catch (err) {
-    result = {
-      status: 500,
-      body: { error: err instanceof Error ? err.message : 'The change failed.' },
-    };
+    // The cause goes to the log; the person reads a fixed sentence.
+    logger.error('[AgentRaise] A confirmed change failed', { approvalId, err });
+    result = raiseRefusal('internal_error', 'That change failed. Ask the agent to ask again.');
   }
   recordAudit({
     action: `${AGENT_RAISE_PREFIX}${raise.kind}`,

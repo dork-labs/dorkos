@@ -66,11 +66,13 @@ const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const OUTSIDE = {
-  error: 'Access denied: path outside directory boundary',
-  code: 'OUTSIDE_BOUNDARY',
-};
-const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
+const GIT_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'Pick a folder inside the ones DorkOS may use.',
+});
+const GIT_NULL_BYTE = problemBody('invalid_request', {
+  detail: 'That path has a character paths can’t hold.',
+});
+const NO_WORKSPACE = problemBody('not_found', { detail: 'No workspace with that id.' });
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CROSS_SITE = { 'Sec-Fetch-Site': 'cross-site' };
@@ -141,27 +143,33 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/directory refuses a folder outside the boundary',
     path: '/api/directory?path=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/directory refuses a walk out of the boundary',
     path: `/api/directory?path=${q(`${REPO_ROOT}/../../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/directory refuses a NUL byte',
     path: `/api/directory?path=${q(`${REPO_ROOT}/a\0b`)}`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/directory answers 404 for a folder that does not exist',
     path: `/api/directory?path=${q(path.join(REPO_ROOT, 'no-such-folder'))}`,
-    expect: { status: 404, body: { error: 'Directory not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That folder doesn’t exist.' }),
+    },
   },
   {
     name: 'GET /api/directory refuses a file',
     path: `/api/directory?path=${q(path.join(REPO_ROOT, 'package.json'))}`,
-    expect: { status: 400, body: { error: 'Not a directory' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_folder', { detail: 'That path is a file, not a folder.' }),
+    },
   },
   {
     name: 'GET /api/directory refuses an empty path',
@@ -231,10 +239,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { parentPath: SCRATCH, folderName: 'Not Kebab' },
     expect: {
       status: 400,
-      body: {
-        error:
-          'Invalid folder name. Lowercase letters, numbers, and hyphens only. Must start with a letter.',
-      },
+      body: problemBody('invalid_request', {
+        detail: 'Use lowercase letters, numbers and hyphens, starting with a letter.',
+      }),
     },
   },
   {
@@ -242,14 +249,14 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: '/tmp', folderName: 'contract-escape' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/directory refuses a NUL byte in the parent',
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: `${SCRATCH}\0`, folderName: 'contract-nul' },
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/directory makes a missing parent inside the boundary on the way',
@@ -270,7 +277,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: SCRATCH, folderName: NEW_FOLDER },
-    expect: { status: 409, body: { error: 'Directory already exists' } },
+    expect: {
+      status: 409,
+      body: problemBody('already_exists', { detail: 'A folder with that name is already there.' }),
+    },
   },
   {
     name: 'PUT /api/directory is not a route',
@@ -308,17 +318,17 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/git/status refuses a folder outside the boundary',
     path: '/api/git/status?dir=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/git/status refuses a walk out of the boundary',
     path: `/api/git/status?dir=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/git/status refuses a NUL byte with a 403',
+    name: 'GET /api/git/status refuses a NUL byte with a 400',
     path: `/api/git/status?dir=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/git/status refuses a repeated dir',
@@ -391,7 +401,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/workspaces/ports',
     body: { path: REPO_ROOT },
-    expect: { status: 404, body: { error: 'No managed workspace for path' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That path isn’t inside a managed workspace.' }),
+    },
   },
   {
     name: 'POST /api/workspaces/ports refuses a request with no body',
@@ -427,19 +440,19 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/workspaces/:id answers 404 for an unknown workspace',
     path: '/api/workspaces/no-such-workspace',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'GET /api/workspaces/:id decodes an encoded slash and still answers 404',
     path: '/api/workspaces/..%2F..%2Fetc',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'POST /api/workspaces/:id/pin answers 404 for an unknown workspace',
     method: 'POST',
     path: '/api/workspaces/no-such-workspace/pin',
     body: { pinned: true },
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'POST /api/workspaces/:id/pin refuses a body without pinned',
@@ -458,7 +471,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     name: 'DELETE /api/workspaces/:id answers 404 for an unknown workspace',
     method: 'DELETE',
     path: '/api/workspaces/no-such-workspace?force=true',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'DELETE /api/workspaces/:id refuses an empty approvedRemoveHooks',
@@ -506,17 +519,17 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/projects/resolve refuses a folder outside the boundary',
     path: '/api/projects/resolve?cwd=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/projects/resolve refuses a walk out of the boundary',
     path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/projects/resolve refuses a NUL byte with a 403',
+    name: 'GET /api/projects/resolve refuses a NUL byte with a 400',
     path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/projects/resolve refuses a missing cwd',
@@ -546,7 +559,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: CROSS_SITE,
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('project_lookup_person_required') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {
@@ -555,11 +568,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can look up a project.',
-        code: 'project_lookup_person_required',
-        message: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
-      },
+      body: problemBody('person_only', {
+        detail: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
+      }),
     },
   },
 
@@ -647,7 +658,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'PUT',
     path: '/api/read-cursors/room/no-such-room',
     body: { lastReadSeq: 1 },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('room_not_found') }).loose() },
   },
   {
     name: 'GET /api/read-cursors/:kind/:id refuses an agent it cannot verify',
@@ -655,7 +666,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 401,
-      schema: z.object({ code: z.literal('AGENT_IDENTITY_UNVERIFIED') }).loose(),
+      schema: z.object({ code: z.literal('agent_identity_unverified') }).loose(),
     },
   },
   {
@@ -684,44 +695,50 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: '/etc' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/session-locations refuses a walk out of the boundary',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: `${REPO_ROOT}/../..` },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'POST /api/session-locations refuses a NUL byte with a 403',
+    name: 'POST /api/session-locations refuses a NUL byte with a 400',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: `${REPO_ROOT}\0` },
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/session-locations refuses an unknown field',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: REPO_ROOT, extra: true },
-    expect: { status: 400, body: { error: 'Choose a valid chat folder.' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Choose a valid chat folder.' }),
+    },
   },
   {
     name: 'POST /api/session-locations refuses a request with no body',
     method: 'POST',
     path: '/api/session-locations',
-    expect: { status: 400, body: { error: 'Choose a valid chat folder.' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Choose a valid chat folder.' }),
+    },
   },
   {
     name: 'GET /api/session-locations/:id answers 404 for an id that is not a UUID',
     path: '/api/session-locations/not-a-uuid',
-    expect: { status: 404, body: { error: 'Chat folder not found.' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'Chat folder not found.' }) },
   },
   {
     name: 'GET /api/session-locations/:id answers 404 for a UUID nobody saved',
     path: `/api/session-locations/${randomUUID()}`,
-    expect: { status: 404, body: { error: 'Chat folder not found.' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'Chat folder not found.' }) },
   },
   {
     name: 'GET /api/session-locations/:id refuses a cross-site request',
@@ -729,10 +746,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: CROSS_SITE,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can choose a chat folder.',
-        code: 'SESSION_LOCATION_PERSON_REQUIRED',
-      },
+      body: problemBody('person_only', { detail: 'Open DorkOS to choose a chat folder.' }),
     },
   },
   {
@@ -743,11 +757,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { cwd: REPO_ROOT },
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can choose a chat folder.',
-        code: 'SESSION_LOCATION_PERSON_REQUIRED',
-        message: 'Only a person can choose a chat folder.',
-      },
+      body: problemBody('person_only', { detail: 'Only a person can choose a chat folder.' }),
     },
   },
   {
@@ -756,7 +766,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('SESSION_LOCATION_PERSON_REQUIRED') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {
@@ -803,7 +813,12 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/templates',
     body: TEMPLATE,
-    expect: { status: 409, body: { error: `Template ID '${TEMPLATE.id}' already exists` } },
+    expect: {
+      status: 409,
+      body: problemBody('conflict', {
+        detail: `A template called '${TEMPLATE.id}' already exists. Pick another id.`,
+      }),
+    },
   },
   {
     name: 'POST /api/templates refuses a built-in id',
@@ -812,7 +827,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { ...TEMPLATE, id: 'blank' },
     expect: {
       status: 409,
-      body: { error: `Template ID 'blank' conflicts with a built-in template` },
+      body: problemBody('conflict', {
+        detail: `A built-in template is called 'blank'. Pick another id.`,
+      }),
     },
   },
   {
@@ -828,7 +845,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     name: 'DELETE /api/templates/:id refuses a built-in template',
     method: 'DELETE',
     path: '/api/templates/blank',
-    expect: { status: 403, body: { error: `Cannot delete built-in template 'blank'` } },
+    expect: {
+      status: 403,
+      body: problemBody('forbidden', { detail: 'Built-in templates can’t be deleted.' }),
+    },
   },
   {
     name: 'DELETE /api/templates/:id removes a template (after the cases above)',
@@ -840,13 +860,19 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     name: 'DELETE /api/templates/:id answers 404 for a template that is gone (after the case above)',
     method: 'DELETE',
     path: `/api/templates/${TEMPLATE.id}`,
-    expect: { status: 404, body: { error: `Template '${TEMPLATE.id}' not found` } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: `No template is called '${TEMPLATE.id}'.` }),
+    },
   },
   {
     name: 'DELETE /api/templates/:id decodes the id',
     method: 'DELETE',
     path: '/api/templates/a%20b',
-    expect: { status: 404, body: { error: `Template 'a b' not found` } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: `No template is called 'a b'.` }),
+    },
   },
   {
     name: 'GET /api/templates/:id is not a route',
@@ -885,27 +911,33 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/harness/status refuses a folder outside the boundary',
     path: '/api/harness/status?projectPath=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/harness/status refuses a walk out of the boundary',
     path: `/api/harness/status?projectPath=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/harness/status refuses a NUL byte',
     path: `/api/harness/status?projectPath=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/harness/status refuses a file',
     path: `/api/harness/status?projectPath=${q(path.join(REPO_ROOT, 'package.json'))}`,
-    expect: { status: 400, body: { error: 'Not a directory' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_folder', { detail: 'Pick a folder, not a file.' }),
+    },
   },
   {
     name: 'GET /api/harness/status answers 404 for a folder that does not exist',
     path: `/api/harness/status?projectPath=${q(path.join(REPO_ROOT, 'no-such-folder'))}`,
-    expect: { status: 404, body: { error: 'Project directory not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That folder doesn’t exist.' }),
+    },
   },
   {
     name: 'POST /api/harness/sync refuses a folder with nothing set up',
@@ -914,11 +946,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { projectPath: NO_MANIFEST },
     expect: {
       status: 409,
-      body: {
-        error: 'DorkOS isn’t sharing agent files for this folder yet',
-        code: 'harness_not_set_up',
-        message: 'Run `dorkos harness sync --fix` in this folder to set it up.',
-      },
+      body: problemBody('conflict', {
+        detail: 'Run `dorkos harness sync --fix` in this folder to set it up.',
+      }),
     },
   },
   {
@@ -938,7 +968,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/harness/sync',
     body: { projectPath: '/etc' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/harness/sync refuses an agent before reading the body',
@@ -947,13 +977,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can sync agent files',
-        code: 'operator_only_harness_sync',
-        message:
-          'This writes into your project and removes files DorkOS put there, so it is a ' +
-          'decision a person makes in DorkOS rather than something an agent does on your behalf.',
-      },
+      body: problemBody('person_only', {
+        detail: 'Only a person can sync agent files, in DorkOS.',
+      }),
     },
   },
   {
@@ -961,14 +987,14 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/harness/adopt',
     body: { projectPath: NO_MANIFEST, name: 'some-skill' },
-    expect: { status: 409, schema: z.object({ code: z.literal('harness_not_set_up') }).loose() },
+    expect: { status: 409, schema: z.object({ code: z.literal('conflict') }).loose() },
   },
   {
     name: 'POST /api/harness/adopt refuses a NUL byte',
     method: 'POST',
     path: '/api/harness/adopt',
     body: { projectPath: `${REPO_ROOT}\0`, name: 'some-skill' },
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/harness/adopt refuses an agent',
@@ -978,7 +1004,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { projectPath: NO_MANIFEST, name: 'some-skill' },
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('operator_only_harness_adopt') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {
@@ -1009,22 +1035,28 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/shapes/..%2F..%2Fsecret/apply',
     expect: {
       status: 400,
-      body: {
-        error: "Invalid Shape name '../../secret' — must be a kebab-case slug (a-z, 0-9, -)",
-      },
+      body: problemBody('invalid_request', {
+        detail: "'../../secret' isn’t a Shape name. Use lowercase letters, digits and dashes.",
+      }),
     },
   },
   {
     name: 'POST /api/shapes/:name/apply answers 404 for a Shape that is not installed',
     method: 'POST',
     path: '/api/shapes/ghost/apply',
-    expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: "No Shape called 'ghost' is installed." }),
+    },
   },
   {
     name: 'POST /api/shapes/:name/fork answers 404 for a Shape that is not installed',
     method: 'POST',
     path: '/api/shapes/ghost/fork',
-    expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: "No Shape called 'ghost' is installed." }),
+    },
   },
   {
     name: 'POST /api/shapes/:name/fork refuses a target name that is not a slug',
@@ -1033,9 +1065,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { as: '../escape' },
     expect: {
       status: 400,
-      body: {
-        error: "Invalid Shape name '../escape' — must be a kebab-case slug (a-z, 0-9, -)",
-      },
+      body: problemBody('invalid_request', {
+        detail: "'../escape' isn’t a Shape name. Use lowercase letters, digits and dashes.",
+      }),
     },
   },
   {

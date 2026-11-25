@@ -169,8 +169,8 @@ describe('the out-of-usage routes', () => {
       .set('x-dorkos-approval', 'approval-token-abc')
       .send({ account: 'dorkos-credits' });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({
-      error: 'Only you can move this chat onto your DorkOS credits, from the DorkOS app.',
+    expect(res.body).toMatchObject({
+      detail: 'Only you can move this chat onto your DorkOS credits, from the DorkOS app.',
       code: 'person_only',
     });
     expect(continueSession).not.toHaveBeenCalled();
@@ -202,9 +202,9 @@ describe('the out-of-usage routes', () => {
     );
     const res = await request(testServer).post(`${base}/continue`).send({ account: 'spare' });
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error: 'This chat did not start here, so it can only wait for the reset.',
-      code: 'WAIT_ONLY',
+    expect(res.body).toMatchObject({
+      detail: 'This chat did not start here, so it can only wait for the reset.',
+      code: 'conflict',
     });
 
     vi.mocked(waitForReset).mockRejectedValue(
@@ -228,15 +228,14 @@ describe('the out-of-usage routes', () => {
     );
     const res = await request(testServer).post(`${base}/continue`).send({ account: 'work' });
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error:
-        "work can't be used in client-app. It's set to work only in other. Pick another account, or change this in Settings → Runtimes.",
-      message:
+    expect(res.body).toMatchObject({
+      detail:
         "work can't be used in client-app. It's set to work only in other. Pick another account, or change this in Settings → Runtimes.",
       code: 'account_not_allowed_here',
-      project,
+      projectName: project.name,
       accountId: 'work',
     });
+    expect(res.body.project).toBeUndefined();
   });
 
   it('refuses a malformed body before the service is asked', async () => {
@@ -297,7 +296,7 @@ describe('the out-of-usage routes', () => {
     ]);
     for (const res of answers) {
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
     }
     expect(continueSession).not.toHaveBeenCalled();
   });
@@ -381,7 +380,7 @@ describe('GET /api/sessions/:id/limit-history', () => {
   it('answers 404 for a session this server does not know', async () => {
     const res = await request(testServer).get(`${base}/limit-history`);
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).toBe('session_not_found');
   });
 
   it('refuses a session outside the boundary as the other session reads do', async () => {
@@ -392,12 +391,12 @@ describe('GET /api/sessions/:id/limit-history', () => {
     vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(outside());
     const placed = await request(testServer).get(`${base}/limit-history`);
     expect(placed.status).toBe(403);
-    expect(placed.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(placed.body.code).toBe('outside_boundary');
     // …and one the caller names.
     vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(outside());
     const named = await request(testServer).get(`${base}/limit-history?cwd=/elsewhere`);
     expect(named.status).toBe(403);
-    expect(named.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(named.body.code).toBe('outside_boundary');
     expect(validateBoundaryOrDorkHome).toHaveBeenLastCalledWith('/elsewhere');
   });
 

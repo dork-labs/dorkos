@@ -46,7 +46,7 @@ import {
   PERSON_ONLY_DATA_PATHS,
   PROJECT_PLUGIN_PATHS,
   protectedPathGlob,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -305,8 +305,12 @@ function isForeignWindowsPath(target: string): boolean {
   return process.platform !== 'win32' && /^[A-Za-z]:[\\/]/.test(target);
 }
 
-/** The real path of `target`, or `undefined` when it does not exist yet. */
-function realpathOrUndefined(target: string): string | undefined {
+/**
+ * The real path of `target`, or `undefined` when it does not exist yet.
+ *
+ * @param target - The path to resolve.
+ */
+export function realpathOrUndefined(target: string): string | undefined {
   try {
     return realpathSync.native(target);
   } catch {

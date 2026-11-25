@@ -200,7 +200,8 @@ it('a chat with no agent and no known folder records none, and its save stays un
   expect(doc.row()?.resolvedCwd).toBeNull();
   const discovery = await request(docs.server).get(doc.endpoint);
   expect(discovery.status).toBe(404);
-  expect(discovery.body.code).toBe('DOC_FILE_SAVE_UNAVAILABLE');
+  expect(discovery.headers['content-type']).toContain('application/problem+json');
+  expect(discovery.body.code).toBe('not_found');
   await expect(
     saveOriginalDocumentFile(h.http.fileWrites, doc.input(h.dir), { headers: {} })
   ).rejects.toBeInstanceOf(DocChannelNotFoundError);

@@ -28,7 +28,7 @@ import { getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { ExtensionConnectionError } from '@dorkos/extension-api/server';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import type { MiniAppAccess } from '../services/connectors/extensions/mini-app-access.js';
 import {
@@ -116,7 +116,7 @@ export function createMiniAppAccessPageRoutes(deps: MiniAppAccessPageRouterDeps)
   router.get(`${BASE}/page`, (c) => {
     lockDown(c);
     if (!isPageLoad(c)) {
-      return ownerRefusal(c, 'mini_app_access_page_only', 'Open this page in the browser.');
+      return ownerRefusal(c, 'forbidden', 'Open this page in the browser.');
     }
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -157,36 +157,31 @@ export function createMiniAppAccessPageRoutes(deps: MiniAppAccessPageRouterDeps)
     const origin = headers.origin;
     const trusted = deps.trustedOrigins?.() ?? resolveTrustedOrigins();
     if (headers['sec-fetch-site'] !== 'same-origin' || !origin || !trusted.includes(origin)) {
-      return ownerRefusal(c, 'mini_app_access_same_page', 'Decide on the DorkOS page itself.');
+      return ownerRefusal(c, 'origin_not_allowed', 'Decide on the DorkOS page itself.');
     }
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const parsed = DecisionBodySchema.safeParse(await readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Open the page again.', code: 'MINI_APP_ACCESS_BAD_DECISION' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Open the page again.' });
     }
     const ticket = tokens.redeem(parsed.data.token, getCookie(c, COOKIE), sessionKeyOf(c));
     if (!ticket) {
-      return c.json(
-        {
-          error: 'This page ran out or was already used. Open it again.',
-          code: 'MINI_APP_ACCESS_STALE',
-        },
-        403
-      );
+      return problem(c, 'stale_page', {
+        detail: 'This page ran out or was already used. Open it again.',
+      });
     }
     if (parsed.data.decision === 'deny') {
       return c.json({ status: 'denied', message: 'Nothing changed. You can close this page.' });
     }
     if (!parsed.data.connectionId) {
-      return c.json({ error: 'Pick an account first.', code: 'MINI_APP_ACCESS_NO_ACCOUNT' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Pick an account first.' });
     }
     const access = deps.access();
     if (!access) {
-      return c.json(
-        { error: 'DorkOS is still starting. Try again.', code: 'MINI_APP_ACCESS_UNAVAILABLE' },
-        503
-      );
+      return problem(c, 'temporarily_unavailable', {
+        detail: 'DorkOS is still starting. Try again.',
+      });
     }
     const approval = {
       extensionId: ticket.extensionId,
@@ -214,7 +209,8 @@ export function createMiniAppAccessPageRoutes(deps: MiniAppAccessPageRouterDeps)
           });
         } catch (err) {
           if (err instanceof ExtensionConnectionError) {
-            return c.json({ error: err.message, code: err.code }, 409);
+            // Its sentence is written to be shown (`ExtensionConnectionError`).
+            return problem(c, 'precondition_failed', { detail: err.message });
           }
           throw err;
         }

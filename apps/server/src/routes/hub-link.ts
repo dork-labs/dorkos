@@ -44,8 +44,7 @@ import {
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { BodyRule } from '@dorkos/http-kit';
-import { readJsonBody } from '@dorkos/http-kit';
-import { errorBody } from '../lib/route-utils.js';
+import { problem, problemBody, readJsonBody } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
@@ -98,7 +97,13 @@ const liveDeps: HubLinkRouteDeps = {
 };
 
 /** The one answer for a wrong, expired or used code and a bad signature. */
-const REFUSED = errorBody('That link code did not work. Make a new one.', 'LINK_REFUSED');
+const REFUSED = 'That link code didn’t work. Make a new one.';
+
+/** A body that is not a link request. */
+const NOT_A_LINK_REQUEST = 'That isn’t a link request.';
+
+/** The hub has no address or key to answer a link with yet. */
+const NOT_READY = 'This hub can’t link computers yet.';
 
 /**
  * The body parser for the link path alone: a small cap, since a link request
@@ -110,8 +115,11 @@ export const hubLinkBodyRule: BodyRule = {
   answerFailure: (error) => {
     const tooLarge = (error as { type?: unknown }).type === 'entity.too.large';
     return tooLarge
-      ? { status: 413, body: errorBody('That request is too large.', 'TOO_LARGE') }
-      : { status: 400, body: errorBody('That request is not valid.', 'INVALID') };
+      ? {
+          status: 413,
+          body: problemBody('request_too_large', { detail: 'That link request is too large.' }),
+        }
+      : { status: 400, body: problemBody('malformed_request', { detail: NOT_A_LINK_REQUEST }) };
   },
 };
 
@@ -156,32 +164,30 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
   router.post('/', async (c) => {
     if (!deps.isHub()) return apiNotFound(c);
     if (fromBrowser(c)) {
-      return c.json(errorBody('Link from the DorkOS app on your computer.', 'FORBIDDEN'), 403);
+      return problem(c, 'forbidden', { detail: 'Link from the DorkOS app on your computer.' });
     }
     const parsed = RelayLinkRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(errorBody('That request is not valid.', 'INVALID'), 400);
+      return problem(c, 'invalid_request', { detail: NOT_A_LINK_REQUEST });
     }
     const request = parsed.data;
     // Before the code: a link that cannot be answered must not spend one.
     const origin = deps.servingOrigin();
     const signer = origin ? deps.signer() : null;
-    if (!origin || !signer) {
-      return c.json(errorBody("This hub can't link computers yet.", 'HUB_NOT_READY'), 503);
-    }
+    if (!origin || !signer) return problem(c, 'temporarily_unavailable', { detail: NOT_READY });
     const code = normalizeRelayLinkCode(request.code);
     const redeemed = deps.consume(request.code);
     if (!redeemed.ok) {
       if (redeemed.reason === 'throttled') {
-        return c.json(errorBody('Too many tries. Wait a few minutes.', 'TOO_MANY_ATTEMPTS'), 429);
+        return problem(c, 'rate_limited', { detail: 'Too many tries. Wait a few minutes.' });
       }
       logger.warn('[HubRelay] Refused a link request with a wrong or used code');
-      return c.json(REFUSED, 401);
+      return problem(c, 'link_code_refused', { detail: REFUSED });
     }
     const codeHash = relayLinkCodeHash(code ?? '');
     if (!verifyRelayLinkRequest(request, origin, codeHash)) {
       auditLink(redeemed.mintedBy, request, 'refused', 'bad_signature');
-      return c.json(REFUSED, 401);
+      return problem(c, 'link_code_refused', { detail: REFUSED });
     }
     const owner = deps.owner();
     const answer: Omit<RelayLinkResponse, 'signature'> = {
@@ -201,7 +207,7 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
         error: (error as Error).name,
       });
       auditLink(redeemed.mintedBy, request, 'failed', 'hub_cannot_sign');
-      return c.json(errorBody("This hub can't link computers yet.", 'HUB_NOT_READY'), 503);
+      return problem(c, 'temporarily_unavailable', { detail: NOT_READY });
     }
     try {
       await deps.link({
@@ -215,13 +221,14 @@ export function createHubLinkRoutes(deps: HubLinkRouteDeps = liveDeps): Hono<Api
       if (error instanceof LinkedComputerKeyMismatchError) {
         // The code is spent; the computer already linked keeps its link.
         auditLink(redeemed.mintedBy, request, 'refused', 'already_linked');
-        return c.json(
-          errorBody('That computer is already linked. Remove it first.', 'ALREADY_LINKED'),
-          409
-        );
+        return problem(c, 'already_linked', {
+          detail: 'That computer is already linked. Remove it first.',
+        });
       }
       auditLink(redeemed.mintedBy, request, 'refused', 'store_refused');
-      return c.json(errorBody("This hub can't link another computer.", 'LINK_LIMIT'), 409);
+      return problem(c, 'computer_limit_reached', {
+        detail: 'This hub can’t link another computer.',
+      });
     }
     auditLink(redeemed.mintedBy, request, 'ok');
     c.header('Cache-Control', 'no-store');

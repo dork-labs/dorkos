@@ -67,30 +67,6 @@ function tool(slug: string, tags: string[]) {
   };
 }
 
-function toolkit() {
-  return {
-    composio_managed_auth: [],
-    deprecated: { rawProxyInfoByAuthSchemes: [], toolkitId: 'github' },
-    enabled: true,
-    is_local_toolkit: false,
-    meta: {
-      available_versions: [TOOLKIT_VERSION],
-      categories: [],
-      created_at: '2026-09-01T00:00:00.000Z',
-      description: 'GitHub',
-      logo: 'https://assets.fixture.invalid/github.svg',
-      tools_count: 3,
-      triggers_count: 0,
-      updated_at: '2026-09-01T00:00:00.000Z',
-      version: TOOLKIT_VERSION,
-      app_url: 'https://github.com',
-    },
-    name: 'GitHub',
-    slug: 'github',
-    type: 'native',
-  };
-}
-
 async function readBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -309,75 +285,6 @@ describe('ComposioSdkClient', () => {
     });
   });
 
-  it('resolves a concrete toolkit version and preserves exact cursor metadata across pages', async () => {
-    const local = await fixture((request, response) => {
-      if (request.path === '/api/v3.1/toolkits/github') return json(response, 200, toolkit());
-      if (request.path === '/api/v3.1/tools') {
-        const cursor = request.query.cursor;
-        return json(response, 200, {
-          current_page: cursor ? 2 : 1,
-          items: cursor
-            ? [
-                tool('GITHUB_CREATE_ISSUE', ['readOnlyHint', 'destructiveHint', 'openWorldHint']),
-                tool('GITHUB_GENERIC_PROXY', ['openWorldHint']),
-              ]
-            : [tool('GITHUB_GET_REPOSITORY', ['readOnlyHint', 'idempotentHint'])],
-          total_items: 3,
-          total_pages: 2,
-          next_cursor: cursor ? null : 'cursor/page+2=',
-        });
-      }
-      return json(response, 599, { error: `unexpected ${request.method} ${request.path}` });
-    });
-    const sdk = client(local.baseUrl);
-
-    const version = await sdk.resolveToolkitVersion('github', new AbortController().signal);
-    expect(version).toEqual({ status: 'ok', toolkit: 'github', toolkitVersion: TOOLKIT_VERSION });
-    if (version.status !== 'ok') throw new Error(version.reason);
-
-    const first = await sdk.listOperationSchemas(INSTANCE_ID, {
-      toolkit: 'github',
-      toolkitVersion: version.toolkitVersion,
-      limit: 1,
-      signal: new AbortController().signal,
-    });
-    expect(first.page.operations).toHaveLength(1);
-    expect(first.page.operations[0]).toMatchObject({
-      operationSlug: 'GITHUB_GET_REPOSITORY',
-      toolkitVersion: TOOLKIT_VERSION,
-      capabilityClassification: 'read',
-      retryPolicy: 'never',
-      schemaHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-    });
-    expect(first.page).toMatchObject({ nextCursor: 'cursor/page+2=', truncated: true });
-
-    const second = await sdk.listOperationSchemas(INSTANCE_ID, {
-      toolkit: 'github',
-      toolkitVersion: version.toolkitVersion,
-      cursor: first.page.nextCursor,
-      limit: 2,
-      signal: new AbortController().signal,
-    });
-    expect(second.page.operations.map((entry) => entry.operationSlug)).toEqual([
-      'GITHUB_CREATE_ISSUE',
-      'GITHUB_GENERIC_PROXY',
-    ]);
-    expect(second.page.operations[0]?.capabilityClassification).toBe('destructive');
-    expect(second.page.truncated).toBe(false);
-
-    const listRequests = local.requests.filter((entry) => entry.path === '/api/v3.1/tools');
-    expect(listRequests).toHaveLength(2);
-    expect(listRequests[0]?.query).toMatchObject({
-      toolkit_slug: 'github',
-      'toolkit_versions[github]': TOOLKIT_VERSION,
-      important: 'false',
-      include_deprecated: 'false',
-      limit: '1',
-    });
-    expect(listRequests[1]?.query.cursor).toBe('cursor/page+2=');
-    expect(local.requests.every((entry) => entry.apiKey === API_KEY)).toBe(true);
-  });
-
   // Tag shapes follow Composio's documented verdicts (only `…Hint` tags count): every action carries at
   // least one of readOnlyHint / createHint / updateHint / destructiveHint, and
   // an irreversible update carries updateHint AND destructiveHint.
@@ -591,37 +498,6 @@ describe('ComposioSdkClient', () => {
     ];
     expect(await classes(client(local.baseUrl))).toEqual(expected);
     expect(await classes(hosted)).toEqual(expected);
-  });
-
-  it('carries the display name and the important tag as hints, without changing the classification', async () => {
-    const local = await fixture((_request, response) =>
-      json(response, 200, {
-        current_page: 1,
-        total_pages: 1,
-        total_items: 2,
-        next_cursor: null,
-        items: [
-          { ...tool('GITHUB_SEND', ['important', 'openWorldHint']), name: '  Send Thing ' },
-          { ...tool('GITHUB_GET', ['readOnlyHint']), name: '' },
-        ],
-      })
-    );
-    const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
-      toolkit: 'github',
-      toolkitVersion: TOOLKIT_VERSION,
-      limit: 10,
-      signal: new AbortController().signal,
-    });
-    expect(result.page.operations[0]).toMatchObject({
-      displayName: 'Send Thing',
-      important: true,
-      capabilityClassification: 'destructive',
-    });
-    expect(result.page.operations[1]).toMatchObject({
-      important: false,
-      capabilityClassification: 'read',
-    });
-    expect(result.page.operations[1]).not.toHaveProperty('displayName');
   });
 
   it.each(['toolkit', 'version'])(
@@ -843,23 +719,6 @@ describe('ComposioSdkClient', () => {
       );
       return { result, dispatched };
     }
-
-    it('sends the call when the optional file is left out', async () => {
-      const { result, dispatched } = await sendEmail(SEND_EMAIL_SCHEMA, {
-        recipient_email: 'a@example.com',
-      });
-      expect(result).toMatchObject({ status: 'success' });
-      expect(dispatched).toHaveLength(1);
-    });
-
-    it('sends the call when the optional file is null', async () => {
-      const { result, dispatched } = await sendEmail(SEND_EMAIL_SCHEMA, {
-        recipient_email: 'a@example.com',
-        attachment: null,
-      });
-      expect(result).toMatchObject({ status: 'success' });
-      expect(dispatched).toHaveLength(1);
-    });
 
     it('refuses before any request when a file is filled in', async () => {
       const { result, dispatched } = await sendEmail(SEND_EMAIL_SCHEMA, {

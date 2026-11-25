@@ -51,6 +51,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getDefault: vi.fn(() => fakeRuntime),
     getDefaultType: vi.fn(() => 'fake'),
     has: vi.fn(() => true),
+    listRuntimes: vi.fn(() => [fakeRuntime]),
     persistSessionRuntime: vi.fn(async () => true),
     resolveForSession: vi.fn(async () => fakeRuntime),
     resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: false })),
@@ -98,6 +99,7 @@ vi.mock('../../services/session/message-dispatcher.js', async (importOriginal) =
 import { Hono } from 'hono';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { createSessionRoutes } from '../sessions.js';
+import { createRelayRoutes } from '../relay.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { dispatchMessage } from '../../services/session/message-dispatcher.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
@@ -114,6 +116,11 @@ import {
   countWhileRunning,
   resetLiveOutsiderTurns,
 } from '../../services/core/turn-power/live-outsider-turns.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const SESSION = '00000000-0000-4000-8000-0000000036a4';
 
@@ -294,7 +301,7 @@ describe('POST /:id/messages from an agent', () => {
   it("refuses A starting a chat in B's home, and dispatches nothing", async () => {
     const res = await post('/messages', { content: 'x', create: true, cwd: homeB }, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
   });
@@ -302,7 +309,7 @@ describe('POST /:id/messages from an agent', () => {
   it("refuses A naming B's home as the chat's agent", async () => {
     const res = await post('/messages', { content: 'x', create: true, agentPath: homeB }, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
@@ -337,8 +344,53 @@ describe('POST /:id/messages from an agent', () => {
 
     const res = await post('/messages', { content: 'do it as B' }, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('gives a relay message from A into that chat the same answer (DOR-5200)', async () => {
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
+      runtime: fakeRuntime as never,
+      bound: true,
+    });
+    vi.mocked(runtimeRegistry.resolveSessionRuntime).mockResolvedValue({
+      type: 'fake',
+      bound: true,
+    });
+    fakeRuntime.getSessionCwd = vi.fn(() => freeFolder);
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(homeB);
+    const publish = vi.fn();
+    const relay = new Hono<ApiEnv>()
+      .use('*', async (c, next) => {
+        c.set('agentIdentity', identityA());
+        c.set('body', {
+          subject: `relay.agent.claude-code.${SESSION}`,
+          payload: { content: 'do it as B' },
+          from: 'relay.agent.anyone',
+        });
+        await next();
+      })
+      .route(
+        '/api/relay',
+        createRelayRoutes({
+          relayCore: { publish } as never,
+          isRoomSession: () => false,
+          chatMesh: () => ({ ...mesh(), getProjectPath: () => undefined }) as never,
+        })
+      );
+    const headers = { 'content-type': 'application/json', host: 'localhost:4242' };
+    const viaRelay = await relay.request(
+      '/api/relay/messages',
+      { method: 'POST', headers, body: '{}' },
+      { incoming: { headers, socket: { remoteAddress: '127.0.0.1' } }, outgoing: {} } as never
+    );
+    const viaSessions = await post('/messages', { content: 'do it as B' }, AS_A);
+    expect(viaSessions.status).toBe(403);
+    expect({ status: viaRelay.status, body: await viaRelay.json() }).toEqual({
+      status: viaSessions.status,
+      body: await viaSessions.json(),
+    });
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("refuses A posting into a chat that stands in B's home", async () => {
@@ -384,7 +436,7 @@ describe('POST /:id/messages from a caller DorkOS cannot name', () => {
   it("refuses a token-less caller starting a chat in an agent's home", async () => {
     const res = await post('/messages', { content: 'x', create: true, cwd: homeB });
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
@@ -443,7 +495,7 @@ describe('POST /:id/fork', () => {
   it("refuses A forking a chat into B's home", async () => {
     const res = await post(`/fork?cwd=${encodeURIComponent(homeB)}`, {}, AS_A);
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
     expect(fakeRuntime.forkSession).not.toHaveBeenCalled();
   });
 
@@ -476,7 +528,7 @@ describe('a message waiting in a chat (DOR-3644 S1)', () => {
   it("refuses A rewording or moving one in B's chat", async () => {
     const res = await post('/queue/m-1', { content: 'now as B' }, AS_A, 'PATCH');
     expect(res.status).toBe(403);
-    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+    expect(await codeOf(res)).toBe('desk_not_own');
   });
 
   it("refuses A removing one from B's chat", async () => {
@@ -518,7 +570,7 @@ describe('a message waiting in its own chat, while the agent is under limits (DO
       aTurnUnderLimits();
       const res = await post('/queue/m-1', body, AS_A, method);
       expect(res.status).toBe(403);
-      expect(await codeOf(res)).toBe('LIMITED_TURN');
+      expect(await codeOf(res)).toBe('forbidden');
     }
   );
 
@@ -562,18 +614,18 @@ describe('a launch or fork that names no folder, when the default is home (DOR-4
   it('refuses a token-less new chat with PROTECTED_FOLDER and says to name a folder', async () => {
     const res = await post('/messages', { content: 'x', create: true });
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { code?: string; error?: string };
-    expect(body.code).toBe('PROTECTED_FOLDER');
-    expect(body.error).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
+    const body = (await res.json()) as { code?: string; detail?: string };
+    expect(body.code).toBe('protected_folder');
+    expect(body.detail).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
     expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
   it('refuses a token-less fork the same way', async () => {
     const res = await post('/fork', {});
     expect(res.status).toBe(403);
-    const body = (await res.json()) as { code?: string; error?: string };
-    expect(body.code).toBe('PROTECTED_FOLDER');
-    expect(body.error).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
+    const body = (await res.json()) as { code?: string; detail?: string };
+    expect(body.code).toBe('protected_folder');
+    expect(body.detail).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
     expect(fakeRuntime.forkSession).not.toHaveBeenCalled();
   });
 
@@ -590,8 +642,8 @@ describe('a launch or fork that names no folder, when the default is home (DOR-4
 
   it('names the plain refusal, not the hint, when a folder was named', async () => {
     const res = await post('/messages', { content: 'x', create: true, cwd: DEFAULT_CWD });
-    const body = (await res.json()) as { code?: string; error?: string };
-    expect(body.code).toBe('PROTECTED_FOLDER');
-    expect(body.error).toBe(PROTECTED_FOLDER_MESSAGE);
+    const body = (await res.json()) as { code?: string; detail?: string };
+    expect(body.code).toBe('protected_folder');
+    expect(body.detail).toBe(PROTECTED_FOLDER_MESSAGE);
   });
 });

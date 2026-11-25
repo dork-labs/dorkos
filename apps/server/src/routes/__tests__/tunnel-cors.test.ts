@@ -215,7 +215,7 @@ describe('Host guard on /api (DNS rebinding)', () => {
       .set('Origin', 'http://evil.com:4242');
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('HOST_NOT_ALLOWED');
+    expect(res.body.code).toBe('host_not_allowed');
   });
 
   it('still allows a loopback request on a remapped port', async () => {
@@ -315,6 +315,6 @@ describe('Remote Access reads refuse a foreign page and a foreign Host (DOR-3650
     const res = await answer(path, { Host: 'evil.com:4242', Origin: 'http://evil.com:4242' });
 
     expect(res.status).toBe(403);
-    expect(JSON.parse(res.body).code).toBe('HOST_NOT_ALLOWED');
+    expect(JSON.parse(res.body).code).toBe('host_not_allowed');
   });
 });

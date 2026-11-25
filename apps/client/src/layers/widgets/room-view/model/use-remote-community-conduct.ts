@@ -15,9 +15,9 @@ export type ConductHold =
 
 /** The refusal codes a space sends when its moderation holds a post (DOR-2768). */
 const HOLD_CODES: ReadonlySet<string> = new Set([
-  'COMMUNITY_MUTED',
-  'COMMUNITY_SLOW_MODE',
-  'COMMUNITY_RULES_NOT_ACCEPTED',
+  'space_muted',
+  'space_slow_mode',
+  'space_rules_not_accepted',
 ]);
 
 /**
@@ -117,7 +117,7 @@ export function useRemoteCommunityConduct({
   const noteHold = useCallback(
     (cause: unknown) => {
       const code = (cause as { code?: unknown } | null)?.code;
-      if (code === 'COMMUNITY_SLOW_MODE') {
+      if (code === 'space_slow_mode') {
         // Count down only the wait the space named; without one, sending stays open.
         const waitMs = (cause as { retryAfterMs?: unknown }).retryAfterMs;
         if (typeof waitMs === 'number' && waitMs > 0) {

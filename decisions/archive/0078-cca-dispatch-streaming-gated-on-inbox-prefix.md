@@ -1,7 +1,7 @@
 ---
 number: 78
 title: CCA Dispatch Streaming Gated on relay.inbox.dispatch.* Prefix
-status: draft
+status: archived
 created: 2026-03-05
 spec: relay-async-query
 superseded-by: null

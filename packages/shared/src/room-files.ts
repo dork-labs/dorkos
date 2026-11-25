@@ -19,6 +19,7 @@
  * @module room-files
  */
 import { z } from 'zod';
+import { ProblemSchema } from './problem.js';
 
 /**
  * What a directory entry IS.
@@ -265,7 +266,7 @@ export const RoomFileSaveRequestSchema = z.object({
    * This is the whole of the optimistic lock. The server does not ask whether
    * `main` has moved (it moves whenever anybody merges, which has nothing to do
    * with this file); it asks whether THIS PATH changed between `baseCommit` and
-   * `main`'s tip. If it did, the save is refused with `FILE_CHANGED` and
+   * `main`'s tip. If it did, the save is refused with `file_changed` and
    * nothing is written.
    *
    * **Shaped like a commit id, or refused before it can be one.** The value
@@ -386,7 +387,7 @@ export const RoomFileMoveRequestSchema = z.object({
   to: z.string().min(1),
   /**
    * The commit the person's view came from — required. Every path under `from`
-   * must be unchanged since, or the move is refused `FILE_CHANGED`: a move only
+   * must be unchanged since, or the move is refused `file_changed`: a move only
    * makes sense over files the person has seen.
    */
   baseCommit: CommitIdSchema,
@@ -401,7 +402,7 @@ export const RoomFileDeleteRequestSchema = z.object({
   path: z.string().min(1),
   /**
    * The commit the person's view came from — required. Every path under
-   * `path` must be unchanged since, or the delete is refused `FILE_CHANGED`:
+   * `path` must be unchanged since, or the delete is refused `file_changed`:
    * nobody deletes a file they have not seen.
    */
   baseCommit: CommitIdSchema,
@@ -457,7 +458,7 @@ export type RoomFileChangeResponse = z.infer<typeof RoomFileChangeResponseSchema
  * keep-mine choice, and a typo in either end would silently turn that into a
  * generic error toast.
  */
-export const ROOM_FILE_CHANGED_CODE = 'FILE_CHANGED';
+export const ROOM_FILE_CHANGED_CODE = 'file_changed';
 
 /** What the room knows about a save that lost the race. */
 export const RoomFileConflictSchema = z.object({
@@ -485,17 +486,18 @@ export const RoomFileConflictSchema = z.object({
 /** What the room knows about a save that lost the race. See {@link RoomFileConflictSchema}. */
 export type RoomFileConflict = z.infer<typeof RoomFileConflictSchema>;
 
-/** The 409 body a `FILE_CHANGED` refusal carries. */
-export const RoomFileConflictResponseSchema = z.object({
-  /** The sentence to show. */
-  error: z.string(),
+/**
+ * The 409 problem document a `file_changed` refusal carries: the problem's own
+ * members (`detail` is the sentence to show) and the `conflict` extension.
+ */
+export const RoomFileConflictResponseSchema = ProblemSchema.extend({
   /** Always {@link ROOM_FILE_CHANGED_CODE}. */
   code: z.literal(ROOM_FILE_CHANGED_CODE),
   /** What changed under the editor. See {@link RoomFileConflictSchema}. */
   conflict: RoomFileConflictSchema,
 });
 
-/** The 409 body a `FILE_CHANGED` refusal carries. See {@link RoomFileConflictResponseSchema}. */
+/** The 409 problem a `file_changed` refusal carries. See {@link RoomFileConflictResponseSchema}. */
 export type RoomFileConflictResponse = z.infer<typeof RoomFileConflictResponseSchema>;
 
 /**

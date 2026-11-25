@@ -97,8 +97,11 @@ const SAVED = z.object({ success: z.literal(true), config: z.object({}).loose() 
 const OPERATOR_ONLY = (paths: string[]) =>
   z
     .object({
-      error: z.literal('Only a person can change those settings'),
-      code: z.literal('operator_only_config'),
+      type: z.literal('urn:dorkos:problem:person_only'),
+      title: z.string(),
+      status: z.literal(403),
+      detail: z.literal('Only a person can change those settings'),
+      code: z.literal('person_only'),
       paths: z.array(z.string()).refine((have) => have.join() === paths.join()),
       message: z.string(),
     })
@@ -111,26 +114,29 @@ const DOC_METRICS = z
     requestAttempts: z.object({ rejectedRequestsByClass: z.object({}).loose() }).loose(),
   })
   .loose();
-const DOC_METRICS_FORBIDDEN = {
-  code: 'DOC_METRICS_FORBIDDEN',
-  error: 'Only the owner can read document metrics.',
-};
-const DOC_NOT_FOUND = {
-  error: 'The document is not available.',
-  code: 'CANVAS_DOCUMENT_NOT_FOUND',
-};
-const DOC_EVENT_TOO_LARGE = {
-  error: 'The document event is too large.',
-  code: 'DOC_EVENT_TOO_LARGE',
-};
-const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
-const RESET_TOKEN_REQUIRED = {
-  error:
-    'Nothing has been deleted. Resetting DorkOS takes two steps now: ask DorkOS to start the reset, then confirm it within 2 minutes. Open Settings and start the reset again.',
-  code: 'RESET_TOKEN_REQUIRED',
-};
-const BAD_CONFIRM = { error: 'Missing or invalid confirm field. Send { confirm: "reset" }.' };
-const TOO_MANY_ADMIN = { error: 'Too many admin requests. Try again later.' };
+const DOC_METRICS_FORBIDDEN = problemBody('owner_only', {
+  detail: 'Only the owner can read document metrics.',
+});
+const DOC_NOT_FOUND = problemBody('not_found', { detail: 'The document is not available.' });
+const DOC_EVENT_TOO_LARGE = problemBody('request_too_large', {
+  detail: 'The document event is too large. Send a smaller one.',
+});
+/** A document query or event id the routes refuse: one code, the sentence says it. */
+const DOC_QUERY_REFUSED = problemBody('invalid_request', {
+  detail: 'The document event or query is not valid.',
+});
+const SETUP_REFUSED = problemBody('person_only', { detail: 'Only the owner can set up DorkOS.' });
+const RESET_TOKEN_REQUIRED = problemBody('forbidden', {
+  detail: 'Nothing was deleted. Start the reset again, then confirm within 2 minutes.',
+});
+const BAD_CONFIRM = problemBody('invalid_request', {
+  detail: 'Send { confirm: "reset" } to reset DorkOS.',
+});
+const TOO_MANY_ADMIN = problemBody('rate_limited', {
+  detail: 'Too many admin requests. Try again later.',
+});
+const CHOOSE_A_PATH = problemBody('invalid_request', { detail: 'Choose how your agents run.' });
+const NOT_REGISTERED = problemBody('not_found', { detail: 'No agent is registered at that path.' });
 const ADMIN_LIMIT = (limit: number, remaining: number) => ({
   'x-ratelimit-limit': String(limit),
   'x-ratelimit-remaining': String(remaining),
@@ -219,8 +225,8 @@ contractSuite(
       headers: { host: 'evil.example' },
       expect: {
         status: 403,
-        headers: JSON_TYPE,
-        schema: z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose(),
+        headers: { 'content-type': /^application\/problem\+json\b/ },
+        schema: z.object({ code: z.literal('host_not_allowed') }).loose(),
       },
     },
     {
@@ -233,14 +239,22 @@ contractSuite(
       name: 'PATCH /api/config with no body fails as it always has',
       method: 'PATCH',
       path: '/api/config',
-      expect: { status: 500, headers: JSON_TYPE, body: { error: 'Internal server error' } },
+      expect: {
+        status: 500,
+        headers: PROBLEM_TYPE,
+        body: problemBody('internal_error', { detail: 'The settings weren’t saved. Try again.' }),
+      },
     },
     {
       name: 'PATCH /api/config refuses a body that is not an object',
       method: 'PATCH',
       path: '/api/config',
       body: [1],
-      expect: { status: 400, body: { error: 'Request body must be a JSON object' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'Request body must be a JSON object' }),
+      },
     },
     {
       name: 'PATCH /api/config refuses malformed JSON in the chain',
@@ -264,7 +278,7 @@ contractSuite(
       path: '/api/config',
       headers: AGENT,
       body: { auth: { enabled: false } },
-      expect: { status: 403, headers: JSON_TYPE, schema: OPERATOR_ONLY(['auth.enabled']) },
+      expect: { status: 403, headers: PROBLEM_TYPE, schema: OPERATOR_ONLY(['auth.enabled']) },
     },
     {
       name: 'PATCH /api/config refuses an approval token the same way',
@@ -295,7 +309,9 @@ contractSuite(
       body: {},
       expect: {
         status: 400,
-        body: { error: 'Body must include a non-empty "value" string' },
+        body: problemBody('invalid_request', {
+          detail: 'Send the agent’s name as a non-empty `value`.',
+        }),
       },
     },
     {
@@ -304,7 +320,9 @@ contractSuite(
       path: '/api/config/agents/defaultAgent',
       expect: {
         status: 400,
-        body: { error: 'Body must include a non-empty "value" string' },
+        body: problemBody('invalid_request', {
+          detail: 'Send the agent’s name as a non-empty `value`.',
+        }),
       },
     },
     {
@@ -346,21 +364,21 @@ contractSuite(
       path: '/api/onboarding/first-run',
       headers: AGENT,
       body: {},
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     },
     {
       name: 'POST /api/onboarding/first-run refuses a choice it does not know',
       method: 'POST',
       path: '/api/onboarding/first-run',
       body: { path: 'nowhere' },
-      expect: { status: 400, body: { error: 'Choose how your agents run.' } },
+      expect: { status: 400, body: CHOOSE_A_PATH },
     },
     {
       name: 'POST /api/onboarding/welcome refuses an agent',
       method: 'POST',
       path: '/api/onboarding/welcome',
       headers: AGENT,
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     },
     {
       name: 'POST /api/onboarding/welcome posts DorkBot’s welcome',
@@ -382,26 +400,44 @@ contractSuite(
       path: '/api/mcp-config',
       expect: {
         status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'Missing required query param: path' },
+        headers: PROBLEM_TYPE,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.literal('Send the folder as `path`.'),
+          })
+          .loose(),
       },
     },
     {
       name: 'GET /api/mcp-config refuses a repeated path',
       path: '/api/mcp-config?path=a&path=b',
-      expect: { status: 400, body: { error: 'Missing required query param: path' } },
+      expect: {
+        status: 400,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.literal('Send the folder as `path`.'),
+          })
+          .loose(),
+      },
     },
     {
       name: 'GET /api/mcp-config refuses a runtime this server does not run',
       path: '/api/mcp-config?path=.&runtime=nope',
-      expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+      expect: {
+        status: 400,
+        body: problemBody('invalid_request', { detail: 'There is no runtime by that name.' }),
+      },
     },
     {
       name: 'GET /api/mcp-config refuses a path outside the boundary',
       path: '/api/mcp-config?path=/etc',
       expect: {
         status: 403,
-        body: { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
+        body: problemBody('outside_boundary', {
+          detail: 'Pick a folder inside the ones DorkOS may use.',
+        }),
       },
     },
     // feedback
@@ -410,17 +446,13 @@ contractSuite(
       method: 'POST',
       path: '/api/feedback',
       body: {},
-      expect: {
-        status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'Invalid feedback', code: 'INVALID_FEEDBACK' },
-      },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
     },
     {
       name: 'POST /api/feedback refuses no body at all',
       method: 'POST',
       path: '/api/feedback',
-      expect: { status: 400, body: { error: 'Invalid feedback', code: 'INVALID_FEEDBACK' } },
+      expect: { status: 400, schema: VALIDATION_FAILED },
     },
     {
       name: 'POST /api/feedback reads a body above the app-wide limit, then refuses it',
@@ -428,7 +460,7 @@ contractSuite(
       path: '/api/feedback',
       headers: { 'content-type': 'application/json' },
       body: BETWEEN_LIMITS,
-      expect: { status: 400, body: { error: 'Invalid feedback', code: 'INVALID_FEEDBACK' } },
+      expect: { status: 400, schema: VALIDATION_FAILED },
     },
     {
       name: 'POST /api/feedback refuses a body above its own 2 MB limit',
@@ -451,8 +483,10 @@ contractSuite(
       path: '/api/feedback/mine',
       expect: {
         status: 502,
-        headers: JSON_TYPE,
-        body: { error: 'Could not reach the feedback service' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('upstream_unavailable', {
+          detail: 'Couldn’t reach the feedback service.',
+        }),
       },
     },
     {
@@ -469,7 +503,7 @@ contractSuite(
       method: 'POST',
       path: '/api/canvas/docs/doc-1/events',
       body: {},
-      expect: { status: 404, headers: JSON_TYPE, body: DOC_NOT_FOUND },
+      expect: { status: 404, headers: PROBLEM_TYPE, body: DOC_NOT_FOUND },
     },
     {
       name: 'POST /api/canvas/docs/:id/events refuses malformed JSON with its own words',
@@ -479,8 +513,10 @@ contractSuite(
       body: '{bad',
       expect: {
         status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'The document event is not valid.', code: 'INVALID_DOC_EVENT' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('malformed_request', {
+          detail: 'The document event is not valid JSON.',
+        }),
       },
     },
     {
@@ -489,7 +525,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events',
       headers: { 'content-type': 'application/json' },
       body: ABOVE_DOC_EVENT_LIMIT,
-      expect: { status: 413, headers: JSON_TYPE, body: DOC_EVENT_TOO_LARGE },
+      expect: { status: 413, headers: PROBLEM_TYPE, body: DOC_EVENT_TOO_LARGE },
     },
     {
       name: 'POST /api/canvas/docs/:id/events takes a body just inside the limit',
@@ -507,7 +543,9 @@ contractSuite(
       body: {},
       expect: {
         status: 401,
-        body: { error: 'Sign in or use a valid agent token.', code: 'AGENT_IDENTITY_UNVERIFIED' },
+        body: problemBody('agent_identity_unverified', {
+          detail: 'Sign in or use a valid agent token.',
+        }),
       },
     },
     {
@@ -535,7 +573,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?since=abc',
       expect: {
         status: 400,
-        body: { error: 'The document event or query is not valid.', code: 'INVALID_DOC_QUERY' },
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -543,7 +581,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?other=1',
       expect: {
         status: 400,
-        body: { error: 'The document event or query is not valid.', code: 'INVALID_DOC_QUERY' },
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -551,10 +589,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events/not-an-id',
       expect: {
         status: 400,
-        body: {
-          error: 'The document event or query is not valid.',
-          code: 'INVALID_DOC_EVENT_ID',
-        },
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -599,7 +634,11 @@ contractSuite(
     {
       name: 'GET /api/debug/sessions/:id refuses an id that is not one',
       path: '/api/debug/sessions/not-a-uuid',
-      expect: { status: 400, body: { error: 'Invalid session ID', code: 'INVALID_SESSION_ID' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'That isn’t a chat id.' }),
+      },
     },
     {
       name: 'GET /api/debug/sessions/:id answers a session nothing has bound',
@@ -620,7 +659,11 @@ contractSuite(
       name: 'GET /api/debug/sessions/:id hides a session from an agent that may not read it',
       path: `/api/debug/sessions/${UUID}`,
       headers: AGENT,
-      expect: { status: 404, body: { error: 'Session not found', code: 'SESSION_NOT_FOUND' } },
+      expect: {
+        status: 404,
+        headers: PROBLEM_TYPE,
+        body: problemBody('session_not_found', { detail: 'No chat with that id.' }),
+      },
     },
     {
       name: 'GET /api/debug/rooms/:id/bindings answers a room with none',
@@ -701,7 +744,7 @@ contractSuite(
       body: { confirm: 'reset' },
       expect: {
         status: 429,
-        headers: { ...JSON_TYPE, ...ADMIN_LIMIT(3, 0), 'retry-after': /^\d+$/ },
+        headers: { ...PROBLEM_TYPE, ...ADMIN_LIMIT(3, 0), 'retry-after': /^\d+$/ },
         body: TOO_MANY_ADMIN,
       },
     },
@@ -737,7 +780,7 @@ contractSuite(
       body: { name: 'no-such-scenario' },
       expect: {
         status: 400,
-        schema: z.object({ error: z.string().startsWith('Unknown scenario') }).strict(),
+        body: problemBody('invalid_request', { detail: 'That scenario couldn’t be set.' }),
       },
     },
     {
@@ -786,7 +829,10 @@ contractSuite(
       method: 'POST',
       path: '/api/test/canonical-id',
       body: { sessionId: UUID, canonicalId: UUID, runtime: 'nope' },
-      expect: { status: 500, body: { error: "Runtime 'nope' not registered" } },
+      expect: {
+        status: 500,
+        body: problemBody('internal_error', { detail: 'Couldn’t find that chat’s program.' }),
+      },
     },
     {
       name: 'GET /api/test/persistent refuses no session',
@@ -827,7 +873,7 @@ contractSuite(
       method: 'POST',
       path: '/api/test/room-worktree-commit',
       body: { roomId: 'r', agentPath: '/nowhere', path: 'a.txt', text: 't' },
-      expect: { status: 404, body: { error: 'No agent is registered at /nowhere' } },
+      expect: { status: 404, body: NOT_REGISTERED },
     },
     {
       name: 'POST /api/test/agent-token refuses an agent nobody registered',
@@ -836,7 +882,9 @@ contractSuite(
       body: { agentPath: '/nowhere' },
       expect: {
         status: 404,
-        schema: z.object({ error: z.string().startsWith('No agent is registered at /nowhere') }),
+        body: problemBody('not_found', {
+          detail: 'Register the agent first, then mint its token.',
+        }),
       },
     },
     {
@@ -851,7 +899,7 @@ contractSuite(
       method: 'POST',
       path: '/api/test/seed-approval',
       body: { capabilityId: 'x', agentPath: '/nowhere', area: 'rooms', summary: 's' },
-      expect: { status: 404, body: { error: 'No agent is registered at /nowhere.' } },
+      expect: { status: 404, body: NOT_REGISTERED },
     },
     {
       name: 'POST /api/test/seed-agent refuses a slot it does not know',
@@ -908,12 +956,15 @@ contractSuite(
     {
       name: 'GET /api/test/community-subscription refuses no room',
       path: '/api/test/community-subscription',
-      expect: { status: 400, body: { error: 'A community ref and roomId are required.' } },
+      expect: { status: 400, schema: VALIDATION_FAILED },
     },
     {
       name: 'GET /api/test/community-subscription answers a room it is not following',
       path: '/api/test/community-subscription?ref=a&roomId=b',
-      expect: { status: 404, body: { error: 'Community room subscription is unavailable.' } },
+      expect: {
+        status: 404,
+        body: problemBody('not_found', { detail: 'No subscription for that room.' }),
+      },
     },
     {
       name: 'POST /api/test/community-connection-change answers ok',
@@ -1315,22 +1366,16 @@ describe('contract: the mock OAuth sign-in, the fake inference stream and docume
 });
 
 /** What the desktop app tells a person who asks the server to restart itself. */
-const DESKTOP_RESTART =
-  'The DorkOS app starts and stops the server for you, so restarting it from here would leave you with no server running. Quit DorkOS and open it again instead. That does the same thing.';
-/** What it tells a person who asks for a reset; the data folder is named. */
-const DESKTOP_RESET = z
-  .object({
-    error: z
-      .string()
-      .startsWith('The DorkOS app starts and stops the server for you, so it cannot reset itself'),
-    code: z.literal('MANAGED_BY_DESKTOP'),
-  })
-  .strict();
-const DESKTOP_GENERIC = {
-  error:
-    'The DorkOS app starts and stops the server for you, so this action is not available here.',
-  code: 'MANAGED_BY_DESKTOP',
-};
+const DESKTOP_RESTART = problemBody('managed_by_desktop', {
+  detail: 'Quit DorkOS and open it again. That restarts the server.',
+});
+/** What it tells a person who asks for a reset; a detail never names the folder. */
+const DESKTOP_RESET = problemBody('managed_by_desktop', {
+  detail: 'Nothing was deleted. Quit DorkOS, delete its data folder, then open it again.',
+});
+const DESKTOP_GENERIC = problemBody('managed_by_desktop', {
+  detail: 'The DorkOS app runs this server, so do this there.',
+});
 
 contractSuite(
   'admin and test-only groups outside test mode, under the desktop app',
@@ -1341,42 +1386,42 @@ contractSuite(
       path: '/api/admin/restart',
       expect: {
         status: 409,
-        headers: { ...JSON_TYPE, 'x-ratelimit-limit': null },
-        body: { error: DESKTOP_RESTART, code: 'MANAGED_BY_DESKTOP' },
+        headers: { ...PROBLEM_TYPE, 'x-ratelimit-limit': null },
+        body: DESKTOP_RESTART,
       },
     },
     {
       name: 'POST /api/admin/restart is refused every time, never rate limited',
       method: 'POST',
       path: '/api/admin/restart',
-      expect: { status: 409, body: { error: DESKTOP_RESTART, code: 'MANAGED_BY_DESKTOP' } },
+      expect: { status: 409, body: DESKTOP_RESTART },
     },
     {
       name: 'POST /api/admin/reset is refused with the reset’s own words',
       method: 'POST',
       path: '/api/admin/reset',
       body: { confirm: 'reset' },
-      expect: { status: 409, schema: DESKTOP_RESET },
+      expect: { status: 409, body: DESKTOP_RESET },
     },
     {
       name: 'POST /api/admin/reset/ is refused with a trailing slash too',
       method: 'POST',
       path: '/api/admin/reset/',
       body: { confirm: 'reset' },
-      expect: { status: 409, schema: DESKTOP_RESET },
+      expect: { status: 409, body: DESKTOP_RESET },
     },
     {
       name: 'POST /api/admin/Reset is refused in any case',
       method: 'POST',
       path: '/api/admin/Reset',
       body: { confirm: 'reset' },
-      expect: { status: 409, schema: DESKTOP_RESET },
+      expect: { status: 409, body: DESKTOP_RESET },
     },
     {
       name: 'POST /api/admin/reset/prepare is refused with the reset’s own words',
       method: 'POST',
       path: '/api/admin/reset/prepare',
-      expect: { status: 409, schema: DESKTOP_RESET },
+      expect: { status: 409, body: DESKTOP_RESET },
     },
     {
       name: 'GET /api/admin/anything is refused, not answered 404',
@@ -1567,13 +1612,14 @@ describe('contract: the same groups with login on', () => {
       body: { auth: { enabled: false } },
       expect: {
         status: 403,
-        body: {
-          error: 'Only a person can change those settings',
-          code: 'operator_cookie_required',
-          paths: ['auth.enabled'],
-          message:
-            'Only a person signed in to DorkOS can change the settings that protect this instance',
-        },
+        body: problemBody('person_only', {
+          detail: 'Only a person can change those settings',
+          extensions: {
+            paths: ['auth.enabled'],
+            message:
+              'Only a person signed in to DorkOS can change the settings that protect this instance',
+          },
+        }),
       },
     });
     await check(server, {
@@ -1593,10 +1639,10 @@ describe('contract: the same groups with login on', () => {
         headers: cookie,
         expect: {
           status: 409,
-          body: {
-            error:
-              'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
-          },
+          body: problemBody('conflict', {
+            detail:
+              'The local token works only on this computer without a password. Use an API key.',
+          }),
         },
       });
     }
@@ -1616,8 +1662,8 @@ describe('contract: the same groups with login on', () => {
       body: {},
       expect: {
         status: 403,
-        headers: JSON_TYPE,
-        body: { error: 'Setup is only available on this computer.' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('operator_only', { detail: 'Setup is only available on this computer.' }),
       },
     });
   });
@@ -1642,21 +1688,21 @@ describe('contract: the same groups with login on', () => {
       method: 'POST',
       path: '/api/onboarding/welcome',
       headers: apiKey,
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     });
     await check(server, {
       method: 'POST',
       path: '/api/onboarding/first-run',
       headers: { ...apiKey, origin: server!.baseUrl },
       body: {},
-      expect: { status: 403, body: SETUP_REFUSED('not-a-person') },
+      expect: { status: 403, body: SETUP_REFUSED },
     });
     await check(server, {
       method: 'POST',
       path: '/api/onboarding/first-run',
       headers: { ...cookie, origin: server!.baseUrl },
       body: {},
-      expect: { status: 400, body: { error: 'Choose how your agents run.' } },
+      expect: { status: 400, body: CHOOSE_A_PATH },
     });
   });
 });

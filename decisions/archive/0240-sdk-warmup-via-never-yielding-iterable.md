@@ -1,7 +1,7 @@
 ---
 number: 240
 title: SDK Warm-up via Never-Yielding Async Iterable
-status: draft
+status: archived
 created: 2026-04-10
 spec: runtime-model-discovery
 superseded-by: null

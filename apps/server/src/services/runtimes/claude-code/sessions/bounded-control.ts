@@ -34,6 +34,7 @@
  *
  * @module services/runtimes/claude-code/sessions/bounded-control
  */
+import { RUNTIME_STOP_ACK_TIMEOUT_MS } from '../../shared/timing/stop-ack.js';
 
 /**
  * How long a stop's control request may go unanswered before its caller gives
@@ -57,7 +58,7 @@
  * control round-trip on the same pipe (`CONTEXT_USAGE_TIMEOUT_MS`,
  * `message-sender.ts`).
  *
- * Three seconds anyway, because the person is the tighter constraint: a Stop
+ * Three seconds anyway (the bound every runtime shares, `shared/timing/stop-ack.ts`), because the person is the tighter constraint: a Stop
  * that has visibly done nothing for longer than that reads as broken, and
  * pressing it again is the natural response. The trade is bounded on the other
  * side too — the live settle is honest on BOTH paths, and a turn ended by an
@@ -72,7 +73,7 @@
  * Revisit this number with measurements of real ack latency under load, not
  * with an argument.
  */
-export const STOP_ACK_TIMEOUT_MS = 3_000;
+export const STOP_ACK_TIMEOUT_MS = RUNTIME_STOP_ACK_TIMEOUT_MS;
 
 /**
  * **What this bound does NOT bound** (DOR-1319).

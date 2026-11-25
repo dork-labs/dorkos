@@ -102,7 +102,7 @@ it.each(['warm', 'reopened'] as const)(
     expect(stored(id)?.model).toBe(frozen.model);
     const refused = await patch(id, current.model);
     expect(refused.status).toBe(400);
-    expect(refused.body.code).toBe('UNSUPPORTED_MODEL');
+    expect(refused.body.code).toBe('invalid_request');
     expect(stored(id)?.model).toBe(frozen.model);
     expect(runtime.sessions.get(id)?.inference).toEqual(frozen);
 
@@ -126,7 +126,7 @@ it('uses the current setup for a new conversation with no frozen inference', asy
   expect(stored(id)?.runtime).toBeNull();
   const refused = await patch(id, frozen.model);
   expect(refused.status).toBe(400);
-  expect(refused.body.code).toBe('UNSUPPORTED_MODEL');
+  expect(refused.body.code).toBe('invalid_request');
   expect(runtime.sessions.get(id)?.session.model).toBe(current.model);
   expect(runtime.sessions.get(id)?.inference).toBeUndefined();
   expect(resolveModel).not.toHaveBeenCalled();

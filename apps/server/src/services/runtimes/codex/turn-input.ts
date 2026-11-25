@@ -1,6 +1,6 @@
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
-import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
+import { formatContextWarning } from '../shared/prose/context-warning-block.js';
 /**
  * Per-turn input shaping for the Codex runtime: the DorkOS permission-mode →
  * ThreadOptions projection (NOTES.md Verdict 2) and the prompt assembly that

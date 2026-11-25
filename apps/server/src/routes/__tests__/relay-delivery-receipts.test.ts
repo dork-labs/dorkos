@@ -21,6 +21,7 @@ import { initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
 import { decideSessionGate } from '../../services/core/auth/session-gate.js';
 import { initConfigManager, configManager } from '../../services/core/config-manager.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 // The real session gate, so one case can stand in for an identity it proved.
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
@@ -59,6 +60,8 @@ beforeEach(() => {
   configManager.set('auth', { enabled: false });
   db = createDb(join(dir, 'receipts.db'));
   runMigrations(db);
+  // Whether the subject names a chat is read from the registry (DOR-5200, DOR-5209).
+  runtimeRegistry.setDb(db);
   db.insert(user)
     .values({
       id: 'install-owner',
@@ -121,6 +124,13 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** Mesh, which knows the subject as an agent's own address (DOR-5209). */
+const receiptMesh = () =>
+  ({
+    listWithPaths: () => [{ id: 'receipt-test', projectPath: '/made-up/agents/receipt' }],
+    getProjectPath: (id: string) => (id === 'receipt-test' ? '/made-up/agents/receipt' : undefined),
+  }) as never;
+
 /** Serve the Relay routes over the real Core, behind the real `/api` chain and session gate. */
 function mount(
   manager?: AdapterManager,
@@ -129,7 +139,12 @@ function mount(
 ) {
   target.mount(
     relayRoutesListener(
-      { relayCore: core, ...(manager && { adapterManager: manager }), activity },
+      {
+        relayCore: core,
+        ...(manager && { adapterManager: manager }),
+        activity,
+        chatMesh: receiptMesh,
+      },
       { before }
     )
   );
@@ -139,7 +154,9 @@ function send(extra: Record<string, unknown> = {}) {
     .post('/api/relay/messages')
     .send({
       subject: SUBJECT,
-      from: 'relay.human.console.forged',
+      // Not a person's address: with an owner and no session these callers are programs, which
+      // the route refuses one (DOR-5151, `relay-message-sender.test.ts`). Receipts are the subject.
+      from: 'relay.external.receipt-fixture',
       payload: { secret: SECRET },
       ...extra,
     });
@@ -245,7 +262,7 @@ it('real insert failure is safe storage503 with no locator or delivery/accountin
   expect(captured.subscriberCalls).toBe(0);
   expect(captured.counts).toEqual({ receipts: 0, index: { n: 0 }, calls: 0, mailboxes: [] });
   expect(response.status).toBe(503);
-  expect(response.body.code).toBe('RELAY_RECEIPT_STORAGE_UNAVAILABLE');
+  expect(response.body.code).toBe('temporarily_unavailable');
   expect(response.body).not.toHaveProperty('messageId');
   expect(JSON.stringify(response.body)).not.toContain(SECRET);
 });
@@ -277,7 +294,7 @@ it('caller BEGIN refuses before ID/effects without committing caller work', asyn
   const response = await send();
   expect(counts()).toEqual({ receipts: 0, index: { n: 0 }, calls: 0, mailboxes: [] });
   expect(response.status).toBe(503);
-  expect(response.body.code).toBe('RELAY_RECEIPT_TRANSACTION_ACTIVE');
+  expect(response.body.code).toBe('temporarily_unavailable');
   expect(response.body).not.toHaveProperty('messageId');
   expect(db.$client.inTransaction).toBe(true);
   expect(subscriber).not.toHaveBeenCalled();
@@ -291,14 +308,14 @@ it('a second real Core observer is busy with zero loser effects', async () => {
     logger: noopLogger,
     adapterRegistry: registry,
   });
-  target.mount(relayRoutesListener({ relayCore: loser }));
+  target.mount(relayRoutesListener({ relayCore: loser, chatMesh: receiptMesh }));
   try {
     const response = await send();
     expect(response.status).toBe(503);
-    expect(response.body.code).toBe('RELAY_RECEIPT_OBSERVER_BUSY');
+    expect(response.body.code).toBe('temporarily_unavailable');
     const status = await request(target.server).get(`/api/relay/messages/${UNKNOWN}/status`);
     expect(status.status).toBe(503);
-    expect(status.body.code).toBe('RELAY_RECEIPT_OBSERVER_BUSY');
+    expect(status.body.code).toBe('temporarily_unavailable');
     expect(status.headers['cache-control']).toBe('no-store');
     expect(response.body).not.toHaveProperty('messageId');
     expect(rows()).toEqual([]);
@@ -315,7 +332,7 @@ it('real accounting failure after durable acceptance retains exact locator befor
   );
   const response = await send();
   expect(response.status).toBe(503);
-  expect(response.body.code).toBe('RELAY_RECEIPT_RESPONSE_UNAVAILABLE');
+  expect(response.body.code).toBe('temporarily_unavailable');
   expect(response.body.messageId).toBe(rows()[0].message_id);
   expect(response.body.statusUrl).toBe(`/api/relay/messages/${rows()[0].message_id}/status`);
   expect(JSON.stringify(response.body)).not.toContain(SECRET);
@@ -338,7 +355,7 @@ it('snapshot read outage after effects retains locator, without replay, and stat
   });
   const response = await send();
   expect(response.status).toBe(503);
-  expect(response.body.code).toBe('RELAY_RECEIPT_RESPONSE_UNAVAILABLE');
+  expect(response.body.code).toBe('temporarily_unavailable');
   expect(response.body.messageId).toBe(rows()[0].message_id);
   expect(registry.deliver).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(response.body)).not.toContain(SECRET);
@@ -362,7 +379,7 @@ it('one-shot serialization failure keeps the callback-owned locator and safe err
   expect(response.status).toBe(503);
   expect(response.body.messageId).toBe(rows()[0].message_id);
   expect(response.body.statusUrl).toBe(`/api/relay/messages/${rows()[0].message_id}/status`);
-  expect(response.body.code).toBe('RELAY_RECEIPT_RESPONSE_UNAVAILABLE');
+  expect(response.body.code).toBe('temporarily_unavailable');
   expect(JSON.stringify(response.body)).not.toContain(SECRET);
   expect(registry.deliver).toHaveBeenCalledTimes(1);
 });
@@ -535,7 +552,8 @@ it('invalid400 follows auth and unknown/untracked/expired locators share exact40
   mount();
   const malformed = await request(target.server).get('/api/relay/messages/not-an-id/status');
   expect(malformed.status).toBe(400);
-  expect(malformed.body.code).toBe('INVALID_RELAY_MESSAGE_ID');
+  expect(malformed.headers['content-type']).toContain('application/problem+json');
+  expect(malformed.body.code).toBe('invalid_request');
   const ordinary = await send({ subject: 'relay.custom.topic' });
   const tracked = await send();
   receiptClock = Date.parse(tracked.body.receipt.expiresAt);
@@ -550,11 +568,15 @@ it('invalid400 follows auth and unknown/untracked/expired locators share exact40
     expect(response.headers['cache-control']).toBe('no-store');
   }
   expect(rows()).toHaveLength(1);
-  expect((await request(target.server).get(`/api/relay/messages/${UNKNOWN}/trace`)).body).toEqual({
-    error: 'Tracing not available',
+  expect(
+    (await request(target.server).get(`/api/relay/messages/${UNKNOWN}/trace`)).body
+  ).toMatchObject({
+    code: 'not_found',
+    detail: 'Delivery tracing is off here.',
   });
-  expect((await request(target.server).get(`/api/relay/messages/${UNKNOWN}`)).body).toEqual({
-    error: 'Message not found',
+  expect((await request(target.server).get(`/api/relay/messages/${UNKNOWN}`)).body).toMatchObject({
+    code: 'not_found',
+    detail: 'That message doesn’t exist.',
   });
 });
 
@@ -564,14 +586,14 @@ it('GET transaction and real storage outages remain distinct503, never missing40
   db.$client.exec('BEGIN');
   const transaction = await request(target.server).get(post.body.statusUrl);
   expect(transaction.status).toBe(503);
-  expect(transaction.body.code).toBe('RELAY_RECEIPT_TRANSACTION_ACTIVE');
+  expect(transaction.body.code).toBe('temporarily_unavailable');
   expect(transaction.headers['cache-control']).toBe('no-store');
   db.$client.exec('ROLLBACK');
   db.$client.exec('ALTER TABLE relay_delivery_receipts RENAME TO unavailable_receipts');
   try {
     const storage = await request(target.server).get(post.body.statusUrl);
     expect(storage.status).toBe(503);
-    expect(storage.body.code).toBe('RELAY_RECEIPT_STORAGE_UNAVAILABLE');
+    expect(storage.body.code).toBe('temporarily_unavailable');
     expect(storage.headers['cache-control']).toBe('no-store');
   } finally {
     db.$client.exec('ALTER TABLE unavailable_receipts RENAME TO relay_delivery_receipts');

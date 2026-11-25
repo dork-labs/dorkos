@@ -28,7 +28,7 @@ import {
   SHELL_UNREADABLE_DENY_REASON,
   SHELL_WRITE_DENY_REASON,
 } from '../shell-path-guard.js';
-import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../shared/policy/protected-paths.js';
+import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../../core/protected-paths/protected-paths.js';
 import { expandVariables, parseShell } from '../shell-words.js';
 
 /** The check in this process, reading the agent list first as the host does. */
@@ -890,6 +890,133 @@ describe('shell writes to the Terminal command', () => {
     ['a file named dorkos in the working folder', `echo x > dorkos`],
   ])('leaves %s alone', (_label, command) => {
     expect(shellWriteVerdict(command, roots)).toBe('none');
+  });
+});
+
+// DOR-4522: OpenCode's and Doe's shells have no other stop, so for them every write on the
+// protected-files list counts, an installed package's folder among them.
+describe('shell writes to the protected-files list', () => {
+  const listed = () => ({ ...roots, protectedWrites: true });
+  const plugin = () => path.join(roots.dorkHome, 'plugins', 'acme');
+
+  it.each([
+    ['touching a file in an installed package', () => `touch ${plugin()}/skills/x/SKILL.md`],
+    ['a relative write from inside it', () => `cd ${plugin()} && echo x > hooks.json`],
+    ['a script writing from inside it', () => `cd ${plugin()} && python3 -c "open('a','w')"`],
+    ['copying over the config', () => `cp /tmp/made-up ${roots.dorkHome}/config.json`],
+    ['removing a folder that holds one', () => `rm -rf ${roots.dorkHome}/cache`],
+  ])('refuses %s, at every level', (_label, command) => {
+    expect(shellWriteVerdict(command(), listed())).toBe('writes');
+    expect(shellWriteVerdict(command(), { ...listed(), full: true })).toBe('writes');
+  });
+
+  it('leaves ordinary writes alone, and Claude Code’s own reading unchanged', () => {
+    expect(shellWriteVerdict(`touch ${roots.cwd}/notes.txt`, listed())).toBe('none');
+    expect(shellWriteVerdict(`touch ${plugin()}/x`, roots)).toBe('none');
+  });
+});
+
+// DOR-5249: a whole-folder removal or move is refused when a protected entry that can sit at any
+// depth (a project's `.dork/plugins`) is the folder itself or sits below it.
+describe('removing or moving a folder that holds a protected entry', () => {
+  let base: string;
+  let projects: string;
+  let site: string;
+  let fresh: string;
+  const at = (cwd: string, full: boolean) => ({ ...roots, cwd, full, protectedWrites: true });
+
+  beforeAll(() => {
+    base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'shell-guard-whole-')));
+    projects = path.join(base, 'projects');
+    site = path.join(projects, 'site');
+    fresh = path.join(base, 'fresh');
+    touch(path.join(site, '.dork', 'plugins', 'acme', 'hooks.json'));
+    touch(path.join(fresh, '.dork', 'agent.json'));
+    touch(path.join(base, 'plain', 'build', 'out.js'));
+    // Past the walk's limit of 50,000 entries, with nothing protected in it:
+    // once as a plain tree, once as a project's dependencies and git history.
+    const pastLimit = (folder: string) => {
+      for (let i = 0; i < 100; i++) {
+        mkdirSync(path.join(folder, `d${i}`), { recursive: true });
+        for (let j = 0; j < 500; j++) writeFileSync(path.join(folder, `d${i}`, `f${j}`), '');
+      }
+    };
+    pastLimit(path.join(base, 'big'));
+    pastLimit(path.join(base, 'app', 'node_modules'));
+    touch(path.join(base, 'app', '.git', 'HEAD'));
+  }, 120_000);
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  }, 60_000);
+
+  it.each([
+    ['the working folder’s `.dork`', () => [site, 'rm -rf .dork']],
+    ['a `.dork` with nothing protected in it yet', () => [fresh, 'rm -r .dork']],
+    ['a folder holding a project’s plugins', () => [base, `rm -rf ${projects}`]],
+    ['the working folder itself', () => [site, 'rm -rf .']],
+    ['a move of that folder', () => [base, `mv ${projects} ${base}/moved`]],
+    ['a move of `.dork`', () => [site, 'mv .dork .dork-old']],
+    ['a move into a named folder', () => [base, `mv -t ${base}/plain ${projects}`]],
+    ['a git move of that folder', () => [base, `git mv ${projects} ${base}/moved`]],
+    ['a git removal of that folder', () => [base, `git rm -r ${projects}`]],
+    ['a tree too big to finish walking', () => [base, `rm -rf ${base}/big`]],
+    ['a filtered delete from that folder', () => [base, `find ${projects} -name '*.pyc' -delete`]],
+    ['a delete from the working folder', () => [site, 'find -delete']],
+    ['names piped into a recursive removal', () => [base, `find ${projects} | xargs rm -rf`]],
+    ['a clean of the working folder', () => [site, 'git clean -fdx']],
+    ['a clean of that folder', () => [base, `git clean -fd ${projects}`]],
+    ['a sync that deletes there', () => [base, `rsync -a --delete ${base}/plain/ ${projects}/`]],
+    [
+      'a sync that takes the source',
+      () => [base, `rsync -a --remove-source-files ${projects}/ ${base}/plain/`],
+    ],
+    [
+      'a delete past find’s leading options',
+      () => [`${base}/plain`, `find -L ${projects} -delete`],
+    ],
+    ['a delete from find’s -f folder', () => [`${base}/plain`, `find -f ${projects} -O3 -delete`]],
+    ['a recursive removal run by find', () => [base, `find ${projects} -type d -exec rm -rf {} +`]],
+    [
+      'a sync that deletes under its short name',
+      () => [base, `rsync -a --del ${base}/plain/ ${projects}/`],
+    ],
+    [
+      'a sync that takes what it sent',
+      () => [base, `rsync -a --remove-sent-files ${projects}/ ${base}/plain/`],
+    ],
+  ])('refuses %s, at every level', (_label, call) => {
+    const [cwd, command] = call();
+    expect(shellWriteVerdict(command!, at(cwd!, false))).toBe('writes');
+    expect(shellWriteVerdict(command!, at(cwd!, true))).toBe('writes');
+  });
+
+  it.each([
+    ['removing a folder with nothing protected in it', () => `rm -rf ${base}/plain/build`],
+    ['moving one', () => `mv ${base}/plain/build ${base}/plain/dist`],
+    ['removing a folder that isn’t there', () => `rm -rf ${base}/plain/gone`],
+    ['removing a project’s dependencies', () => `rm -rf ${base}/app/node_modules`],
+    ['removing a project with big dependencies and git history', () => `rm -rf ${base}/app`],
+    ['moving a file into a project', () => `mv ${base}/plain/build/out.js ${site}`],
+    ['a filtered delete in a plain folder', () => `find ${base}/plain -name '*.pyc' -delete`],
+    ['a delete past find’s options in a plain folder', () => `find -L ${base}/plain -delete`],
+    [
+      'names from a plain folder piped into a removal',
+      () => `find ${base}/plain/build | xargs rm -rf`,
+    ],
+    ['a clean of a plain folder', () => `git clean -fd ${base}/plain`],
+    [
+      'a sync that deletes in a plain folder',
+      () => `rsync -a --delete ${base}/plain/build/ ${base}/plain/dist/`,
+    ],
+  ])('still runs %s at Full', (_label, command) => {
+    expect(shellWriteVerdict(command(), at(base, true))).toBe('none');
+  });
+
+  it('leaves Claude Code’s own reading unchanged', () => {
+    expect(shellWriteVerdict('rm -rf .dork', { ...roots, cwd: site })).toBe('none');
+    expect(shellWriteVerdict(`mv ${projects} ${base}/moved`, roots)).toBe('none');
+    expect(shellWriteVerdict('git clean -fdx', { ...roots, cwd: site })).toBe('none');
   });
 });
 

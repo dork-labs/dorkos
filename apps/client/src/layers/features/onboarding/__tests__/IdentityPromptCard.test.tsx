@@ -196,7 +196,7 @@ describe('IdentityPromptCard', () => {
     await renderCard({ email: 'kai@example.com' });
     await screen.findByTestId('identity-prompt-card');
     vi.mocked(mockTransport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error('taken'), { code: 'HANDLE_TAKEN' })
+      Object.assign(new Error('taken'), { code: 'handle_taken' })
     );
 
     fireEvent.click(screen.getByTestId('confirm-identity'));
@@ -211,7 +211,7 @@ describe('IdentityPromptCard', () => {
     await renderCard();
     await screen.findByTestId('identity-prompt-card');
     vi.mocked(mockTransport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error('A handle is all lowercase.'), { code: 'INVALID_HANDLE' })
+      Object.assign(new Error('A handle is all lowercase.'), { code: 'invalid_handle' })
     );
 
     fireEvent.change(screen.getByLabelText('Handle'), { target: { value: 'Kai' } });

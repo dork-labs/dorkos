@@ -28,7 +28,7 @@ describe('TaskDetail', () => {
         onScrollToTask={() => {}}
       />
     );
-    expect(screen.getByText('Doing important work')).toBeDefined();
+    expect(screen.getByText('Doing important work')).toBeInTheDocument();
   });
 
   it('omits description section when not present', () => {
@@ -49,7 +49,7 @@ describe('TaskDetail', () => {
     render(
       <TaskDetail task={taskB} taskMap={map} statusSince={Date.now()} onScrollToTask={() => {}} />
     );
-    expect(screen.getByText(/Task A/)).toBeDefined();
+    expect(screen.getByText(/Task A/)).toBeInTheDocument();
   });
 
   it('shows owner when present', () => {
@@ -61,7 +61,7 @@ describe('TaskDetail', () => {
         onScrollToTask={() => {}}
       />
     );
-    expect(screen.getByText('sub-agent-1')).toBeDefined();
+    expect(screen.getByText('sub-agent-1')).toBeInTheDocument();
   });
 
   it('calls onScrollToTask when dependency is clicked', () => {
@@ -83,6 +83,6 @@ describe('TaskDetail', () => {
         onScrollToTask={() => {}}
       />
     );
-    expect(screen.getByText(/1m/)).toBeDefined();
+    expect(screen.getByText(/1m/)).toBeInTheDocument();
   });
 });

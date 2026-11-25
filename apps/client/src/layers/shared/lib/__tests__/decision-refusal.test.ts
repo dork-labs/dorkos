@@ -21,17 +21,15 @@ function serverError(message: string, code?: string): Error & { code?: string } 
 describe('describeDecisionRefusal', () => {
   it('shows the server’s own sentence for every refusal that has one', () => {
     const cases: [string, string][] = [
-      ['operator_cookie_required', 'Only a person signed in to DorkOS can change that'],
+      ['person_only', 'Only a person signed in to DorkOS can change that'],
+      ['not_from_wifi', 'Answer at your computer or over Remote Access.'],
       [
-        'ALWAYS_NOT_OFFERED',
+        'always_not_offered',
         "Always allow isn't offered for this request. Answer it with Allow or Deny.",
       ],
-      [
-        'ALWAYS_ALLOW_NOT_RECORDED',
-        'DorkOS could not save Always allow, so it allowed nothing. Try again.',
-      ],
-      ['APPROVAL_EXPIRED', 'This approval expired before it was decided'],
-      ['APPROVAL_NOT_PENDING', 'This approval was already decided'],
+      ['expired', 'This approval expired before it was decided.'],
+      ['already_resolved', 'This approval was already decided.'],
+      ['not_found', 'No such approval.'],
     ];
 
     for (const [code, message] of cases) {

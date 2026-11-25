@@ -25,14 +25,23 @@ import path from 'node:path';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import { createTemplateRoutes } from '../templates.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { templatesDomain } from '../../services/core/agent-templates/template-catalog.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 let DORK_HOME: string;
 
+/**
+ * The read is the capability `templates.list`, served by the mount from the
+ * same data directory the hand routes write.
+ */
 function createApp(): RequestListener {
-  return honoGroupListener({ path: '/api/templates', routes: createTemplateRoutes(DORK_HOME) });
+  return honoGroupListener([
+    capabilityGroup(templatesDomain, { templateDeps: { dorkHome: DORK_HOME } }),
+    { path: '/api/templates', routes: createTemplateRoutes(DORK_HOME) },
+  ]);
 }
 
 function catalogPath(): string {
@@ -167,7 +176,8 @@ describe('Template Routes', () => {
       });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('built-in');
+      expect(res.body.code).toBe('conflict');
+      expect(res.body.detail).toMatch(/built-in/i);
     });
 
     it('returns 409 on ID conflict with existing user template', async () => {
@@ -182,7 +192,9 @@ describe('Template Routes', () => {
       });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('already exists');
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ code: 'conflict' });
+      expect(res.body.detail).toContain('already exists');
     });
 
     it('applies default values for optional fields', async () => {
@@ -270,14 +282,16 @@ describe('Template Routes', () => {
       const res = await request(fixtureServer).delete('/api/templates/nextjs');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('built-in');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toMatch(/built-in/i);
     });
 
     it('returns 404 for non-existent template', async () => {
       const res = await request(fixtureServer).delete('/api/templates/does-not-exist');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('not found');
+      expect(res.body).toMatchObject({ code: 'not_found' });
+      expect(res.body.detail).toContain('No template is called');
     });
   });
 });

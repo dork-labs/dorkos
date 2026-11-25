@@ -1,7 +1,7 @@
 ---
 number: 59
 title: Unify Tunnel Status into Single Zod Schema
-status: draft
+status: archived
 created: 2026-03-01
 spec: tunnel-remote-access-overhaul
 superseded-by: null

@@ -194,10 +194,12 @@ describe('connector-providers router', () => {
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ secret: SECRET })
         .expect(403);
-      expect(saved.body).toEqual({
+      expect(saved.headers['content-type']).toContain('application/problem+json');
+      expect(saved.body).toMatchObject({
         code: 'person_only',
-        error: 'Only you can change the keys DorkOS uses to reach your apps, from the DorkOS app.',
+        detail: 'Only you can change the keys DorkOS uses to reach apps, in the app.',
       });
+      expect(saved.body).not.toHaveProperty('error');
       await request(app)
         .delete('/api/connectors/providers/composio/credential')
         .set('x-dorkos-agent', 'agent-token-abc')
@@ -214,9 +216,9 @@ describe('connector-providers router', () => {
         .put('/api/connectors/providers/composio/credential')
         .send({ secret: SECRET })
         .expect(403);
-      expect(res.body).toEqual({
+      expect(res.body).toMatchObject({
         code: 'owner_only',
-        error: 'Only the owner of this DorkOS can change the keys it uses to reach apps.',
+        detail: 'Only the owner of this DorkOS can change the keys it uses.',
       });
       await request(app).delete('/api/connectors/providers/composio/credential').expect(403);
       expect(registry.resolveProvider('composio')).toBeUndefined();
@@ -339,8 +341,9 @@ describe('connector-providers router', () => {
       .put('/api/connectors/providers/gmail/credential')
       .send({ secret: SECRET });
     expect(unknown.status).toBe(400);
-    expect(unknown.body).toEqual({
-      error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
+    expect(unknown.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
     });
 
     const emptyBody = await request(fixtureServer)
@@ -357,8 +360,9 @@ describe('connector-providers router', () => {
       '/api/connectors/providers/gmail/credential'
     );
     expect(unknownDelete.status).toBe(400);
-    expect(unknownDelete.body).toEqual({
-      error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
+    expect(unknownDelete.body).toMatchObject({
+      code: 'invalid_request',
+      detail: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
     });
   });
 

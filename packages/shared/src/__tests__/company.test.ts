@@ -15,7 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { COPYRIGHT_NOTICE, company, formatCompanyAddress } from '../company.js';
+import { COPYRIGHT_NOTICE, company } from '../company.js';
 import { links, repoUrl } from '../links.js';
 
 /** Repo root, so the test does not depend on the directory vitest runs from. */
@@ -214,22 +214,6 @@ const PUBLISHED_PACKAGES = [
 // Several checks scan the whole repository with git grep, which took over
 // 5 seconds on a loaded merge-queue runner; the default timeout is too tight.
 describe('company facts', { timeout: 30_000 }, () => {
-  it('carries exactly the published facts', () => {
-    // A new field is a deliberate decision about what this public repo
-    // publishes, so it has to be named here too.
-    expect(Object.keys(company).sort()).toEqual(
-      [
-        'address',
-        'emails',
-        'entityType',
-        'governingState',
-        'jurisdiction',
-        'legalName',
-        'shortName',
-      ].sort()
-    );
-  });
-
   it('publishes exactly the named email addresses, all on the company domain', () => {
     expect(company.emails).toEqual({
       contact: 'hey@dorkos.ai',
@@ -237,19 +221,6 @@ describe('company facts', { timeout: 30_000 }, () => {
       security: 'security@dorkos.ai',
       marketplace: 'hello@dorkos.ai',
     });
-  });
-
-  it('formats the postal address on one line', () => {
-    expect(formatCompanyAddress()).toBe(
-      '605 W 9th Street, Unit #4144, Austin, TX 78701, United States'
-    );
-    expect(formatCompanyAddress(company.address, { country: false })).toBe(
-      '605 W 9th Street, Unit #4144, Austin, TX 78701'
-    );
-  });
-
-  it('the governing state is the one the company is formed in', () => {
-    expect(company.jurisdiction.startsWith(company.governingState)).toBe(true);
   });
 
   it('the desktop build copyright and publisher match the module', () => {

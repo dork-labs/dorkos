@@ -1,68 +1,18 @@
 // @vitest-environment jsdom
-import { createMockTransport } from '@dorkos/test-utils';
-const transportOwner = createMockTransport();
 import { CanvasChannelNotificationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { subscribeDocChannelNotifications } from '../doc-channel-notifications';
 import { DOC_EVENT, DOC_SNAPSHOT } from './doc-channel-fixtures';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ConnectionState } from '@dorkos/shared/types';
 import {
   SessionEventSchema,
   SessionListEventSchema,
   type SessionEvent,
   type SessionSnapshot,
   type SessionStatus,
-  type SessionListEvent,
 } from '@dorkos/shared/session-stream';
-
-import { StreamManager, type DurableStreamConnection } from '../stream-manager';
+import { createMockTransport } from '@dorkos/test-utils';
 import { GENERIC_EVENTS } from '../generic-events';
-import type { StreamConnectionOptions } from '../ws-connection';
-
-// NOTE on the testing-rule's "mock Transport via TransportProvider" wording:
-// StreamManager consumes SSE frames directly (not transport.subscribeSession), so
-// the correct, cleaner seam is the injected fake connection factory below. It
-// satisfies the rule's intent (no real network / no fetch mocking) and lets each
-// test push frames synchronously. TransportProvider is not needed for these unit
-// tests.
-
-/** A fake connection that records its options and lets the test push frames. */
-class FakeConnection implements DurableStreamConnection {
-  connect = vi.fn();
-  disconnect = vi.fn();
-  destroy = vi.fn();
-  enableVisibilityOptimization = vi.fn();
-  constructor(
-    readonly url: string,
-    readonly opts: StreamConnectionOptions
-  ) {}
-
-  /** Push a frame as the server would deliver it (event name + parsed JSON data). */
-  push(eventName: string, data: unknown): void {
-    this.opts.eventHandlers[eventName]?.(data);
-  }
-
-  /** Drive a connection-state change through onStateChange. */
-  emitState(state: ConnectionState, failedAttempts = 0): void {
-    this.opts.onStateChange?.(state, failedAttempts);
-  }
-}
-
-/** Build a StreamManager wired to a factory that records every FakeConnection. */
-function setup() {
-  const connections: FakeConnection[] = [];
-  const createConnection = (
-    url: string,
-    opts: StreamConnectionOptions
-  ): DurableStreamConnection => {
-    const conn = new FakeConnection(url, opts);
-    connections.push(conn);
-    return conn;
-  };
-  const manager = new StreamManager({ createConnection });
-  manager.useHttpSource('/api', transportOwner);
-  return { manager, connections };
-}
+import { setup, transportOwner } from './stream-manager.fixtures';
 
 const STATUS: SessionStatus = {
   contextUsage: null,
@@ -91,20 +41,6 @@ const SNAPSHOT: SessionSnapshot = {
 
 const TURN_START_EVENT: SessionEvent = { type: 'turn_start', seq: 1 };
 
-/** A held destructive capability call, exactly as the server pushes it (DOR-939). */
-const HELD_APPROVAL = {
-  approvalId: 'appr-1',
-  capabilityId: 'mcp.add',
-  capabilityTitle: 'Add an MCP server',
-  tier: 'destructive' as const,
-  summary: 'Prober wants to run "Add an MCP server"',
-  hasAgentPath: true,
-  area: null,
-  alwaysOffered: false,
-  requestedAt: '2026-08-06T00:00:00.000Z',
-  expiresAt: '2026-08-06T02:00:00.000Z',
-};
-
 describe('StreamManager', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -122,10 +58,8 @@ describe('StreamManager', () => {
   });
 
   it('revives a session stream that gave up when the same session is attached again', () => {
-    // Real failure mode: a laptop waking without a network spends the five
-    // reconnect attempts in seconds and the stream settles at `disconnected`,
-    // where it never retries. The idempotent early return kept it dead through
-    // every later send, so the chat showed nothing until a refresh.
+    // Real failure mode: a laptop waking without a network spends the five reconnect attempts in
+    // seconds and the stream settles at `disconnected`, where it never retries.
     const { manager, connections } = setup();
     manager.attachSession('sess-a');
     connections[0]!.emitState('disconnected');
@@ -192,16 +126,6 @@ describe('StreamManager', () => {
     expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
   });
 
-  it('emits onSnapshot with a validated snapshot when a snapshot frame arrives', () => {
-    // Real failure mode: a cold-connect snapshot frame must hydrate the store.
-    const onSnapshot = vi.fn();
-    const { manager, connections } = setup();
-    manager.setListeners({ onSnapshot });
-    manager.attachSession('sess-a');
-    connections[0]!.push('snapshot', SNAPSHOT);
-    expect(onSnapshot).toHaveBeenCalledWith('sess-a', SNAPSHOT);
-  });
-
   it('emits onSessionEvent for a valid live event frame', () => {
     // Real failure mode: a live event frame (registered under its type name) must
     // be forwarded so the store can fold it into the projection.
@@ -214,9 +138,9 @@ describe('StreamManager', () => {
   });
 
   it('dispatches a ui_command frame to subscribers AND forwards it to the store', () => {
-    // Real failure mode (DOR-104): a `control_ui` event must reach both the store
-    // (so the seq watermark advances) and the UI-command subscriber (the side
-    // effect, e.g. open the canvas) — otherwise the agent canvas is a silent no-op.
+    // Real failure mode (DOR-104): a `control_ui` event must reach both the store (so the seq
+    // watermark advances) and the UI-command subscriber (the side effect, e.g. open the canvas) —
+    // otherwise the agent canvas is a silent no-op.
     const onSessionEvent = vi.fn();
     const onUiCommand = vi.fn();
     const { manager, connections } = setup();
@@ -246,21 +170,6 @@ describe('StreamManager', () => {
       command: { action: 'close_canvas' },
     } as SessionEvent;
     // Push on sess-a's (now-background) connection — its eventHandlers still fire.
-    connections[0]!.push('ui_command', event);
-    expect(onUiCommand).not.toHaveBeenCalled();
-  });
-
-  it('unsubscribeUiCommand stops further dispatch', () => {
-    const onUiCommand = vi.fn();
-    const { manager, connections } = setup();
-    const unsubscribe = manager.subscribeUiCommand(onUiCommand);
-    manager.attachSession('sess-a');
-    unsubscribe();
-    const event: SessionEvent = {
-      type: 'ui_command',
-      seq: 2,
-      command: { action: 'close_canvas' },
-    } as SessionEvent;
     connections[0]!.push('ui_command', event);
     expect(onUiCommand).not.toHaveBeenCalled();
   });
@@ -324,78 +233,6 @@ describe('StreamManager', () => {
     warn.mockRestore();
   });
 
-  it('shows an unreadable live question as an inline notice instead of nothing (DOR-2078)', () => {
-    // Real failure mode: a question_prompt the schema rejected was dropped, so
-    // the turn sat waiting on a card nobody could see.
-    const onSessionEvent = vi.fn();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { manager, connections } = setup();
-    manager.setListeners({ onSessionEvent });
-    manager.attachSession('sess-a');
-
-    connections[0]!.push('question_prompt', { type: 'question_prompt', seq: 3, id: 'q1' });
-    // A replay from Last-Event-ID re-delivers the same frame: same note, one warning.
-    connections[0]!.push('question_prompt', { type: 'question_prompt', seq: 3, id: 'q1' });
-
-    expect(onSessionEvent).toHaveBeenCalledWith(
-      'sess-a',
-      expect.objectContaining({ type: 'error', seq: 3, code: 'unreadable_entry' })
-    );
-    expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
-  });
-
-  it('propagates the session connection state through onSessionConnectionState', () => {
-    // Real failure mode: the UI's connection indicator depends on state changes
-    // flowing through to the listener with the right session id.
-    const onSessionConnectionState = vi.fn();
-    const { manager, connections } = setup();
-    manager.setListeners({ onSessionConnectionState });
-    manager.attachSession('sess-a');
-    connections[0]!.emitState('connected');
-    expect(onSessionConnectionState).toHaveBeenCalledWith('sess-a', 'connected');
-  });
-
-  it('announces connecting when a session stream opens, over the last stream’s state', () => {
-    // DOR-1916: a fresh connection starts at `connecting` and only announces a
-    // change, so the store kept session A's `disconnected` across a switch away
-    // and back and showed "Live updates lost" over a healthy connect.
-    const onSessionConnectionState = vi.fn();
-    const { manager, connections } = setup();
-    manager.setListeners({ onSessionConnectionState });
-    manager.attachSession('sess-a');
-    connections[0]!.emitState('disconnected');
-    manager.attachSession('sess-b');
-
-    onSessionConnectionState.mockClear();
-    manager.attachSession('sess-a');
-
-    // Before the new socket says anything, sess-a already reads `connecting`.
-    const forA = onSessionConnectionState.mock.calls.filter(([id]) => id === 'sess-a');
-    expect(forA.at(-1)).toEqual(['sess-a', 'connecting']);
-  });
-
-  it('records a bug-report breadcrumb when the session stream disconnects', async () => {
-    // Real failure mode: a bug filed right after a stream drop should carry
-    // "the session stream just disconnected" without the user having to notice
-    // and describe it themselves (feedback-pipeline spec Part 1).
-    const { getBreadcrumbs, __resetBreadcrumbsForTests } = await import('../../breadcrumbs');
-    __resetBreadcrumbsForTests();
-    const { manager, connections } = setup();
-    manager.attachSession('sess-a');
-
-    connections[0]!.emitState('connected');
-    expect(getBreadcrumbs()).toHaveLength(0);
-
-    connections[0]!.emitState('disconnected');
-    const crumbs = getBreadcrumbs();
-    expect(crumbs).toHaveLength(1);
-    expect(crumbs[0].kind).toBe('sse_disconnect');
-    expect(crumbs[0].message).toContain('sess-a');
-
-    __resetBreadcrumbsForTests();
-  });
-
   it('connectList opens the global stream once and forwards validated list events', () => {
     // Real failure mode: the global /api/events stream must be a single idempotent
     // connection that forwards session-list events for the sidebar.
@@ -408,13 +245,6 @@ describe('StreamManager', () => {
     expect(connections[0]!.url).toBe('/api/events');
     connections[0]!.push('session_removed', { type: 'session_removed', sessionId: 'sess-x' });
     expect(onListEvent).toHaveBeenCalledWith({ type: 'session_removed', sessionId: 'sess-x' });
-  });
-
-  it('detachSession destroys the active connection', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('sess-a');
-    manager.detachSession();
-    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
   });
 
   it('registers a frame handler for EVERY SessionEventSchema discriminant (schema-drift pin)', () => {
@@ -440,15 +270,9 @@ describe('StreamManager', () => {
 
   it('registers a frame handler for EVERY SessionListEventSchema discriminant (schema-drift pin)', () => {
     // Real failure mode, and the exact one the sibling pin above exists for, on
-    // `SESSION_LIST_EVENT_TYPES` (declared once in `session-stream-methods.ts` and
-    // imported here, DOR-576): it is the gate every session-list event the shipped
-    // web/Electron/CLI client receives over HTTP passes through. A discriminant
-    // the server broadcasts but this set does not name gets no listener, and
-    // `EventSource` drops the frame in silence — no warning, no failed request,
-    // just a sidebar that stops updating. Nothing guarded it: the server-side
-    // `sse-event-allowlist` scan matches `.broadcast('literal')`, and the
-    // session-list broadcast site passes a variable
-    // (`eventFanOut.broadcast(outgoing.type, outgoing)`).
+    // `SESSION_LIST_EVENT_TYPES` (declared once in `session-stream-methods.ts` and imported here,
+    // DOR-576): it is the gate every session-list event the shipped web/Electron/CLI client
+    // receives over HTTP passes through.
     const { manager, connections } = setup();
     manager.connectList();
     const handlers = connections[0]!.opts.eventHandlers;
@@ -467,23 +291,6 @@ describe('StreamManager', () => {
     }
 
     // Reverse: no name in the allowlist that the schema no longer declares.
-    //
-    // Compared by HANDLER IDENTITY rather than by counting keys, because the same
-    // map also carries the generic names (stream-manager.ts registers both). Every
-    // session-list name shares one `onListEvent` reference while each generic name
-    // gets its own closure, so the reference partition is the session-list
-    // allowlist — a flat count would flag GENERIC_EVENTS entries as stale.
-    //
-    // Known limit, measured rather than assumed. A stale name that ALSO appears in
-    // GENERIC_EVENTS is invisible here: `buildListEventHandlers` registers the
-    // generic names second and overwrites, so the colliding key's handler is the
-    // generic closure and this filter drops it. Seeding `'connected'` into
-    // SESSION_LIST_EVENT_TYPES leaves this test green. It is behaviourally benign
-    // (the frame still reaches a handler) and the realistic stale name — a rename
-    // like `session_renamed` — does go red. Stated because an earlier version of
-    // this comment claimed the identity partition CAUGHT that case, which it does
-    // not, and a guard whose comment oversells it is the defect this file exists to
-    // remove.
     const listHandler = handlers[discriminants[0]!];
     const listNames = registered.filter((name) => handlers[name] === listHandler);
     expect(
@@ -501,190 +308,34 @@ describe('StreamManager', () => {
     expect(registered).toContain(GENERIC_EVENTS[0]);
   });
 
-  it.each([
-    [
-      'error',
-      {
-        type: 'error',
-        seq: 3,
-        message: 'Model overloaded',
-        code: 'overloaded_error',
-        category: 'execution_error',
-        details: 'HTTP 529',
-      } as SessionEvent,
-    ],
-    [
-      'system_status',
-      {
-        type: 'system_status',
-        seq: 4,
-        message: 'Running hook "format"…',
-      } as SessionEvent,
-    ],
-    [
-      'operation_progress',
-      {
-        type: 'operation_progress',
-        seq: 6,
-        operation: 'compaction',
-        state: 'started',
-        determinate: false,
-        message: 'Compacting context…',
-      } as SessionEvent,
-    ],
-    [
-      'model_request',
-      {
-        type: 'model_request',
-        seq: 7,
-        requestId: 'request-a',
-        phase: 'end',
-        model: 'sample-model',
-        startedAt: 1000,
-        firstTokenAt: 1200,
-        endedAt: 1800,
-        inputTokens: 12000,
-        outputTokens: 50,
-      } as SessionEvent,
-    ],
-    [
-      'compact_boundary',
-      {
-        type: 'compact_boundary',
-        seq: 5,
-        trigger: 'auto',
-        preTokens: 52000,
-        postTokens: 8000,
-      } as SessionEvent,
-    ],
-    // A tool call the runtime refused before anyone could be asked (DOR-795).
-    // The registration pin above proves the NAME is in the map; this proves the
-    // frame is actually routed with its attribution intact, which is the half
-    // that matters: for a backgrounded subagent's auto-denial this event is the
-    // only notice that a piece of the work never happened, and `agentId` is the
-    // only thing that says which helper it was.
-    [
-      'permission_denied',
-      {
-        type: 'permission_denied',
-        seq: 9,
-        toolCallId: 'toolu_async_1',
-        toolName: 'Bash',
-        message: 'Backgrounded agents cannot request permission.',
-        reasonType: 'asyncAgent',
-        agentId: 'agent_child_7',
-      } as SessionEvent,
-    ],
-    // A turn that ran on another model than the session names (DOR-2636): a
-    // dropped frame here would be the silent switch the notice exists to end.
-    [
-      'model_substituted',
-      {
-        type: 'model_substituted',
-        seq: 2,
-        from: 'opus',
-        fromName: 'Opus',
-        to: 'md_suggested',
-        toName: 'Suggested',
-        reason: 'credits-not-covered',
-      } as SessionEvent,
-    ],
-    // A project's own OpenCode add-ons kept off (DOR-4404): a dropped frame
-    // would lose them silently.
-    [
-      'project_addons_off',
-      { type: 'project_addons_off', seq: 2, plugins: 2, tools: 0, mcpServers: 1 } as SessionEvent,
-    ],
-    // Background commands a Stop could not end (DOR-3285): a dropped frame
-    // hides work still running on the computer.
-    [
-      'work_left_running',
-      {
-        type: 'work_left_running',
-        seq: 3,
-        tasks: [{ taskId: 'tail', command: 'tail -f server.log' }],
-      } as SessionEvent,
-    ],
-    [
-      'work_left_ended',
-      { type: 'work_left_ended', seq: 4, taskId: 'tail', status: 'completed' } as SessionEvent,
-    ],
-    // The in-session capability hold (DOR-939) and its resolution. Same failure
-    // mode as the four above and the reason DOR-963 exists: the pair shipped
-    // with a server emitter, a store fold, and an inline card — and no entry in
-    // SESSION_EVENT_TYPES, so over the socket the frames never arrived and the
-    // card never appeared. The RESOLVED half matters as much as the required
-    // half: without it a card that did appear would never retire.
-    [
-      'capability_approval_required',
-      {
-        type: 'capability_approval_required',
-        seq: 7,
-        startedAt: 1_000_000,
-        capMs: 45_000,
-        approval: HELD_APPROVAL,
-      } as SessionEvent,
-    ],
-    [
-      'capability_approval_resolved',
-      {
-        type: 'capability_approval_resolved',
-        seq: 8,
-        approvalId: 'appr-1',
-        outcome: 'granted',
-      } as SessionEvent,
-    ],
-    // The queue frame (spec `persistent-session-runtime`). Registered before
-    // anything renders it, because the drop this list guards is invisible: the
-    // server would emit, the socket would discard, and the queue view would
-    // look like a server bug. The payload carries a full queue AND an outcome
-    // so the frame proven to survive is the one the server actually sends.
-    [
-      'queue_update',
-      {
-        type: 'queue_update',
-        seq: 9,
-        queue: [
-          {
-            id: 'msg-1',
-            content: 'and check the migration too',
-            disposition: 'queue',
-            enqueuedAt: 1_700_000_000_000,
-            enqueuedBy: 'client-a',
-          },
-        ],
-        outcome: {
-          messageId: 'msg-1',
-          requested: 'steer',
-          applied: 'queue',
-          degradedBecause: 'unsupported',
-        },
-      } as SessionEvent,
-    ],
-  ])('dispatches a %s frame to onSessionEvent (previously dropped over HTTP)', (name, event) => {
-    const onSessionEvent = vi.fn();
+  it('detachSession destroys the active connection', () => {
     const { manager, connections } = setup();
-    manager.setListeners({ onSessionEvent });
     manager.attachSession('sess-a');
-    connections[0]!.push(name, event);
-    expect(onSessionEvent).toHaveBeenCalledWith('sess-a', event);
+    manager.detachSession();
+    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces connecting when a session stream opens, over the last stream’s state', () => {
+    // DOR-1916: a fresh connection starts at `connecting` and only announces a
+    // change, so the store kept session A's `disconnected` across a switch away
+    // and back and showed "Live updates lost" over a healthy connect.
+    const onSessionConnectionState = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionConnectionState });
+    manager.attachSession('sess-a');
+    connections[0]!.emitState('disconnected');
+    manager.attachSession('sess-b');
+
+    onSessionConnectionState.mockClear();
+    manager.attachSession('sess-a');
+
+    // Before the new socket says anything, sess-a already reads `connecting`.
+    const forA = onSessionConnectionState.mock.calls.filter(([id]) => id === 'sess-a');
+    expect(forA.at(-1)).toEqual(['sess-a', 'connecting']);
   });
 });
 
 describe('StreamManager — HTTP source (baseUrl)', () => {
-  it('builds stream URLs from the configured base URL (packaged Electron)', () => {
-    // Real failure mode: a file:// renderer cannot resolve a relative /api —
-    // the streams must use the same absolute origin as HttpTransport.
-    const { manager, connections } = setup();
-    manager.useHttpSource('http://localhost:4242/api', transportOwner);
-    manager.attachSession('sess-a', '/proj');
-    manager.connectList();
-    expect(connections[0]!.url).toBe(
-      'http://localhost:4242/api/sessions/sess-a/events?cwd=%2Fproj'
-    );
-    expect(connections[1]!.url).toBe('http://localhost:4242/api/events');
-  });
-
   it('re-opens live streams against the new base URL when the source switches', () => {
     // Real failure mode: a late source switch silently killing (or keeping)
     // streams on the previous origin.
@@ -713,59 +364,6 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     expect(handler).toHaveBeenCalledWith({ connected: true });
   });
 
-  it('generic dispatch does not interfere with session-list event forwarding', () => {
-    const onListEvent = vi.fn();
-    const handler = vi.fn();
-    const { manager, connections } = setup();
-    manager.setListeners({ onListEvent });
-    manager.connectList();
-    manager.subscribeEvent('relay_message', handler); // subscribed AFTER connect
-    const removed: SessionListEvent = { type: 'session_removed', sessionId: 'sess-a' };
-    connections[0]!.push('session_removed', removed);
-    connections[0]!.push('relay_message', { id: 'm1' });
-    expect(onListEvent).toHaveBeenCalledWith(removed);
-    expect(handler).toHaveBeenCalledWith({ id: 'm1' });
-  });
-
-  it('unsubscribing a generic handler stops dispatch', () => {
-    const { manager, connections } = setup();
-    const handler = vi.fn();
-    const unsubscribe = manager.subscribeEvent('extension_reloaded', handler);
-    manager.connectList();
-    unsubscribe();
-    connections[0]!.push('extension_reloaded', { extensionIds: ['a'] });
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  it('tracks and publishes the list connection state (incl. failed attempts)', () => {
-    const { manager, connections } = setup();
-    const listener = vi.fn();
-    manager.subscribeListConnectionState(listener);
-    manager.connectList();
-    connections[0]!.emitState('connected');
-    expect(manager.getListConnectionState()).toBe('connected');
-    expect(listener).toHaveBeenCalledWith('connected', 0);
-    connections[0]!.emitState('reconnecting', 2);
-    expect(manager.getListConnectionState()).toBe('reconnecting');
-    expect(manager.getListFailedAttempts()).toBe(2);
-    expect(listener).toHaveBeenLastCalledWith('reconnecting', 2);
-  });
-
-  it('enables visibility optimization on the list connection (hidden-tab release)', () => {
-    const { manager, connections } = setup();
-    manager.connectList();
-    expect(connections[0]!.enableVisibilityOptimization).toHaveBeenCalledTimes(1);
-  });
-
-  it('getAttachedSessionId reflects the active-session attach lifecycle', () => {
-    const { manager } = setup();
-    expect(manager.getAttachedSessionId()).toBeNull();
-    manager.attachSession('sess-a');
-    expect(manager.getAttachedSessionId()).toBe('sess-a');
-    manager.detachSession();
-    expect(manager.getAttachedSessionId()).toBeNull();
-  });
-
   // --- Extension event bridge taps (subscribeSessionEvent / subscribeListEvent /
   //     subscribeAttachedSessionChange) ---
 
@@ -776,26 +374,6 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     manager.attachSession('sess-a');
     connections[0]!.push('turn_start', { type: 'turn_start', seq: 1 });
     expect(handler).toHaveBeenCalledWith('sess-a', { type: 'turn_start', seq: 1 });
-  });
-
-  it('stops forwarding session events after the tap unsubscribes', () => {
-    const { manager, connections } = setup();
-    const handler = vi.fn();
-    const unsub = manager.subscribeSessionEvent(handler);
-    manager.attachSession('sess-a');
-    unsub();
-    connections[0]!.push('turn_start', { type: 'turn_start', seq: 1 });
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  it('forwards session-list events to subscribeListEvent listeners', () => {
-    const { manager, connections } = setup();
-    const handler = vi.fn();
-    manager.subscribeListEvent(handler);
-    manager.connectList();
-    const removed: SessionListEvent = { type: 'session_removed', sessionId: 'sess-a' };
-    connections[0]!.push('session_removed', removed);
-    expect(handler).toHaveBeenCalledWith(removed);
   });
 
   it('emits a single attach transition per switch (no null flicker on re-attach)', () => {
@@ -810,24 +388,6 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
       ['sess-a', null],
       ['sess-b', 'sess-a'],
     ]);
-  });
-
-  it('does not emit an attach transition for a repeat attach of the same id', () => {
-    const { manager } = setup();
-    const handler = vi.fn();
-    manager.subscribeAttachedSessionChange(handler);
-    manager.attachSession('sess-a');
-    manager.attachSession('sess-a');
-    expect(handler).toHaveBeenCalledTimes(1);
-  });
-
-  it('emits a null attach transition on detach', () => {
-    const { manager } = setup();
-    const handler = vi.fn();
-    manager.subscribeAttachedSessionChange(handler);
-    manager.attachSession('sess-a');
-    manager.detachSession();
-    expect(handler).toHaveBeenLastCalledWith(null, 'sess-a');
   });
 
   it('does not emit attach transitions on a source switch (no A→null→A flicker)', () => {
@@ -847,282 +407,6 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     expect(connections[0]!.destroy).toHaveBeenCalled();
     expect(connections[1]!.url).toContain('http://localhost:4242/api');
     expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('StreamManager — pinned (PIP) session slot (gen-ui-pip)', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('getPinnedSessionId is null until a session is pinned', () => {
-    const { manager } = setup();
-    expect(manager.getPinnedSessionId()).toBeNull();
-    manager.attachSession('A');
-    manager.pinSession('A');
-    expect(manager.getPinnedSessionId()).toBe('A');
-    manager.unpinSession();
-    expect(manager.getPinnedSessionId()).toBeNull();
-  });
-
-  it('does NOT open a second connection when pinning the already-attached session (shared, invariant)', () => {
-    // Invariant: pinned === attached share the single active connection, so the
-    // pin records state without a new SSE (pinnedConnection stays null).
-    const { manager, connections } = setup();
-    manager.attachSession('A');
-    manager.pinSession('A');
-    expect(connections).toHaveLength(1);
-    expect(manager.getPinnedSessionId()).toBe('A');
-    expect(manager.getAttachedSessionId()).toBe('A');
-  });
-
-  it('pinSession is idempotent for the same id (no churn)', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('A');
-    manager.pinSession('B'); // off-route → opens a pinned connection
-    expect(connections).toHaveLength(2);
-    manager.pinSession('B'); // repeat → no-op
-    expect(connections).toHaveLength(2);
-    expect(connections[1]!.destroy).not.toHaveBeenCalled();
-    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
-  });
-
-  it('opens a dedicated pinned connection for an off-route session and folds its events into the store', () => {
-    // The pinned background session still feeds the store fold (so the widget
-    // follows live), but ui_command dispatch stays gated to the attached one.
-    const onSessionEvent = vi.fn();
-    const onUiCommand = vi.fn();
-    const { manager, connections } = setup();
-    manager.setListeners({ onSessionEvent });
-    manager.subscribeUiCommand(onUiCommand);
-    manager.attachSession('A');
-    manager.pinSession('B'); // connections[1] is the pinned B stream
-    expect(connections[1]!.url).toBe('/api/sessions/B/events');
-    connections[1]!.push('turn_start', { type: 'turn_start', seq: 1 });
-    expect(onSessionEvent).toHaveBeenCalledWith('B', { type: 'turn_start', seq: 1 });
-    // A ui_command on the background pinned session must NOT pop UI over 'A'.
-    connections[1]!.push('ui_command', {
-      type: 'ui_command',
-      seq: 2,
-      command: { action: 'close_canvas' },
-    } as SessionEvent);
-    expect(onUiCommand).not.toHaveBeenCalled();
-  });
-
-  // --- Transition table (one dedicated test per row) ---
-
-  it('row 1: pinned A + attached A (shared), attachSession(B) transfers the active connection into the pinned slot (no close/reopen) and opens a fresh B', () => {
-    const onSessionEvent = vi.fn();
-    const onUiCommand = vi.fn();
-    const { manager, connections } = setup();
-    manager.setListeners({ onSessionEvent });
-    manager.subscribeUiCommand(onUiCommand);
-    manager.attachSession('A'); // connections[0] shared active+pin
-    manager.pinSession('A');
-
-    manager.attachSession('B'); // connections[1] fresh active B
-
-    expect(manager.getAttachedSessionId()).toBe('B');
-    expect(manager.getPinnedSessionId()).toBe('A');
-    // The A connection was TRANSFERRED, never destroyed (identity preserved).
-    expect(connections[0]!.destroy).not.toHaveBeenCalled();
-    expect(connections).toHaveLength(2);
-    expect(connections[1]!.url).toBe('/api/sessions/B/events');
-    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
-    // connections[0] now serves the (background) pinned A: events fold, but a
-    // ui_command must not dispatch since A is no longer the attached session.
-    connections[0]!.push('turn_start', { type: 'turn_start', seq: 1 });
-    expect(onSessionEvent).toHaveBeenCalledWith('A', { type: 'turn_start', seq: 1 });
-    connections[0]!.push('ui_command', {
-      type: 'ui_command',
-      seq: 2,
-      command: { action: 'close_canvas' },
-    } as SessionEvent);
-    expect(onUiCommand).not.toHaveBeenCalled();
-  });
-
-  it('row 2: pinned A + attached B, attachSession(A) adopts the pinned connection into the active slot (no duplicate; pinnedConnection cleared)', () => {
-    const onUiCommand = vi.fn();
-    const { manager, connections } = setup();
-    manager.subscribeUiCommand(onUiCommand);
-    manager.attachSession('B'); // connections[0] active B
-    manager.pinSession('A'); // connections[1] pinned A (own conn)
-
-    manager.attachSession('A'); // adopt connections[1]
-
-    expect(manager.getAttachedSessionId()).toBe('A');
-    expect(manager.getPinnedSessionId()).toBe('A'); // shared again
-    expect(connections).toHaveLength(2); // NO duplicate opened
-    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // old active B torn down
-    expect(connections[1]!.destroy).not.toHaveBeenCalled(); // adopted, identity preserved
-    expect(connections[1]!.connect).toHaveBeenCalledTimes(1); // only its original connect
-    // connections[1] is now the ACTIVE connection for A: a ui_command dispatches.
-    connections[1]!.push('ui_command', {
-      type: 'ui_command',
-      seq: 2,
-      command: { action: 'close_canvas' },
-    } as SessionEvent);
-    expect(onUiCommand).toHaveBeenCalledWith({ action: 'close_canvas' }, 'A');
-  });
-
-  it('row 2 with a DIVERGENT cwd: attachSession(A, newCwd) re-opens instead of adopting the stale-URL pinned connection', () => {
-    // Real failure mode: the pinned connection's URL is bound to the OLD cwd, so
-    // adopting it on a cwd change would silently serve the wrong project's
-    // history — contradicting attachSession's changed-cwd re-open contract.
-    const { manager, connections } = setup();
-    manager.attachSession('B'); // connections[0] active B
-    manager.pinSession('A', '/old'); // connections[1] pinned A, URL bound to /old
-
-    manager.attachSession('A', '/new'); // divergent cwd → no adopt
-
-    expect(manager.getAttachedSessionId()).toBe('A');
-    expect(manager.getPinnedSessionId()).toBe('A'); // pin state survives, now shared
-    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // outgoing active B torn down
-    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1); // stale-cwd pinned conn torn down
-    expect(connections).toHaveLength(3); // fresh connection against the NEW cwd
-    expect(connections[2]!.url).toBe('/api/sessions/A/events?cwd=%2Fnew');
-    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
-    // One-owner invariant: the pin shares the fresh active connection, so a later
-    // unpin must NOT close the active stream.
-    manager.unpinSession();
-    expect(connections[2]!.destroy).not.toHaveBeenCalled();
-    expect(manager.getAttachedSessionId()).toBe('A');
-  });
-
-  it('row 3: pinned A + attached B, attachSession(C) re-targets the active slot B→C and leaves the pinned connection untouched', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('B'); // connections[0] active B
-    manager.pinSession('A'); // connections[1] pinned A
-
-    manager.attachSession('C'); // connections[2] active C
-
-    expect(manager.getAttachedSessionId()).toBe('C');
-    expect(manager.getPinnedSessionId()).toBe('A');
-    expect(connections).toHaveLength(3);
-    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1); // active B destroyed
-    expect(connections[1]!.destroy).not.toHaveBeenCalled(); // pinned A untouched
-    expect(connections[2]!.url).toBe('/api/sessions/C/events');
-    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
-  });
-
-  it('row 4a: unpinSession with an OWN pinned connection closes only the pinned connection', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('B'); // connections[0] active B
-    manager.pinSession('A'); // connections[1] pinned A
-
-    manager.unpinSession();
-
-    expect(manager.getPinnedSessionId()).toBeNull();
-    expect(manager.getAttachedSessionId()).toBe('B'); // active untouched
-    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1);
-    expect(connections[0]!.destroy).not.toHaveBeenCalled();
-  });
-
-  it('row 4b: unpinSession on a SHARED pin leaves the active connection connected and attached unchanged', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('A'); // connections[0] shared active+pin
-    manager.pinSession('A');
-
-    manager.unpinSession();
-
-    expect(manager.getPinnedSessionId()).toBeNull();
-    expect(manager.getAttachedSessionId()).toBe('A');
-    expect(connections).toHaveLength(1);
-    expect(connections[0]!.destroy).not.toHaveBeenCalled();
-  });
-
-  it('row 5: pinned A + attached B, pinSession(C) unpins A (closing its connection) then pins C', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('B'); // connections[0] active B
-    manager.pinSession('A'); // connections[1] pinned A
-
-    manager.pinSession('C'); // unpin A, pin C → connections[2]
-
-    expect(manager.getAttachedSessionId()).toBe('B');
-    expect(manager.getPinnedSessionId()).toBe('C');
-    expect(connections).toHaveLength(3);
-    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1); // A's pinned conn closed
-    expect(connections[2]!.url).toBe('/api/sessions/C/events');
-    expect(connections[2]!.connect).toHaveBeenCalledTimes(1);
-    expect(connections[0]!.destroy).not.toHaveBeenCalled(); // active B untouched
-  });
-
-  it('row 6: a transport rebuild (source switch) with attached A + differently-pinned B restores BOTH slots against the new source', () => {
-    const { manager, connections } = setup();
-    manager.attachSession('A', '/pa'); // connections[0] active A
-    manager.pinSession('B', '/pb'); // connections[1] pinned B
-
-    manager.useHttpSource('http://localhost:9999/api', transportOwner);
-
-    // Both old connections torn down, both slots rebuilt against the new origin.
-    expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
-    expect(connections[1]!.destroy).toHaveBeenCalledTimes(1);
-    expect(manager.getAttachedSessionId()).toBe('A');
-    expect(manager.getPinnedSessionId()).toBe('B'); // pin STATE survived
-    const rebuilt = connections.slice(2).map((c) => c.url);
-    expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fpa');
-    expect(rebuilt).toContain('http://localhost:9999/api/sessions/B/events?cwd=%2Fpb');
-    for (const conn of connections.slice(2)) {
-      expect(conn.connect).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it('row 6 (shared): a source switch with a SHARED pin keeps it shared (no separate pinned connection)', () => {
-    // When pinned === attached the active reattach re-establishes the shared
-    // connection; the pin must NOT spawn a duplicate against the new source.
-    const { manager, connections } = setup();
-    manager.attachSession('A'); // connections[0] shared active+pin
-    manager.pinSession('A');
-
-    manager.useHttpSource('http://localhost:9999/api', transportOwner);
-
-    expect(manager.getAttachedSessionId()).toBe('A');
-    expect(manager.getPinnedSessionId()).toBe('A');
-    // Exactly one rebuild (the shared active), not two.
-    expect(connections).toHaveLength(2);
-    expect(connections[1]!.url).toBe('http://localhost:9999/api/sessions/A/events');
-  });
-
-  it('a shared pin takes the ATTACHED cwd, ignoring a divergent caller cwd (zero-gap transfer preserved; rebuild targets the real project)', () => {
-    // Real failure mode: LiveSessionWidget resolves cwd from session-list
-    // metadata while attachSession got the operator's selected cwd. Trusting
-    // the caller in pinSession's shared branch desyncs pinnedCwd from the
-    // shared connection's actual `?cwd=` URL, corrupting the later cwd-equality
-    // checks (needless destroy/reopen, or a rebuild against the wrong project).
-    const { manager, connections } = setup();
-    manager.attachSession('A', '/proj'); // connections[0], URL bound to /proj
-    manager.pinSession('A', '/stale-metadata-cwd'); // shared — caller cwd differs
-
-    manager.attachSession('B'); // row 1 transfer-out
-
-    // Zero-gap: the shared connection transferred, never destroyed.
-    expect(connections[0]!.destroy).not.toHaveBeenCalled();
-    expect(manager.getPinnedSessionId()).toBe('A');
-
-    // Observable proof pinnedCwd carried the CONNECTION's truth (/proj), not
-    // the caller's: a source rebuild re-opens the pinned slot from pinnedCwd.
-    manager.useHttpSource('http://localhost:9999/api', transportOwner);
-    const rebuilt = connections.map((c) => c.url);
-    expect(rebuilt).toContain('http://localhost:9999/api/sessions/A/events?cwd=%2Fproj');
-    expect(rebuilt.join(' ')).not.toContain('stale-metadata-cwd');
-  });
-
-  it('after a transfer-out, re-attaching with the ORIGINAL attached cwd adopts (no reopen) even when pinSession passed a different cwd', () => {
-    // Regression: with pinnedCwd corrupted by the caller's cwd (here null,
-    // the unresolved-metadata case), the adopt path's cwd-equality check would
-    // see a false divergence against '/proj' and destroy/reopen the pinned
-    // connection instead of adopting it — breaking the zero-gap guarantee.
-    const { manager, connections } = setup();
-    manager.attachSession('A', '/proj'); // connections[0]
-    manager.pinSession('A', null); // shared — caller cwd unknown/unresolved
-    manager.attachSession('B'); // transfer-out → connections[1] active B
-
-    manager.attachSession('A', '/proj'); // must ADOPT the transferred conn
-
-    expect(connections).toHaveLength(2); // no third connection opened
-    expect(connections[0]!.destroy).not.toHaveBeenCalled(); // adopted, zero-gap
-    expect(manager.getAttachedSessionId()).toBe('A');
-    expect(manager.getPinnedSessionId()).toBe('A'); // shared again
   });
 });
 

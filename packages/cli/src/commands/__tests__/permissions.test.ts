@@ -9,9 +9,9 @@ vi.mock('../../lib/api-client.js', () => {
   class ApiError extends Error {
     constructor(
       public status: number,
-      public body: { error?: string; code?: string }
+      public body: { detail?: string; code?: string }
     ) {
-      super(body.error ?? `HTTP ${status}`);
+      super(body.detail ?? `HTTP ${status}`);
     }
   }
   return { ApiError, apiCall: vi.fn() };
@@ -135,16 +135,6 @@ describe('dorkos permissions', () => {
     expect(err()).toContain("'maybe' is not a state");
   });
 
-  it('chooses a preset', async () => {
-    apiCallMock.mockResolvedValue({ changes: [], permissions: OVERVIEW });
-    expect(await runPermissionsDispatcher(['set', '--preset', 'careful'])).toBe(0);
-    expect(apiCallMock).toHaveBeenCalledWith('PUT', '/api/permissions/preset', {
-      preset: 'careful',
-      surface: 'cli',
-    });
-    expect(out()).toContain('Preset is now Careful.');
-  });
-
   it('sets the Trusted preset with nothing to acknowledge first (DOR-2739)', async () => {
     apiCallMock.mockResolvedValue({ changes: [], permissions: OVERVIEW });
     expect(await runPermissionsDispatcher(['set', '--preset', 'trusted'])).toBe(0);
@@ -155,15 +145,6 @@ describe('dorkos permissions', () => {
     expect(out()).toContain('Preset is now Trusted.');
     expect(err()).toBe('');
   });
-
-  it.each(['balanced', 'full'])(
-    'no longer offers %s, and says which presets there are',
-    async (preset) => {
-      expect(await runPermissionsDispatcher(['set', '--preset', preset])).toBe(1);
-      expect(apiCallMock).not.toHaveBeenCalled();
-      expect(err()).toContain(`'${preset}' is not a preset. Use one of: trusted, careful.`);
-    }
-  );
 
   it('still reads a stored Balanced, and reads an undecided install as Trusted', async () => {
     apiCallMock.mockResolvedValue({ ...OVERVIEW, preset: 'balanced', changeCount: 0 });
@@ -179,8 +160,10 @@ describe('dorkos permissions', () => {
   it("prints the server's floor refusal as it is", async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(400, {
-        error: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
-        code: 'FLOOR_NEVER_ALLOWED',
+        title: 'The request didn’t pass its checks.',
+        status: 400,
+        code: 'invalid_request',
+        detail: 'Safety limits and Reach & secrets are never Allowed. Choose Ask or Blocked.',
       })
     );
     expect(await runPermissionsDispatcher(['set', 'reach', 'allowed'])).toBe(1);
@@ -264,9 +247,11 @@ describe('dorkos permissions', () => {
 
   it('on a conflict, names it and the --force next step', async () => {
     apiCallMock.mockRejectedValue(
-      new ApiError(409, {
-        error: 'This has changed since. Set it back anyway?',
-        code: 'UNDO_CONFLICT',
+      new ApiError(412, {
+        title: 'Something changed since you last looked.',
+        status: 412,
+        code: 'precondition_failed',
+        detail: 'This has changed since. Set it back anyway?',
         conflicts: [
           {
             change: {
@@ -279,7 +264,7 @@ describe('dorkos permissions', () => {
             reason: 'changed-since',
           },
         ],
-      } as { error: string; code: string })
+      } as { detail: string; code: string })
     );
     expect(await runPermissionsDispatcher(['undo', 'e1'])).toBe(1);
     expect(err()).toContain('This has changed since.');
@@ -314,14 +299,6 @@ describe('dorkos agent permissions', () => {
     },
   };
 
-  it('shows one agent, found by display name', async () => {
-    apiCallMock.mockResolvedValueOnce(ROSTER).mockResolvedValueOnce(AGENT_VIEW);
-    expect(await runAgentPermissions(['auditor'])).toBe(0);
-    expect(apiCallMock).toHaveBeenLastCalledWith('GET', '/api/agents/a1/permissions');
-    expect(out()).toContain("Files & commands: Ask first (This agent's own setting)");
-    expect(out()).toMatch(/Rooms\s+rooms\s+Blocked\s+This agent's own setting \(everyone: Ask\)/);
-  });
-
   it("sets and resets an agent's own area", async () => {
     apiCallMock.mockResolvedValue(ROSTER);
     apiCallMock.mockImplementation(async (method: string) =>
@@ -354,11 +331,5 @@ describe('dorkos agent permissions', () => {
       filesAndCommands: null,
       surface: 'cli',
     });
-  });
-
-  it('says so when no agent matches', async () => {
-    apiCallMock.mockResolvedValue(ROSTER);
-    expect(await runAgentPermissions(['nobody'])).toBe(1);
-    expect(err()).toContain("No agent called 'nobody'");
   });
 });

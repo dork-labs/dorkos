@@ -5,6 +5,7 @@
  *
  * @module services/session/message-dispatcher/adopt
  */
+import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import crypto from 'node:crypto';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
@@ -25,6 +26,7 @@ import { launching, pending } from './state.js';
 import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';
 import { awaitsPersonSend } from './pause-hold.js';
+import { adoptRun } from './run-feed.js';
 import type { DispatchMessageOpts, DispatchPlan, MessageDispatchResult } from './types.js';
 
 /** Inputs for {@link adoptQueuedMessages}. */
@@ -56,6 +58,12 @@ export interface AdoptQueuedMessagesOpts {
    * when they next send.
    */
   onlyFromChats?: boolean;
+  /**
+   * With {@link onlyFromChats}, a mini app's rows too (`extension:` lock
+   * identity): nobody is watching those either, and a restart must not leave
+   * one waiting in an idle chat (DOR-5232).
+   */
+  orFromApps?: boolean;
 }
 
 /**
@@ -135,7 +143,12 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
     // no other dispatch may press it for them after a resume. Any other person
     // row (queued behind a busy turn, then a restart) is adopted and runs.
     if (awaitsPersonSend(row.id)) continue;
-    if (opts.onlyFromChats && !isChatClientId(row.enqueuedBy)) continue;
+    if (
+      opts.onlyFromChats &&
+      !isChatClientId(row.enqueuedBy) &&
+      !(opts.orFromApps && isExtensionClientId(row.enqueuedBy))
+    )
+      continue;
     // Protected rows have their own adoption path because their visible queue
     // text is only a placeholder. Generic recovery must never send it or bypass
     // the source adapter's final authority preflight.
@@ -166,12 +179,15 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
     // under nothing at all.
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
+    // The run its acceptance wrote, or one for a row an earlier build queued.
+    const runId = adoptRun(opts.sessionId, row.id);
     const plan: DispatchPlan = {
       sessionId: opts.sessionId,
       sessionKey,
       clientId: row.enqueuedBy,
       content: row.content,
       messageId: row.id,
+      ...(runId !== undefined ? { runId } : {}),
       projector: opts.projector,
       runtime: opts.runtime,
       budgetMs: SESSIONS.LOCK_TTL_MS,
@@ -258,12 +274,14 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
     }
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
+    const runId = adoptRun(opts.sessionId, row.id);
     const plan: DispatchPlan = {
       sessionId: receipt.sessionId,
       sessionKey,
       clientId: service.sender(receipt) ?? `system:${receipt.sourceKind}:${receipt.sourceId}`,
       content: row.content,
       messageId: row.id,
+      ...(runId !== undefined ? { runId } : {}),
       projector: opts.projector,
       runtime: opts.runtime,
       budgetMs: SESSIONS.LOCK_TTL_MS,

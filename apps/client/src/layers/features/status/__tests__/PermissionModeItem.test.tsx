@@ -117,6 +117,8 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -192,6 +194,8 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -244,6 +248,8 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -300,6 +306,8 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: {
@@ -353,6 +361,8 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
   mediaOutput: 'none',
   nativeContext: [],
   permissionModes: { supported: false, values: [] },
@@ -379,19 +389,19 @@ describe('PermissionModeItem', () => {
       permissionModes: { ...CLAUDE_CAPABILITIES.permissionModes, default: 'default' },
     };
 
-    it('shows the runtime default, marked Wi-Fi, for a chat at Full autonomy', () => {
+    it('shows the runtime default, marked network, for a chat at Full autonomy', () => {
       mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
       onWifi.value = true;
       render(
         <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
       );
       expect(screen.getByTestId('permission-mode-trigger')).toHaveAccessibleName(
-        'Permissions: Default (Wi-Fi)'
+        'Permissions: Default (network)'
       );
-      expect(screen.getByTestId('permission-mode-trigger')).toHaveTextContent('Default (Wi-Fi)');
+      expect(screen.getByTestId('permission-mode-trigger')).toHaveTextContent('Default (network)');
     });
 
-    it('says just the level at phone width, keeping Wi-Fi in its name', () => {
+    it('says just the level at phone width, keeping network in its name', () => {
       mockCapabilitiesForRuntime.mockReturnValue(WITH_DEFAULT);
       onWifi.value = true;
       render(
@@ -403,9 +413,9 @@ describe('PermissionModeItem', () => {
         />
       );
       const trigger = screen.getByTestId('permission-mode-trigger');
-      expect(trigger).not.toHaveTextContent('(Wi-Fi)');
+      expect(trigger).not.toHaveTextContent('(network)');
       expect(trigger).toHaveTextContent('Default');
-      expect(trigger).toHaveAccessibleName('Permissions: Default (Wi-Fi)');
+      expect(trigger).toHaveAccessibleName('Permissions: Default (network)');
     });
 
     it('shows the default for a chat in Auto too, by the server’s rule', () => {
@@ -420,7 +430,7 @@ describe('PermissionModeItem', () => {
         />
       );
       expect(screen.getByTestId('permission-mode-trigger')).toHaveAccessibleName(
-        'Permissions: Default (Wi-Fi)'
+        'Permissions: Default (network)'
       );
     });
 

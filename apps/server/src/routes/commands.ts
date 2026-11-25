@@ -1,12 +1,14 @@
 import { Hono } from 'hono';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { sessionAgentById } from '../services/core/agent-identity/session-agent.js';
 import { CommandsQuerySchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import { validationProblem } from '@dorkos/http-kit';
+import { problem, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -23,6 +25,10 @@ const router = new Hono<ApiEnv>();
  * 3. Else the default runtime — the legitimate cold-discovery path for screens
  *    without session context (onboarding, first-run, command palette before any
  *    session is active).
+ *
+ * With a `sessionId`, the session's agent is read from what the server recorded
+ * for it, never from the request, so a session working outside its agent's home
+ * also lists that agent's own skills (DOR-5250).
  */
 router.get('/', async (c) => {
   const parsed = CommandsQuerySchema.safeParse(readQuery(c));
@@ -40,7 +46,9 @@ router.get('/', async (c) => {
     let runtime: AgentRuntime;
     if (runtimeParam !== undefined) {
       if (!runtimeRegistry.has(runtimeParam)) {
-        return c.json({ error: `Unknown runtime: ${runtimeParam}` }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'No agent program by that name runs here.',
+        });
       }
       runtime = runtimeRegistry.get(runtimeParam);
     } else if (sessionId) {
@@ -53,14 +61,16 @@ router.get('/', async (c) => {
       }
       runtime = runtimeRegistry.getDefault();
     }
-    const commands = await runtime.getCommands(refresh, validatedCwd);
+    // A failed read lists the folder's commands alone rather than none.
+    const agentPath = sessionId
+      ? await sessionAgentById(sessionId).catch(() => undefined)
+      : undefined;
+    const commands = await runtime.getCommands(refresh, validatedCwd, agentPath);
     return c.json(commands);
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     logger.error('[commands] GET / failed', { err, cwd: parsed.data.cwd, sessionId });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t list the commands. Try again.' });
   }
 });
 

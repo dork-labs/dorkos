@@ -115,17 +115,14 @@ import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constan
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
-import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
+import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
-import {
-  assertNoProjectPlugins,
-  projectPluginRefusal,
-  ProjectPluginsRefusedError,
-} from './messaging/project-plugin-guard.js';
+import { ProjectPluginsRefusedError } from './messaging/project-plugin-guard.js';
+import { ProjectPluginRecheck, killNow } from './messaging/project-plugin-recheck.js';
 import { projectAddonsNotice } from './messaging/project-addons-notice.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { OpenCodeMcpManager, type EnsureManagedResult } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
@@ -198,6 +195,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly registry = new OpenCodeSessionRegistry();
   private readonly locks = new SessionLockManager();
   private readonly approvals = new PendingApprovalStore();
+  /** Looks again for a project's own plugins after each turn, and restarts the sidecar (DOR-4412). */
+  private readonly pluginRecheck = new ProjectPluginRecheck(() => killNow(this.provider));
   /** What {@link enforceApprovals} reaches into on every mapped turn event. */
   private readonly approvalGate: ApprovalGateDeps;
   /** Each model's context window from the sidecar's catalog, read once and cached. */
@@ -463,9 +462,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         // Held per ask, like the grants: a turn another agent's post or a
         // stranger's message started is answered at no looser a level than its
         // sender's (spec `trusted-by-default-flip` §4). Stored settings stay as they are.
-        ...(opts?.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
+        permissionCeiling: opts?.permissionCeiling,
+        sendPermissionMode: opts?.permissionMode,
       }
     );
   }
@@ -592,9 +590,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
     // A project's own plugins would run in the shared sidecar, flag or not
-    // (DOR-4394): asked on every turn, before the sidecar sees the folder.
-    const pluginRefusal = projectPluginRefusal(cwd);
-    if (pluginRefusal) return yield pluginRefusal;
+    // (DOR-4394): asked on every turn, before the sidecar sees the folder, once
+    // any restart a folder's new plugins started has finished (DOR-4412).
+    const pluginTurn = await this.pluginRecheck.admit(cwd);
+    if (pluginTurn.refusal) return yield pluginTurn.refusal;
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
     // that credits cannot pay for is REFUSED here, with nothing sent.
@@ -612,17 +611,25 @@ export class OpenCodeRuntime implements AgentRuntime {
       void this.provider.turnSettled?.().catch(() => undefined);
       const refusal = switchPendingEvent(err) ?? creditsRefusalEvent(err);
       if (!refusal) throw err;
-      yield refusal;
-      return;
+      return yield refusal;
     }
+    // Whose identity this turn carries: the directory's own agent, or the one
+    // a room worktree was handed to — never by prefix, and never another agent
+    // than the room turn names (DOR-2091, `agent-home.ts`). A worktree
+    // looked up exactly hosts nobody, which is how opencode agents in a room
+    // with files used to get no `dorkos` server at all. Looked up when asked,
+    // so the connector check below reads the registry as it is by then.
+    const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
+    const registeredAgent = () => (agentPath ? this.meshCore?.getByPath(agentPath) : undefined);
     let ocSessionId: string, client: OpencodeClient, directory: string;
     try {
       ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
       client = await this.provider.getClient(cwd);
-      await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
+      // The shells' chat id, plus its agent and space for signatures (provenance v2).
+      await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId, registeredAgent()?.id);
       directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
       // The prompt goes to the session's STORED folder (Security M2, #3764).
-      assertNoProjectPlugins(cwd, directory);
+      pluginTurn.assertNoPlugins(directory);
     } catch (err) {
       this.settingUp.delete(settingUp);
       void this.provider.turnSettled?.().catch(() => undefined);
@@ -641,7 +648,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     this.activeTurns.set(sessionId, turn);
     const toolTurn = new OpenCodeToolTurnContext(
       () => this.activeTurns.get(sessionId) === turn && turn.phase === 'running',
-      () => this.registry.get(sessionId)?.permissionMode,
+      () => readOpenCodeTurnMode(this.registry, sessionId, opts?.sendPermissionMode),
       opts?.permissionCeiling,
       controller.signal
     );
@@ -667,14 +674,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         turn.phase = 'setup';
       }
 
-      // Whose identity this turn carries: the directory's own agent, or the one
-      // a room worktree was handed to — never by prefix, and never another agent
-      // than the room turn names (DOR-2091, `agent-home.ts`). A worktree
-      // looked up exactly hosts nobody, which is how opencode agents in a room
-      // with files used to get no `dorkos` server at all.
-      const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
-      const meshAgent =
-        opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+      const meshAgent = opts?.connectorTurn ? registeredAgent() : undefined;
       const opened =
         this.connectorRuntimeTools && meshAgent && agentPath
           ? await openTurnOrSkip(
@@ -764,7 +764,8 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Trigger only once the stream is observably live (or the bounded wait
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
-
+      // Nothing is sent on a sidecar a plugin restart has begun to stop.
+      pluginTurn.assertCurrent();
       await trigger(client, ocSessionId, mcpResult, plan, () => {
         if (mcpResult.connectorApplied && turn.connectorBinding)
           toolTurn.attach((event) => queue.push(event));
@@ -775,8 +776,9 @@ export class OpenCodeRuntime implements AgentRuntime {
         sessionId,
         ocSessionId,
         cwd,
+        directory,
         permissions: ctx,
-        protectedRoots: protectedPathRoots(cwd, agentPath, this.meshCore),
+        protectedRoots: turnProtectedRoots(cwd, agentPath, this.meshCore),
         // A Stop ends a heavy shell job's wait for the machine's line (DOR-4209).
         signal: controller.signal,
       };
@@ -804,6 +806,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
+      // First, before anything here waits: a folder this turn used may have
+      // gained plugins while it ran, and the restart must begin before any
+      // other turn can be sent (DOR-4412).
+      this.pluginRecheck.afterTurn(cwd, directory);
       toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       turn.connectorSupervisor?.stop();

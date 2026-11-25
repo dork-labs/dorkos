@@ -50,7 +50,8 @@ const NOW = new Date().toISOString();
 /** Fully-materialized agent manifest fixture (all schema defaults applied). */
 const MANIFEST: AgentManifest = {
   workspace: { mode: 'home' },
-  id: '01JXAMPLE0000000000000TEST',
+  // A real mesh ULID, so the listing's `ref` is a reference and not null.
+  id: '01JX4MP1E0000000000000TEST',
   name: 'structured-output-bot',
   description: 'Fixture agent for structured-output tests',
   runtime: 'claude-code',
@@ -235,7 +236,11 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
     // the MCP SDK validates `structuredContent` against it and an unexpected
     // key would fail the call rather than reach here.
     expect(structured.agents).toEqual([
-      { ...MANIFEST, relaySubject: `relay.agent.demo.${MANIFEST.id}` },
+      {
+        ...MANIFEST,
+        ref: `dork:agent:${MANIFEST.id}`,
+        relaySubject: `relay.agent.demo.${MANIFEST.id}`,
+      },
     ]);
   });
 
@@ -246,7 +251,10 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
 
   it('mesh_inspect returns schema-valid structuredContent', async () => {
     const structured = await callStructured('mesh_inspect', { agentId: MANIFEST.id });
-    expect(structured).toEqual(MESH_INSPECT);
+    expect(structured).toEqual({
+      ...MESH_INSPECT,
+      agent: { ...MESH_INSPECT.agent, ref: `dork:agent:${MANIFEST.id}` },
+    });
   });
 
   it('mesh_query_topology returns schema-valid structuredContent', async () => {

@@ -89,7 +89,7 @@ export function describeAuthError(
 
   // The server signed you in, but this browser drops the cookie over plain
   // http at a network address (DOR-2968). Saying so ends the silent loop.
-  if (error.code === 'SIGN_IN_NEEDS_HTTPS') {
+  if (error.code === 'sign_in_needs_https') {
     return {
       message: 'This browser can’t keep the sign-in over plain http. Open DorkOS over https.',
       detail: null,

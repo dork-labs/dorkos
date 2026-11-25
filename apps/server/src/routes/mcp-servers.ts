@@ -34,7 +34,15 @@ import {
   type GlobalMcpServerPatch,
 } from '@dorkos/shared/global-mcp-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import {
+  problem,
+  problemBody,
+  readJsonBody,
+  sendProblem,
+  validationProblem,
+  type ProblemStatus,
+} from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar, refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
@@ -59,22 +67,47 @@ import { addMcpServerSheetRoutes, type McpServerSheetDeps } from './mcp-server-s
 import { noOwnerRefusal } from './relay-adapter-http.js';
 import { holdForStepUp } from './step-up-guard.js';
 
-/** Refusal code for a caller that is not a person. */
-export const MCP_SERVERS_PERSON_ONLY = 'MCP_SERVERS_PERSON_ONLY';
+/**
+ * How each store refusal answers: its problem code and status. A server that
+ * changed since it was read is `precondition_failed`, and a removal that left
+ * a saved key behind is `secret_left`, which the app tells apart.
+ */
+const PROBLEM_BY_STORE_CODE = {
+  not_found: ['not_found', 404],
+  name_taken: ['conflict', 409],
+  reserved_name: ['conflict', 409],
+  oauth_unsupported: ['invalid_request', 422],
+  unsafe_command: ['invalid_request', 422],
+  unsafe_env: ['invalid_request', 422],
+  unreadable: ['temporarily_unavailable', 503],
+  changed: ['precondition_failed', 412],
+  secret_left: ['secret_left', 500],
+  masked_value: ['invalid_request', 422],
+} as const satisfies Record<GlobalMcpStoreError['code'], readonly [ProblemCode, ProblemStatus]>;
 
-/** How each store refusal answers. */
-const STATUS_BY_CODE = {
-  not_found: 404,
-  name_taken: 409,
-  reserved_name: 409,
-  oauth_unsupported: 422,
-  unsafe_command: 422,
-  unsafe_env: 422,
-  unreadable: 503,
-  changed: 409,
-  secret_left: 500,
-  masked_value: 422,
-} as const;
+/**
+ * The fixed sentence each store refusal answers with. The store's own message
+ * can name a file it read, so it goes to the server log, never to the caller.
+ */
+const DETAIL_BY_STORE_CODE: Record<GlobalMcpStoreError['code'], string> = {
+  not_found: 'There is no MCP server by that name.',
+  name_taken: 'A server with that name already exists. Pick another.',
+  reserved_name: "That name is one of DorkOS's own. Pick another.",
+  oauth_unsupported: "This server needs a sign-in DorkOS can't do yet.",
+  unsafe_command: "That command can't run here. Use the full path to the program.",
+  unsafe_env: "One of those environment variables isn't allowed.",
+  unreadable: "The saved servers couldn't be read. Nothing changed.",
+  changed: 'This server changed since you looked. Reload it and try again.',
+  secret_left: "The server is removed, but its saved key couldn't be deleted.",
+  masked_value: "Type the secret again. A masked value can't be saved.",
+};
+
+/** A store refusal as a problem document. */
+function storeProblem(err: GlobalMcpStoreError): Problem {
+  const [code, status] = PROBLEM_BY_STORE_CODE[err.code];
+  logger.info('[mcp-servers] store refused', { code: err.code, error: err.message });
+  return problemBody(code, { detail: DETAIL_BY_STORE_CODE[err.code], status });
+}
 
 /** What the change bar names, in its refusal. */
 const WRITE_SUBJECT = 'MCP servers for every agent';
@@ -97,22 +130,19 @@ interface HeldWrite {
 /** The bar for reading the list: a person, never an agent. */
 function refuseRead(c: Context<ApiEnv>): Response | undefined {
   if (clearsTheAgentBar(honoRequestFacts(c))) return undefined;
-  return c.json(
-    { error: 'Only a person can see these servers, in the app.', code: MCP_SERVERS_PERSON_ONLY },
-    403
-  );
+  return problem(c, 'person_only', { detail: 'Only a person can see these servers, in the app.' });
 }
 
 /** The bar for changing it: the owner, at this computer. */
 function refuseWrite(c: Context<ApiEnv>): Response | undefined {
   const refusal = refuseFrontDoorChange(honoRequestFacts(c), WRITE_SUBJECT);
-  return refusal ? c.json({ error: refusal.error, code: refusal.code }, 403) : undefined;
+  return refusal ? problem(c, 'operator_only', { detail: refusal.error }) : undefined;
 }
 
 /** A store refusal as an answer; anything else is rethrown. */
 function storeRefusal(c: Context<ApiEnv>, err: unknown): Response {
   if (err instanceof GlobalMcpStoreError) {
-    return c.json({ error: err.message, code: err.code }, STATUS_BY_CODE[err.code]);
+    return sendProblem(c, storeProblem(err));
   }
   throw err;
 }
@@ -123,7 +153,8 @@ async function writeResult(run: () => Promise<WriteResult>): Promise<WriteResult
     return await run();
   } catch (err) {
     if (err instanceof GlobalMcpStoreError) {
-      return { status: STATUS_BY_CODE[err.code], body: { error: err.message, code: err.code } };
+      const body = storeProblem(err);
+      return { status: body.status, body };
     }
     throw err;
   }
@@ -158,6 +189,7 @@ export function createMcpServerRoutes(
       const refused = noOwnerRefusal(c, 'Only a person can change these servers, in the app.');
       if (refused) return refused;
       const { status, body } = await writeResult(run);
+      if (status >= 400) return sendProblem(c, body as Problem);
       return c.json(body as object, status as ContentfulStatusCode);
     }
     return holdForStepUp(c, {
@@ -166,7 +198,8 @@ export function createMcpServerRoutes(
       // Re-checked on the request that confirmed it: still the owner, still allowed here.
       commit: async (confirming) => {
         const stale = refuseFrontDoorChange(confirming, WRITE_SUBJECT);
-        if (stale) return { status: 403, body: { error: stale.error, code: stale.code } };
+        if (stale)
+          return { status: 403, body: problemBody('operator_only', { detail: stale.error }) };
         return writeResult(run);
       },
     });
@@ -242,7 +275,8 @@ export function createMcpServerRoutes(
     const refusal = refuseRead(c);
     if (refusal) return refusal;
     const parsed = GlobalMcpArgsCheckSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Send the arguments to check.' }, 400);
+    if (!parsed.success)
+      return validationProblem(c, parsed.error, { detail: 'Send the arguments to check.' });
     return c.json({ looksSecret: argsLookSecret(parsed.data.args) });
   });
 
@@ -251,7 +285,8 @@ export function createMcpServerRoutes(
     const refusal = refuseWrite(c);
     if (refusal) return refusal;
     const parsed = GlobalMcpServerInputSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'That server is not complete.' }, 400);
+    if (!parsed.success)
+      return validationProblem(c, parsed.error, { detail: 'That server is not complete.' });
     const input = parsed.data;
     try {
       store.refuseAdd(input);
@@ -270,7 +305,8 @@ export function createMcpServerRoutes(
     const refusal = refuseWrite(c);
     if (refusal) return refusal;
     const parsed = GlobalMcpServerInputSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'That server is not complete.' }, 400);
+    if (!parsed.success)
+      return validationProblem(c, parsed.error, { detail: 'That server is not complete.' });
     const input = parsed.data;
     const name = c.req.param('name');
     let expect: string;
@@ -300,7 +336,9 @@ export function createMcpServerRoutes(
     const refusal = refuseWrite(c);
     if (refusal) return refusal;
     const parsed = GlobalMcpServerPatchSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Send enabled or excludedAgents.' }, 400);
+    if (!parsed.success) {
+      return validationProblem(c, parsed.error, { detail: 'Send enabled or excludedAgents.' });
+    }
     const name = c.req.param('name');
     try {
       // Decided in the store's write queue, so no other write can change the answer.

@@ -25,14 +25,14 @@ function messageOf(error: unknown): string | undefined {
 /**
  * What went wrong changing a room's limits.
  *
- * **`OPERATOR_ONLY` is replaced rather than passed through, and that is the
+ * **`operator_only` is replaced rather than passed through, and that is the
  * whole point of this file.** The server writes that refusal in the owner's
  * voice — "Only you can change how much a room may spend" — which is exactly
  * right in a log and exactly wrong shown to the person it just refused, who is
  * by definition not that "you". Said back plainly, it names who can, so the
  * reader knows the answer is "ask the owner" rather than "try again".
  *
- * `ROOM_ARCHIVED` gets its own line because it is fixable in one press, from the
+ * `room_archived` gets its own line because it is fixable in one press, from the
  * foot of the same panel. Everything else passes the server's own sentence
  * through: it knows which of its rules broke, and any sentence written here
  * would have to describe all of them and help with none.
@@ -41,9 +41,9 @@ function messageOf(error: unknown): string | undefined {
  */
 export function roomLimitsErrorMessage(error: unknown): string {
   switch (codeOf(error)) {
-    case 'OPERATOR_ONLY':
+    case 'operator_only':
       return 'Only the owner of this DorkOS can change room limits.';
-    case 'ROOM_ARCHIVED':
+    case 'room_archived':
       return 'This room is archived. Bring it back to change its limits.';
     default:
       return messageOf(error) ?? 'Couldn’t save that limit. Try again.';

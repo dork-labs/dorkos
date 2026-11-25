@@ -131,7 +131,15 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
     // reach the person as an error, never as "nothing changed".
     globalThis.fetch = vi.fn(
       async () =>
-        new Response(JSON.stringify({ error: 'Package not installed: flow' }), { status: 404 })
+        new Response(
+          JSON.stringify({
+            title: 'That doesn’t exist here.',
+            status: 404,
+            code: 'not_found',
+            detail: 'Package not installed: flow',
+          }),
+          { status: 404 }
+        )
     ) as unknown as typeof fetch;
 
     await expect(

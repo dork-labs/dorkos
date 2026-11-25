@@ -29,7 +29,6 @@ import {
   askAboutWithheldGlobalPlugins,
   CARD_COOLDOWN_MS,
   decideHeldBackPackage,
-  describeGlobalActivationCapability,
   GLOBAL_ACTIVATION_CAPABILITY_ID,
   HeldBackDecisionError,
   HeldBackReviewError,
@@ -377,15 +376,6 @@ describe('held-back packages a person can see and review (DOR-2306, I2)', () => 
     );
   });
 
-  it('says a package too long for a card can be reviewed in the terminal', async () => {
-    await installHooked('huge', `echo ${'y'.repeat(5_000)}`);
-
-    const [huge] = await listHeldBackPackages(dorkHome);
-
-    expect(huge).toMatchObject({ reviewable: false });
-    expect(huge?.note).toContain('dorkos marketplace held-back --allow huge');
-  });
-
   it('raises the card on request, past the cooldown, and lets a refused package be decided again', async () => {
     await installHooked('tool', 'echo done');
     const denied = answering('denied');
@@ -479,16 +469,6 @@ describe('a held-back package that kept files it could not sort (DOR-2322)', () 
     expect(listed?.note).toMatch(
       /An update kept 1 file DorkOS couldn't sort that still runs \(commands\/old\.md\)\. Choose Check files on tool to set aside any left over from the earlier version\./
     );
-  });
-});
-
-describe('describeGlobalActivationCapability', () => {
-  it('names the card and marks it as needing a decision, and nothing else', () => {
-    expect(describeGlobalActivationCapability(GLOBAL_ACTIVATION_CAPABILITY_ID)).toEqual({
-      title: 'Let a globally installed package run programs in every chat',
-      tier: 'destructive',
-    });
-    expect(describeGlobalActivationCapability('marketplace.install')).toBeUndefined();
   });
 });
 

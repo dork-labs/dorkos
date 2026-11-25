@@ -44,10 +44,10 @@ const API_KEY_ENV_VAR = 'DORKOS_API_KEY';
 const API_KEY_FILE_NAME = 'api-key';
 
 /**
- * The HTTP error envelope returned by the marketplace routes. The router
- * uses `mapErrorToStatus` in `apps/server/src/routes/marketplace/shared.ts` to map
- * service errors into this shape, so the CLI can detect conflict reports
- * and validation errors without parsing free-form messages.
+ * The HTTP error body the API answers with: a problem document (the
+ * marketplace routes map service errors through `mapErrorToProblem` in
+ * `apps/server/src/routes/marketplace/shared.ts`), so the CLI can detect
+ * conflict reports and validation errors without parsing free-form messages.
  */
 export interface ApiErrorBody {
   /** The older body's message; a problem document says `detail` instead. */
@@ -85,8 +85,8 @@ export class ApiError extends Error {
 
   /**
    * Build a typed API error. The message and code are read from the body by
-   * `readErrorBody` (`@dorkos/shared/problem`): a problem document first, then
-   * the older `{ error, code }` shape.
+   * `readErrorBody` (`@dorkos/shared/problem`): a problem document, or the
+   * login gate's `AUTH_REQUIRED`, which is not a problem on purpose.
    *
    * @param status - HTTP status code returned by the server.
    * @param body - Parsed JSON error body. Empty object when the response
@@ -201,8 +201,9 @@ function apiKeyHeaders(): Record<string, string> {
 }
 
 /**
- * The codes the app-wide login gate answers 401 with: today's, and the problem
- * code it moves to under DOR-4979.
+ * The codes a 401 that asks for a sign-in carries: the login gate's own
+ * `AUTH_REQUIRED` (not a problem document, on purpose) and the problem code
+ * `unauthenticated` other routes answer with.
  */
 const LOGIN_GATE_CODES = new Set(['AUTH_REQUIRED', 'unauthenticated']);
 

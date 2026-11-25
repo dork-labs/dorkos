@@ -474,9 +474,23 @@ spec." ;;
   esac
 done
 
-# 1. Nothing may sit outside the one testDir the config declares.
-stray=$(cd "$e2e_root" && find . -name '*.spec.ts' \
-  -not -path './node_modules/*' -not -path './tests/*' | sed 's|^\./||' | sort)
+# 1. Nothing may sit outside the one testDir this config declares, except a
+# directory another Playwright config collects on purpose and runs somewhere
+# else: apps/e2e/release-smoke/ is playwright.release-smoke.config.ts's
+# testDir, run by Release Publish's smoke job (#4366). Each such directory must
+# have that config, and the config must still point at it, or the exception
+# itself fails.
+OTHER_COLLECTED_DIRS=(release-smoke)
+for d in "${OTHER_COLLECTED_DIRS[@]}"; do
+  [ -d "$e2e_root/$d" ] || continue
+  cfg="$e2e_root/playwright.$d.config.ts"
+  if ! { [ -f "$cfg" ] && grep -Eq "testDir: *['\"]\./${d}['\"]" "$cfg"; }; then
+    fail "apps/e2e/$d/ is excused as another config's testDir, but playwright.$d.config.ts does not declare testDir './$d'. Fix the config or drop $d from OTHER_COLLECTED_DIRS."
+  fi
+done
+prune=(-not -path './node_modules/*' -not -path './tests/*')
+for d in "${OTHER_COLLECTED_DIRS[@]}"; do prune+=(-not -path "./$d/*"); done
+stray=$(cd "$e2e_root" && find . -name '*.spec.ts' "${prune[@]}" | sed 's|^\./||' | sort)
 if [ -n "$stray" ]; then
   fail "these spec files are outside apps/e2e/tests, so nothing collects them:
 $(printf '%s\n' "$stray" | sed 's/^/  /')

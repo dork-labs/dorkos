@@ -212,7 +212,7 @@ Invariants:
 - Every status carries a `note`: what happens next, in plain words the agent can pass on, with no ids or links. `requestNote` in the service is the one place that writes them, and the follow-up message in the chat reuses it.
 - A request read by a different agent, session, runtime or agent path returns the same `request_not_found` as a missing one.
 - Only an explicit owner decision resolves a request. A request whose origin no longer passes `revalidateOrigin` resolves as `target_deleted`.
-- Error codes are the `ConnectorAgentRequestError` union; the card maps each one it can meet to plain copy, so add a case there when you add a code an owner's answer can hit. The create-time refusals (`request_open_elsewhere`, `request_rate_limited`) reach only the agent, and their message is the words it relays.
+- Error codes are the `ConnectorAgentRequestError` union. Over HTTP each becomes a problem code through `AGENT_REQUEST_PROBLEM` (`routes/connector-problems.ts`), and the card maps each problem code it can meet to plain copy, so add a row there and a case on the card when you add a code an owner's answer can hit. The create-time refusals (`request_open_elsewhere`, `request_rate_limited`) reach only the agent, and their message is the words it relays.
 
 Tests: `services/connectors/__tests__/agent-request-service.test.ts`, the test-mode scenario `services/runtimes/test-mode/connection-request-scenarios.ts`, the browser module `apps/e2e/tests/connections/chat-connect-card.ts`, and the credentialed eval `packages/evals/src/suite/connection-request.ts`.
 
@@ -220,16 +220,17 @@ Tests: `services/connectors/__tests__/agent-request-service.test.ts`, the test-m
 
 A managed-connector call the control plane refuses throws `ManagedConnectorCloudError` (`apps/server/src/services/core/auth/cloud-link-client.ts`), never a bare `Error`. It carries the refusal's category (`code`), the HTTP `status`, the cloud's own `cloudCode` from its `{error, reason?}` body, a `reason` capped at 200 characters, and the method and path without a query string. Each refusal writes exactly one log line from that file; do not log it again further up.
 
-Every route that can reach the managed cloud maps it through `managedCloudErrorResponse` (`apps/server/src/routes/managed-cloud-error.ts`) to an honest HTTP status and a stable `code` the client branches on:
+Every route that can reach the managed cloud maps it through `managedCloudErrorResponse` (`apps/server/src/routes/managed-cloud-error.ts`) to a problem document with an honest status, a stable `code` the client branches on, and a fixed `detail` (never the cloud's own words):
 
-| Error `code`                                                  | Status | Route `code`              |
-| ------------------------------------------------------------- | ------ | ------------------------- |
-| `unauthorized`                                                | 401    | `cloud_link_required`     |
-| `permission_upgrade_required`                                 | 409    | `cloud_link_needs_update` |
-| `unavailable`, `network_error`                                | 503    | `cloud_unavailable`       |
-| `request_failed`, `invalid_response`, `not_found`, `conflict` | 502    | `cloud_refused`           |
+| Error `code`                                                  | Status | Problem `code`        |
+| ------------------------------------------------------------- | ------ | --------------------- |
+| `unauthorized`, `permission_upgrade_required`                 | 401    | `cloud_link_required` |
+| `unavailable`, `network_error`                                | 503    | `cloud_unavailable`   |
+| `request_failed`, `invalid_response`, `not_found`, `conflict` | 502    | `cloud_refused`       |
 
-Never let a managed-cloud error fall through to a route's own generic 500 or outage answer (the connector events router checks it before its `events_unavailable` fallback): return `managedCloudErrorResponse(c, error)` when it answers, before any catch-all. A service that wraps the error (as the app-actions listing does) keeps it as `cause`, and its route checks the cause first. The client reads the same `code` through `cloudFailure()` (`apps/client/src/layers/entities/connectors/lib/cloud-failure.ts`), and `LoadFailedState` (or its `RelinkButton`) shows it. For the two link codes the button opens Settings › DorkOS account with the `SETTINGS_RELINK_SECTION` section, and the account panel starts a new link itself: a link that needs updating is still linked, so landing on the panel alone would leave nothing to press.
+Every other connected-app refusal is mapped the same way, one typed table per service error in `apps/server/src/routes/connector-problems.ts` (DOR-4979): each service code gets one problem code and one fixed sentence, and a table is total by type, so a new service code does not compile until it has a row.
+
+Never let a managed-cloud error fall through to a route's own generic 500 or outage answer (the connector events router checks it before its `events_unavailable` fallback): return `managedCloudErrorResponse(c, error)` when it answers, before any catch-all. A service that wraps the error (as the app-actions listing does) keeps it as `cause`, and its route checks the cause first. The client reads the same `code` through `cloudFailure()` (`apps/client/src/layers/entities/connectors/lib/cloud-failure.ts`), and `LoadFailedState` (or its `RelinkButton`) shows it. For the link code the button opens Settings › DorkOS account with the `SETTINGS_RELINK_SECTION` section, and the account panel starts a new link itself: a link that needs updating is still linked (the same code, since the fix is the same), so landing on the panel alone would leave nothing to press.
 
 ## Common mistakes
 

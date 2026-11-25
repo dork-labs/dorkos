@@ -7,71 +7,55 @@
  * refuse and launch nothing. The limits survive a restart and count chats
  * started from started chats.
  *
- * The launch service is the edge: it is replaced so a start can be observed
- * without a runtime. Everything else is real, down to the table.
+ * A start goes through the real turn port (spec `turns-survive-restarts` §3):
+ * the space face saves its run over the test database, and a case moves the
+ * run as the dispatcher would, so a start can be observed without a runtime.
+ * Everything else is real, down to the table.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { SessionListEvent } from '@dorkos/shared/session-stream';
+
 import type { Session } from '@dorkos/shared/types';
 import { SessionStartedBySchema } from '@dorkos/shared/schemas';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
-import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
+import { createMockSession } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
+import {
+  createRunFactsSink,
+  createRunRecord,
+  getRunRecord,
+  installRunRecord,
+  uninstallRunRecord,
+  type RunRecord,
+} from '../../runs/index.js';
+import { eq, notifications as notificationsTable } from '@dorkos/db';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
+import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
+// Wires the projector's rekey hooks (the queue and its runs follow a moved chat).
+import '../../session/message-dispatcher.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+  peekProjector,
+  rekeyProjector,
+} from '../../session/session-state-projector.js';
+import { queueKeyOf } from '../../session/resolution/session-key-registry.js';
+import { holdRun, releaseRun } from '../../session/turn-port/facts.js';
 
-/** Every launch the seam asked for, and the settle callback of each. */
-const launches = vi.hoisted(
-  () =>
-    [] as Array<{
-      sessionId: string;
-      origin: { kind: string };
-      request: { content: string; cwd?: string; runtime?: string };
-      clientId: string;
-      permissionCeiling?: unknown;
-      countsTowardLaunchCap?: boolean;
-      onSettled?: (outcome: 'ok' | 'failed') => void;
-    }>
-);
-/** What the next launch answers: accepted under the same id unless a test says otherwise. */
-const nextLaunch = vi.hoisted(() => ({
-  warnings: undefined as undefined | Array<{ code: string; message: string }>,
-  refused: null as null | { refused: string; message: string },
-  canonical: null as null | ((id: string) => string),
-}));
-
-vi.mock('../../session/launch/launch-session.js', () => ({
-  agentLaunchCapMessage: () => 'Too many spin-off chats are running (8).',
-  isSessionLaunchRefusal: (result: object) => 'refused' in result,
-  dispatchSessionMessage: vi.fn(async (opts: (typeof launches)[number]) => {
-    launches.push(opts);
-    if (nextLaunch.refused) return nextLaunch.refused;
-    return {
-      accepted: true,
-      canonicalId: nextLaunch.canonical ? nextLaunch.canonical(opts.sessionId) : opts.sessionId,
-      outcome: { kind: 'started', messageId: 'm-1' },
-      queued: false,
-      queuePosition: 1,
-      ...(nextLaunch.warnings ? { warnings: nextLaunch.warnings } : {}),
-    };
-  }),
-}));
-
-import { eventFanOut } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster } from '../../session/catalog/session-list-broadcaster.js';
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
 import { SessionStartedByStore } from '../../session/origin/session-started-by-store.js';
-import {
-  StartWorkInputError,
-  StartWorkService,
-  setStartWorkService,
-  type StartWorkDeps,
-} from '../start-work.js';
+import { StartWorkService, setStartWorkService, type StartWorkDeps } from '../start-work.js';
 import { createDataProviderContext } from '../extension-server-api-factory.js';
 import { createInboxFixture, shipDecision } from '../inbox/__tests__/inbox-fixture.js';
 import { startSorting } from '../inbox/__tests__/fixtures/inbox-fixture.js';
@@ -116,6 +100,28 @@ let running: string[];
 let renamed: Array<{ runtime: string; sessionId: string; title: string; cwd: string }>;
 let service: StartWorkService;
 let projects: ReturnType<typeof fakeProjects>;
+let record: RunRecord;
+/** Every start the turn port saved, with its run's id, in order. */
+let launches: Array<StartTurnInput & { runId: string }>;
+/** When set, the rename a case wants in place of the default one. */
+let renameHook: StartWorkDeps['rename'] | undefined;
+/** Admission's launch cap, as a switch. */
+let machineFull: boolean;
+
+/** Let the record's watchers hear what just moved. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 4; i++) await Promise.resolve();
+}
+
+/** A start's turn ran and ended, as the dispatcher writes it. */
+async function finish(index: number): Promise<void> {
+  const { store } = record;
+  let run = store.get(launches[index]!.runId)!;
+  run = store.move(run, 'starting', store.lease());
+  run = store.move(run, 'started', { startedAt: store.stamp(), runtime: 'test-mode' });
+  store.endTurn(run, 'completed');
+  await flush();
+}
 
 function build(overrides: Partial<StartWorkDeps> = {}): StartWorkService {
   return new StartWorkService({
@@ -126,8 +132,10 @@ function build(overrides: Partial<StartWorkDeps> = {}): StartWorkService {
     runningSessionIds: () => running,
     defaultRuntime: () => 'test-mode',
     rename: async (runtime, sessionId, title, cwd) => {
+      if (renameHook) return renameHook(runtime, sessionId, title, cwd);
       renamed.push({ runtime, sessionId, title, cwd });
     },
+    port: () => record.port,
     ...overrides,
   });
 }
@@ -142,15 +150,24 @@ async function refusal(promise: Promise<unknown>): Promise<StartWorkError> {
 }
 
 beforeEach(() => {
-  nextLaunch.warnings = undefined;
-  launches.length = 0;
-  nextLaunch.refused = null;
-  nextLaunch.canonical = null;
   db = createTestDb();
+  machineFull = false;
+  record = createRunRecord(db, {
+    epoch: '01BOOTEPOCHSTARTWORK000000',
+    admission: { admission: { pausedAgent: () => undefined, machineFull: () => machineFull } },
+  });
+  launches = [];
+  const start = record.port.start.bind(record.port);
+  vi.spyOn(record.port, 'start').mockImplementation((input) => {
+    const answer = start(input);
+    launches.push({ ...input, runId: answer.runId });
+    return answer;
+  });
   store = new SessionStartedByStore(db);
   clock = Date.parse('2026-09-29T09:00:00.000Z');
   running = [];
   renamed = [];
+  renameHook = undefined;
   projects = fakeProjects({ flow: [DORKOS, BLINTZ], 'hello-world': [] });
   service = build();
   _forgetTitles();
@@ -161,15 +178,7 @@ afterEach(() => {
 });
 
 describe('a start', () => {
-  it('returns the Codex no-tools warning without assigning the project an agent', async () => {
-    service = build({ defaultRuntime: () => 'codex' });
-    nextLaunch.warnings = [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }];
-    const result = await service.start('flow', INPUT, 'ctx');
-    expect(result).toMatchObject({ warnings: nextLaunch.warnings });
-    expect(launches[0]!.request).not.toHaveProperty('agentPath');
-  });
-
-  it('launches one chat in the project root, with its title and the prompt as its first message', async () => {
+  it('starts one chat in the project root, with its title and the prompt as its first message', async () => {
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
 
     expect(launches).toHaveLength(1);
@@ -177,20 +186,20 @@ describe('a start', () => {
     expect(launch).toMatchObject({
       sessionId,
       origin: { kind: 'extension-start' },
-      request: {
-        content: INPUT.prompt,
-        cwd: DORKOS.root,
-        runtime: 'test-mode',
-        // One honest line for the model; the prompt stays byte for byte.
-        seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
-      },
-      clientId: 'extension:flow',
-      countsTowardLaunchCap: true,
+      content: INPUT.prompt,
+      cwd: DORKOS.root,
+      tier: 'owner',
+      // One honest line for the model; the prompt stays byte for byte.
+      seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
     });
-    expect(launches[0]).not.toHaveProperty('permissionCeiling');
-    expect(renamed).toEqual([
-      { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
-    ]);
+    expect(launch).not.toHaveProperty('permissionCeiling');
+    // On the runtime the account rule was checked for, by name.
+    expect(launch).toMatchObject({ runtime: 'test-mode' });
+    // Saved as a run, waiting for its hand-over: the answer came at acceptance.
+    expect(record.store.get(launch!.runId)).toMatchObject({ status: 'queued', sessionId });
+    // No title on a chat whose turn has not begun: a start that waits or is
+    // cancelled leaves no titled empty chat.
+    expect(renamed).toEqual([]);
     expect(store.get(sessionId)).toMatchObject({
       kind: 'extension',
       extensionId: 'flow',
@@ -203,6 +212,9 @@ describe('a start', () => {
   it('passes a Wi-Fi sign-in’s bound on (DOR-3037)', async () => {
     await service.start('flow', INPUT, 'ctx', { permissionCeiling: 'runtime-default' });
     expect(launches[0]!.permissionCeiling).toBe('runtime-default');
+    expect(record.effects.listForRun(launches[0]!.runId)[0]?.payload).toMatchObject({
+      permissionCeiling: 'runtime-default',
+    });
   });
 
   it('says who started it on the session list', async () => {
@@ -224,68 +236,13 @@ describe('a start', () => {
     expect(rows[1]!.startedBy).toBeUndefined();
   });
 
-  it('says who started it on the live session stream', async () => {
-    const { sessionId } = await service.start('flow', INPUT, 'ctx');
-    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
-    const runtime = new FakeAgentRuntime();
-    const upsert: SessionListEvent = {
-      type: 'session_upserted',
-      session: createMockSession({ id: sessionId, title: INPUT.title }),
-    };
-    runtime.subscribeSessionList.mockReturnValue(
-      (async function* () {
-        yield upsert;
-      })()
-    );
-    const broadcaster = new SessionListBroadcaster();
-    broadcaster.setOriginResolvers({
-      resolveStartedBy: (ids) => store.getMany(ids),
-      extensionNameOf: () => 'Flow',
-    });
-    broadcaster.start([runtime]);
-    try {
-      await vi.waitFor(() =>
-        expect(broadcast).toHaveBeenCalledWith(
-          'session_upserted',
-          expect.objectContaining({
-            session: expect.objectContaining({
-              id: sessionId,
-              startedBy: expect.objectContaining({ kind: 'extension', extensionName: 'Flow' }),
-            }),
-          }),
-          // Who may hear about the session (spec `audit-trail` §3.4).
-          expect.any(Function)
-        )
-      );
-    } finally {
-      await broadcaster.stop();
-      broadcast.mockRestore();
-    }
-  });
-
   it('keeps who started it when the runtime settles on another id', async () => {
-    nextLaunch.canonical = (id) => `sdk-${id}`;
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
-    expect(sessionId).toMatch(/^sdk-/);
-    expect(store.get(sessionId)?.extensionId).toBe('flow');
-    expect(store.get(sessionId.slice('sdk-'.length))).toBeNull();
-    expect(renamed[0]!.sessionId).toBe(sessionId);
-  });
-
-  it('sets the title after the first turn when the runtime cannot set it yet', async () => {
-    let calls = 0;
-    service = build({
-      rename: async (runtime, sessionId, title, cwd) => {
-        calls += 1;
-        if (calls === 1) throw new Error('no transcript yet');
-        renamed.push({ runtime, sessionId, title, cwd });
-      },
-    });
-    const { sessionId } = await service.start('flow', INPUT, 'ctx');
-    expect(renamed).toEqual([]);
-    launches[0]!.onSettled?.('ok');
-    await vi.waitFor(() => expect(renamed).toHaveLength(1));
-    expect(renamed[0]).toMatchObject({ sessionId, title: INPUT.title });
+    // The chat's runs move with its queue to the id the runtime settled on.
+    record.store.rekeyChat(sessionId, `sdk-${sessionId}`);
+    await finish(0);
+    expect(store.get(`sdk-${sessionId}`)?.extensionId).toBe('flow');
+    expect(store.get(sessionId)).toBeNull();
   });
 
   it('is reachable as ctx.sessions.start, scoped to the calling extension', async () => {
@@ -303,7 +260,7 @@ describe('a start', () => {
         extensionId: 'flow',
         reason: '12 new ideas were waiting to be sorted',
       });
-      expect(launches[0]!.request.cwd).toBe(DORKOS.root);
+      expect(launches[0]!.cwd).toBe(DORKOS.root);
     } finally {
       releaseListeners();
       fs.rmSync(dorkHome, { recursive: true, force: true });
@@ -367,7 +324,7 @@ describe('refusals launch nothing', () => {
     for (let i = 0; i < START_WORK_LIMITS.perHour; i++) {
       await service.start('flow', INPUT, 'ctx');
       // Each one finishes, so only the hourly limit is in play.
-      launches.at(-1)!.onSettled?.('ok');
+      await finish(launches.length - 1);
       clock += 60_000;
     }
     const err = await refusal(service.start('flow', INPUT, 'ctx'));
@@ -391,58 +348,36 @@ describe('refusals launch nothing', () => {
     const err = await refusal(service.start('flow', INPUT, 'ctx'));
     expect(err).toMatchObject({
       code: 'start_limit',
-      message: 'Flow already has 3 chats working. Try again when one finishes.',
+      message: 'Flow already has 3 chats working or waiting. Try again when one finishes.',
     });
     expect(launches).toHaveLength(START_WORK_LIMITS.running);
 
-    launches[0]!.onSettled?.('ok');
+    await finish(0);
     await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeTruthy();
   });
 
-  it('counts a started chat that is working on a later turn, from the live statuses', async () => {
-    const ids: string[] = [];
-    for (let i = 0; i < START_WORK_LIMITS.running; i++) {
-      ids.push((await service.start('flow', INPUT, 'ctx')).sessionId);
-      launches.at(-1)!.onSettled?.('ok');
-    }
-    // All three finished their first turn; a person then sent each a message.
-    running = [...ids, 'someone-elses-chat'];
-    expect((await refusal(service.start('flow', INPUT, 'ctx'))).code).toBe('start_limit');
-    running = ids.slice(1);
-    await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeTruthy();
+  it('forgets a start the launch’s own account check refused at the door', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(1);
+    // The door refuses it after acceptance, and the run is cancelled with why.
+    record.starts.cancel(launches[0]!.runId, 'account_not_allowed');
+    await flush();
+    expect(record.store.get(launches[0]!.runId)?.endingDetail.cancelledBecause).toBe(
+      'account_not_allowed'
+    );
+    expect(store.get(sessionId)).toBeNull();
+    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
   });
 
-  it('refuses as account_not_allowed_here when the launch’s own account check refuses', async () => {
-    nextLaunch.refused = {
-      refused: 'ACCOUNT_NOT_ALLOWED',
-      message: "dorkos isn't set to use Work. Pick another account.",
-    };
-    const err = await refusal(service.start('flow', INPUT, 'ctx'));
-    expect(err).toMatchObject({
-      code: 'account_not_allowed_here',
-      message: "dorkos isn't set to use Work. Pick another account.",
+  it('waits, rather than refuses, when the machine-wide cap is full', async () => {
+    machineFull = true;
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(record.store.get(launches[0]!.runId)).toMatchObject({
+      status: 'queued',
+      waitReason: 'machine_full',
     });
-    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
-  });
-
-  it('refuses a launch the machine-wide cap refused, and forgets it', async () => {
-    nextLaunch.refused = { refused: 'LAUNCH_CAP_FULL', message: 'full' };
-    const err = await refusal(service.start('flow', INPUT, 'ctx'));
-    expect(err.code).toBe('start_limit');
-    expect(store.countSince('flow', '1970-01-01T00:00:00.000Z')).toBe(0);
-  });
-
-  it('refuses input that breaks a length rule, as a StartWorkInputError', async () => {
-    await expect(service.start('flow', { ...INPUT, title: 'x'.repeat(81) }, 'ctx')).rejects.toThrow(
-      StartWorkInputError
-    );
-    await expect(service.start('flow', { ...INPUT, reason: '' }, 'ctx')).rejects.toThrow(
-      /Say why in 1 to 200 characters/
-    );
-    await expect(
-      service.start('flow', { ...INPUT, prompt: 'x'.repeat(20_001) }, 'ctx')
-    ).rejects.toThrow(/under 20,000 characters/);
-    expect(launches).toHaveLength(0);
+    // Still a start: it counts until it runs or is cancelled.
+    expect(store.get(sessionId)?.extensionId).toBe('flow');
   });
 });
 
@@ -450,7 +385,7 @@ describe('the limits', () => {
   it('survive a restart: the hourly count is read from the table', async () => {
     for (let i = 0; i < START_WORK_LIMITS.perHour; i++) {
       await service.start('flow', INPUT, 'ctx');
-      launches.at(-1)!.onSettled?.('ok');
+      await finish(launches.length - 1);
     }
     // A new process: nothing in memory, the same database.
     const restarted = build();
@@ -459,7 +394,7 @@ describe('the limits', () => {
 
   it('count chats started from a started chat', async () => {
     const parent = await service.start('flow', INPUT, 'ctx');
-    launches.at(-1)!.onSettled?.('ok');
+    await finish(launches.length - 1);
     // The parent chat starts another (what `session_start` records).
     const child = service.reserve({
       sessionId: 'child-1',
@@ -486,20 +421,6 @@ describe('the limits', () => {
     });
     expect(grandchild).toMatchObject({ ok: false, error: { code: 'start_limit' } });
     expect(store.get('grandchild-1')).toBeNull();
-  });
-
-  it('never limit a chat whose chain reaches no extension', () => {
-    for (let i = 0; i < 20; i++) {
-      const claimed = service.reserve({
-        sessionId: `plain-${i}`,
-        kind: 'chat',
-        extensionId: null,
-        startedBySessionId: 'a-persons-chat',
-        originExtensionId: null,
-        reason: null,
-      });
-      expect(claimed.ok).toBe(true);
-    }
   });
 });
 
@@ -535,36 +456,6 @@ describe('startedBy', () => {
     expect(service.startedBy('flow', 'child-1')).toBe(true);
     expect(service.startedBy('hello-world', sessionId)).toBe(false);
     expect(service.startedBy('flow', 'a-persons-chat')).toBe(false);
-  });
-
-  it('names the chat a chat was started from, when this server has listed it', () => {
-    store.insert({
-      sessionId: 'child-1',
-      kind: 'chat',
-      extensionId: null,
-      startedBySessionId: 'parent-1',
-      originExtensionId: null,
-      reason: 'split the work',
-      createdAt: new Date(clock).toISOString(),
-    });
-    const rows = [
-      createMockSession({ id: 'parent-1', title: 'Plan the launch' }),
-      createMockSession({ id: 'child-1', title: 'Write the post' }),
-    ];
-    applySessionOriginOverlays(rows, { resolveStartedBy: (ids) => store.getMany(ids) });
-    expect(rows[1]!.startedBy).toEqual({
-      kind: 'chat',
-      sessionId: 'parent-1',
-      title: 'Plan the launch',
-      reason: 'split the work',
-      // A row from before the level was recorded says nothing about it.
-      permission: null,
-    });
-
-    _forgetTitles();
-    const alone = [createMockSession({ id: 'child-1', title: 'Write the post' })];
-    applySessionOriginOverlays(alone, { resolveStartedBy: (ids) => store.getMany(ids) });
-    expect(alone[0]!.startedBy).toMatchObject({ kind: 'chat', title: null });
   });
 
   it('carries the level a chat was started at, and whether it matched the starter', () => {
@@ -661,6 +552,330 @@ describe('a watch on an inbox row (§7.3)', () => {
     } finally {
       fx.inbox.stop();
       fx.close();
+    }
+  });
+});
+
+describe('a start through the turn port (DOR-5232)', () => {
+  it('saves its words with the start, hands them over again after a restart, and lets them go once used', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    const run = record.store.get(launches[0]!.runId)!;
+    expect(run.sourceRef).toBe(`start-work:${sessionId}`);
+    expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
+
+    // A restart: a new run record and seam over the same database. The words
+    // are no longer in any process, only in the start's own row.
+    record = createRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000001' });
+    service = build();
+    expect(record.port.wordsOf(run)).toBe(INPUT.prompt);
+
+    // Once its turn has them, the row lets them go.
+    launches[0] = { ...launches[0]!, runId: run.id };
+    await finish(0);
+    expect(store.get(sessionId)?.prompt).toBeNull();
+  });
+
+  it('tells the owner once, naming the app and why, when a start it answered never runs', async () => {
+    const notifications = new NotificationStore(db);
+    setNotificationService(new NotificationService(notifications));
+    try {
+      await service.start('flow', INPUT, 'ctx');
+      const { runId } = launches[0]!;
+      // The door refused it after the answer: the account rule.
+      record.starts.cancel(runId, 'account_not_allowed');
+      expect(record.effects.listForRun(runId).filter((e) => e.kind === 'notify_person')).toEqual([
+        expect.objectContaining({
+          key: `notify:${runId}:not_started`,
+          payload: expect.objectContaining({ name: 'Flow', reason: 'account_not_allowed' }),
+        }),
+      ]);
+      await record.worker.runOnce();
+      const rows = db
+        .select()
+        .from(notificationsTable)
+        .where(eq(notificationsTable.kind, 'extension.work_not_started'))
+        .all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        title: 'The Flow app couldn’t start its chat',
+        body: 'No account may work in that project.',
+      });
+      // Told once: a second pass writes nothing.
+      await record.worker.runOnce();
+      expect(
+        db
+          .select()
+          .from(notificationsTable)
+          .where(eq(notificationsTable.kind, 'extension.work_not_started'))
+          .all()
+      ).toHaveLength(1);
+    } finally {
+      setNotificationService(null);
+    }
+  });
+
+  it('carries a launch warning on its history until the chat shows its run (T3)', async () => {
+    const emit = vi.fn(async () => undefined);
+    service = build({ activity: { emit } as never });
+    await service.start('flow', INPUT, 'ctx');
+    const { runId } = launches[0]!;
+    const { store: runs } = record;
+    // This process holds the launch, as the dispatcher does while it runs.
+    holdRun(runId);
+    runs.move(runs.get(runId)!, 'starting', runs.lease());
+    createRunFactsSink(runs, record.notices, record.starts).report({
+      kind: 'started',
+      runId,
+      sessionId: launches[0]!.sessionId,
+      openedBy: 'caller',
+      runtime: 'codex',
+      runtimeTurnRef: 1,
+      warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
+    });
+    releaseRun(runId);
+    await flush();
+    expect(runs.get(runId)?.warnings).toEqual([
+      { code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' },
+    ]);
+    expect(
+      emit.mock.calls.map(
+        (call) => (call as unknown as [{ eventType: string; summary: string }])[0]
+      )
+    ).toEqual([
+      expect.objectContaining({ eventType: 'extension.session_started' }),
+      expect.objectContaining({
+        eventType: 'extension.session_warning',
+        summary: `Flow's chat ${INPUT.title}: This chat has no DorkOS tools.`,
+      }),
+    ]);
+  });
+
+  it('keeps opening the chat by the id it answered, after the runtime moves the chat', async () => {
+    // The server's own wiring: the run record as the facts sink, and the queue
+    // whose rekey moves a chat's runs.
+    uninstallRunRecord();
+    installRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000002' });
+    record = getRunRecord()!;
+    setMessageQueueStore(new MessageQueueStore(db));
+    try {
+      const { sessionId } = await service.start('flow', INPUT, 'ctx');
+      getOrCreateProjector(sessionId, DORKOS.root);
+      const canonical = `sdk-${sessionId}`;
+      rekeyProjector(sessionId, canonical);
+
+      // The id the app was given still reaches the chat, its projector and its run.
+      expect(queueKeyOf(sessionId)).toBe(queueKeyOf(canonical));
+      expect(peekProjector(sessionId)).toBe(peekProjector(canonical));
+      expect(record.port.list(sessionId).map((run) => run.id)).toEqual([
+        record.port.list(canonical)[0]!.id,
+      ]);
+
+      // Its first turn runs: who started it moves with it, and the title is set.
+      const { store: runs } = record;
+      const run = runs.listForChat(canonical)[0]!;
+      holdRun(run.id);
+      runs.move(run, 'starting', runs.lease());
+      createRunFactsSink(runs).report({
+        kind: 'started',
+        runId: run.id,
+        sessionId: canonical,
+        openedBy: 'caller',
+        runtime: 'test-mode',
+        runtimeTurnRef: 1,
+      });
+      releaseRun(run.id);
+      await flush();
+      expect(store.get(canonical)?.extensionId).toBe('flow');
+      expect(store.get(sessionId)).toBeNull();
+      // Titled once its turn began, under the id it runs under, on its runtime.
+      expect(renamed).toEqual([
+        { runtime: 'test-mode', sessionId: canonical, title: INPUT.title, cwd: DORKOS.root },
+      ]);
+      disposeProjector(canonical);
+    } finally {
+      uninstallRunRecord();
+      setMessageQueueStore(undefined);
+    }
+  });
+});
+
+describe('the store’s reaction to a pause cut after a start’s first event (DOR-5232)', () => {
+  it('keeps the words through a cut driven by hand, and tells nobody it could not start', async () => {
+    // No Mac path cuts a run without a queue row (spec §4.7, `startAgain`):
+    // the cut and the second start below are driven by hand, so this proves
+    // only what the record and the start do with them, not a working resume.
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    const { runId } = launches[0]!;
+    const { store: runs } = record;
+    const sink = createRunFactsSink(runs, record.notices, record.starts);
+    const startOnce = (ref: number) => {
+      runs.move(runs.get(runId)!, 'starting', runs.lease());
+      sink.report({
+        kind: 'started',
+        runId,
+        sessionId,
+        openedBy: 'caller',
+        runtime: 'test-mode',
+        runtimeTurnRef: ref,
+      });
+      sink.report({ kind: 'delivered', runId });
+    };
+    holdRun(runId);
+    startOnce(1);
+    // Every watcher hears the run running before the pause lands.
+    await flush();
+    // A pause lands after the runtime's first event, before the agent acted: 15.
+    sink.dispatcher.pauseCut(runId);
+    await flush();
+    expect(runs.get(runId)?.status).toBe('queued');
+    // The words are still there to hand over again: in the row and in memory.
+    expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
+    expect(record.port.wordsOf(runs.get(runId)!)).toBe(INPUT.prompt);
+    // Started again by hand, as a resume would: it ends, and its words go.
+    startOnce(2);
+    runs.endTurn(runs.get(runId)!, 'completed');
+    releaseRun(runId);
+    await flush();
+    expect(runs.get(runId)?.status).toBe('ended');
+    expect(store.get(sessionId)?.prompt).toBeNull();
+    expect(
+      record.effects
+        .listForRun(runId)
+        .filter((e) => e.kind === 'notify_person' && e.key.endsWith(':not_started'))
+    ).toEqual([]);
+  });
+});
+
+describe('a start across a restart and a rebind (DOR-5232)', () => {
+  /** A restart: a new run record and seam over the same database. */
+  function restart(epoch: string): void {
+    record = createRunRecord(db, {
+      epoch,
+      admission: { admission: { pausedAgent: () => undefined, machineFull: () => false } },
+    });
+    service = build();
+  }
+
+  it('still titles its chat when a restart lands before its turn begins', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    expect(renamed).toEqual([]);
+    restart('01BOOTEPOCHSTARTWORK000003');
+    await finish(0);
+    expect(renamed).toEqual([
+      { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
+    ]);
+    expect(store.get(sessionId)?.title).toBeNull();
+  });
+
+  it('still titles its chat when the first try is under way at the run’s end and then fails', async () => {
+    let failFirst!: (err: Error) => void;
+    const tries: string[] = [];
+    renameHook = (runtime, sessionId, title) => {
+      tries.push(title);
+      if (tries.length === 1) {
+        return new Promise<void>((_resolve, reject) => {
+          failFirst = reject;
+        });
+      }
+      renamed.push({ runtime, sessionId, title, cwd: DORKOS.root });
+      return Promise.resolve();
+    };
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    const { store: runs } = record;
+    let run = runs.move(runs.get(launches[0]!.runId)!, 'starting', runs.lease());
+    run = runs.move(run, 'started', { startedAt: runs.stamp(), runtime: 'test-mode' });
+    await flush();
+    expect(tries).toEqual([INPUT.title]);
+    // The run ends while that first try is still out.
+    runs.endTurn(run, 'completed');
+    await flush();
+    expect(store.get(sessionId)).toMatchObject({ prompt: null, title: INPUT.title });
+    failFirst(new Error('no transcript yet'));
+    await flush();
+    await flush();
+    expect(renamed.map((r) => r.title)).toEqual([INPUT.title]);
+    expect(store.get(sessionId)?.title).toBeNull();
+  });
+
+  it('counts starts still waiting after a restart against the running limit', async () => {
+    for (let i = 0; i < START_WORK_LIMITS.running; i++) await service.start('flow', INPUT, 'ctx');
+    restart('01BOOTEPOCHSTARTWORK000004');
+    const err = await refusal(service.start('flow', INPUT, 'ctx'));
+    expect(err).toMatchObject({ code: 'start_limit' });
+    // One ends: room again.
+    await finish(0);
+    await expect(service.start('flow', INPUT, 'ctx')).resolves.toBeDefined();
+  });
+
+  it('forgets a start whose first callback after a restart is already its end', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    restart('01BOOTEPOCHSTARTWORK000005');
+    record.starts.cancel(launches[0]!.runId, 'account_not_allowed');
+    await flush();
+    expect(store.get(sessionId)).toBeNull();
+  });
+
+  it('lets go at boot of words no run still needs', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    // Killed after its run ended, before its words were let go.
+    const { store: runs } = record;
+    let run = runs.move(runs.get(launches[0]!.runId)!, 'starting', runs.lease());
+    run = runs.move(run, 'started', { startedAt: runs.stamp(), runtime: 'test-mode' });
+    runs.endTurn(run, 'completed');
+    expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
+    restart('01BOOTEPOCHSTARTWORK000006');
+    expect(store.get(sessionId)).toMatchObject({ prompt: null, title: null });
+  });
+
+  it('finds its words and its app after a rebind and a restart, and tells the owner when it is cancelled', async () => {
+    uninstallRunRecord();
+    installRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000007' });
+    record = getRunRecord()!;
+    setMessageQueueStore(new MessageQueueStore(db));
+    try {
+      const { sessionId } = await service.start('flow', INPUT, 'ctx');
+      getOrCreateProjector(sessionId, DORKOS.root);
+      const canonical = `sdk-${sessionId}`;
+      rekeyProjector(sessionId, canonical);
+      // Its turn begins under the id the runtime settled on: the row moves.
+      const { store: runs } = record;
+      const runId = runs.listForChat(canonical)[0]!.id;
+      holdRun(runId);
+      runs.move(runs.get(runId)!, 'starting', runs.lease());
+      const sink = createRunFactsSink(runs, record.notices, record.starts);
+      sink.report({
+        kind: 'started',
+        runId,
+        sessionId: canonical,
+        openedBy: 'caller',
+        runtime: 'test-mode',
+        runtimeTurnRef: 1,
+      });
+      await flush();
+      expect(store.get(canonical)?.prompt).toBe(INPUT.prompt);
+      // A pause cuts it back to waiting; then a restart.
+      sink.dispatcher.pauseCut(runId);
+      releaseRun(runId);
+      await flush();
+      uninstallRunRecord();
+      installRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000008' });
+      record = getRunRecord()!;
+      service = build();
+      const run = record.store.get(runId)!;
+      expect(run.status).toBe('queued');
+      expect(record.port.wordsOf(run)).toBe(INPUT.prompt);
+      // Cancelled now: the owner hears, by the app's name.
+      record.starts.cancel(runId, 'account_not_allowed');
+      const notices = record.effects
+        .listForRun(runId)
+        .filter((effect) => effect['key'] === `notify:${runId}:not_started`);
+      expect(notices).toEqual([
+        expect.objectContaining({ payload: expect.objectContaining({ name: 'Flow' }) }),
+      ]);
+      disposeProjector(canonical);
+    } finally {
+      uninstallRunRecord();
+      setMessageQueueStore(undefined);
     }
   });
 });

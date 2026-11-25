@@ -136,7 +136,6 @@ const EXCEPTIONS: Record<string, string> = {
     'Re-reads a source a person already added; adds none.',
   'shapes POST /:name/fork': 'Copies a Shape to edit; applies nothing.',
   'workspaces POST /ports': 'Reads a workspace’s ports.',
-  'workspaces POST /:id/pin': 'Pins a workspace in the list.',
   'runtimes POST /opencode/provision':
     'Installs OpenCode at this computer only; grants no account or key.',
   'runtimes POST /codex/provision':
@@ -195,6 +194,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
   'cloud-owner-bar.ts': 'Shared account owner bar; writes are classified in its callers.',
+  'community-problems.ts':
+    'The space connection owner check and failure answers; writes are classified in callers.',
   'config-backups.ts':
     "Removes or moves the person's own older database copies; grants nothing (N).",
   'approval-person-bars.ts':
@@ -223,6 +224,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'mesh-agent-patch-http.ts':
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',
   'front-door-step-up.ts': 'The shared helper itself rechecks the bar.',
+  'capability-dispatch.ts':
+    'Reads the person bar only to open the person-only door (audience person) on a capability; it grants nothing, and the tier and permission gate still run inside registry.invoke (N).',
   // Shared bars and helpers: their callers are classified here one by one.
   'agent-instructions.ts': 'Reads an agent’s instructions; no write route.',
   'extension-write-binding.ts': 'Shared extension write bar; its callers are classified here.',
@@ -460,7 +463,7 @@ describe('front-door write census', () => {
     );
     const ownerRefusal = `{
       const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), RUN_ON_CREDITS);
-      if (refusal) return c.json(refusal, 403);
+      if (refusal) return ownerRefusalReply(c, refusal);
     }`;
     expect(credits?.thenStatement.getText().replace(/\s+/g, '')).toBe(
       ownerRefusal.replace(/\s+/g, '')

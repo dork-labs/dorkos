@@ -1,7 +1,7 @@
 /** Approval route contracts, including individual person-requested hook reviews. */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../openapi/problem-openapi.js';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 import {
   PendingApprovalsResponseSchema,
@@ -23,6 +23,7 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
       'Approvals an agent has requested and nobody has decided yet, oldest first. Expired requests ' +
       'are excluded, and no response here ever carries token material.',
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'Pending approvals',
         content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
@@ -45,7 +46,7 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The full list',
         content: { 'application/json': { schema: ApprovalFullDetailResponseSchema } },
       },
-      404: { description: 'No pending card with a full list' },
+      404: problemResponse('`not_found`: no pending card with a full list'),
     },
   });
 
@@ -66,7 +67,7 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
       'through the same permission service Settings uses, before the agent is told the answer, so ' +
       'the resumed call and the new setting agree. It records its own `permission.changed` event ' +
       'beside the `permission.answered` event every answer records. It is refused (409 ' +
-      '`ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no ' +
+      '`always_not_offered`) when DorkOS does not know which agent asked, the action has no ' +
       'permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach ' +
       '& secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before ' +
       'anything is granted. Away from this computer, a yes needs fresh confirmation for this request. ' +
@@ -80,35 +81,35 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
         description: 'Approval granted',
         content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
       },
-      403: {
-        description:
-          'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-          'holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person ' +
-          'signed in to the DorkOS app can decide (`operator_cookie_required`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      401: {
-        description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      404: {
-        description: 'No such approval',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      409: {
-        description:
-          "Already decided; or `answer: 'always'` on an approval that does not offer it " +
-          '(`ALWAYS_NOT_OFFERED`). Nothing is granted in that case',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      403: problemResponse(
+        '`person_only`: an agent cannot decide, nor can the caller holding the approval token, ' +
+          'and with login on only a person signed in to the DorkOS app can. `owner_only`: a paid ' +
+          'run, and the caller is not the owner. `not_from_wifi`: a yes from Wi-Fi'
+      ),
+      401: problemResponse('`unauthenticated`: login is enabled and the caller is not signed in'),
+      404: problemResponse('`not_found`: no such approval'),
+      409: problemResponse(
+        "`already_resolved`: already decided. `always_not_offered`: `answer: 'always'` on an " +
+          'approval that does not offer it, or a paid run. `spend_limit_reached`: the monthly ' +
+          'limit stopped a paid run. `conflict`: a card that can only be declined. Nothing is granted'
+      ),
       428: {
         description: 'Confirm this approval with the held step-up action; nothing granted yet',
         content: { 'application/json': { schema: StepUpRequiredBodySchema } },
       },
-      410: {
-        description: 'Expired before it was decided',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      410: problemResponse('`expired`: it expired before it was decided'),
+      400: problemResponse(
+        '`invalid_request`: the body failed its checks, or the permission service refused the ' +
+          "setting `answer: 'always'` would write (an unknown action, or one never Allowed)"
+      ),
+      412: problemResponse(
+        '`precondition_failed`: an agent-raise card no longer counts, because the agent read ' +
+          'outside words since it asked'
+      ),
+      500: problemResponse(
+        "`internal_error`: Always allow couldn't be saved, so nothing was allowed; or another " +
+          "answer won and the saved Always allow couldn't be taken back"
+      ),
     },
   });
 
@@ -130,32 +131,14 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
         description: 'Approval denied',
         content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
       },
-      403: {
-        description:
-          'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-          'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      401: {
-        description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      400: {
-        description: 'Invalid body',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      404: {
-        description: 'No such approval',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      409: {
-        description: 'Already decided',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      410: {
-        description: 'Expired before it was decided',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      403: problemResponse(
+        '`person_only`: an agent cannot decide, nor can the caller holding the approval token'
+      ),
+      401: problemResponse('`unauthenticated`: login is enabled and the caller is not signed in'),
+      400: problemResponse('`invalid_request`: the body failed its checks'),
+      404: problemResponse('`not_found`: no such approval'),
+      409: problemResponse('`already_resolved`: already decided'),
+      410: problemResponse('`expired`: it expired before it was decided'),
     },
   });
 
@@ -178,24 +161,12 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
           },
         },
       },
-      401: {
-        description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      403: {
-        description:
-          'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-          'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      404: {
-        description: 'No such approval',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
-      409: {
-        description: 'This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      401: problemResponse('`unauthenticated`: login is enabled and the caller is not signed in'),
+      403: problemResponse(
+        '`person_only`: an agent cannot decide, nor can the caller holding the approval token'
+      ),
+      404: problemResponse('`not_found`: no such approval'),
+      409: problemResponse('`always_not_offered`: this request never suggests Always allow'),
     },
   });
   registry.registerPath({
@@ -209,8 +180,8 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
         description: 'Declined hook requests',
         content: { 'application/json': { schema: DeclinedHookApprovalsResponseSchema } },
       },
-      401: { description: 'Sign-in required' },
-      403: { description: 'A person must read this history' },
+      401: problemResponse('`unauthenticated`: sign-in required'),
+      403: problemResponse('`person_only`: a person must read this history'),
     },
   });
   registry.registerPath({
@@ -228,9 +199,11 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
           'application/json': { schema: z.object({ ok: z.literal(true), approvalId: z.string() }) },
         },
       },
-      401: { description: 'Sign-in required' },
-      403: { description: 'Only a person may ask again' },
-      409: { description: 'Already asked again, or the request cannot be rebuilt' },
+      401: problemResponse('`unauthenticated`: sign-in required'),
+      403: problemResponse('`person_only`: only a person may ask again'),
+      409: problemResponse(
+        '`already_resolved`: already asked again. `conflict`: the request cannot be rebuilt'
+      ),
     },
   });
 }

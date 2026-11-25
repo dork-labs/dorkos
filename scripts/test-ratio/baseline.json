@@ -1,0 +1,113 @@
+{
+  "$comment": "The test budget (scripts/test-ratio/check-test-ratio.ts). Each package passes while under either its ratio (lines of test per line of source) or its count of test lines. Both only fall. Run `pnpm check:test-ratio -- --update --package <pkg>` after deleting tests; never raise or remove an entry by hand.",
+  "packages": {
+    "apps/client": {
+      "ratio": 0.78,
+      "tests": 349917
+    },
+    "apps/design-system": {
+      "ratio": 0.91,
+      "tests": 1084
+    },
+    "apps/desktop": {
+      "ratio": 0.81,
+      "tests": 16894
+    },
+    "apps/server": {
+      "ratio": 1.24,
+      "tests": 891138
+    },
+    "apps/site": {
+      "ratio": 0.5,
+      "tests": 29258
+    },
+    "packages/a2a-gateway": {
+      "ratio": 1.81,
+      "tests": 3519
+    },
+    "packages/browser": {
+      "ratio": 1,
+      "tests": 24180
+    },
+    "packages/ci-steward": {
+      "ratio": 0.62,
+      "tests": 8251
+    },
+    "packages/cli": {
+      "ratio": 0.88,
+      "tests": 33324
+    },
+    "packages/cloud-api": {
+      "ratio": 0.77,
+      "tests": 5631
+    },
+    "packages/connector-providers": {
+      "ratio": 1.15,
+      "tests": 8013
+    },
+    "packages/db": {
+      "ratio": 1.47,
+      "tests": 14106
+    },
+    "packages/decisions": {
+      "ratio": 1.08,
+      "tests": 1381
+    },
+    "packages/doe": {
+      "ratio": 1.39,
+      "tests": 5696
+    },
+    "packages/evals": {
+      "ratio": 0.5,
+      "tests": 9810
+    },
+    "packages/extension-api": {
+      "ratio": 0.5,
+      "tests": 2982
+    },
+    "packages/harness": {
+      "ratio": 1.11,
+      "tests": 22487
+    },
+    "packages/marketplace": {
+      "ratio": 0.97,
+      "tests": 4960
+    },
+    "packages/memory": {
+      "ratio": 0.95,
+      "tests": 1828
+    },
+    "packages/mesh": {
+      "ratio": 1.13,
+      "tests": 5876
+    },
+    "packages/operating-skills": {
+      "ratio": 0.57,
+      "tests": 1353
+    },
+    "packages/relay": {
+      "ratio": 1.05,
+      "tests": 24831
+    },
+    "packages/shared": {
+      "ratio": 0.5,
+      "tests": 28043
+    },
+    "packages/skills": {
+      "ratio": 1.47,
+      "tests": 3450
+    },
+    "packages/test-utils": {
+      "ratio": 0.5,
+      "tests": 4356
+    },
+    "packages/ui": {
+      "ratio": 0.75,
+      "tests": 2572
+    },
+    "scripts": {
+      "ratio": 0.89,
+      "tests": 20251
+    }
+  }
+}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# scripts-suite-lane: harness (needs node_modules; see scripts/run-scripts-suites.sh)
 # Fixture suite for .claude/hooks/format-changed.sh, the `Stop` hook that formats
 # everything the working tree changed, once per turn.
 #

@@ -4,8 +4,15 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { TranscriptHistoryCache, CHUNK_BYTES } from '../transcript-history-cache.js';
-import { parseTranscript } from '../../transcript-parser.js';
-import { parseTasks } from '../../task-reader.js';
+import { parseTranscript } from '../../__tests__/parse-transcript.js';
+import { createTaskParser } from '../../task-reader.js';
+
+/** The tasks one parser folds from these lines in a single pass. */
+function oneFold(lines: string[]) {
+  const parser = createTaskParser();
+  for (const line of lines) parser.pushRecord(JSON.parse(line));
+  return parser.result();
+}
 
 /**
  * A transcript is parsed once and grown as it grows (DOR-2889). Opening a long
@@ -250,7 +257,7 @@ describe('TranscriptHistoryCache', () => {
     await writeFile(file, jsonl([user('plan'), todo('first task')]));
     const cache = new TranscriptHistoryCache();
     expect((await cache.readTasks(file, SESSION)).map((t) => t.subject)).toEqual(
-      parseTasks([user('plan'), todo('first task')]).map((t) => t.subject)
+      oneFold([user('plan'), todo('first task')]).map((t) => t.subject)
     );
 
     await appendFile(file, jsonl([todo('second list')]));

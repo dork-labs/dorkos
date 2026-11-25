@@ -50,6 +50,7 @@ import {
   confirmSetupAnswer,
 } from './harness.js';
 import { problemBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -157,10 +158,17 @@ const VALIDATION_FAILED = z
   .object({ code: z.literal('invalid_request'), issues: z.unknown() })
   .loose();
 const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
-const OUTSIDE_BOUNDARY = { error: 'Access denied: projectPath outside boundary' };
-const CLIENT_OUTDATED = z
-  .object({ error: z.string(), code: z.literal('client_outdated') })
-  .strict();
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
+/** A problem document with exactly this code and `detail`. */
+const problemOf = (code: ProblemCode, detail: string) => problemBody(code, { detail });
+/** A problem document with this code, any `detail`, and any extension members. */
+const problemCoded = (code: ProblemCode) =>
+  z.object({ code: z.literal(code), detail: z.string() }).loose();
+const OUTSIDE_BOUNDARY = problemOf(
+  'outside_boundary',
+  '`projectPath` is outside the folders DorkOS may use.'
+);
+const CLIENT_OUTDATED = problemCoded('invalid_request');
 const SOURCE_LIST = z
   .object({
     sources: z.array(
@@ -170,14 +178,11 @@ const SOURCE_LIST = z
   .strict();
 const PACKAGE_LIST = z.object({ packages: z.array(z.object({ name: z.string() }).loose()) });
 const SOURCE_REFUSAL = (action: 'add' | 'remove') =>
-  z
-    .object({
-      error: z.literal(`Only the person running DorkOS can ${action} a package source`),
-      code: z.literal('operator_only_marketplace_source'),
-      message: z.string(),
-    })
-    .strict();
-const OPERATOR_ONLY = (error: string) => ({ error, code: 'operator_only' });
+  problemOf(
+    'operator_only',
+    `DorkOS ${action === 'add' ? 'added' : 'removed'} nothing. Package sources are the person's to choose. Ask them; retrying won't help.`
+  );
+const OPERATOR_ONLY = (detail: string) => problemOf('operator_only', detail);
 const CACHE_STATUS = z
   .object({
     marketplaces: z.number(),
@@ -203,7 +208,8 @@ const REQUIRES_CONFIRMATION = z
     message: z.string(),
   })
   .strict();
-const NOT_INSTALLED = (name: string) => z.object({ error: z.string().includes(name) }).strict();
+/** A package nowhere installed: a fixed sentence, never the name echoed back. */
+const NOT_INSTALLED = problemOf('not_found', "That package isn't installed here.");
 /** A disclosure that runs nothing, as a held-back decision would carry it. */
 const EMPTY_EFFECTS = {
   hooks: [],
@@ -238,7 +244,7 @@ contractSuite('marketplace groups', [
     method: 'POST',
     path: '/api/marketplace/sources',
     headers: AGENT,
-    expect: { status: 403, headers: JSON_TYPE, schema: SOURCE_REFUSAL('add') },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: SOURCE_REFUSAL('add') },
   },
   {
     name: 'POST /api/marketplace/sources refuses an approval-token holder',
@@ -246,7 +252,7 @@ contractSuite('marketplace groups', [
     path: '/api/marketplace/sources',
     headers: REQUESTER,
     body: { name: 'evil', source: 'https://example.com/evil' },
-    expect: { status: 403, schema: SOURCE_REFUSAL('add') },
+    expect: { status: 403, body: SOURCE_REFUSAL('add') },
   },
   {
     name: 'POST /api/marketplace/sources refuses an empty body',
@@ -269,11 +275,10 @@ contractSuite('marketplace groups', [
     body: { name: 'evil', source: 'ext::sh -c touch% /tmp/pwned' },
     expect: {
       status: 400,
-      body: {
-        error:
-          "That address isn't one DorkOS can fetch a marketplace from. Use an https:// address " +
-          'for a git repository, or a file:// path to a folder on this machine.',
-      },
+      body: problemOf(
+        'invalid_request',
+        "DorkOS can't fetch from that address. Use an https:// or file:// address."
+      ),
     },
   },
   {
@@ -281,7 +286,7 @@ contractSuite('marketplace groups', [
     method: 'DELETE',
     path: '/api/marketplace/sources/personal',
     headers: AGENT,
-    expect: { status: 403, schema: SOURCE_REFUSAL('remove') },
+    expect: { status: 403, body: SOURCE_REFUSAL('remove') },
   },
   {
     name: 'POST /api/marketplace/sources/:name/refresh answers 404 for an unknown source',
@@ -289,8 +294,8 @@ contractSuite('marketplace groups', [
     path: '/api/marketplace/sources/no-such-source/refresh',
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: "Marketplace source 'no-such-source' not found" },
+      headers: PROBLEM_TYPE,
+      body: problemOf('not_found', 'There is no package source by that name.'),
     },
   },
   {
@@ -313,7 +318,7 @@ contractSuite('marketplace groups', [
   {
     name: 'GET /api/marketplace/installed refuses a repeated projectPath',
     path: '/api/marketplace/installed?projectPath=/a&projectPath=/b',
-    expect: { status: 400, body: { error: 'projectPath may be given only once' } },
+    expect: { status: 400, body: problemOf('invalid_request', 'Send `projectPath` only once.') },
   },
   {
     name: 'GET /api/marketplace/installed refuses a project outside the boundary',
@@ -323,7 +328,10 @@ contractSuite('marketplace groups', [
   {
     name: 'GET /api/marketplace/installed/:name answers 404 for a package nowhere installed',
     path: '/api/marketplace/installed/nothing-here',
-    expect: { status: 404, body: { error: "Installed package 'nothing-here' not found" } },
+    expect: {
+      status: 404,
+      body: problemOf('not_found', "That package isn't installed here."),
+    },
   },
   {
     name: 'HEAD /api/marketplace/installed/:name answers 404 with no body',
@@ -361,7 +369,10 @@ contractSuite('marketplace groups', [
   {
     name: 'GET /api/marketplace/packages/:name answers 404 for an unknown marketplace',
     path: '/api/marketplace/packages/anything?marketplace=no-such-market',
-    expect: { status: 404, body: { error: "Marketplace 'no-such-market' is not configured" } },
+    expect: {
+      status: 404,
+      body: problemOf('not_found', "That marketplace isn't configured. Add it first."),
+    },
   },
 
   // package actions
@@ -397,21 +408,24 @@ contractSuite('marketplace groups', [
     method: 'POST',
     path: '/api/marketplace/packages/anything/install',
     body: { marketplace: 'no-such-market' },
-    expect: { status: 404, body: { error: "Marketplace 'no-such-market' is not configured" } },
+    expect: {
+      status: 404,
+      body: problemOf('not_found', "That marketplace isn't configured. Add it first."),
+    },
   },
   {
     name: 'POST /api/marketplace/packages/:name/uninstall refuses an encoded climb before any gate',
     method: 'POST',
     path: '/api/marketplace/packages/..%2F..%2Fvictim/uninstall',
     body: {},
-    expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+    expect: { status: 400, schema: problemCoded('invalid_request') },
   },
   {
     name: 'POST /api/marketplace/packages/:name/uninstall answers 404 when the person removes nothing',
     method: 'POST',
     path: '/api/marketplace/packages/nothing-here/uninstall',
     body: {},
-    expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+    expect: { status: 404, body: NOT_INSTALLED },
   },
   {
     name: 'POST /api/marketplace/packages/:name/uninstall asks a person when an agent calls',
@@ -449,14 +463,14 @@ contractSuite('marketplace groups', [
     path: '/api/marketplace/packages/nothing-here/update',
     expect: {
       status: 404,
-      schema: z.object({ error: z.string(), packageNames: z.array(z.string()) }).loose(),
+      schema: problemCoded('not_found').and(z.object({ packageNames: z.array(z.string()) })),
     },
   },
   {
     name: 'POST /api/marketplace/packages/:name/check-files answers 404 for a package nowhere installed',
     method: 'POST',
     path: '/api/marketplace/packages/nothing-here/check-files',
-    expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+    expect: { status: 404, body: NOT_INSTALLED },
   },
   {
     name: 'POST /api/marketplace/packages/:name/check-files refuses a project outside the boundary',
@@ -487,7 +501,7 @@ contractSuite('marketplace groups', [
     method: 'POST',
     path: '/api/marketplace/packages/nothing-here/keep-files',
     body: { keepKey: 'k' },
-    expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+    expect: { status: 404, body: NOT_INSTALLED },
   },
   {
     name: 'GET /api/marketplace/packages/:name/install is the /api 404',
@@ -504,7 +518,7 @@ contractSuite('marketplace groups', [
   {
     name: 'GET /api/marketplace/updates refuses a repeated projectPath',
     path: '/api/marketplace/updates?projectPath=/a&projectPath=/b',
-    expect: { status: 400, body: { error: 'projectPath may be given only once' } },
+    expect: { status: 400, body: problemOf('invalid_request', 'Send `projectPath` only once.') },
   },
   {
     name: 'POST /api/marketplace/updates refuses an empty body',
@@ -534,7 +548,7 @@ contractSuite('marketplace groups', [
         },
       ],
     },
-    expect: { status: 404, schema: z.object({ error: z.string() }).loose() },
+    expect: { status: 404, schema: problemCoded('not_found') },
   },
 
   // held back
@@ -549,7 +563,7 @@ contractSuite('marketplace groups', [
     path: '/api/marketplace/held-back/nothing-here/review',
     expect: {
       status: 409,
-      schema: z.object({ error: z.string(), code: z.literal('not_reviewable') }).strict(),
+      schema: problemCoded('conflict'),
     },
   },
   {
@@ -581,13 +595,13 @@ contractSuite('marketplace groups', [
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/marketplace/held-back/:name/decision answers 409 for a package not held back',
+    name: 'POST /api/marketplace/held-back/:name/decision answers 412 for a package not held back',
     method: 'POST',
     path: '/api/marketplace/held-back/nothing-here/decision',
     body: { decision: 'refuse', effects: EMPTY_EFFECTS, bindsTo: 'x' },
     expect: {
-      status: 409,
-      schema: z.object({ error: z.string(), code: z.literal('not_decidable') }).strict(),
+      status: 412,
+      schema: problemCoded('precondition_failed'),
     },
   },
 
@@ -637,7 +651,7 @@ contractSuite('marketplace groups', [
     method: 'POST',
     path: '/api/marketplace/dev-links/Not%20A%20Name/unlink',
     body: { scope: 'global' },
-    expect: { status: 400, body: { error: 'That is not a package name.' } },
+    expect: { status: 400, body: problemOf('invalid_request', 'That is not a package name.') },
   },
   {
     name: 'POST /api/marketplace/dev-links/:name/unlink refuses a person’s empty body',
@@ -663,7 +677,7 @@ contractSuite('marketplace groups', [
     name: 'GET /api/marketplace/sources refuses a foreign Host',
     path: '/api/marketplace/sources',
     headers: { host: 'evil.example.com' },
-    expect: { status: 403, schema: z.object({ error: z.string() }).loose() },
+    expect: { status: 403, schema: z.object({ code: z.literal('host_not_allowed') }).loose() },
   },
   {
     name: 'GET /api/marketplace/installed answers a same-origin browser with its CORS headers',
@@ -801,7 +815,10 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
         source: pathToFileURL(MARKET).href,
       });
       expect(again.status).toBe(409);
-      expect(again.json).toEqual({ error: expect.stringContaining('already exists') });
+      expect(again.json).toMatchObject({
+        code: 'conflict',
+        detail: expect.stringContaining('already exists'),
+      });
 
       await check(server, {
         path: '/api/marketplace/sources',
@@ -830,7 +847,7 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
       });
       await check(server, {
         path: `/api/marketplace/packages/not-listed?marketplace=contract`,
-        expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
+        expect: { status: 404, schema: problemCoded('not_found') },
       });
 
       await check(server, {
@@ -960,7 +977,9 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
         AGENT
       );
       expect(replay.status).toBe(403);
-      expect(replay.json).toEqual({ status: 'declined', reason: 'Unknown or expired token' });
+      expect(replay.json).toEqual(
+        problemOf('declined', 'A person said no, or the approval ended. Nothing was installed.')
+      );
     },
     CASE_TIMEOUT_MS
   );
@@ -1069,8 +1088,10 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
       );
       expect(again.status).toBe(409);
       expect(again.json).toEqual({
-        code: 'dev_link_exists',
-        error: `${LINKED_PACK} already runs from a dev link here. Unlink it first.`,
+        ...problemOf(
+          'conflict',
+          'This package already runs from a dev link here. Unlink it first.'
+        ),
         name: LINKED_PACK,
       });
 
@@ -1148,7 +1169,7 @@ describe('contract: the marketplace groups with login on', () => {
   }, 30_000);
 
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-  const COOKIE_REQUIRED = z.object({ code: z.literal('operator_cookie_required') }).loose();
+  const COOKIE_REQUIRED = problemCoded('person_only');
 
   it(
     'refuses a caller with no credential at the session gate',
@@ -1179,7 +1200,7 @@ describe('contract: the marketplace groups with login on', () => {
         apiKey
       );
       expect(refused.status).toBe(403);
-      expect(refused.json.code).toBe('marketplace_source_needs_app');
+      expect(refused.json.code).toBe('person_only');
       // The owner's session adds it once they confirm it's them (DOR-4355).
       const asked = await call(
         server,
@@ -1195,7 +1216,7 @@ describe('contract: the marketplace groups with login on', () => {
         method: 'DELETE',
         path: '/api/marketplace/sources/contract',
         headers: { ...apiKey, ...AGENT },
-        expect: { status: 403, schema: SOURCE_REFUSAL('remove') },
+        expect: { status: 403, body: SOURCE_REFUSAL('remove') },
       });
       const removed = await call(
         server,
@@ -1231,14 +1252,14 @@ describe('contract: the marketplace groups with login on', () => {
         path: '/api/marketplace/held-back/nothing-here/decision',
         headers: { ...cookie, origin: server!.baseUrl },
         body: decision,
-        expect: { status: 409, schema: z.object({ code: z.literal('not_decidable') }).loose() },
+        expect: { status: 412, schema: problemCoded('precondition_failed') },
       });
       await check(server, {
         method: 'POST',
         path: '/api/marketplace/packages/nothing-here/keep-files',
         headers: { ...cookie, origin: server!.baseUrl },
         body: { keepKey: 'k' },
-        expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+        expect: { status: 404, body: NOT_INSTALLED },
       });
     },
     CASE_TIMEOUT_MS
@@ -1259,7 +1280,7 @@ describe('contract: the marketplace groups with login on', () => {
         path: '/api/marketplace/packages/nothing-here/uninstall',
         headers: { ...cookie, origin: server!.baseUrl },
         body: {},
-        expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+        expect: { status: 404, body: NOT_INSTALLED },
       });
     },
     CASE_TIMEOUT_MS

@@ -33,11 +33,11 @@
  *
  * @module services/runtimes/claude-code/folder-settings/folder-config-pin
  */
-import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { agentFileHooks, hookScriptFiles } from './folder-config-scripts.js';
+import { sha256 } from '../repo-settings/repo-files.js';
 
 /** The three parts a pin is made of, in the order a card names them. */
 export const FOLDER_CONFIG_PARTS = ['hooks', 'mcpJson', 'manifest'] as const;
@@ -68,7 +68,8 @@ export interface FolderConfigParts {
 /**
  * The keys of a folder's Claude Code settings that run code or decide which
  * MCP servers start. Nothing else in the file is pinned: a changed allow list
- * has its own approval (`agent-folder-allows.ts`), and the rest is preference.
+ * has its own approval (`agent-folder-allows.ts`, `tool-gate/folder-file-allows.ts`),
+ * and the rest is preference.
  */
 export const CODE_SETTINGS_KEYS = [
   'hooks',
@@ -156,11 +157,6 @@ function sortKeys(value: unknown): unknown {
     out[key] = sortKeys((value as Record<string, unknown>)[key]);
   }
   return out;
-}
-
-/** sha256 of a string, hex. */
-function sha256(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
 }
 
 /** A malformed file as a value: its text's hash, never its text. */

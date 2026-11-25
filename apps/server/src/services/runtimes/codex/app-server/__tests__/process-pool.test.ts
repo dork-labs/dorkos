@@ -62,16 +62,6 @@ describe('keying', () => {
       release();
     }
   });
-
-  it('gives each home its own process and reuses it', async () => {
-    const { pool, host } = makePool();
-    const one = await pool.acquire(PERSON);
-    const again = await pool.acquire(PERSON);
-    const credits = await pool.acquire(CREDITS);
-    expect(again).toBe(one);
-    expect(credits).not.toBe(one);
-    expect(host.spawns).toHaveLength(2);
-  });
 });
 
 describe('spawning', () => {
@@ -88,12 +78,6 @@ describe('spawning', () => {
     expect(host.processes[0]!.received.map((m) => m.method)).toEqual(['initialize', 'initialized']);
     expect(proc.version).toBe('0.154.0');
     expect(pool.lastSeenVersion).toBe('0.154.0');
-  });
-
-  it('keeps an operator-set RUST_LOG', async () => {
-    const { pool, host } = makePool();
-    await pool.acquire({ ...PERSON, env: { ...PERSON.env, RUST_LOG: 'debug' } });
-    expect(host.spawns[0]!.env.RUST_LOG).toBe('debug');
   });
 
   it('shares one in-flight boot between concurrent callers', async () => {

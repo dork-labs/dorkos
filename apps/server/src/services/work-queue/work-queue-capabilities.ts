@@ -188,6 +188,8 @@ export const workQueueDomain: CapabilityDomain = {
         'Queue one standalone prompt for yourself or agentId. Adding work asks a person, even at Full. Other-agent writes refuse marked, agent-started, scheduled and heartbeat turns. The chat keeps the requester’s marks and runs no higher than either agent or its first run. Queues start only when enabled and within their caps.',
       permissionDirectionForInput: () => 'widen',
       approvalDisplayFields: ['agentId', 'title', 'cwd'],
+      // The card names the target agent rather than its id.
+      approvalSubject: { field: 'agentId', kind: 'agent' },
       input: AddWorkItemRequestSchema.extend(Target),
       output: ItemResult,
       surfaces: mcp('work_queue_add'),
@@ -230,7 +232,9 @@ export const workQueueDomain: CapabilityDomain = {
       description:
         'Remove waiting work from your queue or agentId. Narrowing needs no Ask. Cross-agent turn restrictions still apply.',
       permissionDirectionForInput: () => 'narrow',
-      approvalDisplayFields: ['agentId', 'id'],
+      approvalDisplayFields: ['agentId'],
+      // The card names the target agent rather than its id.
+      approvalSubject: { field: 'agentId', kind: 'agent' },
       input: ItemTarget,
       output: z.union([z.object({ ok: z.literal(true) }), RefusalSchema]),
       surfaces: mcp('work_queue_remove'),
@@ -270,6 +274,8 @@ export const workQueueDomain: CapabilityDomain = {
         'Read agentId’s work queue under Other agents. Asks a person by default. Cross-agent turn restrictions apply.',
       permissionDirectionForInput: () => 'widen',
       approvalDisplayFields: ['agentId'],
+      // The card names the target agent rather than its id.
+      approvalSubject: { field: 'agentId', kind: 'agent' },
       input: z.object({ agentId: z.string().min(1) }),
       output: QueueResult,
       surfaces: mcp('work_queue_read_agent', true),
@@ -287,6 +293,8 @@ export const workQueueDomain: CapabilityDomain = {
         'Change enabled, target or dailyStartCap on your queue or agentId. Supply current settings as before. Narrowing needs no Ask; widening asks even at Full. An agent cannot raise the daily cap past the last limit a person set in queue Settings.',
       permissionDirectionForInput: configureDirection,
       approvalDisplayFields: ['agentId', 'before', 'changes'],
+      // The card names the target agent rather than its id.
+      approvalSubject: { field: 'agentId', kind: 'agent' },
       input: Configure,
       output: QueueResult,
       surfaces: mcp('work_queue_configure'),
@@ -321,6 +329,8 @@ export const workQueueDomain: CapabilityDomain = {
         'Reorder waiting itemIds within your queue or agentId. It starts no new work and needs no Ask. Cross-agent turn restrictions still apply.',
       permissionDirectionForInput: () => 'narrow',
       approvalDisplayFields: ['agentId', 'itemIds'],
+      // The card names the target agent rather than its id.
+      approvalSubject: { field: 'agentId', kind: 'agent' },
       input: z.object({ ...Target, itemIds: z.array(z.string().min(1)).min(1).max(200) }),
       output: QueueResult,
       surfaces: mcp('work_queue_reorder'),
@@ -337,7 +347,9 @@ export const workQueueDomain: CapabilityDomain = {
       description:
         'Explicitly requeue an ended item. This is a new start and asks even at Full. It keeps the original author, marks and first-run ceiling. Cross-agent turn restrictions still apply.',
       permissionDirectionForInput: () => 'widen',
-      approvalDisplayFields: ['agentId', 'id'],
+      approvalDisplayFields: ['agentId'],
+      // The card names the target agent rather than its id.
+      approvalSubject: { field: 'agentId', kind: 'agent' },
       input: ItemTarget,
       output: ItemResult,
       surfaces: mcp('work_queue_requeue'),

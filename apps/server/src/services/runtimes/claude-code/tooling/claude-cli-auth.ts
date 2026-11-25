@@ -24,6 +24,7 @@
  */
 import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import { resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
+import { resolveRuntimeBinary } from '../../shared/resolve-binary.js';
 import {
   findBinaryOnPath,
   isProbeTimeoutError,
@@ -56,10 +57,12 @@ const AUTH_PROBE_LABEL = 'Claude Code authentication';
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */
-export async function resolveClaudeBinaryPath(): Promise<string | null> {
-  return (
-    resolveClaudeBinaryBeforePath() ?? (await findBinaryOnPath('claude', CLAUDE_PROBE_TIMEOUT_MS))
-  );
+export function resolveClaudeBinaryPath(): Promise<string | null> {
+  // Every rung checks its own path, so the shared ladder only orders them.
+  return resolveRuntimeBinary([
+    { resolve: () => resolveClaudeBinaryBeforePath(), verified: true },
+    { resolve: () => findBinaryOnPath('claude', CLAUDE_PROBE_TIMEOUT_MS), verified: true },
+  ]);
 }
 
 /** What `claude auth status --json` reports about this machine's sign-in (never any token material). */

@@ -22,7 +22,10 @@
 import type { DirectNotesData } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { sanitizeContextScalar } from '@dorkos/shared/ui-widget';
-import { defuseUntrustedText, fenceUntrustedBlock } from '../untrusted-fence.js';
+import {
+  defuseUntrustedText,
+  fenceUntrustedBlock,
+} from '../../../core/untrusted-text/untrusted-fence.js';
 
 const TAG = CONTEXT_TAG.direct_notes;
 

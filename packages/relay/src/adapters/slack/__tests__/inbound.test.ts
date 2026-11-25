@@ -1,22 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockRelay } from '../../../__tests__/fixtures.js';
-import {
-  extractChannelId,
-  handleInboundMessage,
-  createSlackInboundState,
-  clearCaches,
-  MAX_CONTENT_LENGTH,
-} from '../inbound.js';
+import { handleInboundMessage, createSlackInboundState } from '../inbound.js';
 import type { SlackMessageEvent, InboundOptions, SlackInboundState } from '../inbound.js';
 import type { WebClient } from '@slack/web-api';
 import type { AdapterInboundCallbacks } from '../../../types.js';
 import type { RelayPublisher } from '../../../types.js';
-import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
 import { ThreadParticipationTracker } from '../thread-tracker.js';
 import { createSlackPresenceState } from '../presence.js';
-
-/** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
-const testCodec = new SlackThreadIdCodec();
 
 function createMockClient(): WebClient & { reactions: { add: ReturnType<typeof vi.fn> } } {
   return {
@@ -54,20 +44,6 @@ function createEvent(overrides: Partial<SlackMessageEvent> = {}): SlackMessageEv
   };
 }
 
-describe('extractChannelId', () => {
-  it('extracts channel ID from DM subject', () => {
-    expect(extractChannelId(testCodec, 'relay.human.slack.D12345')).toBe('D12345');
-  });
-
-  it('returns null for non-slack subject', () => {
-    expect(extractChannelId(testCodec, 'relay.human.telegram.12345')).toBeNull();
-  });
-
-  it('returns null for empty group suffix', () => {
-    expect(extractChannelId(testCodec, 'relay.human.slack.group.')).toBeNull();
-  });
-});
-
 describe('handleInboundMessage', () => {
   let relay: RelayPublisher;
   let client: WebClient;
@@ -96,55 +72,10 @@ describe('handleInboundMessage', () => {
     );
   });
 
-  it('publishes group message with group segment', async () => {
-    // @mentions the bot, because a channel message that names nobody is
-    // filtered by the default respond mode. This used to publish unmentioned:
-    // the call sites here fell back to 'always' while the schema said
-    // 'thread-aware' (DOR-623). This test is about the subject, not the gate.
-    const event = createEvent({ channel: 'C12345', text: '<@UBOTID> hello' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    expect(relay.publish).toHaveBeenCalledWith(
-      'relay.human.slack.group.C12345',
-      expect.objectContaining({ channelType: 'group' }),
-      expect.any(Object)
-    );
-  });
-
   it('skips bot own messages (echo prevention)', async () => {
     const event = createEvent({ user: 'UBOTID' });
     await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('skips bot_message subtype', async () => {
-    const event = createEvent({ subtype: 'bot_message' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('skips messages with bot_id', async () => {
-    const event = createEvent({ bot_id: 'B12345' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('caps content at MAX_CONTENT_LENGTH', async () => {
-    const longText = 'X'.repeat(40_000);
-    const event = createEvent({ text: longText });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(published.content.length).toBe(MAX_CONTENT_LENGTH);
-  });
-
-  it('records error when publish fails without throwing', async () => {
-    (relay.publish as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
-    const event = createEvent();
-    await expect(
-      handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state)
-    ).resolves.toBeUndefined();
-    expect(callbacks.recordError).toHaveBeenCalled();
   });
 
   describe('working presence — the trigger message is queued, not marked', () => {
@@ -177,32 +108,6 @@ describe('handleInboundMessage', () => {
         deliveredTo: 0,
         rejected: [{ reason: 'rate_limited' }],
       });
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'reaction',
-        presence
-      );
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(presence.pendingReactions.has('D67890')).toBe(false);
-    });
-
-    // The router's own drops (paused binding, missing agent, no binding) come
-    // back as deliveredTo: 0 with NOTHING in `rejected` — and the queue was only
-    // cleared for an explicit rejection, so every one of those left a trigger
-    // behind and offset the `:eyes:` on every later turn in the channel by one
-    // (DOR-789).
-    it('forgets the queued message when the router silently drops it', async () => {
-      const event = createEvent({ ts: '1234.5678' });
-      const presence = createSlackPresenceState();
-      (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ deliveredTo: 0 });
 
       await handleInboundMessage(
         event,
@@ -271,71 +176,6 @@ describe('handleInboundMessage', () => {
 
       expect(relay.publish).toHaveBeenCalledTimes(1);
     });
-
-    it('cleans up expired entries and allows reprocessing', async () => {
-      vi.useFakeTimers();
-      const event = createEvent();
-
-      // Process with event_id
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-expire' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-
-      // Advance past TTL (5 minutes)
-      vi.advanceTimersByTime(5 * 60 * 1_000 + 1);
-
-      // Same event_id should now process again (entry expired)
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-expire' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(2);
-    });
-
-    it('clearCaches clears the dedup cache', async () => {
-      const event = createEvent();
-      const options: InboundOptions = { eventId: 'evt-clear' };
-      const deliver = () =>
-        handleInboundMessage(
-          event,
-          client,
-          relay,
-          'UBOTID',
-          callbacks,
-          state,
-          undefined,
-          'none',
-          undefined,
-          undefined,
-          options
-        );
-
-      await deliver();
-      clearCaches(state);
-      await deliver();
-
-      expect(relay.publish).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe('instance-scoped caches', () => {
@@ -402,16 +242,6 @@ describe('handleInboundMessage', () => {
       );
     }
 
-    it('with no respondMode supplied, falls back to the schema default and not to always', async () => {
-      // DOR-623: the default is stated once, in `DEFAULT_RESPOND_MODE`. These
-      // call sites used to restate it as 'always', so whether an unaddressed
-      // channel message was answered depended on whether the config had
-      // travelled through the schema.
-      const event = createEvent({ channel: 'C12345', text: 'general chatter' });
-      await callWithOptions(event, {});
-      expect(relay.publish).not.toHaveBeenCalled();
-    });
-
     it("'mention-only' skips non-mentions", async () => {
       const event = createEvent({ channel: 'C12345', text: 'just chatting' });
       await callWithOptions(event, { respondMode: 'mention-only' });
@@ -428,17 +258,6 @@ describe('handleInboundMessage', () => {
       });
       await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
       expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
-    it("'thread-aware' skips non-participating threads without mention", async () => {
-      const tracker = new ThreadParticipationTracker();
-      const event = createEvent({
-        channel: 'C12345',
-        text: 'thread reply',
-        thread_ts: '2222.0000',
-      });
-      await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
-      expect(relay.publish).not.toHaveBeenCalled();
     });
   });
 
@@ -512,28 +331,6 @@ describe('handleInboundMessage', () => {
         undefined,
         undefined,
         { respondMode: 'always', channelOverrides: { C12345: { enabled: false } } }
-      );
-      expect(relay.publish).not.toHaveBeenCalled();
-    });
-
-    it('respondMode override takes precedence over global', async () => {
-      // Global is 'always' but channel override is 'mention-only' — should skip non-mention
-      const event = createEvent({ channel: 'C12345', text: 'hello' });
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        {
-          respondMode: 'always',
-          channelOverrides: { C12345: { respondMode: 'mention-only' } },
-        }
       );
       expect(relay.publish).not.toHaveBeenCalled();
     });

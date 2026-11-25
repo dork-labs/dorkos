@@ -20,17 +20,58 @@ import {
   UPLOAD_STALLED_MESSAGE,
   UPLOAD_STALL_TIMEOUT_MS,
 } from './upload-contract';
+import { isProblem, readErrorBody, type Problem } from '@dorkos/shared/problem';
+import { noRoomSentence, tooLargeSentence } from '@dorkos/shared/move-sizes';
 import { buildQueryString } from './http-client';
 
+/** A whole, non-negative byte count, or `undefined`. */
+function bytesOf(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
 /**
- * Whether a parsed body is the move route's answer.
+ * The sentence for a refused move. A refusal over sizes carries only the
+ * numbers (DOR-4979), so the sentence is built here from them; without them,
+ * or for any other refusal, it is the server's own `detail`.
+ *
+ * @param body - The refusal.
+ */
+function refusalMessage(body: Problem): string {
+  const sizes = body as Record<string, unknown>;
+  if (body.code === 'disk_full') {
+    const needed = bytesOf(sizes.neededBytes);
+    const free = bytesOf(sizes.freeBytes);
+    if (needed !== undefined && free !== undefined) return noRoomSentence(needed, free);
+  }
+  if (body.code === 'request_too_large') {
+    const archive = bytesOf(sizes.archiveBytes);
+    const limit = bytesOf(sizes.limitBytes);
+    if (archive !== undefined && limit !== undefined) return tooLargeSentence(archive, limit);
+  }
+  return readErrorBody(body, 'Couldn’t start the move. Try again.').message;
+}
+
+/**
+ * The move route's answer from a parsed body: its `ok` envelope, or its refusal
+ * (a problem document, DOR-4979) read into the same envelope, with `mayExist`
+ * kept when the move may still be there. `null` for anything else.
  *
  * @param body - The parsed response body.
  */
-function isMoveResponse(body: unknown): body is CloudCommunityMoveResponse {
-  return (
-    typeof body === 'object' && body !== null && typeof (body as { ok?: unknown }).ok === 'boolean'
-  );
+export function moveResponseOf(body: unknown): CloudCommunityMoveResponse | null {
+  if (isProblem(body)) {
+    const mayExist = (body as { mayExist?: unknown }).mayExist === true;
+    return {
+      ok: false,
+      message: refusalMessage(body),
+      ...(mayExist ? { mayExist: true as const } : {}),
+    };
+  }
+  return typeof body === 'object' &&
+    body !== null &&
+    typeof (body as { ok?: unknown }).ok === 'boolean'
+    ? (body as CloudCommunityMoveResponse)
+    : null;
 }
 
 /**
@@ -90,7 +131,8 @@ export function startHostedCommunityMoveOverHttp(
       } catch {
         body = undefined;
       }
-      if (isMoveResponse(body)) resolve(body);
+      const answer = moveResponseOf(body);
+      if (answer) resolve(answer);
       else reject(new Error(`HTTP ${xhr.status}`));
     });
     xhr.addEventListener('error', () => {

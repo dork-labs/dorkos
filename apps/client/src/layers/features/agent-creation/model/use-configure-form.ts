@@ -23,8 +23,9 @@ async function probeDirectory(transport: Transport, directory: string): Promise<
       ? 'exists-has-dork'
       : 'exists-no-dork';
   } catch (err) {
-    const message = err instanceof Error ? err.message : '';
-    return message.includes('EACCES') || message.includes('permission') ? 'error' : 'no-path';
+    // The system refusing DorkOS the folder is an error; anything else means
+    // nothing usable is there yet.
+    return (err as { code?: unknown } | null)?.code === 'forbidden' ? 'error' : 'no-path';
   }
 }
 

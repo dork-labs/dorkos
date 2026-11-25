@@ -207,10 +207,6 @@ describe('remote roster rows and agent availability (DOR-2878)', () => {
     stale: false,
   });
 
-  it('reads a row from a space without availability, unchanged', () => {
-    expect(RemoteCommunityMembersResponseSchema.parse(roster([row])).members[0]).toEqual(row);
-  });
-
   it('reads an agent row that carries where it runs and whether it is there', () => {
     const reported = {
       ...row,

@@ -1,7 +1,7 @@
 ---
 number: 149
 title: Three-Phase Implementation for Streaming Message Integrity
-status: draft
+status: archived
 created: 2026-03-19
 spec: streaming-message-integrity
 superseded-by: null

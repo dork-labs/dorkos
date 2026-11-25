@@ -65,6 +65,8 @@ type RecoveryRoute = ReturnType<typeof validatedRecoveryRoute>;
 
 /** What one dispatch resolved: the turn's message, and the launch behind it. */
 export interface PumpLaunchPlan {
+  toolTurnOwner?: AgentSession['connectorTurn'];
+  toolTurnSettings?: ResolvedLaunch['toolTurnSettings'];
   /** The working directory this turn runs in — the gate's value and the launch's. */
   effectiveCwd: string;
   /** The message as it reaches the model, context bag prepended (ADR-0273). */
@@ -88,8 +90,14 @@ export interface PumpLaunchPlan {
  * @param resolved - The resolver's answer for this turn.
  * @param effectiveCwd - The working directory the turn runs in.
  */
-export function pumpLaunchPlanOf(resolved: ResolvedLaunch, effectiveCwd: string): PumpLaunchPlan {
+export function pumpLaunchPlanOf(
+  resolved: ResolvedLaunch,
+  effectiveCwd: string,
+  toolTurnOwner?: AgentSession['connectorTurn']
+): PumpLaunchPlan {
   return {
+    toolTurnOwner,
+    toolTurnSettings: resolved.toolTurnSettings,
     effectiveCwd,
     enrichedContent: resolved.enrichedContent,
     meshAgentId: resolved.meshAgentId,

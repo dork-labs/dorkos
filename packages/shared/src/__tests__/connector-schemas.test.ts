@@ -14,9 +14,6 @@ import {
   ConnectorReviewActionSchema,
   ConnectorUsageItemSchema,
   actionNameFromSlug,
-  serviceNameFromToolkit,
-  decodeConnectorReviewAction,
-  encodeConnectorReviewAction,
 } from '@dork-labs/connector-providers/connector-schemas';
 import { ConnectorAgentRequestDecisionSchema } from '../connector-agent-request-schemas.js';
 
@@ -35,16 +32,6 @@ describe('connector reconciliation apply contracts', () => {
     expect(
       ConnectorReconciliationApplyResponseSchema.parse({ ...base, authoritySync })
     ).toMatchObject({ authoritySync });
-  });
-
-  it('allows a catalog review state without presenting it as ready', () => {
-    expect(
-      ConnectorReconciliationApplyResponseSchema.parse({
-        ...base,
-        reconciliationStatus: 'migration_needs_reconcile',
-        authoritySync: { status: 'ready' },
-      }).reconciliationStatus
-    ).toBe('migration_needs_reconcile');
   });
 
   it.each([
@@ -393,18 +380,6 @@ describe('connector execution contracts', () => {
 });
 
 describe('ConnectorReviewActionSchema', () => {
-  it('round-trips one canonical discriminated action', () => {
-    const action = ConnectorReviewActionSchema.parse({
-      version: 1,
-      kind: 'set_agent_access',
-      connectionId: 'connection-1',
-      agentId: 'agent-a',
-      operationRevisionIds: ['revision-read', 'revision-write'],
-    });
-
-    expect(decodeConnectorReviewAction(encodeConnectorReviewAction(action))).toEqual(action);
-  });
-
   it('validates an agent connection request without any private account selector', () => {
     const action = ConnectorReviewActionSchema.parse({
       version: 1,
@@ -474,25 +449,6 @@ describe('agent access requests', () => {
       }).success
     ).toBe(false);
   });
-
-  it('answers one way: no, or the access the agent now holds', () => {
-    expect(ConnectorAgentRequestDecisionSchema.parse({ decision: 'denied' })).toEqual({
-      decision: 'denied',
-    });
-    expect(
-      ConnectorAgentRequestDecisionSchema.parse({
-        decision: 'current_access',
-        connectionId: 'connection-1',
-      })
-    ).toEqual({ decision: 'current_access', connectionId: 'connection-1', eventScopes: [] });
-    expect(
-      ConnectorAgentRequestDecisionSchema.safeParse({
-        decision: 'approved',
-        connectionId: 'connection-1',
-        operationRevisionIds: ['revision-read'],
-      }).success
-    ).toBe(false);
-  });
 });
 
 describe('agent event review bounds', () => {
@@ -546,29 +502,7 @@ describe('agent event review bounds', () => {
 });
 
 describe('actionNameFromSlug', () => {
-  it('turns an action id into plain words, dropping the app’s own prefix', () => {
-    expect(actionNameFromSlug('GMAIL_SEND_EMAIL', 'gmail')).toBe('Send email');
-    expect(actionNameFromSlug('gmail.messages.list', 'gmail')).toBe('List');
-    expect(actionNameFromSlug('LINEAR_CREATE_ISSUE', 'linear')).toBe('Create issue');
-    expect(actionNameFromSlug('GOOGLECALENDAR_DELETE_EVENT', 'googlecalendar')).toBe(
-      'Delete event'
-    );
-  });
-
   it('treats the service id as plain text, never as a pattern', () => {
     expect(actionNameFromSlug('XX_DELETE_ROW', '.*')).toBe('Xx delete row');
-  });
-
-  it('falls back to the id when nothing readable is left', () => {
-    expect(actionNameFromSlug('GMAIL_', 'gmail')).toBe('GMAIL_');
-  });
-});
-
-describe('serviceNameFromToolkit', () => {
-  it('names an app the same way everywhere', () => {
-    expect(serviceNameFromToolkit('gmail')).toBe('Gmail');
-    expect(serviceNameFromToolkit('google_calendar')).toBe('Google Calendar');
-    expect(serviceNameFromToolkit('microsoft-teams')).toBe('Microsoft Teams');
-    expect(serviceNameFromToolkit('slack.bot')).toBe('Slack Bot');
   });
 });

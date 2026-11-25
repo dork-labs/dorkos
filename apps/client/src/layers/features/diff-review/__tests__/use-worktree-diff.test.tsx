@@ -106,7 +106,7 @@ describe('useWorktreeDiff', () => {
 
   it('surfaces a room that could not answer rather than drawing an empty diff', async () => {
     readRoomCanvasDiff.mockRejectedValue(
-      Object.assign(new Error('not there any more'), { code: 'ROOM_FILE_NOT_FOUND' })
+      Object.assign(new Error('not there any more'), { code: 'room_file_not_found' })
     );
     const { result } = renderHook(() => useWorktreeDiff(ARGS), { wrapper });
 

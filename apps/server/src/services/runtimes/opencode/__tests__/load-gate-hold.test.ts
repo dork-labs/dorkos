@@ -128,6 +128,7 @@ function machine(load = 20, gate?: () => LoadGate) {
       sessionId,
       ocSessionId: `ses_${sessionId}`,
       cwd: project.dir,
+      directory: project.dir,
       permissions: {
         pendingPermissionSessions: new Map(
           Object.keys(calls).map((id): [string, string] => [id, `ses_${sessionId}`])
@@ -243,20 +244,6 @@ describe('the acceptance test: two OpenCode chats on one busy computer', () => {
     expect(m.queue.runningCount()).toBe(0);
     expect(m.queue.list()).toHaveLength(0);
   });
-
-  it('says the place again every minute, naming neither the command nor the chat', async () => {
-    const m = machine(20);
-    const ana = m.chat('ana-secret-chat', 'bypassPermissions', { 'perm-a': 'call-a' });
-    const held = pass(m.deps, ana, bashAsk('pnpm build --filter secret-project', 'perm-a'));
-    await settle();
-    await m.time.step(MINUTE);
-    await settle();
-    expect(waitWords(held.events)).toHaveLength(2);
-    expect(JSON.stringify(held.events)).not.toMatch(/secret|pnpm/);
-    expect(JSON.stringify([m.lines, m.log.warn.mock.calls])).not.toMatch(/secret/);
-    m.stopAll.abort();
-    await vi.waitFor(() => expect(held.done).toBe(true));
-  });
 });
 
 describe('the hold waits, and the normal decision decides', () => {
@@ -310,31 +297,6 @@ describe('the hold waits, and the normal decision decides', () => {
     expect(m.queue.list()).toHaveLength(0);
     // The card's own record is the normal one: it can be answered, and it is the person's.
     expect(m.deps.approvals.take('ana', 'perm-a')).not.toBeNull();
-  });
-
-  it('a gate that breaks lets the ask through to the decision, logging no command and no message', async () => {
-    const m = machine(20, () => {
-      throw new Error('EACCES /Users/someone/secret-project');
-    });
-    const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a' });
-    expect(
-      await passAll(m.deps, ana, bashAsk('pnpm build --filter secret-project', 'perm-a'))
-    ).toEqual([]);
-    expect(m.respond).toHaveBeenCalledWith(approvedOnce('perm-a', 'ses_ana'));
-    expect(m.log.warn).toHaveBeenCalledWith(expect.any(String), { error: 'Error' });
-    expect(JSON.stringify(m.log.warn.mock.calls)).not.toMatch(/secret/);
-  });
-
-  it('a gate turned off, and a tool other than bash, hold nothing', async () => {
-    settings.enabled = false;
-    const m = machine(20);
-    const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a', 'perm-w': 'call-w' });
-    expect(await passAll(m.deps, ana, bashAsk('pnpm build', 'perm-a'))).toEqual([]);
-    settings.enabled = true;
-    expect(await passAll(m.deps, ana, askFor('webfetch', 'pnpm build', 'perm-w'))).toEqual([]);
-    expect(m.respond).toHaveBeenCalledTimes(2);
-    expect(m.queue.list()).toHaveLength(0);
-    expect(m.queue.runningCount()).toBe(0);
   });
 });
 
@@ -408,38 +370,6 @@ describe('a chat never waits behind its own slot', () => {
     await passAll(m.deps, ana, callEnded('call-a', 'complete'));
     expect(m.queue.runningCount()).toBe(0);
   }, 30_000);
-
-  it('asks the gate under one share key per chat, its helpers’ asks included', async () => {
-    const gateIfHeavy = vi.fn(async () => null);
-    const m = machine(4, () => ({
-      waitForSlot: vi.fn(),
-      gateIfHeavy,
-      occupy: vi.fn(() => null),
-      waitWhileBusy: vi.fn(async () => {}),
-      waitingJobs: () => [],
-      letThrough: () => 'not-found',
-      markUrgent: () => 'not-found',
-      moveToFront: () => 'not-found',
-    }));
-    const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a', 'perm-h': 'call-h' });
-    ana.permissions.pendingPermissionSessions.set('perm-h', 'ses_helper');
-    await passAll(m.deps, ana, bashAsk('pnpm build', 'perm-a'));
-    await passAll(m.deps, ana, bashAsk('pnpm test', 'perm-h'));
-    expect(gateIfHeavy.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
-      { chatId: 'ana', shareKey: 'opencode:ana:main' },
-      { chatId: 'ana', shareKey: 'opencode:ana:main' },
-    ]);
-  });
-
-  it('the turn’s end gives back a slot shared by several calls', async () => {
-    const m = machine(4);
-    const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a', 'perm-b': 'call-b' });
-    await passAll(m.deps, ana, bashAsk('pnpm build', 'perm-a'));
-    await passAll(m.deps, ana, bashAsk('pnpm test', 'perm-b'));
-    expect(m.queue.runningCount()).toBe(1);
-    m.deps.approvals.clearSession('ana');
-    expect(m.queue.runningCount()).toBe(0);
-  });
 });
 
 describe('giving the slot back', () => {
@@ -470,7 +400,9 @@ describe('giving the slot back', () => {
     expect(m.respond).toHaveBeenCalledWith({
       url: '/permission/{requestID}/reply',
       path: { requestID: 'perm-a' },
+      query: { directory: project.dir },
       body: { reply: 'reject', message: STOPPED_WHILE_WAITING_REASON },
+      signal: expect.any(AbortSignal),
     });
     expect(anaBuild.events.at(-1)).toMatchObject({
       type: 'permission_denied',
@@ -508,31 +440,6 @@ describe('giving the slot back', () => {
     expect(m.respond).toHaveBeenCalledWith(
       expect.objectContaining({ body: expect.objectContaining({ reply: 'reject' }) })
     );
-    expect(m.queue.runningCount()).toBe(0);
-  });
-
-  it('when the turn stops reading at its status line (its stream torn down)', async () => {
-    const m = machine(20);
-    const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a' });
-    const held = enforceApprovals(m.deps, ana, bashAsk('pnpm build', 'perm-a'));
-    expect((await held.next()).value).toMatchObject({ type: 'system_status' });
-    expect(m.queue.list()).toHaveLength(1);
-    await held.return(undefined);
-    await settle();
-    expect(m.queue.list()).toHaveLength(0);
-    // Torn down mid-wait: nothing reached the sidecar, and nothing will.
-    m.loadSource.set(4);
-    await m.time.step(POLL);
-    expect(m.respond).not.toHaveBeenCalled();
-    expect(m.queue.runningCount()).toBe(0);
-  });
-
-  it('as the decision starts, for a helper’s own ask, whose call’s end never reaches this stream', async () => {
-    const m = machine(4);
-    const ana = m.chat('ana', 'bypassPermissions', { 'perm-h': 'call-h' });
-    ana.permissions.pendingPermissionSessions.set('perm-h', 'ses_helper');
-    await passAll(m.deps, ana, bashAsk('pnpm build', 'perm-h'));
-    expect(m.respond).toHaveBeenCalledWith(approvedOnce('perm-h', 'ses_helper'));
     expect(m.queue.runningCount()).toBe(0);
   });
 

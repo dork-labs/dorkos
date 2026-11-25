@@ -16,11 +16,24 @@ name: review-redispatch
 # starts no workflow, so the review would never run. The app has no
 # Administration permission. Nothing from a PR is checked out or run here.
 
+# WHEN IT RUNS (ledger 261124-161126). The cron alone fired once in its first
+# 16 hours, so the scan also ticks whenever CLI Smoke Test finishes on main
+# (after every push, about every 16 minutes on a working day). Each tick scans
+# every open PR, and the ladder in should-redispatch-review.sh decides whether
+# a red review's rung has passed: a tick before it answers `SKIP backoff` in
+# seconds. The cron stays as the backstop for quiet hours. `workflow_run` runs
+# main's copy of this file, and nothing from a PR is checked out or run on any
+# trigger.
+
 on:
   schedule:
     # GitHub throttles scheduled workflows (merge-tail measured a median gap of
     # 162 minutes against a 10-minute ask); the ladder's rungs allow for it.
     - cron: '*/10 * * * *'
+  workflow_run:
+    workflows: [CLI Smoke Test]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,19 +41,22 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: review-redispatch
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
   redispatch:
+    # One scan at a time; a burst of ticks collapses to the newest waiting.
+    concurrency:
+      group: review-redispatch
+      cancel-in-progress: false
     runs-on: ubuntu-latest
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). The schedule runs main's copy on main, so it enters.
+    environment: automation
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: scripts/should-redispatch-review.sh
@@ -48,7 +64,7 @@ jobs:
 
       - name: Mint the merge-tail app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           # The client id is a secret, not a variable, on purpose: repo secrets
           # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.

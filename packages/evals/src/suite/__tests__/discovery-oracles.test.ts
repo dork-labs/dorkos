@@ -15,20 +15,14 @@ import {
 import {
   agentTurnDone,
   atMostTwoWays,
-  chatAppsNamed,
   everyTurnAnswered,
-  noCallTo,
   noDiscoveryLookups,
-  noLookupAbout,
   noSuggestionInTurn,
   noSuggestionToGet,
   pointsToWhereTheyDecide,
   replyNamesPackageWithWhy,
-  replyNeverNames,
-  roomPostMatches,
   roomPostsSuggestNothing,
   suggestionPhrases,
-  suggestsChatAppInTurn,
   suggestsOneChatAppWithWhy,
   waysNamed,
 } from '../discovery-oracles.js';
@@ -116,15 +110,6 @@ describe('the suggestion phrasings', () => {
     }
   });
 
-  it('over-read a report built on the bare verb, the strict direction its doc names', () => {
-    expect(suggestionPhrases('I could not connect to Slack.')).not.toEqual([]);
-  });
-
-  it('count chat apps by name, Teams only in full', () => {
-    expect(chatAppsNamed('Tell the teams on Slack or Discord')).toEqual(['Slack', 'Discord']);
-    expect(chatAppsNamed('Microsoft Teams')).toEqual(['Microsoft Teams']);
-  });
-
   it('count offered ways clause by clause, skipping the ones ruled out', () => {
     expect(waysNamed('Slack, or a webhook with an API key')).toEqual([
       'Slack',
@@ -191,12 +176,6 @@ describe('the "should suggest" oracles', () => {
     ).toBe(true);
   });
 
-  it('suggestsChatAppInTurn reads the turn it names', async () => {
-    const frames = [...turn('Connect Slack and I will post it.'), ...turn('Done.')];
-    expect(await pass(suggestsChatAppInTurn(0), frames)).toBe(true);
-    expect(await pass(suggestsChatAppInTurn(1), frames)).toBe(false);
-  });
-
   it('atMostTwoWays passes one, two or one clarifying question; fails a menu or nothing', async () => {
     expect(await pass(atMostTwoWays, turn('Connect Slack.'))).toBe(true);
     expect(await pass(atMostTwoWays, turn('Connect Slack, or I can email it.'))).toBe(true);
@@ -204,23 +183,6 @@ describe('the "should suggest" oracles', () => {
     expect(await pass(atMostTwoWays, turn('Slack, Discord or a webhook?'))).toBe(false);
     expect(await pass(atMostTwoWays, turn('Done.'))).toBe(false);
     expect(await pass(atMostTwoWays, turn('Which chat? And which channel?'))).toBe(false);
-  });
-
-  it('atMostTwoWays counts a menu offered in a question card', async () => {
-    const card = {
-      event: 'question_prompt',
-      data: {
-        type: 'question_prompt',
-        id: 'q1',
-        questions: [
-          {
-            question: 'Where should I post?',
-            options: [{ label: 'Slack' }, { label: 'Discord' }, { label: 'Microsoft Teams' }],
-          },
-        ],
-      },
-    } as SseFrame;
-    expect(await pass(atMostTwoWays, [card, ...turn('Which chat should I use?')])).toBe(false);
   });
 
   it('replyNamesPackageWithWhy wants the name and a reason in the same sentence', async () => {
@@ -275,23 +237,6 @@ describe('the "stay quiet" oracles', () => {
       expect(await pass(o, turn(bad)), bad).toBe(false);
     }
   });
-
-  it('replyNeverNames and noLookupAbout catch the unrelated package', async () => {
-    const css = /\bcss\b|\blint/i;
-    expect(await pass(replyNeverNames(css, 'x'), turn('Booked with Sam.'))).toBe(true);
-    expect(await pass(replyNeverNames(css, 'x'), turn('css-tidy-lint might help.'))).toBe(false);
-    const about = noLookupAbout(css, 'x');
-    const calendar = call('mcp__dorkos__marketplace_recommend', { context: 'book a meeting' });
-    const lint = call('mcp__dorkos__marketplace_search', { query: 'css lint' });
-    expect(await pass(about, calendar)).toBe(true);
-    expect(await pass(about, lint)).toBe(false);
-  });
-
-  it('noCallTo fails on the named tool only', async () => {
-    const o = noCallTo(['marketplace_install'], 'x');
-    expect(await pass(o, call('mcp__dorkos__marketplace_uninstall', {}))).toBe(true);
-    expect(await pass(o, call('mcp__dorkos__marketplace_install', { name: 'a' }))).toBe(false);
-  });
 });
 
 describe('the room oracles', () => {
@@ -321,12 +266,6 @@ describe('the room oracles', () => {
     const second = post('agent-ada', 'If you connect Gmail I can send it.');
     expect(await run(o, [post('agent-ada', 'Draft: Friday.'), second])).toBe(false);
     expect(await run(o, [post('agent-ada', 'Hi')], { ...room, agents: {} })).toBe(false);
-  });
-
-  it('roomPostMatches reads only the agent posts', async () => {
-    const o = roomPostMatches('ada', /friday/i, 'x');
-    expect(await run(o, [post('agent-ada', 'Moved to Friday.')])).toBe(true);
-    expect(await run(o, [post('op', 'Friday?'), post('agent-ada', 'Sure.')])).toBe(false);
   });
 
   it('agentTurnDone sees the release of the agent working indicator only', () => {

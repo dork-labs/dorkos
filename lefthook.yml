@@ -57,8 +57,8 @@
 # 3 s or less and so a lock, a stale dist or the environment rather than a type
 # error. A commit re-checked the same change about eight times per merged PR.
 # `typecheck` is a required check on every PR and in the merge queue, so no
-# type error can land; the worst a missed one costs is a red PR. Before you open
-# a PR, typecheck with `pnpm verify:preopen` (affected-only), or one package with
+# type error can land; the worst a missed one costs is a red PR. To typecheck
+# locally while debugging, use `pnpm verify:preopen` (affected-only), or one package with
 # `pnpm --filter <pkg> typecheck`. Claude Code sessions also typecheck the
 # edited file's package after every edit (`.claude/hooks/typecheck-changed.sh`).
 pre-commit:
@@ -253,6 +253,23 @@ pre-push:
         own_mocks_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:own-mocks -- --base "$own_mocks_base"
       fail_text: Own-module mock ratchet failed — fix the packages listed above.
+    turn-port:
+      # The turn port's ratchet (DOR-5232), on the same branch point as
+      # max-lines above. The lint rule holds each file to its entry; this
+      # refuses an entry raised or added by hand. Pure file reads, under a second.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push turn-port
+        turn_port_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:turn-port -- --base "$turn_port_base"
+      fail_text: Turn port ratchet failed — fix the files listed above.
+    test-ratio:
+      # The per-package test budget, on the same branch point as max-lines
+      # above. Pure file reads, a few seconds.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push test-ratio
+        test_ratio_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:test-ratio -- --base "$test_ratio_base"
+      fail_text: Test budget failed — each line above says whether to delete weaker tests or restore the baseline.
     ledger-coverage:
       # Coverage discovers gate scripts and checks only changed pipeline paths.
       # Use the branch point so later main changes are not charged to this PR.

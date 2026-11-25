@@ -1,5 +1,6 @@
 import { factsRateLimit, type RateLimitVerdict } from '../http/rate-limiter.js';
 import type { RequestFacts } from '../http/request-facts.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** Default requests per minute per IP through one extension's data proxy. */
 export const EXTENSION_PROXY_RATE_LIMIT_DEFAULT = 120;
@@ -7,11 +8,10 @@ export const EXTENSION_PROXY_RATE_LIMIT_DEFAULT = 120;
 /** Rate-limit window: one minute. */
 const WINDOW_MS = 60_000;
 
-/** The refusal body, sent with status 429. */
-export const EXTENSION_PROXY_RATE_LIMITED_BODY = {
-  error: 'Too many requests to this extension proxy. Try again shortly.',
-  code: 'PROXY_RATE_LIMITED',
-} as const;
+/** The refusal, a `429 rate_limited` problem document. */
+export const EXTENSION_PROXY_RATE_LIMITED_BODY = problemBody('rate_limited', {
+  detail: 'Too many requests to this extension. Wait a moment, then try again.',
+});
 
 /**
  * Build the throttle for one extension's `dataProxy` route.

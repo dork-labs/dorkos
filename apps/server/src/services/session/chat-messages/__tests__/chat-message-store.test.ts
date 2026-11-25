@@ -5,7 +5,11 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
+import { agents, sessionBirthAllocations, sessionMetadata, type Db } from '@dorkos/db';
+import { bindSessionWrite } from '../../../core/runtime-seam/bind-session-write.js';
+import type { SessionBirthWriteContext } from '../../../core/runtime-seam/session-birth-write.js';
+import { MessageQueueStore } from '../../message-queue-store.js';
+import { chatClientId } from '../chat-client-id.js';
 import { ChatMessageStore, type NewChatMessage } from '../chat-message-store.js';
 
 let db: Db;
@@ -62,6 +66,169 @@ describe('ChatMessageStore — rows', () => {
   it('writes nothing for an empty patch', () => {
     const inserted = store.insert(message());
     expect(store.update('m1', {})).toEqual(inserted);
+  });
+});
+
+describe('fresh agent DM birth', () => {
+  const target = { id: 'ben', path: '/agents/ben' };
+  const reserve = () => store.insertFreshDm(message(), target);
+  const allocate = () => db.select().from(sessionBirthAllocations).all();
+  const metadata = () => db.select().from(sessionMetadata).all();
+
+  it('passes only the exact durable receipt through the real first metadata bind', () => {
+    db.insert(agents)
+      .values({
+        id: target.id,
+        name: 'Ben',
+        projectPath: target.path,
+        runtime: 'doe',
+        registeredAt: '2026-10-09T10:00:00.000Z',
+        updatedAt: '2026-10-09T10:00:00.000Z',
+      })
+      .run();
+    const { row, birth } = reserve();
+    expect(store.get(row.id)).toEqual(row);
+    expect(allocate()).toMatchObject([
+      {
+        sessionId: row.toSessionId,
+        createdAt: row.createdAt,
+        internalSource: {
+          receiptId: row.id,
+          queueMessageId: row.queueMessageId,
+          fromSessionId: row.fromSessionId,
+        },
+      },
+    ]);
+    expect(metadata()).toEqual([]);
+    const bind = (context: Extract<SessionBirthWriteContext, { kind: 'chat-message' }> = birth) =>
+      bindSessionWrite(
+        db,
+        row.toSessionId,
+        'doe',
+        { kind: 'chat-message' },
+        target.path,
+        {},
+        {},
+        undefined,
+        context
+      );
+    expect(() => bind({ ...birth, fromAgentPath: '/agents/wrong' })).toThrow('refused: source');
+    expect(() => bind({ ...birth, delivery: 'dispatcher-restart' })).toThrow('refused: source');
+    expect(allocate()).toHaveLength(1);
+    expect(metadata()).toEqual([]);
+    expect(bind()).toBe(true);
+    expect(allocate()).toEqual([]);
+    expect(metadata()).toMatchObject([
+      { sessionId: row.toSessionId, runtime: 'doe', modelLaunchState: 'pending-v1' },
+    ]);
+  });
+
+  it('does not reserve birth when SQLite ignores the receipt insert', () => {
+    db.$client.exec(`CREATE TEMP TRIGGER ignore_dm_receipt BEFORE INSERT ON chat_messages
+      BEGIN SELECT RAISE(IGNORE); END`);
+    expect(reserve).toThrow('DorkOS could not reserve this chat.');
+    expect(store.get('m1')).toBeUndefined();
+    expect(allocate()).toEqual([]);
+  });
+
+  it('rolls back a new receipt when the allocation write is refused', () => {
+    db.$client.exec(`CREATE TEMP TRIGGER refuse_dm_birth BEFORE INSERT ON session_birth_allocations
+      BEGIN SELECT RAISE(ABORT, 'fixture refusal'); END`);
+    expect(reserve).toThrow('fixture refusal');
+    expect(store.get('m1')).toBeUndefined();
+    expect(allocate()).toEqual([]);
+  });
+
+  it('retires only the exact unconsumed receipt and preserves both on failed cleanup', () => {
+    const { row, birth } = reserve();
+    store.deleteRejectedFreshDm(row, { ...birth, queueMessageId: 'wrong' });
+    expect(store.get(row.id)).toEqual(row);
+    expect(allocate()).toHaveLength(1);
+    db.$client.exec(`CREATE TEMP TRIGGER refuse_dm_cleanup BEFORE DELETE ON chat_messages
+      BEGIN SELECT RAISE(ABORT, 'fixture cleanup refusal'); END`);
+    expect(() => store.deleteRejectedFreshDm(row, birth)).toThrow('fixture cleanup refusal');
+    expect(store.get(row.id)).toEqual(row);
+    expect(allocate()).toHaveLength(1);
+    db.$client.exec('DROP TRIGGER refuse_dm_cleanup');
+    store.deleteRejectedFreshDm(row, birth);
+    expect(store.get(row.id)).toBeUndefined();
+    expect(allocate()).toEqual([]);
+  });
+
+  function boundReceipt() {
+    db.insert(agents)
+      .values({
+        id: target.id,
+        name: 'Ben',
+        projectPath: target.path,
+        runtime: 'doe',
+        registeredAt: '2026-10-09T10:00:00.000Z',
+        updatedAt: '2026-10-09T10:00:00.000Z',
+      })
+      .run();
+    const { row, birth } = reserve();
+    expect(
+      bindSessionWrite(
+        db,
+        row.toSessionId,
+        'doe',
+        { kind: 'chat-message' },
+        target.path,
+        {},
+        {},
+        undefined,
+        birth
+      )
+    ).toBe(true);
+    expect(allocate()).toEqual([]);
+    return { row, birth };
+  }
+
+  it('retires the exact receipt after a bind but before queue admission', () => {
+    const { row, birth } = boundReceipt();
+    const before = metadata();
+    store.deleteRejectedFreshDm(row, birth);
+    expect(store.get(row.id)).toBeUndefined();
+    expect(metadata()).toEqual(before);
+  });
+
+  it('preserves an admitted queue row and its receipt even before the receipt status is updated', () => {
+    const { row, birth } = boundReceipt();
+    const queue = new MessageQueueStore(db);
+    const admitted = queue.enqueue({
+      id: birth.queueMessageId,
+      sessionId: row.toSessionId,
+      content: 'fixture',
+      clientId: chatClientId(birth.fromSessionId),
+    });
+    store.deleteRejectedFreshDm(row, birth);
+    expect(store.get(row.id)).toEqual(row);
+    expect(queue.list(row.toSessionId)).toEqual([admitted]);
+  });
+
+  it.each([
+    { status: 'working' },
+    { toSessionId: 'canonical-chat' },
+    { queueMessageId: 'joined-queue' },
+  ] as const)('preserves a bound receipt after dispatch changed its evidence: %j', (advance) => {
+    const { row, birth } = boundReceipt();
+    store.update(row.id, advance);
+    const changed = store.get(row.id);
+    store.deleteRejectedFreshDm(row, birth);
+    expect(store.get(row.id)).toEqual(changed);
+  });
+
+  it('does not adopt an existing metadata winner and keeps ordinary receipts allocation-free', () => {
+    db.insert(sessionMetadata)
+      .values({ sessionId: 'chat-b', runtime: 'doe', createdAt: 'prior' })
+      .run();
+    const before = metadata();
+    expect(reserve).toThrow('DorkOS could not reserve this chat.');
+    expect(store.get('m1')).toBeUndefined();
+    expect(metadata()).toEqual(before);
+    store.insert(message());
+    expect(store.get('m1')).toBeDefined();
+    expect(allocate()).toEqual([]);
   });
 });
 

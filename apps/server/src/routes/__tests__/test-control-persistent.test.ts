@@ -132,7 +132,8 @@ describe('the held-process controls', () => {
       .send({ sessionId: FOREIGN, enabled: true });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('not-test-mode');
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toContain('isn’t on the test runtime');
     expect(heldProcesses.isEnabled(FOREIGN)).toBe(false);
     // The read and the reap refuse it on the same terms, so the three controls
     // can never disagree about which runtime they are speaking for.

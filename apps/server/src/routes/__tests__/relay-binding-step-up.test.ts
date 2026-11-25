@@ -58,7 +58,7 @@ describe('chat route confirmation', () => {
     expect(held.status).toBe(428);
     expect(JSON.stringify(store.getById(bindingId))).toBe(before);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(JSON.stringify(store.getById(bindingId))).toBe(before);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -69,7 +69,7 @@ describe('chat route confirmation', () => {
   });
 
   // Security S5 on DOR-4355 M3: a change read as free must still be free when it lands.
-  it('answers 409 for a free change judged on a route the person narrowed meanwhile', async () => {
+  it('answers 412 for a free change judged on a route the person narrowed meanwhile', async () => {
     const narrowed = store.getById(bindingId)!;
     expect(narrowed.canInitiate).toBe(false);
     // The read the route judges on is from before the person took "start chats" away.
@@ -77,8 +77,11 @@ describe('chat route confirmation', () => {
     const res = await owner
       .call('patch', `/api/relay/bindings/${bindingId}`, 'own-tunnel')
       .send({ canInitiate: true });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('BINDING_CHANGED');
+    expect(res.status).toBe(412);
+    expect(res.body).toMatchObject({
+      code: 'precondition_failed',
+      detail: 'That chat route changed since you looked. Try again.',
+    });
     expect(store.getById(bindingId)?.canInitiate).toBe(false);
   });
 

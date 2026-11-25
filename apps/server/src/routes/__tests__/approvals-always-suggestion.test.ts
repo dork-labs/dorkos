@@ -211,7 +211,7 @@ describe('the Always allow suggestion', () => {
       `/api/approvals/${ask({ area: 'reach' })}/dismiss-suggestion`
     );
     expect(floor.status).toBe(409);
-    expect(floor.body.code).toBe('SUGGESTION_NOT_OFFERED');
+    expect(floor.body.code).toBe('always_not_offered');
   });
 });
 

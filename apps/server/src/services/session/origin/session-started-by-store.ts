@@ -20,6 +20,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   sessionStartedBy,
   sql,
   type Db,
@@ -65,6 +66,14 @@ export interface StartedByRecord {
    * `agent-mode-run-origin.ts`, which takes any other value as a run.
    */
   scheduledOrigin: string | null;
+  /**
+   * The words a start asked of the new chat, kept until its turn has them,
+   * then cleared (spec `turns-survive-restarts` §3.2, DOR-5232): what a
+   * restart in between hands over again. Null otherwise.
+   */
+  prompt: string | null;
+  /** The title a start asked for, kept until the chat took it. Null otherwise. */
+  title: string | null;
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
@@ -76,7 +85,9 @@ type DefaultedField =
   | 'starterPermissionMode'
   | 'permissionSameAsStarter'
   | 'reportBack'
-  | 'scheduledOrigin';
+  | 'scheduledOrigin'
+  | 'prompt'
+  | 'title';
 
 /**
  * A start as a writer hands it in: `carried` defaults to false, the
@@ -107,6 +118,69 @@ export class SessionStartedByStore {
   insert(record: StartedByInsert): boolean {
     const result = this.db.insert(sessionStartedBy).values(record).onConflictDoNothing().run();
     return result.changes > 0;
+  }
+
+  /**
+   * Let a start's words and title go: its run ended (or will never run).
+   *
+   * @param sessionId - The chat.
+   * @param opts.keepTitle - Keep the title: setting it is still under way.
+   */
+  clearPrompt(sessionId: string, opts: { keepTitle?: boolean } = {}): void {
+    this.db
+      .update(sessionStartedBy)
+      .set(opts.keepTitle ? { prompt: null } : { prompt: null, title: null })
+      .where(eq(sessionStartedBy.sessionId, sessionId))
+      .run();
+  }
+
+  /**
+   * The chat took its title: nothing is left to set.
+   *
+   * @param sessionId - The chat.
+   */
+  clearTitle(sessionId: string): void {
+    this.db
+      .update(sessionStartedBy)
+      .set({ title: null })
+      .where(eq(sessionStartedBy.sessionId, sessionId))
+      .run();
+  }
+
+  /**
+   * The chats an extension's chain started since a moment, carried moves
+   * included (a move's successor is still working for the app): what "chats
+   * working at once" is counted over, from saved rows.
+   *
+   * @param originExtensionId - The extension at the root of the chain.
+   * @param since - ISO 8601.
+   */
+  listSince(originExtensionId: string, since: string): string[] {
+    return this.db
+      .select({ id: sessionStartedBy.sessionId })
+      .from(sessionStartedBy)
+      .where(
+        and(
+          eq(sessionStartedBy.originExtensionId, originExtensionId),
+          gte(sessionStartedBy.createdAt, since)
+        )
+      )
+      .all()
+      .map((row) => row.id);
+  }
+
+  /**
+   * Every start whose words are still kept: what a boot checks against the
+   * runs that name them (a start killed before its run was saved, or before
+   * its words were let go).
+   */
+  withPrompt(): string[] {
+    return this.db
+      .select({ id: sessionStartedBy.sessionId })
+      .from(sessionStartedBy)
+      .where(isNotNull(sessionStartedBy.prompt))
+      .all()
+      .map((row) => row.id);
   }
 
   /**

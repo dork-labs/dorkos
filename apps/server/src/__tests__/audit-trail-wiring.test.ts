@@ -21,12 +21,8 @@ describe('audit trail startup wiring', () => {
     expect(prune).toBeGreaterThan(wire);
   });
 
-  it('serves /api/audit and registers the audit capabilities with the same log', () => {
-    // Served from the Hono `/api` app (`http/hono-api.ts`), which reads this.
-    expect(source).toContain('deps.audit = { log: auditLog, accounts: auditAccounts };');
-    expect(source).toContain(
-      'auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),'
-    );
+  it('registers the audit capabilities, which the mount serves at /api/audit', () => {
+    expect(source).toContain('...auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),');
   });
 
   it('sets the session visibility lookup from the stored origin and the overlays', () => {

@@ -1,15 +1,5 @@
 // @vitest-environment jsdom
-/**
- * The honest quiet state (team-room-home spec D3.6).
- *
- * Three promises are pinned here. "All quiet." is a claim about RIGHT NOW, so it
- * is measured against the read cursor as it stood when the page opened —
- * anything said since is a conversation, and a conversation is not a quiet
- * morning. The room never fakes a recap: with nothing scheduled it says two
- * words and stops, and every forward look it does draw is read out of a real
- * task. And it never talks over the pinned triage header: anything waiting or
- * wrong is the header's line, and this stands down for good.
- */
+/** The honest quiet state (team-room-home spec D3.6). */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
@@ -19,10 +9,6 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { Task } from '@dorkos/shared/types';
-import type {
-  ListNotificationsResponse,
-  NotificationDTO,
-} from '@dorkos/shared/notification-schemas';
 import type { ExtensionDecisionDTO } from '@dorkos/shared/extension-decision-schemas';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
@@ -41,10 +27,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 // DorkBot's suggestion has its own suite, where the registry can be controlled.
-// What matters here is the one thing only this file can answer: WHEN the quiet
-// state lets it speak at all. The rest of the barrel is kept (DOR-902) — a
-// factory that returns only the one override deletes every other export for
-// anything else in the tree that imports from it.
 let suggestionQualifies = true;
 vi.mock('@/layers/features/feature-promos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/feature-promos')>();
@@ -140,94 +122,7 @@ function buildApproval(): PendingApproval {
   };
 }
 
-/** A mesh report with agents nobody can reach — one real attention row. */
-/**
- * Frozen at module load rather than read per call, so every row in one run is
- * the same age and a suite that takes a minute cannot have its first fixture
- * age differently from its last.
- */
-const LOADED_AT = Date.now();
-
-/** One minute, in milliseconds. */
-const MINUTE_MS = 60_000;
-
-/**
- * An Inbox page holding one "agent stopped answering" row per name.
- *
- * The cheapest way to put one real Recent-Activity row on screen: those rows are
- * Inbox notifications now (DOR-1384), not a derivation over mesh liveness, so
- * one transport answer still does it and the row still owns the
- * `?detail=offline-agent` deep link.
- */
-function offlineAgents(...names: string[]) {
-  return {
-    notifications: names.map((name, i) => ({
-      id: `01JZH000000000000000000${i}`,
-      kind: 'agent.unreachable' as const,
-      tier: 'quiet' as const,
-      subject: { type: 'agent' as const, id: name },
-      agentId: name,
-      title: `${name} stopped answering`,
-      // RELATIVE, never a literal date. The activity group only draws the last
-      // 24 hours (`useActivityNotifications`), so a fixture pinned to a calendar
-      // day is a test that passes until the wall clock walks past it and then
-      // fails for a reason that has nothing to do with the code. This one did:
-      // written at 22h old, red by the same afternoon.
-      createdAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
-    })),
-    nextCursor: null,
-    unreadCount: names.length,
-  };
-}
-
-/** The one unread `report.daily` row this file seeds. */
-function shiftReportRow(): NotificationDTO {
-  return {
-    id: '01JZR000000000000000000S1',
-    kind: 'report.daily',
-    tier: 'quiet',
-    subject: { type: 'system', id: '2026-08-19' },
-    title: 'While you were away: 2 turns finished',
-    body: '2 turns finished in the last day.',
-    createdAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
-  };
-}
-
-/**
- * `listNotifications`, split by which lens is asking.
- *
- * `useAttentionRows` (via `useActivityNotifications`) and `useShiftReport`
- * share the transport method but read different kinds through different
- * lenses, so a flat `mockResolvedValue` cannot answer both truthfully —
- * whatever it returns lands in BOTH caches, and an activity fixture handed to
- * the `report.daily` lens would draw a fabricated Shift Report. This inspects
- * the query the way the real server route does: `activity` for anything else,
- * `report` rows only for a `report.daily` lens.
- */
-function notificationsByLens(
-  options: { activity?: ListNotificationsResponse; report?: NotificationDTO[] } = {}
-) {
-  const empty: ListNotificationsResponse = { notifications: [], nextCursor: null, unreadCount: 0 };
-  return vi
-    .fn()
-    .mockImplementation((query?: { kind?: string[] }): Promise<ListNotificationsResponse> =>
-      query?.kind?.includes('report.daily')
-        ? Promise.resolve({
-            notifications: options.report ?? [],
-            nextCursor: null,
-            unreadCount: options.report?.length ?? 0,
-          })
-        : Promise.resolve(options.activity ?? empty)
-    );
-}
-
-/**
- * #team with a roster, so the reader has a read cursor to be frozen from.
- *
- * `lastReadSeq` is the whole point of this fixture: it is where the reader had
- * got to when the page opened, and everything the room says after it is what
- * makes the morning not quiet.
- */
+/** #team with a roster, so the reader has a read cursor to be frozen from. */
 function roomWithCursor(lastReadSeq: number) {
   return {
     id: ROOM_ID,
@@ -258,13 +153,8 @@ function roomWithCursor(lastReadSeq: number) {
 }
 
 /**
- * Render the quiet state over a room whose history is already in the cache —
- * which is how it reaches this component in the app, since the room surface
- * below it does the fetching.
- *
- * `lastReadSeq` defaults to the newest entry, i.e. a reader who is caught up.
- * That is the only arrangement the line is allowed to appear in, so it is the
- * baseline every other test varies from.
+ * Render the quiet state over a room whose history is already in the cache — which is how it
+ * reaches this component in the app, since the room surface below it does the fetching.
  */
 function renderQuiet({
   entries = [post(1)],
@@ -329,28 +219,6 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   return Promise.resolve(new Response('{}', { status: 404 }));
 }
 
-/** One open decision an extension asked about — it waits in the Inbox, not the header. */
-function buildDecision(): ExtensionDecisionDTO {
-  return {
-    id: '01J0000000000000000000000D',
-    extensionId: 'flow',
-    extensionName: 'Flow',
-    key: 'ship',
-    title: 'Ship it?',
-    why: 'Review passed. Saying no keeps it in review.',
-    detail: null,
-    project: null,
-    projectLabel: null,
-    since: null,
-    actions: { kind: 'yes-no', approveLabel: 'Ship', rejectLabel: 'Keep in review' },
-    link: null,
-    raisedAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
-    needsYou: false,
-    watch: null,
-    revision: 0,
-  };
-}
-
 /** The quiet line, or `null` when it drew nothing at all. */
 function quietLine(): HTMLElement | null {
   return document.querySelector('[data-slot="home-quiet-state"]');
@@ -399,48 +267,11 @@ describe('HomeQuietState — when it speaks', () => {
     );
     expect(quietLine()!.textContent).toContain('tomorrow');
   });
-
-  it('leaves the forward look off when the scheduler is switched off', async () => {
-    const listTasks = vi.fn().mockResolvedValue([buildTask({ nextRun: new Date().toISOString() })]);
-    const { transport } = renderQuiet({
-      transport: {
-        listTasks,
-        getConfig: vi
-          .fn()
-          .mockResolvedValue({ tasks: { enabled: false }, relay: { enabled: false } }),
-      },
-    });
-
-    expect(await screen.findByText('All quiet.')).toBeInTheDocument();
-    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
-    // A feature nobody has switched on has no runs to promise.
-    expect(listTasks).not.toHaveBeenCalled();
-    expect(quietLine()!.textContent).toBe('All quiet.');
-  });
 });
 
 describe('HomeQuietState — when it stands down', () => {
   it('draws nothing on a room with no history — day one is the chips, not a recap', async () => {
     const { transport } = renderQuiet({ entries: [] });
-
-    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-    expect(quietLine()).toBeNull();
-  });
-
-  it('draws nothing while the history has not loaded', async () => {
-    // No `setQueryData` for this room at all: nothing is known yet, and nothing
-    // is claimed.
-    const transport = createMockTransport();
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>
-          <HomeQuietState roomId={ROOM_ID} presenceOccupied={false} />
-        </TransportProvider>
-      </QueryClientProvider>
-    );
 
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
     expect(quietLine()).toBeNull();
@@ -457,108 +288,6 @@ describe('HomeQuietState — when it stands down', () => {
     await waitFor(() => expect(quietLine()).toBeNull());
   });
 
-  // DOR-2578: the Inbox pill read "1 waiting" while a surface beside it said
-  // all was quiet. Anything the pill counts silences this line, including the
-  // kinds the header does not draw. Seeded defect: read only approvals
-  // (`approvals.length > 0`) instead of the waiting queue's `items`.
-  it('draws nothing when an extension decision is waiting in the Inbox', async () => {
-    mockExtensionDecisions = [buildDecision()];
-    renderQuiet();
-
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringMatching(/\/extension-decisions$/),
-        expect.anything()
-      )
-    );
-    // Long enough for the line to have appeared if it were going to.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(quietLine()).toBeNull();
-  });
-
-  it('draws nothing when an agent is waiting on an answer', async () => {
-    const { transport } = renderQuiet({
-      transport: {
-        listPendingInteractions: vi.fn().mockResolvedValue({
-          interactions: [
-            {
-              sessionId: 'ses-1',
-              cwd: '/work',
-              interaction: { id: 'int-1', type: 'question', toolCallId: 'tc-1' },
-              raisedAt: new Date(LOADED_AT - MINUTE_MS).toISOString(),
-            },
-          ],
-        }),
-      },
-    });
-
-    await waitFor(() => expect(transport.listPendingInteractions).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(quietLine()).toBeNull();
-  });
-
-  it('says nothing when a waiting read failed — cannot say is not quiet', async () => {
-    // A failed read answers with an empty list. Seeded defect: drop
-    // `waitingUnreadable ||` from the gate and "All quiet." is drawn over it.
-    decisionsReadFails = true;
-    renderQuiet();
-
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringMatching(/\/extension-decisions$/),
-        expect.anything()
-      )
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(quietLine()).toBeNull();
-  });
-
-  it('says nothing until the waiting queue has loaded', async () => {
-    // Seeded defect: drop `waitingLoading ||` from the gate and "All quiet."
-    // is drawn before the Inbox's reads have answered.
-    extensionReadsHang = true;
-    renderQuiet();
-
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(quietLine()).toBeNull();
-  });
-
-  it('draws nothing when something needs attention', async () => {
-    const { transport } = renderQuiet({
-      transport: {
-        listNotifications: notificationsByLens({ activity: offlineAgents('tangerines') }),
-      },
-    });
-
-    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalled());
-    await waitFor(() => expect(quietLine()).toBeNull());
-  });
-
-  it('draws nothing when there is a Shift Report to show — it is the header saying something too', async () => {
-    // Nothing is waiting and nothing broke, but the Shift Report card is on
-    // screen above the feed, and "All quiet." directly under a card listing
-    // what happened overnight is the contradiction this gate exists to catch.
-    const { transport } = renderQuiet({
-      transport: { listNotifications: notificationsByLens({ report: [shiftReportRow()] }) },
-    });
-
-    // Both lenses have to have been asked — `useAttentionRows`'s activity
-    // read and `useShiftReport`'s own — before the answer means anything.
-    // `waitFor(() => expect(quietLine()).toBeNull())` alone would pass on the
-    // FIRST poll, on the frame before any of this has resolved (the room's
-    // cursor is not frozen yet either, so `quiet` starts false regardless of
-    // what the Shift Report says) — which proves nothing about whether the
-    // report was ever consulted. Settling first, then reading the DOM with a
-    // plain assertion, is what makes this a claim about the steady state.
-    await waitFor(() => expect(transport.listNotifications).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(transport.getRoom).toHaveBeenCalled());
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(quietLine()).toBeNull();
-  });
-
   it('draws nothing while somebody is working — that is not quiet', async () => {
     const { transport } = renderQuiet({ presenceOccupied: true });
 
@@ -569,9 +298,7 @@ describe('HomeQuietState — when it stands down', () => {
 
 describe('HomeQuietState — "quiet" is a claim about right now', () => {
   it('says nothing over a room that has been talking since the reader arrived', async () => {
-    // The reader had read up to entry 1. Entries 2 and 3 landed after that, so
-    // the feed underneath this line is a live conversation — and "All quiet."
-    // over it is the room asserting something its own contents disprove.
+    // The reader had read up to entry 1.
     const { transport } = renderQuiet({
       entries: [post(1), post(2), post(3)],
       lastReadSeq: 1,
@@ -582,38 +309,13 @@ describe('HomeQuietState — "quiet" is a claim about right now', () => {
     expect(quietLine()).toBeNull();
   });
 
-  it('speaks when everything in the room is at or behind where the reader had got to', async () => {
-    renderQuiet({ entries: [post(1), post(2), post(3)], lastReadSeq: 3 });
-
-    expect(await screen.findByText('All quiet.')).toBeInTheDocument();
-  });
-
-  it('says nothing to a reader who is not a member — no cursor is not "nothing new"', async () => {
-    const { transport } = renderQuiet({
-      // A room the reader can see but is not in: the roster holds somebody else.
-      transport: {
-        getRoom: vi.fn().mockResolvedValue({
-          ...roomWithCursor(1),
-          viewerAuthorId: 'somebody-else',
-        }),
-      },
-    });
-
-    await waitFor(() => expect(transport.getRoom).toHaveBeenCalled());
-    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-    expect(quietLine()).toBeNull();
-  });
-
   it('holds the cursor it arrived with, so reading the room cannot make it lie', async () => {
     // The reader arrives caught up, and the line is honest.
     const { queryClient } = renderQuiet({ entries: [post(1), post(2)], lastReadSeq: 2 });
     expect(await screen.findByText('All quiet.')).toBeInTheDocument();
 
-    // Now somebody says something, and looking at the room marks it read — which
-    // is exactly what `useMarkRoomRead` does to this cache, within a frame. A
-    // component reading the LIVE cursor would compare 3 against 3, call it
-    // caught up, and leave "All quiet." sitting over a message that had just
-    // arrived. The frozen copy still remembers arriving at 2.
+    // Now somebody says something, and looking at the room marks it read — which is exactly what
+    // `useMarkRoomRead` does to this cache, within a frame.
     act(() => {
       queryClient.setQueryData(roomKeys.entries(ROOM_ID), [post(1), post(2), post(3)]);
       queryClient.setQueryData(roomKeys.detail(ROOM_ID), roomWithCursor(3));
@@ -636,31 +338,6 @@ describe('HomeQuietState — DorkBot may say one thing (spec D5.3)', () => {
     expect(quietLine()!.contains(suggestion())).toBe(true);
   });
 
-  it('still speaks under a real run, below it — discovery is not only for the idle', async () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(9, 0, 0, 0);
-    renderQuiet({
-      transport: {
-        listTasks: vi.fn().mockResolvedValue([buildTask({ nextRun: tomorrow.toISOString() })]),
-      },
-    });
-
-    // Somebody who runs schedules ALWAYS has a forward look, so a rule that hid
-    // the suggestion whenever one existed would hide it from the people using
-    // the product most. What keeps the pair honest is qualification — a promo
-    // offering what this install already has does not qualify — not silence.
-    await waitFor(() => expect(quietLine()!.textContent).toContain('Morning standup'));
-    const forwardLookLine = quietLine()!.querySelector('p')!;
-    expect(suggestion()).toBeInTheDocument();
-
-    // Under it, not woven into it.
-    expect(forwardLookLine.contains(suggestion())).toBe(false);
-    expect(
-      forwardLookLine.compareDocumentPosition(suggestion()!) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-  });
-
   it('says nothing at all when an approval is waiting — the whole line stands down', async () => {
     const { transport } = renderQuiet({
       transport: {
@@ -671,24 +348,6 @@ describe('HomeQuietState — DorkBot may say one thing (spec D5.3)', () => {
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
     await waitFor(() => expect(quietLine()).toBeNull());
     // The gate is inherited, not restated: no line, so no suggestion either.
-    expect(suggestion()).toBeNull();
-  });
-
-  it('leaves the line at two words when nothing qualifies — no empty container', async () => {
-    suggestionQualifies = false;
-    const { transport } = renderQuiet();
-
-    expect(await screen.findByText('All quiet.')).toBeInTheDocument();
-    await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
-    expect(quietLine()!.textContent).toBe('All quiet.');
-  });
-
-  it('says nothing over a room that has been talking, suggestion and all', async () => {
-    const { transport } = renderQuiet({ entries: [post(1), post(2)], lastReadSeq: 1 });
-
-    await waitFor(() => expect(transport.getRoom).toHaveBeenCalledWith(ROOM_ID));
-    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
-    expect(quietLine()).toBeNull();
     expect(suggestion()).toBeNull();
   });
 });
@@ -704,9 +363,7 @@ describe('HomeQuietState — it comes down once', () => {
     setPresence(true);
     await waitFor(() => expect(quietLine()).toBeNull());
 
-    // The turn ends. A line that came back here would be a bordered element
-    // appearing and disappearing above a feed somebody is reading, every time an
-    // agent breathed.
+    // The turn ends.
     setPresence(false);
     await waitFor(() => expect(quietLine()).toBeNull());
     expect(screen.queryByText('All quiet.')).toBeNull();

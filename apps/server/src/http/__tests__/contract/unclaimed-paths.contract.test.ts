@@ -54,11 +54,10 @@ const SHELL_HEADERS = {
 const API_NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
-const HOST_NOT_ALLOWED = {
-  error:
-    'This instance does not answer to the address "evil.example". If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.',
-  code: 'HOST_NOT_ALLOWED',
-};
+const HOST_NOT_ALLOWED = problemBody('host_not_allowed', {
+  detail:
+    'DorkOS doesn’t answer to "evil.example". Add it to DORKOS_TRUSTED_HOSTS, or turn on login.',
+});
 
 /** The page a request nothing answers gets, outside `/api`. */
 function cannot(method: string, target: string): string {

@@ -1,6 +1,7 @@
 /** The folder a chat's own runtime is running it in now (DOR-5035). */
 import { eq, sessionMetadata, type Db } from '@dorkos/db';
 import { runtimeRegistry } from '../runtime-registry.js';
+import { peekProjector } from '../../session/session-state-projector.js';
 
 /**
  * Ask only the runtime the chat is bound to, from its memory: never another
@@ -18,4 +19,27 @@ export function liveRuntimeCwd(db: Db, sessionId: string): string | undefined {
     .get()?.runtime;
   if (!runtime || !runtimeRegistry.has(runtime)) return undefined;
   return runtimeRegistry.get(runtime).getSessionCwd?.(sessionId);
+}
+
+/**
+ * The folder a chat runs in, as far as this boot can tell: its own runtime's
+ * answer ({@link liveRuntimeCwd}), else the folder its projector knows (Codex
+ * and OpenCode keep no such answer), else the agent folder its session record
+ * names (after a restart, before anything reopened the chat). `undefined`
+ * when none of them knows.
+ *
+ * @param db - The server's database.
+ * @param sessionId - The chat.
+ */
+export function knownChatCwd(db: Db, sessionId: string): string | undefined {
+  return (
+    liveRuntimeCwd(db, sessionId) ??
+    peekProjector(sessionId)?.cwd ??
+    db
+      .select({ agentPath: sessionMetadata.agentPath })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get()?.agentPath ??
+    undefined
+  );
 }

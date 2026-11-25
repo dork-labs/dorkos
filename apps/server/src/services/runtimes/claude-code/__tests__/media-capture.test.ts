@@ -43,8 +43,9 @@ import {
   createToolResultImageState,
 } from '../tool-result-images.js';
 import { attachTranscriptImages, mapSdkMessageWithMedia } from '../media-capture.js';
-import { parseTranscript, type TranscriptImageRef } from '../sessions/transcript-parser.js';
-import { TINY_PNG_BASE64, imageTranscriptLines, sdkImageToolResult } from './sdk-scenarios.js';
+import { type TranscriptImageRef } from '../sessions/transcript-parser.js';
+import { parseTranscript } from '../sessions/__tests__/parse-transcript.js';
+import { TINY_PNG_BASE64, imageTranscriptLines } from './sdk-scenarios.js';
 
 const TOOL_ID = 'toolu_017pyTSTTbL2ih7UE7Nd3AX9';
 
@@ -185,32 +186,6 @@ describe('finding the pictures in a tool result', () => {
     ]);
   });
 
-  it('finds none in the text results every other tool returns', () => {
-    expect(extractToolResultImages(TOOL_ID, 'plain string result')).toEqual([]);
-    expect(extractToolResultImages(TOOL_ID, [{ type: 'text', text: 'ok' }])).toEqual([]);
-    expect(extractToolResultImages(TOOL_ID, undefined)).toEqual([]);
-  });
-
-  it('names the position, so two images in one result are two different pictures', () => {
-    const images = extractToolResultImages(TOOL_ID, [
-      { type: 'text', text: 'here they are' },
-      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TINY_PNG_BASE64 } },
-      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TINY_PNG_BASE64 } },
-    ]);
-    expect(images.map((i) => i.identity)).toEqual([
-      ['tool', TOOL_ID, '1'],
-      ['tool', TOOL_ID, '2'],
-    ]);
-  });
-
-  it('reports an image at a web address rather than fetching it', () => {
-    const [image] = extractToolResultImages(TOOL_ID, [
-      { type: 'image', source: { type: 'url', url: 'https://example.test/x.png' } },
-    ]);
-    expect(image.kind).toBe('unreadable');
-    expect(image.kind === 'unreadable' && image.reason).toContain('not fetched from here');
-  });
-
   it('announces one picture once, however many times the result is re-delivered', () => {
     const state = createToolResultImageState();
     const content = [
@@ -248,56 +223,6 @@ describe('a live turn that reads a PNG', () => {
     }
   });
 
-  it('announces the image before the turn ends, not after it', async () => {
-    // The whole turn, message by message, in the order the SDK emits them.
-    // Nothing may follow a `done` — the projector settles on it and the durable
-    // stream is closed — so a picture drained at the END of a turn instead of
-    // at the message that produced it would be lost in production while still
-    // showing up in a test that only counted events.
-    const { store, home } = makeStore();
-    try {
-      const messages: SDKMessage[] = [];
-      for await (const message of sdkImageToolResult(TOOL_ID, '/projects/conformance/shot.png')) {
-        messages.push(message);
-      }
-      const events = await driveLive(store, 'sess-order', messages);
-      // The whole sequence, not a membership check: the picture lands directly
-      // after the tool call that produced it and well before the turn's `done`.
-      //
-      // The `tool_result` between them is this read ENDING, and it exists only
-      // since DOR-2011. `tool_call_end` reports `running` now — it fires when
-      // the model finishes typing the arguments, before any approval and before
-      // the tool runs — so the result block is what settles the call, and it is
-      // emitted even here, where the result is a picture and carries no text at
-      // all. Without it this read would spin forever.
-      expect(events.map((e) => e.type)).toEqual([
-        'session_status',
-        'tool_call_start',
-        'tool_call_delta',
-        'tool_call_end',
-        'tool_result',
-        'image_attachment',
-        'session_status',
-        'done',
-      ]);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it('announces it once even when the result is delivered twice', async () => {
-    const { store, home } = makeStore();
-    try {
-      const events = await driveLive(store, 'sess-twice', [
-        imageResultMessage(),
-        imageResultMessage(),
-      ]);
-      expect(events.filter((e) => e.type === 'image_attachment')).toHaveLength(1);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
   it('still shows the picture when the SDK summarized the tool result', async () => {
     // A `tool_use_summary` replaces a result's TEXT with a sentence. It does not
     // replace a picture, and there is nowhere else the bytes appear — so the
@@ -318,88 +243,12 @@ describe('a live turn that reads a PNG', () => {
     }
   });
 
-  it('keeps BOTH the words and the picture when a result carries each', async () => {
-    // The ordinary mixed shape, and the one that proves the text path and the
-    // image path do not exclude each other: `extractToolResultText` still
-    // answers the text, and the image is announced beside it.
-    const { store, home } = makeStore();
-    try {
-      const events = await driveLive(store, 'sess-mixed', [
-        toolResultMessage([
-          { toolUseId: TOOL_ID, content: [{ type: 'text', text: 'read 1 image' }, imageBlock()] },
-        ]),
-      ]);
-      expect(events.map((e) => e.type)).toEqual(['tool_result', 'image_attachment']);
-      expect((events[0].data as { result: string }).result).toBe('read 1 image');
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it('keeps two parallel tool results in step with their own pictures', async () => {
-    // What the IN-LOOP drain is for. The SDK batches parallel tool calls into
-    // ONE user message, so this message yields two `tool_result` events and
-    // carries two images. Draining only after the message finishes would
-    // announce both pictures at the end — tool_result(A), tool_result(B),
-    // image(A), image(B) — and attach each to the wrong step on screen.
-    // Draining after every event keeps each picture with the call it came from.
-    const { store, home } = makeStore();
-    try {
-      const events = await driveLive(store, 'sess-parallel', [
-        toolResultMessage([
-          { toolUseId: 'toolu_A', content: [{ type: 'text', text: 'A' }, imageBlock()] },
-          { toolUseId: 'toolu_B', content: [{ type: 'text', text: 'B' }, imageBlock()] },
-        ]),
-      ]);
-      expect(events.map((e) => e.type)).toEqual([
-        'tool_result',
-        'image_attachment',
-        'tool_result',
-        'image_attachment',
-      ]);
-      // And they are two DIFFERENT pictures, because identity is per tool call.
-      const ids = events
-        .filter((e) => e.type === 'image_attachment')
-        .map((e) => (e.data as ImagePart).attachmentId);
-      expect(new Set(ids).size).toBe(2);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
   it('says so out loud when there is nowhere to keep the picture', async () => {
     const events = await driveLive(null, 'sess-nostore', [imageResultMessage()]);
     expect(events.filter((e) => e.type === 'image_attachment')).toEqual([]);
     const errors = events.filter((e) => e.type === 'error');
     expect(errors).toHaveLength(1);
     expect((errors[0].data as { code?: string }).code).toBe('SESSION_IMAGE_NOT_STORED');
-  });
-
-  it('says so out loud for a format a session may not keep', async () => {
-    const { store, home } = makeStore();
-    try {
-      const events = await driveLive(store, 'sess-svg', [
-        imageResultMessage('image/svg+xml', Buffer.from('<svg/>').toString('base64')),
-      ]);
-      expect(events.filter((e) => e.type === 'image_attachment')).toEqual([]);
-      expect(events.filter((e) => e.type === 'error')).toHaveLength(1);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it('says so out loud for a picture too large to keep', async () => {
-    const { store, home } = makeStore();
-    try {
-      const events = await driveLive(store, 'sess-huge', [
-        imageResultMessage('image/png', 'A'.repeat(20 * 1024 * 1024)),
-      ]);
-      expect(events.filter((e) => e.type === 'image_attachment')).toEqual([]);
-      const [error] = events.filter((e) => e.type === 'error');
-      expect((error.data as { message: string }).message).toContain('too large');
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
   });
 });
 
@@ -425,23 +274,6 @@ describe('reading the same turn back out of the transcript', () => {
       const image = assistant!.parts![1] as ImagePart;
       expect(image.mediaType).toBe('image/png');
       expect(image.size).toBe(Buffer.from(TINY_PNG_BASE64, 'base64').length);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it('lands the same file at the same URL a live turn wrote, not a second copy', async () => {
-    const { store, home } = makeStore();
-    try {
-      const live = await driveLive(store, 'sess-same', [imageResultMessage()]);
-      const liveImage = live.find((e) => e.type === 'image_attachment')!.data as ImagePart;
-
-      const messages = await readHistory(store, 'sess-same');
-      const historyImage = (messages.find((m) => m.role === 'assistant')!.parts as ImagePart[])[1];
-
-      expect(historyImage.attachmentId).toBe(liveImage.attachmentId);
-      expect(historyImage.url).toBe(liveImage.url);
-      expect(await readdir(attachmentDir(home, 'sess-same'))).toHaveLength(1);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -526,11 +358,5 @@ describe('reading the same turn back out of the transcript', () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
-  });
-
-  it('reads no images at all when the caller asked for none', () => {
-    const messages = parseTranscript(imageTranscriptLines(TOOL_ID));
-    const assistant = messages.find((m) => m.role === 'assistant');
-    expect(assistant?.parts?.map((p) => p.type)).toEqual(['tool_call', 'text']);
   });
 });

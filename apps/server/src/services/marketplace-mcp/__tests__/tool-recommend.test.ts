@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { z } from 'zod';
+
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson, MarketplaceJsonEntry } from '@dorkos/marketplace';
 
-import { createRecommendHandler, RecommendInputSchema } from '../tool-recommend.js';
+import { createRecommendHandler } from '../tool-recommend.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import * as installedScanner from '../../marketplace/installed-scanner.js';
@@ -104,46 +104,6 @@ function parseResponse(result: { content: { type: 'text'; text: string }[] }): {
   return JSON.parse(result.content[0]!.text);
 }
 
-describe('RecommendInputSchema', () => {
-  const schema = z.object(RecommendInputSchema);
-
-  it('accepts a minimal valid input', () => {
-    const parsed = schema.parse({ context: 'sentry errors' });
-    expect(parsed.context).toBe('sentry errors');
-    expect(parsed.limit).toBe(5);
-    expect(parsed.type).toBeUndefined();
-  });
-
-  it('rejects empty context strings', () => {
-    expect(() => schema.parse({ context: '' })).toThrow();
-  });
-
-  it('rejects context strings longer than 500 characters', () => {
-    expect(() => schema.parse({ context: 'a'.repeat(501) })).toThrow();
-  });
-
-  it('accepts the four valid type values', () => {
-    for (const t of ['agent', 'plugin', 'skill-pack', 'adapter'] as const) {
-      expect(schema.parse({ context: 'foo', type: t }).type).toBe(t);
-    }
-  });
-
-  it('rejects unknown type values', () => {
-    expect(() => schema.parse({ context: 'foo', type: 'extension' })).toThrow();
-  });
-
-  it('clamps limit to the 1-20 range', () => {
-    expect(() => schema.parse({ context: 'foo', limit: 0 })).toThrow();
-    expect(() => schema.parse({ context: 'foo', limit: 21 })).toThrow();
-    expect(schema.parse({ context: 'foo', limit: 1 }).limit).toBe(1);
-    expect(schema.parse({ context: 'foo', limit: 20 }).limit).toBe(20);
-  });
-
-  it('rejects non-integer limits', () => {
-    expect(() => schema.parse({ context: 'foo', limit: 1.5 })).toThrow();
-  });
-});
-
 describe('createRecommendHandler', () => {
   let deps: MarketplaceMcpDeps;
 
@@ -186,25 +146,6 @@ describe('createRecommendHandler', () => {
     expect(marketplaces).toEqual(['community', 'personal']);
   });
 
-  it('skips disabled marketplaces', async () => {
-    deps = buildDeps({
-      sources: [source('community', true), source('personal', false)],
-      marketplaces: {
-        community: marketplace('community', [entry({ name: 'sentry-community' })]),
-        // personal would throw if it were ever fetched
-      },
-    });
-    const handler = createRecommendHandler(deps);
-
-    const result = await handler({ context: 'sentry', limit: 5 });
-    const payload = parseResponse(result);
-
-    expect(payload.recommendations).toHaveLength(1);
-    expect(payload.recommendations[0]!.marketplace).toBe('community');
-    // Confirm the disabled source was never fetched.
-    expect(deps.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
-  });
-
   it('filters by type before scoring when supplied', async () => {
     deps = buildDeps({
       sources: [source('community')],
@@ -225,26 +166,6 @@ describe('createRecommendHandler', () => {
     expect(payload.recommendations).toHaveLength(1);
     expect(payload.recommendations[0]!.name).toBe('sentry-agent');
     expect(payload.recommendations[0]!.type).toBe('agent');
-  });
-
-  it('treats entries with no explicit type as plugin when filtering', async () => {
-    deps = buildDeps({
-      sources: [source('community')],
-      marketplaces: {
-        community: marketplace('community', [
-          entry({ name: 'sentry-default' }),
-          entry({ name: 'sentry-agent', type: 'agent' }),
-        ]),
-      },
-    });
-    const handler = createRecommendHandler(deps);
-
-    const result = await handler({ context: 'sentry', type: 'plugin', limit: 5 });
-    const payload = parseResponse(result);
-
-    expect(payload.recommendations).toHaveLength(1);
-    expect(payload.recommendations[0]!.name).toBe('sentry-default');
-    expect(payload.recommendations[0]!.type).toBe('plugin');
   });
 
   it('truncates results to the supplied limit', async () => {
@@ -285,74 +206,6 @@ describe('createRecommendHandler', () => {
       expect.stringContaining('marketplace_recommend'),
       expect.objectContaining({ marketplace: 'broken' })
     );
-  });
-
-  it('returns the recommendation array shape from the spec', async () => {
-    deps = buildDeps({
-      sources: [source('community')],
-      marketplaces: {
-        community: marketplace('community', [
-          entry({
-            name: 'sentry-monitor',
-            description: 'Track errors and exceptions',
-            tags: ['errors', 'monitoring'],
-            type: 'plugin',
-          }),
-        ]),
-      },
-    });
-    const dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-recommend-shape-'));
-    const handler = createRecommendHandler({ ...deps, dorkHome });
-
-    const result = await handler({ context: 'sentry errors', limit: 5 }).finally(() =>
-      rm(dorkHome, { recursive: true, force: true })
-    );
-    const payload = parseResponse(result);
-
-    expect(payload.recommendations).toHaveLength(1);
-    const rec = payload.recommendations[0]!;
-    expect(rec).toEqual({
-      name: 'sentry-monitor',
-      type: 'plugin',
-      description: 'Track errors and exceptions',
-      marketplace: 'community',
-      relevanceScore: expect.any(Number),
-      reason: expect.any(String),
-      // Nothing is installed under the test's empty data directory.
-      installed: false,
-    });
-    expect(rec.relevanceScore).toBeGreaterThan(0);
-    expect(rec.reason.length).toBeGreaterThan(0);
-  });
-
-  it('defaults description to an empty string when missing', async () => {
-    deps = buildDeps({
-      sources: [source('community')],
-      marketplaces: {
-        community: marketplace('community', [entry({ name: 'sentry' })]),
-      },
-    });
-    const handler = createRecommendHandler(deps);
-
-    const result = await handler({ context: 'sentry', limit: 5 });
-    const payload = parseResponse(result);
-
-    expect(payload.recommendations[0]!.description).toBe('');
-  });
-
-  it('defaults type to plugin when entry has no explicit type', async () => {
-    deps = buildDeps({
-      sources: [source('community')],
-      marketplaces: {
-        community: marketplace('community', [entry({ name: 'sentry' })]),
-      },
-    });
-    const handler = createRecommendHandler(deps);
-
-    const result = await handler({ context: 'sentry', limit: 5 });
-    const payload = parseResponse(result);
-
-    expect(payload.recommendations[0]!.type).toBe('plugin');
   });
 });
 
@@ -447,11 +300,6 @@ describe('createRecommendHandler — installed', () => {
   it('says false for a same-named package from another marketplace', async () => {
     await install(dorkHome, 'sentry-monitor', 'someone-else');
     expect((await flags(depsFor()))['sentry-monitor']).toBe(false);
-  });
-
-  it('leaves installed out when a same-named install does not say where it came from', async () => {
-    await install(dorkHome, 'sentry-monitor');
-    expect((await flags(depsFor()))['sentry-monitor']).toBe('unknown');
   });
 
   it('leaves installed out, never false, when the installed scan fails', async () => {

@@ -33,6 +33,11 @@ import {
   holdsOnly,
 } from './task-scheduler.fixtures.js';
 import type { MockRelay, RuntimeHarness, Dispatchable } from './task-scheduler.fixtures.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 vi.mock('../../../runtimes/claude-code/claude-config-dir.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../runtimes/claude-code/claude-config-dir.js')>()),

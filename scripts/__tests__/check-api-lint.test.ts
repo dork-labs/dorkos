@@ -28,6 +28,7 @@ import {
   errorMissingItems,
   errorShapeItems,
   isHandRegistryFile,
+  isKeptRoute,
   listPagingItems,
   operationIdItems,
   paramNameItems,
@@ -45,7 +46,7 @@ const CLI = join(ROOT, 'scripts', 'api-lint', 'check-api-lint.ts');
 /** The repo-wide test reads the whole spec, census and registry; see check-own-mocks. */
 const SCAN_TIMEOUT_MS = 30_000;
 
-const ERROR_REF = { $ref: '#/components/schemas/ErrorResponse' };
+const ERROR_REF = { $ref: '#/components/schemas/Problem' };
 
 /** A clean operation: an id, a shared-shape 404 and a plain 200. */
 function op(extra: Partial<OperationNode> = {}): OperationNode {
@@ -197,6 +198,64 @@ describe('error-shape', () => {
     expect(errorShapeItems(doc({ '/api/x': { get: op() } }))).toEqual({});
     expect(errorShapeItems(viaResponse)).toEqual({});
   });
+
+  it('passes a problem document, plain or with extension members (DOR-4979)', () => {
+    const problem = { $ref: '#/components/schemas/Problem' };
+    const plain = { content: { 'application/problem+json': { schema: problem } } };
+    const extended = {
+      content: {
+        'application/problem+json': {
+          schema: { allOf: [problem, { type: 'object', properties: { conflicts: {} } }] },
+        },
+      },
+    };
+    const inline = { content: { 'application/problem+json': { schema: { type: 'object' } } } };
+    const d = doc({
+      '/api/x': { get: op({ responses: { '409': plain, '412': extended, '500': inline } }) },
+    });
+    expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 500'] });
+  });
+
+  it('passes a named problem extension and a choice between problems, never the old `ErrorResponse`', () => {
+    const problem = { $ref: '#/components/schemas/Problem' };
+    const named = { $ref: '#/components/schemas/Conflict' };
+    const body = (schema: object) => ({
+      content: { 'application/problem+json': { schema } },
+    });
+    const d: OpenApiDocument = {
+      paths: {
+        '/api/x': {
+          get: op({
+            responses: {
+              '409': body({ anyOf: [named, problem] }),
+              '412': body(named),
+              '400': body({ anyOf: [problem, { type: 'object' }] }),
+              '500': body({ $ref: '#/components/schemas/ErrorResponse' }),
+            },
+          }),
+        },
+      },
+      components: {
+        schemas: { Conflict: { allOf: [problem, { type: 'object' }] }, ErrorResponse: {} },
+      },
+    };
+    expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 400', 'GET /api/x 500'] });
+  });
+
+  it('passes a $ref to the step-up 428 component but still counts an inline copy of it', () => {
+    const stepUp = {
+      type: 'object',
+      properties: { error: { type: 'string' }, code: { type: 'string' } },
+    };
+    const held = (schema: object) =>
+      op({ responses: { '428': { content: { 'application/json': { schema } } } } });
+    const d = doc({
+      '/api/shared': { post: held({ $ref: '#/components/schemas/StepUpRequired' }) },
+      '/api/passkey': { post: held({ $ref: '#/components/schemas/PasskeyCheckRequired' }) },
+      '/api/inline': { post: held(stepUp) },
+    });
+    expect(errorShapeItems(d)).toEqual({ inline: ['POST /api/inline 428'] });
+  });
 });
 
 describe('list-paging', () => {
@@ -322,6 +381,26 @@ describe('hand-registered-path', () => {
     const call = 'registry.' + 'registerPath(';
     const text = [`${call}{});`, `// ${call}`, ` * ${call}`, `${call}a); ${call}b);`].join('\n');
     expect(registerPathLines(text)).toEqual([1, 4, 4]);
+  });
+
+  it('skips a call that documents a route on the hand-route allowlist', () => {
+    const call = 'registry.' + 'registerPath(';
+    const text = [
+      `${call}{`,
+      "  method: 'get',",
+      "  path: '/api/sessions/{id}/events',",
+      '});',
+      `${call}{ method: 'post', path: '/api/sessions/{id}/events' });`,
+      `${call}{ method: 'get', path: '/api/auth/session' });`,
+      `${call}{ method: 'get', path: \`/api/x\${y}\` });`,
+    ].join('\n');
+    const kept = [
+      { method: 'GET', path: '/api/sessions/:sessionId/events' },
+      { method: 'ALL', path: '/api/auth/*' },
+    ];
+    expect(registerPathLines(text, kept)).toEqual([5, 7]);
+    expect(isKeptRoute(kept, 'delete', '/api/auth')).toBe(true);
+    expect(isKeptRoute(kept, 'get', '/api/authors')).toBe(false);
   });
 });
 

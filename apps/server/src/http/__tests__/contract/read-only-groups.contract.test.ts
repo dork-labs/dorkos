@@ -28,6 +28,9 @@ import { contractSuite } from './harness.js';
 import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const NO_SEARCH_WORD = problemBody('invalid_request', {
+  detail: 'Search needs a word of at least 2 letters to look for.',
+});
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
 });
@@ -56,7 +59,10 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/models refuses an unknown runtime',
     path: '/api/models?runtime=nope',
-    expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'No agent program by that name runs here.' }),
+    },
   },
 
   // commands
@@ -79,14 +85,19 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/commands refuses an unknown runtime',
     path: '/api/commands?runtime=nope',
-    expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'No agent program by that name runs here.' }),
+    },
   },
   {
     name: 'GET /api/commands refuses a directory outside the boundary',
     path: '/api/commands?cwd=/etc',
     expect: {
       status: 403,
-      body: { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
+      body: problemBody('outside_boundary', {
+        detail: 'Pick a folder inside the ones DorkOS may use.',
+      }),
     },
   },
 
@@ -147,7 +158,9 @@ contractSuite('read-only and system groups', [
     path: '/api/capabilities/catalog?cursor=zzz',
     expect: {
       status: 400,
-      body: { error: 'Invalid cursor "zzz"; use the nextCursor from a previous response.' },
+      body: problemBody('invalid_request', {
+        detail: 'That cursor isn’t valid. Use nextCursor from a previous page.',
+      }),
     },
   },
   {
@@ -157,7 +170,9 @@ contractSuite('read-only and system groups', [
     body: {},
     expect: {
       status: 404,
-      body: { error: 'Unknown capability: nope.nope', code: 'UNKNOWN_CAPABILITY' },
+      body: problemBody('unknown_capability', {
+        detail: 'No action has that id. List them with `dorkos capabilities`.',
+      }),
     },
   },
 
@@ -242,7 +257,10 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/team/:memberId/rooms refuses an unknown member',
     path: '/api/team/nobody/rooms',
-    expect: { status: 404, body: { error: 'No member with that id', code: 'MEMBER_NOT_FOUND' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'No member with that id.' }),
+    },
   },
 
   // activity
@@ -292,7 +310,10 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/audit/:id refuses an id it has no event for',
     path: '/api/audit/nope',
-    expect: { status: 404, body: { error: 'No audit event with that id.', code: 'NOT_FOUND' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'No audit event with that id.' }),
+    },
   },
   {
     name: 'GET /api/audit/accounts/:accountId/timeline answers an empty timeline',
@@ -311,10 +332,7 @@ contractSuite('read-only and system groups', [
     path: '/api/search',
     expect: {
       status: 400,
-      body: {
-        error: 'Search needs a word of at least 2 letters to look for.',
-        code: 'INVALID_SEARCH_QUERY',
-      },
+      body: NO_SEARCH_WORD,
     },
   },
   {
@@ -322,10 +340,7 @@ contractSuite('read-only and system groups', [
     path: '/api/search?q=',
     expect: {
       status: 400,
-      body: {
-        error: 'Search needs a word of at least 2 letters to look for.',
-        code: 'INVALID_SEARCH_QUERY',
-      },
+      body: NO_SEARCH_WORD,
     },
   },
 
@@ -336,11 +351,10 @@ contractSuite('read-only and system groups', [
     headers: { 'x-dorkos-agent': 'not-a-real-token' },
     expect: {
       status: 401,
-      body: {
-        error:
+      body: problemBody('agent_identity_unverified', {
+        detail:
           'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
-        code: 'AGENT_IDENTITY_UNVERIFIED',
-      },
+      }),
     },
   },
   {
@@ -353,7 +367,10 @@ contractSuite('read-only and system groups', [
     name: 'GET /api/team/:memberId/rooms refuses an agent',
     path: '/api/team/nobody/rooms',
     headers: { 'x-dorkos-agent': 'not-a-real-token' },
-    expect: { status: 403, body: { error: 'Only people read a profile', code: 'PEOPLE_ONLY' } },
+    expect: {
+      status: 403,
+      body: problemBody('person_only', { detail: 'Only people read a profile.' }),
+    },
   },
   {
     name: 'POST /api/capabilities/:id/invoke runs a read capability for an unknown agent',
@@ -413,10 +430,7 @@ contractSuite('read-only and system groups', [
     path: '/api/search?q=hello&q=world',
     expect: {
       status: 400,
-      body: {
-        error: 'Search needs a word of at least 2 letters to look for.',
-        code: 'INVALID_SEARCH_QUERY',
-      },
+      body: NO_SEARCH_WORD,
     },
   },
   // Bodies

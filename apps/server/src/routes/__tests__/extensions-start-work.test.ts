@@ -10,9 +10,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
 const state = vi.hoisted(() => ({ authEnabled: false }));
-const launches = vi.hoisted(
-  () => [] as Array<{ sessionId: string; request: { cwd?: string }; permissionCeiling?: unknown }>
-);
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
@@ -35,18 +32,11 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
-vi.mock('../../services/session/launch/launch-session.js', () => ({
-  agentLaunchCapMessage: () => 'Too many spin-off chats are running (8).',
-  isSessionLaunchRefusal: (result: object) => 'refused' in result,
-  dispatchSessionMessage: vi.fn(async (opts: (typeof launches)[number]) => {
-    launches.push(opts);
-    return { accepted: true, canonicalId: opts.sessionId, queued: false, queuePosition: 1 };
-  }),
-}));
-
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
+import { createRunRecord, type RunRecord } from '../../services/runs/index.js';
 import type { ProjectInfo } from '@dorkos/extension-api/server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
@@ -75,17 +65,28 @@ const DORKOS: ProjectInfo = {
 };
 
 let store: SessionStartedByStore;
+let record: RunRecord;
+/** Every start the turn port was asked for. */
+let launches: StartTurnInput[];
 let signedInUser: { userId: string; credential: 'cookie' } | undefined;
 let statusOf: Record<string, string>;
 
 beforeEach(() => {
-  launches.length = 0;
+  const db = createTestDb();
+  record = createRunRecord(db, { epoch: '01BOOTEPOCHROUTESTART00000' });
+  launches = [];
+  const start = record.port.start.bind(record.port);
+  vi.spyOn(record.port, 'start').mockImplementation((input) => {
+    launches.push(input);
+    return start(input);
+  });
   state.authEnabled = false;
   signedInUser = undefined;
   statusOf = { hello: 'compiled', off: 'disabled' };
   store = new SessionStartedByStore(createTestDb());
   setStartWorkService(
     new StartWorkService({
+      port: () => record.port,
       store,
       projects: {
         rootWithin: async (dir: string) => (dir.startsWith('/repos/dorkos') ? DORKOS.root : null),
@@ -144,7 +145,7 @@ describe('POST /api/extensions/:id/start-work', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ sessionId: expect.any(String) });
     expect(launches).toHaveLength(1);
-    expect(launches[0]!.request.cwd).toBe('/repos/dorkos');
+    expect(launches[0]!.cwd).toBe('/repos/dorkos');
     expect(store.get(res.body.sessionId)).toMatchObject({
       kind: 'extension',
       extensionId: 'hello',
@@ -178,8 +179,9 @@ describe('POST /api/extensions/:id/start-work', () => {
       .send(BODY);
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('start_work_person_required');
-    expect(res.body.message).toMatch(/DorkOS started nothing/);
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body.code).toBe('person_only');
+    expect(res.body.detail).toMatch(/DorkOS started nothing/);
     expect(launches).toHaveLength(0);
   });
 
@@ -216,11 +218,13 @@ describe('POST /api/extensions/:id/start-work', () => {
       .send({ ...BODY, project: '/tmp/scratch' });
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({
-      error:
-        "That folder isn't in a project Hello World can start work in. Choose a folder inside one of your projects.",
-      code: 'not_a_project',
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      detail: 'Choose a folder inside one of your projects.',
+      code: 'not_found',
     });
+    // The service's own sentence, which names the extension, stays in the log.
+    expect(JSON.stringify(res.body)).not.toContain('Hello World');
     expect(launches).toHaveLength(0);
   });
 
@@ -240,7 +244,7 @@ describe('POST /api/extensions/:id/start-work', () => {
     const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
 
     expect(res.status).toBe(429);
-    expect(res.body.code).toBe('start_limit');
+    expect(res.body).toMatchObject({ code: 'rate_limited' });
     expect(launches).toHaveLength(0);
   });
 
@@ -249,13 +253,15 @@ describe('POST /api/extensions/:id/start-work', () => {
       .post('/api/extensions/hello/start-work')
       .send({ ...BODY, title: 'x'.repeat(81) });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/title of 1 to 80 characters/);
+    expect(res.body.code).toBe('invalid_request');
+    expect(res.body.detail).toBe('Keep the prompt, title and reason within their length limits.');
     expect(launches).toHaveLength(0);
   });
 
   it('answers a generic 500, never the error itself, when the server fails', async () => {
     setStartWorkService(
       new StartWorkService({
+        port: () => record.port,
         store,
         projects: {
           rootWithin: async () => DORKOS.root,
@@ -271,16 +277,26 @@ describe('POST /api/extensions/:id/start-work', () => {
     );
     const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: 'The chat could not be started. Try again.' });
+    expect(res.body).toMatchObject({
+      code: 'internal_error',
+      detail: 'The chat couldn’t be started. Try again.',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('Cannot read properties');
     expect(launches).toHaveLength(0);
   });
 
-  it('answers 404 for an unknown extension and 409 for one that is off', async () => {
+  it('answers not_running for an unknown extension and one that is off, never not_found', async () => {
+    // `not_found` from this route means a folder outside every project, which
+    // the app throws as `not_a_project`: an unknown extension must not read so.
     const unknown = await request(server).post('/api/extensions/nope/start-work').send(BODY);
-    expect(unknown.status).toBe(404);
+    expect(unknown.status).toBe(409);
+    expect(unknown.body.code).toBe('not_running');
     const off = await request(server).post('/api/extensions/off/start-work').send(BODY);
     expect(off.status).toBe(409);
-    expect(off.body.error).toBe('Turn on Off in Settings → Extensions first.');
+    expect(off.body).toMatchObject({
+      code: 'not_running',
+      detail: 'Turn on Off in Settings → Extensions first.',
+    });
     expect(launches).toHaveLength(0);
   });
 });

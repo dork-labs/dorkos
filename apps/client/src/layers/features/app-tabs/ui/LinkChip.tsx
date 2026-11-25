@@ -3,6 +3,7 @@ import { cn } from '@/layers/shared/lib';
 import type { LinkChipRenderProps, LinkChipSlot } from '@/layers/shared/model';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/layers/shared/ui';
 import {
+  linkChipAddress,
   linkChipFace,
   linkChipKind,
   type LinkChipKind,
@@ -90,6 +91,6 @@ function LinkChip({ address, label, anchor }: LinkChipRenderProps) {
  * channel or a DM draw as {@link LinkChip}; every other link stays plain.
  */
 export const linkChipSlot: LinkChipSlot = {
-  accepts: (address) => linkChipKind(parseTabHref(address)) !== null,
+  accepts: (address) => linkChipKind(parseTabHref(linkChipAddress(address))) !== null,
   render: (props) => <LinkChip {...props} />,
 };

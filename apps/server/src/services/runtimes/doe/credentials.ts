@@ -19,6 +19,7 @@ import {
   CreditsUnavailableError,
   type CreditsLaunch,
 } from '../../core/cloud/credits-protocols.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { doeCredentialId, validateDoeSecret } from '../connect/doe-credentials.js';
 import { resolveDoeModel } from './models.js';
 
@@ -45,7 +46,7 @@ export function inspectDoeInference(
 ): { configured: boolean; source?: DoeInferenceConfig['source'] } {
   if (!config || !DoeInferenceConfigSchema.safeParse(config).success) return { configured: false };
   const configured =
-    config.source === 'dorkos-credits'
+    config.source === CREDITS_PROVIDER_ID
       ? creditsReady(config)
       : config.source !== 'api-key' ||
         Boolean(config.credentialRef ?? providers()[doeCredentialId(config.endpoint)]);
@@ -88,7 +89,7 @@ export function freezeDoeInference(input: {
   const { credentialRef: _ref, credentialEndpoint: _endpoint, ...metadata } = config;
   return DoeInferenceConfigSchema.parse({
     ...metadata,
-    source: 'dorkos-credits',
+    source: CREDITS_PROVIDER_ID,
     model: input.model ?? config.model,
   });
 }

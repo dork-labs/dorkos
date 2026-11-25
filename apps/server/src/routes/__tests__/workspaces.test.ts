@@ -14,6 +14,8 @@ import { execFileSync } from 'node:child_process';
 import type { RequestListener } from 'node:http';
 import workspaceRoutes from '../workspaces.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { workspacesDomain } from '../../services/workspace/workspace-capabilities.js';
 import {
   setWorkspaceManager,
   setWorkspaceRoot,
@@ -31,7 +33,12 @@ const fixtureTarget = swappableServer();
 
 function mountWith(manager: Partial<WorkspaceManager>): RequestListener {
   setWorkspaceManager(manager as WorkspaceManager);
-  return honoGroupListener({ path: '/api/workspaces', routes: workspaceRoutes });
+  // Listing, the scan, resolving a path and the pin are capabilities the
+  // mount serves ahead of the hand routes, as the real app registers them.
+  return honoGroupListener([
+    capabilityGroup(workspacesDomain),
+    { path: '/api/workspaces', routes: workspaceRoutes },
+  ]);
 }
 
 const sampleWorkspace: Workspace = {
@@ -63,6 +70,39 @@ describe('workspaces routes', () => {
     expect(res.body.workspaces).toHaveLength(1);
   });
 
+  it('GET / hides a person’s chats from an agent and shows the person every one', async () => {
+    const sessions = [{ sessionId: 'private-chat', cwd: '/root/core/DOR-84', title: 'Mine' }];
+    const app = mountWith({
+      list: vi.fn().mockResolvedValue([{ ...sampleWorkspace, sessions }]),
+    });
+    const server = fixtureTarget.mount(app);
+    const person = await request(server).get('/api/workspaces');
+    expect(person.status).toBe(200);
+    expect(person.body.workspaces[0].sessions).toEqual(sessions);
+
+    // An unknown chat is private, so an agent learns neither its id nor its title.
+    const agent = await request(server).get('/api/workspaces').set('X-DorkOS-Agent', 'x');
+    expect(agent.status).toBe(200);
+    expect(agent.body.workspaces[0].sessions).toEqual([]);
+    expect(JSON.stringify(agent.body)).not.toContain('Mine');
+  });
+
+  it('POST /:id/pin is a person’s preference: an agent is refused person_only', async () => {
+    const setPinned = vi.fn().mockResolvedValue({ ...sampleWorkspace, pinned: true });
+    const server = fixtureTarget.mount(mountWith({ setPinned }));
+    const agent = await request(server)
+      .post('/api/workspaces/w1/pin')
+      .set('X-DorkOS-Agent', 'x')
+      .send({ pinned: true });
+    expect(agent.status).toBe(403);
+    expect(agent.body.code).toBe('person_only');
+    expect(setPinned).not.toHaveBeenCalled();
+
+    const person = await request(server).post('/api/workspaces/w1/pin').send({ pinned: true });
+    expect(person.status).toBe(200);
+    expect(person.body.pinned).toBe(true);
+  });
+
   it('GET /resolve maps a nested path to its workspace', async () => {
     const app = mountWith({ resolveByPath: vi.fn().mockResolvedValue(sampleWorkspace) });
     const res = await request(fixtureTarget.mount(app))
@@ -80,7 +120,7 @@ describe('workspaces routes', () => {
       .post('/api/workspaces')
       .send({ projectKey: 'core', key: 'k', source: 'ext::sh' });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNSAFE_WORKSPACE_SOURCE');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('DELETE returns 200 + blocked:dirty for a dirty workspace (not 409)', async () => {

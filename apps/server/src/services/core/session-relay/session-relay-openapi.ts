@@ -20,35 +20,35 @@ import {
   SessionRelayPresenceSchema,
   SessionRelayStatusSchema,
 } from '@dorkos/shared/session-relay-link';
+import { problemResponse } from '../openapi/problem-openapi.js';
 
 const TAGS = ['Session relay'];
-
-const ErrorSchema = z.object({ error: z.string(), code: z.string() });
 
 const json = (schema: z.ZodType, description: string) => ({
   description,
   content: { 'application/json': { schema } },
 });
 
+/** One declared response: a success body or a problem document. */
+type Declared = ReturnType<typeof json> | ReturnType<typeof problemResponse>;
+
 const STATUS = json(SessionRelayStatusSchema, 'Where the link stands now');
 const PRESENCE = json(
   SessionRelayPresenceSchema,
   'Whether someone is using this computer from the web'
 );
-const OFF = json(ErrorSchema, 'On a hub, or while the `sessionRelay.enabled` experiment is off');
-const NOT_HERE = json(
-  ErrorSchema,
-  'Not the owner at this computer using the app: the relay, another device, an agent, an ' +
-    'approval token, an API key or any other bearer'
+const OFF = problemResponse('On a hub, or while the `sessionRelay.enabled` experiment is off');
+const NOT_HERE = problemResponse(
+  '`operator_only`: not the owner at this computer using the app: the ' +
+    'relay, another device, an agent, an approval token, an API key or any other bearer'
 );
-const AGENT = json(ErrorSchema, 'A caller presenting agent identity');
-const NOT_LINKED = json(ErrorSchema, 'This computer is not linked');
-const PASSWORD = json(
-  ErrorSchema,
-  "Not the owner at this computer using the app, or the owner's password was missing or " +
-    'wrong (`SESSION_RELAY_PASSWORD`)'
+const AGENT = problemResponse('`forbidden`: a caller presenting agent identity');
+const NOT_LINKED = problemResponse('`conflict`: this computer is not linked');
+const PASSWORD = problemResponse(
+  "`operator_only`, or `forbidden` when the owner's password was missing or wrong " +
+    '(`detail` says which)'
 );
-const THROTTLED = json(ErrorSchema, 'Too many wrong passwords lately, from anywhere');
+const THROTTLED = problemResponse('`rate_limited`: too many wrong passwords lately, from anywhere');
 
 /** One write behind the person-at-this-computer bar. */
 function registerWrite(
@@ -57,7 +57,7 @@ function registerWrite(
   path: string,
   summary: string,
   description: string,
-  extra: Record<number, ReturnType<typeof json>> = {},
+  extra: Record<number, Declared> = {},
   body?: z.ZodType,
   answer: ReturnType<typeof json> = STATUS
 ): void {
@@ -138,14 +138,13 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
       "owner's confirmation in a separate sheet. A code naming this computer or a private address is refused, and a " +
       'computer linked to a DorkOS account accepts only a hub naming that account as its owner.',
     {
-      400: json(ErrorSchema, 'Not a link code, or it names a private address'),
+      400: problemResponse('Not a link code, or it names a private address'),
       403: PASSWORD,
       429: THROTTLED,
-      409: json(
-        ErrorSchema,
+      409: problemResponse(
         'No owner account, already linked, the hub said no, or a different DorkOS account'
       ),
-      502: json(ErrorSchema, 'The hub could not be reached or verified'),
+      502: problemResponse('The hub could not be reached or verified'),
     },
     SessionRelayLinkBodySchema
   );
@@ -157,7 +156,7 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
     'Choose what the web may do here',
     'Chat or Full control. Raising to Full control asks for confirmation; lowering does ' +
       'not. Stored in the relay pin; every relayed turn is held to Chat today.',
-    { 400: json(ErrorSchema, 'Not a level'), 403: PASSWORD, 409: NOT_LINKED, 429: THROTTLED },
+    { 400: problemResponse('Not a level'), 403: PASSWORD, 409: NOT_LINKED, 429: THROTTLED },
     SessionRelayLevelBodySchema
   );
 
@@ -195,7 +194,9 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
 }
 
 const PASSKEYS = json(SessionRelayPasskeyListSchema, 'The pinned approve page and passkeys');
-const PASSKEY_REFUSED = json(ErrorSchema, 'Refused (`SESSION_RELAY_PASSKEY`), with why');
+const PASSKEY_REFUSED = problemResponse(
+  'Refused (`invalid_request` or `conflict`), with why in `detail`'
+);
 
 /** The approvals passkeys (B4c): adding one, listing them, removing one. */
 function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
@@ -229,7 +230,7 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
       403: PASSWORD,
       409: PASSKEY_REFUSED,
       429: THROTTLED,
-      500: json(ErrorSchema, 'This computer could not write the statement'),
+      500: problemResponse('This computer could not write the statement'),
     },
     SessionRelayPasskeyStartBodySchema,
     json(SessionRelayPasskeyStartSchema, 'The enrol statement and the approve page to open')
@@ -250,9 +251,9 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
       'computer: on a hub this path needs a sign-in like any other.',
     {
       400: PASSKEY_REFUSED,
-      403: json(ErrorSchema, "Not a direct loopback caller, or not the return page's own request"),
+      403: problemResponse("Not a direct loopback caller, or not the return page's own request"),
       409: PASSKEY_REFUSED,
-      410: json(ErrorSchema, 'The statement expired'),
+      410: problemResponse('`expired`: the statement expired'),
     },
     SessionRelayPasskeyFinishBodySchema,
     PASSKEYS
@@ -267,9 +268,9 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
       'says `damaged: true`), so a passkey can be added again; a sound file is refused.',
     {
       403: PASSWORD,
-      409: json(ErrorSchema, 'The file is not damaged: remove passkeys one at a time'),
+      409: problemResponse('The file is not damaged: remove passkeys one at a time'),
       429: THROTTLED,
-      500: json(ErrorSchema, 'The file could not be read just now; nothing was removed'),
+      500: problemResponse('The file could not be read just now; nothing was removed'),
     },
     SessionRelayPasskeyRemoveBodySchema,
     PASSKEYS
@@ -291,7 +292,7 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: PASSKEYS,
       403: PASSWORD,
-      404: json(ErrorSchema, 'No such passkey here, or the experiment is off'),
+      404: problemResponse('No such passkey here, or the experiment is off'),
       429: THROTTLED,
     },
   });

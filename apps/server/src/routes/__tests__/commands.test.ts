@@ -101,6 +101,8 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
     computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
+    // The agent the server recorded for a chat (`sessionAgentById` before the database is wired).
+    getSessionAgentPath: vi.fn(async () => null),
     getDefault: vi.fn(() => mockRuntime),
     has: vi.fn((type: string) => type in RUNTIMES),
     get: vi.fn((type: string) => RUNTIMES[type] ?? mockRuntime),
@@ -170,7 +172,7 @@ describe('Commands Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.commands).toHaveLength(1);
       expect(res.body.commands[0].fullCommand).toBe('/daily:plan');
-      expect(mockGetCommands).toHaveBeenCalledWith(false, undefined);
+      expect(mockGetCommands).toHaveBeenCalledWith(false, undefined, undefined);
     });
 
     it('passes refresh=true to registry', async () => {
@@ -178,7 +180,7 @@ describe('Commands Routes', () => {
 
       const res = await request(testServer).get('/api/commands?refresh=true');
       expect(res.status).toBe(200);
-      expect(mockGetCommands).toHaveBeenCalledWith(true, undefined);
+      expect(mockGetCommands).toHaveBeenCalledWith(true, undefined, undefined);
     });
 
     it('returns empty when no commands exist', async () => {
@@ -244,7 +246,7 @@ describe('Commands Routes', () => {
       const res = await request(testServer).get('/api/commands').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -268,6 +270,29 @@ describe('Commands Routes', () => {
       expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(CLAUDE_SESSION);
       expect(mockGetCommands).toHaveBeenCalled();
       expect(mockTestModeGetCommands).not.toHaveBeenCalled();
+    });
+
+    it('hands the runtime the agent the server recorded for the session, never one the request names (DOR-5250)', async () => {
+      mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
+      vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValueOnce('/agents/ana');
+
+      const res = await request(testServer)
+        .get('/api/commands')
+        .query({ sessionId: CLAUDE_SESSION, cwd: '/work/site', agentPath: '/agents/bo' });
+      expect(res.status).toBe(200);
+      expect(runtimeRegistry.getSessionAgentPath).toHaveBeenCalledWith(CLAUDE_SESSION);
+      expect(mockGetCommands).toHaveBeenCalledWith(false, '/work/site', '/agents/ana');
+    });
+
+    it('still lists the folder’s commands when the session’s agent can’t be read', async () => {
+      mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
+      vi.mocked(runtimeRegistry.getSessionAgentPath).mockRejectedValueOnce(new Error('db gone'));
+
+      const res = await request(testServer)
+        .get('/api/commands')
+        .query({ sessionId: CLAUDE_SESSION, cwd: '/work/site' });
+      expect(res.status).toBe(200);
+      expect(mockGetCommands).toHaveBeenCalledWith(false, '/work/site', undefined);
     });
 
     it('resolves the test-mode runtime for a test-mode session', async () => {
@@ -317,7 +342,8 @@ describe('Commands Routes', () => {
         .get('/api/commands')
         .query({ runtime: 'bogus-runtime' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/unknown runtime/i);
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe('No agent program by that name runs here.');
       expect(runtimeRegistry.get).not.toHaveBeenCalled();
       expect(runtimeRegistry.resolveForSession).not.toHaveBeenCalled();
     });

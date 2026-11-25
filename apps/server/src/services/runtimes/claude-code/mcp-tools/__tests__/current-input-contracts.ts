@@ -33,6 +33,8 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
       // A declaration change must explain its real census drift here.
       // +1 total/relevant/ordinary/inSession/external for
       // `operator.update_agent_config` (DOR-4266), which has no defaults.
+      // +1 total/relevant/ordinary/inSession/external for `link.resolve`
+      // (DOR-5046), which has no defaults.
       const topDefaults = relevant.map(
         (cap) =>
           Object.values(capabilityInputObject(cap).shape).filter(
@@ -50,11 +52,15 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultFields: topDefaults.reduce((a, b) => a + b, 0),
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
-        total: 133,
-        relevant: 131,
-        ordinary: 119,
-        inSession: 118,
-        external: 86,
+        // +7 total for the person work-queue controls (no MCP surface, DOR-4978).
+        // +5 total for the to-do and promise doors and what cannot wake (no MCP surface, DOR-4978).
+        // +4 total for a person's to-do writes and promise changes (person-only, no MCP surface,
+        // DOR-4978).
+        total: 160,
+        relevant: 132,
+        ordinary: 120,
+        inSession: 119,
+        external: 87,
         private: 12,
         defaultNodes: 29,
         topDefaultFields: 15,

@@ -18,7 +18,7 @@ import {
   isContentEvent,
   isInteractiveEvent,
   isReportedFailure,
-} from './empty-stream-guard.js';
+} from '../../shared/empty-stream-guard.js';
 import { fireLaunchProbes } from './launch-probes.js';
 import { recordClaudeTurnContext, systemAppendOf } from './turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
@@ -120,9 +120,13 @@ export async function* executeSdkQuery(
   messageOpts?: MessageOpts,
   retryDepth = 0
 ): AsyncGenerator<StreamEvent> {
+  const toolTurnOwner = opts.toolTurnOwner;
   session.lastActivity = Date.now();
   session.turnStartedAwake = performance.now();
   session.eventQueue = [];
+  session.eventQueueNotify = undefined;
+  const eventQueue = session.eventQueue;
+  let queueNotify: (() => void) | undefined;
   // Clear last turn's breakdown so a failed fetch this turn never shows stale data.
   session.contextBreakdown = undefined;
   // A stop stamped in a PREVIOUS turn must not blind this turn's phantom
@@ -205,6 +209,9 @@ export async function* executeSdkQuery(
     session.launchedPerToken ? undefined : resolved.launch.accountRoot
   );
   session.activeQuery = agentQuery;
+  const retireToolTurn = resolved.toolTurnSettings
+    ? toolTurnOwner?.prepareToolTurn(session, agentQuery, resolved.toolTurnSettings)
+    : undefined;
 
   // Ending the held prompt sends the CLI's stdin an EOF, and from that moment
   // nothing DorkOS writes to this query arrives: the SDK drops the write in
@@ -302,8 +309,8 @@ export async function* executeSdkQuery(
     }> | null = null;
 
     while (true) {
-      while (session.eventQueue.length > 0) {
-        const queuedEvent = session.eventQueue.shift()!;
+      while (eventQueue.length > 0) {
+        const queuedEvent = eventQueue.shift()!;
         if (queuedEvent.type === 'done') emittedDone = true;
         // `interactive-handlers.ts` pushes approval/question/elicitation prompts
         // onto this queue directly — they never reach the guard through
@@ -318,7 +325,8 @@ export async function* executeSdkQuery(
       }
 
       const queuePromise = new Promise<'queue'>((resolve) => {
-        session.eventQueueNotify = () => resolve('queue');
+        queueNotify = () => resolve('queue');
+        if (session.eventQueue === eventQueue) session.eventQueueNotify = queueNotify;
       });
 
       if (!pendingSdkPromise) {
@@ -527,6 +535,10 @@ export async function* executeSdkQuery(
           await opts.onSdkSessionRebind(retired, session.sdkSessionId);
         }
         if (event.type === 'done') {
+          // A segment with live helpers/owed delivery is not a logical terminal.
+          if (!liveness.holdOpenAtResult().hold) {
+            retireToolTurn?.(emittedError ? 'runtime_failed' : 'turn_terminal');
+          }
           emittedDone = true;
           if (opts.meshCore && meshAgentId) {
             opts.meshCore.updateLastSeen(meshAgentId, 'response_complete');
@@ -636,6 +648,7 @@ export async function* executeSdkQuery(
     // report the same expiry, and a person should not be able to tell which one
     // caught it.
     const isAuthError = detectAuthError({ message: errMsg });
+    retireToolTurn?.('runtime_failed');
     yield {
       type: 'error',
       data: {
@@ -652,6 +665,9 @@ export async function* executeSdkQuery(
     };
     emittedError = true;
   } finally {
+    // EOF/terminal failure is observed here even when no mapped done was emitted.
+    // A stale recursive frame's captured publication cannot retire its successor.
+    retireToolTurn?.(emittedError ? 'runtime_failed' : 'turn_terminal');
     initGuard.dispose();
     // Always release the held input stream so the subprocess can never leak if we
     // exit before the result message (error, interrupt, empty stream). Idempotent.
@@ -685,9 +701,10 @@ export async function* executeSdkQuery(
     // the next resume stays plain and keeps this turn's user message in context.
     // Skipped when a recursion retry ran — that inner call set the correct value
     // and this outer frame's local would clobber it.
-    if (!retriedViaRecursion) {
+    if (!retriedViaRecursion && session.eventQueue === eventQueue) {
       session.lastAssistantUuid = lastMainAssistantUuid;
     }
+    if (session.eventQueueNotify === queueNotify) session.eventQueueNotify = undefined;
   }
 
   // Detect empty streams that also never produced a done — zero content

@@ -14,6 +14,7 @@ import { TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { ownerRefusalReply } from './session-route-replies.js';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 
 /** What the route reads and writes. */
@@ -38,7 +39,7 @@ export function createHeartbeatTriageRoutes(deps: HeartbeatTriageRouterDeps): Ho
       personOnly: 'Only you can choose what pays for checks, from the DorkOS app.',
       action: 'choose what pays for checks',
     });
-    if (refusal) return c.json(refusal, 403);
+    if (refusal) return ownerRefusalReply(c, refusal);
     const parsed = TriageCreditsChoiceSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) return validationProblem(c, parsed.error);
     const { useCredits } = parsed.data;

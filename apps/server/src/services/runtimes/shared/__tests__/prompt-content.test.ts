@@ -49,7 +49,7 @@ import { buildAgentContextAppend } from '../agent-context.js';
 import { buildCodexPrompt } from '../../codex/turn-input.js';
 import { buildOpenCodeParts, buildOpenCodeSystem } from '../../opencode/messaging/turn-input.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
-import { DEFUSED_TAGS } from '../untrusted-fence.js';
+import { DEFUSED_TAGS } from '../../../core/untrusted-text/untrusted-fence.js';
 
 /**
  * The blocks a fully-configured agent's append carries, in the order they are

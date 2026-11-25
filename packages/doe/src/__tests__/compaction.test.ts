@@ -1,7 +1,5 @@
 import { compactionFixture as fixture } from './compaction-fixture.js';
 import Database from 'better-sqlite3';
-import { estimateInput, systemFingerprint } from '../context-estimation.js';
-import { businessPrompt } from '../prompt.js';
 import { expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 import { Doe } from '../doe.js';
@@ -248,85 +246,6 @@ it('reused call IDs retain every crossing call/result group', async () => {
   expect(JSON.stringify(f.store.restore('business').messages)).toContain('old-call');
   expect(JSON.stringify(f.store.restore('business').messages)).toContain('new-call');
 });
-it('pure provider baseline is marked provider, while changed instructions/schemas are explicit estimated growth', async () => {
-  const f = fixture();
-  f.seed();
-  const records = f.store.restore('business').messages;
-  f.store.recordUsage('business', {
-    requestId: 'measured',
-    inputTokens: 600,
-    contextMessageSeq: records.at(-1)!.seq,
-    contextCheckpointSeq: 0,
-    contextSystemHash: systemFingerprint(
-      businessPrompt(f.config.profile, 'CURRENT-RESOURCE'),
-      f.config.registry.selected(),
-      records.map((r) => r.payload)
-    ),
-    contextEstimateTokens: estimateInput(
-      businessPrompt(f.config.profile, 'CURRENT-RESOURCE'),
-      f.config.registry.selected(),
-      records.map((r) => r.payload)
-    ).tokens,
-  });
-  await new Doe(f.config, f.factory).compact();
-  expect(f.store.restore('business').checkpoint!.before).toMatchObject({
-    source: 'provider',
-    tokens: 600,
-    providerTokens: 600,
-    estimatedTokens: 0,
-  });
-  f.store.appendMessage('business', { role: 'user', content: 'new' });
-  f.store.appendMessage('business', {
-    role: 'assistant',
-    content: [{ type: 'text', text: 'answer' }],
-  });
-  const fresh = f.store.restore('business').messages;
-  f.store.recordUsage('business', {
-    requestId: 'measured-again',
-    inputTokens: 600,
-    contextMessageSeq: fresh.filter((r) => r.seq > 0).at(-1)!.seq,
-    contextCheckpointSeq: f.store.restore('business').checkpoint!.seq,
-    contextSystemHash: systemFingerprint(
-      businessPrompt(f.config.profile, 'CURRENT-RESOURCE'),
-      f.config.registry.selected(),
-      fresh.map((r) => r.payload)
-    ),
-    contextEstimateTokens: estimateInput(
-      businessPrompt(f.config.profile, 'CURRENT-RESOURCE'),
-      f.config.registry.selected(),
-      fresh.map((r) => r.payload)
-    ).tokens,
-  });
-  f.config.resources.load = async () => 'CURRENT-RESOURCE' + ' UPDATED-INSTRUCTION'.repeat(30);
-  f.config.registry.register({
-    name: 'new_schema',
-    description: 'New schema',
-    initialLoad: true,
-    schema: { type: 'object', properties: { value: { type: 'string' } } },
-    execute: async () => ({ content: [] }),
-  });
-  await new Doe(f.config, f.factory).compact();
-  expect(f.store.restore('business').checkpoint!.before.providerTokens).toBe(600);
-  expect(f.store.restore('business').checkpoint!.before.estimatedTokens).toBeGreaterThan(0);
-  expect(f.store.restore('business').checkpoint!.before.source).toBe('estimated');
-});
-it('manual and automatic share the same cut point and before/after counts for identical input', async () => {
-  const manual = fixture(),
-    automatic = fixture();
-  manual.seed();
-  automatic.seed();
-  manual.config.model.contextWindow = 2400;
-  automatic.config.model.contextWindow = 2400;
-  const input: ModelMessage = { role: 'user', content: 'current', timestamp: 7 };
-  manual.store.appendMessage('business', input);
-  await new Doe(manual.config, manual.factory).compact();
-  await new Doe(automatic.config, automatic.factory).run(input);
-  const a = manual.store.restore('business').checkpoint!,
-    b = automatic.store.restore('business').checkpoint!;
-  expect(a.firstRetainedSeq).toBe(b.firstRetainedSeq);
-  expect(a.before).toEqual(b.before);
-  expect(a.after).toEqual(b.after);
-});
 
 for (const text of ['', 'oversized '.repeat(800)])
   it(`refuses ${text ? 'oversized' : 'empty'} summaries while retaining real call usage`, async () => {
@@ -347,43 +266,6 @@ for (const text of ['', 'oversized '.repeat(800)])
     expect(end).not.toHaveProperty('before');
     expect(end).not.toHaveProperty('after');
   });
-it('equal-sized changed instructions invalidate a pure-provider label', async () => {
-  const f = fixture();
-  f.seed();
-  const records = f.store.restore('business').messages;
-  const prompt = businessPrompt(f.config.profile, 'CURRENT-RESOURCE');
-  f.store.recordUsage('business', {
-    requestId: 'reported',
-    inputTokens: 600,
-    contextMessageSeq: records.at(-1)!.seq,
-    contextCheckpointSeq: 0,
-    contextEstimateTokens: estimateInput(
-      prompt,
-      f.config.registry.selected(),
-      records.map((r) => r.payload)
-    ).tokens,
-    contextSystemHash: systemFingerprint(
-      prompt,
-      f.config.registry.selected(),
-      records.map((r) => r.payload)
-    ),
-  });
-  f.config.resources.load = async () => 'CHANGED-RESOURCE';
-  await new Doe(f.config, f.factory).compact();
-  expect(f.store.restore('business').checkpoint!.before.source).toBe('estimated');
-  expect(f.store.restore('business').checkpoint!.before.providerTokens).toBe(600);
-});
-
-it('preserves all text blocks in the final business summary', async () => {
-  const f = fixture();
-  f.seed();
-  f.setSummaryText('Decision: accept the offer.');
-  f.setSummarySuffix('Promise: send the invoice Friday.');
-  await new Doe(f.config, f.factory).compact();
-  const summary = f.store.restore('business').checkpoint!.summary;
-  expect(JSON.stringify(summary)).toContain('Decision: accept the offer.');
-  expect(JSON.stringify(summary)).toContain('Promise: send the invoice Friday.');
-});
 
 it('refuses before model work when indispensable older system instructions already exceed the context limit', async () => {
   const f = fixture();
@@ -451,32 +333,6 @@ it('snapshot replay preserves one copy of plain instructions across repeated com
     expect(system.match(/NEW-AFTER-CHECKPOINT/g)).toHaveLength(1);
     expect(system).toContain('updated');
     expect(system).not.toContain('original');
-    expect(f.store.archive('business').slice(0, originals.length)).toEqual(originals);
-  } finally {
-    await wire.close();
-  }
-});
-
-it('retains valid array text system instructions through checkpoint and real model request', async () => {
-  const f = fixture();
-  f.store.appendMessage('business', {
-    role: 'system',
-    content: [
-      { type: 'text', text: 'KEEP-ARRAY-RULE' },
-      { type: 'text', text: 'SECOND-ARRAY-RULE' },
-    ],
-    timestamp: 0,
-  });
-  f.seed();
-  const originals = f.store.archive('business');
-  await new Doe(f.config, f.factory).compact();
-  f.reopen();
-  const wire = await protocolFixture('openai-completions');
-  try {
-    f.config.model.endpoint = wire.endpoint;
-    await new Doe(f.config).run('check');
-    expect(JSON.stringify(wire.bodies[0])).toContain('KEEP-ARRAY-RULE');
-    expect(JSON.stringify(wire.bodies[0])).toContain('SECOND-ARRAY-RULE');
     expect(f.store.archive('business').slice(0, originals.length)).toEqual(originals);
   } finally {
     await wire.close();

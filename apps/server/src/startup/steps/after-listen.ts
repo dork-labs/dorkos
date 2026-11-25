@@ -17,12 +17,10 @@ import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger, logError } from '../../lib/logger.js';
 import { sharedBackgroundWorkLedger } from '../../services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { wakeChatsCutShort } from '../../services/session/runtime-turns/wake-cut-short-work.js';
-import { rearmChatQueues, sweepOrphanedMessageQueues } from '../../services/session/index.js';
-import {
-  liveSessionCwd,
-  resumeChatQueue,
-} from '../../services/extensions/agent-send/agent-send-defaults.js';
+import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
+import { resumeStrandedChatQueues } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
+import { startRunEffects } from '../../services/runs/index.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -119,6 +117,12 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     docDeliveryRunner,
   } = built;
 
+  // The outbox's worker, first: the follow-ups runs saved are carried out from
+  // here on, whatever below throws, and before any chat's queue resumes (spec
+  // `turns-survive-restarts` §7.3). Until it runs, the "finished" emitter
+  // tells every turn itself.
+  startRunEffects();
+
   // A hub reads who it belongs to and refuses everybody until it serves them
   // (DOR-2934). The server is listening, so Cloud's health check answers
   // while the first read is in flight.
@@ -177,19 +181,11 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // Messages other chats queued survive a restart, but nothing ran them until a
   // newer message reached the same chat, sometimes days later (DOR-3287). Resume
   // those chats now, and on the health tick for any row left with nothing to run it.
+  // Mini apps' rows too: a pause holds them like any other (DOR-5232).
   const resumeChatQueues = (): void => {
-    void rearmChatQueues({
-      resume: async (id) =>
-        resumeChatQueue(
-          id,
-          await liveSessionCwd(id),
-          refs.roomSessionPlacePort,
-          {},
-          {
-            registeredAgentPaths: () =>
-              refs.meshCore?.listWithPaths().map((agent) => agent.projectPath),
-          }
-        ),
+    void resumeStrandedChatQueues({
+      meshCore: () => refs.meshCore,
+      roomSessionPlace: () => refs.roomSessionPlacePort,
     }).catch((err: unknown) => {
       logger.warn('[DorkOS] could not resume chats’ queued messages', logError(err));
     });

@@ -118,7 +118,8 @@ function refuse(code: string, message: string): never {
  * tools and other surface-less capabilities are reached only through their
  * own dedicated servers, so they are out of reach here even though the call
  * carries a server principal. A call over HTTP or the CLI (`dorkos call`)
- * already reaches any capability by id, so it may name any.
+ * already reaches any capability by id, so it may name any but a person-only
+ * one (`surfaces.http.audience: 'person'`), which no agent may run.
  *
  * @param registry - The composed registry.
  * @param named - What the agent passed as `action`.
@@ -130,8 +131,10 @@ export function findRequestedAction(
   named: string,
   surface: McpServerId | null
 ): CapabilityDefinition | undefined {
+  // A person-only capability is never an agent's to ask for, on any surface.
   const reachable = (capability: CapabilityDefinition) =>
-    surface === null || capability.surfaces.mcp?.servers.includes(surface) === true;
+    capability.surfaces.http?.audience !== 'person' &&
+    (surface === null || capability.surfaces.mcp?.servers.includes(surface) === true);
   const byId = registry.get(named);
   if (byId) return reachable(byId) ? byId : undefined;
   const bare = bareToolName(named);

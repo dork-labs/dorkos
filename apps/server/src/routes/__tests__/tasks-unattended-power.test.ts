@@ -341,7 +341,7 @@ describe('the guards that stand between an agent and a raised task', () => {
       .send(createBody({ permissionMode: 'bypassPermissions', reason: 'because' }));
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_task_field');
+    expect(res.body.code).toBe('person_only');
     expect(res.body.fields).toEqual(['permissionMode']);
     expect(store.getTasks()).toHaveLength(0);
   });

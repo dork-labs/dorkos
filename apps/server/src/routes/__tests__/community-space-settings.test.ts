@@ -210,7 +210,8 @@ describe('only the person at the app', () => {
     // Purpose: fails if any non-person caller gets a read, or the space is asked for one.
     const response = await request(server).get(`${base}/settings`).set(headers);
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('NOT_A_PERSON');
+    expect(response.headers['content-type']).toContain('application/problem+json');
+    expect(response.body.code).toBe('person_only');
     expect(remote).not.toHaveBeenCalled();
     expect(credential).not.toHaveBeenCalled();
   });
@@ -270,9 +271,10 @@ describe('refusals and the credential', () => {
     remote.mockRejectedValue(new PinnedHttpError(403, 'FORBIDDEN'));
     const response = await request(server).get(`${base}/members`);
     expect(response.status).toBe(403);
-    expect(response.body).toEqual({
-      error: 'This space doesn’t show who is in it to your role.',
-      code: 'SPACE_READ_FORBIDDEN',
+    expect(response.headers['content-type']).toContain('application/problem+json');
+    expect(response.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'This space doesn’t show who is in it to your role.',
     });
   });
 
@@ -280,7 +282,10 @@ describe('refusals and the credential', () => {
     credential.mockRejectedValueOnce(new RemoteConnectionAuthorizationError());
     const response = await request(server).get(`${base}/rules`);
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe('COMMUNITY_RECONNECT_REQUIRED');
+    expect(response.body).toMatchObject({
+      code: 'conflict',
+      detail: 'Reconnect this space to continue.',
+    });
   });
 
   it('keeps the credential out of every answer and every log line when the space fails', async () => {
@@ -363,9 +368,9 @@ describe('the last answer, for when the space cannot be reached', () => {
     try {
       const response = await request(never).get(`${base}/members`);
       expect(response.status).toBe(503);
-      expect(response.body).toEqual({
-        error: 'Can’t reach this space right now.',
-        code: 'SPACE_UNREACHABLE',
+      expect(response.body).toMatchObject({
+        code: 'temporarily_unavailable',
+        detail: 'Can’t reach this space right now.',
       });
     } finally {
       await close(never);
@@ -413,7 +418,7 @@ describe('the kept answers under load and after a refusal', () => {
       remote.mockRejectedValue(new PinnedOriginError('REMOTE_UNAVAILABLE'));
       const down = await request(target).get(`${base}/members`);
       expect(down.status).toBe(503);
-      expect(down.body.code).toBe('SPACE_UNREACHABLE');
+      expect(down.body.code).toBe('temporarily_unavailable');
     } finally {
       await close(target);
       await rm(fresh, { recursive: true, force: true });
@@ -426,9 +431,9 @@ describe('the kept answers under load and after a refusal', () => {
     grantRejected.mockResolvedValue(true);
     const response = await request(server).get(`${base}/rules`);
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({
-      error: 'Reconnect this space to continue.',
-      code: 'COMMUNITY_RECONNECT_REQUIRED',
+    expect(response.body).toMatchObject({
+      code: 'conflict',
+      detail: 'Reconnect this space to continue.',
     });
   });
 
@@ -438,7 +443,10 @@ describe('the kept answers under load and after a refusal', () => {
     const response = await request(server).get(`${base}/settings`);
     expect(grantRejected).toHaveBeenCalledWith(ref, 'author-a');
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('SPACE_READ_UNAVAILABLE');
+    expect(response.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'This space doesn’t show its settings to the app yet.',
+    });
   });
 });
 

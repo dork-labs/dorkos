@@ -120,14 +120,14 @@ describe('AddMcpServerForm', () => {
     const transport = createMockTransport({
       addAgentMcpServer: vi
         .fn()
-        .mockRejectedValue(Object.assign(new Error(sentence), { code: 'NOT_FROM_WIFI' })),
+        .mockRejectedValue(Object.assign(new Error(sentence), { code: 'not_from_wifi' })),
     });
     renderForm(transport, TRANSPORTS);
     addHttpServer();
     const shown = await screen.findByText(sentence);
     expect(shown.getAttribute('data-tone')).toBe('info');
     expect(shown.className).not.toContain('text-destructive');
-    expect(screen.queryByText(/NOT_FROM_WIFI/)).toBeNull();
+    expect(screen.queryByText(/not_from_wifi/)).toBeNull();
   });
 
   it('on Wi-Fi says no up front and never sends the add (DOR-2969)', async () => {
@@ -139,7 +139,9 @@ describe('AddMcpServerForm', () => {
     renderForm(transport, TRANSPORTS);
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
     expect(
-      await screen.findByText('Adding a server only works at this computer. You’re on Wi-Fi.')
+      await screen.findByText(
+        'Adding a server only works at this computer. You’re on another device.'
+      )
     ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });

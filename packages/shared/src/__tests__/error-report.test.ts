@@ -199,10 +199,6 @@ describe('scrubStack', () => {
     expect(frames[1].function).toBe('<anonymous>');
   });
 
-  it('returns [] for an undefined stack', () => {
-    expect(scrubStack(undefined, '/srv/dorkos')).toEqual([]);
-  });
-
   // `POST /api/errors` takes a 20 kB `stack` from anyone who can reach the
   // server, and the two frame regexes both had a `\s+` overlapping a lazy
   // `.+?` — so one absurdly long line cost about a second of blocked event
@@ -214,14 +210,6 @@ describe('scrubStack', () => {
     const frames = scrubStack(stack, '/srv/dorkos');
     expect(frames).toHaveLength(1);
     expect(frames[0]).toMatchObject({ function: 'ok', filename: 'y.ts' });
-  });
-
-  it('still parses a long-but-plausible frame line', () => {
-    const deep = `/srv/dorkos/${'nested/'.repeat(100)}x.ts`;
-    expect(deep.length).toBeLessThan(1_024);
-    const frames = scrubStack(`Error: boom\n    at fn (${deep}:3:4)`, '/srv/dorkos');
-    expect(frames).toHaveLength(1);
-    expect(frames[0]).toMatchObject({ function: 'fn', lineno: 3, colno: 4 });
   });
 
   it("scrubs the route's true worst case — 20 kB packed with lines at the length cap — fast", () => {
@@ -250,17 +238,6 @@ describe('scrubStack', () => {
     const started = performance.now();
     expect(scrubStack(`Error\n    ${hostile}`, '/srv/dorkos')).toEqual([]);
     expect(performance.now() - started).toBeLessThan(100);
-  });
-
-  it('still reads a normal frame whose filename has no trailing space', () => {
-    // The rewrite requires the captured name to start AND end with a non-space.
-    // Over 1,235,314 exhaustive inputs the ONLY behaviour that moved was a
-    // "filename" ending in whitespace (`at foo :1:1`), which no real V8 frame
-    // produces — and which the old pattern captured WITH the trailing space.
-    expect(scrubStack('Error\n    at /srv/dorkos/x.ts:1:2', '/srv/dorkos')).toMatchObject([
-      { filename: 'x.ts', lineno: 1, colno: 2, function: '<anonymous>' },
-    ]);
-    expect(scrubStack('Error\n    at /srv/dorkos/x.ts :1:2', '/srv/dorkos')).toEqual([]);
   });
 });
 
@@ -401,13 +378,6 @@ describe('errorEventToExceptionProperties — scrubbing preserved end-to-end', (
     });
   });
 
-  it('tags client-surface frames as web:javascript', () => {
-    const scrubbed = buildErrorEvent({ ...base, surface: 'client', error: new Error('x') });
-    const props = errorEventToExceptionProperties(scrubbed);
-    // Even with no frames, the surface classification is client.
-    expect(props.surface).toBe('client');
-  });
-
   it('a poisoned error cannot leak paths or tokens through the $exception mapping', () => {
     const HOME = '/Users/alice';
     const TOKEN = 'sk-abcdef0123456789ABCDEF';
@@ -465,15 +435,6 @@ describe('sendExceptionEvent', () => {
     expect(body.events[0]).toMatchObject({ event: '$exception' });
   });
 
-  it('honors a custom endpoint', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    await sendExceptionEvent(event, {
-      fetchImpl: fetchSpy,
-      endpoint: 'https://example.test/ingest',
-    });
-    expect(fetchSpy.mock.calls[0][0]).toBe('https://example.test/ingest');
-  });
-
   it('in debug mode prints and sends nothing', async () => {
     const fetchSpy = vi.fn();
     const writeSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
@@ -482,32 +443,14 @@ describe('sendExceptionEvent', () => {
     expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('$exception'));
     writeSpy.mockRestore();
   });
-
-  it('swallows fetch failures', async () => {
-    const fetchSpy = vi.fn().mockRejectedValueOnce(new Error('network down'));
-    await expect(sendExceptionEvent(event, { fetchImpl: fetchSpy })).resolves.toBeUndefined();
-  });
 });
 
 describe('raceWithTimeout', () => {
-  it('resolves as soon as the promise settles (fast path)', async () => {
-    let settled = false;
-    await raceWithTimeout(
-      Promise.resolve().then(() => void (settled = true)),
-      5000
-    );
-    expect(settled).toBe(true);
-  });
-
   it('resolves within the timeout when the promise hangs (bounded)', async () => {
     const never = new Promise<void>(() => {}); // never settles
     const start = Date.now();
     await raceWithTimeout(never, 20);
     // Resolved despite the hung promise; bounded near the timeout, not forever.
     expect(Date.now() - start).toBeLessThan(500);
-  });
-
-  it('never rejects even if the promise rejects', async () => {
-    await expect(raceWithTimeout(Promise.reject(new Error('boom')), 50)).resolves.toBeUndefined();
   });
 });

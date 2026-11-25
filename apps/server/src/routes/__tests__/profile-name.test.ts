@@ -222,7 +222,7 @@ describe('PATCH /api/profile', () => {
         .send({ displayName: 'Definitely The Operator' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
       // Refused before either write, not after one of them.
       expect(storedAccountName()).toBe('Dorian');
       expect(storedProfileName).toBeNull();
@@ -239,7 +239,7 @@ describe('PATCH /api/profile', () => {
         .send({ displayName: 'Not The Owner' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
       expect(storedAccountName()).toBe('Dorian');
       // The half that would otherwise have leaked: the config write is not
       // behind the account check unless it is put there deliberately.

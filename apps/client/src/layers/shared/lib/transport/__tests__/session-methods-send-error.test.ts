@@ -30,8 +30,10 @@ describe('postMessage on a refusal', () => {
         status: 400,
         json: () =>
           Promise.resolve({
-            error: 'Choose a registered agent before starting this session',
-            code: 'INVALID_AGENT_PATH',
+            title: 'The request didn’t pass its checks.',
+            status: 400,
+            code: 'invalid_request',
+            detail: 'Choose a registered agent before starting this session',
           }),
       })
     );

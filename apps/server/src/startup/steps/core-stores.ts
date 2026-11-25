@@ -8,6 +8,7 @@
  * @module startup/steps/core-stores
  */
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
+import { loadLocalSpaceId } from '../../lib/identity/space-id.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorCatalogCache } from '../../services/connectors/resources/catalog-cache.js';
 import path from 'path';
@@ -29,6 +30,11 @@ import {
   setSessionLimitStore,
 } from '../../services/session/index.js';
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
+import { installWorkLinkStore } from '../../services/work-graph/index.js';
+import { installRunRecord } from '../../services/runs/index.js';
+import { knownChatCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
+import { resolveAgentIdForPath } from '../../services/mesh/agent-path-lookup.js';
+import { ulid } from 'ulidx';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
 import { accountRuleRoots } from '../../services/core/usage/account-eligibility.js';
@@ -46,6 +52,7 @@ import {
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { chatFolderById } from '../../services/core/agent-identity/session-agent.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from '../../services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -74,6 +81,8 @@ import { initAgentIdentityService } from '../../services/core/agent-identity/ind
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { wireAuditTrail } from '../../services/audit/index.js';
 import { wireAgentPause } from '../../services/mesh/pause/index.js';
+import { agentPause } from '../../services/mesh/pause/agent-pause.js';
+import { isAgentLaunchCapFull } from '../../services/session/launch/launch-cap.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { ServerRefs } from '../server-refs.js';
@@ -99,6 +108,9 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // as MeshCore exists below, before its first startup pass. Provider bootstrap
   // and connector routes remain later in startup, after their other dependencies.
   const connectorInstallationId = await getOrCreateInstanceId(dorkHome);
+  // Beside the install id, the local space's id: read, or minted on the first
+  // boot, then held for every turn's signature references (ADR 261122-124821).
+  await loadLocalSpaceId(dorkHome);
   const connectorOwner = {
     kind: 'local_install',
     installationId: connectorInstallationId,
@@ -148,6 +160,37 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   const messageQueueStore = new MessageQueueStore(db);
   setMessageQueueStore(messageQueueStore);
 
+  // The run record, and this boot's epoch: the owner of every run this process
+  // starts (spec `turns-survive-restarts` §6.1). Before anything can launch a turn.
+  // Its outbox names a chat by the folder it runs in, when the emitter's own
+  // naming did not travel with the notice.
+  installRunRecord(db, {
+    epoch: ulid(),
+    // The turn port's door (spec §3.1, §3.5): Mesh and the pause service are
+    // read at call time, since both start later in boot.
+    agentHome: () => {
+      const mesh = refs.meshCore;
+      return mesh ? (agentId) => mesh.getProjectPath(agentId) : undefined;
+    },
+    admission: {
+      admission: {
+        pausedAgent: (agentId, cwd, sessionId) =>
+          agentPause()?.pausedAgentOfStart(agentId, cwd, sessionId, () =>
+            knownChatCwd(db, sessionId)
+          ),
+        machineFull: isAgentLaunchCapFull,
+      },
+    },
+    onResumed: (listener) => agentPause()?.onResumed(listener) ?? (() => {}),
+    handlers: {
+      placeOf: (sessionId) => {
+        const cwd = knownChatCwd(db, sessionId);
+        const agentId = resolveAgentIdForPath(cwd);
+        return { ...(cwd ? { cwd } : {}), ...(agentId ? { agentId } : {}) };
+      },
+    },
+  });
+
   // The durable hold for staged words, on the same beat again: the server tells
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
@@ -158,6 +201,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // registers, so the first turn is recorded; text past 30 days is swept here
   // and on the hourly tick.
   installTurnContextStore(db);
+
+  // The work graph's edges (DOR-4968), on the same beat: a first turn's re-key
+  // is recorded as it happens, so the first turn must find the store in place.
+  installWorkLinkStore(db);
 
   // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
   // here, before extensions start, because a name handed out earlier could
@@ -208,6 +255,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   runtimeRegistry.setDb(db);
   // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 

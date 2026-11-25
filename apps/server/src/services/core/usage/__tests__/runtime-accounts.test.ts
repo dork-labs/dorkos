@@ -4,6 +4,7 @@ import {
   DEFAULT_ACCOUNT_LABEL,
   defaultAccountFolder,
   accountForPath,
+  isMainSignIn,
   pruneTargets,
   resolveAccountRef,
   resolveRuntimeAccounts,
@@ -59,6 +60,24 @@ describe('resolveRuntimeAccounts (contract §1.1a rev 6d)', () => {
     expect(accounts.map((a) => [a.id, a.ledgerId, a.isDefault, a.label, a.path])).toEqual([
       ['claude3', 'claude3', false, 'Claude3', '/home/op/.claude3'],
       ['default', 'default', true, DEFAULT_ACCOUNT_LABEL, '/home/op/.claude'],
+    ]);
+  });
+
+  it('carries a stored agentsMayPick true onto the account, and nothing for false or absent (DOR-5033)', () => {
+    const { accounts } = resolveRuntimeAccounts('claude-code', {
+      config: config([
+        { id: 'northwind', path: '/home/op/.claude-northwind', agentsMayPick: true },
+        { id: 'side', path: '/home/op/.claude-side', agentsMayPick: false },
+        { id: 'plain', path: '/home/op/.claude-plain' },
+      ]),
+      home: HOME,
+      realpath,
+    });
+    expect(accounts.map((a) => [a.id, a.agentsMayPick])).toEqual([
+      ['northwind', true],
+      ['side', undefined],
+      ['plain', undefined],
+      ['default', undefined],
     ]);
   });
 
@@ -233,5 +252,44 @@ describe('pruneTargets (prune.cases shapes, rev 6d)', () => {
         { 'claude-code': ['claude3', 'default'] }
       )
     ).toEqual({ 'claude-code': [], codex: [], opencode: [], doe: [] });
+  });
+});
+
+describe('isMainSignIn (DOR-5033)', () => {
+  const base = {
+    runtime: 'claude-code' as const,
+    label: null,
+    color: '#123456',
+    storedColor: null,
+    routable: true,
+    implicit: false,
+    isDefault: false,
+    ledgerId: null,
+  };
+  const at = (id: string, folder: string | null, extra: Record<string, unknown> = {}) => ({
+    ...base,
+    id,
+    path: folder,
+    canonicalPath: folder,
+    ...extra,
+  });
+
+  it('is true for the row default names, even with no folder to compare', () => {
+    const main = at('main', null, { isDefault: true });
+    expect(isMainSignIn(main, [main])).toBe(true);
+  });
+
+  it('is true for the id default, and for another row on the default folder', () => {
+    const standalone = at('default', '/home/op/.claude', { implicit: true, isDefault: true });
+    const twin = at('twin', '/home/op/.claude');
+    expect(isMainSignIn(standalone, [twin, standalone])).toBe(true);
+    expect(isMainSignIn(twin, [twin, standalone])).toBe(true);
+  });
+
+  it('is false for a row on its own folder, and when no account is the default', () => {
+    const main = at('main', '/home/op/.claude', { isDefault: true });
+    const side = at('side', '/home/op/.claude-side');
+    expect(isMainSignIn(side, [main, side])).toBe(false);
+    expect(isMainSignIn(side, [side])).toBe(false);
   });
 });

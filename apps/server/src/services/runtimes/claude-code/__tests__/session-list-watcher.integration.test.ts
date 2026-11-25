@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile, unlink, appendFile } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, unlink, appendFile, utimes } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -121,10 +121,12 @@ describe('watchSessionList (real filesystem integration)', () => {
     await mkdir(dir);
     const file = join(dir, 'session-d1.jsonl');
     await writeFile(file, jsonlLine('/work/delta', 'First words'));
+    // Backdate the first write, so the append lands at a later mtime without a wait.
+    const earlier = new Date(Date.now() - 60_000);
+    await utimes(file, earlier, earlier);
     iterator = watchSessionList(new TranscriptReader(), [projectsRoot])[Symbol.asyncIterator]();
     await nextEvent(iterator, 'initial inventory');
 
-    await new Promise((resolve) => setTimeout(resolve, 1_100)); // a later mtime, to the ms
     await appendFile(file, jsonlLine('/work/delta', 'More words'));
     const updated = await nextEvent(iterator, 'session_upserted after an append');
     expect(updated).toMatchObject({ type: 'session_upserted', session: { id: 'session-d1' } });

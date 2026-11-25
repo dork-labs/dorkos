@@ -73,7 +73,10 @@ export function relayServesLaunchOrigin(kind: TurnOrigin['kind']): boolean {
     // An agent's own work nobody typed into (a room turn, a scheduled run, a
     // beat), a chat bridged from off this machine, a conversation another
     // agent or an outside sender started over the bus, a connector event's
-    // chat, an extension's own app-data chat, and the test harness.
+    // chat, an extension's own app-data chat, and the test harness. DorkOS
+    // carrying on (`resume`) never starts a chat; were one ever stored, the
+    // cautious answer is that the web does not reach it.
+    case 'resume':
     case 'room':
     case 'schedule':
     case 'heartbeat':
@@ -110,6 +113,7 @@ const KNOWN_LAUNCH_ORIGINS: Readonly<Record<TurnOrigin['kind'], true>> = {
   'chat-message': true,
   'account-handoff': true,
   'account-resume': true,
+  resume: true,
   heartbeat: true,
   'test-harness': true,
 };

@@ -9,8 +9,12 @@
  * starts, for Codex, OpenCode and Doe, which have no hook that runs first.
  *
  * DorkOS's own tools, its connected-app tools included, are never answered here: the server marks
- * those itself when they return outside text (`core/capabilities/dorkos-tool-reads.ts`). Local tools
- * (file reads, searches, edits, the shell) never mark here.
+ * those itself when they return outside text (`core/capabilities/dorkos-tool-reads.ts`).
+ *
+ * Local tools mark by what they are handed (DOR-5236): a shell command that fetches from the network
+ * or names a file in a folder of outside files (`shell-outside-text.ts`), a file read in one of those
+ * folders, and a search that reaches one (`outside-file-places.ts`). An input that cannot be read
+ * counts as reading outside text. Everything else they do stays unmarked.
  *
  * OpenCode spells another server's tool `server_tool`, with no marker, so there every tool that is
  * not one of its own known local tools marks: an unknown name, or none, fails closed.
@@ -23,6 +27,8 @@ import {
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
 } from '../dorkos-tool-names.js';
+import { outsideFileTests, type CallPlace } from './outside-file-places.js';
+import { commandReadsOutsideText, shellCommandOf } from './shell-outside-text.js';
 
 /** Claude Code's tools that bring in outside text: a page, a web search, an MCP server's resource. */
 const CLAUDE_CODE_OUTSIDE_TOOLS: ReadonlySet<string> = new Set([
@@ -42,14 +48,15 @@ const CONNECTIONS_PREFIX = `mcp__${DORKOS_CONNECTIONS_SERVER_NAME}__`;
  * own tools out, and a matcher too narrow would fail with no symptom.
  */
 export const CLAUDE_CODE_OUTSIDE_TEXT_MATCHER =
-  '^(WebFetch|WebSearch|ListMcpResourcesTool|ReadMcpResourceTool)$|^mcp__';
+  '^(WebFetch|WebSearch|ListMcpResourcesTool|ReadMcpResourceTool|Bash|Read|Grep)$|^mcp__';
 
 /** Codex's tool that searches the web. Codex has no page fetch of its own. */
 const CODEX_WEB_SEARCH = 'WebSearch';
 
 /**
- * OpenCode's own tools that only touch this computer, or run nothing by themselves. Not `task`: a
- * helper it starts may read anything, so starting one marks.
+ * OpenCode's own tools that only touch this computer, or run nothing by themselves, so their name
+ * alone never marks (`bash`, `read` and `grep` still mark by their input). Not `task`: a helper it
+ * starts may read anything, so starting one marks.
  */
 const OPENCODE_LOCAL_TOOLS: ReadonlySet<string> = new Set([
   'bash',
@@ -75,6 +82,77 @@ const DOE_WEB_FETCH = 'web_fetch';
 const DOE_MCP_PREFIX = 'mcp_';
 const DOE_CONNECTIONS_PREFIX = `mcp_${DORKOS_CONNECTIONS_SERVER_NAME}_`;
 
+/** Each runtime's shell tool, which marks by the command it runs. Doe has none. */
+const SHELL_TOOLS: Readonly<Record<string, string>> = {
+  'claude-code': 'Bash',
+  codex: 'Shell',
+  opencode: 'bash',
+};
+
+/** Each runtime's file reads, and the input field naming the file: they mark in a folder of outside files. */
+const FILE_READ_TOOLS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  'claude-code': { Read: 'file_path' },
+  opencode: { read: 'filePath' },
+  doe: { read: 'path' },
+};
+
+/**
+ * Each runtime's searches, and the input field naming where they start (the working folder when it
+ * is left out): they mark when that folder holds outside files or has a folder of them below it.
+ * Codex reads and searches through its shell.
+ */
+const SEARCH_TOOLS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  'claude-code': { Grep: 'path' },
+  opencode: { grep: 'path' },
+  doe: { search: 'path' },
+};
+
+/** An input that cannot be judged, which counts as reading outside text. */
+const UNREADABLE = Symbol('unreadable input');
+
+/** What a tool's input is: an object, the text it came as when that is not JSON, or unreadable. */
+function parsedInput(input: unknown): unknown {
+  if (typeof input !== 'string') return input;
+  try {
+    return JSON.parse(input) as unknown;
+  } catch {
+    // Text that opens like JSON and does not parse cannot be judged.
+    return /^\s*[{[]/.test(input) ? UNREADABLE : input;
+  }
+}
+
+/** Whether a local tool's input hands the turn outside text: a fetching command, an outside file. */
+function inputReadsOutsideText(
+  runtime: string,
+  toolName: string,
+  input: unknown,
+  given: CallPlace
+): boolean {
+  const isShell = SHELL_TOOLS[runtime] === toolName;
+  const readField = FILE_READ_TOOLS[runtime]?.[toolName];
+  const searchField = SEARCH_TOOLS[runtime]?.[toolName];
+  if (!isShell && readField === undefined && searchField === undefined) return false;
+  const parsed = parsedInput(input);
+  if (parsed === UNREADABLE) return true;
+  const place = runtime === 'claude-code' ? { ...given, claudeCode: true } : given;
+  if (isShell) {
+    const shell = shellCommandOf(parsed);
+    // A shell call with no command to read cannot be judged.
+    if (shell === undefined) return true;
+    if (!shell.cwd) return commandReadsOutsideText(shell.command, place);
+    // A command run from a folder of outside files reads them by their bare names.
+    if (outsideFileTests(place).holds(shell.cwd)) return true;
+    return commandReadsOutsideText(shell.command, { ...place, cwd: shell.cwd });
+  }
+  const fields = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  if (readField !== undefined) {
+    const target = fields[readField];
+    return typeof target === 'string' && outsideFileTests(place).holds(target);
+  }
+  const root = fields[searchField!];
+  return outsideFileTests(place).searchReaches(typeof root === 'string' && root ? root : '.');
+}
+
 /** Whether an `mcp__server__tool` name is another server's: neither DorkOS's own nor its connected apps'. */
 function isOtherServerTool(toolName: string, dorkosPrefix: string): boolean {
   return (
@@ -89,8 +167,22 @@ function isOtherServerTool(toolName: string, dorkosPrefix: string): boolean {
  *
  * @param runtime - The runtime's type.
  * @param toolName - The tool's name as that runtime reported it.
+ * @param input - The call's input, as an object or its JSON text. Without it only the name decides,
+ *   so a shell command or a file read is not marked until its input is known.
+ * @param place - Where the call runs, so a file in the agent's own folder stays unmarked.
  */
-export function toolReadsOutsideText(runtime: string, toolName: string): boolean {
+export function toolReadsOutsideText(
+  runtime: string,
+  toolName: string,
+  input?: unknown,
+  place: CallPlace = {}
+): boolean {
+  if (toolReadsByName(runtime, toolName)) return true;
+  return input !== undefined && inputReadsOutsideText(runtime, toolName, input, place);
+}
+
+/** Whether the tool's name alone says it reads outside text. */
+function toolReadsByName(runtime: string, toolName: string): boolean {
   switch (runtime) {
     case 'claude-code':
       return (

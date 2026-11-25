@@ -1,84 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { HistoryMessage } from '@dorkos/shared/types';
-import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
-import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
-import { useSessionStreamStore, DEFAULT_SESSION_STREAM_STATE } from '../session-stream-store';
-import { useSessionListStore } from '../session-list-store';
-
-const SID = 'sess-1';
-
-const STATUS: SessionStatus = {
-  contextUsage: {
-    totalTokens: 100,
-    maxTokens: 200,
-    outputTokens: 10,
-    cacheReadTokens: 5,
-    cacheCreationTokens: 2,
-  },
-  cost: 0.01,
-  usage: null,
-  cacheStats: { cacheReadTokens: 5, cacheCreationTokens: 2 },
-  model: 'claude',
-  permissionMode: 'default',
-  todoCounts: null,
-  runningSubagentCount: 0,
-  lifecycle: 'idle',
-  lastError: null,
-  limit: null,
-  accountUsage: null,
-};
-
-const MESSAGE: HistoryMessage = { id: 'm1', role: 'user', content: 'hello' };
-
-function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
-  return {
-    messages: [MESSAGE],
-    inProgressTurn: null,
-    status: STATUS,
-    pendingInteractions: [],
-    queuedMessages: [],
-    canvas: [],
-    cursor: 5,
-    ...overrides,
-  };
-}
-
-function queued(id: string, content: string): QueuedMessage {
-  return { id, content, disposition: 'queue', enqueuedAt: 1000, enqueuedBy: 'window-a' };
-}
-
-function queueUpdate(
-  seq: number,
-  queue: QueuedMessage[],
-  outcome?: MessageDeliveryOutcome
-): SessionEvent {
-  return { type: 'queue_update', seq, queue, ...(outcome ? { outcome } : {}) };
-}
-
-function approvalEvent(seq: number, id: string): SessionEvent {
-  return {
-    type: 'approval_required',
-    seq,
-    startedAt: 1000,
-    remainingMs: 30000,
-    id,
-    toolName: 'Bash',
-    input: 'ls',
-    hasSuggestions: false,
-  };
-}
+import { useSessionStreamStore } from '../session-stream-store';
+import {
+  SID,
+  STATUS,
+  MESSAGE,
+  snapshot,
+  queued,
+  queueUpdate,
+  approvalEvent,
+} from './session-stream-store.fixtures';
 
 describe('useSessionStreamStore', () => {
   beforeEach(() => {
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
-  });
-
-  it('getSession returns the default state for an unknown id', () => {
-    expect(useSessionStreamStore.getState().getSession('unknown')).toEqual(
-      DEFAULT_SESSION_STREAM_STATE
-    );
   });
 
   it('applySnapshot hydrates messages/status and sets both seq cursors', () => {
@@ -99,16 +35,6 @@ describe('useSessionStreamStore', () => {
     store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'hello' });
     store.applySnapshot(SID, snapshot()); // snapshot history ends with user 'hello'
     expect(useSessionStreamStore.getState().getSession(SID).optimisticUserMessage).toBeNull();
-  });
-
-  it('applySnapshot keeps an optimistic user message the snapshot does not yet contain', () => {
-    const store = useSessionStreamStore.getState();
-    store.setOptimisticUserMessage(SID, { id: 'opt-2', content: 'newer message' });
-    store.applySnapshot(SID, snapshot());
-    expect(useSessionStreamStore.getState().getSession(SID).optimisticUserMessage).toEqual({
-      id: 'opt-2',
-      content: 'newer message',
-    });
   });
 
   it('a turn_input SURVIVES the event-handling path and rides the open turn (AC5)', () => {
@@ -171,14 +97,6 @@ describe('useSessionStreamStore', () => {
     expect(useSessionStreamStore.getState().getSession(SID).chatActivityVersion).toBe(before + 1);
   });
 
-  it('a reconnect moves the chat-activity version, so cards re-read after a gap', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot());
-    const before = useSessionStreamStore.getState().getSession(SID).chatActivityVersion;
-    store.applySnapshot(SID, snapshot());
-    expect(useSessionStreamStore.getState().getSession(SID).chatActivityVersion).toBe(before + 1);
-  });
-
   it('setHistoryMessages clears inProgressTurn by default but preserves it on request', () => {
     // Real failure mode: the turn_end reconcile reload resolves AFTER the next
     // turn already started (queued-flush race) — clearing then would wipe the
@@ -220,69 +138,6 @@ describe('useSessionStreamStore', () => {
 
     const s = useSessionStreamStore.getState().getSession(SID);
     expect(s.inProgressTurn.map((e) => e.type)).toEqual(['mcp_signin_required']);
-  });
-
-  /** The `mcp_signin_required` event for the card these tests drive. */
-  function SIGNIN_REQUIRED(seq: number): SessionEvent {
-    return {
-      type: 'mcp_signin_required',
-      seq,
-      serverName: 'granola',
-      agentId: '01HV7KJZZZ0000000000000000',
-      flowId: 'flow-1',
-      authorizeUrl: 'https://mcp.test.local/authorize',
-      disclosure: 'DorkOS stores the token on this machine.',
-    } as SessionEvent;
-  }
-
-  /** Run a turn that asks for a sign-in and ends, as the real flow does. */
-  function signinTurn(store: ReturnType<typeof useSessionStreamStore.getState>, seq: number): void {
-    store.applyEvent(SID, { type: 'turn_start', seq });
-    store.applyEvent(SID, { type: 'text_delta', seq: seq + 1, text: 'Connecting your notes.' });
-    store.applyEvent(SID, SIGNIN_REQUIRED(seq + 2));
-    store.applyEvent(SID, { type: 'turn_end', seq: seq + 3 });
-  }
-
-  /** The sign-in event types currently on screen. */
-  function signinTypes(): string[] {
-    return useSessionStreamStore
-      .getState()
-      .getSession(SID)
-      .inProgressTurn.filter((e) => e.type.startsWith('mcp_signin'))
-      .map((e) => e.type);
-  }
-
-  it('setHistoryMessages keeps a RESOLVED card so the receipt survives (DOR-1004)', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-    store.applyEvent(SID, {
-      type: 'mcp_signin_required',
-      seq: 2,
-      serverName: 'granola',
-      agentId: '01HV7KJZZZ0000000000000000',
-      flowId: 'flow-1',
-      authorizeUrl: 'https://mcp.test.local/authorize',
-      disclosure: 'DorkOS stores the token on this machine.',
-    });
-    store.applyEvent(SID, {
-      type: 'mcp_signin_resolved',
-      seq: 3,
-      flowId: 'flow-1',
-      outcome: 'connected',
-    });
-    store.applyEvent(SID, { type: 'turn_end', seq: 4 });
-
-    store.setHistoryMessages(SID, [MESSAGE]);
-
-    // Both halves: the card carries the server name, the resolution carries the
-    // outcome, and the fold needs the pair to render the receipt at all.
-    expect(
-      useSessionStreamStore
-        .getState()
-        .getSession(SID)
-        .inProgressTurn.map((e) => e.type)
-    ).toEqual(['mcp_signin_required', 'mcp_signin_resolved']);
   });
 
   it('turn_start carries a sign-in receipt exactly one turn further (DOR-1004)', () => {
@@ -331,99 +186,11 @@ describe('useSessionStreamStore', () => {
     ).toEqual(['turn_start']);
   });
 
-  it('retires the receipt after ONE turn even with a history reload between (DOR-1004)', () => {
-    // The bug this pins: the grace mark used to be inferred from a `turn_start`
-    // sitting in the outgoing list — and the reload path strips exactly that
-    // event. So every settled turn handed the receipt a fresh turn of grace and
-    // it never retired, while the server retired it after one. Four turns and
-    // three reloads later it was still on screen.
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot({ cursor: 0 }));
-    signinTurn(store, 1);
-    store.setHistoryMessages(SID, [MESSAGE]);
-    store.applyEvent(SID, {
-      type: 'mcp_signin_resolved',
-      seq: 5,
-      flowId: 'flow-1',
-      outcome: 'connected',
-    });
-
-    // The resume turn: the receipt rides through it, reload and all.
-    store.applyEvent(SID, { type: 'turn_start', seq: 6 });
-    store.applyEvent(SID, { type: 'turn_end', seq: 7 });
-    store.setHistoryMessages(SID, [MESSAGE]);
-    expect(signinTypes()).toEqual(['mcp_signin_required', 'mcp_signin_resolved']);
-
-    // The turn after that retires it, and the reload cannot resurrect it.
-    store.applyEvent(SID, { type: 'turn_start', seq: 8 });
-    expect(signinTypes()).toEqual([]);
-    store.applyEvent(SID, { type: 'turn_end', seq: 9 });
-    store.setHistoryMessages(SID, [MESSAGE]);
-    expect(signinTypes()).toEqual([]);
-
-    // …and it stays gone however many more turns run.
-    store.applyEvent(SID, { type: 'turn_start', seq: 10 });
-    store.setHistoryMessages(SID, [MESSAGE]);
-    expect(signinTypes()).toEqual([]);
-  });
-
-  it('retires an UNRESOLVED card after one turn, reload or not (DOR-1004)', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot({ cursor: 0 }));
-    signinTurn(store, 1);
-    store.setHistoryMessages(SID, [MESSAGE]);
-
-    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
-    expect(signinTypes()).toEqual(['mcp_signin_required']);
-    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
-    store.setHistoryMessages(SID, [MESSAGE]);
-
-    store.applyEvent(SID, { type: 'turn_start', seq: 7 });
-    expect(signinTypes()).toEqual([]);
-  });
-
-  it('gives the receipt its OWN turn of grace, not the card’s leftovers (DOR-1004)', () => {
-    // A sign-in the person takes their time over: the card burns its turn while
-    // they are still in the browser, and the resolution lands afterwards. The
-    // receipt must not inherit a spent grace and vanish immediately — the server
-    // projector resets it in `attachSigninResolution`, and so does this.
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot({ cursor: 0 }));
-    signinTurn(store, 1);
-    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
-    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
-
-    store.applyEvent(SID, {
-      type: 'mcp_signin_resolved',
-      seq: 7,
-      flowId: 'flow-1',
-      outcome: 'connected',
-    });
-    store.applyEvent(SID, { type: 'turn_start', seq: 8 });
-
-    expect(signinTypes()).toEqual(['mcp_signin_required', 'mcp_signin_resolved']);
-  });
-
-  it('a snapshot re-baselines the grace from what the server still carries (DOR-1004)', () => {
-    // The server sends only the cards it is still carrying. Keeping a stale
-    // spent-mark would retire, on the very next turn, a card the server had just
-    // said is on screen.
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot({ cursor: 0 }));
-    signinTurn(store, 1);
-    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
-    // Grace now spent. A reconnect brings the card back from the server…
-    store.applySnapshot(SID, snapshot({ cursor: 10, inProgressTurn: [SIGNIN_REQUIRED(11)] }));
-
-    store.applyEvent(SID, { type: 'turn_start', seq: 12 });
-
-    expect(signinTypes()).toEqual(['mcp_signin_required']);
-  });
-
-  it('records the fidelity events (thinking/progress/hook/memory) in the turn (task #19)', () => {
-    // Real failure mode: a fidelity event type missing from TURN_EVENT_TYPES is
-    // silently dropped by the store — the live turn renders lean while the
-    // post-turn history reload shows the full detail (jarring pop-in).
+  // Real failure mode, once per event type: a type missing from
+  // TURN_EVENT_TYPES is dropped by the default arm, so its row only appears
+  // after the history reload and the live turn renders lean (task #19,
+  // DOR-118/DOR-125, DOR-1215, DOR-795, DOR-2636).
+  it('retains every fidelity event in the live turn (DOR-1215, DOR-795, DOR-2636)', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();
     store.applyEvent(SID, { type: 'turn_start', seq: 1 });
@@ -431,101 +198,26 @@ describe('useSessionStreamStore', () => {
     store.applyEvent(SID, { type: 'tool_progress', seq: 3, toolCallId: 't1', content: 'out' });
     store.applyEvent(SID, { type: 'hook_update', seq: 4, hookId: 'h1', status: 'running' });
     store.applyEvent(SID, { type: 'memory_recall', seq: 5, mode: 'select', memories: [] });
-    const s = useSessionStreamStore.getState().getSession(SID);
-    expect(s.inProgressTurn.map((e) => e.type)).toEqual([
-      'turn_start',
-      'thinking_delta',
-      'tool_progress',
-      'hook_update',
-      'memory_recall',
-    ]);
-    expect(s.lastAppliedSeq).toBe(5);
-  });
-
-  it('retains system_status events in the turn so the strip producer sees them (DOR-118/DOR-125)', () => {
-    // Real failure mode: system_status was omitted from TURN_EVENT_TYPES, so the
-    // status strip's producer (useSystemStatusEvents) was starved live —
-    // "Compacting context…" and "Running hook…" only appeared after the durable
-    // history reload. They must be retained in the live turn.
-    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    const store = useSessionStreamStore.getState();
-    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-    store.applyEvent(SID, { type: 'system_status', seq: 2, message: 'Running hook "pre"…' });
-    store.applyEvent(SID, {
-      type: 'operation_progress',
-      seq: 3,
-      operation: 'compaction',
-      state: 'started',
-      determinate: false,
-      message: 'Compacting context…',
-    });
-    const s = useSessionStreamStore.getState().getSession(SID);
-    expect(s.inProgressTurn.map((e) => e.type)).toEqual([
-      'turn_start',
-      'system_status',
-      'operation_progress',
-    ]);
-  });
-
-  it('retains compact_boundary in the turn so the boundary row is drawn live (DOR-1215)', () => {
-    // The same failure `system_status` had above, on the event that matters
-    // most: `compact_boundary` was missing from TURN_EVENT_TYPES, so the
-    // default arm dropped it and `foldCompactBoundary` — the projection that
-    // exists solely to draw `CompactBoundaryRow` (DOR-118) — was never reached
-    // by a live turn. The asymmetry that gives it away: a FAILED compaction
-    // already drew its row, because that one is synthesized from
-    // `operation_progress`, which IS retained. Success drew nothing.
-    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    const store = useSessionStreamStore.getState();
-    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, { type: 'system_status', seq: 6, message: 'Running hook "pre"…' });
     store.applyEvent(SID, {
       type: 'compact_boundary',
-      seq: 2,
+      seq: 7,
       trigger: 'manual',
       preTokens: 51_226,
       postTokens: 4_151,
     });
-    const s = useSessionStreamStore.getState().getSession(SID);
-    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'compact_boundary']);
-    // The metadata rides with it — the row reports the numbers, so an event
-    // retained but stripped would render a boundary that says nothing.
-    expect(s.inProgressTurn[1]).toMatchObject({ trigger: 'manual', preTokens: 51_226 });
-  });
-
-  it('retains permission_denied in the turn so the denial chip is drawn live (DOR-795)', () => {
-    // Same failure shape `compact_boundary` had: an event the default arm drops
-    // never reaches its fold, so the chip only appears on the next history
-    // reload — and for a backgrounded subagent's auto-denial there is nothing
-    // else in the conversation to notice the loss by.
-    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    const store = useSessionStreamStore.getState();
-    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
     store.applyEvent(SID, {
       type: 'permission_denied',
-      seq: 2,
+      seq: 8,
       toolCallId: 'toolu_async_1',
       toolName: 'Bash',
       message: 'Backgrounded agents cannot request permission.',
       reasonType: 'asyncAgent',
       agentId: 'agent_child_7',
     });
-    const s = useSessionStreamStore.getState().getSession(SID);
-    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'permission_denied']);
-    // The attribution rides with it — an event retained but stripped would draw
-    // a chip that cannot name the helper it is about.
-    expect(s.inProgressTurn[1]).toMatchObject({
-      agentId: 'agent_child_7',
-      reasonType: 'asyncAgent',
-    });
-  });
-
-  it('retains model_substituted in the turn so the notice is drawn live (DOR-2636)', () => {
-    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    const store = useSessionStreamStore.getState();
-    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
     store.applyEvent(SID, {
       type: 'model_substituted',
-      seq: 2,
+      seq: 9,
       from: 'opus',
       fromName: 'Opus',
       to: 'md_suggested',
@@ -533,7 +225,19 @@ describe('useSessionStreamStore', () => {
       reason: 'credits-not-covered',
     });
     const s = useSessionStreamStore.getState().getSession(SID);
-    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'model_substituted']);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual([
+      'turn_start',
+      'thinking_delta',
+      'tool_progress',
+      'hook_update',
+      'memory_recall',
+      'system_status',
+      'compact_boundary',
+      'permission_denied',
+      'model_substituted',
+    ]);
+    expect(s.inProgressTurn[6]).toMatchObject({ trigger: 'manual', preTokens: 51_226 });
+    expect(s.inProgressTurn[7]).toMatchObject({ agentId: 'agent_child_7' });
   });
 
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
@@ -633,18 +337,6 @@ describe('useSessionStreamStore', () => {
     expect(s.pendingInteractions[0]!.id).toBe('int-1');
   });
 
-  it('setConnectionState updates the session connection state', () => {
-    useSessionStreamStore.getState().setConnectionState(SID, 'connected');
-    expect(useSessionStreamStore.getState().getSession(SID).connectionState).toBe('connected');
-  });
-
-  it('removeSession drops the session and its access-order entry', () => {
-    useSessionStreamStore.getState().applySnapshot(SID, snapshot());
-    useSessionStreamStore.getState().removeSession(SID);
-    expect(useSessionStreamStore.getState().sessions[SID]).toBeUndefined();
-    expect(useSessionStreamStore.getState().sessionAccessOrder).not.toContain(SID);
-  });
-
   it('turn_start clears the trigger-pending latch (CLI-B7)', () => {
     // Real failure mode: the latch must release the moment the triggered turn
     // materializes, or the composer would stay in queue mode through the turn.
@@ -653,14 +345,6 @@ describe('useSessionStreamStore', () => {
     store.setTriggerPending(SID, true);
     expect(useSessionStreamStore.getState().getSession(SID).triggerPending).toBe(true);
     store.applyEvent(SID, { type: 'turn_start', seq: 6 });
-    expect(useSessionStreamStore.getState().getSession(SID).triggerPending).toBe(false);
-  });
-
-  it('turn_end clears a stale trigger-pending latch', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot());
-    store.setTriggerPending(SID, true);
-    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
     expect(useSessionStreamStore.getState().getSession(SID).triggerPending).toBe(false);
   });
 
@@ -674,333 +358,6 @@ describe('useSessionStreamStore', () => {
     expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(1);
     store.applySnapshot(SID, snapshot({ cursor: 9 }));
     expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(2);
-  });
-
-  describe('typed turn errors (status.lastError mirror)', () => {
-    const errorEvent: SessionEvent = {
-      type: 'error',
-      seq: 2,
-      message: 'Model overloaded',
-      code: 'overloaded_error',
-      category: 'execution_error',
-      details: 'HTTP 529',
-    };
-
-    it('an unreadable-prompt stand-in rides the turn but never becomes lastError (DOR-2078)', () => {
-      // Real failure mode: the stand-in mirrored into lastError, so a live window
-      // showed it as the turn's failure while a reloaded one (whose snapshot the
-      // server built without it) did not.
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, {
-        type: 'error',
-        seq: 2,
-        message: 'The agent asked you something here, but it couldn’t be shown.',
-        code: 'unreadable_entry',
-      });
-      const s = useSessionStreamStore.getState().getSession(SID);
-      expect(s.inProgressTurn.some((e) => e.type === 'error')).toBe(true);
-      expect(s.status?.lastError ?? null).toBeNull();
-    });
-
-    it('an error event rides the turn AND mirrors into status.lastError', () => {
-      // Real failure mode: without the mirror, a reconnecting client (whose
-      // snapshot carries only status) has no failure details to render — and
-      // without the turn push, the live inline error part never folds.
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, errorEvent);
-      const s = useSessionStreamStore.getState().getSession(SID);
-      expect(s.inProgressTurn.some((e) => e.type === 'error')).toBe(true);
-      expect(s.status?.lastError).toEqual({
-        message: 'Model overloaded',
-        code: 'overloaded_error',
-        category: 'execution_error',
-        details: 'HTTP 529',
-      });
-      // Non-terminal: the error event itself must NOT settle the lifecycle.
-      expect(s.status?.lifecycle).toBe('streaming');
-    });
-
-    it('holds a usage limit from a status_change and clears it at turn_start (projector parity)', () => {
-      const limit = {
-        accountId: 'work',
-        window: 'seven_day',
-        resetsAt: null,
-        since: '2026-09-26T10:00:00.000Z',
-        plan: { mode: 'ask' as const },
-        scope: 'account' as const,
-        state: 'limited' as const,
-      };
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, { type: 'status_change', seq: 2, status: { limit } });
-      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.limit).toEqual(limit);
-      store.applyEvent(SID, { type: 'turn_start', seq: 4 });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.limit).toBeNull();
-    });
-
-    it('turn_start clears the previous lastError (server-projector parity)', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, errorEvent);
-      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
-      store.applyEvent(SID, { type: 'turn_start', seq: 4 });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toBeNull();
-    });
-
-    it('a turn_end that does not settle to error clears lastError (recovered mid-turn error)', () => {
-      // Real failure mode: a runtime that recovers from a mid-turn error (e.g. a
-      // Codex item_error) must not leave a stale failure surface behind.
-      //
-      // The recovered shape carries `completed`, and that is load-bearing: a
-      // turn that recovered SAYS so. This drove a reason-less `turn_end` until
-      // DOR-1676, which is the CRASH shape rather than the recovered one (the
-      // server's mirror of this test always used `completed`), so it asserted
-      // idle for a turn that had failed.
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, errorEvent);
-      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'completed' });
-      const s = useSessionStreamStore.getState().getSession(SID);
-      expect(s.status?.lifecycle).toBe('idle');
-      expect(s.status?.lastError).toBeNull();
-    });
-
-    // DOR-1676. The gap this closes, on the client half of the mirror: the SDK
-    // names its own reason on a failing result, so a turn that emitted a real
-    // error frame closed as `turn_end{terminalReason:'model_error'}` — which the
-    // old rule recognised as neither an error nor an abort, settling the session
-    // idle AND wiping the failure text with it.
-    it.each(['model_error', 'api_error', 'turn_setup_failed', 'prompt_too_long', 'max_turns'])(
-      'settles to error and keeps lastError when a turn with an error frame ends with %s',
-      (terminalReason) => {
-        const store = useSessionStreamStore.getState();
-        store.applySnapshot(SID, snapshot({ cursor: 0 }));
-        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-        store.applyEvent(SID, errorEvent);
-        store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason });
-        const s = useSessionStreamStore.getState().getSession(SID);
-        expect(s.status?.lifecycle).toBe('error');
-        expect(s.status?.lastError?.message).toBe('Model overloaded');
-      }
-    );
-
-    // The absolving half, and the reason it is an allowlist rather than just
-    // `completed`: these three ride the SDK's success result — the turn handed
-    // work off and is coming back (the DOR-1100 continuation). Failing them
-    // would call a turn that is still working a turn that broke.
-    it.each(['background_requested', 'tool_deferred', 'tool_deferred_unavailable'])(
-      'stays idle when an error frame is excused by %s',
-      (terminalReason) => {
-        const store = useSessionStreamStore.getState();
-        store.applySnapshot(SID, snapshot({ cursor: 0 }));
-        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-        store.applyEvent(SID, errorEvent);
-        store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason });
-        expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
-      }
-    );
-
-    // A survivable error is not the turn failing: a `hook_failure` is the
-    // operator's own script exiting non-zero, and the turn still carried the
-    // whole answer. Without the denylist the frame rule would fail it.
-    it('stays idle when the only error frame is a non-fatal hook failure', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, {
-        type: 'error',
-        seq: 2,
-        message: 'Hook "notify" failed (Stop)',
-        code: 'hook_failure',
-      });
-      store.applyEvent(SID, { type: 'turn_end', seq: 3 });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
-    });
-
-    // A stop outranks the frame, and with NO stop record on the turn_end that
-    // stays true whatever the frame said — the degradation pin for every runtime
-    // that keeps no such record (codex, opencode) and every turn recorded before
-    // the field existed.
-    it('settles to interrupted, not error, when an aborted turn carried an error frame', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, errorEvent);
-      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'aborted_streaming' });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
-        'interrupted'
-      );
-    });
-
-    // The refusal case, on the client half of the mirror. An API refusal aborts
-    // the main turn controller, so the turn ends `aborted_streaming` while
-    // DorkOS never asked for a stop — and the mapper KEEPS the error frame on
-    // purpose. Read on shape alone the composer said "you stopped this" about a
-    // turn the operator never touched, and the clear that follows the derivation
-    // took the refusal text with it.
-    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
-      'settles to error and keeps lastError when %s carried no stop request',
-      (terminalReason) => {
-        const store = useSessionStreamStore.getState();
-        store.applySnapshot(SID, snapshot({ cursor: 0 }));
-        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-        store.applyEvent(SID, errorEvent);
-        store.applyEvent(SID, {
-          type: 'turn_end',
-          seq: 3,
-          terminalReason,
-          stopWasRequested: false,
-        });
-        const s = useSessionStreamStore.getState().getSession(SID);
-        expect(s.status?.lifecycle).toBe('error');
-        expect(s.status?.lastError?.message).toBe('Model overloaded');
-      }
-    );
-
-    it.each(['interrupted', 'aborted_streaming', 'aborted_tools'])(
-      'still settles to interrupted when %s WAS requested',
-      (terminalReason) => {
-        // Unchanged behavior for the turn a person actually stopped, which is
-        // the mistake that would cost most if this rule over-fired.
-        const store = useSessionStreamStore.getState();
-        store.applySnapshot(SID, snapshot({ cursor: 0 }));
-        store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-        store.applyEvent(SID, errorEvent);
-        store.applyEvent(SID, {
-          type: 'turn_end',
-          seq: 3,
-          terminalReason,
-          stopWasRequested: true,
-        });
-        const s = useSessionStreamStore.getState().getSession(SID);
-        expect(s.status?.lifecycle).toBe('interrupted');
-        expect(s.status?.lastError).toBeNull();
-      }
-    );
-
-    it('stays interrupted when an unrequested abort had nothing to report', () => {
-      // Both halves are required: an abort with no fatal frame is a turn cut
-      // short however it happened, and there is no failure to show.
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, {
-        type: 'turn_end',
-        seq: 2,
-        terminalReason: 'aborted_streaming',
-        stopWasRequested: false,
-      });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
-        'interrupted'
-      );
-    });
-
-    it('stays interrupted when an unrequested abort carried only a SURVIVABLE frame', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, {
-        type: 'error',
-        seq: 2,
-        message: 'Hook "notify" failed (Stop)',
-        code: 'hook_failure',
-      });
-      store.applyEvent(SID, {
-        type: 'turn_end',
-        seq: 3,
-        terminalReason: 'aborted_streaming',
-        stopWasRequested: false,
-      });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe(
-        'interrupted'
-      );
-    });
-
-    // Real failure mode, and it reached main's own send tests before this guard
-    // existed. `status_change.status` is `.partial()`, so a delta can carry one
-    // field — and `mergeStatus` used to fall back to that delta itself when no
-    // snapshot had hydrated yet ("prior is non-null in practice"), leaving a
-    // held status with no `lastError` key at all. `lastError` is typed
-    // `ErrorEvent | null`, so a `!== null` test LOOKED total; reading `.code`
-    // off nothing THREW inside the projection, and an ordinary turn ending
-    // stopped settling — the session stayed `streaming` and the composer stayed
-    // locked. The root fix is that the held status is a WHOLE `SessionStatus`
-    // from the first event on, so the fields the derivation reads
-    // unconditionally are all there.
-    //
-    // Deliberately applies NO snapshot, because that is the whole reproduction.
-    it('settles a turn whose held status was built by a status_change alone (no snapshot yet)', () => {
-      const store = useSessionStreamStore.getState();
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, {
-        type: 'status_change',
-        seq: 2,
-        status: { lifecycle: 'streaming', permissionMode: 'default' },
-      });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toBeNull();
-
-      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'model_error' });
-      const s = useSessionStreamStore.getState().getSession(SID);
-      expect(s.status?.lifecycle).toBe('idle');
-      expect(s.status?.lastError).toBeNull();
-      expect(s.status?.cost).toBeNull();
-    });
-
-    // The second defense, kept because the first cannot reach every source of a
-    // missing key: a snapshot minted by a server that predates `lastError`
-    // hydrates status WHOLESALE, so `mergeStatus` never sees it and the field is
-    // structurally absent however complete the store's own base is. The
-    // derivation therefore reads `lastError` truthily rather than `!== null`.
-    it('settles a turn hydrated from a snapshot whose status predates lastError', () => {
-      const store = useSessionStreamStore.getState();
-      const { lastError: _omitted, ...withoutLastError } = STATUS;
-      store.applySnapshot(SID, snapshot({ cursor: 0, status: withoutLastError as SessionStatus }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, { type: 'turn_end', seq: 2, terminalReason: 'model_error' });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
-    });
-
-    // The frame is what decides, so a clean turn must not be dragged into error
-    // by an unfamiliar reason. A forward-open union means new SDK values arrive
-    // without warning, and one of them accusing a turn that reported nothing
-    // wrong would be the mirror-image bug.
-    it('stays idle for an unclassified terminal reason when no error frame was latched', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, { type: 'turn_end', seq: 2, terminalReason: 'some_future_reason' });
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lifecycle).toBe('idle');
-    });
-
-    it('a turn_end that settles to error retains lastError', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot(SID, snapshot({ cursor: 0 }));
-      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-      store.applyEvent(SID, errorEvent);
-      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
-      const s = useSessionStreamStore.getState().getSession(SID);
-      expect(s.status?.lifecycle).toBe('error');
-      expect(s.status?.lastError?.message).toBe('Model overloaded');
-    });
-
-    it('snapshot hydration carries lastError (reconnect after a failed turn)', () => {
-      const held = { message: 'Sidecar crashed', category: 'execution_error' as const };
-      useSessionStreamStore
-        .getState()
-        .applySnapshot(
-          SID,
-          snapshot({ status: { ...STATUS, lifecycle: 'error', lastError: held } })
-        );
-      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toEqual(held);
-    });
   });
 
   describe('migrateSessionContinuity (rekey follow-through, NF-2)', () => {
@@ -1018,6 +375,16 @@ describe('useSessionStreamStore', () => {
       const source = useSessionStreamStore.getState().getSession('request-uuid');
       expect(source.optimisticUserMessage).toBeNull();
       expect(source.triggerPending).toBe(false);
+    });
+
+    it('leaves the source projection (messages, turn, seq) intact for a still-open view', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot('request-uuid', snapshot());
+      store.setTriggerPending('request-uuid', true);
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      const source = useSessionStreamStore.getState().getSession('request-uuid');
+      expect(source.messages).toEqual([MESSAGE]);
+      expect(source.lastAppliedSeq).toBe(5);
     });
 
     it('leaves the queue where it is — the server owns it and follows the rekey itself', () => {
@@ -1048,37 +415,6 @@ describe('useSessionStreamStore', () => {
       expect(
         useSessionStreamStore.getState().getSession('request-uuid').optimisticUserMessage
       ).toBeNull();
-    });
-
-    it('is idempotent — the second observation point finds an empty source and no-ops', () => {
-      // Both the 202 path and the retire announce may fire for one rekey.
-      const store = useSessionStreamStore.getState();
-      store.setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'once' });
-      store.migrateSessionContinuity('request-uuid', 'canonical-id');
-      store.setOptimisticUserMessage('canonical-id', { id: 'opt-1', content: 'once' });
-      store.migrateSessionContinuity('request-uuid', 'canonical-id');
-      expect(
-        useSessionStreamStore.getState().getSession('canonical-id').optimisticUserMessage
-      ).toEqual({ id: 'opt-1', content: 'once' });
-    });
-
-    it('no-ops on an identity migration and never creates an entry for an empty source', () => {
-      const store = useSessionStreamStore.getState();
-      store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'kept' });
-      store.migrateSessionContinuity(SID, SID);
-      expect(useSessionStreamStore.getState().getSession(SID).optimisticUserMessage).not.toBeNull();
-      store.migrateSessionContinuity('never-seen', 'canonical-id');
-      expect(useSessionStreamStore.getState().sessions['canonical-id']).toBeUndefined();
-    });
-
-    it('leaves the source projection (messages, turn, seq) intact for a still-open view', () => {
-      const store = useSessionStreamStore.getState();
-      store.applySnapshot('request-uuid', snapshot());
-      store.setTriggerPending('request-uuid', true);
-      store.migrateSessionContinuity('request-uuid', 'canonical-id');
-      const source = useSessionStreamStore.getState().getSession('request-uuid');
-      expect(source.messages).toEqual([MESSAGE]);
-      expect(source.lastAppliedSeq).toBe(5);
     });
   });
 
@@ -1111,28 +447,6 @@ describe('useSessionStreamStore', () => {
       const after = useSessionStreamStore.getState();
       expect(after.sessions['s-0']).toBeDefined();
       expect(after.sessionAccessOrder).toContain('s-0');
-    });
-
-    it('unpinning makes the session evictable again on the next over-limit pass', () => {
-      const store = useSessionStreamStore.getState();
-      seedIdleSessions(store, RETENTION_LIMIT);
-      store.setPinnedSession('s-0');
-      store.ensureSession('s-20'); // survives, still pinned
-
-      store.setPinnedSession(null);
-      store.ensureSession('s-21'); // one more over-limit pass, now unpinned
-
-      const after = useSessionStreamStore.getState();
-      expect(after.sessions['s-0']).toBeUndefined();
-      expect(after.sessionAccessOrder).not.toContain('s-0');
-    });
-
-    it('setPinnedSession updates pinnedSessionId, and clears it back to null', () => {
-      expect(useSessionStreamStore.getState().pinnedSessionId).toBeNull();
-      useSessionStreamStore.getState().setPinnedSession(SID);
-      expect(useSessionStreamStore.getState().pinnedSessionId).toBe(SID);
-      useSessionStreamStore.getState().setPinnedSession(null);
-      expect(useSessionStreamStore.getState().pinnedSessionId).toBeNull();
     });
 
     it('a session holding queued messages is evictable — the queue is not lost with it', () => {
@@ -1176,13 +490,6 @@ describe('useSessionStreamStore', () => {
       ).toEqual(['q2', 'q1']);
     });
 
-    it('an out-of-order or duplicate update is ignored, like every other event', () => {
-      const store = useSessionStreamStore.getState();
-      store.applyEvent(SID, queueUpdate(4, [queued('q1', 'current')]));
-      store.applyEvent(SID, queueUpdate(2, []));
-      expect(useSessionStreamStore.getState().getSession(SID).queuedMessages).toHaveLength(1);
-    });
-
     it('keeps the receipt of a message that is still waiting', () => {
       useSessionStreamStore.getState().applyEvent(
         SID,
@@ -1197,571 +504,12 @@ describe('useSessionStreamStore', () => {
         useSessionStreamStore.getState().getSession(SID).queueOutcomes['q1']?.degradedBecause
       ).toBe('unsupported');
     });
-
-    it('drops the receipt when its message leaves the queue', () => {
-      const store = useSessionStreamStore.getState();
-      store.applyEvent(
-        SID,
-        queueUpdate(1, [queued('q1', 'change course')], {
-          messageId: 'q1',
-          requested: 'steer',
-          applied: 'queue',
-          degradedBecause: 'unsupported',
-        })
-      );
-      store.applyEvent(SID, queueUpdate(2, []));
-      expect(useSessionStreamStore.getState().getSession(SID).queueOutcomes).toEqual({});
-    });
-
-    it('keeps no receipt for a message that ran instead of queueing', () => {
-      // An outcome can name a message that is already absent from the queue —
-      // it ran straight away. There is no chip for it, so there is nothing to
-      // hang a receipt on.
-      useSessionStreamStore.getState().applyEvent(
-        SID,
-        queueUpdate(1, [], {
-          messageId: 'q1',
-          requested: 'steer',
-          applied: 'queue',
-          degradedBecause: 'session-idle',
-        })
-      );
-      expect(useSessionStreamStore.getState().getSession(SID).queueOutcomes).toEqual({});
-    });
-
-    it('a fresh snapshot replaces the queue and clears the receipts', () => {
-      const store = useSessionStreamStore.getState();
-      store.applyEvent(
-        SID,
-        queueUpdate(1, [queued('q1', 'waiting')], {
-          messageId: 'q1',
-          requested: 'queue',
-          applied: 'queue',
-        })
-      );
-      store.applySnapshot(SID, snapshot({ queuedMessages: [queued('q2', 'from the server')] }));
-      const after = useSessionStreamStore.getState().getSession(SID);
-      expect(after.queuedMessages.map((m) => m.id)).toEqual(['q2']);
-      expect(after.queueOutcomes).toEqual({});
-    });
-  });
-});
-
-describe('useSessionListStore', () => {
-  beforeEach(() => {
-    useSessionListStore.setState({
-      sessions: {},
-      statuses: {},
-      statusCwds: {},
-      unseen: {},
-      rekeys: {},
-    });
   });
 
-  const SESSION = {
-    id: SID,
-    title: 'Test',
-    createdAt: '2026-06-10T00:00:00.000Z',
-    updatedAt: '2026-06-10T00:00:00.000Z',
-    permissionMode: 'default' as const,
-    runtime: 'claude-code',
-  };
-
-  it('applyListEvent upserts a session', () => {
-    useSessionListStore.getState().applyListEvent({ type: 'session_upserted', session: SESSION });
-    expect(useSessionListStore.getState().sessions[SID]).toEqual(SESSION);
-  });
-
-  it('applyListEvent sets a session status while the lifecycle carries a signal', () => {
-    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
-    useSessionListStore.getState().applyListEvent({
-      type: 'session_status',
-      sessionId: SID,
-      cwd: '/work/a',
-      status: streaming,
-    });
-    expect(useSessionListStore.getState().statuses[SID]).toEqual(streaming);
-    expect(useSessionListStore.getState().statusCwds[SID]).toBe('/work/a');
-  });
-
-  it('applyListEvent prunes the entry when the lifecycle settles (idle/interrupted)', () => {
-    // Discovery only removes DEFAULT_CWD sessions, so settled statuses must
-    // prune here or a long-lived client accumulates an entry per session that
-    // ever transitioned (scanned per agent row).
-    const store = useSessionListStore.getState();
-    store.applyListEvent({
-      type: 'session_status',
-      sessionId: SID,
-      cwd: '/work/a',
-      status: { ...STATUS, lifecycle: 'streaming' },
-    });
-    store.applyListEvent({ type: 'session_status', sessionId: SID, status: STATUS }); // idle
-    expect(useSessionListStore.getState().statuses[SID]).toBeUndefined();
-    expect(useSessionListStore.getState().statusCwds[SID]).toBeUndefined();
-  });
-
-  it('applyListEvent retires the pre-rekey request UUID named by retiredSessionId', () => {
-    // First-turn F2 race: transitions broadcast under the request UUID before
-    // the canonical id resolves; no session_removed ever fires for it. The
-    // rekey re-announce must drop it or its 'streaming' pins agent-row
-    // liveness forever.
-    const store = useSessionListStore.getState();
-    store.applyListEvent({
-      type: 'session_status',
-      sessionId: 'request-uuid',
-      cwd: '/work/a',
-      status: { ...STATUS, lifecycle: 'streaming' },
-    });
-    store.markUnseen('request-uuid', '/work/a');
-    store.applyListEvent({
-      type: 'session_status',
-      sessionId: SID,
-      cwd: '/work/a',
-      retiredSessionId: 'request-uuid',
-      status: { ...STATUS, lifecycle: 'streaming' },
-    });
-    expect(useSessionListStore.getState().statuses['request-uuid']).toBeUndefined();
-    expect(useSessionListStore.getState().statusCwds['request-uuid']).toBeUndefined();
-    // A retired UUID can never become active, so a lingering unseen flag would
-    // never clear — the retire must drop it too.
-    expect(useSessionListStore.getState().unseen['request-uuid']).toBeUndefined();
-    expect(useSessionListStore.getState().statuses[SID]).toBeDefined();
-    // The retirement is recorded so late-bound consumers (the URL rekey, the
-    // query-cache reconciler) can follow it after the fact (NF-2/NF-3).
-    expect(useSessionListStore.getState().rekeys['request-uuid']).toBe(SID);
-  });
-
-  it('the retire announce also drops a metadata row held under the retired id (NF-3)', () => {
-    const store = useSessionListStore.getState();
-    store.applyListEvent({
-      type: 'session_upserted',
-      session: { ...SESSION, id: 'request-uuid', title: 'Session request-' },
-    });
-    store.applyListEvent({
-      type: 'session_status',
-      sessionId: SID,
-      retiredSessionId: 'request-uuid',
-      status: { ...STATUS, lifecycle: 'streaming' },
-    });
-    expect(useSessionListStore.getState().sessions['request-uuid']).toBeUndefined();
-  });
-
-  it('applyListEvent removes a session and its status', () => {
-    const store = useSessionListStore.getState();
-    store.applyListEvent({ type: 'session_upserted', session: SESSION });
-    store.applyListEvent({ type: 'session_status', sessionId: SID, status: STATUS });
-    store.applyListEvent({ type: 'session_removed', sessionId: SID });
-    expect(useSessionListStore.getState().sessions[SID]).toBeUndefined();
-    expect(useSessionListStore.getState().statuses[SID]).toBeUndefined();
-  });
-
-  it('markUnseen / clearUnseen roundtrip, carrying the session cwd', () => {
-    const store = useSessionListStore.getState();
-    store.markUnseen(SID, '/projects/a');
-    expect(useSessionListStore.getState().unseen[SID]).toBe('/projects/a');
-    store.clearUnseen(SID);
-    expect(useSessionListStore.getState().unseen[SID]).toBeUndefined();
-  });
-
-  it('session_removed also drops the unseen flag', () => {
-    const store = useSessionListStore.getState();
-    store.markUnseen(SID);
-    store.applyListEvent({ type: 'session_removed', sessionId: SID });
-    expect(useSessionListStore.getState().unseen[SID]).toBeUndefined();
-  });
-
-  it('resetStatuses clears status projections but keeps metadata and unseen flags', () => {
-    // Real failure mode: the reconnect re-baseline must not wipe the sidebar
-    // (sessions) or acknowledged-pending work signals (unseen) — only the
-    // fan-out-derived live statuses that may be stale after the gap.
-    const store = useSessionListStore.getState();
-    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
-    store.applyListEvent({ type: 'session_upserted', session: SESSION });
-    store.applyListEvent({ type: 'session_status', sessionId: SID, cwd: '/p', status: streaming });
-    store.markUnseen('other-session', '/p');
-    store.resetStatuses();
-    const state = useSessionListStore.getState();
-    expect(state.statuses).toEqual({});
-    expect(state.statusCwds).toEqual({});
-    expect(state.sessions[SID]).toEqual(SESSION);
-    expect(state.unseen['other-session']).toBe('/p');
-  });
-});
-
-// DOR-1100: a background task outlives the turn that started it, so the count
-// this store reports has to outlive that turn's events. The turn-end reconcile
-// wipes `inProgressTurn` seconds after the turn closes, which is exactly when
-// the session looks finished and is not.
-describe('useSessionStreamStore — live background children', () => {
-  const store = useSessionStreamStore;
-
-  /** A `subagent_update` on the durable stream. */
-  function child(seq: number, taskId: string, status: string): SessionEvent {
-    return { type: 'subagent_update', seq, taskId, status } as SessionEvent;
-  }
-
-  /** The same, marked as housekeeping the runtime asked indicators to ignore. */
-  function ambientChild(seq: number, taskId: string, status: string): SessionEvent {
-    return { type: 'subagent_update', seq, taskId, status, ambient: true } as SessionEvent;
-  }
-
-  beforeEach(() => {
-    store.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
-  });
-
-  it('keeps the count after the turn that started the children is reloaded away', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
-    store.getState().applyEvent(SID, child(2, 'bt1', 'running'));
-    store.getState().applyEvent(SID, child(3, 'bt2', 'running'));
-    store.getState().applyEvent(SID, { type: 'turn_end', seq: 4 });
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
-
-    // What the turn-end reconcile does: canonical history replaces the turn.
-    store.getState().setHistoryMessages(SID, [MESSAGE]);
-
-    expect(store.getState().sessions[SID]?.inProgressTurn).toEqual([]);
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
-    expect(store.getState().sessions[SID]?.status?.lifecycle).toBe('idle');
-  });
-
-  // Spec `ambient-background-tasks`: the runtime marks work it started on its
-  // own behalf, and every indicator — this count included — leaves it out.
-  it('never counts a housekeeping child', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, child(1, 'real', 'running'));
-    store.getState().applyEvent(SID, ambientChild(2, 'chore', 'running'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-
-    // The terminal update carries the mark too, so the ending of a child that
-    // never entered the count cannot be booked against a child that did.
-    store.getState().applyEvent(SID, ambientChild(3, 'chore', 'complete'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-
-    store.getState().applyEvent(SID, child(4, 'real', 'complete'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-  });
-
-  // The bug this pins: only the START and the terminal update carry the mark.
-  // Reading the event's own field alone let the progress report in the middle —
-  // which carries no mark — push a housekeeping child INTO the count, while its
-  // marked terminal update was skipped as housekeeping and never took it out.
-  // The count then sat at one for the rest of the turn with nothing left to
-  // retire it, in the status line and the session inspector both.
-  it('does not let a progress report pull a housekeeping child into the count', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, ambientChild(1, 'chore', 'running'));
-    // The progress report: same status, no mark.
-    store.getState().applyEvent(SID, child(2, 'chore', 'running'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-
-    store.getState().applyEvent(SID, ambientChild(3, 'chore', 'complete'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-    expect(store.getState().sessions[SID]?.runningSubagentIds).toEqual([]);
-    // …and the id is forgotten, so the list stays bounded by live children.
-    expect(store.getState().sessions[SID]?.ambientSubagentIds).toEqual([]);
-  });
-
-  it('drains a housekeeping child the server retires as untracked', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, ambientChild(1, 'chore', 'running'));
-    store.getState().applyEvent(SID, child(2, 'chore', 'running'));
-    // Asserted here as well as at the end: the terminal arm below repairs a
-    // count that went wrong, so only a check while the child is still running
-    // can tell "never counted" from "counted, then quietly fixed".
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-
-    store.getState().applyEvent(SID, ambientChild(3, 'chore', 'untracked'));
-
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-    expect(store.getState().sessions[SID]?.ambientSubagentIds).toEqual([]);
-  });
-
-  // A snapshot's own events carry the mark, and the live events that follow it
-  // carry it no more reliably than the ones inside it did — so hydration has to
-  // seed the remembered set, not just filter the count once.
-  it('remembers the mark across hydration, so the next progress report is still skipped', () => {
-    store.getState().applySnapshot(
-      SID,
-      snapshot({
-        cursor: 10,
-        status: { ...STATUS, runningSubagentCount: 0 },
-        inProgressTurn: [ambientChild(9, 'chore', 'running')],
-      })
-    );
-    expect(store.getState().sessions[SID]?.ambientSubagentIds).toEqual(['chore']);
-
-    store.getState().applyEvent(SID, child(11, 'chore', 'running'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-  });
-
-  it('leaves a housekeeping child out when a snapshot re-baselines the count', () => {
-    store.getState().applySnapshot(
-      SID,
-      snapshot({
-        cursor: 10,
-        // The server's own count already excludes the housekeeping child.
-        status: { ...STATUS, runningSubagentCount: 1 },
-        inProgressTurn: [child(8, 'real', 'running'), ambientChild(9, 'chore', 'running')],
-      })
-    );
-
-    expect(store.getState().sessions[SID]?.runningSubagentIds).toEqual(['real']);
-    expect(store.getState().sessions[SID]?.unnamedRunningSubagents).toBe(0);
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-  });
-
-  it('does not double-count a child that keeps reporting progress', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, child(1, 'bt1', 'running'));
-    store.getState().applyEvent(SID, child(2, 'bt1', 'running'));
-    store.getState().applyEvent(SID, child(3, 'bt1', 'running'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-  });
-
-  it('drops a child from the count when it finishes', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, child(1, 'bt1', 'running'));
-    store.getState().applyEvent(SID, child(2, 'bt2', 'running'));
-    store.getState().applyEvent(SID, child(3, 'bt1', 'complete'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-    store.getState().applyEvent(SID, child(4, 'bt2', 'error'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
-  });
-
-  // A refresh mid-background-work: the snapshot counts two children and names
-  // neither (they belong to a turn that already closed). Both facts have to
-  // survive — the total, and the fact that finishing one leaves one.
-  it('carries a snapshot count for children it cannot name, and drains it', () => {
-    store.getState().applySnapshot(
-      SID,
-      snapshot({
-        cursor: 10,
-        status: { ...STATUS, runningSubagentCount: 2 },
-      })
-    );
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
-    expect(store.getState().sessions[SID]?.unnamedRunningSubagents).toBe(2);
-
-    store.getState().applyEvent(SID, child(11, 'bt-from-before', 'complete'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-
-    // A child this projection CAN name starts alongside them.
-    store.getState().applyEvent(SID, child(12, 'bt-new', 'running'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
-    store.getState().applyEvent(SID, child(13, 'bt-new', 'complete'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-  });
-
-  // The snapshot names what it can, so a child already visible in the current
-  // turn must not be counted twice when its next progress report arrives.
-  it('names the snapshot turn’s running children instead of counting them twice', () => {
-    store.getState().applySnapshot(
-      SID,
-      snapshot({
-        cursor: 10,
-        status: { ...STATUS, runningSubagentCount: 1 },
-        inProgressTurn: [{ type: 'turn_start', seq: 8 }, child(9, 'bt1', 'running')],
-      })
-    );
-    expect(store.getState().sessions[SID]?.runningSubagentIds).toEqual(['bt1']);
-    expect(store.getState().sessions[SID]?.unnamedRunningSubagents).toBe(0);
-
-    store.getState().applyEvent(SID, child(11, 'bt1', 'running'));
-    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
-  });
-});
-
-// A turn window the RUNTIME opened (DOR-1100) — the agent waking itself up when
-// a background task finished — is not the same thing as the person sending the
-// next message, and the projection must not treat it as one.
-describe('useSessionStreamStore — runtime-opened turn windows', () => {
-  const store = useSessionStreamStore;
-
-  beforeEach(() => {
-    store.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
-  });
-
-  // The failure this replaces: the CLI drains its queued notification within
-  // milliseconds, so the reopen routinely beats the turn-end history reload.
-  // Resetting the turn there blanked the reply the agent had just written.
-  it('keeps the finished window’s events on screen when the agent wakes itself', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
-    store.getState().applyEvent(SID, { type: 'text_delta', seq: 2, text: 'here is the answer' });
-    store.getState().applyEvent(SID, { type: 'turn_end', seq: 3 });
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 4, origin: 'runtime' });
-    store.getState().applyEvent(SID, { type: 'text_delta', seq: 5, text: 'and one more thing' });
-
-    // `turn_end` itself is never pushed onto the turn (server parity), so the
-    // preserved shape is the finished window's CONTENT followed by the new
-    // window's — which is exactly what stays on screen.
-    expect(store.getState().sessions[SID]?.inProgressTurn.map((e) => e.type)).toEqual([
-      'turn_start',
-      'text_delta',
-      'turn_start',
-      'text_delta',
-    ]);
-    expect(
-      store.getState().sessions[SID]?.inProgressTurn.find((e) => e.type === 'text_delta')
-    ).toMatchObject({ text: 'here is the answer' });
-    expect(store.getState().sessions[SID]?.status?.lifecycle).toBe('streaming');
-  });
-
-  // A turn the PERSON sends still resets: by then the settled turn has long
-  // since been reloaded into canonical history, so keeping it would double it.
-  it('still resets the turn when a person sends the next message', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
-    store.getState().applyEvent(SID, { type: 'text_delta', seq: 2, text: 'first' });
-    store.getState().applyEvent(SID, { type: 'turn_end', seq: 3 });
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 4, userMessage: 'again please' });
-
-    expect(store.getState().sessions[SID]?.inProgressTurn.map((e) => e.type)).toEqual([
-      'turn_start',
-    ]);
-  });
-
-  // A chain of wake-ups appends without bound if no reload lands to trim it, and
-  // a long-lived tab must not grow forever. The trim takes whole finished
-  // windows: half a window renders as a reply starting mid-sentence.
-  it('bounds a long wake-up chain by dropping whole finished windows', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    let seq = 0;
-    const next = () => ++seq;
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: next() });
-    // Ten wake-up windows of 40 deltas each — well past the 200 bound.
-    for (let window = 0; window < 10; window++) {
-      store.getState().applyEvent(SID, { type: 'turn_end', seq: next() });
-      store.getState().applyEvent(SID, { type: 'turn_start', seq: next(), origin: 'runtime' });
-      for (let i = 0; i < 40; i++) {
-        store.getState().applyEvent(SID, { type: 'text_delta', seq: next(), text: `w${window}` });
-      }
-    }
-
-    const turn = store.getState().sessions[SID]!.inProgressTurn;
-    expect(turn.length).toBeLessThanOrEqual(200);
-    // Whatever survived still begins at a window boundary, never mid-reply.
-    expect(turn[0]?.type).toBe('turn_start');
-    // …and the newest window is intact, which is the one on screen.
-    expect(turn.filter((e) => e.type === 'text_delta').at(-1)).toMatchObject({ text: 'w9' });
-  });
-
-  // The bound's blind spot (DOR-1107): a retained sign-in card sits AHEAD of the
-  // first window, so a scan that assumed the turn began at a window boundary cut
-  // nothing off, and the cap stopped applying for the rest of the session.
-  it('bounds a long wake-up chain that begins with a retained sign-in card', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    let seq = 0;
-    const next = () => ++seq;
-
-    // A turn asks for a sign-in, ends, and its history reload lands — which
-    // clears the turn down to the one thing the transcript never carries: the
-    // unresolved card. That card is now the turn's first event.
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: next() });
-    store.getState().applyEvent(SID, {
-      type: 'mcp_signin_required',
-      seq: next(),
-      serverName: 'granola',
-      agentId: '01HV7KJZZZ0000000000000000',
-      flowId: 'flow-1',
-      authorizeUrl: 'https://mcp.test.local/authorize',
-      disclosure: 'DorkOS stores the token on this machine.',
-    });
-    store.getState().applyEvent(SID, { type: 'turn_end', seq: next() });
-    store.getState().setHistoryMessages(SID, [MESSAGE]);
-    expect(store.getState().sessions[SID]?.inProgressTurn.map((e) => e.type)).toEqual([
-      'mcp_signin_required',
-    ]);
-
-    // The person is off in their browser, so nothing ages the card and no reload
-    // trims the turn. A hundred wake-up windows append behind it.
-    for (let window = 0; window < 100; window++) {
-      store.getState().applyEvent(SID, { type: 'turn_start', seq: next(), origin: 'runtime' });
-      for (let i = 0; i < 5; i++) {
-        store.getState().applyEvent(SID, { type: 'text_delta', seq: next(), text: `w${window}` });
-      }
-      store.getState().applyEvent(SID, { type: 'turn_end', seq: next() });
-    }
-
-    const turn = store.getState().sessions[SID]!.inProgressTurn;
-    expect(turn.length).toBeLessThanOrEqual(200);
-    // The card is still there — bounding the turn must not cost the person the
-    // link they walked away to use (DOR-1004).
-    expect(turn[0]?.type).toBe('mcp_signin_required');
-    // …and what survives behind it still starts at a window boundary.
-    expect(turn[1]?.type).toBe('turn_start');
-    expect(turn.filter((e) => e.type === 'text_delta').at(-1)).toMatchObject({ text: 'w99' });
-  });
-
-  it('records who opened the window so the settle handler can tell them apart', () => {
-    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
-    expect(store.getState().sessions[SID]?.turnOrigin).toBe('user');
-
-    store.getState().applyEvent(SID, { type: 'turn_end', seq: 2 });
-    // Survives turn_end: the settle handler runs after it and needs to know
-    // what just settled.
-    expect(store.getState().sessions[SID]?.turnOrigin).toBe('user');
-
-    store.getState().applyEvent(SID, { type: 'turn_start', seq: 3, origin: 'runtime' });
-    expect(store.getState().sessions[SID]?.turnOrigin).toBe('runtime');
-  });
-});
-
-describe('the live-usage stamp (spec claude-account-ui §6.8)', () => {
-  const usageFrame = (seq: number, utilization: number): SessionEvent => ({
-    type: 'status_change',
-    seq,
-    status: { usage: { kind: 'subscription', utilization } },
-  });
-  const stamp = () => useSessionStreamStore.getState().sessions[SID]!.usageArrivedAt;
-
-  beforeEach(() => {
+  it('removeSession drops the session and its access-order entry', () => {
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot());
     useSessionStreamStore.getState().removeSession(SID);
-  });
-
-  it('stamps a live usage frame, and never a snapshot', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot());
-    expect(stamp()).toBeNull();
-    store.applyEvent(SID, usageFrame(6, 0.4));
-    expect(stamp()).not.toBeNull();
-  });
-
-  it('keeps the previous stamp for frames replayed after a reconnect', () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot());
-    // The laptop sleeps; the stream drops and comes back, replaying the gap.
-    store.setConnectionState(SID, 'reconnecting');
-    store.setConnectionState(SID, 'connected');
-    store.applyEvent(SID, usageFrame(6, 0.9));
-    expect(stamp()).toBeNull();
-  });
-
-  it("stamps again once the turn carrying this window's own message starts", () => {
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot());
-    store.setConnectionState(SID, 'reconnecting');
-    store.setConnectionState(SID, 'connected');
-    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'next please' });
-    store.setTriggerPending(SID, true);
-    store.applyEvent(SID, { type: 'turn_start', seq: 6, userMessage: 'next please' });
-    store.applyEvent(SID, usageFrame(7, 0.5));
-    expect(stamp()).not.toBeNull();
-  });
-
-  it("does not restart on a replayed turn from another client's message", () => {
-    // A person sends while the reconnect is still replaying: the replay's
-    // turn_start is someone else's, older turn.
-    const store = useSessionStreamStore.getState();
-    store.applySnapshot(SID, snapshot());
-    store.setConnectionState(SID, 'reconnecting');
-    store.setConnectionState(SID, 'connected');
-    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'next please' });
-    store.setTriggerPending(SID, true);
-    store.applyEvent(SID, { type: 'turn_start', seq: 6, userMessage: 'from the other tab' });
-    store.applyEvent(SID, usageFrame(7, 0.9));
-    expect(stamp()).toBeNull();
+    expect(useSessionStreamStore.getState().sessions[SID]).toBeUndefined();
+    expect(useSessionStreamStore.getState().sessionAccessOrder).not.toContain(SID);
   });
 });

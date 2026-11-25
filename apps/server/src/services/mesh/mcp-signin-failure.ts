@@ -10,7 +10,10 @@
  *
  * So the failure is classified from the STAGE the provider recorded on its way
  * through `auth()` ({@link McpSigninProgress}) rather than from the message, and
- * the raw text is demoted to a detail the UI keeps behind a disclosure.
+ * the raw text is demoted to a detail. Only the MCP tool result carries that
+ * detail; over HTTP the capability dispatcher answers the family as its
+ * lower-case problem code (`signin_no_app_registration`, …) with a fixed
+ * sentence, and the raw text never leaves the server.
  *
  * @module services/mesh/mcp-signin-failure
  */
@@ -31,7 +34,7 @@ export interface McpSigninFailure {
   message: string;
   /** The machine-readable family; see {@link McpSigninFailureCode}. */
   code: McpSigninFailureCode;
-  /** The raw error, truncated — for the Details disclosure, never the headline. */
+  /** The raw error, truncated: in the MCP tool result only, never the headline or HTTP. */
   detail: string;
 }
 
@@ -86,7 +89,7 @@ function detailOf(err: unknown): string {
 
 /**
  * Classify a failed `startSignin` into its plain-language family plus the raw
- * detail behind it.
+ * detail behind it (MCP only; see the module note).
  *
  * @param err - The error the sign-in threw.
  * @param progress - The provider's record of how far `auth()` got.
@@ -101,8 +104,8 @@ export function classifySigninFailure(
 
 /**
  * What `startSignin` throws when a sign-in cannot be started: the plain family
- * as the `Error` message, with the code and raw detail attached for the surfaces
- * that can render them separately.
+ * as the `Error` message, with the code and raw detail attached. The MCP tool
+ * result carries both; an HTTP caller gets the lower-case problem code only.
  *
  * A plain `Error` subclass rather than a result field, because every existing
  * caller already treats a throw as "no sign-in happened" — the classification

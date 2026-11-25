@@ -34,6 +34,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { honoRequestFacts, type RequestFacts, type RequestFactsEnv } from './request-facts.js';
 import { edgeClientRateLimitKey, rateLimitKey } from '../middleware/rate-limit-key.js';
+import { isProblem, PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
 
 /** How much a limiter allows. */
 export interface RateLimitPolicy {
@@ -181,7 +182,10 @@ export function rateLimitHeaders(
 interface RateLimitAnswer extends RateLimitPolicy {
   /** Which header family to answer with. */
   readonly headers: RateLimitHeaders;
-  /** The JSON refusal body, sent with status 429. */
+  /**
+   * The JSON refusal body, sent with status 429: a problem document (sent as
+   * `application/problem+json`), or a protocol's own body such as JSON-RPC's.
+   */
   readonly message: object;
 }
 
@@ -225,10 +229,12 @@ export function honoRateLimit(options: HonoRateLimitOptions): MiddlewareHandler<
     for (const [name, value] of Object.entries(headers)) c.header(name, value);
     if (!decision.allowed) {
       if (options.onLimited) return options.onLimited(c);
-      // The same bytes and type Express's `res.json` sends.
-      return c.body(JSON.stringify(options.message), 429, {
-        'Content-Type': 'application/json; charset=utf-8',
-      });
+      // A problem goes out as one; a protocol's own body keeps the bytes and
+      // type Express's `res.json` sent.
+      const type = isProblem(options.message)
+        ? { 'Content-Type': PROBLEM_CONTENT_TYPE }
+        : { 'Content-Type': 'application/json; charset=utf-8' };
+      return c.body(JSON.stringify(options.message), 429, type);
     }
     await next();
     // A handler that returns its own `Response` replaces the one `c.header`

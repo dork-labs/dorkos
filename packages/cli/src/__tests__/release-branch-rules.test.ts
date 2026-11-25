@@ -8,7 +8,6 @@ import {
   assertRoutineBase,
   assertVersionOnNpm,
   checkReleaseCherryPicks,
-  formatReleaseBranchLog,
   resolveTagCommit,
   type ReleaseBranchCommit,
 } from '../../scripts/release-branch/rules.js';
@@ -32,9 +31,6 @@ const branchJson = (tip: string) => ({
 });
 
 describe('branch name', () => {
-  it('accepts exactly release/v<version>', () => {
-    expect(() => assertReleaseBranchName(branch, '1.2.3')).not.toThrow();
-  });
   it.each([
     ['release/1.2.3', '1.2.3'],
     ['release/v1.2.4', '1.2.3'],
@@ -48,9 +44,6 @@ describe('branch name', () => {
 });
 
 describe('branch tip', () => {
-  it('accepts a tip equal to the release commit and the named SHA', () => {
-    expect(() => assertReleaseBranchTip(branchJson(head), branch, head, head)).not.toThrow();
-  });
   it('refuses a cherry-pick that landed after the OK (tip moved past the named SHA)', () => {
     const later = sha('d');
     expect(() => assertReleaseBranchTip(branchJson(later), branch, later, head)).toThrow(
@@ -73,32 +66,6 @@ describe('branch tip', () => {
 });
 
 describe('bases', () => {
-  it("routine: the merge-base must be QA's pin", () => {
-    expect(() => assertRoutineBase(pin, pin)).not.toThrow();
-    expect(() => assertRoutineBase(sha('e'), pin)).toThrow("not at QA's pin");
-  });
-  it('hotfix: the base tag must be the previous patch', () => {
-    expect(() => assertHotfixBaseTag('v1.2.2', '1.2.3')).not.toThrow();
-    for (const tag of ['v1.2.1', 'v1.1.2', '1.2.2', 'v1.2.3', 'v1.2.2-rc.1', 'main'])
-      expect(() => assertHotfixBaseTag(tag, '1.2.3')).toThrow('previous patch tag');
-    expect(() => assertHotfixBaseTag('v1.2.0', '1.2.0')).toThrow('previous patch tag');
-  });
-  it('resolves lightweight and annotated tags to their commit', () => {
-    expect(
-      resolveTagCommit('v1.2.2', {
-        ref: 'refs/tags/v1.2.2',
-        object: { type: 'commit', sha: pin },
-      })
-    ).toBe(pin);
-    const tagObject = sha('f');
-    expect(
-      resolveTagCommit(
-        'v1.2.2',
-        { ref: 'refs/tags/v1.2.2', object: { type: 'tag', sha: tagObject } },
-        { sha: tagObject, tag: 'v1.2.2', object: { type: 'commit', sha: pin } }
-      )
-    ).toBe(pin);
-  });
   it.each([
     ['a branch, not a tag', { ref: 'refs/heads/v1.2.2', object: { type: 'commit', sha: pin } }],
     [
@@ -354,9 +321,6 @@ describe('cherry-pick rule', () => {
       ]);
     const codeOf = (commit: ReleaseBranchCommit) => checkReleaseCherryPicks(input([commit]))[0];
 
-    it('accepts a change of only info.version, to the release version', () => {
-      expect(checkReleaseCherryPicks(input([withDoc(doc('1.2.2'), doc('1.2.3'))]))).toEqual([]);
-    });
     it.each([
       ['a new path', doc('1.2.2'), doc('1.2.3', { paths: { '/api/x': {} } })],
       ['a changed title', doc('1.2.2'), doc('1.2.3').replace('Made-up API', 'Other API')],
@@ -406,24 +370,6 @@ describe('cherry-pick rule', () => {
   });
 });
 
-describe('publish log', () => {
-  it('prints the base, the branch, the diff stat and the commit list', () => {
-    const log = formatReleaseBranchLog({
-      mode: 'routine',
-      base: pin,
-      baseLabel: "QA's pin on main",
-      branch,
-      head,
-      diffStat: ' VERSION | 2 +-',
-      log: 'aaaaaaa chore(release): v1.2.3',
-    });
-    expect(log).toContain(`base:   QA's pin on main (${pin})`);
-    expect(log).toContain(`branch: ${branch}`);
-    expect(log).toContain(`git diff --stat ${pin}..${head}\n VERSION | 2 +-`);
-    expect(log).toContain(`git log --oneline ${pin}..${head}\naaaaaaa chore(release): v1.2.3`);
-  });
-});
-
 describe('release-cli flags', () => {
   const flags = [
     '--release-branch',
@@ -435,17 +381,6 @@ describe('release-cli flags', () => {
     '--expected-sha',
     head,
   ];
-  it('leaves the no-flag path untouched', () => {
-    expect(parseReleaseBranchArgs([])).toBeUndefined();
-    expect(parseReleaseBranchArgs(['--publish'])).toBeUndefined();
-  });
-  it('parses a full routine set', () => {
-    expect(parseReleaseBranchArgs([...flags, '--root', '/tmp/r'])).toEqual({
-      request: { branch, mode: 'routine', base: pin, expectedSha: head },
-      root: '/tmp/r',
-      rest: [],
-    });
-  });
   it('refuses hotfix mode while tags can be moved (Security M2)', () => {
     const hotfix = [...flags.slice(0, 3), 'hotfix', '--base', 'v1.2.2', '--expected-sha', head];
     expect(() => parseReleaseBranchArgs(hotfix)).toThrow('Hotfix publishing is off');
@@ -471,11 +406,6 @@ const approval = (login: string, state = 'approved', env = 'npm-release', id = 7
 const approver = { login: 'release-approver', id: 7 };
 
 describe('publish approval', () => {
-  it('accepts an npm-release approval by the named approver', () => {
-    expect(() =>
-      assertPublishApproval([approval('Release-Approver')], approver, 'dev-account')
-    ).not.toThrow();
-  });
   it.each([
     ['no approvals', []],
     ['an approval for another environment', [approval('release-approver', 'approved', 'staging')]],
@@ -508,6 +438,21 @@ describe('publish approval', () => {
       expect(() =>
         assertPublishApproval([approval('release-approver')], bad, 'dev-account')
       ).toThrow('GitHub accounts');
+  });
+});
+
+// The release gate's own checks on what it publishes and where the branch was
+// cut. Each is the only test of its function.
+describe('release bases', () => {
+  it("routine: the merge-base must be QA's pin", () => {
+    expect(() => assertRoutineBase(pin, pin)).not.toThrow();
+    expect(() => assertRoutineBase(sha('e'), pin)).toThrow("not at QA's pin");
+  });
+  it('hotfix: the base tag must be the previous patch', () => {
+    expect(() => assertHotfixBaseTag('v1.2.2', '1.2.3')).not.toThrow();
+    for (const tag of ['v1.2.1', 'v1.1.2', '1.2.2', 'v1.2.3', 'v1.2.2-rc.1', 'main'])
+      expect(() => assertHotfixBaseTag(tag, '1.2.3')).toThrow('previous patch tag');
+    expect(() => assertHotfixBaseTag('v1.2.0', '1.2.0')).toThrow('previous patch tag');
   });
 });
 

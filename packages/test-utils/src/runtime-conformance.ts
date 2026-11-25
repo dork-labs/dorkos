@@ -1,4 +1,5 @@
 import { runtimeApprovalConformance } from './runtime-conformance-approval.js';
+import { runtimeRestartConformance, type RestartCaseOpts } from './runtime-conformance-restart.js';
 import { assertRuntimeTimingEvents } from './runtime-timing-conformance.js';
 /**
  * Shared AgentRuntime conformance suite — the behavioral gate every runtime
@@ -51,6 +52,7 @@ import {
   evaluateUserLastMessageAtPresence,
 } from './runtime-conformance-session-list.js';
 import { INJECTED_CONTEXT_TAGS } from './injected-context-tags.js';
+import { assertSubfolderListing } from './runtime-conformance-subfolder.js';
 import type {
   ApprovalEvent,
   HistoryMessage,
@@ -64,9 +66,10 @@ import { InterruptReceiptSchema } from '@dorkos/shared/schemas';
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
  * the strictest portable expectations; loosen only what a runtime genuinely
- * cannot satisfy (e.g. a stateless adapter with no native history).
+ * cannot satisfy (e.g. a stateless adapter with no native history). The
+ * restart options are {@link RestartCaseOpts}.
  */
-export interface RuntimeConformanceOpts {
+export interface RuntimeConformanceOpts extends RestartCaseOpts {
   /** Label for the registered describe block. Defaults to `'AgentRuntime conformance'`. */
   name?: string;
   /** Working/project directory for cwd-scoped calls. Defaults to `'/projects/conformance'`. */
@@ -879,6 +882,26 @@ function nextSessionId(): string {
 }
 
 /**
+ * Settle a stop aimed at a backend a `hangingInterrupt` driver staged never to
+ * answer, advancing fake time through the runtime's own ack bound instead of
+ * waiting it out. Arm it only over such a driver: a backend that answers for
+ * itself answers on the real event loop, and faked time fires the bound first
+ * (DOR-5247). The clock is restored by `onTestFinished` too, so a stop that
+ * never settles cannot leave fake timers armed for the tests after it.
+ */
+async function advancedThroughBound<T>(stop: () => Promise<T>): Promise<T> {
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  vi.useFakeTimers();
+  const pending = stop();
+  await vi.advanceTimersByTimeAsync(10_000);
+  const settled = await pending;
+  vi.useRealTimers();
+  return settled;
+}
+
+/**
  * The durable settings store as a runtime sees it (ADR-0260), recording every
  * re-key it is asked to perform. Reads return nothing so the runtime falls back
  * to its own defaults — the subject here is which id the settings are FILED
@@ -1297,7 +1320,6 @@ export function runtimeConformance(
     expiredQuestionHistory,
     presenceTurn,
     warmSession,
-    approvalTurn,
     dispositionTurn,
     terminalOnce,
     queueDurability,
@@ -1446,32 +1468,7 @@ export function runtimeConformance(
       });
 
       it('RT-SES-02: lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
-        // The other half of the membership rule. A person opens a project and
-        // starts an agent in `packages/api`; that session is the project's
-        // session, and every runtime used to decide otherwise by comparing the
-        // two directory strings for equality. DOR-674 fixed OpenCode's sidecar
-        // listing and deferred this invariant because claude-code would have
-        // failed it; DOR-1550 is where the rest of the set caught up.
-        const runtime = makeRuntime();
-        const subfolder = `${projectDir}/packages/api`;
-        const inside = await seedListableSession(runtime, subfolder);
-        // `<project>-2` shares a character prefix with the project and shares no
-        // path SEGMENT with it — the trap a `startsWith` check falls into, and
-        // the control that keeps the case above from passing by listing
-        // everything on the machine.
-        const sibling = await seedListableSession(runtime, `${projectDir}-2`);
-        // And the project's own directory, so a wiring that seeds nothing
-        // listable fails here rather than silently proving nothing.
-        const own = await seedListableSession(runtime, projectDir);
-
-        const listed = await runtime.listSessions(projectDir);
-        const ids = listed.map((s) => s.id);
-        expect(ids, 'the project’s own session must list at all').toContain(own);
-        expect(ids, 'a session started in a subfolder belongs to the project').toContain(inside);
-        expect(ids, 'a sibling project’s session is not this project’s').not.toContain(sibling);
-        // Each row still says where it is really running — a listing that
-        // rewrote `cwd` to the project would hide which folder an agent is in.
-        expect(listed.find((s) => s.id === inside)?.cwd).toBe(subfolder);
+        await assertSubfolderListing(makeRuntime(), projectDir, seedListableSession);
       });
 
       it('RT-SES-01: getSession resolves session metadata or null — and null for an unknown id', async () => {
@@ -2408,12 +2405,10 @@ export function runtimeConformance(
       }
     });
 
-    runtimeApprovalConformance(makeRuntime, {
-      approvalTurn,
-      nextSessionId,
-      sessionOpts,
-      messageContent,
-    });
+    // The driver options plus this suite's session helpers, for the cases kept in their own files.
+    const wiring = { ...opts, nextSessionId, sessionOpts, messageContent };
+    runtimeApprovalConformance(makeRuntime, wiring);
+    runtimeRestartConformance(makeRuntime, wiring);
 
     describe('presence truthfulness (the strip omits rather than lies)', () => {
       it('RT-STR-06: a session that has never run a turn reports idle, and shows no turn', async () => {
@@ -2792,14 +2787,7 @@ export function runtimeConformance(
           // leans on macrotask delays), then the bound is advanced through so
           // the receipt lands without spending three real seconds.
           await hangingInterrupt(runtime, sessionId);
-          onTestFinished(() => {
-            vi.useRealTimers();
-          });
-          vi.useFakeTimers();
-          const pending = runtime.interruptQuery(sessionId);
-          await vi.advanceTimersByTimeAsync(10_000);
-          live = await pending;
-          vi.useRealTimers();
+          live = await advancedThroughBound(() => runtime.interruptQuery(sessionId));
         } else {
           // No driver means this runtime's interrupt has nothing to await, so
           // its turn can be opened the ordinary way and left running: pull ONE
@@ -2901,17 +2889,19 @@ export function runtimeConformance(
         ).toEqual([]);
 
         const seen: string[] = [];
-        onTestFinished(() => {
-          vi.useRealTimers();
-        });
-        vi.useFakeTimers();
-        const pending = runtime.endSessionsWhere((session) => {
-          seen.push(session.sessionId);
-          return true;
-        });
-        await vi.advanceTimersByTimeAsync(10_000);
-        const ended = await pending;
-        vi.useRealTimers();
+        const endPicked = (): Promise<string[]> =>
+          runtime.endSessionsWhere((session) => {
+            seen.push(session.sessionId);
+            return true;
+          });
+        // Fake time only over a driver's never-answering backend (see
+        // `advancedThroughBound`). With no driver the backend answers for
+        // itself, and a live one answers on the real event loop: faked time
+        // fired OpenCode's 3s bound before the real sidecar's abort reply could
+        // land, so a stop it confirmed read as unconfirmed and `ended` came
+        // back empty (DOR-5247). Real timers there, as in I2's no-driver arm;
+        // the runtime's own bound still caps the wait.
+        const ended = hangingInterrupt ? await advancedThroughBound(endPicked) : await endPicked();
 
         expect(
           seen.length,

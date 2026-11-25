@@ -159,7 +159,7 @@ export function registerApprovalStepUpCases(): void {
         .set('Origin', ORIGIN)
         .send({});
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
       expect(res.body.heldActionId).toBeUndefined();
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
@@ -427,8 +427,8 @@ export function registerApprovalStepUpCases(): void {
         .where(eq(approvalRows.id, ticket.approvalId))
         .run();
       const res = await confirm(held.body.heldActionId);
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('different-request');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
 
@@ -436,7 +436,7 @@ export function registerApprovalStepUpCases(): void {
       const held = await grant(ask().approvalId, 'own-tunnel');
       expect(held.status).toBe(428);
       expect((await confirm(held.body.heldActionId, 'own-tunnel', 'browser-b')).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
     });
 
@@ -456,7 +456,7 @@ export function registerApprovalStepUpCases(): void {
         .set('Origin', ORIGIN)
         .send({ answer: 'always' });
       expect(always.status).toBe(403);
-      expect(always.body.code).toBe('NOT_FROM_WIFI');
+      expect(always.body.code).toBe('not_from_wifi');
       db.update(approvalRows)
         .set({ tier: 'destructive' })
         .where(eq(approvalRows.id, once.approvalId))
@@ -471,7 +471,7 @@ export function registerApprovalStepUpCases(): void {
       // Refused by the sheet (no password over plain Wi-Fi) or by the commit's own Wi-Fi rule.
       const finished = await confirm(held.body.heldActionId, 'wifi');
       expect(finished.body.ok === true ? finished.body.result.code : finished.body.code).toMatch(
-        /^(NOT_FROM_WIFI|insecure-connection)$/
+        /^(not_from_wifi|insecure_connection)$/
       );
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
@@ -481,8 +481,8 @@ export function registerApprovalStepUpCases(): void {
       const refused = await grant(ticket.approvalId, 'wifi');
       expect(refused.status).toBe(403);
       expect(refused.body).toMatchObject({
-        code: 'NOT_FROM_WIFI',
-        error: 'Answer at your computer or over Remote Access.',
+        code: 'not_from_wifi',
+        detail: 'Answer at your computer or over Remote Access.',
       });
       expect(refused.body.heldActionId).toBeUndefined();
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
@@ -496,7 +496,7 @@ export function registerApprovalStepUpCases(): void {
       expect((await confirm(held.body.heldActionId)).body).toMatchObject({
         ok: true,
         status: 409,
-        result: { code: 'APPROVAL_NOT_PENDING' },
+        result: { code: 'already_resolved' },
       });
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('denied');
     });
