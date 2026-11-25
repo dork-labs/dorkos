@@ -8,7 +8,7 @@ gates:
   - wf.rolling-bisect.next
   - wf.rolling-bisect.report
   - wf.rolling-bisect.revert
-prs: []
+prs: [4442]
 ratchet-release: []
 field-changes: []
 ---
