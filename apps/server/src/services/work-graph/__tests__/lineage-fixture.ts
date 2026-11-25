@@ -105,15 +105,19 @@ export function ran(...ids: string[]): void {
   }
 }
 
-/** Each descendant as `depth:id<-parent(via)`: `!` never started, `~` still launching. */
+/** How each state reads in {@link tree} and {@link up}: `!` never started, `~` launching, `?` unknown. */
+const MARK = { chat: '', 'never-started': '!', launching: '~', unknown: '?' } as const;
+
+/** Each descendant as `depth:id<-parent(via)`, marked by its state. */
 export function tree(lineage: ChatLineage | null): string[] {
-  const mark = { chat: '', 'never-started': '!', launching: '~' } as const;
   return (lineage?.descendants ?? []).map(
-    (d) => `${d.depth}:${d.chatId}<-${d.parentId}(${d.via})${mark[d.state.kind]}`
+    (d) => `${d.depth}:${d.chatId}<-${d.parentId}(${d.via})${MARK[d.state.kind]}`
   );
 }
 
-/** Each ancestor as `depth:id(via)`. */
+/** Each ancestor as `depth:id(via)`, marked by its state. */
 export function up(lineage: ChatLineage | null): string[] {
-  return (lineage?.ancestors ?? []).map((a) => `${a.depth}:${a.chatId}(${a.via})`);
+  return (lineage?.ancestors ?? []).map(
+    (a) => `${a.depth}:${a.chatId}(${a.via})${MARK[a.state.kind]}`
+  );
 }

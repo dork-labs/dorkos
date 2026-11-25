@@ -21,12 +21,11 @@
  * tree and the read tools (W4, W5) read through here and do not repeat it. A
  * chat is shown when it ran, when it is still launching, or when it never
  * started but has a run that says why; a chat with neither a binding nor any
- * run is left out, never shown as a bare id. Below the asked chat, a chat with
- * a shown child is shown too, as a chat: it started that child, so it ran,
- * whatever the join could find. Above it, every parent goes through the same
- * join: one with neither a binding nor any run ends the walk up there and is
- * not shown, and one the join can place is shown as a chat, since it started
- * the chat below it.
+ * run is left out, never shown as a bare id. The one exception is a chat the
+ * tree passes through: one with a shown child below the asked chat, or a
+ * parent above it. With neither a binding nor any run, it is shown as
+ * `unknown` (it cannot be opened), and the walk goes on through it, up and
+ * down alike. A chat the join can place keeps its real state.
  *
  * A chat on another computer (`specs/space-computer-contract`) is not
  * recorded in this computer's `session_metadata`, so the join asks the run
@@ -79,7 +78,7 @@ export interface LineageAncestor {
   depth: number;
   /** How the chat one step below came from this one. */
   via: LineageVia;
-  /** What a reader may show of it: a chat, since it started the one below it. */
+  /** What a reader may show of it: its real state, or `unknown` when only a start record proves it. */
   state: LineageState;
 }
 
@@ -134,7 +133,8 @@ interface Visited {
   at: string;
 }
 
-const SHOWN_CHAT: LineageState = { kind: 'chat' };
+/** A chat the tree passes through that only a start record proves. */
+const UNKNOWN: LineageState = { kind: 'unknown' };
 
 /** Reads a chat's lineage. See the module documentation. */
 export class ChatLineageReader {
@@ -160,16 +160,17 @@ export class ChatLineageReader {
   read(chatId: string, opts: ChatLineageOptions = {}): ChatLineage | null {
     const id = this.reads.current([chatId]).get(chatId) ?? chatId;
     const { visited, states, stopped } = this.walkDown(id, opts.depth ?? Infinity);
-    // Children before parents: a chat with a shown child is shown as a chat.
+    // Children before parents: a chat the join leaves out, with a shown child, is unknown.
     const shown = new Map<string, LineageState>();
     const hasShownChild = new Set<string>();
     for (const chat of [...visited].reverse()) {
-      const state = hasShownChild.has(chat.chatId) ? SHOWN_CHAT : states.get(chat.chatId);
+      const state =
+        states.get(chat.chatId) ?? (hasShownChild.has(chat.chatId) ? UNKNOWN : undefined);
       if (!state) continue;
       shown.set(chat.chatId, state);
       hasShownChild.add(chat.parentId);
     }
-    const state = hasShownChild.has(id) ? SHOWN_CHAT : this.reads.statesOf([id]).get(id);
+    const state = this.reads.statesOf([id]).get(id) ?? (hasShownChild.has(id) ? UNKNOWN : null);
     if (!state) return null;
     // `visited` is shallowest first and oldest first within a level, so the
     // first shown chats in it are the ones a capped answer keeps, and a kept
@@ -240,10 +241,9 @@ export class ChatLineageReader {
   }
 
   /**
-   * The chats above `chatId`, nearest first. Each parent goes through the
-   * join: one with neither a binding nor any run ends the walk and is not
-   * shown; one the join can place is shown as a chat, since it started (or
-   * was carried into) the chat below it.
+   * The chats above `chatId`, nearest first, each with the state the join
+   * gives it. A parent with neither a binding nor any run is `unknown`, and
+   * the walk goes on through it.
    */
   private walkUp(chatId: string): LineageAncestor[] {
     const found: LineageAncestor[] = [];
@@ -252,9 +252,9 @@ export class ChatLineageReader {
     for (let depth = 1; depth <= LINEAGE_MAX_DEPTH; depth += 1) {
       const parent = this.reads.parentsOf([current]).get(current);
       if (parent === undefined || seen.has(parent.chatId)) break;
-      if (!this.reads.statesOf([parent.chatId]).get(parent.chatId)) break;
       seen.add(parent.chatId);
-      found.push({ chatId: parent.chatId, depth, via: parent.via, state: SHOWN_CHAT });
+      const state = this.reads.statesOf([parent.chatId]).get(parent.chatId) ?? UNKNOWN;
+      found.push({ chatId: parent.chatId, depth, via: parent.via, state });
       current = parent.chatId;
     }
     return found;

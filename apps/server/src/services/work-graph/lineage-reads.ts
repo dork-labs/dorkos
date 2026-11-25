@@ -12,8 +12,9 @@
  * `session_metadata` answers for chats older than the run record. A chat
  * with neither is shown from its last run: still launching (queued or
  * starting), or never started, with the run's reason. A chat with no binding
- * and no run is left out. This check reads no transcript, unlike
- * `sessionExists`, so the walk also shows any chat that has a shown child.
+ * and no run is left out, unless the tree passes through it: then it is
+ * shown as `unknown` (`./chat-lineage.ts`). This check reads no transcript,
+ * unlike `sessionExists`.
  *
  * When the work graph moves to the space store (DOR-5139), the binding and
  * run reads here go over the contract instead of this computer's tables.
@@ -34,8 +35,18 @@ export type LineageVia = 'started' | 'carried';
 /** What a reader may show of a chat in a lineage. */
 export type LineageState =
   | {
-      /** It ran: a run of it started, or it is bound to a runtime, or it started a shown chat. */
+      /** It ran: a run of it started, or it is bound to a runtime. It can be opened. */
       kind: 'chat';
+    }
+  | {
+      /**
+       * Only a start record proves it: no binding and no run, yet the tree
+       * passes through it (it started a shown chat, or a record names it as a
+       * shown chat's parent). It cannot be opened; a reader says so in words,
+       * never as an id. A stray record and a real chat that ran unbound look
+       * the same in the data, so both read this way.
+       */
+      kind: 'unknown';
     }
   | {
       /** It has not run yet, and its last run is still in line or starting. */

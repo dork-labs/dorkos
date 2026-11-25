@@ -56,36 +56,56 @@ describe('a child still launching', () => {
   });
 });
 
-describe('a middle chat the join cannot place', () => {
-  it('is shown, with its live grandchild, when unbound or cancelled', () => {
-    start('root', 'unbound-mid');
-    start('unbound-mid', 'leaf-a');
+describe('a middle chat only a start record proves', () => {
+  /**
+   * root → unknown-mid → leaf-a, where unknown-mid has no binding and no run;
+   * root → cancelled-mid → leaf-b, where cancelled-mid's one run was cancelled.
+   */
+  function plant(): string {
+    start('root', 'unknown-mid');
+    start('unknown-mid', 'leaf-a');
     const cancelledMid = start('root', 'cancelled-mid');
     start('cancelled-mid', 'leaf-b');
     const run = queuedRun('cancelled-mid');
     stores.runs.move(run, 'cancelled', { endedAt: stores.runs.stamp() });
     cancelledMid.cancel();
     ran('root', 'leaf-a', 'leaf-b');
+    return run.id;
+  }
+
+  it('root sees unknown-mid, then leaf-a, going down', () => {
+    plant();
+    expect(tree(reader().read('root')).slice(0, 2)).toEqual([
+      '1:unknown-mid<-root(started)?',
+      '2:leaf-a<-unknown-mid(started)',
+    ]);
+  });
+
+  it('leaf-a sees unknown-mid, then root, going up', () => {
+    plant();
+    expect(up(reader().read('leaf-a'))).toEqual(['1:unknown-mid(started)?', '2:root(started)']);
+  });
+
+  it('says unknown for the chat it cannot open, and keeps a run-backed chat’s own state', () => {
+    const runId = plant();
     const lineage = reader().read('root');
     expect(tree(lineage)).toEqual([
-      '1:unbound-mid<-root(started)',
-      '2:leaf-a<-unbound-mid(started)',
-      '1:cancelled-mid<-root(started)',
+      '1:unknown-mid<-root(started)?',
+      '2:leaf-a<-unknown-mid(started)',
+      '1:cancelled-mid<-root(started)!',
       '2:leaf-b<-cancelled-mid(started)',
     ]);
-    // Promoted, each comes back with a state a reader can put into words.
-    for (const mid of ['unbound-mid', 'cancelled-mid'])
-      expect(lineage?.descendants.find((d) => d.chatId === mid)?.state).toEqual({ kind: 'chat' });
-    // Walking up, a parent goes through the join: one with a run is shown as a chat...
-    expect(up(reader().read('leaf-b'))).toEqual(['1:cancelled-mid(started)', '2:root(started)']);
-    // ...and one with neither a binding nor any run ends the walk, unshown.
-    expect(up(reader().read('leaf-a'))).toEqual([]);
+    const stateOf = (id: string) => lineage?.descendants.find((d) => d.chatId === id)?.state;
+    expect(stateOf('unknown-mid')).toEqual({ kind: 'unknown' });
+    // Its one run was cancelled before its turn started: never started, with that reason.
+    expect(stateOf('cancelled-mid')).toEqual({ kind: 'never-started', runId, reason: 'cancelled' });
+    expect(up(reader().read('leaf-b'))).toEqual(['1:cancelled-mid(started)!', '2:root(started)']);
   });
 });
 
 describe('a parent a stray record names', () => {
-  it('is not shown, and ends the walk up, when it has neither a chat nor any run', () => {
-    start('root', 'child');
+  it('is shown as unknown, and the walk up goes on through it', () => {
+    start('ghost-parent', 'ghost');
     // A row naming a parent that never ran, as a stray write would leave.
     stores.starts.insert({
       sessionId: 'orphan',
@@ -96,9 +116,9 @@ describe('a parent a stray record names', () => {
       reason: null,
       createdAt: tick(),
     });
-    ran('root', 'child', 'orphan');
-    expect(up(reader().read('orphan'))).toEqual([]);
-    expect(up(reader().read('child'))).toEqual(['1:root(started)']);
+    ran('ghost-parent', 'orphan');
+    // In the data it looks like a real chat that ran unbound, so it reads the same.
+    expect(up(reader().read('orphan'))).toEqual(['1:ghost(started)?', '2:ghost-parent(started)']);
   });
 });
 
