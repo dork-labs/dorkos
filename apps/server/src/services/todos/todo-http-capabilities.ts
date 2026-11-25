@@ -129,6 +129,8 @@ export function promisePersonOf(
 ): Extract<TodoPromiseActor, { kind: 'person' }> {
   const proven = deps.personProven(request);
   if (proven) return { kind: 'person', proven };
+  // The owner's held Wi-Fi sign-in may give an agent no work (`mayGiveAgentWork`).
+  if (request.heldWifiOwner) return { kind: 'person', proven, held: true };
   // Where the request came from first: the owner lookup fails closed on its own. A key, token or
   // bearer is a program, not the app, as in `requirePersonAtThisComputer`.
   const ownerless = request.atThisComputerWithoutProgramKey && !deps.ownerExists();

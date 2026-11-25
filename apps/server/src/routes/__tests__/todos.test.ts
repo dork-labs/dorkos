@@ -28,6 +28,7 @@ import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { TodoPromiseService } from '../../services/todos/todo-promise-service.js';
 import { TodoPromiseStore } from '../../services/todos/todo-promise-store.js';
 import { TodoService } from '../../services/todos/todo-service.js';
+import { HELD_DEVICE_REFUSAL } from '../../services/todos/todo-promise-types.js';
 import { TodoStore } from '../../services/todos/todo-store.js';
 
 const fixtureTarget = swappableServer();
@@ -270,6 +271,29 @@ describe('to-do routes', () => {
       expect(power(id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
     });
 
+    it('makes a to-do for the person, at the stranger bound, but never one for an agent (Security, 2026-11-25)', async () => {
+      setOwner('user_owner');
+      heldOwner = true;
+      const mine = await request(fixtureServer)
+        .post('/api/todos')
+        .send({ what: 'Call the bank', assignee: { kind: 'person', account: 'owner' } });
+      expect(mine.status).toBe(201);
+      expect(power(mine.body.id)).toEqual({
+        authority: 'runtime-default',
+        marks: '{"outsider":true}',
+      });
+      // Otherwise anyone on the network could hand an agent work, and wake it.
+      const theirs = await request(fixtureServer)
+        .post('/api/todos')
+        .send({ what: 'Run the deploy', assignee: { kind: 'agent', agentId: 'agent-ana' } });
+      expect(theirs.status).toBe(403);
+      expect(theirs.body.code).toBe('person_only');
+      expect(theirs.body.detail).toBe(
+        'Give an agent work at this computer, or let this device run agents.'
+      );
+      expect(db.select().from(todoTable).all()).toHaveLength(1);
+    });
+
     it('is refused on a to-do assigned to an agent', async () => {
       const id = await made({ kind: 'agent', agentId: 'agent-ana' }, 'Run the deploy');
       for (const change of [{ state: 'kept' }, { note: 'Done' }, { rank: 'a' }]) {
@@ -287,10 +311,15 @@ describe('to-do routes', () => {
         .send({ what: 'Run the deploy to production' });
       expect(edit.status).toBe(403);
       const mine = await made({ kind: 'person', account: 'owner' });
+      const before = power(mine);
       const handOff = await request(fixtureServer)
         .patch(`/api/todos/${mine}`)
         .send({ assignee: { kind: 'agent', agentId: 'agent-ana' } });
       expect(handOff.status).toBe(403);
+      // Handing the person's own to-do to an agent is giving it work (Security, 2026-11-25).
+      expect(handOff.body).toMatchObject({ code: 'person_only', detail: HELD_DEVICE_REFUSAL });
+      expect(power(mine)).toEqual(before);
+      expect(todos.get(mine)).toMatchObject({ assignee: { kind: 'person' } });
       expect(power(id)).toEqual({ authority: 'person', marks: '{}' });
     });
   });

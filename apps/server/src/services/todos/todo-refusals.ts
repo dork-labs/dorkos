@@ -15,7 +15,11 @@
 import type { ProblemCode } from '@dorkos/shared/problem';
 import { TodoStateSchema } from '@dorkos/shared/todo-promise-schemas';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
-import { TodoPromiseError, type TodoPromiseErrorCode } from './todo-promise-types.js';
+import {
+  HELD_DEVICE_REFUSAL,
+  TodoPromiseError,
+  type TodoPromiseErrorCode,
+} from './todo-promise-types.js';
 
 /** One refusal: its problem code, its fixed sentence, and the other sentences it may say. */
 export interface TodoToolRefusal {
@@ -48,6 +52,7 @@ const TOOL_CODE: Readonly<Record<TodoPromiseErrorCode, string>> = {
   NO_AGENT: 'TODO_NO_AGENT',
   UNKNOWN_AGENT: 'TODO_UNKNOWN_AGENT',
   TOO_MANY: 'TODO_TOO_MANY',
+  HELD_DEVICE: 'TODO_HELD_DEVICE',
 };
 
 /**
@@ -119,6 +124,13 @@ export const TODO_TOOL_REFUSALS: Readonly<Record<string, TodoToolRefusal>> = {
   TODO_TOO_MANY: {
     code: 'rate_limited',
     detail: 'Too many to-dos for one day. Wait until tomorrow.',
+    alsoSays: [],
+  },
+  // A held Wi-Fi device giving an agent work (`mayGiveAgentWork`): a person is wanted, at this
+  // computer or on a device let run agents.
+  TODO_HELD_DEVICE: {
+    code: 'person_only',
+    detail: HELD_DEVICE_REFUSAL,
     alsoSays: [],
   },
 };
