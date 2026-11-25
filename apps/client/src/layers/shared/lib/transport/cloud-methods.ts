@@ -41,19 +41,19 @@ import type {
   CloudUsageResponse,
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
+import { isProblem } from '@dorkos/shared/problem';
 import { buildQueryString, fetchJSON } from './http-client';
 import { startHostedCommunityMoveOverHttp } from './community-move-methods';
 
 /**
- * Answer a write whose reply is an `ok` envelope, handing back the owner bar's
- * refusal instead of throwing it.
+ * Answer a write whose reply is an `ok` envelope, handing back the server's
+ * refusal of the request instead of throwing it.
  *
  * Every DorkOS account write is for the owner of this DorkOS, and the
- * server answers anyone else with a 403 carrying one sentence
- * (`{ ok: false, code, message }`). `fetchJSON` throws on every non-2xx, so
- * without this the sentence would be lost and the surface would say the
- * account could not be reached. Anything that is not such a refusal still
- * throws.
+ * server answers anyone else, and a request it can't take, with a `4xx`
+ * problem document carrying one sentence in `detail` (DOR-4979). `fetchJSON`
+ * throws on every non-2xx, so without this the sentence would be lost and the
+ * surface would say the account could not be reached. A `5xx` still throws.
  *
  * @param send - The write, as a `fetchJSON` call.
  */
@@ -63,10 +63,9 @@ async function refusalOrAnswer<T>(
   try {
     return await send();
   } catch (err) {
-    const body = (err as { body?: unknown }).body as
-      { ok?: unknown; message?: unknown } | undefined;
-    if (body?.ok === false && typeof body.message === 'string') {
-      return { ok: false, message: body.message };
+    const body = (err as { body?: unknown }).body;
+    if (isProblem(body) && body.status < 500 && err instanceof Error) {
+      return { ok: false, message: err.message };
     }
     throw err;
   }

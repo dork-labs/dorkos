@@ -10,7 +10,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { readSettingsFile } from '../repo-settings/repo-files.js';
+import { readSettingsFile, trimmedStrings } from '../repo-settings/repo-files.js';
 
 /** A folder's two settings files. */
 export const SETTINGS_FILES = ['settings.json', 'settings.local.json'] as const;
@@ -26,14 +26,6 @@ export interface FolderSettingsEntries {
   dirs: string[];
   /** A file exists that DorkOS could not read or parse. */
   unreadable: boolean;
-}
-
-/** The strings in an array, trimmed, blanks dropped; nothing for anything else. */
-function strings(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) =>
-    typeof entry === 'string' && entry.trim() ? [entry.trim()] : []
-  );
 }
 
 /**
@@ -56,8 +48,8 @@ export function readFolderSettingsEntries(
     }
     const permissions = (read.value as { permissions?: Record<string, unknown> } | null)
       ?.permissions;
-    out.rules.push(...strings(permissions?.allow));
-    out.dirs.push(...strings(permissions?.additionalDirectories));
+    out.rules.push(...trimmedStrings(permissions?.allow));
+    out.dirs.push(...trimmedStrings(permissions?.additionalDirectories));
   }
   return out;
 }
@@ -91,7 +83,10 @@ function mainCheckout(top: string, dotGit: string): string | undefined {
     const pointer = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, 'utf8'))?.[1];
     if (!pointer) return undefined;
     const gitDir = path.resolve(top, pointer);
-    const common = fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim();
+    const commondir = path.join(gitDir, 'commondir');
+    // No commondir: the git folder is this repo's own.
+    if (!fs.existsSync(commondir)) return fs.existsSync(gitDir) ? top : undefined;
+    const common = fs.readFileSync(commondir, 'utf8').trim();
     const shared = path.resolve(gitDir, common);
     return path.basename(shared) === '.git' ? path.dirname(shared) : undefined;
   } catch {
@@ -105,6 +100,8 @@ export interface SettingsFolders {
   folders: string[];
   /** The folder a person's Always allow is kept in. */
   alwaysAllowFolder: string;
+  /** The folders whose local settings file a launch loads: the working folder and {@link alwaysAllowFolder}, by each spelling. */
+  localFolders: string[];
 }
 
 /** One spelling of the working folder's share of {@link settingsFolders}. */
@@ -119,7 +116,8 @@ function foldersFrom(start: string, userHome: string): SettingsFolders {
   }
   const main = repo?.main !== undefined && !samePlace(repo.main, userHome) ? repo.main : undefined;
   if (main !== undefined && !folders.includes(main)) folders.push(main);
-  return { folders, alwaysAllowFolder: main ?? start };
+  const alwaysAllowFolder = main ?? start;
+  return { folders, alwaysAllowFolder, localFolders: [...new Set([start, alwaysAllowFolder])] };
 }
 
 /**
@@ -143,6 +141,7 @@ export function settingsFolders(cwd: string, userHome: string): SettingsFolders 
   return {
     folders: [...new Set([...given.folders, ...fromReal.folders])],
     alwaysAllowFolder: fromReal.alwaysAllowFolder,
+    localFolders: [...new Set([...given.localFolders, ...fromReal.localFolders])],
   };
 }
 

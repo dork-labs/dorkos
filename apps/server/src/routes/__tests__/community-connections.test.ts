@@ -227,8 +227,8 @@ describe('local connection route authority and public projection', () => {
       'https://community.example',
       409,
       {
-        code: 'COMMUNITY_SELECTION_REQUIRED',
-        error: 'That address has more than one space on it. Use the link for the one you want.',
+        code: 'space_choice_required',
+        detail: 'That address has more than one space. Use one space’s own link.',
       },
     ],
     [
@@ -237,8 +237,8 @@ describe('local connection route authority and public projection', () => {
       'https://community.example',
       426,
       {
-        code: 'COMMUNITY_UPGRADE_REQUIRED',
-        error: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
+        code: 'space_server_outdated',
+        detail: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
       },
     ],
     [
@@ -247,8 +247,8 @@ describe('local connection route authority and public projection', () => {
       'https://community.example/acme',
       404,
       {
-        code: 'COMMUNITY_NAME_NOT_FOUND',
-        error: 'No space uses that short address there. Check the spelling.',
+        code: 'space_name_not_found',
+        detail: 'No space uses that short address there. Check the spelling.',
       },
     ],
   ] as const)('answers %s with a typed refusal', async (_case, refusal, url, status, body) => {
@@ -258,7 +258,8 @@ describe('local connection route authority and public projection', () => {
     try {
       const response = await connectUnclaimed(routes.server, url);
       expect(response.status).toBe(status);
-      expect(response.body).toEqual(body);
+      expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(response.body).toMatchObject({ ...body, status });
     } finally {
       await routes.close();
     }
@@ -273,9 +274,9 @@ describe('local connection route authority and public projection', () => {
         .post('/api/community-connections/ref-busy/poll')
         .set('x-test-author', 'author-a');
       expect(response.status).toBe(409);
-      expect(response.body).toEqual({
-        code: 'PAIRING_BUSY',
-        error: 'This pairing is still finishing. Try again in a moment.',
+      expect(response.body).toMatchObject({
+        code: 'pairing_busy',
+        detail: 'This pairing is still finishing. Try again in a moment.',
       });
     } finally {
       await routes.close();
@@ -295,21 +296,17 @@ describe('local connection route authority and public projection', () => {
       expect(response.status).toBe(429);
       // The host's wait is passed on, as a header and in the body the dialog reads.
       expect(response.headers['retry-after']).toBe('17');
-      expect(response.body).toEqual({
-        code: 'COMMUNITY_RATE_LIMITED',
-        error:
-          'This DorkOS has tried that space too many times in a short while. Wait 17 seconds, then try again.',
-        retryAfterSeconds: 17,
+      expect(response.body).toMatchObject({
+        code: 'rate_limited',
+        detail: 'This DorkOS tried that space too often. Wait, then try again.',
+        retryAfterMs: 17_000,
       });
       // A host that named no wait gets no invented one.
       const unnamed = await connectUnclaimed(routes.server, 'https://community.example/acme');
       expect(unnamed.status).toBe(429);
       expect(unnamed.headers['retry-after']).toBeUndefined();
-      expect(unnamed.body).toEqual({
-        code: 'COMMUNITY_RATE_LIMITED',
-        error:
-          'This DorkOS has tried that space too many times in a short while. Wait a minute, then try again.',
-      });
+      expect(unnamed.body).toMatchObject({ code: 'rate_limited' });
+      expect(unnamed.body.retryAfterMs).toBeUndefined();
     } finally {
       await routes.close();
     }
@@ -322,7 +319,10 @@ describe('local connection route authority and public projection', () => {
     try {
       const response = await connectUnclaimed(routes.server, 'https://community.example/api');
       expect(response.status).toBe(400);
-      expect(response.body).toEqual({ error: 'Enter an accessible HTTPS space address.' });
+      expect(response.body).toMatchObject({
+        code: 'invalid_request',
+        detail: 'Enter an accessible HTTPS space address.',
+      });
     } finally {
       await routes.close();
     }
@@ -492,10 +492,11 @@ describe('local connection route authority and public projection', () => {
       .set('x-test-author', 'author-b')
       .set('x-dorkos-community-owner', 'author-a');
 
-    expect(response.status).toBe(409);
-    expect(response.body).toEqual({
-      error: 'The local owner changed. Reload to see spaces for the current account.',
-      code: 'COMMUNITY_OWNER_CHANGED',
+    // Changed since the page looked: 412, with its own code the app reloads on.
+    expect(response.status).toBe(412);
+    expect(response.body).toMatchObject({
+      code: 'owner_changed',
+      detail: 'The owner of this DorkOS changed. Reload to see their spaces.',
     });
   });
 

@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { PermissionResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readFolderSettingsEntries } from '../folder-settings-files.js';
+import { readFolderSettingsEntries, settingsFolders } from '../folder-settings-files.js';
 import {
   watchFolderAllows,
   watchLaunchFolderAllows,
@@ -297,7 +297,7 @@ describe('which folders are read', () => {
       updatedInput: {},
       updatedPermissions: updates,
     }))();
-    expect(remember).toHaveBeenCalledWith(atHome({ cwd: home }), true, updates);
+    expect(remember).toHaveBeenCalledWith({ ...atHome({ cwd: home }), runsIn: sub }, true, updates);
   });
 });
 
@@ -341,6 +341,60 @@ describe('worktrees and links', () => {
     }
   });
 
+  it.each(['a submodule', 'a git folder kept elsewhere'])(
+    'reads the top of %s, and records there',
+    async (kind) => {
+      const top = path.join(root, 'super', 'sm');
+      const gitDir =
+        kind === 'a submodule'
+          ? path.join(root, 'super', '.git', 'modules', 'sm')
+          : path.join(root, 'store', 'sm.git');
+      fs.mkdirSync(gitDir, { recursive: true });
+      fs.mkdirSync(path.join(top, 'x'), { recursive: true });
+      fs.writeFileSync(path.join(top, '.git'), `gitdir: ${gitDir}\n`);
+      settings(top, 'settings.local.json', { permissions: { allow: ['Bash'] } });
+      const cwd = path.join(top, 'x');
+      expect(settingsFolders(cwd, TURN.userHome)).toMatchObject({
+        alwaysAllowFolder: top,
+        localFolders: [cwd, top],
+      });
+      const remember = vi.fn();
+      const watch = watchFolderAllows(
+        inWorkspace({ cwd }),
+        records({ rememberPersonAlwaysAllow: remember })
+      );
+      expect(await watch.mustAsk('Bash', TOUCH)).toBe(true);
+      await watch.rememberPersonAnswers(async (): Promise<PermissionResult> => ({
+        behavior: 'allow',
+        updatedInput: {},
+        updatedPermissions: [
+          {
+            type: 'addRules',
+            behavior: 'allow',
+            destination: 'localSettings',
+            rules: [{ toolName: 'Bash' }],
+          },
+        ],
+      }))();
+      expect(remember).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: top }),
+        false,
+        expect.anything()
+      );
+    }
+  );
+
+  it('reads only the working folder when a repo’s git folder is missing', () => {
+    const top = path.join(root, 'gone');
+    fs.mkdirSync(path.join(top, 'x'), { recursive: true });
+    fs.writeFileSync(path.join(top, '.git'), `gitdir: ${path.join(root, 'nowhere')}\n`);
+    const cwd = path.join(top, 'x');
+    expect(settingsFolders(cwd, TURN.userHome)).toMatchObject({
+      alwaysAllowFolder: cwd,
+      localFolders: [cwd],
+    });
+  });
+
   it('reads a worktree of a bare repo as its own repo', async () => {
     const bare = path.join(root, 'bare.git');
     const gitDir = path.join(bare, 'worktrees', 'wt');
@@ -370,7 +424,11 @@ describe('worktrees and links', () => {
         },
       ],
     }))();
-    expect(remember).toHaveBeenCalledWith(inWorkspace({ cwd }), false, expect.anything());
+    expect(remember).toHaveBeenCalledWith(
+      { ...inWorkspace({ cwd }), runsIn: cwd },
+      false,
+      expect.anything()
+    );
   });
 
   it('walks up from the real folder a link leads to', async () => {
@@ -557,7 +615,7 @@ describe('a person’s Always allow', () => {
     // Claude Code writes the rule after the answer.
     settings(home, 'settings.local.json', { permissions: { allow: ['Bash(touch probe-file)'] } });
     expect(await watch.mustAsk('Bash', TOUCH)).toBe(false);
-    expect(remember).toHaveBeenCalledWith(atHome(), true, ALWAYS);
+    expect(remember).toHaveBeenCalledWith({ ...atHome(), runsIn: home }, true, ALWAYS);
   });
 
   it('records nothing for a plain yes or a no', async () => {

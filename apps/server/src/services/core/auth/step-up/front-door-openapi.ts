@@ -10,6 +10,8 @@ import {
 import { z } from 'zod';
 import { CommunityShortNameSchema } from '@dork-labs/cloud-api';
 
+import { problemResponse } from '../../openapi/problem-openapi.js';
+
 const AUTH_WRITES = [
   'api-key/create',
   'api-key/update',
@@ -191,7 +193,9 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
           description: 'The action completed',
           content: { 'application/json': { schema: z.unknown() } },
         },
-        403: { description: 'This caller cannot change access here' },
+        403: answersProblems(path)
+          ? problemResponse('This caller cannot change access here')
+          : { description: 'This caller cannot change access here' },
       },
     });
   }
@@ -215,6 +219,19 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
       content: { 'application/json': { schema: StepUpRequiredBodySchema } },
     };
   }
+}
+
+/**
+ * The gap-filled routes whose refusals are problem documents (DOR-4979). The
+ * rest still answer their own shape until their route group moves. Better
+ * Auth's own `/api/auth/*` endpoints answer `{ message, code }`, so none is
+ * declared there.
+ */
+const PROBLEM_PREFIXES = ['/api/cloud/', '/api/tunnel/', '/api/community-connections'];
+
+/** Whether a gap-filled route answers its refusals as problem documents. */
+function answersProblems(path: string): boolean {
+  return PROBLEM_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
 /** Describe the existing ceremony, including the action kinds the sheet can show. */

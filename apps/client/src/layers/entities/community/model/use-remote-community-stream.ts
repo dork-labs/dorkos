@@ -313,14 +313,14 @@ export function useRemoteCommunityStream(
         const status =
           error && typeof error === 'object' && 'status' in error ? error.status : undefined;
         const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-        if (code === 'COMMUNITY_DELETED' || code === 'COMMUNITY_TAKEN_DOWN') {
+        if (code === 'space_deleted' || code === 'space_taken_down') {
           // The whole community is gone (DOR-2575): the room ends here rather than retrying, and
           // the connection list is read again so the page shows the gone panel now, not at the
           // next poll.
           removeAccess();
           void queries.invalidateQueries({ queryKey: communityKeys.connections(currentAuthority) });
         } else if (status === 401 || status === 403 || status === 404) removeAccess();
-        else if (status === 410 && code === 'COMMUNITY_CURSOR_STALE') since = undefined;
+        else if (status === 412 && code === 'precondition_failed') since = undefined;
       }
       if (
         controller.signal.aborted ||

@@ -77,7 +77,10 @@ function fakeHub(options: FakeHubOptions = {}) {
     const origin = ORIGIN;
     const codeHash = relayLinkCodeHash(request.code);
     if (!verifyRelayLinkRequest(request, origin, codeHash)) {
-      return Response.json({ error: 'no', code: 'LINK_REFUSED' }, { status: 401 });
+      return Response.json(
+        { code: 'link_code_refused', status: 401, title: 'no' },
+        { status: 401 }
+      );
     }
     const answer: Omit<RelayLinkResponse, 'signature'> = {
       v: 1,

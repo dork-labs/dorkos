@@ -45,10 +45,7 @@ interface Delivery {
  * of this room, so it goes back into its composer's draft, where the panel counts it and offers
  * to copy it (DOR-2575) — never lost with the room.
  */
-const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set([
-  'COMMUNITY_DELETED',
-  'COMMUNITY_TAKEN_DOWN',
-]);
+const COMMUNITY_GONE_CODES: ReadonlySet<string> = new Set(['space_deleted', 'space_taken_down']);
 
 /**
  * How long an uploaded file may still go with a message. A space refuses a file no message took

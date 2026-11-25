@@ -33,10 +33,12 @@ export interface PersonAnswerTurn {
   agentId: string | undefined;
   /** The registered agent home, if any. */
   home: string | undefined;
-  /** The folder the turn launches in. */
+  /** The folder the answer is kept in. */
   cwd: string;
   /** DorkOS's data folder. */
   dorkHome: string;
+  /** The folder the turn launches in, where the scripts its settings name are read; `cwd` when left out. */
+  runsIn?: string;
 }
 
 /**
@@ -84,9 +86,10 @@ function rememberInWorkspace(turn: PersonAnswerTurn, updates: readonly Permissio
   if (local.some((update) => update.type !== 'addRules' || update.behavior !== 'allow')) return;
   const added = allowRulesOf(local);
   if (added.length === 0) return;
-  const before = readLocalSettings(turn.cwd, turn.dorkHome);
+  const runsIn = turn.runsIn ?? turn.cwd;
+  const before = readLocalSettings(turn.cwd, turn.dorkHome, runsIn);
   if (before && !(before.approvable && isRepoConfigApproved('local', before.digest))) return;
-  const after = readLocalSettingsWithAllows(turn.cwd, turn.dorkHome, added);
+  const after = readLocalSettingsWithAllows(turn.cwd, turn.dorkHome, added, runsIn);
   if (!after?.approvable) return;
   recordRepoConfigApproval('local', after.digest);
 }

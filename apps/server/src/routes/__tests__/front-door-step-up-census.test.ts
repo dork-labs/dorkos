@@ -195,6 +195,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
   'cloud-owner-bar.ts': 'Shared account owner bar; writes are classified in its callers.',
+  'community-problems.ts':
+    'The space connection owner check and failure answers; writes are classified in callers.',
   'config-backups.ts':
     "Removes or moves the person's own older database copies; grants nothing (N).",
   'approval-person-bars.ts':

@@ -23,9 +23,9 @@ import {
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { resolveCommunityOwner } from './community-connections.js';
+import { resolveCommunityOwner } from './community-problems.js';
 import {
   getRemoteCommunityAdapter,
   getRemoteCommunityDeliverySnapshot,
@@ -76,7 +76,7 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     try {
       const connection = await verifiedConnection(ref, owner, 'read');
       const room = await getRemoteCommunityAdapter(ref, owner).getRoom(c.req.param('roomId'));
-      if (!room) return c.json({ error: 'Room not found.' }, 404);
+      if (!room) return problem(c, 'not_found', { detail: 'That room isn’t in this space.' });
       return c.json(
         RemoteCommunityRoomResponseSchema.parse({
           room: remoteRoom(room, connection.remoteCommunityId, connection.access!),
@@ -94,7 +94,7 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     const query = readQuery(c);
     const limit = query.limit === undefined ? 100 : Number(query.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
-      return c.json({ error: 'Use a history limit from 1 through 100.' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Use a history limit from 1 through 100.' });
     try {
       await verifiedConnection(ref, owner, 'read');
       const page = await getRemoteCommunityAdapter(ref, owner).listEntriesWithThreadRoot(roomId, {
@@ -130,7 +130,7 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
         adapter.getReadCursor(roomId),
         adapter.getRoom(roomId),
       ]);
-      if (!room) return c.json({ error: 'Room not found.' }, 404);
+      if (!room) return problem(c, 'not_found', { detail: 'That room isn’t in this space.' });
       return c.json(
         RemoteCommunityReadCursorSchema.parse({ cursor, unreadCount: room.unreadCount ?? 0 })
       );
@@ -145,13 +145,13 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     const roomId = c.req.param('roomId');
     const body = readJsonBody(c) as { cursor?: unknown } | undefined;
     const cursor = typeof body?.cursor === 'string' ? body.cursor : null;
-    if (!cursor) return c.json({ error: 'A cursor is required.' }, 400);
+    if (!cursor) return problem(c, 'invalid_request', { detail: 'Send the cursor you last read.' });
     try {
       await verifiedConnection(ref, owner, 'read');
       const adapter = getRemoteCommunityAdapter(ref, owner);
       await adapter.setReadCursor(roomId, cursor as never);
       const room = await adapter.getRoom(roomId);
-      if (!room) return c.json({ error: 'Room not found.' }, 404);
+      if (!room) return problem(c, 'not_found', { detail: 'That room isn’t in this space.' });
       return c.json(
         RemoteCommunityReadCursorSchema.parse({ cursor, unreadCount: room.unreadCount ?? 0 })
       );
@@ -212,7 +212,10 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     if (target instanceof Response) return target;
     const { owner, ref } = target;
     const input = RemoteCommunityPostRequestSchema.safeParse(readJsonBody(c));
-    if (!input.success) return c.json({ error: 'Enter a message with a valid retry key.' }, 400);
+    if (!input.success)
+      return validationProblem(c, input.error, {
+        detail: 'Enter a message with a valid retry key.',
+      });
     try {
       await verifiedConnection(ref, owner, 'post');
       const entry = await getRemoteCommunityAdapter(ref, owner).postEntry(
@@ -232,7 +235,10 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     if (target instanceof Response) return target;
     const { owner, ref } = target;
     const input = attachmentHeaders(c);
-    if (!input) return c.json({ error: 'Provide valid file metadata and a retry key.' }, 400);
+    if (!input)
+      return problem(c, 'invalid_request', {
+        detail: 'Send the file’s details and a retry key.',
+      });
     try {
       await verifiedConnection(ref, owner, 'post');
       const attachment = await getRemoteCommunityAdapter(ref, owner).uploadAttachment(
@@ -276,7 +282,9 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
     const roomId = z.string().min(1).max(128).safeParse(c.req.param('roomId'));
     const idempotencyKey = z.string().min(1).max(128).safeParse(c.req.param('idempotencyKey'));
     if (!ref.success || !roomId.success || !idempotencyKey.success) {
-      return c.json({ error: 'Use valid space, room, and delivery identifiers.' }, 400);
+      return problem(c, 'invalid_request', {
+        detail: 'Use valid space, room and delivery identifiers.',
+      });
     }
     try {
       await verifiedConnection(ref.data, owner, 'post');
@@ -286,8 +294,10 @@ export function createRemoteCommunitiesRoutes(): Hono<ApiEnv> {
         ownerAuthorId: owner,
         idempotencyKey: idempotencyKey.data,
       });
-      if (result === 'missing') return c.json({ error: 'Delivery not found.' }, 404);
-      if (result === 'terminal') return c.json({ error: 'Delivery cannot be retried.' }, 409);
+      if (result === 'missing')
+        return problem(c, 'not_found', { detail: 'That message isn’t waiting to send.' });
+      if (result === 'terminal')
+        return problem(c, 'conflict', { detail: 'That message can’t be sent again.' });
       return c.json(
         getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner),
         result === 'in-flight' || result === 'queued' ? 202 : 200

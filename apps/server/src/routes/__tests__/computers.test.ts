@@ -83,6 +83,8 @@ describe('computer owner routes', () => {
     ]) {
       const response = await request(server).post('/api/computers').set(headers);
       expect(response.status).toBe(403);
+      expect(response.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(['person_only', 'owner_only']).toContain(response.body.code);
     }
     expect(service.create).not.toHaveBeenCalled();
   });
@@ -130,11 +132,15 @@ describe('computer owner routes', () => {
     vi.mocked(service.input).mockRejectedValueOnce(new Error('private password secret'));
     const failed = await request(server).post('/api/computers/input').set(ownerHeaders).send(input);
     expect(failed.status).toBe(503);
+    expect(failed.body).toMatchObject({
+      code: 'temporarily_unavailable',
+      detail: 'The agent computer isn’t available. Try again.',
+    });
     expect(JSON.stringify(failed.body)).not.toContain('secret');
     vi.mocked(service.input).mockRejectedValueOnce(new ComputerRefusal('control-lost'));
-    expect(
-      (await request(server).post('/api/computers/input').set(ownerHeaders).send(input)).status
-    ).toBe(409);
+    const lost = await request(server).post('/api/computers/input').set(ownerHeaders).send(input);
+    expect(lost.status).toBe(409);
+    expect(lost.body.code).toBe('computer_control_lost');
   });
   it('validates closed public DTOs and never serializes an accidental credential', async () => {
     vi.mocked(service.status).mockResolvedValueOnce({

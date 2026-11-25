@@ -66,10 +66,10 @@ import {
   type CommunityMoveUploads,
 } from '../services/core/cloud/community-move-upload.js';
 import { isCloudLinked } from '../services/core/cloud/v1-client.js';
-import { envelopeRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
+import { problemRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import { officialOnlyOrigin } from '../middleware/spaces-enabled.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { startHostedSpaceMove } from './cloud-community-move-http.js';
@@ -77,7 +77,7 @@ import {
   UNREACHABLE,
   NOT_LINKED,
   OWNER_ONLY,
-  stagingRefusal,
+  roomCheckMessage,
   writeFailed,
   readFailed,
 } from './cloud-communities-common.js';
@@ -202,7 +202,8 @@ export function createCloudCommunitiesRoutes(
   /** GET /name-check?name= — whether a web address is free right now. */
   router.get('/name-check', async (c) => {
     const name = CommunityShortNameSchema.safeParse(readQuery(c).name);
-    if (!name.success) return c.json({ error: 'That isn’t a web address.' }, 400);
+    if (!name.success)
+      return validationProblem(c, name.error, { detail: 'That isn’t a web address.' });
     if (!isCloudLinked())
       return c.json({ available: false } satisfies CloudCommunityNameCheckResponse);
     try {
@@ -246,14 +247,13 @@ export function createCloudCommunitiesRoutes(
 
   /** POST / — start a hosted community. The claim link stays on this server. */
   router.post('/', async (c) => {
-    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.start);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.start);
+    if (refusal) return sendProblem(c, refusal);
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     const body = StartBodySchema.safeParse(readJsonBody(c));
-    if (!body.success) {
-      return c.json({ ok: false, message: 'Give the space a name.' }, 400);
-    }
+    if (!body.success)
+      return validationProblem(c, body.error, { detail: 'Give the space a name.' });
     return runAccountWrite(c, {
       kind: 'cloud.space',
       target: 'hosted-space',
@@ -284,14 +284,15 @@ export function createCloudCommunitiesRoutes(
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     const query = RoomQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json({ error: 'That isn’t a file size.' }, 400);
+    if (!query.success)
+      return validationProblem(c, query.error, { detail: 'That isn’t a file size.' });
     try {
       await checkRoom(query.data.bytes);
     } catch (error) {
       if (!(error instanceof StagingError)) throw error;
       return c.json({
         ok: false,
-        message: stagingRefusal(error).message,
+        message: roomCheckMessage(error),
       } satisfies CloudCommunityRefusal);
     }
     return c.json({ ok: true } satisfies CloudCommunityMoveRoomResponse);
@@ -324,8 +325,8 @@ export function createCloudCommunitiesRoutes(
 
   /** POST /moves/:moveId/cancel — cancel a move that is not ready yet. */
   router.post('/moves/:moveId/cancel', async (c) => {
-    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
+    if (refusal) return sendProblem(c, refusal);
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     // Stop sending first: whatever the service answers, this process has no
@@ -341,8 +342,8 @@ export function createCloudCommunitiesRoutes(
 
   /** POST /moves/:moveId/upload — send the export again from the copy held here. */
   router.post('/moves/:moveId/upload', async (c) => {
-    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.move);
+    if (refusal) return sendProblem(c, refusal);
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     return runAccountWrite(c, {
@@ -374,8 +375,8 @@ export function createCloudCommunitiesRoutes(
    * the person's own browser. The only answer in this family that carries one.
    */
   router.post('/:communityId/claim-link', async (c) => {
-    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.claimLink);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.claimLink);
+    if (refusal) return sendProblem(c, refusal);
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     return runAccountWrite(c, {
@@ -400,12 +401,12 @@ export function createCloudCommunitiesRoutes(
 
   /** POST /:communityId/keep — keep one community open, confirming what it holds. */
   router.post('/:communityId/keep', async (c) => {
-    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.keep);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.keep);
+    if (refusal) return sendProblem(c, refusal);
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     const body = KeepBodySchema.safeParse(readJsonBody(c));
-    if (!body.success) return c.json({ ok: false, message: 'Nothing to confirm.' }, 400);
+    if (!body.success) return validationProblem(c, body.error, { detail: 'Nothing to confirm.' });
     return runAccountWrite(c, {
       kind: 'cloud.space',
       target: c.req.param('communityId'),
@@ -431,8 +432,8 @@ export function createCloudCommunitiesRoutes(
 
   /** POST /:communityId/restore — reopen a held community. */
   router.post('/:communityId/restore', async (c) => {
-    const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.keep);
-    if (refusal) return c.json(refusal, 403);
+    const refusal = problemRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.keep);
+    if (refusal) return sendProblem(c, refusal);
     if (!isCloudLinked())
       return c.json({ ok: false, message: NOT_LINKED } satisfies CloudCommunityRefusal);
     return runAccountWrite(c, {

@@ -22,7 +22,11 @@ import { expandTilde } from '../../../../lib/boundary.js';
 import { folderAllowsFromSettings } from '../folder-settings/apply-folder-allows.js';
 import { grantsFromSettings } from '../messaging/directory-grants.js';
 import { lastApprovedRules } from '../folder-settings/folder-allow-consent.js';
-import { allowRulesOf, rememberPersonAlwaysAllow } from '../folder-settings/person-always-allow.js';
+import {
+  allowRulesOf,
+  rememberPersonAlwaysAllow,
+  type PersonAnswerTurn,
+} from '../folder-settings/person-always-allow.js';
 import { isRepoConfigApproved } from '../repo-settings/repo-config-consent.js';
 import { readLocalSettings } from '../repo-settings/repo-local-settings.js';
 import { reachesFiles, ruleCovers, ruleMayAllow } from './folder-rule-match.js';
@@ -64,16 +68,18 @@ export interface FolderAllowRecords {
   /** The rules behind the agent's current yes on its folder allow list. */
   approvedRules(agentId: string, home: string): readonly string[] | undefined;
   /**
-   * A folder's local settings as they read now, when that content needs no approval or has one:
-   * its allow rules and folder entries from the same read. `undefined` otherwise.
+   * A folder's local settings as they read now for a turn in `runsIn`, when that content needs no
+   * approval or has one: its allow rules and folder entries from the same read. `undefined`
+   * otherwise.
    */
   approvedLocalSettings(
     folder: string,
-    dorkHome: string
+    dorkHome: string,
+    runsIn: string
   ): { rules: readonly string[]; dirs: readonly string[] } | undefined;
   /** Keep a person's Always allow, so the next launch treats it as approved too. */
   rememberPersonAlwaysAllow(
-    turn: { agentId: string | undefined; home: string | undefined; cwd: string; dorkHome: string },
+    turn: PersonAnswerTurn,
     atHome: boolean,
     updates: readonly PermissionUpdate[]
   ): void;
@@ -82,8 +88,8 @@ export interface FolderAllowRecords {
 /** The records as DorkOS keeps them. */
 const STORED_RECORDS: FolderAllowRecords = {
   approvedRules: lastApprovedRules,
-  approvedLocalSettings: (folder, dorkHome) => {
-    const local = readLocalSettings(folder, dorkHome);
+  approvedLocalSettings: (folder, dorkHome, runsIn) => {
+    const local = readLocalSettings(folder, dorkHome, runsIn);
     if (local === null) return { rules: [], dirs: [] };
     return local.approvable && isRepoConfigApproved('local', local.digest)
       ? local.widening
@@ -168,7 +174,7 @@ export function watchFolderAllows(
         out.dirs.push(...compared.dirs);
       }
       if (files.includes('settings.local.json')) {
-        const local = records.approvedLocalSettings(folder, turn.dorkHome);
+        const local = records.approvedLocalSettings(folder, turn.dorkHome, turn.cwd);
         out.rules.push(...(local?.rules ?? []));
         out.dirs.push(...(local?.dirs ?? []));
       }
@@ -190,7 +196,7 @@ export function watchFolderAllows(
       // A person approved the local settings as they read now.
       const localNow =
         !state.home && state.files.includes('settings.local.json')
-          ? records.approvedLocalSettings(state.folder, turn.dorkHome)
+          ? records.approvedLocalSettings(state.folder, turn.dorkHome, turn.cwd)
           : undefined;
       const approved = new Set([
         ...shared,
@@ -236,7 +242,11 @@ export function watchFolderAllows(
           for (const dir of directoriesOf(updates)) answeredDirs.add(dirKey(dir, turn.cwd));
           // Recorded for the folder the answer is kept in.
           const folder = where.alwaysAllowFolder;
-          records.rememberPersonAlwaysAllow({ ...turn, cwd: folder }, isHome(folder), updates);
+          records.rememberPersonAlwaysAllow(
+            { ...turn, cwd: folder, runsIn: turn.cwd },
+            isHome(folder),
+            updates
+          );
         }
         return result;
       };

@@ -350,9 +350,10 @@ function send(write: Write, headers: Record<string, string> = {}) {
   return write.body === undefined ? req : req.send(write.body);
 }
 
-/** The sentence and code a refused caller got, whichever shape the route answers in. */
-function refusalOf(body: { code?: unknown; message?: unknown; error?: unknown }) {
-  return { code: body.code, sentence: body.message ?? body.error };
+/** The sentence and code a refused caller got: every account write answers a problem document. */
+function refusalOf(body: { code?: unknown; detail?: unknown; type?: unknown }) {
+  expect(body.type).toBe(`urn:dorkos:problem:${String(body.code)}`);
+  return { code: body.code, sentence: body.detail };
 }
 
 describe('the DorkOS account owner bar', () => {
@@ -702,7 +703,9 @@ describe('DorkOS account confirmation', () => {
         const held = await send();
         expect(held.status).toBe(428);
         expect(existsSync(filePath)).toBe(true);
-        expect((await send()).status).toBe(409);
+        const pending = await send();
+        expect(pending.status).toBe(409);
+        expect(pending.body.code).toBe('move_pending');
         expect(moveUploads.stageArchive).toHaveBeenCalledOnce();
         if (ending === 'capacity refused') {
           for (let i = 1; i < MAX_HELD_STEP_UPS_PER_SESSION; i++)

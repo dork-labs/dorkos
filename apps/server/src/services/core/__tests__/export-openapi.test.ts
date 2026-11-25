@@ -355,7 +355,8 @@ it('documents the admitted computer routes without exposing private endpoints', 
   expect(paths['/api/computers/control']?.delete).toBeDefined();
   const document = JSON.stringify(operations);
   expect(document).toContain('X-Client-Id');
-  expect(document).toContain('not-the-owner');
+  expect(document).toContain('owner_only');
+  expect(document).toContain('computer_control_lost');
   expect(document).toContain('additionalProperties');
   expect(document).not.toContain('opencodePassword');
   expect(document).not.toContain('desktopUrl');
