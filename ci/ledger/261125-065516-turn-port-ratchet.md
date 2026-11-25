@@ -16,7 +16,7 @@ ratchet-release: []
 field-changes: []
 ---
 
-DOR-5232, step T5 of spec `turns-survive-restarts` (§3.4). Every space-side caller is to start, watch and stop a turn through one port, and they move to it one at a time. The ratchet holds the line while they do: at this branch's head on main (`b5a4f6d0f6`) the fourteen space-side domains hold 139 imports of turn code (`services/session/**` but chat messages, and `services/runtimes/**`) in 91 files, and none may be added.
+DOR-5232, step T5 of spec `turns-survive-restarts` (§3.4). Every space-side caller is to start, watch and stop a turn through one port, and they move to it one at a time. The ratchet holds the line while they do: at this branch's head on main (`752f248633`) the fourteen space-side domains hold 140 imports of turn code (`services/session/**` but chat messages, and `services/runtimes/**`) in 91 files, and none may be added.
 
 `apps/server/eslint-rules/turn-port-boundary.js` is an ESLint rule in the server's lint (the required `lint` check). It resolves every import, export-from and literal `import()` against the file, type-only imports included, and holds each space-side file to its entry in `apps/server/eslint-rules/turn-port-boundary.baseline.json`: one more import fails, and so does one fewer until `--update` locks the drop in. It also refuses `services/runs` reaching past `session/turn-port/index.js`, and turn code importing `services/runs`, with no baseline. Tests are not checked.
 
