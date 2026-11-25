@@ -495,13 +495,32 @@ function cdTarget(from, target) {
 }
 
 /**
- * Whether a segment hands text to a shell (a shell word is one of its tokens).
+ * Whether a segment hands TEXT to a shell: `bash -c`, `bash -s`, `eval`, or a
+ * shell reading stdin (piped into, `bash <<EOF`). `bash <script file>` runs a
+ * file and does not count (Nov 25: it unmasked quoted heredoc bodies on the
+ * same line, so a PR body that mentioned `pnpm vitest run` was refused).
  *
  * @param {string} segment - One command segment.
  * @returns {boolean} True when the segment runs text through a shell.
  */
 function feedsAShell(segment) {
-  return tokenize(segment).some((token) => STDIN_SHELLS.has(basename(token)));
+  const tokens = tokenize(segment);
+  return tokens.some((token, index) => {
+    const name = basename(token);
+    if (!STDIN_SHELLS.has(name)) return false;
+    // `eval` always runs text; `source`/`.` run a file named next, or stdin.
+    if (name === 'eval') return true;
+    const rest = tokens.slice(index + 1);
+    // `bash -c …`, `bash -lc …`, `bash -s`: text from an argument or stdin.
+    if (rest.some((arg) => /^-[a-zA-Z]*[cs][a-zA-Z]*$/.test(arg))) return true;
+    // `bash script.sh` runs a FILE: its words are not shell text, so quoted
+    // heredoc bodies elsewhere on the line stay masked. A shell with no file
+    // argument (piped into, or `bash <<EOF`) reads its commands from stdin.
+    const file = rest.find(
+      (arg) => !arg.startsWith('-') && !arg.startsWith('<') && !/^\d*[<>]/.test(arg)
+    );
+    return !file;
+  });
 }
 
 /** Shell operators that end one command, longest first. */
@@ -580,12 +599,28 @@ function inspectCommand(command, depth = 0, strict = false, ctx = {}) {
     if (found) return found;
   }
   if (depth < 2) {
-    for (const body of extractSubstitutions(command)) {
+    for (const body of extractSubstitutions(substitutionText(command, strict))) {
       const found = inspectCommand(body, depth + 1, strict, ctx);
       if (found) return found;
     }
   }
   return null;
+}
+
+/**
+ * The text to read `$(…)` and backtick substitutions from: the line with its
+ * quoted heredoc bodies and single-quoted text masked, unless a shell will
+ * execute that text (then every substitution in it is live).
+ *
+ * @param {string} command - Raw command line.
+ * @param {boolean} strict - True when a shell will execute this text.
+ * @returns {string} The text to scan.
+ */
+function substitutionText(command, strict) {
+  if (strict) return command;
+  const masked = maskUnexpandedText(command);
+  if (masked === null) return command;
+  return splitSegments(command).some(feedsAShell) ? command : masked;
 }
 
 /**

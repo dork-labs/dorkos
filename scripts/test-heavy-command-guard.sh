@@ -230,6 +230,23 @@ allow grep -rn "vitest run" scripts
 allow git commit -m "ci: stop raw turbo build"
 CASES
 
+# --- `bash <script file>` beside a quoted heredoc: the heredoc stays text (Nov 25 false positive). ---
+check 'a PR-body heredoc mentioning vitest, beside bash <script>, is allowed' allow \
+  "$(verdict $'cat > /tmp/b.md <<\'EOF\'\nrun pnpm vitest run later\nand npx tsc --noEmit\nEOF\nbash scripts/open-pr.sh --body-file /tmp/b.md')"
+check 'a python heredoc with a backticked tsc, beside bash <script>, is allowed' allow \
+  "$(verdict $'python3 - <<\'EOF\'\nx = "the `tsc` hook"\nEOF\nbash scripts/test-in-project-hook.sh')"
+check 'bash <script> alone is allowed' allow "$(verdict 'bash scripts/test-heavy-command-guard.sh')"
+check 'bash <script> does not hide a heavy command beside it' block "$(verdict 'bash scripts/x.sh && turbo build')"
+# --- the forms that DO feed text to a shell still unmask it. ---
+check 'bash <<EOF runs the heredoc' block "$(verdict $'bash <<\'EOF\'\nturbo build\nEOF')"
+check 'a heredoc piped into bash runs it' block "$(verdict $'cat <<\'EOF\' | bash\nturbo build\nEOF')"
+check 'bash -s <<EOF runs the heredoc' block "$(verdict $'bash -s <<\'EOF\'\nnpx tsc --noEmit\nEOF')"
+check 'sh -lc runs its argument' block "$(verdict "sh -lc 'npx tsc --noEmit'")"
+# shellcheck disable=SC2016 # the $( ) is text for the guard to read
+check 'a double-quoted substitution still runs' block "$(verdict 'echo "$(turbo build)"')"
+check 'a single-quoted substitution is text' allow "$(verdict "echo '\$(turbo build)'")"
+check 'eval runs its argument' block "$(verdict 'eval "turbo build"')"
+
 # In a DorkOS chat the server's own hook holds the command in the gate.
 check 'a DorkOS chat (DORKOS_SESSION_ID set) is left to the server gate' allow \
   "$(DORKOS_SESSION_ID=fixture-chat verdict 'turbo build')"
