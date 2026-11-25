@@ -346,7 +346,9 @@ report() {
   # Every result line from every file, kept only when it is well formed and
   # its id is planned.
   plan=$(checks_plan)
-  all=$(find "$dir" -type f \( -name '*.json' -o -name '*.jsonl' \) -exec cat {} + 2>/dev/null |
+  # Files in a fixed order (find's order differs between Linux and macOS).
+  all=$(find "$dir" -type f \( -name '*.json' -o -name '*.jsonl' \) -print 2>/dev/null | LC_ALL=C sort |
+    while IFS= read -r f; do cat "$f"; done |
     jq -cR 'fromjson? | select(type == "object" and (.check | type) == "string" and (.status | IN("pass","fail","skip","info")) and (.detail | type) == "string")' 2>/dev/null |
     jq -sc --arg plan "$plan" '($plan | split("\n")) as $p | map(select(.check as $c | $p | index($c)))')
   [ -n "$all" ] || all='[]'

@@ -273,7 +273,7 @@ check 'a skipped group opens nothing' 0 "$(count 'issues -f title=')"
 check 'and does not close its issue' 0 "$(count 'state=closed')"
 
 reset
-all_pass_but download/windows
+all_pass_but 'download/windows issues'
 {
   echo 'not json at all'
   echo '{"check":"download/windows","status":"fail","detail":"HTTP 500, not a 302"}'
