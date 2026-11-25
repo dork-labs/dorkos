@@ -113,21 +113,24 @@ export function stepOf(run: TurnRun): SendStep {
  * A message's run. Named by the message's own id since runs were (so a chat
  * the runtime moved to another id, which a restart no longer knows as an
  * alias, still finds it); a message an earlier version saved under a UUID is
- * looked for by its source in the chat it was sent to.
+ * looked for by its source in the chat it was sent to, else, when that
+ * version queued it in the chat itself, as the run adoption gave its queue
+ * row (no source, the row's id), whether or not the row is still there.
  *
  * @param port - The space face.
  * @param row - The message.
  */
 export function runOfRow(
-  port: Pick<SpaceTurnPort, 'get' | 'list'>,
+  port: Pick<SpaceTurnPort, 'get' | 'list' | 'runOfQueueRow'>,
   row: Pick<AgentSendRecord, 'id' | 'sessionId'>
 ): TurnRun | undefined {
   const own = RunIdSchema.safeParse(row.id).success ? port.get(row.id) : undefined;
   if (own) return own;
   const ref = sendSourceRef(row.id);
-  return row.sessionId
+  const sent = row.sessionId
     ? port.list(row.sessionId).find((each) => each.sourceRef === ref)
     : undefined;
+  return sent ?? port.runOfQueueRow(row.id);
 }
 
 /**

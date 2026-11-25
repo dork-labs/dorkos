@@ -426,6 +426,7 @@ describe('why a mini app’s start never ran, in the owner’s notice (DOR-5232)
 
   it.each([
     ['start_failed', 'It kept failing to start.'],
+    ['runtime_mismatch', 'Its agent runs on a different runtime here.'],
     ['start_lost', 'Its first message was lost before it could start.'],
     ['removed', 'Its message was taken off the chat’s queue.'],
     ['session_gone', 'Its chat was gone before it could start.'],

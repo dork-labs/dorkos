@@ -431,6 +431,7 @@ describe('refusals', () => {
       'room_session_moved',
       'desk_not_own',
       'account_not_allowed',
+      'runtime_mismatch',
     ]);
   });
 });

@@ -494,11 +494,14 @@ export class AgentSendService {
         // A kept chat still this agent's is used; one the agent moved away
         // from is replaced by a new chat on this send.
         if (facts.bound && facts.agentPath === agentPath) return { sessionId: kept, agent };
-        // Opened by a message whose run has not ended: the chat is not bound
-        // until that run is handed over, and it is still this agent's.
-        const opening = this.port()
-          ?.list(kept)
-          .some((run) => !RUN_ENDS.has(run.status));
+        // Not bound yet, opened by a message whose run has not ended: bound
+        // when that run is handed over, and still this agent's. A bound chat
+        // the agent moved away from is never reused, however busy it is.
+        const opening =
+          !facts.bound &&
+          this.port()
+            ?.list(kept)
+            .some((run) => !RUN_ENDS.has(run.status));
         if (opening) return { sessionId: kept, agent };
       }
       return { sessionId: null, agent };

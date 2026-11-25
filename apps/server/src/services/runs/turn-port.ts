@@ -124,7 +124,11 @@ export interface SpaceTurnPortDeps {
    * source): a mini app's send or start is refused then, as it always has
    * been, because nobody can yet see a waiting run to take it back (§3.5).
    */
-  pausedAgent?: (agentId: string | null, cwd: string | undefined) => { name: string } | undefined;
+  pausedAgent?: (
+    agentId: string | null,
+    cwd: string | undefined,
+    sessionId: string
+  ) => { name: string } | undefined;
   /** Whether a queue row still holds a run's words (this computer's queue). */
   queueRowExists?: (queueMessageId: string) => boolean;
   /** The computer face, for taking back a run its caller no longer wants. */
@@ -190,7 +194,10 @@ export class SpaceTurnPort {
     }
     const app =
       start.origin.kind === 'extension-message' || start.origin.kind === 'extension-start';
-    const paused = app ? this.deps.pausedAgent?.(start.agentId ?? null, start.cwd) : undefined;
+    // A send to a chat by id names no agent or folder: its chat's agent answers.
+    const paused = app
+      ? this.deps.pausedAgent?.(start.agentId ?? null, start.cwd, start.sessionId)
+      : undefined;
     if (paused) {
       // Today's words and today's rule: nothing is queued, nothing kept for later.
       throw new TurnStartRefusedError('agent_paused', `${paused.name} is paused.`);
@@ -260,6 +267,7 @@ export class SpaceTurnPort {
     if (run?.status !== 'queued') return false;
     const computer = this.deps.computer?.();
     if (run.queueMessageId !== null) {
+      // The computer face is always wired at boot; without it nothing removes the row.
       computer?.removeQueued(run.sessionId, run.queueMessageId);
       return this.deps.runs.get(runId)?.status === 'cancelled';
     }
@@ -342,6 +350,16 @@ export class SpaceTurnPort {
       .find((effect) => effect.kind === 'start_turn');
     const parsed = StartPayloadSchema.safeParse(start?.payload);
     return parsed.success ? parsed.data.cwd : undefined;
+  }
+
+  /**
+   * The run of a queue row, by the row's id, the row present or gone: how a
+   * row an earlier version queued in a chat finds the run adoption gave it.
+   *
+   * @param queueMessageId - The queue row's id.
+   */
+  runOfQueueRow(queueMessageId: string): TurnRun | undefined {
+    return this.deps.runs.findByQueueMessage(queueMessageId);
   }
 
   /**

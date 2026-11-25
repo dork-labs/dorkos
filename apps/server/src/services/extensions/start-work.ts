@@ -20,7 +20,8 @@
  * (the row following a rebind, the title, a launch warning, forgetting a start
  * that never ran) is one watch registered at attach, keyed by the run's
  * source, so a restart in between loses none of it. An answered start can
- * still not run (a refusal at the door, a stop); its owner is told, once.
+ * still not run (a refusal at the door, a chat gone, its words lost); its
+ * owner is told, once.
  *
  * ## The limits
  *
@@ -135,10 +136,10 @@ export class StartWorkService {
   private readonly launching: Launching = new Map();
   /** The turn port this seam reads its starts from, once it has heard of one. */
   private attachedTo: SpaceTurnPort | undefined;
-  /** Runs whose launch warning is on the history already. */
+  /** Live runs whose launch warning is on the history already; let go at the run's end. */
   private readonly warned = new Set<string>();
-  /** Runs whose title is being set right now. */
-  private readonly titling = new Set<string>();
+  /** Runs whose title is being set right now, with whether it took. */
+  private readonly titling = new Map<string, Promise<boolean>>();
   private readonly now: () => number;
   private readonly eligibility: StartWorkEligibility;
   private readonly runningSessionIds: () => string[];
@@ -265,36 +266,55 @@ export class StartWorkService {
             logger.warn('[start-work] could not record a start’s warning', logError(err))
           );
       }
-      this.tryTitle(port, run, row.title);
+      void this.tryTitle(port, run, row.title);
       return;
     }
     this.launching.delete(run.sessionId);
+    this.warned.delete(run.id);
     if (run.startedAt === null) {
       // Never ran: forgotten, so it neither shows nor counts.
       this.deps.store.remove(run.sessionId);
       return;
     }
-    // Its first try may have found no transcript yet.
-    this.tryTitle(port, run, row.title);
-    this.deps.store.clearPrompt(run.sessionId);
+    // The words go now; the title once the last try at it is done: a try
+    // still under way is waited for, and one that failed (its first try may
+    // have found no transcript yet) is made again.
+    this.deps.store.clearPrompt(run.sessionId, { keepTitle: true });
+    const title = row.title;
+    if (title === null) return;
+    void (this.titling.get(run.id) ?? Promise.resolve(false))
+      .then((took) => took || this.tryTitle(port, run, title))
+      .finally(() => this.deps.store.clearTitle(run.sessionId));
   }
 
-  /** Set a start's chat title once, on the runtime the run runs on. */
-  private tryTitle(port: SpaceTurnPort, run: TurnRun, title: string | null): void {
-    if (title === null || this.titling.has(run.id)) return;
+  /**
+   * Set a start's chat title, on the runtime the run runs on. One try at a
+   * time per run: a second ask while one is under way gets the same answer.
+   *
+   * @returns Whether the title took.
+   */
+  private tryTitle(port: SpaceTurnPort, run: TurnRun, title: string | null): Promise<boolean> {
+    const inFlight = this.titling.get(run.id);
+    if (inFlight) return inFlight;
     const cwd = port.cwdOf(run.id);
-    if (cwd === undefined) return;
-    this.titling.add(run.id);
-    void this.rename(run.runtime ?? this.defaultRuntime(), run.sessionId, title, cwd)
+    if (title === null || cwd === undefined) return Promise.resolve(false);
+    const trying = this.rename(run.runtime ?? this.defaultRuntime(), run.sessionId, title, cwd)
       .then(
-        () => this.deps.store.clearTitle(run.sessionId),
-        (err: unknown) =>
+        () => {
+          this.deps.store.clearTitle(run.sessionId);
+          return true;
+        },
+        (err: unknown) => {
           logger.info('[start-work] title not set yet; trying again when the turn ends', {
             sessionId: run.sessionId,
             ...logError(err),
-          })
+          });
+          return false;
+        }
       )
       .finally(() => this.titling.delete(run.id));
+    this.titling.set(run.id, trying);
+    return trying;
   }
 
   /**

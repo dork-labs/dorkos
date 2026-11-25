@@ -54,8 +54,15 @@ export type AdmissionVerdict =
 /** What admission reads. Each is today's source for its check (§3.5). */
 export interface AdmissionDeps {
   runs: RunStore;
-  /** The paused agent a turn is for, by Mesh id, else by its folder; `undefined` when not paused. */
-  pausedAgent: (agentId: string | null, cwd: string | undefined) => { name: string } | undefined;
+  /**
+   * The paused agent a turn is for, by Mesh id, else by its folder, else by
+   * the agent its chat is bound to; `undefined` when not paused.
+   */
+  pausedAgent: (
+    agentId: string | null,
+    cwd: string | undefined,
+    sessionId: string
+  ) => { name: string } | undefined;
   /** Whether every launch slot under `runtimes.maxAgentChats` is taken. */
   machineFull: () => boolean;
 }
@@ -83,7 +90,7 @@ export function admit(
   start: Pick<StartPayload, 'cwd' | 'accountHint'>,
   deps: AdmissionDeps
 ): AdmissionVerdict {
-  if (!personTyped(run.origin) && deps.pausedAgent(run.agentId, start.cwd))
+  if (!personTyped(run.origin) && deps.pausedAgent(run.agentId, start.cwd, run.sessionId))
     return { wait: 'paused' };
   const live = deps.runs.liveRunOf(run.sessionId);
   const chatBusy = live !== undefined && live.id !== run.id;

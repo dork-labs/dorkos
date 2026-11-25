@@ -81,6 +81,25 @@ const DOOR_REFUSALS: Record<
   AGENT_PAUSED: 'agent_paused',
 };
 
+/**
+ * Hand the run to the launch path, answering a runtime mismatch (the start's
+ * runtime is not the one its agent's computer runs) as the refusal it is:
+ * asking again cannot change it.
+ */
+async function dispatchOrRefuse(
+  dispatch: (opts: DispatchSessionMessageOpts) => Promise<DispatchSessionMessageResult>,
+  opts: DispatchSessionMessageOpts
+): Promise<DispatchSessionMessageResult | 'runtime_mismatch'> {
+  try {
+    return await dispatch(opts);
+  } catch (err) {
+    if (err instanceof Error && err.message === 'COMPUTER_RUNTIME_MISMATCH') {
+      return 'runtime_mismatch';
+    }
+    throw err;
+  }
+}
+
 /** The lock identity of a run's turn: the run itself, under the extension prefix for a mini app. */
 function clientIdOf(runId: string, origin: TurnOrigin): string {
   const app = origin.kind === 'extension-message' || origin.kind === 'extension-start';
@@ -131,7 +150,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       // Nothing awaits between admission's cap check and the launch path's own
       // claim of a slot, which it takes before its first await.
       inFlight.add(request.runId);
-      const result = await dispatch({
+      const result = await dispatchOrRefuse(dispatch, {
         sessionId: request.sessionId,
         origin: request.origin,
         runId: request.runId,
@@ -154,6 +173,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
       }).finally(() => inFlight.delete(request.runId));
+      if (result === 'runtime_mismatch') return { refused: 'runtime_mismatch' };
       if (isSessionLaunchRefusal(result)) {
         if (result.refused === 'LAUNCH_CAP_FULL') {
           throw new Error('The launch cap filled between admission and the hand-over');

@@ -77,6 +77,8 @@ let handed: string[];
 /** When set, admission answers this instead of reading its sources. */
 let forcedVerdict: AdmissionVerdict | undefined;
 let paused = false;
+/** A chat whose bound agent reads as paused, asked only for a start naming neither. */
+let pausedChat: string | undefined;
 let machineFull = false;
 /** When set, admission reads the real launch cap rather than the switch above. */
 let realCap = false;
@@ -88,6 +90,8 @@ let computer: ComputerTurnPort;
 let refuseWith: SessionLaunchRefusal['refused'] | undefined;
 /** When set, the launch path throws. */
 let launchThrows = false;
+/** When set, the launch path throws this. */
+let launchError: Error | undefined;
 const sources = new Map<string, string>();
 
 /** A person's turn that works until released. */
@@ -173,6 +177,7 @@ async function launchPath(opts: DispatchSessionMessageOpts) {
   handed.push(opts.runId ?? '?');
   if (launchGate) await launchGate;
   if (launchThrows) throw new Error('The launch path broke, for the demo');
+  if (launchError) throw launchError;
   if (refuseWith) return { refused: refuseWith, message: 'Refused for the demo.' } as const;
   return dispatchSessionMessage(opts);
 }
@@ -199,7 +204,10 @@ function boot(epoch: string): RunRecord {
     agentHome: () => (id) => (id === AGENT.id ? AGENT.home : undefined),
     admission: {
       admission: {
-        pausedAgent: () => (paused ? { name: 'Porter' } : undefined),
+        pausedAgent: (agentId, cwd, chat) =>
+          paused || (agentId === null && cwd === undefined && chat === pausedChat)
+            ? { name: 'Porter' }
+            : undefined,
         machineFull: () => (realCap ? isAgentLaunchCapFull() : machineFull),
       },
       admit: (run, start, deps) => {
@@ -227,11 +235,13 @@ beforeEach(() => {
   handed = [];
   forcedVerdict = undefined;
   paused = false;
+  pausedChat = undefined;
   machineFull = false;
   realCap = false;
   launchGate = undefined;
   refuseWith = undefined;
   launchThrows = false;
+  launchError = undefined;
   sources.clear();
   const now = new Date().toISOString();
   db.insert(agents)
@@ -356,6 +366,31 @@ describe('the space face', () => {
         expect.objectContaining({ reason: 'agent_paused', message: 'Porter is paused.' })
       );
     }
+    expect(record.store.listForChat(sessionId)).toEqual([]);
+  });
+
+  it('cancels a start whose runtime is not the one its agent’s computer runs, at once, without retrying', async () => {
+    launchError = new Error('COMPUTER_RUNTIME_MISMATCH');
+    const { runId } = startFromApp('from the app: on the wrong runtime');
+    await pass();
+    expect(record.store.get(runId)).toMatchObject({
+      status: 'cancelled',
+      endingDetail: { cancelledBecause: 'runtime_mismatch' },
+    });
+    expect(handed).toEqual([runId]);
+    expect(startEffect(runId).state).toBe('done');
+  });
+
+  it('refuses a send to a chat by id, its folder unknown, when the chat’s agent is paused', () => {
+    pausedChat = sessionId;
+    expect(() =>
+      record.port.start({
+        sessionId,
+        content: 'from the app: by chat id',
+        origin: { kind: 'extension-message' },
+        tier: 'owner',
+      })
+    ).toThrow(expect.objectContaining({ reason: 'agent_paused' }));
     expect(record.store.listForChat(sessionId)).toEqual([]);
   });
 

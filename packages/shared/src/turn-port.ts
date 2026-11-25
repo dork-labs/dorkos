@@ -666,6 +666,10 @@ export type TurnStartRequest = z.infer<typeof TurnStartRequestSchema>;
  *   conversation kept in the room's files), `desk_not_own` (the turn would
  *   stand in a room's files, or in a folder that is not its agent's), and
  *   `account_not_allowed` (the account may not work in this project).
+ * - `runtime_mismatch`: the start asked for one runtime, and its agent's home
+ *   is placed on a computer that runs another (`COMPUTER_RUNTIME_MISMATCH` in
+ *   `launch-session.ts`). Asking again cannot change that, so it is a refusal,
+ *   not a failure retried with backoff.
  *
  * Every reason but `already_held` and `chat_busy` cancels the run, with the
  * reason kept in `ending_detail`. None is ever carried as `ended` with
@@ -686,6 +690,7 @@ export const RefusalReasonSchema = z.enum([
   'room_session_moved',
   'desk_not_own',
   'account_not_allowed',
+  'runtime_mismatch',
 ]);
 
 /** Why a start was refused. See {@link RefusalReasonSchema}. */

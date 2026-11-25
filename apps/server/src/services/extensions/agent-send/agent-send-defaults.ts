@@ -11,7 +11,11 @@ import type { MeshCore } from '@dorkos/mesh';
 import { logger } from '../../../lib/logger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
-import { adoptQueuedMessages, isTurnInFlight } from '../../session/message-dispatcher.js';
+import {
+  adoptQueuedMessages,
+  isTurnInFlight,
+  rearmChatQueues,
+} from '../../session/message-dispatcher.js';
 import {
   resolveChatPlace,
   type ResolveChatPlaceDeps,
@@ -246,6 +250,44 @@ export async function resumeChatQueue(
     ...(rows.orFromApps ? { orFromApps: true } : {}),
   });
   clearResumeRefusals(sessionId);
+}
+
+/**
+ * Run every chat whose queued messages nothing is running: other chats' rows
+ * and mini apps' rows alike (DOR-3287, DOR-5232). The server runs it at boot,
+ * on the health tick, and the moment a pause is lifted, so a row a pause held
+ * runs with nobody else sending.
+ *
+ * @param deps.meshCore - The live Mesh accessor, for which folders are agents' homes.
+ * @param deps.roomSessionPlace - The room binding port, when rooms are wired.
+ * @param deps.cwdOf - A chat's live folder (the projector's, else its record).
+ * @param deps.placeDeps - Test seams for place resolution.
+ * @returns How many chats were resumed.
+ */
+export function resumeStrandedChatQueues(deps: {
+  meshCore: () => Pick<MeshCore, 'listWithPaths'> | undefined;
+  roomSessionPlace?: () => RoomSessionPlacePort | undefined;
+  cwdOf?: (sessionId: string) => Promise<string | undefined>;
+  placeDeps?: Partial<ResolveChatPlaceDeps>;
+}): Promise<number> {
+  const cwdOf = deps.cwdOf ?? liveSessionCwd;
+  return rearmChatQueues({
+    resume: async (id) =>
+      resumeChatQueue(
+        id,
+        await cwdOf(id),
+        deps.roomSessionPlace?.(),
+        deps.placeDeps ?? {},
+        {
+          registeredAgentPaths: () =>
+            deps
+              .meshCore()
+              ?.listWithPaths()
+              .map((agent) => agent.projectPath),
+        },
+        { orFromApps: true }
+      ),
+  });
 }
 
 /**

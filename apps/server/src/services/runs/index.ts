@@ -144,7 +144,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     computer: computer ?? getComputerTurnPort,
     queueRowExists,
     starts: (): StartTurns => starts,
-    pausedAgent: (agentId, cwd) => admissionSources.pausedAgent(agentId, cwd),
+    pausedAgent: (agentId, cwd, sessionId) => admissionSources.pausedAgent(agentId, cwd, sessionId),
     preview: (run, start) => {
       if (run.origin === null) return undefined;
       const verdict = admitRun({ ...run, origin: run.origin }, start, {

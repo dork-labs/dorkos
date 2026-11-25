@@ -242,6 +242,7 @@ export {
   cancelPendingDispatch,
   listQueuedMessages,
   noteSessionOrphaned,
+  rearmChatQueues,
   suspendPrivateDispatches,
   sweepOrphanedMessageQueues,
 } from './message-dispatcher/queue-upkeep.js';

@@ -264,6 +264,28 @@ export class AgentPauseService {
   }
 
   /**
+   * The paused agent a turn the turn port is asked to start is for: by its
+   * Mesh id, else its folder, else the agent its chat is bound to (a send to
+   * a chat by id names neither, as after a restart). `undefined` when that
+   * agent is not paused.
+   *
+   * @param agentId - The agent the start names, if any.
+   * @param cwd - The folder the start names, if any.
+   * @param sessionId - Its chat.
+   * @param storedCwd - Reads the chat's stored folder.
+   */
+  pausedAgentOfStart(
+    agentId: string | null,
+    cwd: string | undefined,
+    sessionId: string,
+    storedCwd: () => string | undefined
+  ): PausedAgentRef | undefined {
+    if (agentId !== null) return this.pausedAgent(agentId);
+    if (cwd !== undefined) return this.pausedAgentOfTurn({ cwd });
+    return this.pausedAgentOfSession(sessionId, storedCwd);
+  }
+
+  /**
    * The paused agent a turn belongs to, or `undefined` when it is not paused.
    * Free when nothing is paused, which is almost always.
    *

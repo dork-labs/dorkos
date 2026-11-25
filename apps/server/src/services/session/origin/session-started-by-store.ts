@@ -124,11 +124,12 @@ export class SessionStartedByStore {
    * Let a start's words and title go: its run ended (or will never run).
    *
    * @param sessionId - The chat.
+   * @param opts.keepTitle - Keep the title: setting it is still under way.
    */
-  clearPrompt(sessionId: string): void {
+  clearPrompt(sessionId: string, opts: { keepTitle?: boolean } = {}): void {
     this.db
       .update(sessionStartedBy)
-      .set({ prompt: null, title: null })
+      .set(opts.keepTitle ? { prompt: null } : { prompt: null, title: null })
       .where(eq(sessionStartedBy.sessionId, sessionId))
       .run();
   }
@@ -148,7 +149,8 @@ export class SessionStartedByStore {
 
   /**
    * The chats an extension's chain started since a moment, carried moves
-   * excluded: what "chats working at once" is counted over, from saved rows.
+   * included (a move's successor is still working for the app): what "chats
+   * working at once" is counted over, from saved rows.
    *
    * @param originExtensionId - The extension at the root of the chain.
    * @param since - ISO 8601.

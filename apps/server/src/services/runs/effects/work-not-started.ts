@@ -63,6 +63,8 @@ function why(reason: string): string {
       return 'It can’t run in that folder.';
     case 'unknown_runtime':
       return 'Its runtime isn’t available on this computer.';
+    case 'runtime_mismatch':
+      return 'Its agent runs on a different runtime here.';
     case 'expired':
       return 'It waited too long to start.';
     case 'start_failed':

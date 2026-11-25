@@ -155,6 +155,25 @@ describe('ctx.agent.send — who it is for', () => {
     h.projectors.push(first.sessionId!);
   });
 
+  it('opens a new chat when the agent moved away from its kept chat, even while a turn runs there', async () => {
+    h.agents.set(AGENT, HOME);
+    // The app's kept chat with the agent, bound to its old home, a person's turn running in it.
+    h.store.keepChat(EXT, AGENT, h.session);
+    h.sessions.set(
+      h.session,
+      chat({ launchOrigin: 'extension-message', startedByExtension: EXT, agentPath: '/old/home' })
+    );
+    const first = gate();
+    await personTurn(first.wait);
+    h.runtime.withScenarios([quickTurn()]);
+    const receipt = await h.service.send(EXT, { to: AGENT, text: 'moved', idempotencyKey: 'm' });
+    expect(receipt.sessionId).not.toBe(h.session);
+    expect(h.reserved).toEqual([receipt.sessionId]);
+    first.open();
+    await settle();
+    h.projectors.push(receipt.sessionId!);
+  });
+
   it('refuses an older chat DorkOS cannot place (no launch origin)', async () => {
     // A chat bound before migration 0119 has no origin: it may as well be a
     // room's or a bridged chat, so it is not taken for a person's.
@@ -445,6 +464,33 @@ describe('ctx.agent.send — a moved chat across a restart (DOR-5232)', () => {
   });
 });
 
+/** A message the version before queued in the chat itself: its queue row, and its own row. */
+function legacyQueued(id: string, status: 'queued' | 'started' = 'queued'): void {
+  if (status === 'queued') {
+    h.queue.enqueue({
+      id,
+      sessionId: h.session,
+      content: 'queued before the upgrade',
+      clientId: `extension:${EXT}`,
+      disposition: 'queue',
+      context: null,
+    });
+  }
+  h.store.insert({
+    id,
+    extensionId: EXT,
+    idempotencyKey: `old-${id}`,
+    agentId: null,
+    sessionId: h.session,
+    cwd: null,
+    status,
+    receiptStatus: status,
+    receiptReason: status === 'queued' ? 'busy' : null,
+    failureReason: null,
+    content: null,
+  });
+}
+
 describe('ctx.agent.send — opening and upgrading (DOR-5232)', () => {
   it('opens ONE chat for two first messages sent close together, before either is handed over', async () => {
     h.agents.set(AGENT, HOME);
@@ -499,6 +545,60 @@ describe('ctx.agent.send — opening and upgrading (DOR-5232)', () => {
       ['turn.done', '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c'],
     ]);
     h.projectors.push(...h.reserved);
+  });
+
+  it('takes back a message an earlier version queued, once adopted, when its app is stopped', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    h.service.stop();
+    h.events = [];
+    const id = '7b8c9d0e-2f3a-4b4c-9d5e-6f7a8b9c0d1e';
+    legacyQueued(id);
+    h.service = build();
+    h.service.subscribe(EXT, (event) => h.events.push(event));
+    await h.service.start();
+    await settle();
+    // Adopted behind the person's turn: a run with no source, named by the row.
+    expect(getRunRecord()!.port.runOfQueueRow(id)?.status).toBe('queued');
+
+    h.service.extensionStopped(EXT, { takeBack: true });
+    first.open();
+    await settle();
+    expect(h.queue.list(h.session)).toEqual([]);
+    expect(getRunRecord()!.port.runOfQueueRow(id)?.status).toBe('cancelled');
+    expect(h.runtime.sendMessage.mock.calls.map((call) => call[1])).toEqual([
+      'the person is working',
+    ]);
+    expect(h.events).toEqual([
+      expect.objectContaining({ kind: 'turn.failed', messageId: id, reason: 'stopped' }),
+    ]);
+  });
+
+  it('after a restart, hears a message an earlier version queued as done when its turn ran', async () => {
+    h.service.stop();
+    h.events = [];
+    const id = '8c9d0e1f-3a4b-4c5d-8e6f-7a8b9c0d1e2f';
+    // Its row was delivered and its turn ended; the process died before the app heard.
+    legacyQueued(id, 'started');
+    const { store } = getRunRecord()!;
+    let run = store.create({
+      chatKey: h.session,
+      status: 'queued',
+      openedBy: 'caller',
+      origin: { kind: 'extension-message' },
+      queueMessageId: id,
+    });
+    run = store.move(run, 'starting', store.lease());
+    run = store.move(run, 'started', { startedAt: store.stamp(), runtime: 'test-mode' });
+    store.endTurn(run, 'completed');
+    h.service = build();
+    h.service.subscribe(EXT, (event) => h.events.push(event));
+    await h.service.start();
+    await settle();
+    expect(h.store.get(id)?.status).toBe('done');
+    expect(h.events).toEqual([
+      expect.objectContaining({ kind: 'turn.done', messageId: id, outcome: 'ok' }),
+    ]);
   });
 
   it('leaves a message an earlier version queued in the chat to the queue, and hears it run', async () => {

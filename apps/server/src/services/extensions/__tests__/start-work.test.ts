@@ -103,6 +103,8 @@ let projects: ReturnType<typeof fakeProjects>;
 let record: RunRecord;
 /** Every start the turn port saved, with its run's id, in order. */
 let launches: Array<StartTurnInput & { runId: string }>;
+/** When set, the rename a case wants in place of the default one. */
+let renameHook: StartWorkDeps['rename'] | undefined;
 /** Admission's launch cap, as a switch. */
 let machineFull: boolean;
 
@@ -130,6 +132,7 @@ function build(overrides: Partial<StartWorkDeps> = {}): StartWorkService {
     runningSessionIds: () => running,
     defaultRuntime: () => 'test-mode',
     rename: async (runtime, sessionId, title, cwd) => {
+      if (renameHook) return renameHook(runtime, sessionId, title, cwd);
       renamed.push({ runtime, sessionId, title, cwd });
     },
     port: () => record.port,
@@ -164,6 +167,7 @@ beforeEach(() => {
   clock = Date.parse('2026-09-29T09:00:00.000Z');
   running = [];
   renamed = [];
+  renameHook = undefined;
   projects = fakeProjects({ flow: [DORKOS, BLINTZ], 'hello-world': [] });
   service = build();
   _forgetTitles();
@@ -695,8 +699,11 @@ describe('a start through the turn port (DOR-5232)', () => {
   });
 });
 
-describe('a start a pause cuts after its first event (DOR-5232)', () => {
-  it('keeps its words through the cut, runs once on resume, and tells nobody it could not start', async () => {
+describe('the store’s reaction to a pause cut after a start’s first event (DOR-5232)', () => {
+  it('keeps the words through a cut driven by hand, and tells nobody it could not start', async () => {
+    // No Mac path cuts a run without a queue row (spec §4.7, `startAgain`):
+    // the cut and the second start below are driven by hand, so this proves
+    // only what the record and the start do with them, not a working resume.
     const { sessionId } = await service.start('flow', INPUT, 'ctx');
     const { runId } = launches[0]!;
     const { store: runs } = record;
@@ -724,7 +731,7 @@ describe('a start a pause cuts after its first event (DOR-5232)', () => {
     // The words are still there to hand over again: in the row and in memory.
     expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
     expect(record.port.wordsOf(runs.get(runId)!)).toBe(INPUT.prompt);
-    // Resumed: it runs once, and ends.
+    // Started again by hand, as a resume would: it ends, and its words go.
     startOnce(2);
     runs.endTurn(runs.get(runId)!, 'completed');
     releaseRun(runId);
@@ -757,6 +764,36 @@ describe('a start across a restart and a rebind (DOR-5232)', () => {
     expect(renamed).toEqual([
       { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
     ]);
+    expect(store.get(sessionId)?.title).toBeNull();
+  });
+
+  it('still titles its chat when the first try is under way at the run’s end and then fails', async () => {
+    let failFirst!: (err: Error) => void;
+    const tries: string[] = [];
+    renameHook = (runtime, sessionId, title) => {
+      tries.push(title);
+      if (tries.length === 1) {
+        return new Promise<void>((_resolve, reject) => {
+          failFirst = reject;
+        });
+      }
+      renamed.push({ runtime, sessionId, title, cwd: DORKOS.root });
+      return Promise.resolve();
+    };
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    const { store: runs } = record;
+    let run = runs.move(runs.get(launches[0]!.runId)!, 'starting', runs.lease());
+    run = runs.move(run, 'started', { startedAt: runs.stamp(), runtime: 'test-mode' });
+    await flush();
+    expect(tries).toEqual([INPUT.title]);
+    // The run ends while that first try is still out.
+    runs.endTurn(run, 'completed');
+    await flush();
+    expect(store.get(sessionId)).toMatchObject({ prompt: null, title: INPUT.title });
+    failFirst(new Error('no transcript yet'));
+    await flush();
+    await flush();
+    expect(renamed.map((r) => r.title)).toEqual([INPUT.title]);
     expect(store.get(sessionId)?.title).toBeNull();
   });
 
