@@ -12960,98 +12960,6 @@
         "default": "pending",
         "description": "Filter messages by status. Defaults to \"pending\" (deliverable, unread messages) so budget-rejected failures never surface silently next to real deliverables. Pass \"failed\" to see budget-rejected/dead-lettered messages, \"delivered\" for already-read ones (metadata only — the payload is removed once a message completes), or \"all\" for every status."
       },
-      "DiscoveryCandidate": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "minLength": 1
-          },
-          "strategy": {
-            "type": "string",
-            "minLength": 1
-          },
-          "hints": {
-            "$ref": "#/components/schemas/AgentHints"
-          },
-          "discoveredAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "path",
-          "strategy",
-          "hints",
-          "discoveredAt"
-        ]
-      },
-      "AgentHints": {
-        "type": "object",
-        "properties": {
-          "suggestedName": {
-            "type": "string"
-          },
-          "detectedRuntime": {
-            "$ref": "#/components/schemas/AgentRuntime"
-          },
-          "inferredCapabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "description": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "suggestedName",
-          "detectedRuntime"
-        ]
-      },
-      "AgentRuntime": {
-        "type": "string",
-        "enum": [
-          "claude-code",
-          "cursor",
-          "codex",
-          "opencode",
-          "doe",
-          "windsurf",
-          "gemini",
-          "cline",
-          "roo-code",
-          "copilot",
-          "amazon-q",
-          "continue",
-          "augment",
-          "jetbrains-ai",
-          "kilo-code",
-          "trae",
-          "other"
-        ]
-      },
-      "DiscoverRequest": {
-        "type": "object",
-        "properties": {
-          "roots": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 1
-          },
-          "maxDepth": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "required": [
-          "roots"
-        ]
-      },
       "AgentManifest": {
         "type": "object",
         "properties": {
@@ -13218,6 +13126,28 @@
           "runtime",
           "registeredAt",
           "registeredBy"
+        ]
+      },
+      "AgentRuntime": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "cursor",
+          "codex",
+          "opencode",
+          "doe",
+          "windsurf",
+          "gemini",
+          "cline",
+          "roo-code",
+          "copilot",
+          "amazon-q",
+          "continue",
+          "augment",
+          "jetbrains-ai",
+          "kilo-code",
+          "trae",
+          "other"
         ]
       },
       "AgentBehavior": {
@@ -13473,186 +13403,6 @@
           "addedBy"
         ]
       },
-      "RegisterAgentRequest": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "minLength": 1
-          },
-          "overrides": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1,
-                "description": "ULID assigned at registration"
-              },
-              "name": {
-                "type": "string",
-                "minLength": 1
-              },
-              "displayName": {
-                "type": "string",
-                "maxLength": 100,
-                "description": "Human-readable display name. Falls back to name (slug) when absent.",
-                "example": "My Cool Agent"
-              },
-              "description": {
-                "type": "string",
-                "default": ""
-              },
-              "runtime": {
-                "$ref": "#/components/schemas/AgentRuntime"
-              },
-              "capabilities": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "default": []
-              },
-              "behavior": {
-                "$ref": "#/components/schemas/AgentBehavior"
-              },
-              "namespace": {
-                "type": "string",
-                "maxLength": 64
-              },
-              "registeredAt": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "registeredBy": {
-                "type": "string",
-                "minLength": 1
-              },
-              "persona": {
-                "type": "string",
-                "maxLength": 4000,
-                "description": "System prompt persona text injected into Claude sessions",
-                "example": "You are backend-bot, an expert in REST API design..."
-              },
-              "personaEnabled": {
-                "type": "boolean",
-                "default": true,
-                "description": "Whether persona text is injected into system prompt"
-              },
-              "traits": {
-                "$ref": "#/components/schemas/Traits"
-              },
-              "conventions": {
-                "$ref": "#/components/schemas/Conventions"
-              },
-              "color": {
-                "type": "string",
-                "description": "CSS color override for visual identity (e.g., \"#6366f1\")",
-                "example": "#6366f1"
-              },
-              "icon": {
-                "type": "string",
-                "description": "Emoji override for visual identity",
-                "example": "🤖"
-              },
-              "isSystem": {
-                "type": "boolean",
-                "default": false,
-                "description": "System agents are auto-managed and cannot be deleted"
-              },
-              "model": {
-                "type": "string",
-                "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
-                "example": "opus"
-              },
-              "effort": {
-                "type": "string",
-                "enum": [
-                  "none",
-                  "minimal",
-                  "low",
-                  "medium",
-                  "high",
-                  "max",
-                  "xhigh"
-                ],
-                "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
-                "example": "high"
-              },
-              "account": {
-                "type": "string",
-                "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
-                "example": "acme-corp"
-              },
-              "permissions": {
-                "$ref": "#/components/schemas/AgentPermissions"
-              },
-              "mcpServers": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ManagedMcpServer"
-                },
-                "default": []
-              },
-              "workspace": {
-                "type": "object",
-                "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "home",
-                      "managed",
-                      "none"
-                    ]
-                  },
-                  "source": {
-                    "type": "string",
-                    "description": "Repository or directory the checkout is made from ('managed' only)."
-                  },
-                  "provider": {
-                    "type": "string",
-                    "enum": [
-                      "worktree",
-                      "clone"
-                    ]
-                  }
-                },
-                "required": [
-                  "mode"
-                ],
-                "example": {
-                  "mode": "home"
-                }
-              },
-              "reportsTo": {
-                "type": "string",
-                "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
-                "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
-              },
-              "readsOutsideText": {
-                "type": "boolean",
-                "description": "Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.",
-                "example": true
-              },
-              "createdBy": {
-                "type": "string",
-                "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
-                "example": "install:9f1c2d3e"
-              }
-            }
-          },
-          "approver": {
-            "type": "string"
-          },
-          "scanRoot": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "path"
-        ]
-      },
       "UpdateAgentRequest": {
         "type": "object",
         "properties": {
@@ -13757,221 +13507,6 @@
             "type": "boolean"
           }
         }
-      },
-      "TopologyView": {
-        "type": "object",
-        "properties": {
-          "callerNamespace": {
-            "type": "string"
-          },
-          "namespaces": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NamespaceInfo"
-            }
-          },
-          "accessRules": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CrossNamespaceRule"
-            }
-          },
-          "openMesh": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        "required": [
-          "callerNamespace",
-          "namespaces",
-          "accessRules"
-        ]
-      },
-      "NamespaceInfo": {
-        "type": "object",
-        "properties": {
-          "namespace": {
-            "type": "string"
-          },
-          "agentCount": {
-            "type": "integer"
-          },
-          "agents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TopologyAgent"
-            }
-          }
-        },
-        "required": [
-          "namespace",
-          "agentCount",
-          "agents"
-        ]
-      },
-      "TopologyAgent": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/AgentManifest"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "projectPath": {
-                "type": "string"
-              },
-              "effectiveRuntimeId": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              },
-              "healthStatus": {
-                "$ref": "#/components/schemas/AgentHealthStatus"
-              },
-              "relayAdapters": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "default": []
-              },
-              "relaySubject": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "default": null
-              },
-              "taskCount": {
-                "type": "integer",
-                "default": 0
-              },
-              "lastSeenAt": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "default": null
-              },
-              "lastSeenEvent": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "default": null
-              }
-            }
-          }
-        ]
-      },
-      "AgentHealthStatus": {
-        "type": "string",
-        "enum": [
-          "active",
-          "inactive",
-          "stale",
-          "unreachable"
-        ],
-        "default": "stale"
-      },
-      "CrossNamespaceRule": {
-        "type": "object",
-        "properties": {
-          "sourceNamespace": {
-            "type": "string"
-          },
-          "targetNamespace": {
-            "type": "string"
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "allow",
-              "deny"
-            ]
-          },
-          "origin": {
-            "type": "string",
-            "enum": [
-              "default",
-              "explicit"
-            ],
-            "default": "explicit"
-          }
-        },
-        "required": [
-          "sourceNamespace",
-          "targetNamespace",
-          "action"
-        ]
-      },
-      "UpdateAccessRuleRequest": {
-        "type": "object",
-        "properties": {
-          "sourceNamespace": {
-            "type": "string",
-            "minLength": 1
-          },
-          "targetNamespace": {
-            "type": "string",
-            "minLength": 1
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "allow",
-              "deny"
-            ]
-          }
-        },
-        "required": [
-          "sourceNamespace",
-          "targetNamespace",
-          "action"
-        ]
-      },
-      "DenyRequest": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "minLength": 1
-          },
-          "reason": {
-            "type": "string"
-          },
-          "denier": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ]
-      },
-      "DenialRecord": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "minLength": 1
-          },
-          "reason": {
-            "type": "string"
-          },
-          "deniedBy": {
-            "type": "string",
-            "minLength": 1
-          },
-          "deniedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "path",
-          "deniedBy",
-          "deniedAt"
-        ]
       },
       "CloudOffersResponse": {
         "anyOf": [
@@ -20046,6 +19581,15 @@
           "registeredAt"
         ]
       },
+      "AgentHealthStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "inactive",
+          "stale",
+          "unreachable"
+        ]
+      },
       "TeamAgentActivity": {
         "type": "object",
         "properties": {
@@ -21440,6 +20984,502 @@
         },
         "required": [
           "stopped"
+        ]
+      },
+      "MeshStatus": {
+        "type": "object",
+        "properties": {
+          "totalAgents": {
+            "type": "number"
+          },
+          "activeCount": {
+            "type": "number"
+          },
+          "inactiveCount": {
+            "type": "number"
+          },
+          "staleCount": {
+            "type": "number"
+          },
+          "unreachableCount": {
+            "type": "number"
+          },
+          "byRuntime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "byProject": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "totalAgents",
+          "activeCount",
+          "inactiveCount",
+          "staleCount",
+          "unreachableCount",
+          "byRuntime",
+          "byProject"
+        ]
+      },
+      "TopologyView": {
+        "type": "object",
+        "properties": {
+          "callerNamespace": {
+            "type": "string"
+          },
+          "namespaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NamespaceInfo"
+            }
+          },
+          "accessRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CrossNamespaceRule"
+            }
+          },
+          "openMesh": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "callerNamespace",
+          "namespaces",
+          "accessRules"
+        ]
+      },
+      "NamespaceInfo": {
+        "type": "object",
+        "properties": {
+          "namespace": {
+            "type": "string"
+          },
+          "agentCount": {
+            "type": "integer"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopologyAgent"
+            }
+          }
+        },
+        "required": [
+          "namespace",
+          "agentCount",
+          "agents"
+        ]
+      },
+      "TopologyAgent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentManifest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "projectPath": {
+                "type": "string"
+              },
+              "effectiveRuntimeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "healthStatus": {
+                "$ref": "#/components/schemas/AgentHealthStatus"
+              },
+              "relayAdapters": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "relaySubject": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "taskCount": {
+                "type": "integer",
+                "default": 0
+              },
+              "lastSeenAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "lastSeenEvent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              }
+            }
+          }
+        ]
+      },
+      "CrossNamespaceRule": {
+        "type": "object",
+        "properties": {
+          "sourceNamespace": {
+            "type": "string"
+          },
+          "targetNamespace": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "default",
+              "explicit"
+            ],
+            "default": "explicit"
+          }
+        },
+        "required": [
+          "sourceNamespace",
+          "targetNamespace",
+          "action"
+        ]
+      },
+      "DenialRecord": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "deniedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deniedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "path",
+          "deniedBy",
+          "deniedAt"
+        ]
+      },
+      "DiscoveryCandidate": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "strategy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hints": {
+            "$ref": "#/components/schemas/AgentHints"
+          },
+          "discoveredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "path",
+          "strategy",
+          "hints",
+          "discoveredAt"
+        ]
+      },
+      "AgentHints": {
+        "type": "object",
+        "properties": {
+          "suggestedName": {
+            "type": "string"
+          },
+          "detectedRuntime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "inferredCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "suggestedName",
+          "detectedRuntime"
+        ]
+      },
+      "DiscoverRequest": {
+        "type": "object",
+        "properties": {
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "maxDepth": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "roots"
+        ]
+      },
+      "RegisterAgentRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "ULID assigned at registration"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "displayName": {
+                "type": "string",
+                "maxLength": 100,
+                "description": "Human-readable display name. Falls back to name (slug) when absent.",
+                "example": "My Cool Agent"
+              },
+              "description": {
+                "type": "string",
+                "default": ""
+              },
+              "runtime": {
+                "$ref": "#/components/schemas/AgentRuntime"
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "behavior": {
+                "$ref": "#/components/schemas/AgentBehavior"
+              },
+              "namespace": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "registeredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "registeredBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "persona": {
+                "type": "string",
+                "maxLength": 4000,
+                "description": "System prompt persona text injected into Claude sessions",
+                "example": "You are backend-bot, an expert in REST API design..."
+              },
+              "personaEnabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether persona text is injected into system prompt"
+              },
+              "traits": {
+                "$ref": "#/components/schemas/Traits"
+              },
+              "conventions": {
+                "$ref": "#/components/schemas/Conventions"
+              },
+              "color": {
+                "type": "string",
+                "description": "CSS color override for visual identity (e.g., \"#6366f1\")",
+                "example": "#6366f1"
+              },
+              "icon": {
+                "type": "string",
+                "description": "Emoji override for visual identity",
+                "example": "🤖"
+              },
+              "isSystem": {
+                "type": "boolean",
+                "default": false,
+                "description": "System agents are auto-managed and cannot be deleted"
+              },
+              "model": {
+                "type": "string",
+                "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+                "example": "opus"
+              },
+              "effort": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "max",
+                  "xhigh"
+                ],
+                "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
+                "example": "high"
+              },
+              "account": {
+                "type": "string",
+                "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
+                "example": "acme-corp"
+              },
+              "permissions": {
+                "$ref": "#/components/schemas/AgentPermissions"
+              },
+              "mcpServers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ManagedMcpServer"
+                },
+                "default": []
+              },
+              "workspace": {
+                "type": "object",
+                "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "home",
+                      "managed",
+                      "none"
+                    ]
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "Repository or directory the checkout is made from ('managed' only)."
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "worktree",
+                      "clone"
+                    ]
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "example": {
+                  "mode": "home"
+                }
+              },
+              "reportsTo": {
+                "type": "string",
+                "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+                "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+              },
+              "readsOutsideText": {
+                "type": "boolean",
+                "description": "Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.",
+                "example": true
+              },
+              "createdBy": {
+                "type": "string",
+                "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+                "example": "install:9f1c2d3e"
+              }
+            }
+          },
+          "approver": {
+            "type": "string"
+          },
+          "scanRoot": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "DenyRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "denier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "UpdateAccessRuleRequest": {
+        "type": "object",
+        "properties": {
+          "sourceNamespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetNamespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          }
+        },
+        "required": [
+          "sourceNamespace",
+          "targetNamespace",
+          "action"
         ]
       },
       "AuditVerifyResult": {
@@ -49257,174 +49297,6 @@
         "operationId": "relay.stream"
       }
     },
-    "/api/mesh/discover": {
-      "post": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "Discover mesh agents",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscoverRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Discovered candidates",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "candidates": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/DiscoveryCandidate"
-                      }
-                    }
-                  },
-                  "required": [
-                    "candidates"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "mesh.createDiscover"
-      }
-    },
-    "/api/mesh/agents": {
-      "post": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "Register a mesh agent",
-        "description": "A directory that already holds a `.dork/agent.json` is ADOPTED, never overwritten: the file is left untouched and the agent it describes is what gets registered, so the returned id and name can differ from the ones sent, and `overrides` may be omitted entirely. A manifest that is there but cannot be read is refused with a 422 rather than replaced. `overrides.name` and `overrides.runtime` are required only for a directory that has no manifest to adopt. Registering also clears any denial recorded against the directory.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterAgentRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Registered agent (adopted, when the directory already had one)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentManifest"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Registration refused — an existing manifest there could not be read or adopted",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "mesh.createAgents"
-      },
-      "get": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "List mesh agents",
-        "parameters": [
-          {
-            "schema": {
-              "$ref": "#/components/schemas/AgentRuntime"
-            },
-            "required": false,
-            "name": "runtime",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "capability",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "callerNamespace",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Array of agents",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "agents": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AgentManifest"
-                      }
-                    }
-                  },
-                  "required": [
-                    "agents"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "mesh.listAgents"
-      }
-    },
     "/api/mesh/agents/{id}": {
       "get": {
         "tags": [
@@ -49535,24 +49407,28 @@
         "operationId": "mesh.updateAgents"
       },
       "delete": {
+        "operationId": "mesh.remove_agent",
         "tags": [
           "Mesh"
         ],
-        "summary": "Unregister mesh agent",
-        "description": "Removes the agent and deletes its `.dork/agent.json`, so the next scan does not adopt it back — unless git is tracking that file, which makes it part of a repository rather than DorkOS's bookkeeping. Then the file is left alone and the directory is denied instead, and `blockedFromDiscovery` says so. Registering the directory again clears that denial.",
+        "summary": "Remove an agent",
+        "description": "Take an agent off the team and delete its agent file, so discovery does not add it back. When git tracks that file, it stays and the folder is hidden from discovery instead (`blockedFromDiscovery`).",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent."
             },
             "required": true,
+            "description": "The Mesh id of the agent.",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "Agent removed",
+            "description": "Remove an agent result",
             "content": {
               "application/json": {
                 "schema": {
@@ -49573,8 +49449,18 @@
               }
             }
           },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
           "400": {
-            "description": "Validation error",
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -49582,78 +49468,79 @@
                 }
               }
             }
-          }
-        },
-        "operationId": "mesh.deleteAgents"
-      }
-    },
-    "/api/mesh/topology": {
-      "get": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "Get mesh topology",
-        "description": "Every agent on this machine, grouped by namespace, with the access rules that decide who can message whom. The view is scoped to what the caller can reach: namespaces the caller has no access to are omitted entirely. `openMesh` reports the mesh-wide \"let all my agents talk to each other\" switch.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "The calling agent's namespace, which scopes the view to the namespaces it can reach. Defaults to `*`, the unscoped admin view.",
-              "example": "*"
-            },
-            "required": false,
-            "description": "The calling agent's namespace, which scopes the view to the namespaces it can reach. Defaults to `*`, the unscoped admin view.",
-            "name": "namespace",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Topology view scoped to the caller",
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TopologyView"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "mesh.getTopology"
-      }
-    },
-    "/api/mesh/topology/access": {
-      "put": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "Update a mesh access rule",
-        "description": "Grant or revoke one directional access rule between two namespaces — `allow` lets agents in the source namespace message agents in the target one, `deny` takes that grant away. Rules are one-way: allowing `a -> b` does not let `b` answer back.\n\n`*` on BOTH sides is the mesh-wide \"let all my agents talk to each other\" switch: `allow` turns it on, `deny` turns it off. `*` on one side only is rejected with a 400 — it would open far more traffic than the caller asked for.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAccessRuleRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The rule as applied",
+            "description": "`internal_error`: something went wrong running it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CrossNamespaceRule"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
-          "400": {
-            "description": "Validation error, including `*` on one side only",
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -49662,148 +49549,7 @@
               }
             }
           }
-        },
-        "operationId": "mesh.updateTopologyAccess"
-      }
-    },
-    "/api/mesh/deny": {
-      "post": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "Deny a mesh candidate",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DenyRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Candidate denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "mesh.deny"
-      }
-    },
-    "/api/mesh/denied": {
-      "get": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "List denied mesh candidates",
-        "responses": {
-          "200": {
-            "description": "Denied candidates",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "denied": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/DenialRecord"
-                      }
-                    }
-                  },
-                  "required": [
-                    "denied"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "mesh.getDenied"
-      },
-      "delete": {
-        "tags": [
-          "Mesh"
-        ],
-        "summary": "Clear mesh denial",
-        "description": "The folder goes in the `path` query parameter. Remote Access refuses an encoded `/` or `\\` in a URL path, and every folder path holds one.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "The denied folder, absolute"
-            },
-            "required": true,
-            "description": "The denied folder, absolute",
-            "name": "path",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Denial cleared",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "mesh.deleteDenied"
+        }
       }
     },
     "/api/marketplace/sources": {
@@ -106195,6 +105941,1552 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/agents": {
+      "get": {
+        "operationId": "mesh.list_agents",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "List the agents",
+        "description": "Every registered agent with its health (`healthStatus`, `lastSeenAt`), filtered by runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach.",
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AgentRuntime"
+            },
+            "required": false,
+            "name": "runtime",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "capability",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "callerNamespace",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List the agents result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "ULID assigned at registration"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "maxLength": 100,
+                            "description": "Human-readable display name. Falls back to name (slug) when absent.",
+                            "example": "My Cool Agent"
+                          },
+                          "description": {
+                            "type": "string",
+                            "default": ""
+                          },
+                          "runtime": {
+                            "$ref": "#/components/schemas/AgentRuntime"
+                          },
+                          "capabilities": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "behavior": {
+                            "$ref": "#/components/schemas/AgentBehavior"
+                          },
+                          "namespace": {
+                            "type": "string",
+                            "maxLength": 64
+                          },
+                          "registeredAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "registeredBy": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "persona": {
+                            "type": "string",
+                            "maxLength": 4000,
+                            "description": "System prompt persona text injected into Claude sessions",
+                            "example": "You are backend-bot, an expert in REST API design..."
+                          },
+                          "personaEnabled": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "Whether persona text is injected into system prompt"
+                          },
+                          "traits": {
+                            "$ref": "#/components/schemas/Traits"
+                          },
+                          "conventions": {
+                            "$ref": "#/components/schemas/Conventions"
+                          },
+                          "color": {
+                            "type": "string",
+                            "description": "CSS color override for visual identity (e.g., \"#6366f1\")",
+                            "example": "#6366f1"
+                          },
+                          "icon": {
+                            "type": "string",
+                            "description": "Emoji override for visual identity",
+                            "example": "🤖"
+                          },
+                          "isSystem": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "System agents are auto-managed and cannot be deleted"
+                          },
+                          "model": {
+                            "type": "string",
+                            "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+                            "example": "opus"
+                          },
+                          "effort": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "minimal",
+                              "low",
+                              "medium",
+                              "high",
+                              "max",
+                              "xhigh"
+                            ],
+                            "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
+                            "example": "high"
+                          },
+                          "account": {
+                            "type": "string",
+                            "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
+                            "example": "acme-corp"
+                          },
+                          "permissions": {
+                            "$ref": "#/components/schemas/AgentPermissions"
+                          },
+                          "mcpServers": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/ManagedMcpServer"
+                            },
+                            "default": []
+                          },
+                          "workspace": {
+                            "type": "object",
+                            "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "home",
+                                  "managed",
+                                  "none"
+                                ]
+                              },
+                              "source": {
+                                "type": "string",
+                                "description": "Repository or directory the checkout is made from ('managed' only)."
+                              },
+                              "provider": {
+                                "type": "string",
+                                "enum": [
+                                  "worktree",
+                                  "clone"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "example": {
+                              "mode": "home"
+                            }
+                          },
+                          "reportsTo": {
+                            "type": "string",
+                            "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+                            "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+                          },
+                          "readsOutsideText": {
+                            "type": "boolean",
+                            "description": "Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.",
+                            "example": true
+                          },
+                          "createdBy": {
+                            "type": "string",
+                            "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+                            "example": "install:9f1c2d3e"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "runtime",
+                          "registeredAt",
+                          "registeredBy"
+                        ],
+                        "description": "An agent. Read by another agent, it leaves out persona, conventions, permissions, mcpServers, workspace and projectPath."
+                      }
+                    }
+                  },
+                  "required": [
+                    "agents"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "mesh.register_agent",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Register an agent",
+        "description": "Register the agent in a folder. A folder with an agent file is adopted as it is; one without needs `overrides.name` and `overrides.runtime`. Clears any denial on the folder.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Register an agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentManifest"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/status": {
+      "get": {
+        "operationId": "mesh.status",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Read the registry’s counts",
+        "description": "How many agents are registered, how many are active, and by runtime and project. `byProject` is keyed by folder, so an agent gets it empty.",
+        "responses": {
+          "200": {
+            "description": "Read the registry’s counts result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeshStatus"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/topology": {
+      "get": {
+        "operationId": "mesh.topology",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Read the agent network",
+        "description": "Every agent grouped by namespace, with health, schedules and the access rules. `namespace` scopes the view to what that namespace can reach; `*` (the default) is all.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The namespace whose view to read. Defaults to `*`, every namespace."
+            },
+            "required": false,
+            "description": "The namespace whose view to read. Defaults to `*`, every namespace.",
+            "name": "namespace",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the agent network result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyView"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/denied": {
+      "get": {
+        "operationId": "mesh.list_denied",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "List the folders hidden from discovery",
+        "description": "The folders a person hid from agent discovery, with why and when.",
+        "responses": {
+          "200": {
+            "description": "List the folders hidden from discovery result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "denied": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DenialRecord"
+                      }
+                    }
+                  },
+                  "required": [
+                    "denied"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "mesh.clear_denial",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Show a folder to discovery again",
+        "description": "Clear a folder’s denial, so discovery sees it again. The folder goes in `path`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The denied folder, absolute."
+            },
+            "required": false,
+            "description": "The denied folder, absolute.",
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Show a folder to discovery again result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/discover": {
+      "post": {
+        "operationId": "mesh.discover",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Scan folders for agents",
+        "description": "Scan folders for agent candidates. A folder that already holds an agent file is registered as it is found. Answers at most 1000 candidates.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scan folders for agents result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "candidates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscoveryCandidate"
+                      }
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "candidates",
+                    "truncated"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/agents/{id}/data": {
+      "delete": {
+        "operationId": "mesh.delete_agent_data",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Remove an agent and its data",
+        "description": "Take an agent off the team and delete its `.dork` folder. Refused when git tracks the agent file: remove the agent without its data instead.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Remove an agent and its data result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "deletedPath": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "deletedPath"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/deny": {
+      "post": {
+        "operationId": "mesh.deny_folder",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Hide a folder from discovery",
+        "description": "Hide a folder from agent discovery, with an optional reason.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Hide a folder from discovery result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/topology/access": {
+      "put": {
+        "operationId": "mesh.set_access_rule",
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Change who may message whom",
+        "description": "Allow or deny agents in one namespace messaging another. `*` on both sides turns the mesh-wide switch on (allow) or off (deny).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccessRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Change who may message whom result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossNamespaceRule"
                 }
               }
             }

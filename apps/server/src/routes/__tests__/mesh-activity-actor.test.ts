@@ -1,14 +1,15 @@
 /**
- * Who the Activity feed says registered or removed an agent (DOR-1829).
+ * Who the Activity feed says registered or removed an agent (DOR-1829, DOR-4978).
  *
- * These are the highest-stakes verbs the feed reports — one of them deletes
- * another agent's `.dork` directory — and all three hardcoded `actorType: 'user'`
- * with the label `'You'`, with no caller check anywhere on the router. So an agent
- * removing another agent was recorded in the operator's own feed as their own
- * doing, which is worse than silence because a feed is believed.
+ * These are the highest-stakes verbs the feed reports. They once hardcoded the
+ * person with no caller check, then read the caller (DOR-1829). Now they are
+ * person-only doors on the capability mount (DOR-4978): an agent, or a token
+ * that resolves to nobody, is refused before anything runs and nothing is
+ * recorded, so the feed only ever names the person for them.
  *
- * Driven through the real router and the REAL identity middleware, with only the
- * token→agent lookup faked: the subject is that seam, not the mesh registry.
+ * Driven through the real `/api` chain and the REAL identity middleware, with
+ * only the token→agent lookup faked: the subject is that seam, not the mesh
+ * registry.
  *
  * @module routes/__tests__/mesh-activity-actor
  */
@@ -88,6 +89,8 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { RequestListener } from 'node:http';
 import type { MeshCore } from '@dorkos/mesh';
 import { createMeshRoutes } from '../mesh.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { meshDomain } from '../../services/mesh/doors/mesh-capabilities.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
@@ -129,13 +132,11 @@ function buildApp(): RequestListener {
     getProjectPath: vi.fn(() => '/tmp/projects/agent-1'),
   };
 
-  return honoGroupListener({
-    path: '/api/mesh',
-    routes: createMeshRoutes({
-      meshCore: meshCore as unknown as MeshCore,
-      activity: recordingActivity(),
-    }),
-  });
+  const deps = { meshCore: meshCore as unknown as MeshCore, activity: recordingActivity() };
+  return honoGroupListener([
+    capabilityGroup(meshDomain, { meshDeps: deps }),
+    { path: '/api/mesh', routes: createMeshRoutes(deps) },
+  ]);
 }
 
 /** One write on this router, driven with whatever identity headers a test wants. */
@@ -182,39 +183,25 @@ describe('who the Activity feed says registered or removed an agent', () => {
       expect(emitted[0].actorId).toBeUndefined();
     });
 
-    it('records an identified agent as that agent, not as the person', async () => {
+    it('refuses an identified agent, and records nothing', async () => {
       const res = await drive({ 'x-dorkos-agent': KNOWN_TOKEN });
 
-      expect(res.status).toBe(expectStatus);
-      expect(emitted).toHaveLength(1);
-      expect(emitted[0]).toMatchObject({
-        actorType: 'agent',
-        actorId: IDENTITY.agentPath,
-        actorLabel: 'Researcher',
-      });
+      expect(res.status).toBe(403);
+      expect(emitted).toEqual([]);
     });
 
-    it('records a token that resolves to nothing as an unidentified caller', async () => {
+    it('refuses a token that resolves to nothing, and records nothing', async () => {
       const res = await drive({ 'x-dorkos-agent': 'tok_nobody_knows' });
 
-      expect(res.status).toBe(expectStatus);
-      expect(emitted).toHaveLength(1);
-      expect(emitted[0]).toMatchObject({
-        actorType: 'system',
-        actorLabel: 'Unidentified caller',
-      });
-      expect(emitted[0].actorId).toBeUndefined();
+      expect(res.status).toBe(403);
+      expect(emitted).toEqual([]);
     });
 
     it('never writes a real-shaped presented token into the feed', async () => {
       await drive({ 'x-dorkos-agent': REAL_SHAPED_TOKEN });
 
-      const serialized = JSON.stringify(emitted);
-      expect(serialized).not.toContain(REAL_SHAPED_TOKEN);
-      expect(serialized).not.toContain(REAL_SHAPED_TOKEN.slice(0, 16));
-      expect(serialized).not.toContain(REAL_SHAPED_TOKEN.slice(-16));
-      expect(emitted).toHaveLength(1);
-      expect(emitted[0]).toMatchObject({ actorType: 'system' });
+      expect(JSON.stringify(emitted)).not.toContain(REAL_SHAPED_TOKEN.slice(0, 16));
+      expect(emitted).toEqual([]);
     });
   });
 

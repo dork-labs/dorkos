@@ -13,6 +13,8 @@ import type { MeshCore } from '@dorkos/mesh';
 import { createStepUpRoutes } from '../../step-up.js';
 import { createMeshRoutes } from '../../mesh.js';
 import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../../http/__tests__/capability-group.js';
+import { meshDomain } from '../../../services/mesh/doors/mesh-capabilities.js';
 import type { ActivityService } from '../../../services/activity/activity-service.js';
 import { initConfigManager } from '../../../services/core/config-manager.js';
 
@@ -81,10 +83,16 @@ export const MOCK_MANIFEST = {
   registeredBy: 'user',
 };
 
-/** Serve the mesh routes behind the `/api` chain, recording into `activity` if given. */
+/**
+ * Serve the mesh routes behind the `/api` chain, recording into `activity` if
+ * given: the capability mount's doors first, as the app mounts them, then the
+ * two hand routes.
+ */
 export function mountMesh(meshCore: MockMeshCore, activity?: ActivityService): void {
+  const meshDeps = { meshCore: meshCore as unknown as MeshCore, ...(activity && { activity }) };
   fixtureTarget.mount(
     honoGroupListener([
+      capabilityGroup(meshDomain, { meshDeps }),
       {
         path: '/api/mesh',
         routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore, activity }),

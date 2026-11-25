@@ -1,69 +1,37 @@
 /**
- * Mesh agent discovery and registry routes — discover agents, manage registrations,
- * maintain the denial list, and query network topology.
+ * The agent registry routes still served by hand (DOR-4978). Every other
+ * `/api/mesh/*` path is a capability the mount serves
+ * (`services/mesh/doors/mesh-capabilities.ts`).
  *
- * ## Who the Activity feed says did it
+ * - `GET /agents/paths`, `/agents/:id/access` and `/agents/:id/health` answer
+ *   lists that do not page yet; they move once paging is settled (A5).
+ * - `GET /agents/:id` moves with them: on the mount its `{id}` would answer
+ *   `/agents/paths` before this router could.
+ * - `PATCH /agents/:id` holds a credits change for "Confirm it's you" and
+ *   refuses an agent's runtime, model and effort changes in middleware
+ *   (`mesh-agent-patch-http.ts`).
+ * - `POST /agents/:id/heartbeat` is one a Wi-Fi sign-in may send on purpose,
+ *   so it waits for Security to approve a network mode for it.
  *
- * Register, remove, and remove-with-data all read the caller
- * (`readActivityActor`) instead of asserting the person did it. Until DOR-1829
- * they hardcoded `user` / `'You'`, so an agent that removed another agent was
- * recorded in the operator's own feed as the operator's own doing — the exact
- * lie DOR-1801 fixed one router over.
- *
- * They are NOT person-barred, and that is a decision rather than an omission.
- * `MCP_TOOL_TIERS` already classifies these verbs for agents: `mesh_register` is
- * `act` and `mesh_unregister` is `destructive` (an approval card, not a
- * prohibition). A bar here would make the HTTP door refuse outright what the
- * sanctioned agent door allows with a person's consent — a policy change, not an
- * attribution fix. What the HTTP routes lack is the tier gate the MCP twins run,
- * which is a separate piece of work; recording who acted is the part that can be
- * true today.
- *
- * The heartbeat route's `agent.status_changed` event is the one actor here that
- * is NOT the caller: it records DorkOS noticing a health transition, so it stays
- * `system` / `System`. See `routes/__tests__/route-activity-actor.test.ts`,
- * which exempts that one site by name.
+ * The heartbeat's `agent.status_changed` event is not the caller's doing: it
+ * records DorkOS noticing a health transition, so it stays `system` /
+ * `System`. See `routes/__tests__/route-activity-actor.test.ts`, which exempts
+ * that one site by name.
  *
  * @module routes/mesh
  */
-import { projectComputerPlacement, projectComputerPlacementById } from './computer-placement.js';
-import path from 'path';
 import { Hono } from 'hono';
-import { isManifestGitTracked } from '@dorkos/mesh';
-import type { TopologyView } from '@dorkos/shared/mesh-schemas';
-import {
-  DiscoverRequestSchema,
-  RegisterAgentRequestSchema,
-  DenyRequestSchema,
-  AgentListQuerySchema,
-  HeartbeatRequestSchema,
-  UpdateAccessRuleRequestSchema,
-} from '@dorkos/shared/mesh-schemas';
-import { removeDorkDirectory, probeManifest } from '@dorkos/shared/manifest';
-import { validateBoundary, validateBoundaryOrDorkHome } from '../lib/boundary.js';
-import { logger } from '../lib/logger.js';
-import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
-import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
-import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
-import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
+import { projectComputerPlacement } from './computer-placement.js';
+import { HeartbeatRequestSchema } from '@dorkos/shared/mesh-schemas';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { readActivityActor } from '../services/activity/activity-actor.js';
 import {
   refuseAgentExecutionWrites,
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
-import {
-  agentNotFound,
-  outsideBoundary,
-  registrationProblem,
-  unprocessable,
-} from './mesh-problems.js';
-import { honoRequestFacts } from '../http/request-facts.js';
-import { readQuery } from '../http/request-query.js';
-import { enrichTopology, type TopologyEnrichmentDeps } from './mesh-topology.js';
-import { registrationFields } from '../services/mesh/agent-patch.js';
+import { readJsonBody } from '@dorkos/http-kit';
+import { agentNotFound } from './mesh-problems.js';
+import type { TopologyEnrichmentDeps } from './mesh-topology.js';
 import { patchMeshAgent } from './mesh-agent-patch-http.js';
 
 /** Registry, activity and topology services the Mesh HTTP routes use. */
@@ -73,7 +41,7 @@ export interface MeshRouterDeps extends TopologyEnrichmentDeps {
 }
 
 /**
- * Create the Mesh routes with discovery, registration, and denial endpoints.
+ * Create the hand-served Mesh routes: four reads, an agent's update and its heartbeat.
  *
  * @param deps - MeshCore, the activity feed, and the subsystems topology enrichment reads
  * @returns The routes, to mount at `/api/mesh`.
@@ -82,270 +50,28 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   const { meshCore, activity: activityService } = deps;
   const router = new Hono<ApiEnv>();
 
-  // POST /discover — Scan directories for agent candidates
-  router.post('/discover', async (c) => {
-    const result = DiscoverRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return validationProblem(c, result.error);
-    }
-
-    // Validate each discovery root against boundary
-    const validatedRoots: string[] = [];
-    for (const root of result.data.roots) {
-      try {
-        validatedRoots.push(await validateBoundary(root));
-      } catch {
-        return outsideBoundary(c);
-      }
-    }
-
-    try {
-      const MAX_CANDIDATES = 1000;
-      const candidates = [];
-      const options = result.data.maxDepth ? { maxDepth: result.data.maxDepth } : undefined;
-      // A folder the scan finds may hold a browser server outside DorkOS's guard (DOR-3957).
-      const warnBrowsers = createScanBrowserWarner(logger);
-      for await (const event of meshCore.discover(validatedRoots, options)) {
-        if (event.type === 'candidate') {
-          candidates.push(event.data);
-          warnBrowsers(event.data.path);
-        }
-        if (candidates.length >= MAX_CANDIDATES) break;
-      }
-      return c.json({ candidates, truncated: candidates.length >= MAX_CANDIDATES });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Discovery failed';
-      const stack = err instanceof Error ? err.stack : undefined;
-      console.error('[Mesh] Discovery failed:', message, stack ?? err);
-      return problem(c, 'internal_error', { detail: 'The folder scan failed. Try again.' });
-    }
-  });
-
-  // POST /agents — Register an agent by path.
-  //
-  // A directory that already holds a `.dork/agent.json` is ADOPTED: the file is
-  // left exactly as it is and the identity it describes is what gets
-  // registered, so the response's name and id can differ from what was asked
-  // for. Registration used to write over that file, which cost this repo its
-  // own committed manifest (DOR-1019). A manifest that is there but unreadable
-  // is refused with a 422.
-  router.post('/agents', async (c) => {
-    const result = RegisterAgentRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return validationProblem(c, result.error);
-    }
-
-    const { path: projectPath, overrides, approver, scanRoot } = result.data;
-
-    // Validate projectPath against boundary. Agent-registry seam: system and
-    // marketplace-installed agents live under `{dorkHome}/agents/*`, so registering
-    // an agent there is in-bounds even under a user-project boundary.
-    let validatedPath: string;
-    try {
-      validatedPath = await validateBoundaryOrDorkHome(projectPath);
-    } catch {
-      return outsideBoundary(c);
-    }
-
-    // Validate the scan root (ADR-0032): it must sit inside the boundary (or
-    // dork-home, matching the agent path allowance above) AND be an ancestor of
-    // the agent path — otherwise namespace derivation
-    // (`path.relative(scanRoot, path)`) would climb outside the scanned tree.
-    // Omitted scanRoot falls back to the server default (homedir-relative).
-    let validatedScanRoot: string | undefined;
-    if (scanRoot !== undefined) {
-      try {
-        validatedScanRoot = await validateBoundaryOrDorkHome(scanRoot);
-      } catch {
-        return outsideBoundary(c);
-      }
-      const isAncestor =
-        validatedPath === validatedScanRoot ||
-        validatedPath.startsWith(validatedScanRoot + path.sep);
-      if (!isAncestor) {
-        return problem(c, 'invalid_request', {
-          detail: '`scanRoot` must be a folder that holds the agent’s folder.',
-        });
-      }
-    }
-
-    // Creating an agent needs a name and a runtime; ADOPTING one needs neither,
-    // because the manifest already on disk supplies both and the overrides are
-    // ignored. Requiring them regardless 400'd the one recovery this route
-    // documents — re-registering a folder to take it off the denied list, which
-    // the "Undo" on an unregister toast sends as a bare `{ path }` (DOR-1019
-    // review).
-    const adoptable = (await probeManifest(validatedPath)).state === 'present';
-    if (!adoptable && (!overrides?.name || !overrides?.runtime)) {
-      return problem(c, 'invalid_request', {
-        detail: 'Send overrides.name and overrides.runtime: this folder has no agent.json yet.',
-      });
-    }
-
-    // The same identity gate the `mesh_register` MCP tool uses, and for the same
-    // reason it exists at all: an agent reaches this route too, `name` is the
-    // immutable slug an `@handle` is derived from rather than a label, and a
-    // face has to be a face (DOR-2054). No fallback name is passed — a bare
-    // `{ path }` is the documented re-register recovery, and adoption ignores
-    // every override, so there is nothing here to name.
-    const identity = resolveAgentIdentity({
-      name: overrides?.name,
-      displayName: overrides?.displayName,
-      icon: overrides?.icon,
-      color: overrides?.color,
-    });
-    if (!identity.ok) return problem(c, 'invalid_request', { detail: identity.error });
-
-    try {
-      const manifest = await meshCore.registerByPath(
-        validatedPath,
-        // `createdBy` is the account making this request and `reportsTo` is never
-        // the body's say here (spec `heartbeats` §4.1).
-        registrationFields(overrides, identity.identity),
-        approver,
-        validatedScanRoot
-      );
-
-      // The agent-created seam: mesh registration writes the manifest through
-      // `registerByPath` rather than `createAgentWorkspace`, so it must notify
-      // directly — otherwise an agent registered here only took its #team seat
-      // at the next server boot (DOR-1042, team-room-home spec D3.1). Awaited,
-      // but never throws: a reaction that failed never turns a registration
-      // that succeeded into a 422.
-      //
-      // It goes BEFORE the activity write, and that order is deliberate: only
-      // `registerByPath` is allowed to decide this request's outcome, and the
-      // seat is what a person sees. Behind the emit, a failing activity store
-      // both 422'd a registration that had genuinely happened and left the new
-      // agent outside #team until the next boot.
-      await notifyAgentCreated({
-        id: manifest.id,
-        name: manifest.name,
-        displayName: manifest.displayName,
-        path: validatedPath,
-        // Registration, not creation: this takes a directory the person already
-        // has onto the roster. It gets the seat; it does not get a moment.
-        origin: 'registered',
-      });
-
-      // Fire-and-forget activity event for agent registration — and now
-      // actually fire-and-forget. The feed is bookkeeping: a store that is down
-      // is worth a log line, never a 422 on work that succeeded.
-      if (activityService) {
-        try {
-          await activityService.emit({
-            // Read, never asserted: this route is reachable by an agent, and a
-            // feed that credits the person with a machine's registration is
-            // believed (DOR-1829).
-            ...readActivityActor(honoRequestFacts(c)),
-            category: 'agent',
-            eventType: 'agent.registered',
-            resourceType: 'agent',
-            resourceId: manifest.id,
-            resourceLabel: manifest.name,
-            summary: `Registered agent ${manifest.name}`,
-            linkPath: '/agents',
-          });
-        } catch (err) {
-          logger.warn('[mesh] could not record the agent registration in the activity feed', {
-            err,
-            agentId: manifest.id,
-          });
-        }
-      }
-
-      return c.json(manifest, 201);
-    } catch (err) {
-      return registrationProblem(c, err);
-    }
-  });
-
-  // GET /topology — Query the mesh network topology with optional namespace filtering
-  // meshCore.getTopology() returns base AgentManifest agents; enrichTopology()
-  // adds healthStatus, relayAdapters, taskCount, etc. from other subsystems.
-  router.get('/topology', (c) => {
-    const namespace = (readQuery(c).namespace as string) ?? '*';
-    const topology = meshCore.getTopology(namespace);
-    const enriched = enrichTopology(topology as TopologyView, deps);
-    enriched.namespaces.forEach((ns) => {
-      ns.agents = ns.agents.map(projectComputerPlacement);
-    });
-    return c.json(enriched);
-  });
-
-  // PUT /topology/access — Create or remove cross-namespace access rules.
-  //
-  // `'*'` on BOTH sides is the mesh-wide "Let all my agents talk to each other"
-  // switch (allow turns it on, deny turns it off); the schema rejects a
-  // wildcard on one side only. It routes to the same verbs as a namespace pair
-  // — Mesh stores it in the same rule store and projects it into Relay as
-  // `relay.agent.> -> relay.agent.>`.
-  router.put('/topology/access', (c) => {
-    const result = UpdateAccessRuleRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return validationProblem(c, result.error);
-    }
-    const { sourceNamespace, targetNamespace, action } = result.data;
-    try {
-      if (action === 'allow') {
-        meshCore.allowCrossNamespace(sourceNamespace, targetNamespace);
-      } else {
-        meshCore.denyCrossNamespace(sourceNamespace, targetNamespace);
-      }
-    } catch (err) {
-      // Mesh enforces the same wildcard invariant the schema does, plus any
-      // future rule validation — a rejected rule is the caller's mistake (400),
-      // never a server fault (500).
-      logger.warn('[Mesh] access rule refused', { err });
-      return problem(c, 'invalid_request', { detail: 'That access rule isn’t allowed.' });
-    }
-    // This endpoint only ever writes user-configured grants — bridge-written
-    // defaults are never created or removed here — so origin is always 'explicit'.
-    return c.json({ sourceNamespace, targetNamespace, action, origin: 'explicit' });
-  });
-
-  // GET /status — Aggregate mesh health status
-  router.get('/status', (c) => {
-    const status = meshCore.getStatus();
-    return c.json(status);
-  });
-
   // GET /agents/paths — Lightweight agent list with projectPath (for onboarding/scheduling)
-  // Must come before GET /agents/:id to avoid param capture
   router.get('/agents/paths', (c) => {
     const agents = meshCore.listWithPaths().map(projectComputerPlacement);
     return c.json({ agents });
   });
 
-  // GET /agents — List agents with optional filters.
-  //
-  // One response shape regardless of `callerNamespace`: each agent carries
-  // health fields (healthStatus, lastSeenAt, lastSeenEvent) and NO projectPath
-  // (stripped per the manifest contract). `callerNamespace` only narrows
-  // visibility to reachable namespaces (topology boundary; '*' for admin) — it
-  // no longer swaps in a different, projectPath-leaking payload.
-  router.get('/agents', (c) => {
-    const result = AgentListQuerySchema.safeParse(readQuery(c));
-    if (!result.success) {
-      return validationProblem(c, result.error);
-    }
-    const paths = meshCore.listWithPaths();
-    const agents = meshCore
-      .listWithHealth(result.data ?? {})
-      .map((agent) => projectComputerPlacementById(agent, paths));
-    return c.json({ agents });
-  });
-
   // GET /agents/:id/access — Get reachable agents for a specific agent
-  // MUST come before GET /agents/:id to avoid being swallowed by the param route
   router.get('/agents/:id/access', (c) => {
     const agents = meshCore.getAgentAccess(c.req.param('id'));
     if (!agents) return agentNotFound(c);
     return c.json({ agents });
   });
 
+  // GET /agents/:id — One agent. By hand while `/agents/paths` is: on the mount
+  // its `{id}` would answer that path first.
+  router.get('/agents/:id', (c) => {
+    const agent = meshCore.get(c.req.param('id'));
+    if (!agent) return agentNotFound(c);
+    return c.json(agent);
+  });
+
   // GET /agents/:id/health — Health snapshot for a single agent
-  // MUST come before GET /agents/:id to avoid being swallowed by the param route
   router.get('/agents/:id/health', (c) => {
     const health = meshCore.getAgentHealth(c.req.param('id'));
     if (!health) return agentNotFound(c);
@@ -389,172 +115,12 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
     return c.json({ success: true });
   });
 
-  // GET /agents/:id — Get single agent
-  router.get('/agents/:id', (c) => {
-    const agent = meshCore.get(c.req.param('id'));
-    if (!agent) return agentNotFound(c);
-    return c.json(agent);
-  });
-
   // PATCH /agents/:id — Update agent fields
   // An agent's runtime, model and effort move every schedule that follows it,
   // so an agent changing them is sent to the tool that asks a person (DOR-2328).
   router.patch('/agents/:id', refuseAgentExecutionWrites, refuseAgentSelfFilesFromWifi, (c) =>
     patchMeshAgent(c, deps)
   );
-
-  // DELETE /agents/:id/data — Unregister agent and delete its .dork directory
-  // MUST come before DELETE /agents/:id to avoid Express treating "data" as an :id param
-  router.delete('/agents/:id/data', async (c) => {
-    const id = c.req.param('id');
-    const agent = meshCore.get(id);
-    if (!agent) return agentNotFound(c);
-    if (agent.isSystem) {
-      return problem(c, 'forbidden', { detail: 'A system agent can’t be deleted.' });
-    }
-
-    const projectPath = meshCore.getProjectPath(id);
-    if (!projectPath) {
-      return problem(c, 'not_found', { detail: 'This agent’s folder isn’t known.' });
-    }
-
-    let validatedPath: string;
-    try {
-      // Deliberately the PLAIN boundary (not the dork-home agents seam):
-      // this deletes the agent's .dork directory from disk, and destructive
-      // filesystem writes stay confined to the boundary even though
-      // registering the same path is allowed via the seam.
-      validatedPath = await validateBoundary(projectPath);
-    } catch {
-      return outsideBoundary(c);
-    }
-
-    // A manifest git tracks belongs to somebody's repo, and this route deletes
-    // the whole `.dork/` directory around it — so it refuses outright rather
-    // than half-deleting, and says what to do instead (DOR-1019). Removing the
-    // agent without its data still works and leaves the file alone.
-    if (await isManifestGitTracked(validatedPath, logger)) {
-      return problem(c, 'conflict', {
-        detail: 'Git tracks this agent’s files. Remove the agent without its data instead.',
-      });
-    }
-
-    await meshCore.unregister(id);
-    await removeDorkDirectory(validatedPath);
-
-    // Emit activity event for agent deletion with data
-    if (activityService) {
-      await activityService.emit({
-        // The highest-stakes verb on this router — it removes another agent AND
-        // its data — so naming the wrong actor here is the worst version of the
-        // DOR-1801 defect. Read the caller.
-        ...readActivityActor(honoRequestFacts(c)),
-        category: 'agent',
-        eventType: 'agent.deleted',
-        resourceType: 'agent',
-        resourceId: id,
-        resourceLabel: agent.name,
-        summary: `Deleted agent ${agent.name} and data`,
-        linkPath: '/agents',
-      });
-    }
-
-    return c.json({ success: true, deletedPath: path.join(validatedPath, '.dork') });
-  });
-
-  // DELETE /agents/:id — Unregister agent
-  router.delete('/agents/:id', async (c) => {
-    const id = c.req.param('id');
-    const agent = meshCore.get(id);
-    if (!agent) return agentNotFound(c);
-    if (agent.isSystem) {
-      return problem(c, 'forbidden', { detail: 'A system agent can’t be removed.' });
-    }
-
-    // Surface any marketplace installs this leaves behind. Unregister keeps the
-    // agent's `.dork/plugins/` on disk (unlike the delete-with-data route), so
-    // those installs orphan. Resolve the path and scan BEFORE unregister — the
-    // registry entry is gone by the time unregister callbacks fire.
-    const orphanScanPath = meshCore.getProjectPath(id);
-    if (orphanScanPath) {
-      await logOrphanedInstalls({ projectPath: orphanScanPath, agentLabel: agent.name, logger });
-    }
-
-    const { manifestKept } = await meshCore.unregister(id);
-
-    // Fire-and-forget activity event for agent removal
-    if (activityService) {
-      await activityService.emit({
-        // Same as the delete-with-data route above: an agent may reach this, so
-        // who removed whom is read rather than assumed.
-        ...readActivityActor(honoRequestFacts(c)),
-        category: 'agent',
-        eventType: 'agent.removed',
-        resourceType: 'agent',
-        resourceId: id,
-        resourceLabel: agent.name,
-        summary: `Removed agent ${agent.name}`,
-      });
-    }
-
-    // `blockedFromDiscovery` is the durable second effect, and the caller has to
-    // be able to say it: the agent's manifest was git-tracked, so it is still on
-    // disk and the folder was denied instead — a state the person meets again
-    // the next time they look at that directory (DOR-1019).
-    return c.json({ success: true, blockedFromDiscovery: manifestKept });
-  });
-
-  // POST /deny — Deny a candidate path
-  router.post('/deny', async (c) => {
-    const result = DenyRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return validationProblem(c, result.error);
-    }
-
-    let resolvedPath: string;
-    try {
-      resolvedPath = await validateBoundary(result.data.path);
-    } catch {
-      return outsideBoundary(c);
-    }
-
-    try {
-      await meshCore.deny(resolvedPath, result.data.reason, result.data.denier);
-      return c.json({ success: true }, 201);
-    } catch (err) {
-      return unprocessable(c, err, 'This folder couldn’t be hidden from discovery.');
-    }
-  });
-
-  // GET /denied — List all denial records
-  router.get('/denied', (c) => {
-    const denied = meshCore.listDenied();
-    return c.json({ denied });
-  });
-
-  // DELETE /denied?path= — Clear a denial. The folder rides in the query string,
-  // never a path segment: an encoded `/` or `\` in a path is refused over Remote
-  // Access (`remotePathVerdict`), and every folder path holds one (DOR-4212).
-  router.delete('/denied', async (c) => {
-    const filePath = readQuery(c).path;
-    if (typeof filePath !== 'string' || filePath === '') {
-      return problem(c, 'invalid_request', { detail: 'Send the folder as `path`.' });
-    }
-    // Reject paths with traversal segments
-    if (filePath.includes('..') || filePath.includes('\0')) {
-      return problem(c, 'invalid_request', { detail: 'That path isn’t allowed.' });
-    }
-
-    let resolvedPath: string;
-    try {
-      resolvedPath = await validateBoundary(filePath);
-    } catch {
-      return outsideBoundary(c);
-    }
-
-    await meshCore.undeny(resolvedPath);
-    return c.json({ success: true });
-  });
 
   return router;
 }

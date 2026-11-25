@@ -45,6 +45,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createMeshRoutes } from '../mesh.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { meshDomain } from '../../services/mesh/doors/mesh-capabilities.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 // The `/api` chain reads config (login, the host allowlist); nothing is set.
@@ -180,7 +182,10 @@ beforeEach(async () => {
   // …and a folder a scan finds reaches that seam the way index.ts routes it.
   mesh.onAgentAdopted((agent) => void notifyAgentCreated({ ...agent, origin: 'registered' }));
   target.mount(
-    honoGroupListener({ path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) })
+    honoGroupListener([
+      capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh } }),
+      { path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) },
+    ])
   );
 });
 

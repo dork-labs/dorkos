@@ -98,3 +98,13 @@ export function readActivityActor(
   }
   return activityActorForIdentity(caller.agentIdentity);
 }
+
+/**
+ * The actor for a person-only action (`http.audience: 'person'`): the registry
+ * refused every agent and program before it ran, so the person is who acted.
+ *
+ * @returns The actor fields to spread into an `ActivityService.emit()` call.
+ */
+export function personActivityActor(): ActivityActor {
+  return { actorType: 'user', actorLabel: OPERATOR_ACTOR_LABEL };
+}

@@ -80,6 +80,8 @@ import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import { AGENT_MANIFEST_PATH, UNINSTALLED_AGENT_PATH } from '@dorkos/marketplace';
 import type { RequestListener } from 'node:http';
 import { createMeshRoutes } from '../mesh.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { meshDomain } from '../../services/mesh/doors/mesh-capabilities.js';
 import { createAgentsRoutes } from '../agents.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
@@ -154,6 +156,7 @@ beforeEach(async () => {
   setOnAgentCreated(null);
 
   app = honoGroupListener([
+    capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh } }),
     { path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) },
     { path: '/api/agents', routes: createAgentsRoutes({ meshCore: mesh }) },
   ]);

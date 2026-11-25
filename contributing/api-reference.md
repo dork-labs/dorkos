@@ -1364,6 +1364,8 @@ Delete an adapter-agent binding.
 
 All mesh endpoints are under `/api/mesh/` and are always mounted (no feature flag). The Mesh subsystem initializes automatically on server startup.
 
+**Who may call them** (DOR-4978): the capability mount serves every mesh route but `PATCH /api/mesh/agents/:id`, the heartbeat, `GET /agents/paths`, `/agents/:id`, `/agents/:id/access` and `/agents/:id/health`, which stay by hand (`services/mesh/doors/mesh-capabilities.ts`). The reads it serves (`GET /agents`, `/status`, `/topology`) are open to agents. In `GET /agents` and `/topology`, an agent reading another agent gets it without `persona`, `conventions`, `permissions`, `mcpServers`, `workspace` and `projectPath`, and `/status` gives an agent `byProject` empty. The hand reads (`/agents/:id`, `/agents/:id/access`, `/agents/paths`, `/agents/:id/health`) are unchanged and still show every caller those fields. Every other route here (discover, register, remove, delete with data, deny, the denied list and its clearing, the access rules) is person-only: an agent, an approval token, an API key or any `Authorization` header gets `403 person_only`. Agents use the `mesh_*` tools for those.
+
 Mesh manages an in-memory registry of discovered agent peers. Agents heartbeat to maintain their presence and query the topology to find collaborators.
 
 ### POST /api/mesh/discover
