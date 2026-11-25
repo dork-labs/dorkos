@@ -341,7 +341,8 @@ find_issue() {
 }
 
 report() {
-  local dir=$1 v=$2 url=$3 all plan id st detail groups g failed=0 lines title n body signal labelled=0
+  local dir=$1 v=$2 url=$3
+  local all plan id st detail groups g failed=0 lines title n body signal labelled=0
   [ -d "$dir" ] && is_version "$v" && [[ "$url" =~ ^https://[A-Za-z0-9./_-]+$ ]] || usage
   # Every result line from every file, kept only when it is well formed and
   # its id is planned.
