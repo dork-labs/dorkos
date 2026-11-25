@@ -70,38 +70,42 @@ describe('restartDeclarationProblems', () => {
 
 describe('restartContinueProblems', () => {
   const answered = [event('text_delta'), event('done')];
+  const toolEnded = [event('tool_call_start'), event('tool_call_end')];
+  const problems = (cut: StreamEvent[], continuation: StreamEvent[], freshInstance = true) =>
+    restartContinueProblems({ cut, continuation, freshInstance });
 
   it('accepts a turn cut after its tool call and a continuation that answers once', () => {
-    expect(
-      restartContinueProblems({
-        cut: [event('tool_call_start'), event('tool_call_end')],
-        continuation: answered,
-      })
-    ).toEqual([]);
+    expect(problems(toolEnded, answered)).toEqual([]);
   });
 
   it('fails a cut turn that never finished a tool, or that ended anyway', () => {
-    expect(restartContinueProblems({ cut: [event('text_delta')], continuation: answered })).toEqual(
-      [expect.stringContaining('never finished a tool call')]
-    );
-    expect(
-      restartContinueProblems({
-        cut: [event('tool_result'), event('done')],
-        continuation: answered,
-      })
-    ).toEqual([expect.stringContaining('reached `done`')]);
+    expect(problems([event('text_delta')], answered)).toEqual([
+      expect.stringContaining('never finished a tool call'),
+    ]);
+    expect(problems([event('tool_result'), event('done')], answered)).toEqual([
+      expect.stringContaining('reached `done`'),
+    ]);
   });
 
   it('fails a continuation that errors, stays silent or never ends', () => {
-    const cut = [event('tool_result')];
-    expect(restartContinueProblems({ cut, continuation: [event('error'), ...answered] })).toEqual([
+    expect(problems(toolEnded, [event('error'), ...answered])).toEqual([
       expect.stringContaining('`error` event'),
     ]);
-    expect(restartContinueProblems({ cut, continuation: [event('done')] })).toEqual([
-      expect.stringContaining('said nothing'),
-    ]);
-    expect(restartContinueProblems({ cut, continuation: [event('text_delta')] })).toEqual([
+    expect(problems(toolEnded, [event('done')])).toEqual([expect.stringContaining('said nothing')]);
+    expect(problems(toolEnded, [event('text_delta')])).toEqual([
       expect.stringContaining('exactly one `done`'),
+    ]);
+  });
+
+  it('fails a continuation that keeps going after its done', () => {
+    expect(problems(toolEnded, [event('text_delta'), event('done'), event('text_delta')])).toEqual([
+      expect.stringContaining('its last event was text_delta'),
+    ]);
+  });
+
+  it('fails a restart that hands back the instance that ran the cut turn', () => {
+    expect(problems(toolEnded, answered, false)).toEqual([
+      expect.stringContaining('nothing restarted'),
     ]);
   });
 });

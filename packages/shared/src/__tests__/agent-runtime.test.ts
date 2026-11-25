@@ -25,6 +25,45 @@ function auth(name: string, status: DependencyCheck['status']): DependencyCheck 
   return { name, description: 'auth', status };
 }
 
+/** A capabilities object that declares every required field. */
+const COMPLETE: RuntimeCapabilities = {
+  type: 'complete-runtime',
+  commandIntents: { compact: { supported: false } },
+  nativeContext: [],
+  supportsResume: false,
+  supportsMcp: false,
+  supportsManagedMcpServers: false,
+  supportsCostTracking: false,
+  supportsToolApproval: false,
+  supportsQuestionPrompt: false,
+  supportsPlugins: false,
+  supportsAccounts: false,
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
+  wakesForLostBackgroundWork: false,
+  continuesInterruptedTurn: false,
+  mediaOutput: 'none',
+  permissionModes: { supported: false, values: [] },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
+  features: {},
+};
+
+/** How many fields {@link COMPLETE} declares. */
+const DECLARED_KEYS = Object.keys(COMPLETE).length;
+
+/**
+ * {@link COMPLETE} without one field, typed as exactly that, so assigning it to
+ * `RuntimeCapabilities` fails to compile only if the field is required.
+ *
+ * @param key - The field to leave out.
+ */
+function without<K extends keyof RuntimeCapabilities>(key: K): Omit<RuntimeCapabilities, K> {
+  const copy: Partial<RuntimeCapabilities> = { ...COMPLETE };
+  delete copy[key];
+  return copy as Omit<RuntimeCapabilities, K>;
+}
+
 describe('RuntimeCapabilities shape', () => {
   it('requires every runtime to declare its settings surface', () => {
     // Compile-time forcing, the `commandIntents` precedent: a new adapter must
@@ -56,34 +95,26 @@ describe('RuntimeCapabilities shape', () => {
     expect(withoutSettings.type).toBe('forgetful-runtime');
   });
 
-  it('requires every runtime to declare all three message-delivery capabilities', () => {
+  it('requires every runtime to declare each message-delivery capability', () => {
     // Same compile-time forcing, for the flags the dispatcher resolves a
     // disposition against (spec `persistent-session-runtime`). Optional would
     // mean `undefined` — an adapter that never said whether it can steer, read
     // as "cannot" by a falsy check, which is the silent default this repo keeps
-    // refusing. If any of the three becomes optional, the `@ts-expect-error`
-    // turns into an unused-directive error, and that red is the point.
-    // @ts-expect-error supportsPersistentSession / supportsSteer / supportsContextStaging are required
-    const undeclared: RuntimeCapabilities = {
-      type: 'undeclared-delivery-runtime',
-      commandIntents: { compact: { supported: false } },
-      nativeContext: [],
-      supportsResume: false,
-      supportsMcp: false,
-      supportsManagedMcpServers: false,
-      supportsCostTracking: false,
-      supportsToolApproval: false,
-      supportsQuestionPrompt: false,
-      supportsPlugins: false,
-      supportsAccounts: false,
-      wakesForLostBackgroundWork: false,
-      continuesInterruptedTurn: false,
-      permissionModes: { supported: false, values: [] },
-      settings: { configSection: null, supportsEffort: false, sections: [] },
-      features: {},
-    };
+    // refusing. One object per flag, so each `@ts-expect-error` proves its own
+    // field: if that one becomes optional, its directive turns into an
+    // unused-directive error, and that red is the point.
+    // @ts-expect-error supportsPersistentSession is required
+    const noPersistence: RuntimeCapabilities = without('supportsPersistentSession');
+    // @ts-expect-error supportsSteer is required
+    const noSteer: RuntimeCapabilities = without('supportsSteer');
+    // @ts-expect-error supportsContextStaging is required
+    const noStaging: RuntimeCapabilities = without('supportsContextStaging');
 
-    expect(undeclared.type).toBe('undeclared-delivery-runtime');
+    expect([noPersistence, noSteer, noStaging].map((caps) => Object.keys(caps).length)).toEqual([
+      DECLARED_KEYS - 1,
+      DECLARED_KEYS - 1,
+      DECLARED_KEYS - 1,
+    ]);
   });
 
   it('requires every runtime to declare what it does with media', () => {
@@ -121,35 +152,18 @@ describe('RuntimeCapabilities shape', () => {
     expect(undeclared.type).toBe('undeclared-media-runtime');
   });
 
-  it('requires every runtime to declare both restart capabilities', () => {
+  it('requires every runtime to declare each restart capability', () => {
     // The same compile-time forcing, for what restart recovery reads (spec
     // `turns-survive-restarts` §7.2): a runtime that never said whether a turn
     // cut mid-way can be continued must not be read as "it can" or "it cannot"
-    // by accident. If either becomes optional, the `@ts-expect-error` turns
-    // into an unused-directive error, and that red is the point.
-    // @ts-expect-error wakesForLostBackgroundWork / continuesInterruptedTurn are required
-    const undeclared: RuntimeCapabilities = {
-      type: 'undeclared-restart-runtime',
-      commandIntents: { compact: { supported: false } },
-      nativeContext: [],
-      supportsResume: false,
-      supportsMcp: false,
-      supportsManagedMcpServers: false,
-      supportsCostTracking: false,
-      supportsToolApproval: false,
-      supportsQuestionPrompt: false,
-      supportsPlugins: false,
-      supportsAccounts: false,
-      supportsPersistentSession: false,
-      supportsSteer: false,
-      supportsContextStaging: false,
-      mediaOutput: 'none',
-      permissionModes: { supported: false, values: [] },
-      settings: { configSection: null, supportsEffort: false, sections: [] },
-      features: {},
-    };
+    // by accident. One object per flag, as above.
+    // @ts-expect-error wakesForLostBackgroundWork is required
+    const noWake: RuntimeCapabilities = without('wakesForLostBackgroundWork');
+    // @ts-expect-error continuesInterruptedTurn is required
+    const noContinue: RuntimeCapabilities = without('continuesInterruptedTurn');
 
-    expect(undeclared.type).toBe('undeclared-restart-runtime');
+    expect(noWake).not.toHaveProperty('wakesForLostBackgroundWork');
+    expect(noContinue).not.toHaveProperty('continuesInterruptedTurn');
   });
 
   it('requires a PermissionModeDescriptor to say what its mode does', () => {

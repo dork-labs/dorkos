@@ -68,7 +68,8 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   // `turns-survive-restarts` K13 wants this `true`; that needs test-mode to
   // write a record first, which is T15's fixture, not a flag flip.
   wakesForLostBackgroundWork: false,
-  // `true` for the restart proofs (spec `turns-survive-restarts` §8): nothing
+  // A scripted stand-in, `true` for the restart proofs (spec
+  // `turns-survive-restarts` §8), not a measured resume: nothing
   // of a turn lives in the runtime, so a fresh instance takes the next turn on
   // the same chat. Its conformance run drives that with a cut tool turn.
   continuesInterruptedTurn: true,

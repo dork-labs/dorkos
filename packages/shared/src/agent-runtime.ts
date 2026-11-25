@@ -836,9 +836,13 @@ export interface RuntimeCapabilities {
 
   /**
    * Whether a turn killed IN THE MIDDLE (the server went away, the process with
-   * it) can be continued by a new turn in the same chat that sees what the dead
-   * turn already did (spec `turns-survive-restarts` §7.2). Required, same reason
-   * as {@link supportsPersistentSession}.
+   * it) can be continued by a new turn in the same chat (spec
+   * `turns-survive-restarts` §7.2). Required, same reason as
+   * {@link supportsPersistentSession}.
+   *
+   * What conformance proves today is only that a fresh instance takes that next
+   * turn. That the new turn also sees what the dead one did (its tool results in
+   * the chat's history) waits for recovery's run record (T15).
    *
    * Not {@link supportsResume}, which only says a chat can take later messages.
    * A real runtime declares `true` only once a measured run against the real

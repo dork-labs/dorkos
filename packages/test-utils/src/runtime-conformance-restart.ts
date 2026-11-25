@@ -16,8 +16,10 @@
  *
  * **What a pass proves.** The runtime's SDK or binary is mocked in every
  * conformance file, so a pass proves DorkOS's side of a continuation only,
- * never that the real program resumes. A real runtime flips the flag with a
- * measured run recorded in the spec's §7.6.
+ * never that the real program resumes. Today that is only that a fresh
+ * instance takes the next turn on a chat whose turn was cut; test-mode's
+ * `true` is a scripted stand-in for the restart proofs. A real runtime flips
+ * the flag with a measured run recorded in the spec's §7.6.
  *
  * **What it does not assert yet.** The spec's case also reads the chat's
  * history back and expects the cut turn's tool result in it. A cut turn of a
@@ -77,6 +79,8 @@ export interface RestartContinueObservation {
   cut: StreamEvent[];
   /** The continuation turn's events, from the fresh instance. */
   continuation: StreamEvent[];
+  /** Whether `restart` built a new instance rather than handing back the first. */
+  freshInstance: boolean;
 }
 
 /** Events that say a tool call has ended. */
@@ -133,7 +137,10 @@ export function restartDeclarationProblems(
  */
 export function restartContinueProblems(observation: RestartContinueObservation): string[] {
   const problems: string[] = [];
-  const { cut, continuation } = observation;
+  const { cut, continuation, freshInstance } = observation;
+  if (!freshInstance) {
+    problems.push('`restart` handed back the instance that ran the cut turn, so nothing restarted');
+  }
   if (!cut.some((event) => TOOL_ENDED.has(event.type))) {
     problems.push('the turn to cut never finished a tool call, so nothing was cut after one');
   }
@@ -201,7 +208,9 @@ export function runtimeRestartConformance(
     });
 
     if (restartContinueTurn) {
-      it('a turn cut after a tool call is continued by a fresh instance on the same chat', async () => {
+      // For test-mode, whose `true` is a scripted stand-in for the restart
+      // proofs, this is the whole claim: a fresh instance takes the next turn.
+      it('a fresh instance takes the next turn on a chat cut after a tool call', async () => {
         const sessionId = nextSessionId();
         const first = await restartContinueTurn.start(sessionId);
         const { cwd } = sessionOpts(first);
@@ -216,7 +225,9 @@ export function runtimeRestartConformance(
         })) {
           continuation.push(event);
         }
-        expect(restartContinueProblems({ cut, continuation })).toEqual([]);
+        expect(
+          restartContinueProblems({ cut, continuation, freshInstance: second !== first })
+        ).toEqual([]);
       });
     }
   });
