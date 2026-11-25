@@ -201,8 +201,12 @@ export function createRoomCollaborators(
     reactions: new RoomReactions(core, visibility, publisher),
     turnControl,
     canvas,
-    handoffs: new RoomHandoffs(core, (roomId, entryId, body, within, bind) =>
-      systemPosts.postServiceNotification(roomId, entryId, body, within, bind)
+    handoffs: new RoomHandoffs(
+      core,
+      (roomId, entryId, body, within, bind) =>
+        systemPosts.postServiceNotification(roomId, entryId, body, within, bind),
+      // A hand-off its busy room chat did not take in time is posted for it (DOR-4252).
+      { post: (roomId, input, bind) => posting.postStandIn(roomId, input, bind) }
     ),
     introductions,
   };

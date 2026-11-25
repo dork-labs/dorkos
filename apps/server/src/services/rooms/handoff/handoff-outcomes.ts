@@ -16,7 +16,7 @@
 const SETTLED_MEMORY = 500;
 
 /** Why a hand-off has not ended yet. */
-export type HandoffWaiting = 'queued' | 'seat_busy' | 'running';
+export type HandoffWaiting = 'queued' | 'seat_busy' | 'running' | 'room_moved';
 
 /** How a hand-off stands, as its sender reads it. */
 export type HandoffStatus =
@@ -30,6 +30,9 @@ const WAITING_REASON: Record<HandoffWaiting, string> = {
   queued: 'Another hand-off to this room chat runs first.',
   seat_busy: 'The room chat is mid-turn, or holds background work a restart would end.',
   running: 'The room chat has it and is taking its turn.',
+  room_moved:
+    'The room moved on since this was written, so it was not posted for the busy room chat. ' +
+    'That chat re-reads the room when it is free, then posts it or says why not.',
 };
 
 const UNKNOWN: HandoffStatus = {

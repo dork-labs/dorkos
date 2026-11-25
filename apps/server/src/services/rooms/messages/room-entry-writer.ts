@@ -282,6 +282,7 @@ export class RoomEntryWriter {
       answersEntryId?: string;
       mentions?: readonly string[];
       via?: ForwardVia;
+      standInDispatchId?: string;
     },
     within?: (tx: DbTransaction) => void,
     opts?: {
@@ -314,27 +315,26 @@ export class RoomEntryWriter {
     // `deriveCascade` refuses a fresh cascade to either. Only a human resets the
     // count, which is what spec §6 says and what the setting's own docs promise.
     const author = this.authors.getById(input.authorId);
-    const trigger = input.trigger ?? this.triggers.activeTurnFor(input.authorId);
+    // A hand-off posted for a busy room chat is its own turn (DOR-4252): rooted at itself at the
+    // ceiling, under its own dispatch, never inside the live turn it does not belong to.
+    const standIn = input.standInDispatchId;
+    const trigger =
+      input.trigger ?? (standIn ? undefined : this.triggers.activeTurnFor(input.authorId));
 
-    // WHICH TURN wrote this, which is a different question from which cascade it
-    // belongs to (DOR-1434). The dispatcher hands its own id down with the
-    // trigger it delivers under; every other write inside a turn — the progress
-    // notes an agent posts through the rooms tool, an aside turn's `post_to_room`
-    // writes included — is found by asking the claim held on THIS room. Anything
-    // with no turn behind it stamps `null` and costs one turn on its own, which
-    // is what every row cost before this column existed.
+    // WHICH TURN wrote this, which is a different question from which cascade it belongs to
+    // (DOR-1434). The dispatcher hands its own id down with the trigger it delivers under; every
+    // other write inside a turn (the progress notes an agent posts through the rooms tool, an
+    // aside turn's `post_to_room` writes included) is found by asking the claim held on THIS
+    // room. Anything with no turn behind it stamps `null` and costs one turn on its own.
     //
-    // Two writes that look like they belong to a turn and honestly do not. The
-    // welcome-back greeter's own posts — the status line, and the offer it posts
-    // once the aside turn's claim is already released — are the greeter speaking
-    // for an agent rather than a turn writing, and no claim is held at either
-    // moment. And a cross-room `post_to_room`: the lookup is keyed on the room
-    // the entry lands in, so an agent mid-turn in room A posting a note into
-    // room B holds no claim in B and the note counts as one message there. Both
-    // are accepted rather than overlooked — see the DOR-1434 amendment on
-    // ADR 260823-000217.
+    // Two writes that look like they belong to a turn and honestly do not. The welcome-back
+    // greeter's own posts (the status line, and the offer it posts once the aside turn's claim is
+    // released) are the greeter speaking for an agent, with no claim held. And a cross-room
+    // `post_to_room`: the lookup is keyed on the room the entry lands in, so a note from a turn in
+    // room A holds no claim in B and counts as one message there. Both are accepted rather than
+    // overlooked: see the DOR-1434 amendment on ADR 260823-000217.
     const dispatchId =
-      input.trigger?.dispatchId ?? this.triggers.dispatchFor(roomId, input.authorId) ?? null;
+      standIn ?? input.trigger?.dispatchId ?? this.triggers.dispatchFor(roomId, input.authorId);
 
     // Resolved ONCE, here, and both halves of the answer are kept: who this
     // message reached, and who it named but could not reach because that
@@ -443,7 +443,7 @@ export class RoomEntryWriter {
         mentionSpans:
           room.kind === 'channel' ? markCc(input.text, addressed.spans) : addressed.spans,
         sessionId: input.sessionId ?? null,
-        dispatchId,
+        dispatchId: dispatchId ?? null,
         ...threadPointers(this.store, roomId, input.replyTo),
         ...deriveCascade(id, {
           trigger,

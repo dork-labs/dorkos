@@ -49,15 +49,44 @@ export const STALE_POST_SHOWN_MAX = 20;
 const seenThrough = new Map<string, number>();
 
 /**
+ * The highest `seq` each `(chat, room)` has itself read (DOR-4252): what a hand-off's draft was
+ * written against. The agent's floor above is moved by any of its chats, its room chat included.
+ */
+const chatSeenThrough = new Map<string, number>();
+
+/** The most chats remembered; the one read longest ago is forgotten first. */
+const CHAT_SEEN_MAX = 5_000;
+
+/**
  * Record that an agent has now read a room up to `seq`. Only ever raises.
  *
  * @param roomId - The room.
  * @param authorId - The agent.
  * @param seq - The newest entry it has now seen.
+ * @param sessionId - The chat that read it, when the surface verified one.
  */
-export function noteSeen(roomId: string, authorId: string, seq: number): void {
+export function noteSeen(roomId: string, authorId: string, seq: number, sessionId?: string): void {
   const key = agentKey(roomId, authorId);
   if (seq > (seenThrough.get(key) ?? -1)) seenThrough.set(key, seq);
+  if (!sessionId) return;
+  const chatKey = `${sessionId}\u0000${roomId}`;
+  const before = chatSeenThrough.get(chatKey);
+  if (before !== undefined && before >= seq) return;
+  chatSeenThrough.delete(chatKey);
+  chatSeenThrough.set(chatKey, seq);
+  if (chatSeenThrough.size > CHAT_SEEN_MAX) {
+    chatSeenThrough.delete(chatSeenThrough.keys().next().value!);
+  }
+}
+
+/**
+ * The newest entry one chat has itself read in a room, or `undefined` when it never read it.
+ *
+ * @param sessionId - The chat.
+ * @param roomId - The room.
+ */
+export function chatSeenThroughSeq(sessionId: string, roomId: string): number | undefined {
+  return chatSeenThrough.get(`${sessionId}\u0000${roomId}`);
 }
 
 /**
@@ -68,15 +97,19 @@ export function noteSeen(roomId: string, authorId: string, seq: number): void {
  * @param authorId - The agent that read it.
  * @param opts - The read's paging and thread arguments.
  * @param entries - What it returned.
+ * @param sessionId - The chat that read it, when the surface verified one.
  */
 export function noteHistoryRead(
   roomId: string,
   authorId: string,
   opts: { before?: number | undefined; threadRootEntryId?: string | undefined },
-  entries: readonly RoomEntry[]
+  entries: readonly RoomEntry[],
+  sessionId?: string
 ): void {
   if (opts.before !== undefined || opts.threadRootEntryId !== undefined) return;
-  for (const entry of entries) noteSeen(roomId, authorId, entry.seq);
+  // An empty newest page is a read too: the chat has seen the room as it stands.
+  if (entries.length === 0) noteSeen(roomId, authorId, 0, sessionId);
+  for (const entry of entries) noteSeen(roomId, authorId, entry.seq, sessionId);
 }
 
 /**
@@ -156,7 +189,7 @@ export function holdIfStale(
     for (const sessionId of sessions) if (sessionId) markRunningTurn(sessionId, marks);
   }
   // Handed back now, so they count as read: a revised post goes through.
-  for (const entry of unseen) noteSeen(roomId, authorId, entry.seq);
+  for (const entry of unseen) noteSeen(roomId, authorId, entry.seq, callerSessionId);
   const count = unseen.length === 1 ? '1 new message' : `${unseen.length} new messages`;
   return {
     posted: false,
@@ -173,4 +206,5 @@ export function holdIfStale(
 /** Forget every note. For tests only. */
 export function resetFreshnessForTests(): void {
   seenThrough.clear();
+  chatSeenThrough.clear();
 }
