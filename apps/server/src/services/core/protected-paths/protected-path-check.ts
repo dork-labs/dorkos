@@ -151,30 +151,90 @@ export function protectedPathTest(
   return checker(roots, operation);
 }
 
+/** The most entries a folder walk looks at before it counts as protected. */
+const MAX_WALK_ENTRIES = 50_000;
+
+/**
+ * Walk the tree at `input`, bounded and cycle-aware, until `found` says yes. A tree too big to
+ * finish, or one that can't be read, counts as yes. With `follow`, the walk goes into linked
+ * folders, each entry where it really is, as a search does. Without it a link is an entry like
+ * any other, as a removal or a move takes it, and an entry that isn't there holds nothing.
+ */
+function walkFinds(
+  input: string,
+  found: (entry: string) => boolean,
+  follow?: (entry: string) => string
+): boolean {
+  const pending = [input];
+  const seen = new Set<string>();
+  let entries = 0;
+  try {
+    while (pending.length > 0) {
+      const supplied = pending.pop()!;
+      if (found(supplied)) return true;
+      const current = follow ? follow(supplied) : supplied;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      if (++entries > MAX_WALK_ENTRIES) return true;
+      let folder: boolean;
+      try {
+        folder = (follow ? statSync(current) : lstatSync(current)).isDirectory();
+      } catch (error) {
+        if (follow || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        continue;
+      }
+      if (folder) for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Refuse a native folder search only when its tree contains a protected read,
  * or cannot be checked completely. No file contents are opened. A bounded,
  * cycle-aware walk prevents a symlink loop or a huge tree from blocking a turn.
  */
 export function searchTouchesProtectedPath(input: string, roots: ProtectedPathRoots): boolean {
-  const pending = [input];
-  const seen = new Set<string>();
-  let entries = 0;
+  let protectedRead: (input: string) => boolean;
   try {
-    const protectedRead = checker(roots, 'read');
-    while (pending.length > 0) {
-      const supplied = pending.pop()!;
-      if (protectedRead(supplied)) return true;
-      const current = canonical(supplied, roots.cwd);
-      if (seen.has(current)) continue;
-      seen.add(current);
-      if (++entries > 50_000) return true;
-      if (statSync(current).isDirectory()) {
-        for (const entry of readdirSync(current)) pending.push(path.join(current, entry));
-      }
-    }
-    return false;
+    protectedRead = checker(roots, 'read');
   } catch {
     return true;
   }
+  return walkFinds(input, protectedRead, (entry) => canonical(entry, roots.cwd));
+}
+
+/**
+ * Whether removing or moving the whole of `input` takes with it a protected write that can sit at
+ * any depth, such as a project's `.dork/plugins` (DOR-5249): `input` is the folder such an entry
+ * starts with (`.dork`), or the same bounded walk as a search finds one below it. A tree too big
+ * to finish, or one that can't be read, counts as yes. Links below `input` are not followed: a
+ * removal or a move takes the link, not what it names.
+ *
+ * The entries measured from a fixed folder are the caller's: where they sit is known without a
+ * walk. An `agent-folder` entry counts wherever it sits, which only ever refuses more.
+ *
+ * @param input - The absolute path a command removes or moves as a whole.
+ * @param full - Whether the command runs at Full.
+ */
+export function wholeTakesProtectedWrite(input: string, full: boolean): boolean {
+  const entries = protectedPathsAt(full).filter(
+    (entry) =>
+      entry.deny === 'write' && (entry.root === 'anywhere' || entry.root === 'agent-folder')
+  );
+  const named = entries.map((entry) => expression(entry, true));
+  const leading = entries.flatMap((entry) => {
+    const parts = entry.path.split('/');
+    return parts
+      .slice(1)
+      .map((_, i) =>
+        expression({ ...entry, path: parts.slice(0, i + 1).join('/'), kind: 'file' }, true)
+      );
+  });
+  const fromRoot = (entry: string): string =>
+    path.relative(path.parse(entry).root, entry).split(path.sep).join('/');
+  if (leading.some((test) => test.test(fromRoot(input)))) return true;
+  return walkFinds(input, (entry) => named.some((test) => test.test(fromRoot(entry))));
 }
