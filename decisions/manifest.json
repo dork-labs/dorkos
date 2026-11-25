@@ -8225,6 +8225,24 @@
         "apps/server/src/services/core/session-relay/**",
         "packages/cloud-api/**"
       ]
+    },
+    {
+      "id": "261125-114705",
+      "slug": "capability-http-surface-rules",
+      "title": "Capability HTTP surfaces carry an audience, a network mode and request facts; a reasoned allowlist holds the routes that stay by hand",
+      "status": "accepted",
+      "created": "2026-11-25",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["261123-170830"],
+      "affects": [
+        "apps/server/src/routes/capability-http.ts",
+        "apps/server/src/routes/capability-dispatch.ts",
+        "apps/server/src/services/core/capabilities/registry.ts",
+        "apps/server/src/http/hand-routes/**",
+        "packages/shared/src/capabilities.ts"
+      ]
     }
   ]
 }
