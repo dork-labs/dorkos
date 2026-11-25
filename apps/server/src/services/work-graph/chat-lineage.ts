@@ -6,7 +6,7 @@
  *
  * - the work graph's `started` links (DOR-5263), which name the child by the
  *   id it was given before launch, so each is followed through `rekeyed_from`
- *   to the id the chat has now ({@link WorkLinkStore.resolveRekey});
+ *   to the id the chat has now;
  * - `session_started_by`, which every start since spec `flow-multiproject`
  *   wrote, so a chat started before DOR-5263 still has its parent. Its rows
  *   follow a re-key themselves.
@@ -16,47 +16,45 @@
  * everything the successor starts stays in the tree. The successor hangs under
  * the chat it continues, marked `via: 'carried'`.
  *
- * **The one join.** This is the only place a reader learns which of those
- * children to show, and how. A `started` link is written when the start is
- * recorded, and the table is append-only, so a start cancelled before its chat
- * ran keeps its link. Every child is joined against the chat and its run
- * record:
+ * **The one join.** This query is the only place a reader learns which started
+ * chats to show, and how (`./lineage-reads.ts`, `statesOf`). The chat list's
+ * tree and the read tools (W4, W5) read through here and do not repeat it. A
+ * chat is shown when it ran, when it is still launching, or when it never
+ * started but has a run that says why; a chat with neither a binding nor any
+ * run is left out, never shown as a bare id. A chat with a shown child is
+ * shown too: it started that child, so it ran, whatever the join could find.
+ * Every ancestor of a shown chat is shown for the same reason.
  *
- * - a child whose chat exists (bound to a runtime in `session_metadata`, the
- *   same test `sessionExists` makes first) is shown;
- * - else a child whose last run ended before it started is shown as never
- *   started, with the run's reason;
- * - else it is left out, with everything under it: never a bare id.
+ * A chat on another computer (`specs/space-computer-contract`) is not
+ * recorded in this computer's `session_metadata`, so the join asks the run
+ * record first. When the work graph moves to the space store (DOR-5139), its
+ * binding and run reads go over the contract.
  *
- * The chat list's tree and the read tools (W4, W5) read through here and do
- * not repeat the join.
- *
- * Cycle-safe: a chat is visited once, so a loop in the records ends the walk,
- * and every walk is bounded by {@link LINEAGE_MAX_DEPTH}.
+ * **Bounded.** Each level of the tree is read in a few batched queries,
+ * whatever its width. A walk visits a chat once, so a loop in the records
+ * ends it; it goes at most {@link LINEAGE_MAX_DEPTH} levels and visits at
+ * most {@link LINEAGE_MAX_CHATS} chats, and says when a bound stopped it.
  *
  * @module services/work-graph/chat-lineage
  */
-import { and, inArray, isNotNull, sessionMetadata, type Db } from '@dorkos/db';
-import type { SessionStartedByStore } from '../session/origin/session-started-by-store.js';
-import { RUN_ENDS, type RunStore, type TurnRun } from '../runs/index.js';
-import { REKEY_MAX_DEPTH, type WorkLinkStore } from './work-link-store.js';
+import {
+  LineageReads,
+  type LineageReadsDeps,
+  type LineageState,
+  type LineageVia,
+} from './lineage-reads.js';
+
+export type { LineageState, LineageVia } from './lineage-reads.js';
 
 /** The deepest any lineage walk goes, up or down, whatever a caller asks. */
 export const LINEAGE_MAX_DEPTH = 64;
 
-/** How a chat came from the one above it: started by it, or carried on from it to another account. */
-export type LineageVia = 'started' | 'carried';
-
-/** What a reader may show of a chat in a lineage. */
-export type LineageState =
-  | { kind: 'chat' }
-  | {
-      kind: 'never-started';
-      /** The run that ended before its turn started. */
-      runId: string;
-      /** Why: the run's `cancelledBecause`, else its ending, else its status. */
-      reason: string;
-    };
+/**
+ * The most chats one lineage read visits below the asked chat. A tree wider
+ * or deeper than this is cut off there, oldest first, and the answer says so
+ * (`truncated`), so one call can never hold the event loop for long.
+ */
+export const LINEAGE_MAX_CHATS = 500;
 
 /** One chat above the asked one. */
 export interface LineageAncestor {
@@ -66,7 +64,7 @@ export interface LineageAncestor {
   depth: number;
   /** How the chat one step below came from this one. */
   via: LineageVia;
-  /** What a reader may show of it. */
+  /** What a reader may show of it: always a chat, since it started one that is shown. */
   state: LineageState;
 }
 
@@ -94,19 +92,15 @@ export interface ChatLineage {
   ancestors: LineageAncestor[];
   /** Depth first: each chat followed by its own subtree, siblings oldest first. */
   descendants: LineageDescendant[];
+  /**
+   * True when {@link LINEAGE_MAX_CHATS} or {@link LINEAGE_MAX_DEPTH} stopped
+   * the walk down with chats left to visit; never for a depth the caller asked.
+   */
+  truncated: boolean;
 }
 
 /** What {@link ChatLineageReader} reads. */
-export interface ChatLineageDeps {
-  /** The DorkOS database: whether a chat exists (`session_metadata`). */
-  db: Db;
-  /** The work graph's edges: `started` and `rekeyed_from`. */
-  links: WorkLinkStore;
-  /** `session_started_by`, when wired. */
-  startedBy?: SessionStartedByStore;
-  /** The run record, when wired: why a chat that never ran did not. */
-  runs?: Pick<RunStore, 'listForChat'>;
-}
+export type ChatLineageDeps = LineageReadsDeps;
 
 /** How far a lineage read goes. */
 export interface ChatLineageOptions {
@@ -114,171 +108,133 @@ export interface ChatLineageOptions {
   depth?: number;
 }
 
-/** One child of a chat, before the join. */
-interface ChildEdge {
+/** One chat found walking down, before the join. */
+interface Visited {
   chatId: string;
+  parentId: string;
+  depth: number;
   via: LineageVia;
-  /** When the start was recorded (ISO 8601), for oldest-first order. */
   at: string;
 }
 
+const SHOWN_CHAT: LineageState = { kind: 'chat' };
+
 /** Reads a chat's lineage. See the module documentation. */
 export class ChatLineageReader {
+  private readonly reads: LineageReads;
+
   /**
    * Build the reader over its stores.
    *
    * @param deps - The database, the edge store and, when wired, the parent rows and the run record.
    */
-  constructor(private readonly deps: ChatLineageDeps) {}
+  constructor(deps: ChatLineageDeps) {
+    this.reads = new LineageReads(deps);
+  }
 
   /**
    * A chat's ancestors and its subtree, with depth.
    *
    * @param chatId - The chat, by any id it has had.
    * @param opts - How many levels of descendants; all by default.
-   * @returns The lineage, or `null` when the chat has neither a chat nor a run to show.
+   * @returns The lineage, or `null` when the chat has neither a binding nor a
+   *   run, and nothing it started is shown.
    */
   read(chatId: string, opts: ChatLineageOptions = {}): ChatLineage | null {
-    const id = this.deps.links.resolveRekey(chatId);
-    const state = this.stateOf(id);
-    if (state === null) return null;
-    const depth = Math.min(opts.depth ?? LINEAGE_MAX_DEPTH, LINEAGE_MAX_DEPTH);
+    const id = this.reads.current([chatId]).get(chatId) ?? chatId;
+    const { visited, truncated } = this.walkDown(id, opts.depth ?? Infinity);
+    const states = this.reads.statesOf([id, ...visited.map((chat) => chat.chatId)]);
+    // Children before parents: a chat with a shown child is shown as a chat.
+    const shown = new Map<string, LineageState>();
+    const hasShownChild = new Set<string>();
+    for (const chat of [...visited].reverse()) {
+      const state = hasShownChild.has(chat.chatId) ? SHOWN_CHAT : states.get(chat.chatId);
+      if (!state) continue;
+      shown.set(chat.chatId, state);
+      hasShownChild.add(chat.parentId);
+    }
+    const state = hasShownChild.has(id) ? SHOWN_CHAT : states.get(id);
+    if (!state) return null;
     return {
       chatId: id,
       state,
-      ancestors: this.ancestorsOf(id),
-      descendants: this.descendantsOf(id, depth),
+      ancestors: this.walkUp(id),
+      descendants: depthFirst(id, visited, shown),
+      truncated,
     };
   }
 
-  /** The chats above `chatId`, nearest first, stopping at one that cannot be shown. */
-  private ancestorsOf(chatId: string): LineageAncestor[] {
+  /** Every chat under `root`, level by level, each under the parent the records name. */
+  private walkDown(root: string, asked: number): { visited: Visited[]; truncated: boolean } {
+    const visited: Visited[] = [];
+    const seen = new Set([root]);
+    let frontier = [root];
+    for (let depth = 1; frontier.length > 0 && depth <= asked; depth += 1) {
+      const inFrontier = new Set(frontier);
+      const candidates = this.reads.candidatesUnder(frontier).filter((id) => !seen.has(id));
+      const parents = this.reads.parentsOf(candidates);
+      const level = candidates
+        .flatMap((chatId) => {
+          const parent = parents.get(chatId);
+          // Hung only under the parent the records name, as `walkUp` reads it.
+          return parent && inFrontier.has(parent.chatId)
+            ? [{ chatId, parentId: parent.chatId, depth, via: parent.via, at: parent.at }]
+            : [];
+        })
+        .sort(byStart);
+      if (level.length > 0 && depth > LINEAGE_MAX_DEPTH) return { visited, truncated: true };
+      for (const chat of level) {
+        if (visited.length >= LINEAGE_MAX_CHATS) return { visited, truncated: true };
+        seen.add(chat.chatId);
+        visited.push(chat);
+      }
+      frontier = level.map((chat) => chat.chatId);
+    }
+    return { visited, truncated: false };
+  }
+
+  /** The chats above `chatId`, nearest first. */
+  private walkUp(chatId: string): LineageAncestor[] {
     const found: LineageAncestor[] = [];
     const seen = new Set([chatId]);
     let current = chatId;
     for (let depth = 1; depth <= LINEAGE_MAX_DEPTH; depth += 1) {
-      const parent = this.parentOf(current);
-      if (parent === null || seen.has(parent.chatId)) break;
-      const state = this.stateOf(parent.chatId);
-      if (state === null) break;
+      const parent = this.reads.parentsOf([current]).get(current);
+      if (parent === undefined || seen.has(parent.chatId)) break;
       seen.add(parent.chatId);
-      found.push({ chatId: parent.chatId, depth, via: parent.via, state });
+      // It started (or was carried into) a shown chat, so it ran.
+      found.push({ chatId: parent.chatId, depth, via: parent.via, state: SHOWN_CHAT });
       current = parent.chatId;
     }
     return found;
   }
+}
 
-  /** The chats under `root`, depth first, down to `maxDepth` levels. */
-  private descendantsOf(root: string, maxDepth: number): LineageDescendant[] {
-    const found: LineageDescendant[] = [];
-    const seen = new Set([root]);
-    const visit = (parentId: string, depth: number): void => {
-      if (depth > maxDepth) return;
-      for (const child of this.childrenOf(parentId)) {
-        if (seen.has(child.chatId)) continue;
-        seen.add(child.chatId);
-        const state = this.stateOf(child.chatId);
-        if (state === null) continue;
-        found.push({ chatId: child.chatId, parentId, depth, via: child.via, state });
-        // A chat that never ran started nothing.
-        if (state.kind === 'chat') visit(child.chatId, depth + 1);
-      }
-    };
-    visit(root, 1);
-    return found;
-  }
+/** Siblings oldest first, by when each start was recorded; ties by id. */
+function byStart(a: { at: string; chatId: string }, b: { at: string; chatId: string }): number {
+  if (a.at !== b.at) return a.at < b.at ? -1 : 1;
+  return a.chatId < b.chatId ? -1 : a.chatId > b.chatId ? 1 : 0;
+}
 
-  /** The chats one chat started or was carried to, by current id, oldest first. */
-  private childrenOf(chatId: string): ChildEdge[] {
-    const byId = new Map<string, ChildEdge>();
-    const add = (edge: ChildEdge): void => {
-      const known = byId.get(edge.chatId);
-      if (known === undefined || edge.at < known.at) byId.set(edge.chatId, edge);
-    };
-    for (const alias of this.aliasesOf(chatId)) {
-      for (const link of this.deps.links.from({ kind: 'chat', id: alias }, 'started')) {
-        if (link.to.kind !== 'chat') continue;
-        add({
-          chatId: this.deps.links.resolveRekey(link.to.id),
-          via: 'started',
-          at: link.recordedAt,
-        });
-      }
-    }
-    const startedBy = this.deps.startedBy;
-    if (startedBy) {
-      const rows = startedBy.getMany(startedBy.childrenOf(chatId));
-      for (const row of rows.values()) {
-        add({
-          chatId: this.deps.links.resolveRekey(row.sessionId),
-          via: row.carried ? 'carried' : 'started',
-          at: row.createdAt,
-        });
-      }
-    }
-    // A child's own id is never its parent, whatever a stray row says.
-    byId.delete(chatId);
-    return [...byId.values()].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+/** The shown chats under `root`, each followed by its own subtree. */
+function depthFirst(
+  root: string,
+  visited: readonly Visited[],
+  shown: ReadonlyMap<string, LineageState>
+): LineageDescendant[] {
+  const children = new Map<string, Visited[]>();
+  for (const chat of visited) {
+    if (!shown.has(chat.chatId)) continue;
+    children.set(chat.parentId, [...(children.get(chat.parentId) ?? []), chat]);
   }
-
-  /** The chat that started `chatId` or was carried into it, by current id, or `null`. */
-  private parentOf(chatId: string): { chatId: string; via: LineageVia } | null {
-    const row = this.deps.startedBy?.get(chatId);
-    if (row?.kind === 'chat' && row.startedBySessionId !== null) {
-      return {
-        chatId: this.deps.links.resolveRekey(row.startedBySessionId),
-        via: row.carried ? 'carried' : 'started',
-      };
+  const out: LineageDescendant[] = [];
+  const visit = (parentId: string): void => {
+    for (const chat of children.get(parentId) ?? []) {
+      const { chatId, depth, via } = chat;
+      out.push({ chatId, parentId, depth, via, state: shown.get(chatId)! });
+      visit(chatId);
     }
-    for (const alias of this.aliasesOf(chatId)) {
-      const link = this.deps.links.to({ kind: 'chat', id: alias }, 'started')[0];
-      if (link?.from.kind === 'chat')
-        return { chatId: this.deps.links.resolveRekey(link.from.id), via: 'started' };
-    }
-    return null;
-  }
-
-  /** `chatId` and every older id it replaced, through `rekeyed_from` (bounded, cycle-safe). */
-  private aliasesOf(chatId: string): string[] {
-    const aliases = [chatId];
-    for (let i = 0; i < aliases.length && aliases.length <= REKEY_MAX_DEPTH; i += 1) {
-      for (const link of this.deps.links.from({ kind: 'chat', id: aliases[i]! }, 'rekeyed_from')) {
-        if (link.to.kind === 'chat' && !aliases.includes(link.to.id)) aliases.push(link.to.id);
-      }
-    }
-    return aliases;
-  }
-
-  /** The join: what a reader may show of a chat, or `null` to leave it out. */
-  private stateOf(chatId: string): LineageState | null {
-    const ids = this.aliasesOf(chatId);
-    const bound = this.deps.db
-      .select({ sessionId: sessionMetadata.sessionId })
-      .from(sessionMetadata)
-      .where(and(inArray(sessionMetadata.sessionId, ids), isNotNull(sessionMetadata.runtime)))
-      .get();
-    if (bound) return { kind: 'chat' };
-    const run = this.lastRunOf(ids);
-    if (run && RUN_ENDS.has(run.status) && run.startedAt === null) {
-      return {
-        kind: 'never-started',
-        runId: run.id,
-        reason: run.endingDetail.cancelledBecause ?? run.ending ?? run.status,
-      };
-    }
-    return null;
-  }
-
-  /** The newest run kept under any of these ids. */
-  private lastRunOf(ids: readonly string[]): TurnRun | undefined {
-    const runs = this.deps.runs;
-    if (!runs) return undefined;
-    let last: TurnRun | undefined;
-    for (const id of ids) {
-      for (const run of runs.listForChat(id)) {
-        if (last === undefined || run.createdAt >= last.createdAt) last = run;
-      }
-    }
-    return last;
-  }
+  };
+  visit(root);
+  return out;
 }

@@ -1,111 +1,24 @@
 /**
  * The lineage query (W3, DOR-4969): a chat's ancestors and its whole subtree
- * with depth, over the real SQLite stores. Starts are made through the real
- * start-work seam with the work graph installed, so each one leaves both its
- * `session_started_by` row and its `started` link, as `session_start` does.
- * A chat "exists" once its `session_metadata` row is bound to a runtime, as a
- * chat's first turn binds it.
+ * with depth, over the real SQLite stores (`./lineage-fixture.ts`).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionMetadata, workLinks, type Db } from '@dorkos/db';
-import { StartWorkService, setStartWorkService } from '../../extensions/start-work.js';
-import {
-  SessionStartedByStore,
-  setSessionStartedByStore,
-} from '../../session/origin/session-started-by-store.js';
+import { describe, expect, it } from 'vitest';
+import { workLinks } from '@dorkos/db';
+import { setStartWorkService } from '../../extensions/start-work.js';
+import { setSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import { WorkClaimService } from '../../session/claims/work-claim-service.js';
 import { setWorkClaims } from '../../session/claims/work-claim-current.js';
 import { claimForStart } from '../../session/claims/work-claim-start.js';
 import { reserveChatStart } from '../../runtimes/claude-code/mcp-tools/session-start-reserve.js';
-import { RunStore } from '../../runs/index.js';
 import {
-  ChatLineageReader,
   getWorkLinkStore,
-  installWorkLinkStore,
   readChatLineage,
   recordChatRekey,
   uninstallWorkLinkStore,
-  WorkLinkStore,
-  type ChatLineage,
 } from '../index.js';
+import { ran, reader, start, stores, tick, tree, up, useLineageStores } from './lineage-fixture.js';
 
-let db: Db;
-let starts: SessionStartedByStore;
-let service: StartWorkService;
-let runs: RunStore;
-let clock: number;
-
-beforeEach(() => {
-  db = createTestDb();
-  clock = Date.parse('2026-11-25T10:00:00.000Z');
-  installWorkLinkStore(db);
-  starts = new SessionStartedByStore(db);
-  service = new StartWorkService({
-    store: starts,
-    projects: {
-      rootWithin: async () => null,
-      listForExtension: async () => [],
-      list: async () => [],
-    },
-    extensionName: (id) => id,
-    runningSessionIds: () => [],
-    port: () => undefined,
-    // One second per start, so siblings list oldest first.
-    now: () => (clock += 1000),
-  });
-  runs = new RunStore(db, { epoch: 'boot-1' });
-});
-
-afterEach(() => {
-  uninstallWorkLinkStore();
-  setStartWorkService(undefined);
-  setSessionStartedByStore(undefined);
-  setWorkClaims(undefined);
-});
-
-/** The reader over every store, the way `readChatLineage` builds it. */
-function reader(opts: { startedBy?: boolean } = {}): ChatLineageReader {
-  return new ChatLineageReader({
-    db,
-    links: getWorkLinkStore() ?? new WorkLinkStore({ db }),
-    ...(opts.startedBy === false ? {} : { startedBy: starts }),
-    runs,
-  });
-}
-
-/** `parent` starts `child` through the start-work seam, as `session_start` does. */
-function start(parent: string, child: string, opts: { carry?: boolean } = {}) {
-  const claimed = service.reserveFromChat({
-    sessionId: child,
-    parentSessionId: parent,
-    ...(opts.carry ? { carry: true } : {}),
-  });
-  if (!claimed.ok || claimed.reservation === null) throw new Error(`could not start ${child}`);
-  return claimed.reservation;
-}
-
-/** These chats ran: their first turn bound them to a runtime. */
-function ran(...ids: string[]): void {
-  for (const sessionId of ids) {
-    db.insert(sessionMetadata)
-      .values({ sessionId, runtime: 'claude-code', createdAt: new Date(clock).toISOString() })
-      .run();
-  }
-}
-
-/** Each descendant as `depth:id<-parent(via)`, with `!` for a chat that never started. */
-function tree(lineage: ChatLineage | null): string[] {
-  return (lineage?.descendants ?? []).map(
-    (d) =>
-      `${d.depth}:${d.chatId}<-${d.parentId}(${d.via})${d.state.kind === 'never-started' ? '!' : ''}`
-  );
-}
-
-/** Each ancestor as `depth:id(via)`. */
-function up(lineage: ChatLineage | null): string[] {
-  return (lineage?.ancestors ?? []).map((a) => `${a.depth}:${a.chatId}(${a.via})`);
-}
+useLineageStores();
 
 describe('a chat tree', () => {
   /** root → a → a1 → a1x → deep, and root → b → b1. */
@@ -121,7 +34,9 @@ describe('a chat tree', () => {
 
   it('returns the whole subtree, depth first, with each chat’s depth', () => {
     plant();
-    expect(tree(reader().read('root'))).toEqual([
+    const lineage = reader().read('root');
+    expect(lineage?.truncated).toBe(false);
+    expect(tree(lineage)).toEqual([
       '1:a<-root(started)',
       '2:a1<-a(started)',
       '3:a1x<-a1(started)',
@@ -157,9 +72,16 @@ describe('a chat tree', () => {
 
   it('lets a childrenOf caller ask for any depth', () => {
     plant();
-    expect(starts.childrenOf('root')).toEqual(['a', 'b']);
-    expect(starts.childrenOf('root', 2)).toEqual(['a', 'b', 'a1', 'b1']);
-    expect(starts.childrenOf('root', Infinity)).toEqual(['a', 'b', 'a1', 'b1', 'a1x', 'deep']);
+    expect(stores.starts.childrenOf('root')).toEqual(['a', 'b']);
+    expect(stores.starts.childrenOf('root', 2)).toEqual(['a', 'b', 'a1', 'b1']);
+    expect(stores.starts.childrenOf('root', Infinity)).toEqual([
+      'a',
+      'b',
+      'a1',
+      'b1',
+      'a1x',
+      'deep',
+    ]);
   });
 
   it('answers null for a chat with neither a chat nor a run', () => {
@@ -195,19 +117,19 @@ describe('a cycle in the records', () => {
       ['x', 'y'],
       ['y', 'x'],
     ] as const) {
-      starts.insert({
+      stores.starts.insert({
         sessionId: child,
         kind: 'chat',
         extensionId: null,
         startedBySessionId: parent,
         originExtensionId: null,
         reason: null,
-        createdAt: new Date((clock += 1000)).toISOString(),
+        createdAt: tick(),
       });
     }
     // A bounded depth first, so a broken guard fails here rather than looping forever below.
-    expect(starts.childrenOf('x', 50)).toEqual(['y']);
-    expect(starts.childrenOf('x', Infinity)).toEqual(['y']);
+    expect(stores.starts.childrenOf('x', 50)).toEqual(['y']);
+    expect(stores.starts.childrenOf('x', Infinity)).toEqual(['y']);
   });
 });
 
@@ -219,7 +141,7 @@ describe('a carry to another account', () => {
     ran('root', 'moved', 'successor', 'grandchild');
     // A carry wrote no started link: only the two real starts did.
     expect(
-      db
+      stores.db
         .select()
         .from(workLinks)
         .all()
@@ -240,9 +162,9 @@ describe('a carry to another account', () => {
 
 describe('a start that never ran', () => {
   it('is left out when session_start cancels it because another chat of the agent holds the work', async () => {
-    setSessionStartedByStore(starts);
-    setStartWorkService(service);
-    const claims = new WorkClaimService({ db });
+    setSessionStartedByStore(stores.starts);
+    setStartWorkService(stores.service);
+    const claims = new WorkClaimService({ db: stores.db });
     setWorkClaims(claims);
     expect(claims.claim('agent-1', 'holder', 'DOR-1').ok).toBe(true);
     start('root', 'sibling');
@@ -273,7 +195,7 @@ describe('a start that never ran', () => {
       expect.objectContaining({ to: { kind: 'chat', id: 'sibling' } }),
       expect.objectContaining({ to: { kind: 'chat', id: 'turned-away' } }),
     ]);
-    expect(starts.get('turned-away')).toBeNull();
+    expect(stores.starts.get('turned-away')).toBeNull();
     expect(tree(readChatLineage('root'))).toEqual(['1:sibling<-root(started)']);
     expect(readChatLineage('turned-away')).toBeNull();
   });
@@ -281,6 +203,7 @@ describe('a start that never ran', () => {
   it('is shown as never started, with the run’s reason, when its run ended before it started', () => {
     const reservation = start('root', 'expired-chat');
     ran('root');
+    const { runs } = stores;
     const run = runs.create({
       chatKey: 'expired-chat',
       status: 'queued',
@@ -326,7 +249,7 @@ describe('a re-keyed child', () => {
 describe('a chat started before DOR-5263', () => {
   it('is found through session_started_by alone', () => {
     uninstallWorkLinkStore();
-    starts.insert({
+    stores.starts.insert({
       sessionId: 'old-child',
       kind: 'chat',
       extensionId: null,
@@ -336,7 +259,7 @@ describe('a chat started before DOR-5263', () => {
       createdAt: '2026-10-01T00:00:00.000Z',
     });
     ran('old-root', 'old-child');
-    expect(db.select().from(workLinks).all()).toEqual([]);
+    expect(stores.db.select().from(workLinks).all()).toEqual([]);
     expect(tree(reader().read('old-root'))).toEqual(['1:old-child<-old-root(started)']);
     expect(up(reader().read('old-child'))).toEqual(['1:old-root(started)']);
   });

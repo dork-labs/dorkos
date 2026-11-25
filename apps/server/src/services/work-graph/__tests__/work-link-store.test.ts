@@ -152,10 +152,14 @@ describe('WorkLinkStore', () => {
       'constructor',
       'firstRekeyFrom',
       'from',
+      'fromMany',
       'list',
+      'listMany',
       'record',
       'resolveRekey',
+      'resolveRekeys',
       'to',
+      'toMany',
     ]);
   });
 

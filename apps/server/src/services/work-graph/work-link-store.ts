@@ -29,6 +29,7 @@ import {
   and,
   asc,
   eq,
+  inArray,
   WORK_LINK_RELATIONS,
   WORK_LINK_SOURCE_MAX_LENGTH,
   workLinks,
@@ -46,6 +47,9 @@ export { WORK_LINK_RELATIONS, type WorkLinkRelation } from '@dorkos/db';
 
 /** How many `rekeyed_from` steps {@link WorkLinkStore.resolveRekey} follows at most. */
 export const REKEY_MAX_DEPTH = 32;
+
+/** Most refs one batched read asks SQLite for at once, well under its variable limit. */
+const BATCH = 500;
 
 /** What a `source` may be spelled with: a short lower-case word, `-` allowed. */
 const SOURCE_PATTERN = new RegExp(`^[a-z][a-z0-9-]{0,${WORK_LINK_SOURCE_MAX_LENGTH - 1}}$`);
@@ -259,6 +263,60 @@ export class WorkLinkStore {
   }
 
   /**
+   * Every edge whose subject is one of `refs`, oldest first: {@link from} for
+   * many subjects in one read per {@link BATCH} refs.
+   *
+   * @param refs - The subjects; invalid ones are skipped.
+   * @param relation - Only edges of this relation.
+   */
+  fromMany(refs: readonly EntityRef[], relation: WorkLinkRelation): WorkLink[] {
+    return this.listMany(refs, relation, 'from');
+  }
+
+  /**
+   * Every edge whose object is one of `refs`, oldest first: {@link to} for
+   * many objects in one read per {@link BATCH} refs.
+   *
+   * @param refs - The objects; invalid ones are skipped.
+   * @param relation - Only edges of this relation.
+   */
+  toMany(refs: readonly EntityRef[], relation: WorkLinkRelation): WorkLink[] {
+    return this.listMany(refs, relation, 'to');
+  }
+
+  /**
+   * {@link resolveRekey} for many chats, one read per step for all of them.
+   *
+   * @param chatIds - Chat ids, current or retired.
+   * @returns Each id's current id; an id never re-keyed maps to itself.
+   */
+  resolveRekeys(chatIds: readonly string[]): Map<string, string> {
+    const resolved = new Map(chatIds.map((id) => [id, id]));
+    const seen = new Map(chatIds.map((id) => [id, new Set([id])]));
+    let open = chatIds.filter((id) => isDorkId(id));
+    for (let step = 0; step < REKEY_MAX_DEPTH && open.length > 0; step += 1) {
+      const currents = [...new Set(open.map((id) => resolved.get(id)!))];
+      // The oldest edge out of each id is its true re-key (see {@link record}).
+      const next = new Map<string, string>();
+      for (const link of this.toMany(
+        currents.map((id) => ({ kind: 'chat' as const, id })),
+        'rekeyed_from'
+      )) {
+        if (link.from.kind === 'chat' && link.to.kind === 'chat' && !next.has(link.to.id))
+          next.set(link.to.id, link.from.id);
+      }
+      open = open.filter((id) => {
+        const to = next.get(resolved.get(id)!);
+        if (to === undefined || seen.get(id)!.has(to)) return false;
+        seen.get(id)!.add(to);
+        resolved.set(id, to);
+        return true;
+      });
+    }
+    return resolved;
+  }
+
+  /**
    * The id a chat is known by now, following `rekeyed_from` edges from an
    * older id to the newest one (ADR-0267: a new chat's first id gives way to
    * its runtime's). The edges outlive a restart, so an old id can be resolved
@@ -299,6 +357,29 @@ export class WorkLinkStore {
       .where(and(eq(workLinks.toRef, toRef), eq(workLinks.relation, 'rekeyed_from')))
       .orderBy(asc(workLinks.recordedAt), asc(workLinks.id))
       .get()?.fromRef;
+  }
+
+  private listMany(
+    refs: readonly EntityRef[],
+    relation: WorkLinkRelation,
+    end: 'from' | 'to'
+  ): WorkLink[] {
+    const stored = [
+      ...new Set(refs.map(encodeWorkLinkRef).filter((ref): ref is string => ref !== null)),
+    ];
+    const column = end === 'from' ? workLinks.fromRef : workLinks.toRef;
+    const found: WorkLink[] = [];
+    for (let i = 0; i < stored.length; i += BATCH) {
+      found.push(
+        ...this.list(
+          and(inArray(column, stored.slice(i, i + BATCH)), eq(workLinks.relation, relation))
+        )
+      );
+    }
+    // Batches each come oldest first; merge them on the same order.
+    return found.sort((a, b) =>
+      a.recordedAt === b.recordedAt ? (a.id < b.id ? -1 : 1) : a.recordedAt < b.recordedAt ? -1 : 1
+    );
   }
 
   private list(where: SQL | undefined): WorkLink[] {

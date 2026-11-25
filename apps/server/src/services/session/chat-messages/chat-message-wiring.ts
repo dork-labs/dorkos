@@ -72,8 +72,14 @@ import { readOperatorDisplayName } from '../../core/config/operator-display-name
 import { setQueuedChatActionsDeps } from './queued/queued-chat-actions.js';
 import { chatUsagePauseOf } from './sending/chat-usage-pause.js';
 
-/** How far down a chat's chain of spin-offs a reader may follow. */
-const DESCENDANT_DEPTH = 8;
+/**
+ * An access bound, not a display one: how many levels down its chain of
+ * spin-offs (carried moves included) a chat may read. It is the reach the
+ * hand-written walk had before `childrenOf` took a depth, and it is apart from
+ * the lineage query's `LINEAGE_MAX_DEPTH` on purpose. Widening it changes who
+ * can read what, so it is its own change, with Security's read.
+ */
+const READ_REACH_DEPTH = 8;
 
 /**
  * A chat's title: the one this process last listed, else its runtime's.
@@ -192,7 +198,7 @@ export function mayReadChat(store: ChatMessageStore, caller: ChatCaller, target:
     involvedBy.startedReader ||
     store.sendersTo(caller.sessionId).has(target) ||
     store.agentExchangedWith(caller.agentPath, target) ||
-    startedBy?.childrenOf(caller.sessionId, DESCENDANT_DEPTH).includes(target) === true;
+    startedBy?.childrenOf(caller.sessionId, READ_REACH_DEPTH).includes(target) === true;
   if (!related) return false;
   const visibility = readSessionVisibilities([target]).get(target) ?? 'participants';
   return canReadSession(chatReader(caller), visibility, involvedBy);

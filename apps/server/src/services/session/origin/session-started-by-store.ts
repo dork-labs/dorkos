@@ -366,6 +366,36 @@ export class SessionStartedByStore {
     return found;
   }
 
+  /**
+   * The starts (`kind = 'chat'`, carried moves included) these chats made, in
+   * one read per batch: the rows {@link childrenOf} walks, for a reader that
+   * walks a whole level at once. Oldest first.
+   *
+   * @param sessionIds - The starting chats.
+   */
+  startsBy(sessionIds: readonly string[]): StartedByRecord[] {
+    const unique = [...new Set(sessionIds)];
+    const found: StartedByRecord[] = [];
+    for (let i = 0; i < unique.length; i += BATCH) {
+      found.push(
+        ...this.db
+          .select()
+          .from(sessionStartedBy)
+          .where(
+            and(
+              eq(sessionStartedBy.kind, 'chat'),
+              inArray(sessionStartedBy.startedBySessionId, unique.slice(i, i + BATCH))
+            )
+          )
+          .orderBy(sessionStartedBy.createdAt)
+          .all()
+      );
+    }
+    return found.sort((a, b) =>
+      a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0
+    );
+  }
+
   /** The chats one chat started, oldest first. */
   private directChildrenOf(sessionId: string): string[] {
     return this.db

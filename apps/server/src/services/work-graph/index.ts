@@ -67,6 +67,7 @@ import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
 
 export {
   ChatLineageReader,
+  LINEAGE_MAX_CHATS,
   LINEAGE_MAX_DEPTH,
   type ChatLineage,
   type ChatLineageDeps,
@@ -91,7 +92,7 @@ export {
 export { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
 
 let store: WorkLinkStore | null = null;
-/** The database the store was installed over: the lineage query reads which chats exist from it. */
+/** The database the store was installed over: the lineage query reads chats' bindings from it. */
 let installedDb: Db | null = null;
 let stopRekeyWrites: (() => void) | null = null;
 let stopRekeyReads: (() => void) | null = null;
@@ -145,7 +146,7 @@ export function getWorkLinkStore(): WorkLinkStore | null {
  * @param chatId - The chat, by any id it has had.
  * @param opts - How many levels of descendants; all by default.
  * @returns The lineage; `null` before startup installs the store, or when the
- *   chat has neither a chat nor a run to show.
+ *   chat has neither a binding nor a run, and nothing it started is shown.
  */
 export function readChatLineage(chatId: string, opts?: ChatLineageOptions): ChatLineage | null {
   if (store === null || installedDb === null) return null;
