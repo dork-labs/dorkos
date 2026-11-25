@@ -150,6 +150,9 @@ const RUNNERS = new Set([
   'parallel',
 ]);
 
+/** Shell options that take the next word as their value (not a script file). */
+const SHELL_FLAGS_WITH_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
+
 /** Commands that execute text fed to them on stdin or as their argument. */
 const STDIN_SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish', 'eval', 'source', '.']);
 
@@ -522,9 +525,20 @@ function feedsAShell(segment) {
     // `bash script.sh` runs a FILE: its words are not shell text, so quoted
     // heredoc bodies elsewhere on the line stay masked. A shell with no file
     // argument (piped into, or `bash <<EOF`) reads its commands from stdin.
-    const file = rest.find(
-      (arg) => !arg.startsWith('-') && !arg.startsWith('<') && !/^\d*[<>]/.test(arg)
-    );
+    // The first word that is not a flag, a flag's value or a redirection is the
+    // script file. `-o pipefail`, `-O extglob`, `+o`, `+O`, `--rcfile f` and
+    // `--init-file f` take a value, which is not a file.
+    let file = null;
+    for (let k = 0; k < rest.length; k++) {
+      const arg = rest[k];
+      if (SHELL_FLAGS_WITH_VALUE.has(arg)) {
+        k++;
+        continue;
+      }
+      if (/^[-+]/.test(arg) || arg.startsWith('<') || /^\d*[<>]/.test(arg)) continue;
+      file = arg;
+      break;
+    }
     return !file;
   });
 }

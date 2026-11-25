@@ -250,6 +250,12 @@ check 'bash <script> does not hide a heavy command beside it' block "$(verdict '
 check 'bash <<EOF runs the heredoc' block "$(verdict $'bash <<\'EOF\'\nturbo build\nEOF')"
 check 'a heredoc piped into bash runs it' block "$(verdict $'cat <<\'EOF\' | bash\nturbo build\nEOF')"
 check 'bash -s <<EOF runs the heredoc' block "$(verdict $'bash -s <<\'EOF\'\nnpx tsc --noEmit\nEOF')"
+check 'a heredoc piped into bash -o pipefail runs it' block "$(verdict $'cat <<\'EOF\' | bash -o pipefail\nturbo build\nEOF')"
+check 'a heredoc piped into bash -O extglob runs it' block "$(verdict $'cat <<\'EOF\' | bash -O extglob\nturbo build\nEOF')"
+check 'a heredoc piped into bash --rcfile f runs it' block "$(verdict $'cat <<\'EOF\' | bash --rcfile /tmp/rc\nturbo build\nEOF')"
+check 'bash -o pipefail ./x.sh runs a file' allow "$(verdict 'bash -o pipefail ./x.sh')"
+check 'bash -o pipefail script beside a heredoc keeps the heredoc text' allow \
+  "$(verdict $'cat > /tmp/b.md <<\'EOF\'\nrun turbo build later\nEOF\nbash -o pipefail scripts/open-pr.sh --body-file /tmp/b.md')"
 check 'sh -lc runs its argument' block "$(verdict "sh -lc 'npx tsc --noEmit'")"
 # shellcheck disable=SC2016 # the $( ) is text for the guard to read
 check 'a double-quoted substitution still runs' block "$(verdict 'echo "$(turbo build)"')"
