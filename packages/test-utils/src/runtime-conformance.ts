@@ -888,6 +888,26 @@ function nextSessionId(): string {
 }
 
 /**
+ * Settle a stop aimed at a backend a `hangingInterrupt` driver staged never to
+ * answer, advancing fake time through the runtime's own ack bound instead of
+ * waiting it out. Arm it only over such a driver: a backend that answers for
+ * itself answers on the real event loop, and faked time fires the bound first
+ * (DOR-5247). The clock is restored by `onTestFinished` too, so a stop that
+ * never settles cannot leave fake timers armed for the tests after it.
+ */
+async function advancedThroughBound<T>(stop: () => Promise<T>): Promise<T> {
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  vi.useFakeTimers();
+  const pending = stop();
+  await vi.advanceTimersByTimeAsync(10_000);
+  const settled = await pending;
+  vi.useRealTimers();
+  return settled;
+}
+
+/**
  * The durable settings store as a runtime sees it (ADR-0260), recording every
  * re-key it is asked to perform. Reads return nothing so the runtime falls back
  * to its own defaults — the subject here is which id the settings are FILED
@@ -2778,14 +2798,7 @@ export function runtimeConformance(
           // leans on macrotask delays), then the bound is advanced through so
           // the receipt lands without spending three real seconds.
           await hangingInterrupt(runtime, sessionId);
-          onTestFinished(() => {
-            vi.useRealTimers();
-          });
-          vi.useFakeTimers();
-          const pending = runtime.interruptQuery(sessionId);
-          await vi.advanceTimersByTimeAsync(10_000);
-          live = await pending;
-          vi.useRealTimers();
+          live = await advancedThroughBound(() => runtime.interruptQuery(sessionId));
         } else {
           // No driver means this runtime's interrupt has nothing to await, so
           // its turn can be opened the ordinary way and left running: pull ONE
@@ -2887,17 +2900,19 @@ export function runtimeConformance(
         ).toEqual([]);
 
         const seen: string[] = [];
-        onTestFinished(() => {
-          vi.useRealTimers();
-        });
-        vi.useFakeTimers();
-        const pending = runtime.endSessionsWhere((session) => {
-          seen.push(session.sessionId);
-          return true;
-        });
-        await vi.advanceTimersByTimeAsync(10_000);
-        const ended = await pending;
-        vi.useRealTimers();
+        const endPicked = (): Promise<string[]> =>
+          runtime.endSessionsWhere((session) => {
+            seen.push(session.sessionId);
+            return true;
+          });
+        // Fake time only over a driver's never-answering backend (see
+        // `advancedThroughBound`). With no driver the backend answers for
+        // itself, and a live one answers on the real event loop: faked time
+        // fired OpenCode's 3s bound before the real sidecar's abort reply could
+        // land, so a stop it confirmed read as unconfirmed and `ended` came
+        // back empty (DOR-5247). Real timers there, as in I2's no-driver arm;
+        // the runtime's own bound still caps the wait.
+        const ended = hangingInterrupt ? await advancedThroughBound(endPicked) : await endPicked();
 
         expect(
           seen.length,
