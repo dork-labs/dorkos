@@ -20,7 +20,8 @@
  *    `off-branch`. A detached `HEAD` is off-branch too.
  * 3. No tracked or untracked change (`status --untracked-files=all`), and no
  *    file marked assume-unchanged or skip-worktree, whose edits `status` cannot
- *    see (`ls-files -v`) — otherwise `changes`.
+ *    see (`ls-files -v`), and no submodule entry, whose contents are never
+ *    read (`ls-files -s`) — otherwise `changes`.
  * 4. No commit `main` lacks — otherwise `ahead`.
  * 5. Already at the tip — `current`.
  * 6. **Nothing on disk in the way, in either direction.** No untracked or
@@ -398,10 +399,13 @@ export async function refreshRoomWorktree(
       'status',
       '--porcelain=v1',
       '--untracked-files=all',
-      '--ignore-submodules=none',
       '-z',
     ]);
     if (status.length > 0) return await held('changes');
+    // Status skips submodules (it never looks inside one), so a submodule entry
+    // in the index holds the refresh by itself: what is in it cannot be checked.
+    const staged = await queryList(target, ['ls-files', '-s', '-z']);
+    if (staged.some((entry) => entry.startsWith('160000 '))) return await held('changes');
     // `status` cannot see an edit to a file marked assume-unchanged or
     // skip-worktree — git has been told not to look — and a fast-forward
     // overwrites it. `ls-files -v` tags such a file with a lower-case letter

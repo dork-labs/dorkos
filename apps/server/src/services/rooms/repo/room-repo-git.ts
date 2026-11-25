@@ -115,8 +115,10 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fsp } from 'node:fs';
 import { isSafeRoomRepoConfigKey, NO_REACH_GIT_ENV } from '@dorkos/shared/safe-git';
-import { internalGitArgs } from '../../../lib/git-safety.js';
 import { RoomError, RoomRepoConfigUnsafeError } from '../room-errors.js';
+import { ROOM_GIT_CONFIG_ARGS, roomGitArgv } from './room-git-args.js';
+
+export { ROOM_GIT_CONFIG_ARGS };
 
 const execFileAsync = promisify(execFile);
 
@@ -139,43 +141,6 @@ const GIT_TIMEOUT_MS = 30_000;
  * roughly a million paths, well past any room repo and still a bound.
  */
 const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
-
-/**
- * Config overrides applied to EVERY command, ahead of the subcommand.
- *
- * `-c` rather than writing them into the repo's own config, because the repo's
- * config is a file member-written content can reach and these are exactly the
- * values that turn reading a checkout into running code: the shared set every
- * git command DorkOS runs carries (`internalGitArgs`, DOR-2326), which also
- * refuses a bare repository git merely finds. See the module doc for what
- * the hook and fsmonitor settings were measured to stop.
- */
-export const ROOM_GIT_CONFIG_ARGS: readonly string[] = [
-  ...internalGitArgs(),
-  // **Never look inside a submodule.** An agent can commit a gitlink into its
-  // copy beside a `sub/` holding its own `.git/config` — a folder the agent
-  // wrote, whose filter, textconv or fsmonitor program a status read would run
-  // as the server when git recursed into it. `diff.ignoreSubmodules=all` is what
-  // stops that recursion for `status` and `diff` (measured: `submodule.recurse`
-  // alone does not). Submodules are refused at merge anyway
-  // (`SUBMODULE_NOT_ALLOWED`), so nothing a room keeps depends on them.
-  '-c',
-  'diff.ignoreSubmodules=all',
-  '-c',
-  'status.submoduleSummary=false',
-  '-c',
-  'submodule.recurse=false',
-  // **No automatic housekeeping at all** (DOR-3667). A commit, merge or fetch
-  // ends by running git's automatic maintenance, and its gc runs
-  // `gc.recentObjectsHook`, a shell command, from config (measured). Off
-  // rather than trusted to the audit alone; it also means nothing detaches and
-  // keeps writing `repo/.git` after the server's call returns. A room's objects
-  // stay loose, which costs disk, not correctness.
-  '-c',
-  'gc.auto=0',
-  '-c',
-  'maintenance.auto=false',
-];
 
 /**
  * Environment variables that point a git command at a DIFFERENT repository's
@@ -520,10 +485,11 @@ export async function runGitRaw(
   // runs while that config names a program (see {@link assertRoomRepoConfigSafe}).
   if (readsRoomRepo(ceilingDir, cwd)) await assertRoomRepoConfigSafe(ceilingDir);
   try {
-    const { stdout } = await execFileAsync('git', [...ROOM_GIT_CONFIG_ARGS, ...args], {
+    const env = gitEnv(ceilingDir, cwd);
+    const { stdout } = await execFileAsync('git', await roomGitArgv(args, cwd, env), {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
-      env: gitEnv(ceilingDir, cwd),
+      env,
       maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
       // Bytes, not characters: this function's whole purpose is to answer what
       // git wrote rather than what a decoder made of it.
