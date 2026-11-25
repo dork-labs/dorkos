@@ -34,6 +34,8 @@ Accepted (operator decision, #dorkos, 2026-10-15: "lets move forward with your p
 
 **Amended by** [261124-194115](261124-194115-your-mac-is-the-home-of-your-private-space.md) (accepted 2026-11-24): "Two hubs (Mac and cloud) are peers that do not sync" is retired. A person's own computer is the home of their private space when they have one; their DorkOS in the cloud is the home only when they have none, and otherwise a way in.
 
+**Amended by** [261125-183122](261125-183122-a-published-page-is-a-saved-copy-on-an-always-on-home.md) (accepted 2026-11-25): rule 3's cloud hubs still run no agents. They gain one job: a person's DorkOS in the cloud holds the pages that person published, and runs a published mini app's server half in a sealed box of its own.
+
 ## Context
 
 Dorian asked for two experiences (#dorkos, 2026-10-15). Away from home, at dorkos.ai, he sees and uses every agent he has: the ones on his Mac and the ones in the cloud, with the Mac's going offline when it is shut down. And a person who never installs anything signs up on the web, creates agents and runs them. He also gave the mental model: everything is a space, an account gets a private space, collaborating means a separate space, every server is a space server, and any instance can be a home.
