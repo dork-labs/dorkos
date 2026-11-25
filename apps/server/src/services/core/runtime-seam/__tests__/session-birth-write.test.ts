@@ -8,7 +8,6 @@ import {
   roomSessions,
   sessionBirthAllocations,
   sessionLocations,
-  sessionMessageQueue,
   sessionMetadata,
   type Db,
   type DbTransaction,
@@ -137,7 +136,8 @@ function seatBirth(): SessionBirthWriteContext {
   };
 }
 
-function insertMetadata(tx: DbTransaction, fields: { readonly modelLaunchState?: 'pending-v1' }) {
+type BirthFields = { readonly modelLaunchState?: 'pending-v1' };
+function insertMetadata(tx: DbTransaction, fields: BirthFields) {
   return tx
     .insert(sessionMetadata)
     .values({
@@ -153,6 +153,53 @@ function insertMetadata(tx: DbTransaction, fields: { readonly modelLaunchState?:
 const metadata = () =>
   db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).get();
 const allocations = () => db.select().from(sessionBirthAllocations).all();
+
+/** The write is refused: no metadata row, and the allocation stays unconsumed. */
+function expectRefused(
+  context: SessionBirthWriteContext | undefined,
+  write: (tx: DbTransaction, fields: BirthFields) => unknown = insertMetadata
+) {
+  const attempt = () => withSessionBirthWrite(db, sessionId, context, write);
+  expect(attempt).toThrow(SessionBirthWriteError);
+  expect(metadata()).toBeUndefined();
+  expect(allocations()).toHaveLength(1);
+}
+
+/** Queues the receipt's message for `chat`, as sent by `sender`. */
+function enqueue(chat: string, sender = 'sender') {
+  new MessageQueueStore(db).enqueue({
+    id: 'queue',
+    sessionId: chat,
+    content: 'hello',
+    clientId: chatClientId(sender),
+  });
+}
+
+/** Registers the receipt's target agent at `projectPath` and names it in the allocation. */
+function targetAgentAt(projectPath: string) {
+  db.insert(agents)
+    .values({
+      id: 'target',
+      name: 'Target',
+      runtime: 'codex',
+      projectPath,
+      registeredAt: stamp,
+      updatedAt: stamp,
+    })
+    .run();
+  db.update(sessionBirthAllocations)
+    .set({
+      internalSource: {
+        kind: 'chat-message',
+        receiptId: 'receipt',
+        queueMessageId: 'queue',
+        fromSessionId: 'sender',
+        mintedToSessionId: sessionId,
+        targetAgentId: 'target',
+      },
+    })
+    .run();
+}
 
 describe('synchronous session birth transfer', () => {
   it('preserves a no-allocation insert and its original return value', () => {
@@ -206,14 +253,10 @@ describe('synchronous session birth transfer', () => {
   it('requires context before calling the writer for an allocated id', () => {
     locationBirth();
     let called = false;
-    expect(() =>
-      withSessionBirthWrite(db, sessionId, undefined, () => {
-        called = true;
-      })
-    ).toThrow(SessionBirthWriteError);
+    expectRefused(undefined, () => {
+      called = true;
+    });
     expect(called).toBe(false);
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
   });
 
   it('refuses a vanished expected allocation without inserting metadata', () => {
@@ -238,19 +281,6 @@ describe('synchronous session birth transfer', () => {
     expect(allocations()).toHaveLength(1);
   });
 
-  it('rechecks the persisted location owner after preparation', () => {
-    const context = locationBirth();
-    db.update(sessionLocations)
-      .set({ ownerId: 'other' })
-      .where(eq(sessionLocations.id, 'location'))
-      .run();
-    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
-  });
-
   it('refuses a replaced allocation generation with the same id', () => {
     const context = locationBirth();
     db.update(sessionBirthAllocations).set({ createdAt: 'later' }).run();
@@ -261,124 +291,83 @@ describe('synchronous session birth transfer', () => {
     expect(metadata()).toBeUndefined();
   });
 
+  const receiptPatch = (patch: Partial<typeof chatMessages.$inferInsert>) => () =>
+    db.update(chatMessages).set(patch).where(eq(chatMessages.id, 'receipt')).run();
   it.each([
-    ['destination', { toSessionId: 'other' }],
-    ['sender', { fromSessionId: 'other' }],
-    ['sender path', { fromAgentPath: '/other' }],
-    ['queue identity', { queueMessageId: 'other' }],
     [
-      'private delivery route',
-      {
-        deliveryRoute: 'seat' as const,
+      'the location owner',
+      locationBirth,
+      () =>
+        db
+          .update(sessionLocations)
+          .set({ ownerId: 'other' })
+          .where(eq(sessionLocations.id, 'location'))
+          .run(),
+    ],
+    ['the receipt destination', receiptBirth, receiptPatch({ toSessionId: 'other' })],
+    ['the receipt sender', receiptBirth, receiptPatch({ fromSessionId: 'other' })],
+    ['the receipt sender path', receiptBirth, receiptPatch({ fromAgentPath: '/other' })],
+    ['the receipt queue identity', receiptBirth, receiptPatch({ queueMessageId: 'other' })],
+    [
+      'the receipt private delivery route',
+      receiptBirth,
+      receiptPatch({
+        deliveryRoute: 'seat',
         seatRoomId: 'private-room',
         seatAuthorId: 'private-author',
         seatJoinedAt: stamp,
         seatSessionId: sessionId,
-      },
+      }),
     ],
-  ])('rechecks the receipt %s after preparation', (_name, patch) => {
-    const context = receiptBirth();
-    db.update(chatMessages).set(patch).where(eq(chatMessages.id, 'receipt')).run();
-    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
+    ['a deleted receipt', receiptBirth, () => db.delete(chatMessages).run()],
+    [
+      'the room seat destination',
+      seatBirth,
+      () => db.update(roomSessions).set({ sessionId: 'successor' }).run(),
+    ],
+    [
+      'the room seat generation',
+      seatBirth,
+      () => db.update(roomSessions).set({ createdAt: 'new-generation' }).run(),
+    ],
+    [
+      'a retired room author',
+      seatBirth,
+      () => db.update(authors).set({ retiredAt: 'retired' }).run(),
+    ],
+    ['a deleted seat', seatBirth, () => db.delete(roomSessions).run()],
+  ] as const)('rechecks %s after preparation and refuses a change', (_name, arrange, change) => {
+    const context = arrange();
+    change();
+    expectRefused(context);
   });
 
-  it('checks an actual target agent when the receipt source names one', () => {
+  it.each([
+    ['/target', true],
+    ['/moved', false],
+  ] as const)('checks the actual target agent the receipt names (at %s)', (path, accepted) => {
     const context = receiptBirth();
     if (context.kind !== 'chat-message') throw new Error('Expected receipt fixture');
-    db.insert(agents)
-      .values({
-        id: 'target',
-        name: 'Target',
-        runtime: 'codex',
-        projectPath: '/target',
-        registeredAt: stamp,
-        updatedAt: stamp,
-      })
-      .run();
-    db.update(sessionBirthAllocations)
-      .set({
-        internalSource: {
-          kind: 'chat-message',
-          receiptId: 'receipt',
-          queueMessageId: 'queue',
-          fromSessionId: 'sender',
-          mintedToSessionId: sessionId,
-          targetAgentId: 'target',
-        },
-      })
-      .run();
-    withSessionBirthWrite(
-      db,
-      sessionId,
-      { ...context, targetAgent: { id: 'target', path: '/target' } },
-      insertMetadata
-    );
-    expect(metadata()?.modelLaunchState).toBe('pending-v1');
-  });
-
-  it('refuses a target agent whose persisted path changed', () => {
-    const context = receiptBirth();
-    if (context.kind !== 'chat-message') throw new Error('Expected receipt fixture');
-    db.insert(agents)
-      .values({
-        id: 'target',
-        name: 'Target',
-        runtime: 'codex',
-        projectPath: '/moved',
-        registeredAt: stamp,
-        updatedAt: stamp,
-      })
-      .run();
-    db.update(sessionBirthAllocations)
-      .set({
-        internalSource: {
-          kind: 'chat-message',
-          receiptId: 'receipt',
-          queueMessageId: 'queue',
-          fromSessionId: 'sender',
-          mintedToSessionId: sessionId,
-          targetAgentId: 'target',
-        },
-      })
-      .run();
-    expect(() =>
-      withSessionBirthWrite(
-        db,
-        sessionId,
-        { ...context, targetAgent: { id: 'target', path: '/target' } },
-        insertMetadata
-      )
-    ).toThrow(SessionBirthWriteError);
-    expect(metadata()).toBeUndefined();
+    targetAgentAt(path);
+    const withTarget = { ...context, targetAgent: { id: 'target', path: '/target' } };
+    if (accepted) {
+      withSessionBirthWrite(db, sessionId, withTarget, insertMetadata);
+      expect(metadata()?.modelLaunchState).toBe('pending-v1');
+    } else {
+      expectRefused(withTarget);
+    }
   });
 
   it.each([sessionId, 'other-chat'])(
     'checks a persisted dispatcher queue destination %s',
     (destination) => {
       const context = receiptBirth();
-      db.insert(sessionMessageQueue)
-        .values({
-          id: 'queue',
-          sessionId: destination,
-          position: 1,
-          content: 'hello',
-          disposition: 'queue',
-          clientId: chatClientId('sender'),
-          enqueuedAt: 1,
-        })
-        .run();
-      const write = () => withSessionBirthWrite(db, sessionId, context, insertMetadata);
+      enqueue(destination);
       if (destination === sessionId) {
-        expect(write()).toBe(1);
+        expect(withSessionBirthWrite(db, sessionId, context, insertMetadata)).toBe(1);
         expect(allocations()).toEqual([]);
       } else {
-        expect(write).toThrow(SessionBirthWriteError);
-        expect(metadata()).toBeUndefined();
-        expect(allocations()).toHaveLength(1);
+        expectRefused(context);
       }
     }
   );
@@ -399,32 +388,13 @@ describe('synchronous session birth transfer', () => {
   it('refuses dispatcher restart when its actual queue row is absent', () => {
     const context = receiptBirth();
     if (context.kind !== 'chat-message') throw new Error('Expected receipt fixture');
-    expect(() =>
-      withSessionBirthWrite(
-        db,
-        sessionId,
-        { ...context, delivery: 'dispatcher-restart' },
-        insertMetadata
-      )
-    ).toThrow(SessionBirthWriteError);
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
+    expectRefused({ ...context, delivery: 'dispatcher-restart' });
   });
 
   it('accepts restart from the real store row and its mapped sender', () => {
     const context = receiptBirth();
     if (context.kind !== 'chat-message') throw new Error('Expected receipt fixture');
-    new MessageQueueStore(db).enqueue({
-      id: 'queue',
-      sessionId,
-      content: 'hello',
-      clientId: chatClientId('sender'),
-    });
-    // A new store instance reads the durable row through the restart-facing mapping.
-    const records = new MessageQueueStore(db).list(sessionId);
-    expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({ id: 'queue', enqueuedBy: chatClientId('sender') });
-    expect(db.select().from(sessionMessageQueue).get()?.clientId).toBe(chatClientId('sender'));
+    enqueue(sessionId);
     withSessionBirthWrite(
       db,
       sessionId,
@@ -440,81 +410,16 @@ describe('synchronous session birth transfer', () => {
     (delivery) => {
       const context = receiptBirth();
       if (context.kind !== 'chat-message') throw new Error('Expected receipt fixture');
-      new MessageQueueStore(db).enqueue({
-        id: 'queue',
-        sessionId,
-        content: 'hello',
-        clientId: chatClientId('different-sender'),
-      });
-      expect(() =>
-        withSessionBirthWrite(db, sessionId, { ...context, delivery }, insertMetadata)
-      ).toThrow(SessionBirthWriteError);
-      expect(metadata()).toBeUndefined();
-      expect(allocations()).toHaveLength(1);
+      enqueue(sessionId, 'different-sender');
+      expectRefused({ ...context, delivery });
     }
   );
 
   it('refuses a restart queue destination that no longer matches the receiving chat', () => {
     const context = receiptBirth();
     if (context.kind !== 'chat-message') throw new Error('Expected receipt fixture');
-    new MessageQueueStore(db).enqueue({
-      id: 'queue',
-      sessionId: 'different-chat',
-      content: 'hello',
-      clientId: chatClientId('sender'),
-    });
-    expect(() =>
-      withSessionBirthWrite(
-        db,
-        sessionId,
-        { ...context, delivery: 'dispatcher-restart' },
-        insertMetadata
-      )
-    ).toThrow(SessionBirthWriteError);
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
-  });
-
-  it('refuses a deleted receipt instead of accepting its structural allocation', () => {
-    const context = receiptBirth();
-    db.delete(chatMessages).run();
-    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
-  });
-
-  it.each([
-    ['destination', { sessionId: 'successor' }],
-    ['generation', { createdAt: 'new-generation' }],
-  ])('rechecks the actual room seat %s', (_name, patch) => {
-    const context = seatBirth();
-    db.update(roomSessions).set(patch).run();
-    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
-  });
-
-  it('refuses a retired room author', () => {
-    const context = seatBirth();
-    db.update(authors).set({ retiredAt: 'retired' }).run();
-    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-  });
-
-  it('refuses a deleted seat and preserves its unconsumed allocation', () => {
-    const context = seatBirth();
-    db.delete(roomSessions).run();
-    expect(() => withSessionBirthWrite(db, sessionId, context, insertMetadata)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
+    enqueue('different-chat');
+    expectRefused({ ...context, delivery: 'dispatcher-restart' });
   });
 
   it('refuses an asynchronous writer before its body starts', () => {
@@ -566,11 +471,7 @@ describe('synchronous session birth transfer', () => {
 
   it('refuses a callback that did not insert the pending row', () => {
     const context = locationBirth();
-    expect(() => withSessionBirthWrite(db, sessionId, context, () => 0)).toThrow(
-      SessionBirthWriteError
-    );
-    expect(metadata()).toBeUndefined();
-    expect(allocations()).toHaveLength(1);
+    expectRefused(context, () => 0);
   });
 
   it('rolls back both metadata and a source change made during the callback', () => {

@@ -166,6 +166,13 @@ function approving(cloud: FakeCloud): FakeCloud {
     .on('POST', CONFIRM, CONFIRMED);
 }
 
+/** Set up managed access against an approving Cloud and wait for it to finish. */
+async function setUp(h: Harness): Promise<void> {
+  approving(h.cloud);
+  await h.coordinator.startEnrolment();
+  await h.coordinator.settled;
+}
+
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-remote-coordinator-'));
   initConfigManager(tmpDir);
@@ -240,20 +247,17 @@ describe('setup', () => {
     });
   });
 
-  it.each([['denied', denied]] as const)(
-    'reports %s as its own state and enrols nothing',
-    async (status, answer) => {
-      const { cloud, coordinator } = harness();
-      cloud
-        .on('POST', REQUESTS, { status: 200, body: enrolmentRequest })
-        .on('GET', REQUEST, { status: 200, body: answer });
-      await coordinator.startEnrolment();
-      await coordinator.settled;
-      expect((await coordinator.report()).enrolment).toEqual({ status });
-      expect(readRemoteState().enrolmentId).toBeNull();
-      expect(cloud.callsTo('POST', ISSUE)).toEqual([]);
-    }
-  );
+  it('reports denied as its own state and enrols nothing', async () => {
+    const { cloud, coordinator } = harness();
+    cloud
+      .on('POST', REQUESTS, { status: 200, body: enrolmentRequest })
+      .on('GET', REQUEST, { status: 200, body: denied });
+    await coordinator.startEnrolment();
+    await coordinator.settled;
+    expect((await coordinator.report()).enrolment).toEqual({ status: 'denied' });
+    expect(readRemoteState().enrolmentId).toBeNull();
+    expect(cloud.callsTo('POST', ISSUE)).toEqual([]);
+  });
 
   it('refuses a credential without an edge proof: nothing stored, nothing confirmed', async () => {
     const { cloud, coordinator, store } = harness();
@@ -392,12 +396,6 @@ describe('an enrolment from another link', () => {
 });
 
 describe('mode', () => {
-  async function setUp(h: Harness): Promise<void> {
-    approving(h.cloud);
-    await h.coordinator.startEnrolment();
-    await h.coordinator.settled;
-  }
-
   it.each(['off', 'byo'] as const)('choosing %s closes managed access at once', async (mode) => {
     const h = harness();
     await setUp(h);
@@ -418,9 +416,7 @@ describe('mode', () => {
 
   it('choosing managed needs Cloud to be reachable now, not just the switch on', async () => {
     const h = harness();
-    approving(h.cloud);
-    await h.coordinator.startEnrolment();
-    await h.coordinator.settled;
+    await setUp(h);
     await h.coordinator.selectMode('off');
     h.cloud.on('GET', '/v1/remote/status', { networkError: true });
     h.cloud.relink();
@@ -435,9 +431,7 @@ describe('mode', () => {
 describe('withdrawal', () => {
   it('is local first and stays withdrawn when Cloud is down, saying Cloud may keep a record', async () => {
     const h = harness();
-    approving(h.cloud);
-    await h.coordinator.startEnrolment();
-    await h.coordinator.settled;
+    await setUp(h);
     h.cloud
       .on('POST', REVOKE, { networkError: true })
       .on('DELETE', ENROLMENT, { networkError: true });
@@ -529,9 +523,7 @@ describe('withdrawal', () => {
 
   it('on unlink sends its Cloud calls under the old key before the link is cleared', async () => {
     const h = harness();
-    approving(h.cloud);
-    await h.coordinator.startEnrolment();
-    await h.coordinator.settled;
+    await setUp(h);
     const outcome = h.coordinator.withdrawOnUnlink();
     // The link clears its key right after the unlink step's synchronous part.
     h.cloud.unlink();

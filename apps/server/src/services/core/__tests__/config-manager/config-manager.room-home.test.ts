@@ -1,11 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import Conf, { type Schema } from 'conf';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
   backfillRoomsDefaults,
   backfillWelcomeBackDefaults,
-  CONF_JSON_SCHEMA,
   CONFIG_MIGRATIONS,
   seedCommunityNavigationPrefs,
   raiseEngagedWindowDefaults,
@@ -14,7 +12,7 @@ import {
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createMockStore } from './config-manager.fixtures.js';
+import { createMockStore, upgradeConfigFile } from './config-manager.fixtures.js';
 
 describe('seedCommunityNavigationPrefs migration (community-switcher-navigation 1.2)', () => {
   it('adds the versioned block without replacing existing ui preferences', () => {
@@ -403,28 +401,7 @@ describe('welcomeBack on a config written before it existed (real conf + Ajv)', 
 describe('raiseEngagedWindowDefaults migration (DOR-2823)', () => {
   /** Run the real upgrade to `'0.103.0'` over a stored `rooms` block. */
   function upgrade(rooms: Record<string, unknown>): { rooms: Record<string, unknown> } {
-    const dir = path.join(os.tmpdir(), 'test-dork-engaged-window-' + Date.now() + Math.random());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({ version: 1, rooms, __internal__: { migrations: { version: '0.102.0' } } }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.103.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { rooms: Record<string, unknown> };
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    return upgradeConfigFile({ rooms }, '0.102.0', '0.103.0');
   }
 
   it('raises a window still at the old shipped defaults', () => {
@@ -476,34 +453,7 @@ describe('seedSpacesOfficial migration (spec official-community-space D4)', () =
   function upgrade(spaces: Record<string, unknown>): {
     spaces: { enabled: unknown; official?: { url: unknown } };
   } {
-    const dir = path.join(os.tmpdir(), 'test-dork-spaces-official-' + Date.now() + Math.random());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          spaces,
-          __internal__: { migrations: { version: '0.106.0' } },
-        }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.107.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        spaces: { enabled: unknown; official?: { url: unknown } };
-      };
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    return upgradeConfigFile({ spaces }, '0.106.0', '0.107.0');
   }
 
   it('writes an empty link into a stored spaces block that predates it', () => {

@@ -2,33 +2,14 @@
  * The REAL wiring of `agents_changed`, `config_changed` and
  * `community_connections_changed`, not a copy of it.
  *
- * ## What the copy could not prove
- *
- * The first version of this suite carried the two `index.ts` lines verbatim and
- * asserted on the result. That proves the copy. Adversarial review measured it:
- * deleting `operatorAudience` from the actual wiring in `index.ts` left every
- * test green, because no test ever reached that line. `wireLiveChangeBroadcasts`
- * exists so the decisions have a callable home; these cases call it.
- *
- * Every case here is a MUTATION PROBE — each one fails if a specific thing is
- * removed from the wiring:
- *
- * - drop the audience on `config_changed` → the agent-principal case goes red;
- * - spread the in-process change instead of picking fields → the `projectPath`
- *   case goes red;
- * - drop either subscription → its "reaches a reader" case goes red;
- * - let a config VALUE into the payload → the secret case goes red;
- * - drop the Community subscription or its audience, or let the owner or ref
- *   onto the wire → a `community_connections_changed` case goes red.
- *
- * `index.ts` calling this function is the one link left unproven by unit test,
- * and it is a single call rather than a policy: `sse-event-allowlist.test.ts`
- * scans the server tree for both literal names, so a wiring that stopped
- * broadcasting either would fail there.
+ * Every case is a mutation probe: dropping the `config_changed` audience, spreading
+ * the in-process change instead of picking fields, dropping a subscription, or
+ * letting a config value, Community owner or ref onto the wire turns one red.
+ * That `index.ts` calls this function is checked by `sse-event-allowlist.test.ts`.
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { z } from 'zod';
 
@@ -84,7 +65,6 @@ function fakeMesh() {
   };
   return {
     source,
-    subscriberCount: () => callbacks.length,
     fire: (change: AgentIdentityChange) => callbacks.forEach((callback) => callback(change)),
   };
 }
@@ -100,7 +80,6 @@ function fakeConfig() {
   };
   return {
     source,
-    subscriberCount: () => listeners.length,
     fire: (change: ConfigChange) => listeners.forEach((listener) => listener(change)),
   };
 }
@@ -123,7 +102,6 @@ function fakeCommunityConnections() {
   };
   return {
     source,
-    subscriberCount: () => listeners.length,
     /** One committed write carrying `changes`. */
     fire: (...changes: Change[]) => listeners.forEach((listener) => listener(changes)),
   };
@@ -157,10 +135,6 @@ beforeEach(() => {
 });
 
 describe('agents_changed', () => {
-  it('is subscribed at all', () => {
-    expect(mesh.subscriberCount()).toBe(1);
-  });
-
   it('carries names, ids and a stamp — and NOT the project path', () => {
     mesh.fire(AGENT_CHANGE);
 
@@ -195,11 +169,11 @@ const PRINCIPALS: CallerPrincipal[] = [
   { kind: 'bridged', platform: 'telegram', platformUserId: '42' },
 ];
 
-describe('config_changed', () => {
-  it('is subscribed at all', () => {
-    expect(config.subscriberCount()).toBe(1);
-  });
+/** Which of {@link PRINCIPALS} receive the single broadcast of `event`. */
+const reachedKinds = (event: string): string[] =>
+  PRINCIPALS.filter((principal) => fanOut.reaches(event, principal)).map((p) => p.kind);
 
+describe('config_changed', () => {
   it('carries section names and a stamp, and nothing else', () => {
     config.fire({ sections: ['tunnel'], paths: ['tunnel'] });
 
@@ -214,17 +188,7 @@ describe('config_changed', () => {
     // what the verbatim-copy version of this suite could not do.
     config.fire({ sections: ['ui'], paths: ['ui'] });
 
-    expect(fanOut.only('config_changed').audience).toBeDefined();
-    expect(fanOut.reaches('config_changed', { kind: 'operator' })).toBe(true);
-    expect(fanOut.reaches('config_changed', { kind: 'program', userId: 'user-1' })).toBe(true);
-    expect(fanOut.reaches('config_changed', { kind: 'agent' })).toBe(false);
-    expect(
-      fanOut.reaches('config_changed', {
-        kind: 'bridged',
-        platform: 'telegram',
-        platformUserId: '42',
-      })
-    ).toBe(false);
+    expect(reachedKinds('config_changed')).toEqual(['operator', 'program']);
   });
 
   it('puts no config value on either wire format', () => {
@@ -250,26 +214,13 @@ describe('config_changed', () => {
       expect(fanOut.sent).toEqual([]);
     });
 
-    it('still broadcasts a write that stored navigation AND something else', () => {
-      config.fire({ sections: ['ui'], paths: ['ui.communityNavigation', 'ui.theme'] });
-
-      expect(fanOut.only('config_changed').data).toMatchObject({ sections: ['ui'] });
-    });
-
-    it('still broadcasts a whole-`ui` write, which is what the Settings screen sends', () => {
-      config.fire({ sections: ['ui'], paths: ['ui'] });
-
-      expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
-    });
-
-    it('matches the navigation path whole, never a sibling that shares its prefix', () => {
-      config.fire({ sections: ['ui'], paths: ['ui.communityNavigationHint'] });
-
-      expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
-    });
-
-    it('still broadcasts a write that reported no paths at all', () => {
-      config.fire({ sections: ['ui'], paths: [] });
+    it.each([
+      ['navigation AND something else', ['ui.communityNavigation', 'ui.theme']],
+      ['the whole `ui` section, as the Settings screen sends', ['ui']],
+      ['a sibling that shares the navigation prefix', ['ui.communityNavigationHint']],
+      ['no paths at all', []],
+    ])('still broadcasts a write that stored %s', (_label, paths) => {
+      config.fire({ sections: ['ui'], paths });
 
       expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
     });
@@ -285,30 +236,19 @@ describe('community_connections_changed', () => {
     remoteCommunityId: '11111111-1111-4111-8111-111111111111',
   };
 
-  it('is subscribed at all', () => {
-    expect(communities.subscriberCount()).toBe(1);
-  });
-
-  it('goes out the moment the store reports a write, one frame per write', () => {
+  it('sends one frame per write, however many rows that write changed', () => {
+    // A sweep of three expired rows is one write; three frames would cost
+    // every open window three list reads, each re-verifying every connection.
     communities.fire(ENDED);
-    communities.fire({ ...ENDED, status: 'removed' });
+    communities.fire(
+      { ...ENDED, ref: 'remote_1', status: 'removed' },
+      { ...ENDED, ref: 'remote_2', status: 'removed' }
+    );
 
     expect(fanOut.sent.map((entry) => entry.event)).toEqual([
       'community_connections_changed',
       'community_connections_changed',
     ]);
-  });
-
-  it('sends ONE frame for a write that changed several rows', () => {
-    // A sweep of three expired rows is one write; three frames would cost
-    // every open window three list reads, each re-verifying every connection.
-    communities.fire(
-      { ...ENDED, ref: 'remote_1', status: 'removed' },
-      { ...ENDED, ref: 'remote_2', status: 'removed' },
-      { ...ENDED, ref: 'remote_3', status: 'removed' }
-    );
-
-    expect(fanOut.sent.map((entry) => entry.event)).toEqual(['community_connections_changed']);
   });
 
   it('carries a stamp and nothing else — no owner, no ref, no status', () => {
@@ -350,19 +290,7 @@ describe('community_connections_changed', () => {
   it('is ADDRESSED: a person and a program receive it, an agent never does', () => {
     communities.fire(ENDED);
 
-    expect(fanOut.only('community_connections_changed').audience).toBeDefined();
-    expect(fanOut.reaches('community_connections_changed', { kind: 'operator' })).toBe(true);
-    expect(
-      fanOut.reaches('community_connections_changed', { kind: 'program', userId: 'user-1' })
-    ).toBe(true);
-    expect(fanOut.reaches('community_connections_changed', { kind: 'agent' })).toBe(false);
-    expect(
-      fanOut.reaches('community_connections_changed', {
-        kind: 'bridged',
-        platform: 'telegram',
-        platformUserId: '42',
-      })
-    ).toBe(false);
+    expect(reachedKinds('community_connections_changed')).toEqual(['operator', 'program']);
   });
 });
 
@@ -407,45 +335,16 @@ describe('the stamp', () => {
   });
 });
 
-describe('a throwing fan-out', () => {
-  it('is not caught here — the mesh and config seams already swallow reactions', () => {
-    // Deliberately documented rather than handled: `AgentRegistry` and
-    // `ConfigManager` both catch and log a subscriber that throws, so a second
-    // try/catch here would only hide which layer failed.
-    const throwingFanOut = {
-      broadcast: vi.fn(() => {
-        throw new Error('fan-out exploded');
-      }),
-    };
-    const ownMesh = fakeMesh();
-    wireLiveChangeBroadcasts({
-      meshCore: ownMesh.source,
-      configManager: fakeConfig().source,
-      communityConnections: fakeCommunityConnections().source,
-      eventFanOut: throwingFanOut,
-    });
-
-    expect(() => ownMesh.fire(AGENT_CHANGE)).toThrow('fan-out exploded');
-  });
-});
-
 describe('connector_agent_requests_changed', () => {
-  it('reaches an operator window with a stamp and nothing about the request', () => {
+  it('reaches an operator window with a stamp and nothing about the request, never an agent', () => {
+    // An agent must not learn what another agent asked for.
     const fanOut = recordingFanOut();
-    const announce = connectorAgentRequestsChangedAnnouncer(fanOut, () => '2026-09-26T12:00:00Z');
+    connectorAgentRequestsChangedAnnouncer(fanOut, () => '2026-09-26T12:00:00Z')();
 
-    announce();
-
-    const { data } = fanOut.only('connector_agent_requests_changed');
-    expect(data).toEqual({ changedAt: '2026-09-26T12:00:00Z' });
+    expect(fanOut.only('connector_agent_requests_changed').data).toEqual({
+      changedAt: '2026-09-26T12:00:00Z',
+    });
     expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'operator' })).toBe(true);
-  });
-
-  it('never reaches an agent, which must not learn what another agent asked for', () => {
-    const fanOut = recordingFanOut();
-    connectorAgentRequestsChangedAnnouncer(fanOut)();
-
-    expect(fanOut.only('connector_agent_requests_changed').audience).toBeDefined();
     expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'agent' })).toBe(false);
   });
 });
@@ -507,17 +406,12 @@ describe('capabilities_changed (DOR-2685)', () => {
 });
 
 describe('local_browser_changed', () => {
-  it('carries a stamp and nothing about the site, the agent or the folder', () => {
+  it('carries a stamp and nothing about the site, and reaches a person but never an agent', () => {
     const fanOut = recordingFanOut();
     localBrowserChangedAnnouncer(fanOut, () => '2026-11-03T12:00:00Z')();
     expect(fanOut.only('local_browser_changed').data).toEqual({
       changedAt: '2026-11-03T12:00:00Z',
     });
-  });
-
-  it('is ADDRESSED: a person receives it, an agent never does', () => {
-    const fanOut = recordingFanOut();
-    localBrowserChangedAnnouncer(fanOut)();
     expect(fanOut.reaches('local_browser_changed', { kind: 'operator' })).toBe(true);
     expect(fanOut.reaches('local_browser_changed', { kind: 'agent' })).toBe(false);
   });

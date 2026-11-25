@@ -273,17 +273,14 @@ describe('accountEligibility / eligibleAccountIds / onlyProjectsOf', () => {
     projectAccounts: { [DORKOS]: { allow: ['default', 'spare'] } },
   });
 
-  it('names the allowed projects of an only-projects verdict', () => {
-    // Purpose: the verdict carries ProjectRefs a sentence can name, falling back to the basename.
+  it('names the allowed projects, or the refusing project, in a verdict', () => {
+    // Purpose: the sentence names where the account may work (falling back to the
+    // basename), or the project whose rule refused.
     expect(accountEligibility(cfg, 'claude-code', 'work', DORK)).toEqual({
       eligible: false,
       reason: 'only-projects',
       allowedProjects: [{ root: CLIENT_APP, name: 'client-app' }],
     });
-  });
-
-  it('carries the project in a project-allowlist verdict', () => {
-    // Purpose: the sentence names the project whose rule refused.
     expect(accountEligibility(cfg, 'claude-code', 'personal', DORK)).toEqual({
       eligible: false,
       reason: 'project-allowlist',
@@ -372,49 +369,50 @@ describe('accountEligibility / eligibleAccountIds / onlyProjectsOf', () => {
 
   it('reads an empty, relative or missing folder as no project', async () => {
     // Purpose: several callers pass `''`; that must be "no project", never a throw.
-    await expect(projectOfFolder('')).resolves.toBeNull();
-    await expect(projectOfFolder(undefined)).resolves.toBeNull();
-    await expect(projectOfFolder(null)).resolves.toBeNull();
-    await expect(projectOfFolder('relative/dir')).resolves.toBeNull();
+    for (const folder of ['', undefined, null, 'relative/dir']) {
+      await expect(projectOfFolder(folder)).resolves.toBeNull();
+    }
   });
 });
 
 describe('the refusal (spec §8.3)', () => {
-  it('names the account and where it may work, for a named account', () => {
-    // Purpose: spec §8.3 "Named account" sentence, word for word.
+  it.each([
+    [
+      'a named account',
+      DORK,
+      'Work',
+      { reason: 'only-projects', allowedProjects: [CLIENT] },
+      "Work can't be used in dorkos. It's set to work only in client-app. Pick another account, or change this in Settings → Runtimes.",
+    ],
+    [
+      'a project allow list',
+      DORK,
+      'Work',
+      { reason: 'project-allowlist', project: DORK },
+      "dorkos isn't set to use Work. Pick another account, or remove dorkos's account limit in Settings → Runtimes.",
+    ],
+    [
+      'nothing eligible',
+      DORK,
+      null,
+      { reason: 'none-eligible' },
+      'No account is allowed to work in dorkos. Choose which accounts it may use in Settings → Runtimes.',
+    ],
+    [
+      'no project',
+      null,
+      'Work',
+      { reason: 'only-projects', allowedProjects: [CLIENT] },
+      "Work is set to work only in client-app, and this folder isn't in a project. Pick another account.",
+    ],
+  ] as const)('words the refusal for %s', (_case, project, label, verdict, sentence) => {
     expect(
-      describeAccountRefusal(DORK, 'Work', {
-        reason: 'only-projects',
-        allowedProjects: [CLIENT],
-      })
-    ).toBe(
-      "Work can't be used in dorkos. It's set to work only in client-app. Pick another account, or change this in Settings → Runtimes."
-    );
-  });
-
-  it('names the project whose allow list leaves the account out', () => {
-    // Purpose: spec §8.3 "Project allowlist" sentence.
-    expect(
-      describeAccountRefusal(DORK, 'Work', { reason: 'project-allowlist', project: DORK })
-    ).toBe(
-      "dorkos isn't set to use Work. Pick another account, or remove dorkos's account limit in Settings → Runtimes."
-    );
-  });
-
-  it('says nothing may work in the project when no account is eligible', () => {
-    // Purpose: spec §8.3 "Nothing eligible" sentence.
-    expect(describeAccountRefusal(DORK, null, { reason: 'none-eligible' })).toBe(
-      'No account is allowed to work in dorkos. Choose which accounts it may use in Settings → Runtimes.'
-    );
-  });
-
-  it("says the folder isn't in a project for a restricted account", () => {
-    // Purpose: spec §8.3 "No project" sentence.
-    expect(
-      describeAccountRefusal(null, 'Work', { reason: 'only-projects', allowedProjects: [CLIENT] })
-    ).toBe(
-      "Work is set to work only in client-app, and this folder isn't in a project. Pick another account."
-    );
+      describeAccountRefusal(
+        project,
+        label,
+        verdict as Parameters<typeof describeAccountRefusal>[2]
+      )
+    ).toBe(sentence);
   });
 
   it('joins several allowed projects as a person would read them', () => {

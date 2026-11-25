@@ -25,6 +25,8 @@ Everything else in it stands: everything is a space, the private space is locked
 
 **Amended by** [261125-113808](261125-113808-an-agent-that-runs-in-the-cloud-has-its-home-in-the-cloud.md) (accepted 2026-11-25): each agent has one home, and an agent that runs on a cloud agent computer has its home in the person's DorkOS in the cloud. That settles the open point below about cloud agents, and "when the home is off, the space is away" now means the agents that live on that home.
 
+**Amended by** [261125-183122](261125-183122-a-published-page-is-a-saved-copy-on-an-always-on-home.md) (accepted 2026-11-25): the consequence below that the cloud holds "the agents such a person chooses to run in the cloud, and nothing else" gains one case. The cloud may also hold the pages that person published. A published page is a copy its owner chose to place there; it is outside the private space, which still has one home.
+
 **Builds on:** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (a Mac can be the home that other computers attach to, with no cloud) and [261122-173853](261122-173853-one-space-model.md) (a space holds its members' data).
 
 ## Context

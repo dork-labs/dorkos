@@ -1,14 +1,15 @@
 name: rolling-bisect
 
 # Finds the merge that broke a ROLLING main run (DOR-5122, under DOR-5098:
-# release fast, fix forward). browser-test's push run keeps one run in flight
-# on main (DOR-5130), so one run covers several merges, and auto-revert.yml can
+# release fast, fix forward). browser-test's and test's push runs each keep one
+# run in flight on main (DOR-5130), so one run covers several merges (test
+# joined the bisect in DOR-5254), and auto-revert.yml can
 # blame a merge only when its parent had its own green run, which a rolling run
 # almost never has. scripts/rolling-bisect.sh has the rules.
 #
 # When the push run fails at H, this starts on that FIRST failure. auto-revert
-# never re-runs a rolling workflow: a re-run of an old push run joins
-# browser-test's `gate` concurrency group, where it would cancel the pending
+# never re-runs a rolling workflow: a re-run of an old push run joins the
+# workflow's `gate` concurrency group, where it would cancel the pending
 # newest-main run or be cancelled by the next merge (Nov 25, 7878dda: the
 # bisect waited for an attempt 2 that never came). Instead the first probe
 # re-tests H itself: it dispatches the same workflow on main with
@@ -35,7 +36,8 @@ name: rolling-bisect
 # Bisecting and reporting run whatever AUTO_REVERT says.
 #
 # Add a workflow to `workflows:` below when its push run becomes rolling AND it
-# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml),
+# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml
+# and test.yml),
 # and add it to ROLLING_WORKFLOWS in scripts/auto-revert.sh in the same PR
 # (test-auto-revert.sh fails until both lists match), or auto-revert re-runs
 # it into the rolling concurrency group.
@@ -49,7 +51,7 @@ name: rolling-bisect
 
 on:
   workflow_run:
-    workflows: [browser-test]
+    workflows: [browser-test, test]
     types: [completed]
   workflow_dispatch:
     inputs:

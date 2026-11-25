@@ -32,13 +32,7 @@ const NOTIFY: SenderIdentity = { subject: 'relay.agent.ns.agent-1', agentId: 'ag
 /** Identity for a session that is not a registered agent (no bindings to notify through). */
 const ANON: SenderIdentity = { subject: 'relay.session.scratch' };
 
-/**
- * Minimal binding shape matching AdapterBinding fields used by the handler.
- *
- * Defaults `canInitiate: true` so the routing/channel-matching tests in this
- * file (which predate the DOR-239 permission gate) don't need to opt in —
- * the permission itself is covered by the dedicated `canInitiate` tests below.
- */
+/** A binding; `canInitiate: true` by default, the gate itself is tested below (DOR-239). */
 function makeBinding(overrides: Record<string, unknown> = {}) {
   return {
     id: 'b-1',
@@ -101,12 +95,8 @@ function makeMockBridgeStore(overrides?: Record<string, unknown>) {
 }
 
 /**
- * The rooms/authors/mesh seam the DM fallback writes through (DOR-1209).
- *
- * The seam is faked, not the fallback: `deliverNotifyDm` itself runs for real
- * here, so these tests still exercise the resolution order and the refusals.
- * What the DM write does to a real room log is pinned against a real room
- * service in `services/relay/__tests__/notify-dm.test.ts`.
+ * The seam the DM fallback writes through (DOR-1209); `deliverNotifyDm` itself runs for
+ * real. The real room log is pinned in `services/relay/__tests__/notify-dm.test.ts`.
  */
 function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
   return {
@@ -123,6 +113,20 @@ function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
     logger: { warn: vi.fn() },
     ...overrides,
   } satisfies NonNullable<McpToolDeps['notifyDm']>;
+}
+
+/** A binding store holding exactly `bindings`. */
+function storeOf(bindings: unknown[]): McpToolDeps['bindingStore'] {
+  return makeMockBindingStore({
+    getAll: vi.fn().mockReturnValue(bindings),
+  }) as unknown as McpToolDeps['bindingStore'];
+}
+
+/** A binding router that has seen no active chat on any binding. */
+function noActiveChats(): McpToolDeps['bindingRouter'] {
+  return makeMockBindingRouter({
+    getSessionsByBinding: vi.fn().mockReturnValue([]),
+  }) as unknown as McpToolDeps['bindingRouter'];
 }
 
 function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
@@ -199,9 +203,7 @@ describe('relay_notify_user', () => {
       makeBinding({ id: 'b-2', adapterId: 'slack-main' }),
     ];
     const deps = makeMockDeps({
-      bindingStore: makeMockBindingStore({
-        getAll: vi.fn().mockReturnValue(bindings),
-      }) as unknown as McpToolDeps['bindingStore'],
+      bindingStore: storeOf(bindings),
       bindingRouter: makeMockBindingRouter({
         getSessionsByBinding: vi.fn().mockImplementation((bindingId: string) => {
           if (bindingId === 'b-2')
@@ -232,22 +234,16 @@ describe('relay_notify_user', () => {
   });
 
   it('returns NOT_AN_AGENT when the session is not a registered agent', async () => {
-    const deps = makeMockDeps();
-    const handler = makeHandler(deps, ANON);
-    const result = await handler({ message: 'Hello' });
-
+    const result = await makeHandler(makeMockDeps(), ANON)({ message: 'Hello' });
     expect(result.isError).toBe(true);
-    const data = JSON.parse(result.content[0].text);
-    expect(data.code).toBe('NOT_AN_AGENT');
+    expect(JSON.parse(result.content[0].text).code).toBe('NOT_AN_AGENT');
   });
 
   it('returns NO_BINDING with availableChannels, and no DM, when the named channel is not bound', async () => {
     const notifyDm = makeMockNotifyDm();
     const deps = makeMockDeps({
       notifyDm,
-      bindingStore: makeMockBindingStore({
-        getAll: vi.fn().mockReturnValue([makeBinding({ id: 'b-1', adapterId: 'tg-main' })]),
-      }) as unknown as McpToolDeps['bindingStore'],
+      bindingStore: storeOf([makeBinding({ id: 'b-1', adapterId: 'tg-main' })]),
       adapterManager: makeMockAdapterManager({
         listAdapters: vi.fn().mockReturnValue([]),
       }) as unknown as McpToolDeps['adapterManager'],
@@ -272,9 +268,7 @@ describe('relay_notify_user', () => {
         publish: vi.fn().mockRejectedValue(new Error('Network error')),
       } as unknown as McpToolDeps['relayCore'],
     });
-    const handler = makeHandler(deps);
-    const result = await handler({ message: 'Hello' });
-
+    const result = await makeHandler(deps)({ message: 'Hello' });
     expect(result.isError).toBe(true);
     const data = JSON.parse(result.content[0].text);
     expect(data.code).toBe('SEND_FAILED');
@@ -298,9 +292,7 @@ describe('relay_notify_user', () => {
     /** Deps with no bindings at all — the stock install. */
     function noIntegrationDeps(notifyDm = makeMockNotifyDm()): McpToolDeps {
       return makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingStore'],
+        bindingStore: storeOf([]),
         notifyDm,
       });
     }
@@ -337,9 +329,7 @@ describe('relay_notify_user', () => {
     it('also catches the case where a binding exists but no chat has ever been active', async () => {
       const notifyDm = makeMockNotifyDm();
       const deps = makeMockDeps({
-        bindingRouter: makeMockBindingRouter({
-          getSessionsByBinding: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingRouter'],
+        bindingRouter: noActiveChats(),
         notifyDm,
       });
       const handler = makeHandler(deps);
@@ -386,9 +376,7 @@ describe('relay_notify_user', () => {
       expect(fresh.canInitiate).toBe(false);
 
       const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([fresh]),
-        }) as unknown as McpToolDeps['bindingStore'],
+        bindingStore: storeOf([fresh]),
       });
       const handler = makeHandler(deps);
       const result = await handler({ message: 'Should never arrive' });
@@ -403,9 +391,7 @@ describe('relay_notify_user', () => {
       const notifyDm = makeMockNotifyDm();
       const deps = makeMockDeps({
         notifyDm,
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
-        }) as unknown as McpToolDeps['bindingStore'],
+        bindingStore: storeOf([makeBinding({ canInitiate: false })]),
       });
       const handler = makeHandler(deps);
       const result = await handler({ message: 'Surprise!' });
@@ -423,9 +409,7 @@ describe('relay_notify_user', () => {
 
     it('excludes paused bindings entirely (enabled=false never routes a notify)', async () => {
       const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: true, enabled: false })]),
-        }) as unknown as McpToolDeps['bindingStore'],
+        bindingStore: storeOf([makeBinding({ canInitiate: true, enabled: false })]),
       });
       const handler = makeHandler(deps);
       const result = await handler({ message: 'Should never arrive' });
@@ -446,17 +430,11 @@ describe('relay_notify_user', () => {
   describe('bridged bindings (§7.5)', () => {
     it('resolves and publishes under relay.bridge.initiate.* when the chat is bridged', async () => {
       const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi
-            .fn()
-            .mockReturnValue([
-              makeBinding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' }),
-            ]),
-        }) as unknown as McpToolDeps['bindingStore'],
+        bindingStore: storeOf([
+          makeBinding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' }),
+        ]),
         // sessionMap fully vacated — nothing for the router to find (§7.2).
-        bindingRouter: makeMockBindingRouter({
-          getSessionsByBinding: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingRouter'],
+        bindingRouter: noActiveChats(),
         bridgeStore: makeMockBridgeStore({
           listLiveBridges: vi
             .fn()
@@ -472,12 +450,8 @@ describe('relay_notify_user', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.sent).toBe(true);
       expect(data.chatId).toBe('chat-42');
-      // The distinguishing assertion: NOT the caller's own agent identity —
-      // the bridge delivery principal, so the send is gated as an initiate
-      // through the bridge consent branch, not the agent-sender check.
-      // DOR-889: the bridged notify asserts the server trust marker alongside
-      // the bridge principal, so the pipeline's bridge-principal guard admits
-      // this trusted server publisher.
+      // The bridge delivery principal, not the caller's identity, so the send is
+      // gated as an initiate; DOR-889: plus the server trust marker the guard admits.
       expect(deps.relayCore!.publish).toHaveBeenCalledWith(
         'relay.human.telegram.tg-main.chat-42',
         'Bridged heads up!',
@@ -487,19 +461,15 @@ describe('relay_notify_user', () => {
 
     it('blocks the send when the bridged binding has canInitiate=false', async () => {
       const deps = makeMockDeps({
-        bindingStore: makeMockBindingStore({
-          getAll: vi.fn().mockReturnValue([
-            makeBinding({
-              bridge: 'room',
-              roomId: 'room-1',
-              chatId: 'chat-42',
-              canInitiate: false,
-            }),
-          ]),
-        }) as unknown as McpToolDeps['bindingStore'],
-        bindingRouter: makeMockBindingRouter({
-          getSessionsByBinding: vi.fn().mockReturnValue([]),
-        }) as unknown as McpToolDeps['bindingRouter'],
+        bindingStore: storeOf([
+          makeBinding({
+            bridge: 'room',
+            roomId: 'room-1',
+            chatId: 'chat-42',
+            canInitiate: false,
+          }),
+        ]),
+        bindingRouter: noActiveChats(),
         bridgeStore: makeMockBridgeStore({
           listLiveBridges: vi.fn().mockReturnValue([{ bindingId: 'b-1', chatId: 'chat-42' }]),
         }) as unknown as McpToolDeps['bridgeStore'],

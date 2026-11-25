@@ -70,11 +70,6 @@ const inContainer = (fn: () => Promise<void>): (() => Promise<void>) => {
   };
 };
 
-/**
- * Upgrade-router tests: this file stands in for `sessionGate` and CORS on the
- * socket path, since a WebSocket upgrade never touches the HTTP chain.
- */
-
 let server: Server;
 let port: number;
 
@@ -88,13 +83,11 @@ async function listen(routes: UpgradeRoute[]): Promise<void> {
 
 /** The outcome of one upgrade attempt, from the client's side. */
 interface Attempt {
-  /** Set when the handshake completed and the socket then closed. */
+  /** Close code once an opened socket closed. */
   closeCode?: number;
-  /** Set when the handshake itself was refused, with its HTTP status. */
+  /** HTTP status of a refused handshake. */
   httpStatus?: number;
-  /** Whether the socket opened at all. */
   opened: boolean;
-  /** First text frame received, when one arrived before close. */
   firstFrame?: string;
 }
 
@@ -188,6 +181,9 @@ afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
+/** A page that rebound DNS to this computer: Origin and Host agree, on a name we do not serve. */
+const REBOUND = { origin: 'http://evil.example', host: 'evil.example' };
+
 /** A terminal-shaped route: authorized by holding an unguessable id. */
 const bearerRoute: UpgradeRoute = {
   name: 'terminal',
@@ -206,10 +202,9 @@ async function withTrustedHost(fn: () => Promise<void>): Promise<void> {
   }
 }
 
-// The origin policy itself (ports, `null`, wildcards, a missing or mixed-case
-// Host, IP literals) is pinned in `lib/__tests__/trusted-origins-browser.test.ts`.
-// This file pins the router's WIRING of it: which inputs it reads, and that a
-// refusal is never upgraded into an open socket.
+// This file stands in for `sessionGate` and CORS on the socket path. The origin
+// policy itself is pinned in `lib/__tests__/trusted-origins-browser.test.ts`;
+// here, only the router's wiring of it, and that a refusal never opens a socket.
 describe('attachUpgradeRouter', () => {
   it('tries routes in registration order and stops at the first match', async () => {
     const second = vi.fn(() => ({ ok: true as const, open: () => {} }));
@@ -228,6 +223,8 @@ describe('attachUpgradeRouter', () => {
     expect(result.opened).toBe(true);
     expect(result.firstFrame).toBe('hello');
     expect(second).not.toHaveBeenCalled();
+    // A `bearer-of-id` route (the terminal, ADR 260708-185521) skips the credential gate.
+    expect(gate).not.toHaveBeenCalled();
   });
 
   it('destroys an upgrade no route claims, saying nothing', async () => {
@@ -296,9 +293,7 @@ describe('attachUpgradeRouter', () => {
   });
 
   describe("the credential gate is the ROUTER's job, not each route's", () => {
-    // When each route called it, deleting all three calls left the whole server
-    // suite green: the gate was tested, its WIRING was not.
-
+    // When each route called it, deleting all three calls left every test green.
     it('runs the gate for a `required` route and hands it the resolved identity', async () => {
       gate.mockResolvedValue({
         ok: true,
@@ -326,15 +321,6 @@ describe('attachUpgradeRouter', () => {
 
       expect(authorize, 'the route never ran').not.toHaveBeenCalled();
       expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);
-    });
-
-    it('does NOT run the gate for a `bearer-of-id` route', async () => {
-      // The terminal authenticates by holding an unguessable id (ADR 260708-185521).
-      await listen([acceptingRoute]);
-
-      await attempt('/api/accept');
-
-      expect(gate).not.toHaveBeenCalled();
     });
   });
 
@@ -442,10 +428,7 @@ describe('attachUpgradeRouter', () => {
       // host allowlist is what rejects it, exactly as `hostGuard` does.
       await listen([acceptingRoute]);
 
-      const result = await attempt('/api/accept', {
-        origin: 'http://evil.example',
-        host: 'evil.example',
-      });
+      const result = await attempt('/api/accept', REBOUND);
 
       expect(result.httpStatus).toBe(403);
       expect(result.opened).toBe(false);
@@ -523,29 +506,14 @@ describe('attachUpgradeRouter', () => {
       }
     });
 
-    it(
-      'ACCEPTS an IP-literal Host under the container flag, which rebinding cannot forge',
-      inContainer(async () => {
-        await listen([acceptingRoute]);
-
-        const result = await attempt('/api/accept', {
-          origin: 'http://192.168.1.50:4242',
-          host: '192.168.1.50:4242',
-        });
-
-        expect(result.opened).toBe(true);
-      })
-    );
-
-    it('REFUSES an IP-literal Host when the flag is NOT set', async () => {
+    it('ACCEPTS an IP-literal Host only under the container flag, which rebinding cannot forge', async () => {
       await listen([acceptingRoute]);
+      const ipLiteral = { origin: 'http://192.168.1.50:4242', host: '192.168.1.50:4242' };
 
-      const result = await attempt('/api/accept', {
-        origin: 'http://192.168.1.50:4242',
-        host: '192.168.1.50:4242',
-      });
-
-      expect(result.httpStatus).toBe(403);
+      expect((await attempt('/api/accept', ipLiteral)).httpStatus).toBe(403);
+      await inContainer(async () => {
+        expect((await attempt('/api/accept', ipLiteral)).opened).toBe(true);
+      })();
     });
   });
 
@@ -554,37 +522,20 @@ describe('attachUpgradeRouter', () => {
     // used to make the same-origin branch inert — so in the shipped image a page
     // that rebinds DNS to the published address had a shell on the host.
 
-    it(
-      'REFUSES a rebound origin on the TERMINAL in the shipped container, login off',
-      inContainer(async () => {
-        loginEnabled(false);
-        await listen([bearerRoute]);
+    it.each([false, true])(
+      'REFUSES a rebound origin on the TERMINAL in the shipped container (login on: %s)',
+      (login) =>
+        inContainer(async () => {
+          // A `bearer-of-id` route skips the credential gate entirely, so login
+          // being on changes nothing for it.
+          loginEnabled(login);
+          await listen([bearerRoute]);
 
-        const result = await attempt('/api/terminal/abc/socket', {
-          origin: 'http://evil.example',
-          host: 'evil.example',
-        });
+          const result = await attempt('/api/terminal/abc/socket', REBOUND);
 
-        expect(result.httpStatus).toBe(403);
-        expect(result.opened, 'no shell for a rebound page').toBe(false);
-      })
-    );
-
-    it(
-      'REFUSES a rebound origin on the TERMINAL in the container even with login ON',
-      inContainer(async () => {
-        // A `bearer-of-id` route skips the credential gate entirely, so the
-        // origin-scoped cookie the exemption reasons about is never checked.
-        loginEnabled(true);
-        await listen([bearerRoute]);
-
-        const result = await attempt('/api/terminal/abc/socket', {
-          origin: 'http://evil.example',
-          host: 'evil.example',
-        });
-
-        expect(result.httpStatus).toBe(403);
-      })
+          expect(result.httpStatus).toBe(403);
+          expect(result.opened, 'no shell for a rebound page').toBe(false);
+        })()
     );
 
     it(
@@ -594,10 +545,7 @@ describe('attachUpgradeRouter', () => {
         gate.mockResolvedValue({ ok: false, status: 401, message: 'Unauthorized' });
         await listen([gatedRoute]);
 
-        const result = await attempt('/api/gated', {
-          origin: 'http://evil.example',
-          host: 'evil.example',
-        });
+        const result = await attempt('/api/gated', REBOUND);
 
         expect(gate).toHaveBeenCalled();
         expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);
@@ -628,10 +576,7 @@ describe('attachUpgradeRouter', () => {
         loginEnabled(askOnThisComputer);
         await listen([gatedRoute]);
 
-        const result = await attempt('/api/gated', {
-          origin: 'http://evil.example',
-          host: 'evil.example',
-        });
+        const result = await attempt('/api/gated', REBOUND);
 
         expect(result.opened, 'the credential gate is what stops this one').toBe(true);
         expect(gate).toHaveBeenCalledTimes(1);

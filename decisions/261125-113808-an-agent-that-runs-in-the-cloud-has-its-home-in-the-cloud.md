@@ -26,6 +26,8 @@ His first sentence could mean two things, so it was put to him as its own questi
 
 Everything else in it stands. A person's own computer is still the home of their private space when they have one, and their DorkOS in the cloud still keeps no copy of anything that lives on that computer.
 
+**Amended by** [261125-183122](261125-183122-a-published-page-is-a-saved-copy-on-an-always-on-home.md) (accepted 2026-11-25): the sentence above that a person's DorkOS in the cloud "still keeps no copy of anything that lives on that computer", and rule 6, "the cloud holds only what lives there", gain one case. The cloud may also hold the pages a person published, and it runs a published mini app's server half in a sealed box of its own. A published page is a copy its owner chose to place there; it is outside the private space.
+
 **Builds on:**
 
 - [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md): the space side holds an agent's data and serves its tools, and the computer side runs its turns.

@@ -1,4 +1,9 @@
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import Conf, { type Schema } from 'conf';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { CONF_JSON_SCHEMA, CONFIG_MIGRATIONS } from '../../config-manager.js';
 
 /**
  * Expected `runtimes` section defaults (spec: additional-agent-runtimes +
@@ -90,4 +95,54 @@ export function createMockStore(initial: Record<string, unknown>) {
       delete data[key];
     },
   };
+}
+
+/**
+ * Runs the real `conf` upgrade (schema, defaults, every migration) to `to`
+ * over a config file last written at `from` holding `stored`, and returns the
+ * raw text it wrote back.
+ *
+ * Read the FILE, not the store: Ajv's `useDefaults` answers from a discarded
+ * copy, so a `getDot` assertion would pass with a migration body deleted
+ * (DOR-1496).
+ *
+ * @param stored - The top-level sections of the stored file.
+ * @param from - The migration version the file was last written at.
+ * @param to - The version the upgrade runs to.
+ */
+export function upgradeConfigFileRaw(
+  stored: Record<string, unknown>,
+  from: string,
+  to: string
+): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-dork-config-upgrade-'));
+  const cfgPath = path.join(dir, 'config.json');
+  try {
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({ version: 1, ...stored, __internal__: { migrations: { version: from } } }),
+      'utf-8'
+    );
+    new Conf({
+      configName: 'config',
+      cwd: dir,
+      schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+      defaults: USER_CONFIG_DEFAULTS,
+      clearInvalidConfig: false,
+      projectVersion: to,
+      migrations: CONFIG_MIGRATIONS,
+    });
+    return fs.readFileSync(cfgPath, 'utf-8');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** {@link upgradeConfigFileRaw}, parsed. */
+export function upgradeConfigFile<T = Record<string, Record<string, unknown>>>(
+  stored: Record<string, unknown>,
+  from: string,
+  to: string
+): T {
+  return JSON.parse(upgradeConfigFileRaw(stored, from, to)) as T;
 }

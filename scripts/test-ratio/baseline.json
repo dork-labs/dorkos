@@ -14,7 +14,7 @@
       "tests": 16894
     },
     "apps/server": {
-      "ratio": 1.21,
+      "ratio": 1.2,
       "tests": 872150
     },
     "apps/site": {
@@ -46,7 +46,7 @@
       "tests": 8013
     },
     "packages/db": {
-      "ratio": 1.47,
+      "ratio": 1.41,
       "tests": 14106
     },
     "packages/decisions": {

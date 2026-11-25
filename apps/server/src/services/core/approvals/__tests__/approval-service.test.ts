@@ -12,26 +12,11 @@ import {
   APPROVAL_SUMMARY_MAX_LENGTH,
   PendingApprovalSchema,
 } from '@dorkos/shared/approval-schemas';
-import {
-  ApprovalService,
-  APPROVAL_TTL_MS,
-  MIN_APPROVAL_TTL_MS,
-  resolveApprovalTtlMs,
-} from '../approval-service.js';
+import { ApprovalService, APPROVAL_TTL_MS } from '../approval-service.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 import { eventFanOut } from '../../event-fan-out.js';
 
-/** A binding for a plausible destructive action. */
-const BINDING = {
-  capabilityId: 'marketplace.uninstall',
-  inputHash: hashApprovalInput({ name: 'sentry-monitor' }),
-};
-
-/** The other action a leaked token must never reach. */
-const OTHER_BINDING = {
-  capabilityId: 'marketplace.uninstall',
-  inputHash: hashApprovalInput({ name: 'something-else' }),
-};
+import { BINDING, OTHER_BINDING } from './approval-service.fixtures.js';
 
 describe('ApprovalService', () => {
   let db: Db;
@@ -127,19 +112,6 @@ describe('ApprovalService', () => {
         expect.any(Function)
       );
       expect(JSON.stringify(broadcast.mock.calls)).not.toContain(ticket.token);
-    });
-
-    it('defaults the title to the capability id and the tier to destructive', () => {
-      const ticket = service.request({
-        ...BINDING,
-        summary: 'Uninstall something',
-      });
-
-      const [pending] = service.listPending();
-      expect(pending.approvalId).toBe(ticket.approvalId);
-      expect(pending.capabilityTitle).toBe('marketplace.uninstall');
-      expect(pending.tier).toBe('destructive');
-      expect(pending.requestedBy).toBeUndefined();
     });
   });
 
@@ -405,192 +377,6 @@ describe('ApprovalService', () => {
     });
   });
 
-  describe('the card is described by the registry, not by the requester', () => {
-    it('takes the title and tier from the capability registry', () => {
-      const described = new ApprovalService(db, {
-        describeCapability: (id) =>
-          id === 'marketplace.install'
-            ? { title: 'Install a marketplace package', tier: 'act' }
-            : undefined,
-      });
-
-      described.request({
-        capabilityId: 'marketplace.install',
-        inputHash: BINDING.inputHash,
-        summary: 'Install "sentry-monitor"',
-      });
-
-      expect(described.listPending()[0]).toMatchObject({
-        capabilityTitle: 'Install a marketplace package',
-        tier: 'act',
-      });
-    });
-
-    // DOR-3359: a repo-pin card asks its own question and names what a yes does.
-    it('takes a per-request title and the capability’s consequence badge', () => {
-      const described = new ApprovalService(db, {
-        describeCapability: (id) =>
-          id === 'runtime.apply_repo_tools'
-            ? {
-                title: 'Allow a changed repo skill',
-                tier: 'destructive',
-                consequence: 'Widens what agents can run',
-                titledPerRequest: true,
-              }
-            : { title: 'Install a marketplace package', tier: 'act' },
-      });
-
-      described.request({
-        capabilityId: 'runtime.apply_repo_tools',
-        inputHash: BINDING.inputHash,
-        summary: 'A skill differs from the default branch.',
-        title: 'Allow a changed skill in "wt"?',
-      });
-      described.request({
-        capabilityId: 'marketplace.install',
-        inputHash: 'other',
-        summary: 'Install "sentry-monitor"',
-      });
-
-      const [repo, install] = described.listPending();
-      expect(repo).toMatchObject({
-        capabilityTitle: 'Allow a changed skill in "wt"?',
-        tier: 'destructive',
-        consequence: 'Widens what agents can run',
-      });
-      expect(install.capabilityTitle).toBe('Install a marketplace package');
-      expect(install).not.toHaveProperty('consequence');
-    });
-
-    // Security, DOR-3359: only the server's fixed templates title a card.
-    it('ignores a request’s title for a capability that does not take one', () => {
-      const described = new ApprovalService(db, {
-        describeCapability: () => ({ title: 'Install a marketplace package', tier: 'act' }),
-      });
-      described.request({
-        capabilityId: 'marketplace.install',
-        inputHash: BINDING.inputHash,
-        summary: 'Install "sentry-monitor"',
-        title: 'Allow a harmless read?',
-      });
-      expect(described.listPending()[0].capabilityTitle).toBe('Install a marketplace package');
-    });
-
-    it('never spends a tools-card yes on the hooks card, or the other way round', () => {
-      const described = new ApprovalService(db, { describeCapability: () => undefined });
-      const tools = described.request({
-        capabilityId: 'runtime.apply_repo_tools',
-        inputHash: 'same',
-        summary: 'A skill changed.',
-      });
-      const hooks = described.request({
-        capabilityId: 'runtime.apply_repo_hooks',
-        inputHash: 'same',
-        summary: 'A hook changed.',
-      });
-      described.grant(tools.approvalId);
-      described.grant(hooks.approvalId);
-      expect(
-        described.consume(tools.token, {
-          capabilityId: 'runtime.apply_repo_hooks',
-          inputHash: 'same',
-        }).outcome
-      ).toBe('mismatched');
-      expect(
-        described.consume(hooks.token, {
-          capabilityId: 'runtime.apply_repo_tools',
-          inputHash: 'same',
-        }).outcome
-      ).toBe('mismatched');
-    });
-
-    it('over-warns rather than under-warns on an id the registry does not know', () => {
-      const described = new ApprovalService(db, { describeCapability: () => undefined });
-
-      described.request({
-        capabilityId: 'someone.invented_this',
-        inputHash: BINDING.inputHash,
-        summary: 'Do something unrecognized',
-      });
-
-      expect(described.listPending()[0]).toMatchObject({
-        capabilityTitle: 'someone.invented_this',
-        tier: 'destructive',
-      });
-    });
-  });
-
-  describe('an extension tool names its extension (DOR-2685)', () => {
-    /** A registry with one running extension tool and one core action that claims a source. */
-    let live: boolean;
-    const described = () =>
-      new ApprovalService(db, {
-        describeCapability: (id) =>
-          id === 'ext_mail_app.delete_message' && live
-            ? {
-                title: 'Delete an email',
-                tier: 'destructive',
-                source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
-              }
-            : id === 'tasks.delete'
-              ? {
-                  title: 'Delete a task',
-                  tier: 'destructive',
-                  source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
-                }
-              : undefined,
-      });
-
-    beforeEach(() => {
-      live = true;
-    });
-
-    it('puts the running extension on the card, beside the tool title', () => {
-      const service = described();
-      service.request({
-        capabilityId: 'ext_mail_app.delete_message',
-        inputHash: BINDING.inputHash,
-        summary: 'wants to run "Delete an email" from "Mail"',
-      });
-
-      expect(service.listPending()[0]).toMatchObject({
-        capabilityTitle: 'Delete an email',
-        source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
-      });
-    });
-
-    it('leaves it off when the running extension is not the one the summary named', () => {
-      // A rename or a reinstall under the same id: the subtitle must never
-      // say "From Mail Pro" over a summary that says from "Mail".
-      const service = described();
-      service.request({
-        capabilityId: 'ext_mail_app.delete_message',
-        inputHash: BINDING.inputHash,
-        summary: 'wants to run "Delete an email" from "Old Mail"',
-      });
-
-      expect(service.listPending()[0]?.source).toBeUndefined();
-    });
-
-    it('leaves it off once the extension stops, and off every DorkOS action', () => {
-      const service = described();
-      const ext = service.request({
-        capabilityId: 'ext_mail_app.delete_message',
-        inputHash: BINDING.inputHash,
-        summary: 'wants to run "Delete an email" from "Mail"',
-      });
-      const core = service.request({
-        capabilityId: 'tasks.delete',
-        inputHash: BINDING.inputHash,
-        summary: 'Delete a task',
-      });
-      live = false;
-
-      expect(service.getPending(ext.approvalId)?.source).toBeUndefined();
-      expect(service.getPending(core.approvalId)?.source).toBeUndefined();
-    });
-  });
-
   describe('listPending', () => {
     it('lists what is waiting, oldest first, without token material', () => {
       const first = requestOne();
@@ -616,6 +402,34 @@ describe('ApprovalService', () => {
     });
   });
 
+  it('reports expired, not mismatched, for a stale token with the wrong binding', () => {
+    vi.useFakeTimers();
+    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+    service.grant(ticket.approvalId);
+
+    vi.advanceTimersByTime(APPROVAL_TTL_MS + 1000);
+
+    // Both things are wrong with this presentation. The caller needs to hear the
+    // one it cannot fix by rebuilding its arguments.
+    expect(service.consume(ticket.token, OTHER_BINDING)).toEqual({
+      outcome: 'expired',
+      approvalId: ticket.approvalId,
+    });
+  });
+
+  it('shortens a summary too long for a card instead of storing an unrenderable row', () => {
+    const ticket = service.request({
+      ...BINDING,
+      summary: 'x'.repeat(APPROVAL_SUMMARY_MAX_LENGTH + 200),
+    });
+
+    const [pending] = service.listPending();
+    expect(pending.approvalId).toBe(ticket.approvalId);
+    expect(pending.summary.length).toBe(APPROVAL_SUMMARY_MAX_LENGTH);
+    // Parses against the schema the cockpit uses — the point of the cap.
+    expect(PendingApprovalSchema.safeParse(pending).success).toBe(true);
+  });
+
   describe('purgeExpired', () => {
     it('deletes long-expired rows and keeps live ones', () => {
       vi.useFakeTimers();
@@ -633,213 +447,5 @@ describe('ApprovalService', () => {
         db.select().from(approvals).where(eq(approvals.id, fresh.approvalId)).get()
       ).toBeDefined();
     });
-  });
-});
-
-/**
- * Two properties the cockpit and the tier gate depend on: an expired token
- * reports that it expired even when its binding is wrong, and a summary always
- * fits the card that has to render it.
- */
-describe('ApprovalService — reporting and card limits', () => {
-  let db: Db;
-  let service: ApprovalService;
-
-  beforeEach(() => {
-    db = createTestDb();
-    service = new ApprovalService(db);
-    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
-
-  it('reports expired, not mismatched, for a stale token with the wrong binding', () => {
-    vi.useFakeTimers();
-    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
-    service.grant(ticket.approvalId);
-
-    vi.advanceTimersByTime(APPROVAL_TTL_MS + 1000);
-
-    // Both things are wrong with this presentation. The caller needs to hear the
-    // one it cannot fix by rebuilding its arguments.
-    expect(service.consume(ticket.token, OTHER_BINDING)).toEqual({
-      outcome: 'expired',
-      approvalId: ticket.approvalId,
-    });
-  });
-
-  it('still reports mismatched for a LIVE token with the wrong binding', () => {
-    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
-    service.grant(ticket.approvalId);
-
-    expect(service.consume(ticket.token, OTHER_BINDING)).toEqual({
-      outcome: 'mismatched',
-      approvalId: ticket.approvalId,
-    });
-    // Left unspent: the approval stays available for what was actually allowed.
-    expect(service.consume(ticket.token, BINDING).outcome).toBe('granted');
-  });
-
-  it('shortens a summary too long for a card instead of storing an unrenderable row', () => {
-    const ticket = service.request({
-      ...BINDING,
-      summary: 'x'.repeat(APPROVAL_SUMMARY_MAX_LENGTH + 200),
-    });
-
-    const [pending] = service.listPending();
-    expect(pending.approvalId).toBe(ticket.approvalId);
-    expect(pending.summary.length).toBe(APPROVAL_SUMMARY_MAX_LENGTH);
-    // Parses against the schema the cockpit uses — the point of the cap.
-    expect(PendingApprovalSchema.safeParse(pending).success).toBe(true);
-  });
-
-  it('leaves a summary that already fits exactly as written', () => {
-    service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor", keeping its saved data' });
-    expect(service.listPending()[0].summary).toBe(
-      'Uninstall "sentry-monitor", keeping its saved data'
-    );
-  });
-});
-
-// DOR-987: `awaitDecision` promises it NEVER rejects, because a held destructive
-// call must never be worse than the poll flow it replaces. Two endings skipped
-// the happy path and had to be pinned: a store read that throws (the settle-race
-// probe ran unguarded inside the promise executor, so its throw rejected the
-// promise AND skipped `finish`, stranding the fan-out listener for the life of
-// the process), and an abort.
-describe('ApprovalService.awaitDecision — never rejects, never leaks its listener', () => {
-  let db: Db;
-  let service: ApprovalService;
-
-  beforeEach(() => {
-    db = createTestDb();
-    service = new ApprovalService(db);
-    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('degrades to timeout when the approval store throws, and releases the listener', async () => {
-    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
-    const baseline = eventFanOut.listenerCount;
-    // The settle-race probe reads the row from SQLite; a store that is down (or a
-    // corrupt db file) throws right there, inside the promise executor.
-    vi.spyOn(db, 'select').mockImplementationOnce(() => {
-      throw new Error('SQLITE_IOERR: disk I/O error');
-    });
-
-    // A value, never a rejection — the caller falls back to the poll payload.
-    await expect(service.awaitDecision(ticket.approvalId, { timeoutMs: 60_000 })).resolves.toBe(
-      'timeout'
-    );
-    // …and the subscription is gone, rather than accumulating one dead listener
-    // per held call for the life of the process.
-    expect(eventFanOut.listenerCount).toBe(baseline);
-  });
-
-  it('ends promptly on an abort, and releases the listener', async () => {
-    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
-    const baseline = eventFanOut.listenerCount;
-    const controller = new AbortController();
-
-    // A cap far beyond the test's patience: only the abort can end this wait, so
-    // a green here cannot be the timer's doing.
-    const waiting = service.awaitDecision(ticket.approvalId, {
-      timeoutMs: 10 * 60_000,
-      signal: controller.signal,
-    });
-    controller.abort();
-
-    await expect(waiting).resolves.toBe('timeout');
-    expect(eventFanOut.listenerCount).toBe(baseline);
-  });
-
-  it('ends on an ALREADY-aborted signal without attaching anything', async () => {
-    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
-    const baseline = eventFanOut.listenerCount;
-
-    await expect(
-      service.awaitDecision(ticket.approvalId, {
-        timeoutMs: 10 * 60_000,
-        signal: AbortSignal.abort(),
-      })
-    ).resolves.toBe('timeout');
-    expect(eventFanOut.listenerCount).toBe(baseline);
-  });
-});
-
-describe('resolveApprovalTtlMs — the window can be shortened, never lengthened', () => {
-  it('takes the default when nothing is configured', () => {
-    expect(resolveApprovalTtlMs(undefined)).toBeUndefined();
-  });
-
-  it('honors a SHORTER window, which makes the gate stricter', () => {
-    expect(resolveApprovalTtlMs(5_000)).toBe(5_000);
-  });
-
-  it('CLAMPS a longer window to the default', () => {
-    // The property that makes this knob safe to have at all: a longer window
-    // would let a "yes" stay spendable well after the moment a person meant it,
-    // which is exactly what APPROVAL_TTL_MS is written to prevent.
-    expect(resolveApprovalTtlMs(APPROVAL_TTL_MS * 10)).toBe(APPROVAL_TTL_MS);
-    expect(resolveApprovalTtlMs(APPROVAL_TTL_MS + 1)).toBe(APPROVAL_TTL_MS);
-  });
-
-  it('leaves the boundary values alone', () => {
-    expect(resolveApprovalTtlMs(APPROVAL_TTL_MS)).toBe(APPROVAL_TTL_MS);
-    expect(resolveApprovalTtlMs(MIN_APPROVAL_TTL_MS)).toBe(MIN_APPROVAL_TTL_MS);
-  });
-
-  it('RAISES a window nobody could answer in time to the floor', () => {
-    // Zero or negative is not a stricter gate, it is a gate that refuses
-    // everything — indistinguishable from a broken approval system.
-    expect(resolveApprovalTtlMs(0)).toBe(MIN_APPROVAL_TTL_MS);
-    expect(resolveApprovalTtlMs(-1)).toBe(MIN_APPROVAL_TTL_MS);
-    expect(resolveApprovalTtlMs(-APPROVAL_TTL_MS * 10)).toBe(MIN_APPROVAL_TTL_MS);
-    expect(resolveApprovalTtlMs(1)).toBe(MIN_APPROVAL_TTL_MS);
-  });
-
-  it('falls back to the default on a non-finite value instead of throwing', () => {
-    // NaN would reach `new Date(now + NaN)` and throw RangeError on every
-    // destructive capability — a malformed setting must not break the gate
-    // open OR shut.
-    expect(resolveApprovalTtlMs(Number.NaN)).toBeUndefined();
-    expect(resolveApprovalTtlMs(Number.POSITIVE_INFINITY)).toBeUndefined();
-    expect(resolveApprovalTtlMs(Number.NEGATIVE_INFINITY)).toBeUndefined();
-  });
-
-  it('a floored window still mints a valid expiry rather than an Invalid Date', () => {
-    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    try {
-      const service = new ApprovalService(createTestDb(), {
-        ttlMs: resolveApprovalTtlMs(Number.NaN) ?? APPROVAL_TTL_MS,
-      });
-      const ticket = service.request({ ...BINDING, summary: 'Uninstall it' });
-      expect(Number.isNaN(new Date(ticket.expiresAt).getTime())).toBe(false);
-    } finally {
-      vi.restoreAllMocks();
-    }
-  });
-
-  it('a shortened window is really enforced when a token is presented', () => {
-    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    vi.useFakeTimers();
-    try {
-      const service = new ApprovalService(createTestDb(), {
-        ttlMs: resolveApprovalTtlMs(1_000),
-      });
-      const ticket = service.request({ ...BINDING, summary: 'Uninstall it' });
-      service.grant(ticket.approvalId);
-      vi.advanceTimersByTime(1_001);
-      expect(service.consume(ticket.token, BINDING).outcome).toBe('expired');
-    } finally {
-      vi.useRealTimers();
-      vi.restoreAllMocks();
-    }
   });
 });

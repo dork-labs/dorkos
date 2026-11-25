@@ -70,6 +70,12 @@ describe('the hub-owned table', () => {
       'mesh_register',
       'mesh_unregister',
       'mesh_deny',
+      // A scan registers what it finds, so the REST path and /invoke agree (DOR-4978).
+      'mesh.discover',
+      'mesh.register_agent',
+      'mesh.remove_agent',
+      'mesh.delete_agent_data',
+      'mesh.deny_folder',
       'tasks_create',
       'create_extension',
       'reload_extensions',

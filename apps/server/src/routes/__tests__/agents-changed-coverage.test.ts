@@ -16,7 +16,7 @@
  * subscribing to `onAgentsChanged` directly — which would prove the seam and
  * not the wire, the same gap `unregister-cascade.integration.test.ts` was
  * written to close for `onUnregister`. The payload decisions that wiring makes
- * are probed next door in `services/core/__tests__/live-change-broadcasts.test.ts`;
+ * are probed next door in `services/core/streams/__tests__/live-change-broadcasts.test.ts`;
  * this file is about which WRITES reach it. That `index.ts` really calls it is
  * held by `services/core/__tests__/sse-event-allowlist.test.ts`, which scans the
  * server tree for the literal names and fails if `GENERIC_EVENTS` lists one
@@ -80,6 +80,8 @@ import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import { AGENT_MANIFEST_PATH, UNINSTALLED_AGENT_PATH } from '@dorkos/marketplace';
 import type { RequestListener } from 'node:http';
 import { createMeshRoutes } from '../mesh.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { meshDomain } from '../../services/mesh/doors/mesh-capabilities.js';
 import { createAgentsRoutes } from '../agents.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
@@ -154,6 +156,7 @@ beforeEach(async () => {
   setOnAgentCreated(null);
 
   app = honoGroupListener([
+    capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh } }),
     { path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) },
     { path: '/api/agents', routes: createAgentsRoutes({ meshCore: mesh }) },
   ]);

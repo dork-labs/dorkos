@@ -1,20 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import Conf, { type Schema } from 'conf';
 import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   migrateStatusBarToPins,
   backfillComposerPrefs,
-  CONF_JSON_SCHEMA,
   CONFIG_MIGRATIONS,
   backfillNotificationDefaults,
   backfillPromoDismissals,
   seedMemoryProviderDefault,
   seedUiPanelTabs,
 } from '../../config-manager.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { createMockStore } from './config-manager.fixtures.js';
+import { createMockStore, upgradeConfigFile } from './config-manager.fixtures.js';
 
 describe('backfillPromoDismissals migration (sidebar-simplification D4)', () => {
   it('reserves ui.promos on a `ui` block that predates it', () => {
@@ -63,45 +58,19 @@ describe('backfillPromoDismissals migration (sidebar-simplification D4)', () => 
     // goes red, while the same upgrade boot read back as `store.get('ui').promos`
     // still answers `{ dismissedIds: [] }`. That in-memory form is what the
     // "anchor" belief rested on, and it could not have told the two apart.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-promos-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          ui: { theme: 'dark', statusBar: { pins: ['git'] } },
-          __internal__: { migrations: { version: '0.62.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        // The shipped schema, tolerances included — never rebuilt here (see CONF_JSON_SCHEMA).
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.63.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        ui: Record<string, unknown>;
-      };
-      expect(onDisk.ui.promos).toEqual({ dismissedIds: [] });
-      // The upgrade adds a section; it changes nothing the person had set.
-      expect(onDisk.ui.theme).toBe('dark');
-      expect(onDisk.ui.statusBar).toEqual({ pins: ['git'] });
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      ui: Record<string, unknown>;
+    }>(
+      {
+        ui: { theme: 'dark', statusBar: { pins: ['git'] } },
+      },
+      '0.62.0',
+      '0.63.0'
+    );
+    expect(onDisk.ui.promos).toEqual({ dismissedIds: [] });
+    // The upgrade adds a section; it changes nothing the person had set.
+    expect(onDisk.ui.theme).toBe('dark');
+    expect(onDisk.ui.statusBar).toEqual({ pins: ['git'] });
   });
 });
 
@@ -177,38 +146,15 @@ describe('seedUiPanelTabs migration (DOR-2867)', () => {
   });
 
   it('a real pre-0.112.0 config file gains the leaf on disk (full conf path)', () => {
-    const dir = path.join(os.tmpdir(), 'test-dork-ui-panel-tabs-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      const { panelTabs: _drop, ...uiWithout } = USER_CONFIG_DEFAULTS.ui;
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          ui: { ...uiWithout, theme: 'dark' },
-          __internal__: { migrations: { version: '0.111.0' } },
-        }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.112.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        ui: Record<string, unknown>;
-      };
-      expect(onDisk.ui).toHaveProperty('panelTabs', []);
-      expect(onDisk.ui.theme).toBe('dark');
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const { panelTabs: _drop, ...uiWithout } = USER_CONFIG_DEFAULTS.ui;
+    const onDisk = upgradeConfigFile<{ ui: Record<string, unknown> }>(
+      { ui: { ...uiWithout, theme: 'dark' } },
+      '0.111.0',
+      '0.112.0'
+    );
+    expect(onDisk.ui).toHaveProperty('panelTabs', []);
+    expect(onDisk.ui.theme).toBe('dark');
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });
 

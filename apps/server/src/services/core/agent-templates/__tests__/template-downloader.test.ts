@@ -344,13 +344,11 @@ describe('the GitHub token only ever goes to GitHub', () => {
 });
 
 describe('execGitClone', () => {
-  it('spawns git clone with correct args', async () => {
+  it('spawns a hardened, bounded git clone and removes its .git directory', async () => {
     const mockProc = createMockProcess();
     vi.mocked(spawn).mockReturnValue(mockProc);
 
     const promise = execGitClone('https://github.com/org/repo.git', '/tmp/target');
-
-    // Simulate successful clone
     mockProc._emit('close', 0);
     await promise;
 
@@ -378,16 +376,6 @@ describe('execGitClone', () => {
       ],
       expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] })
     );
-  });
-
-  it('runs the clone with the hardened git env and a timeout', async () => {
-    const mockProc = createMockProcess();
-    vi.mocked(spawn).mockReturnValue(mockProc);
-
-    const promise = execGitClone('https://github.com/org/repo.git', '/tmp/target');
-    mockProc._emit('close', 0);
-    await promise;
-
     const opts = vi.mocked(spawn).mock.calls[0][2] as {
       env?: NodeJS.ProcessEnv;
       timeout?: number;
@@ -398,16 +386,6 @@ describe('execGitClone', () => {
     expect(opts.env?.GIT_TERMINAL_PROMPT).toBe('0');
     // A wall-clock cap bounds a stalled clone.
     expect(opts.timeout).toBeGreaterThan(0);
-  });
-
-  it('removes .git directory after successful clone', async () => {
-    const mockProc = createMockProcess();
-    vi.mocked(spawn).mockReturnValue(mockProc);
-
-    const promise = execGitClone('https://github.com/org/repo.git', '/tmp/target');
-    mockProc._emit('close', 0);
-    await promise;
-
     expect(rm).toHaveBeenCalledWith('/tmp/target/.git', { recursive: true, force: true });
   });
 

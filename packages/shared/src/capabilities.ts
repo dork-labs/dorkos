@@ -151,6 +151,8 @@ export const PERSON_ONLY_MESSAGE = 'Only a person can do this, not an agent.';
 export const PERSON_ONLY_AGENT_HINTS = [
   'Agents make and change to-dos with todo_add and todo_update.',
   'Agents change their own promises with todo_promise_update.',
+  'Agents scan for, register and remove agents with mesh_discover, mesh_register and mesh_unregister.',
+  'Agents hide a folder from discovery with mesh_deny.',
 ] as const;
 
 /** One of {@link PERSON_ONLY_AGENT_HINTS}. */

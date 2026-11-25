@@ -15,11 +15,12 @@
  * @module routes/capability-refusals
  */
 import type { Context } from 'hono';
-import { problemBody, sendProblem } from '@dorkos/http-kit';
+import { problemBody, sendProblem, type ProblemStatus } from '@dorkos/http-kit';
 import { PROBLEM_CODES, type Problem, type ProblemCode } from '@dorkos/shared/problem';
 import { WORK_QUEUE_MAX_QUEUED } from '@dorkos/shared/work-queue-schemas';
 import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
 import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
+import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -37,6 +38,8 @@ interface Refusal {
    * other gets {@link Refusal.detail}. So only sentences written here are sent.
    */
   readonly alsoSays?: readonly string[];
+  /** The status, when a door kept one other than the code's default (a registry 422). */
+  readonly status?: ProblemStatus;
 }
 
 /** The sentence each refusal family answers with, when no tool code says more. */
@@ -253,6 +256,9 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'past_due',
     detail: 'That due date has passed. Pick a time ahead.',
   },
+  // The agent registry's doors kept the hand routes' codes, statuses and sentences
+  // (`services/mesh/doors/mesh-refusals.ts`).
+  ...MESH_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */
@@ -332,7 +338,10 @@ export function toolRefusalProblem(payload: unknown): Problem {
       ? family('invalid_request')
       : (TOOL_REFUSALS[code] ?? sharedCode(code) ?? familyOf(code));
   const listed = typeof error === 'string' && refusal.alsoSays?.includes(error);
-  return problemBody(refusal.code, { detail: listed ? error : refusal.detail });
+  return problemBody(refusal.code, {
+    detail: listed ? error : refusal.detail,
+    ...(refusal.status === undefined ? {} : { status: refusal.status }),
+  });
 }
 
 /**

@@ -161,6 +161,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       // Also a person's own queue doors (`work-queue.view_queue` and the rest, DOR-4978).
       'work-queue.',
       'mesh_',
+      // The registry's reads on `/api/mesh/*`, and a person's changes to it, person-only (DOR-4978).
+      'mesh.',
       'create_agent',
       'get_agent',
       'agent.',
