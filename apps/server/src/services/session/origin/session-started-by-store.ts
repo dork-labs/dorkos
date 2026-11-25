@@ -13,6 +13,10 @@
  * Every method is synchronous (better-sqlite3), which is what lets the limit
  * check and the insert that claims a slot run with no await between them.
  *
+ * A start is announced the moment it is first written ({@link onSessionStartRecorded}),
+ * so the work graph can record which chat started which without this domain
+ * importing it (ADR 261124-131941).
+ *
  * @module services/session/origin/session-started-by-store
  */
 import {
@@ -26,6 +30,7 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
+import { logger } from '../../../lib/logger.js';
 
 /** One stored start. */
 export interface StartedByRecord {
@@ -99,6 +104,44 @@ export type StartedByInsert = Omit<StartedByRecord, DefaultedField> &
 /** Most ids one batched read asks SQLite for at once, well under its variable limit. */
 const BATCH = 500;
 
+/** A start as {@link onSessionStartRecorded} hears it: the ids, never the words. */
+export interface RecordedStart {
+  /** The started chat. */
+  sessionId: string;
+  /** The chat that started it, or null when no chat did. */
+  startedBySessionId: string | null;
+}
+
+const startListeners = new Set<(start: RecordedStart) => void>();
+
+/**
+ * Hear each start the moment its row is first written, in the same synchronous
+ * step. A start already on record (a second insert for the same chat) is not
+ * heard again. A listener that throws is logged and never fails the start.
+ *
+ * @param listener - Called once per new start.
+ * @returns A function that stops listening.
+ */
+export function onSessionStartRecorded(listener: (start: RecordedStart) => void): () => void {
+  startListeners.add(listener);
+  return () => {
+    startListeners.delete(listener);
+  };
+}
+
+function announceStart(start: RecordedStart): void {
+  for (const listener of startListeners) {
+    try {
+      listener(start);
+    } catch (err) {
+      logger.warn('[session-started-by] a start listener failed; the start stands', {
+        sessionId: start.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
 /** Reads and writes `session_started_by`. */
 export class SessionStartedByStore {
   /**
@@ -110,14 +153,21 @@ export class SessionStartedByStore {
 
   /**
    * Record a start. A second record for the same chat replaces nothing: the
-   * first starter is the one the chat says.
+   * first starter is the one the chat says. A start that was written is
+   * announced to {@link onSessionStartRecorded}'s listeners.
    *
    * @param record - The start; `carried` defaults to false, the levels to null.
    * @returns Whether it was written.
    */
   insert(record: StartedByInsert): boolean {
     const result = this.db.insert(sessionStartedBy).values(record).onConflictDoNothing().run();
-    return result.changes > 0;
+    const written = result.changes > 0;
+    if (written)
+      announceStart({
+        sessionId: record.sessionId,
+        startedBySessionId: record.startedBySessionId,
+      });
+    return written;
   }
 
   /**
