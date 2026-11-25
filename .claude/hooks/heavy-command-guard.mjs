@@ -57,8 +57,10 @@
  * COVERAGE THIS DOES NOT HAVE
  *
  * It reads command text only: a heavy command inside a script on disk, an
- * alias, or a harness that runs no Claude hooks (bare Codex or OpenCode) walks
- * past it. Under DorkOS those runtimes are held by the server's gate instead.
+ * alias, a command or path held in a shell variable (`$T`), or a harness that
+ * runs no Claude hooks (bare Codex or OpenCode) walks past it. The one thing it
+ * reads besides the text is whether a vitest path exists as a file (a stat,
+ * against the payload cwd and any `cd` before it). Under DorkOS those runtimes are held by the server's gate instead.
  *
  * It fails CLOSED when node cannot start (run-node-hook.sh) and OPEN when it
  * crashes on a payload, like its siblings. It kills nothing and runs nothing.
@@ -66,6 +68,7 @@
  * Fixtures: scripts/test-heavy-command-guard.sh.
  */
 
+import fs from 'fs';
 import path from 'path';
 import {
   splitSegments,
@@ -195,7 +198,7 @@ const asksHelp = (args) => args.some((arg) => /^(--help|-h|--version|-v|-V)$/.te
  * @param {string[]} args - Arguments after `vitest`.
  * @returns {string | null} A refusal message, or null to allow.
  */
-function checkVitest(args, fed = false) {
+function checkVitest(args, fed = false, cwd = process.cwd()) {
   if (asksHelp(args)) return null;
   if (fed) return refusal('vitest fed its paths by xargs (any number of files)');
   const positionals = [];
@@ -208,19 +211,40 @@ function checkVitest(args, fed = false) {
     }
     positionals.push(arg);
   }
-  // `run`, `watch`, `dev` and `related` are subcommands, not paths.
+  // `related` runs every test that imports the files it is given.
+  if (positionals[0] === 'related')
+    return refusal('vitest related (every test that imports the files)');
+  // `run`, `watch`, `dev` and `bench` are subcommands, not paths.
   const paths = positionals.filter((word) => !['run', 'watch', 'dev', 'bench'].includes(word));
   if (paths.length === 0) return refusal('a whole vitest suite (no test file named)');
-  const notFile = paths.find((word) => !TEST_FILE.test(word));
+  // vitest reads every positional as a substring filter, so only a real test
+  // file, named without glob characters, is one file. This stats paths; it runs nothing.
+  const notFile = paths.find(
+    (word) => !TEST_FILE.test(word) || /[*?[\]{}]/.test(word) || !isFile(path.resolve(cwd, word))
+  );
   if (notFile) {
     return refusal(
-      `vitest given ${notFile} (a directory or a name filter runs every test file it matches)`
+      `vitest given ${notFile} (not one existing test file: a directory, a glob or a name filter runs every file it matches)`
     );
   }
   if (paths.length > MAX_FREE_TEST_FILES) {
     return refusal(`vitest given ${paths.length} test files (more than ${MAX_FREE_TEST_FILES})`);
   }
   return null;
+}
+
+/**
+ * Whether a path is an existing regular file.
+ *
+ * @param {string} target - Absolute path.
+ * @returns {boolean} True for a file.
+ */
+function isFile(target) {
+  try {
+    return fs.statSync(target).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -277,7 +301,7 @@ function checkTurbo(args) {
  */
 function checkProgram(name, args, depth, ctx = {}) {
   if (depth > 4) return null;
-  if (name === 'vitest') return checkVitest(args, ctx.fed);
+  if (name === 'vitest') return checkVitest(args, ctx.fed, ctx.cwd);
   if (name === 'tsc' || name === 'vue-tsc' || name === 'tsgo') return checkTsc(args);
   if (name === 'node') {
     if (args.some((arg) => HEAP_FLAG.test(arg)))
@@ -285,7 +309,7 @@ function checkProgram(name, args, depth, ctx = {}) {
     const script = args.find((arg) => !arg.startsWith('-'));
     if (script && /(^|\/)(tsc|typescript\/bin\/tsc|vitest(\.mjs)?)$/.test(script)) {
       const rest = args.slice(args.indexOf(script) + 1);
-      return /tsc$/.test(script) ? checkTsc(rest) : checkVitest(rest, ctx.fed);
+      return /tsc$/.test(script) ? checkTsc(rest) : checkVitest(rest, ctx.fed, ctx.cwd);
     }
     return null;
   }
@@ -299,18 +323,20 @@ function checkProgram(name, args, depth, ctx = {}) {
     return program ? checkProgram(basename(program), rest, depth + 1, ctx) : null;
   }
   if (name === 'pnpm' || name === 'yarn' || name === 'npm' || name === 'bun') {
-    const lead = args.slice(0, args.length - skipFlags(args, PM_FLAGS_WITH_VALUE).length);
+    // A package's copy: a filter or directory flag anywhere before `--` (pnpm
+    // accepts `pnpm run --filter x build` and `pnpm build --filter x`; npm's -w is
+    // --workspace, pnpm's -w is the workspace root), recursive, or a cwd inside a package.
+    const beforeDashes = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;
+    const scopedFlag = beforeDashes.some(
+      (flag) =>
+        /^(-C|--dir|--filter|-F|--cwd|--workspace|-r|--recursive|--workspaces)(=|$)/.test(flag) ||
+        /^--filter=|^-F./.test(flag) ||
+        (flag === '-w' && name === 'npm')
+    );
     const [sub, ...rest] = skipFlags(args, PM_FLAGS_WITH_VALUE);
     if (!sub) return null;
     // Already in the gate, or a root script that joins it on its own.
     if (sub === 'heavy') return null;
-    // A package's copy: a filter or directory flag (npm's -w is --workspace;
-    // pnpm's -w is the workspace root), recursive, or a cwd inside a package.
-    const scopedFlag = lead.some(
-      (flag) =>
-        /^(-C|--dir|--filter|-F|--cwd|--workspace|-r|--recursive)(=|$)/.test(flag) ||
-        (flag === '-w' && name === 'npm')
-    );
     const scoped = scopedFlag || Boolean(ctx.inPackage);
     if (sub === 'exec' || sub === 'dlx' || sub === 'x') {
       const [program, ...after] = skipFlags(rest, PM_FLAGS_WITH_VALUE);
@@ -407,6 +433,21 @@ function inGate(tokens) {
 const isPackageDir = (target) => Boolean(target) && /(^|\/)(apps|packages)\/[^/]+/.test(target);
 
 /**
+ * The directory a `cd` lands in, from the tracked working directory.
+ *
+ * @param {string} from - The working directory before the `cd`.
+ * @param {string | undefined} target - The directory `cd` was given.
+ * @returns {string} The resolved directory.
+ */
+function cdTarget(from, target) {
+  if (!target || target === '~' || target.startsWith('~/')) {
+    return path.join(process.env.HOME || '/', (target || '~').slice(1));
+  }
+  if (target === '-') return from;
+  return path.resolve(from, target);
+}
+
+/**
  * Whether a segment hands text to a shell (a shell word is one of its tokens).
  *
  * @param {string} segment - One command segment.
@@ -481,7 +522,8 @@ function inspectCommand(command, depth = 0, strict = false, ctx = {}) {
     // `cd apps/server && pnpm typecheck` runs the package's own script.
     const words = stripCommandPrefixes(tokenize(segment));
     if (basename(words[0] ?? '') === 'cd' || basename(words[0] ?? '') === 'pushd') {
-      here = { ...here, inPackage: isPackageDir(words[1]) };
+      const cwd = cdTarget(here.cwd || process.cwd(), words[1]);
+      here = { ...here, cwd, inPackage: isPackageDir(cwd) };
       continue;
     }
     const found = inspectSegment(segment, depth, here);
@@ -525,7 +567,8 @@ async function main() {
 
     const cwd = typeof payload.cwd === 'string' ? payload.cwd : '';
     const found = inspectCommand(payload.tool_input?.command, 0, false, {
-      inPackage: isPackageDir(cwd.replace(/^.*?\/(apps|packages)\//, '$1/')),
+      cwd: cwd || process.cwd(),
+      inPackage: isPackageDir(cwd || process.cwd()),
     });
     if (found) {
       console.error(found);

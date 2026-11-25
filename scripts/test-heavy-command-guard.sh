@@ -20,6 +20,16 @@ guard=${GUARD:-$repo_root/.claude/hooks/heavy-command-guard.mjs}
 payload_dir=$(mktemp -d -t heavy-command-guard-payload.XXXXXX)
 export HEAVY_GUARD_FIXTURE_PAYLOAD=$payload_dir/payload.json
 trap 'rm -rf "$payload_dir"' EXIT
+# A small tree the payload's cwd points at: the guard stats each vitest path, so
+# only files that exist here count as named test files.
+tree=$payload_dir/tree
+for f in apps/server/src/services/core/load-gate/__tests__/load-gate.test.ts \
+  scripts/__tests__/load-wait.test.ts apps/server/src/x.test.ts apps/server/src/a.test.ts \
+  a.test.ts b.test.ts c.test.ts d.test.ts apps/client/src/x.spec.tsx; do
+  mkdir -p "$tree/$(dirname "$f")" && : >"$tree/$f"
+done
+mkdir -p "$tree/apps/server/src/services/runtimes" "$tree/apps/server/src/routes" "$tree/packages"
+export HEAVY_GUARD_FIXTURE_CWD=$tree
 # The DorkOS-chat bypass is its own case below; every other case is a bare session.
 unset DORKOS_SESSION_ID
 
@@ -45,6 +55,7 @@ verdict() {
         process.env.HEAVY_GUARD_FIXTURE_PAYLOAD,
         JSON.stringify({
           tool_name: "Bash",
+          cwd: process.env.HEAVY_GUARD_FIXTURE_CWD,
           tool_input: { command: process.env.HEAVY_GUARD_FIXTURE_COMMAND },
         })
       );
@@ -160,6 +171,21 @@ allow pnpm heavy npx tsc -p apps/server/tsconfig.json --noEmit
 allow pnpm heavy pnpm vitest run apps/server/src/routes
 allow pnpm heavy bash -c 'cd apps/server && pnpm typecheck'
 allow bash scripts/heavy-run-lock.sh --job pnpm --filter @dorkos/server typecheck
+# --- Security's review of #4413: scope flags after the script, filters that look like files, cd. ---
+block pnpm run --filter @dorkos/server typecheck
+block npm run build -w apps/server
+block pnpm build --filter x
+block pnpm test --filter=@dorkos/client
+allow pnpm test -- --filter x
+block pnpm vitest run .test.ts
+block pnpm vitest run s.test.ts
+block pnpm vitest run 'apps/**/x.test.ts'
+block pnpm vitest run apps/server/src/missing.test.ts
+block pnpm vitest related apps/server/src/x.ts
+block cd apps/server/src && pnpm typecheck
+block cd apps/server && cd src && pnpm test
+allow cd apps/server && cd ../.. && pnpm typecheck
+allow cd apps/server && pnpm vitest run src/a.test.ts
 # --- the wrappers that already join the gate. ---
 allow pnpm heavy pnpm vitest run
 allow pnpm heavy turbo build
@@ -191,6 +217,9 @@ check 'a DorkOS chat (DORKOS_SESSION_ID set) is left to the server gate' allow \
 status=$(printf '%s' '{"tool_name":"Bash","cwd":"/repo/apps/server","tool_input":{"command":"pnpm typecheck"}}' |
   node "$guard" >/dev/null 2>&1; echo $?)
 check 'pnpm typecheck with cwd in apps/server is refused' 2 "$status"
+status=$(printf '%s' '{"tool_name":"Bash","cwd":"/repo/apps/server","tool_input":{"command":"cd src && pnpm typecheck"}}' |
+  node "$guard" >/dev/null 2>&1; echo $?)
+check 'cd src from apps/server keeps the package context' 2 "$status"
 status=$(printf '%s' '{"tool_name":"Bash","cwd":"/repo","tool_input":{"command":"pnpm typecheck"}}' |
   node "$guard" >/dev/null 2>&1; echo $?)
 check 'pnpm typecheck with cwd at the root joins the gate itself' 0 "$status"
