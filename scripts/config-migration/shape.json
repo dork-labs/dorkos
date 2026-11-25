@@ -314,6 +314,8 @@
   "runtimes.environment.inherit.doe[]": "string where {\"maxLength\":128,\"minLength\":1,\"pattern\":\"^[A-Za-z_][A-Za-z0-9_]*$\"}",
   "runtimes.environment.inherit.opencode": "array where {\"maxItems\":128} (default)",
   "runtimes.environment.inherit.opencode[]": "string where {\"maxLength\":128,\"minLength\":1,\"pattern\":\"^[A-Za-z_][A-Za-z0-9_]*$\"}",
+  "runtimes.environment.pathPrepend": "array where {\"maxItems\":16} (default)",
+  "runtimes.environment.pathPrepend[]": "string where {\"maxLength\":1024,\"minLength\":2}",
   "runtimes.loadGate": "object (default)",
   "runtimes.loadGate.enabled": "boolean (default)",
   "runtimes.loadGate.hardCapMinutes": "integer where {\"maximum\":9007199254740991,\"minimum\":1} (default)",

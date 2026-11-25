@@ -106,6 +106,7 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.doe',
       'runtimes.environment.inherit.opencode',
+      'runtimes.environment.pathPrepend',
       'tunnel.auth',
       'tunnel.authtoken',
       'ui.communityNavigation.owners[].destinations[].ref',

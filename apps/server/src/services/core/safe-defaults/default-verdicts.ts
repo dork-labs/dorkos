@@ -392,6 +392,8 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.environment.inherit.codex': [],
   'runtimes.environment.inherit.opencode': [],
   'runtimes.environment.inherit.doe': [],
+  // No directory is put ahead of the runtimes' own PATH until the owner names one.
+  'runtimes.environment.pathPrepend': [],
   'tunnel.domain': null,
   'tunnel.authtoken': null,
   'tunnel.auth': null,

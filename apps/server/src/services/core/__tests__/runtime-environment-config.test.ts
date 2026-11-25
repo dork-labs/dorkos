@@ -81,4 +81,46 @@ describe('real runtime environment configuration', () => {
     expect(result.ok).toBe(false);
     expect(disk()).toEqual(before);
   });
+
+  it('persists an owner pathPrepend on disk, refuses agents, and withholds it', () => {
+    const manager = initConfigManager(directory);
+    expect(disk().runtimes.environment.pathPrepend ?? []).toEqual([]);
+    const patch = { runtimes: { environment: { pathPrepend: ['/synthetic/shims'] } } };
+    const denied = applyGuardedConfigWrite({
+      patch,
+      authority: OPERATOR_TOOL_AUTHORITY,
+      source: 'config_patch',
+      writer: { kind: 'unattributed' },
+    });
+    expect(denied.ok).toBe(false);
+    expect(disk().runtimes.environment.pathPrepend ?? []).toEqual([]);
+    const owner = applyGuardedConfigWrite({
+      patch,
+      authority: LOCAL_OPERATOR_AUTHORITY,
+      source: 'dorkos config set',
+      writer: { kind: 'unattributed' },
+    });
+    expect(owner.ok).toBe(true);
+    expect(disk().runtimes.environment.pathPrepend).toEqual(['/synthetic/shims']);
+    expect(disk().runtimes.environment.inherit.codex).toEqual([]);
+    expect(JSON.stringify(projectDisclosedConfig(manager.getAll()))).not.toContain('pathPrepend');
+    new ConfigManager(directory);
+    expect(disk().runtimes.environment.pathPrepend).toEqual(['/synthetic/shims']);
+  });
+
+  it.each([['relative/shims'], ['/a:/b']])(
+    'refuses pathPrepend entry %s without a disk change',
+    (entry) => {
+      initConfigManager(directory);
+      const before = disk();
+      const result = applyGuardedConfigWrite({
+        patch: { runtimes: { environment: { pathPrepend: [entry] } } },
+        authority: LOCAL_OPERATOR_AUTHORITY,
+        source: 'dorkos config set',
+        writer: { kind: 'unattributed' },
+      });
+      expect(result.ok).toBe(false);
+      expect(disk()).toEqual(before);
+    }
+  );
 });

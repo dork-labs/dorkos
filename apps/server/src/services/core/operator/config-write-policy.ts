@@ -763,6 +763,8 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.environment.inherit.codex': 'operator-only',
   'runtimes.environment.inherit.opencode': 'operator-only',
   'runtimes.environment.inherit.doe': 'operator-only',
+  // Decides which programs every agent's commands run first (code the server spawns).
+  'runtimes.environment.pathPrepend': 'operator-only',
   'runtimes.default': 'agent-writable',
   // How much every FUTURE session may do without asking (spec `trust-dial`,
   // decision 6). Operator-only, and it is the one field in this block that is not

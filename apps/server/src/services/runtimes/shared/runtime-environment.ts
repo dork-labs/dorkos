@@ -33,6 +33,11 @@ export interface RuntimeEnvironmentInput {
   purpose: EnvironmentPurpose;
   inherit?: readonly string[];
   overrides?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Directories put first on `PATH`, in order, for a `turn` only (the owner's
+   * `runtimes.environment.pathPrepend`). Helper processes keep `PATH` as it is.
+   */
+  pathPrepend?: readonly string[];
   platform?: NodeJS.Platform;
 }
 
@@ -146,6 +151,28 @@ function parentDisablesTelemetry(input: RuntimeEnvironmentInput): boolean {
   );
 }
 
+/**
+ * Put the owner's directories first on `PATH`, in their order, and drop any
+ * later copy of them so each appears once. On Windows the existing key keeps
+ * its spelling (`Path`) and entries are split on `;`.
+ */
+function prependPath(
+  result: Record<string, string>,
+  input: RuntimeEnvironmentInput,
+  windows: boolean
+): void {
+  const delimiter = windows ? ';' : ':';
+  const same = (a: string, b: string) => (windows ? a.toUpperCase() === b.toUpperCase() : a === b);
+  const key = Object.keys(result).find((name) => same(name, 'PATH')) ?? 'PATH';
+  const first: string[] = [];
+  for (const dir of input.pathPrepend ?? [])
+    if (dir && !first.some((kept) => same(kept, dir))) first.push(dir);
+  const rest = (result[key] ?? '')
+    .split(delimiter)
+    .filter((entry) => entry && !first.some((dir) => same(dir, entry)));
+  result[key] = [...first, ...rest].join(delimiter);
+}
+
 /** Project a complete environment, validate internal overrides, and never mutate or log inputs. */
 export function projectRuntimeEnvironment(input: RuntimeEnvironmentInput): Record<string, string> {
   const inherit = RuntimeInheritedEnvNamesSchema.parse(input.inherit ?? []);
@@ -175,6 +202,7 @@ export function projectRuntimeEnvironment(input: RuntimeEnvironmentInput): Recor
     if (value === undefined) delete result[name];
     else result[name] = value;
   }
+  if (input.purpose === 'turn' && input.pathPrepend?.length) prependPath(result, input, windows);
   // Set last, so no inherited value or override can turn telemetry back on.
   if (parentDisablesTelemetry(input))
     for (const [name, value] of Object.entries(RUNTIME_TELEMETRY_OFF_ENV)) {

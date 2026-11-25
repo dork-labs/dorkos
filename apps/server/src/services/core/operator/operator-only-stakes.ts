@@ -240,6 +240,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
       'runtimes.codex.transport',
+      // Which programs every agent's commands find first on PATH.
+      'runtimes.environment.pathPrepend',
       'connectors.rawMcpServers[].slug',
       'connectors.rawMcpServers[].displayName',
       'connectors.rawMcpServers[].url',

@@ -3,6 +3,7 @@ import { projectRuntimeEnvironment } from '../runtime-environment.js';
 import { BASELINE_ENV_NAMES, RUNTIME_ENV_PROFILES } from '../runtime-environment-catalog.js';
 import {
   RuntimeInheritedEnvNamesSchema,
+  RuntimePathPrependSchema,
   RUNTIME_RESERVED_ENV_NAMES,
 } from '@dorkos/shared/config-schema';
 
@@ -252,3 +253,48 @@ it.each(['claude-code', 'codex', 'opencode', 'doe'] as const)(
         ).toThrow('Unsupported');
   }
 );
+
+describe('pathPrepend (runtimes.environment.pathPrepend)', () => {
+  it('puts the directories first on a turn and on no helper process', () => {
+    const input = { parent, runtime: 'codex', pathPrepend: ['/opt/a', '/opt/b'] } as const;
+    expect(projectRuntimeEnvironment({ ...input, purpose: 'turn' }).PATH).toBe(
+      '/opt/a:/opt/b:/synthetic/bin'
+    );
+    expect(projectRuntimeEnvironment({ ...input, purpose: 'locator' }).PATH).toBe('/synthetic/bin');
+  });
+
+  it('sets PATH to the directories alone when the parent has none', () => {
+    const { PATH: _path, ...noPath } = parent;
+    expect(
+      projectRuntimeEnvironment({
+        parent: noPath,
+        runtime: 'doe',
+        purpose: 'turn',
+        pathPrepend: ['/opt/a'],
+      }).PATH
+    ).toBe('/opt/a');
+  });
+
+  it('keeps the Windows Path spelling and splits on ";"', () => {
+    const result = projectRuntimeEnvironment({
+      parent: { Path: 'C:\\Windows;C:\\shims' },
+      runtime: 'opencode',
+      purpose: 'turn',
+      pathPrepend: ['c:\\SHIMS'],
+      platform: 'win32',
+    });
+    expect(result).toEqual(expect.objectContaining({ Path: 'c:\\SHIMS;C:\\Windows' }));
+    expect(result).not.toHaveProperty('PATH');
+  });
+
+  it('accepts absolute directories and refuses anything that could split PATH', () => {
+    expect(RuntimePathPrependSchema.parse(undefined)).toEqual([]);
+    expect(RuntimePathPrependSchema.parse(['/opt/shims', 'C:\\shims'])).toEqual([
+      '/opt/shims',
+      'C:\\shims',
+    ]);
+    for (const bad of ['relative/dir', '~/shims', '/a:/b', '/a;b', 'C:\\a;b', '/a\0b'])
+      expect(RuntimePathPrependSchema.safeParse([bad]).success, bad).toBe(false);
+    expect(RuntimePathPrependSchema.safeParse(Array(17).fill('/opt/x')).success).toBe(false);
+  });
+});

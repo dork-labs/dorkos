@@ -61,6 +61,35 @@ export const RuntimeInheritedEnvNamesSchema = z
   })
   .default(() => []);
 
+/**
+ * One directory to put first on `PATH`: absolute (`/…`, or `C:\\…` on Windows),
+ * and free of either platform's `PATH` separator so one entry stays one entry.
+ */
+const PathPrependDirSchema = z
+  .string()
+  .min(2)
+  .max(1024)
+  .refine(
+    (dir) => dir.startsWith('/') || /^[A-Za-z]:[\\/]/.test(dir),
+    'Each directory must be an absolute path.'
+  )
+  .refine(
+    (dir) =>
+      !dir.includes('\0') &&
+      !dir.includes(';') &&
+      !(dir.startsWith('/') ? dir : dir.slice(2)).includes(':'),
+    'A directory cannot contain a PATH separator (":" or ";").'
+  );
+
+/**
+ * Directories put first on `PATH` in every runtime's turn, in order. Off (empty)
+ * by default. A directory that does not exist when a turn starts is left out.
+ */
+export const RuntimePathPrependSchema = z
+  .array(PathPrependDirSchema)
+  .max(16)
+  .default(() => []);
+
 /** Complete default configuration for owner-controlled custom inheritance. */
 export const RuntimeEnvironmentSchema = z
   .object({
@@ -72,5 +101,9 @@ export const RuntimeEnvironmentSchema = z
         doe: RuntimeInheritedEnvNamesSchema,
       })
       .default(() => ({ claudeCode: [], codex: [], opencode: [], doe: [] })),
+    pathPrepend: RuntimePathPrependSchema,
   })
-  .default(() => ({ inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } }));
+  .default(() => ({
+    inherit: { claudeCode: [], codex: [], opencode: [], doe: [] },
+    pathPrepend: [],
+  }));

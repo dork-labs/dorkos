@@ -193,6 +193,7 @@ export * from './extension-config-schemas.js';
 export * from './tours-state.js';
 export {
   RuntimeInheritedEnvNamesSchema,
+  RuntimePathPrependSchema,
   isReservedRuntimeEnvName,
   RUNTIME_RESERVED_ENV_NAMES,
 } from './runtime-environment-schema.js';
