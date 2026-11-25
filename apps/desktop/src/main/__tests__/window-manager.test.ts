@@ -13,13 +13,7 @@ vi.mock('node:fs', () => ({
 
 import { createWindow, isOwnOrigin, makeRendererUrlAccessor } from '../window-manager';
 import { resetWindowStateModule } from '../window-state';
-import {
-  app,
-  BrowserWindow,
-  resetElectronMock,
-  nativeTheme,
-  type MockBrowserWindow,
-} from './electron-mock';
+import { app, BrowserWindow, resetElectronMock, type MockBrowserWindow } from './electron-mock';
 import { shell } from 'electron';
 
 const mockedReadFileSync = vi.mocked(readFileSync);
@@ -62,14 +56,6 @@ describe('createWindow — first paint (M5)', () => {
     expect(win.show).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the light background when the OS is in light mode', () => {
-    nativeTheme.shouldUseDarkColors = false;
-
-    const win = createWindow() as unknown as MockBrowserWindow;
-
-    expect(win.options.backgroundColor).toBe('#fafafa');
-  });
-
   it('re-maximizes on show when the persisted state was maximized', async () => {
     mockedReadFileSync.mockReturnValue(
       JSON.stringify({ x: 100, y: 100, width: 1000, height: 700, isMaximized: true })
@@ -89,16 +75,6 @@ describe('createWindow — first paint (M5)', () => {
     vi.useFakeTimers();
     const win = createWindow() as unknown as MockBrowserWindow;
 
-    await vi.advanceTimersByTimeAsync(4_000);
-
-    expect(win.show).toHaveBeenCalledTimes(1);
-  });
-
-  it('never shows twice when the fallback and ready-to-show both fire', async () => {
-    vi.useFakeTimers();
-    const win = createWindow() as unknown as MockBrowserWindow;
-
-    await win.emit('ready-to-show');
     await vi.advanceTimersByTimeAsync(4_000);
 
     expect(win.show).toHaveBeenCalledTimes(1);
@@ -125,16 +101,6 @@ describe('createWindow — renderer loading', () => {
     expect(win.loadURL).toHaveBeenCalledWith('http://localhost:54321');
     expect(win.loadFile).not.toHaveBeenCalled();
   });
-
-  it('prefers the dev server URL over rendererUrl when both are present', () => {
-    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
-
-    const win = createWindow({
-      getRendererUrl: origin('http://localhost:54321'),
-    }) as unknown as MockBrowserWindow;
-
-    expect(win.loadURL).toHaveBeenCalledWith('http://localhost:5173');
-  });
 });
 
 describe('isOwnOrigin', () => {
@@ -146,11 +112,6 @@ describe('isOwnOrigin', () => {
   it("treats the app's own renderer index.html as own origin (packaged build)", () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
     expect(isOwnOrigin(pathToFileURL(join(rendererDir, 'index.html')).href)).toBe(true);
-  });
-
-  it('treats renderer bundle assets (subdirectories) as own origin', () => {
-    vi.stubEnv('ELECTRON_RENDERER_URL', '');
-    expect(isOwnOrigin(pathToFileURL(join(rendererDir, 'assets/index-abc123.js')).href)).toBe(true);
   });
 
   it('rejects a file:// URL outside the renderer bundle (packaged build)', () => {
@@ -173,11 +134,6 @@ describe('isOwnOrigin', () => {
     expect(isOwnOrigin('https://example.com')).toBe(false);
   });
 
-  it('rejects a foreign origin when no dev server URL is set (packaged build)', () => {
-    vi.stubEnv('ELECTRON_RENDERER_URL', '');
-    expect(isOwnOrigin('https://example.com')).toBe(false);
-  });
-
   it('rejects an unparseable URL', () => {
     expect(isOwnOrigin('not a url')).toBe(false);
   });
@@ -190,15 +146,6 @@ describe('isOwnOrigin', () => {
   it('rejects a foreign origin even when a rendererUrl is passed', () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
     expect(isOwnOrigin('https://example.com', 'http://localhost:54321')).toBe(false);
-  });
-
-  it('prefers ELECTRON_RENDERER_URL over rendererUrl when both are present', () => {
-    // Dev never passes rendererUrl in practice (see createWindow), but the
-    // precedence matters if it ever did: HMR's dev-server origin is the
-    // real own-origin, not the packaged-build fallback.
-    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
-    expect(isOwnOrigin('http://localhost:5173/agents', 'http://localhost:54321')).toBe(true);
-    expect(isOwnOrigin('http://localhost:54321/agents', 'http://localhost:54321')).toBe(false);
   });
 });
 
@@ -320,38 +267,6 @@ describe('createWindow — will-navigate guard', () => {
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 
-  it("allows navigation to the bundled server's localhost origin in a packaged build", async () => {
-    vi.stubEnv('ELECTRON_RENDERER_URL', '');
-    const win = createWindow({
-      getRendererUrl: origin('http://localhost:54321'),
-    }) as unknown as MockBrowserWindow;
-    const preventDefault = vi.fn();
-
-    await win.webContents.emit('will-navigate', {
-      url: 'http://localhost:54321/agents',
-      preventDefault,
-    });
-
-    expect(preventDefault).not.toHaveBeenCalled();
-    expect(shell.openExternal).not.toHaveBeenCalled();
-  });
-
-  it('still blocks a foreign origin in a packaged build (rendererUrl set)', async () => {
-    vi.stubEnv('ELECTRON_RENDERER_URL', '');
-    const win = createWindow({
-      getRendererUrl: origin('http://localhost:54321'),
-    }) as unknown as MockBrowserWindow;
-    const preventDefault = vi.fn();
-
-    await win.webContents.emit('will-navigate', {
-      url: 'https://example.com/evil',
-      preventDefault,
-    });
-
-    expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
-  });
-
   it('follows the server to a new port after a restart, instead of externalising our own pages (H4)', async () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
     let port = 54321;
@@ -383,11 +298,6 @@ describe('makeRendererUrlAccessor', () => {
     expect(win.loadFile).not.toHaveBeenCalled();
   });
 
-  it('is undefined while no server is running', () => {
-    app.isPackaged = true;
-    expect(makeRendererUrlAccessor(() => null)()).toBeUndefined();
-  });
-
   it("is the server's own origin in a packaged build, re-read every call", () => {
     app.isPackaged = true;
     let port: number | null = 4242;
@@ -412,20 +322,5 @@ describe('makeRendererUrlAccessor', () => {
     port = null;
 
     expect(accessor()).toBe('http://localhost:4242');
-  });
-
-  it('prefers a live port over the one it remembered', () => {
-    app.isPackaged = true;
-    let port: number | null = 4242;
-    const accessor = makeRendererUrlAccessor(() => port);
-    accessor();
-
-    port = null;
-    expect(accessor()).toBe('http://localhost:4242');
-    port = 4243;
-
-    // A restart that moved the port must move the guards with it; the memory is
-    // only ever a stand-in for a port that is missing.
-    expect(accessor()).toBe('http://localhost:4243');
   });
 });

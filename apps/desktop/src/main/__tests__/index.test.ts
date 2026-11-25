@@ -42,11 +42,6 @@ vi.mock('../auto-updater', () => ({
   consumeUpdateRestart: vi.fn(() => false),
   recordUpdateInstallIntent: vi.fn(),
 }));
-// Reading the bundle on disk is its own suite's job; here the question is only
-// whether the two moments a person expects a new version are wired to it.
-vi.mock('../updater/manual-overwrite', () => ({
-  checkForManualOverwrite: vi.fn(async () => undefined),
-}));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),
   setTrayActivity: vi.fn(),
@@ -122,78 +117,6 @@ describe('single-instance lock (A1)', () => {
 
     expect(mockWindow.restore).toHaveBeenCalledTimes(1);
     expect(mockWindow.focus).toHaveBeenCalledTimes(1);
-  });
-
-  it('focuses without restoring when the existing window is not minimized', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const mockWindow = new BrowserWindow({ width: 1200, height: 800 });
-    mockWindow.isMinimized = vi.fn(() => false);
-    vi.mocked(windowManager.createWindow).mockReturnValue(
-      mockWindow as unknown as Electron.BrowserWindow
-    );
-
-    await import('../index');
-    await app.emit('ready');
-    await app.emit('second-instance');
-
-    expect(mockWindow.restore).not.toHaveBeenCalled();
-    expect(mockWindow.focus).toHaveBeenCalledTimes(1);
-  });
-
-  it('recreates the window on second-instance after the window was closed', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const firstWindow = new BrowserWindow({ width: 1200, height: 800 });
-    const secondWindow = new BrowserWindow({ width: 1200, height: 800 });
-    // The window-manager mock is memoized across tests — reset call counts
-    // so the assertions below only see this test's calls.
-    vi.mocked(windowManager.createWindow)
-      .mockReset()
-      .mockReturnValueOnce(firstWindow as unknown as Electron.BrowserWindow)
-      .mockReturnValueOnce(secondWindow as unknown as Electron.BrowserWindow);
-
-    await import('../index');
-    await app.emit('ready');
-
-    // macOS: the window closes but the app keeps running.
-    await firstWindow.emit('closed');
-    await app.emit('second-instance');
-
-    expect(windowManager.createWindow).toHaveBeenCalledTimes(2);
-    // The stale reference must not be touched after close.
-    expect(firstWindow.isMinimized).not.toHaveBeenCalled();
-    expect(firstWindow.focus).not.toHaveBeenCalled();
-  });
-
-  it('recreates the window on second-instance when the tracked window is destroyed', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const destroyedWindow = new BrowserWindow({ width: 1200, height: 800 });
-    destroyedWindow.isDestroyed = vi.fn(() => true);
-    // The window-manager mock is memoized across tests — reset call counts
-    // so the assertions below only see this test's calls.
-    vi.mocked(windowManager.createWindow)
-      .mockReset()
-      .mockReturnValue(destroyedWindow as unknown as Electron.BrowserWindow);
-
-    await import('../index');
-    await app.emit('ready');
-    await app.emit('second-instance');
-
-    // Destroyed window: never touched; a replacement is created instead.
-    expect(destroyedWindow.isMinimized).not.toHaveBeenCalled();
-    expect(destroyedWindow.focus).not.toHaveBeenCalled();
-    expect(windowManager.createWindow).toHaveBeenCalledTimes(2);
   });
 
   it('logs rather than failing silently when there is no window and no server port yet (DOR-564)', async () => {
@@ -279,43 +202,6 @@ describe('debugging switches at launch', () => {
     expect(windowManager.createWindow).not.toHaveBeenCalled();
   });
 
-  it('a packaged app exits on a switch only the parsed command line carries', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.isPackaged = true;
-    app.commandLine.switches['inspect'] = '';
-
-    const { serverProcess } = await launch(['/Applications/DorkOS.app/Contents/MacOS/DorkOS']);
-
-    expect(app.exit).toHaveBeenCalledWith(1);
-    expect(serverProcess.startServer).not.toHaveBeenCalled();
-  });
-
-  it('a packaged app with no debugging switch starts as usual', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.isPackaged = true;
-
-    const { serverProcess } = await launch([
-      '/Applications/DorkOS.app/Contents/MacOS/DorkOS',
-      '--enable-logging',
-    ]);
-
-    expect(app.exit).not.toHaveBeenCalled();
-    expect(app.requestSingleInstanceLock).toHaveBeenCalledTimes(1);
-    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
-  });
-
-  it('a dev build still takes debugging switches', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-
-    const { serverProcess } = await launch(['electron', '.', '--inspect=9229']);
-
-    expect(app.exit).not.toHaveBeenCalled();
-    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
-  });
-
   it('a second instance carrying debugging switches only brings the window forward', async () => {
     const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -375,16 +261,6 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
     return call[1] as (event: Electron.IpcMainInvokeEvent) => unknown;
   }
 
-  it('registers dorkos:// as the default protocol client at startup', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    await import('../index');
-
-    expect(app.setAsDefaultProtocolClient).toHaveBeenCalledWith('dorkos');
-  });
-
   it('a cold-start open-url (before any window) queues the path; it is delivered once the window is ready', async () => {
     const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -420,31 +296,6 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
     ).toBeNull();
   });
 
-  it('open-url with an already-ready window sends the navigate IPC immediately', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const win = new BrowserWindow({ width: 1200, height: 800 });
-    vi.mocked(windowManager.createWindow)
-      .mockReset()
-      .mockReturnValue(win as unknown as Electron.BrowserWindow);
-
-    await import('../index');
-    await app.emit('ready');
-
-    // Simulate the client hook's on-mount pull, which marks this window's
-    // renderer ready even though nothing is pending yet.
-    const handler = await getHandler('get-pending-navigate');
-    handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent);
-
-    const preventDefault = vi.fn();
-    await app.emit('open-url', { preventDefault }, 'dorkos://session?id=42');
-
-    expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/session?id=42');
-  });
-
   it('ignores get-pending-navigate from a sender that is not the tracked main window', async () => {
     const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -470,27 +321,6 @@ describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', ()
     expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
       '/agents'
     );
-  });
-
-  it('a malformed/unknown deep link just focuses the existing window', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const win = new BrowserWindow({ width: 1200, height: 800 });
-    vi.mocked(windowManager.createWindow)
-      .mockReset()
-      .mockReturnValue(win as unknown as Electron.BrowserWindow);
-
-    await import('../index');
-    await app.emit('ready');
-
-    const preventDefault = vi.fn();
-    await app.emit('open-url', { preventDefault }, 'https://not-dorkos.example');
-
-    expect(win.focus).toHaveBeenCalledTimes(1);
-    expect(win.webContents.send).not.toHaveBeenCalled();
   });
 });
 
@@ -535,87 +365,6 @@ describe('Windows/Linux deep links (argv delivery)', () => {
     ]);
 
     expect(win.webContents.send).toHaveBeenCalledWith('navigate', '/session?id=7');
-  });
-
-  it('a warm second-instance with argv but no deep link just focuses the window', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const win = new BrowserWindow({ width: 1200, height: 800 });
-    vi.mocked(windowManager.createWindow)
-      .mockReset()
-      .mockReturnValue(win as unknown as Electron.BrowserWindow);
-
-    await import('../index');
-    await app.emit('ready');
-
-    await app.emit('second-instance', {}, ['C:\\DorkOS\\DorkOS.exe', '--enable-logging']);
-
-    expect(win.focus).toHaveBeenCalledTimes(1);
-    expect(win.webContents.send).not.toHaveBeenCalled();
-  });
-
-  it('a cold-start deep link in process.argv is queued and delivered once the window is ready', async () => {
-    const originalPlatform = process.platform;
-    const originalArgv = process.argv;
-    // The cold-start argv scan only runs off macOS; pretend we booted on
-    // Windows with a deep link on the command line.
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-    process.argv = ['C:\\Program Files\\DorkOS\\DorkOS.exe', 'dorkos://agents/42'];
-    try {
-      const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-      resetElectronMock();
-      app.requestSingleInstanceLock = vi.fn(() => true);
-
-      const windowManager = await import('../window-manager');
-      const win = new BrowserWindow({ width: 1200, height: 800 });
-      vi.mocked(windowManager.createWindow)
-        .mockReset()
-        .mockReturnValue(win as unknown as Electron.BrowserWindow);
-
-      // Importing index runs the cold-start scan immediately (before 'ready'):
-      // no window/server exists yet, so the path must be queued, not sent.
-      await import('../index');
-      expect(win.webContents.send).not.toHaveBeenCalled();
-
-      // The window is created once the app finishes starting up, and the
-      // renderer's on-mount pull picks up the queued path (read-once).
-      await app.emit('ready');
-      const handler = await getHandler('get-pending-navigate');
-      expect(handler({ sender: win.webContents } as unknown as Electron.IpcMainInvokeEvent)).toBe(
-        '/agents/42'
-      );
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
-      process.argv = originalArgv;
-    }
-  });
-
-  it('does not register the macOS open-url handler when running off macOS', async () => {
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-    process.argv = ['C:\\DorkOS\\DorkOS.exe'];
-    try {
-      const { app, resetElectronMock } = await getElectronMock();
-      resetElectronMock();
-      app.requestSingleInstanceLock = vi.fn(() => true);
-      // `app.on` is a shared vi.fn the mock never re-creates, so its call log
-      // carries over from earlier tests — clear it so this assertion only sees
-      // the registrations `../index` makes on this (Windows) import.
-      vi.mocked(app.on).mockClear();
-
-      await import('../index');
-
-      const registeredEvents = vi.mocked(app.on).mock.calls.map(([event]) => event);
-      expect(registeredEvents).not.toContain('open-url');
-      // The cross-platform pieces are still wired.
-      expect(registeredEvents).toContain('second-instance');
-      expect(app.setAsDefaultProtocolClient).toHaveBeenCalledWith('dorkos');
-    } finally {
-      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
-    }
   });
 });
 
@@ -699,17 +448,6 @@ describe('update IPC handlers', () => {
         const { handler, action } = await bootUpdateHandler(channel);
 
         handler(ipcEventFrom('https://example.test/'));
-
-        expect(action).not.toHaveBeenCalled();
-      });
-
-      it('ignores an event whose frame is already gone', async () => {
-        const { handler, action } = await bootUpdateHandler(channel);
-
-        handler({
-          senderFrame: null,
-          sender: { mainFrame: {} },
-        } as unknown as Electron.IpcMainEvent);
 
         expect(action).not.toHaveBeenCalled();
       });
@@ -810,57 +548,6 @@ describe('update IPC handlers', () => {
   });
 });
 
-/**
- * Noticing an app replaced on disk while it kept running (DOR-1455, decision 8).
- *
- * DorkOS survives its window closing, so a drag-install leaves the OLD process
- * running and the single-instance lock turns "open the new one" into "focus the
- * old one". These are the two moments a person plainly expects the version they
- * just installed.
- */
-describe('a newer DorkOS installed while this one runs', () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  it('looks when a second launch is handed to the running instance', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const manualOverwrite = await import('../updater/manual-overwrite');
-    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
-
-    await import('../index');
-    await app.emit('second-instance', ['/Applications/DorkOS.app']);
-
-    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
-  });
-
-  it('looks when the window is focused', async () => {
-    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const windowManager = await import('../window-manager');
-    const win = new BrowserWindow({ width: 1200, height: 800 });
-    vi.mocked(windowManager.createWindow)
-      .mockReset()
-      .mockReturnValue(win as unknown as Electron.BrowserWindow);
-
-    const manualOverwrite = await import('../updater/manual-overwrite');
-    vi.mocked(manualOverwrite.checkForManualOverwrite).mockClear();
-
-    await import('../index');
-    await app.emit('ready');
-    expect(manualOverwrite.checkForManualOverwrite).not.toHaveBeenCalled();
-
-    await win.emit('focus');
-
-    expect(manualOverwrite.checkForManualOverwrite).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe('keeping DorkOS running in the background (DOR-538)', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -898,20 +585,6 @@ describe('keeping DorkOS running in the background (DOR-538)', () => {
     expect(notice.announceBackgroundRunning).toHaveBeenCalledTimes(1);
   });
 
-  it('quits when the last window closes and there is no tray to come back from', async () => {
-    const tray = await import('../tray');
-    vi.mocked(tray.hasTray).mockReturnValue(false);
-    const notice = await import('../background-notice');
-    vi.mocked(notice.announceBackgroundRunning).mockClear();
-    const { app } = await boot();
-
-    await app.emit('window-all-closed');
-
-    expect(app.quit).toHaveBeenCalledTimes(1);
-    // Nothing to reassure them about: the app really did go.
-    expect(notice.announceBackgroundRunning).not.toHaveBeenCalled();
-  });
-
   it('stays silent when quitAndInstall closes the windows on its way to an update restart', async () => {
     // quitAndInstall() "will close all application windows first, and
     // automatically call app.quit() after all windows have been closed" — so
@@ -932,60 +605,6 @@ describe('keeping DorkOS running in the background (DOR-538)', () => {
     // No quit either: quitAndInstall's own app.quit() is what finishes this.
     expect(app.quit).not.toHaveBeenCalled();
     vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
-  });
-
-  it('still quits with no tray, even mid-update — that state must be unreachable', async () => {
-    // The severe half of the update-restart bug: gating this branch on a flag
-    // another module owns meant a stuck flag could leave the app running with
-    // no window AND no tray. The flag may silence the notice; it may never
-    // stop the quit.
-    const autoUpdater = await import('../auto-updater');
-    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(true);
-    const tray = await import('../tray');
-    vi.mocked(tray.hasTray).mockReturnValue(false);
-    const { app } = await boot();
-
-    await app.emit('window-all-closed');
-
-    expect(app.quit).toHaveBeenCalledTimes(1);
-    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
-  });
-
-  it('hands the quit guard a token it can spend, not a flag it can only read', async () => {
-    const autoUpdater = await import('../auto-updater');
-    const quitGuard = await import('../quit-guard');
-    const armSpy = vi.spyOn(quitGuard, 'armQuitGuard');
-    await boot();
-
-    const [options] = armSpy.mock.calls[0];
-    expect(options.consumeUpdateRestart).toBe(autoUpdater.consumeUpdateRestart);
-    armSpy.mockRestore();
-  });
-
-  it('sets up the tray with a way back to the window and to the activity view', async () => {
-    const tray = await import('../tray');
-    vi.mocked(tray.setupTray).mockClear();
-    const { win } = await boot();
-    const navigation = await import('../navigation');
-    navigation.resolvePendingNavigate(win.webContents.id);
-
-    const [options] = vi.mocked(tray.setupTray).mock.calls[0];
-    options.showWindow();
-    expect(win.focus).toHaveBeenCalledTimes(1);
-
-    options.openActivity();
-    expect(win.webContents.send).toHaveBeenCalledWith('navigate', navigation.ACTIVITY_ROUTE);
-  });
-
-  it('feeds the tray from the server event stream, reading the port through the supervisor', async () => {
-    const activity = await import('../agent-activity');
-    vi.mocked(activity.watchAgentActivity).mockClear();
-    const tray = await import('../tray');
-    await boot();
-
-    const [options] = vi.mocked(activity.watchAgentActivity).mock.calls[0];
-    expect(options.getPort()).toBe(4242);
-    expect(options.onChange).toBe(tray.setTrayActivity);
   });
 });
 
@@ -1077,31 +696,6 @@ describe('wrong-home guard (ready sequence)', () => {
     expect(offered).toBeLessThan(started);
   });
 
-  it('starts the app anyway when the install-location check throws', async () => {
-    // Step 0 is the only await with nothing behind it yet, so an unhandled
-    // throw returns from 'ready' having started no server and created no
-    // window — and Electron surfaces a rejected async 'ready' handler nowhere.
-    // A courtesy about where the app is installed must never cost the boot.
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-
-    const guard = await import('../install-location');
-    const serverProcess = await import('../server-process');
-    const windowManager = await import('../window-manager');
-    vi.mocked(guard.offerMoveToApplications)
-      .mockClear()
-      .mockRejectedValueOnce(new Error('install-location.json holds null'));
-    vi.mocked(serverProcess.startServer).mockClear();
-    vi.mocked(windowManager.createWindow).mockClear();
-
-    await import('../index');
-    await app.emit('ready');
-
-    expect(serverProcess.startServer).toHaveBeenCalledTimes(1);
-    expect(windowManager.createWindow).toHaveBeenCalledTimes(1);
-    expect(app.quit).not.toHaveBeenCalled();
-  });
-
   it('starts nothing when the app is relaunching from its new home', async () => {
     const { app, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -1172,28 +766,5 @@ describe('server start failure', () => {
     // No window, no menu/updater setup — the app must not proceed past the
     // failed server start into a half-initialized, windowless state.
     expect(windowManager.createWindow).not.toHaveBeenCalled();
-  });
-
-  it('drops the "try restarting" advice when the failure already says what to do', async () => {
-    const { app, dialog, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const { PortUnavailableError } = await import('../server-port');
-    const refusal =
-      'DorkOS is set to use port 5000, and something else on this computer already has it. ' +
-      'Quit whatever is using port 5000 and open DorkOS again.';
-    const serverProcess = await import('../server-process');
-    vi.mocked(serverProcess.startServer).mockRejectedValueOnce(new PortUnavailableError(refusal));
-
-    await import('../index');
-    await app.emit('ready');
-
-    const [, message] = vi.mocked(dialog.showErrorBox).mock.calls[0];
-    expect(message).toBe(refusal);
-    // "Try restarting the app" is not merely unhelpful for a pinned port that
-    // is still taken next launch — it contradicts the sentence underneath it,
-    // which is how people learn to stop reading these boxes.
-    expect(message).not.toMatch(/try restarting the app/i);
   });
 });

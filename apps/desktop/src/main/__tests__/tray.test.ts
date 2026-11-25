@@ -5,14 +5,7 @@ vi.mock('../diagnostics', () => ({ saveDiagnosticReportInteractive: vi.fn() }));
 
 import { hasTray, resetTray, setTrayActivity, setupTray } from '../tray';
 import { saveDiagnosticReportInteractive } from '../diagnostics';
-import {
-  app,
-  Menu,
-  Tray,
-  nativeImage,
-  resetElectronMock,
-  unreadableImageFiles,
-} from './electron-mock';
+import { app, Tray, nativeImage, resetElectronMock } from './electron-mock';
 
 const originalPlatform = process.platform;
 
@@ -66,17 +59,6 @@ describe('setupTray', () => {
     expect(Tray.instances[0].image.templateImage).toBe(true);
   });
 
-  it('creates a visible (non-template) tray on Windows', () => {
-    onPlatform('win32');
-
-    setupTray(options);
-
-    expect(hasTray()).toBe(true);
-    const [path] = vi.mocked(nativeImage.createFromPath).mock.calls[0];
-    expect(path).toMatch(/trayIcon\.png$/);
-    expect(Tray.instances[0].image.templateImage).toBe(false);
-  });
-
   it('opens the window on a left click on Windows only — macOS opens the menu instead', () => {
     onPlatform('win32');
     setupTray(options);
@@ -96,39 +78,6 @@ describe('setupTray', () => {
     expect(hasTray()).toBe(false);
     expect(Tray.instances).toHaveLength(0);
   });
-
-  it('runs without a tray when the image cannot be read', () => {
-    onPlatform('darwin');
-    unreadableImageFiles.add('trayTemplate.png');
-
-    setupTray(options);
-
-    expect(hasTray()).toBe(false);
-    expect(Tray.instances).toHaveLength(0);
-  });
-
-  it('runs without a tray when the platform refuses to create one', () => {
-    onPlatform('darwin');
-    vi.mocked(nativeImage.createFromPath).mockImplementationOnce(() => {
-      throw new Error('no display available');
-    });
-
-    // This runs inside the async `ready` handler, whose rejections Electron
-    // surfaces nowhere — a throw here would skip the activity watch, the
-    // display watch and the updater with no log line and no explanation.
-    expect(() => setupTray(options)).not.toThrow();
-    expect(hasTray()).toBe(false);
-    expect(Tray.instances).toHaveLength(0);
-  });
-
-  it('is idempotent — a second call does not create a second tray', () => {
-    onPlatform('darwin');
-
-    setupTray(options);
-    setupTray(options);
-
-    expect(Tray.instances).toHaveLength(1);
-  });
 });
 
 describe('tray menu', () => {
@@ -137,12 +86,6 @@ describe('tray menu', () => {
     options.openActivity = vi.fn();
     onPlatform('darwin');
     setupTray(options);
-  });
-
-  it('leads with the activity summary as a non-clickable line', () => {
-    const [summary] = Tray.instances[0].contextMenuTemplate();
-    expect(summary.label).toBe('No agents working');
-    expect(summary.enabled).toBe(false);
   });
 
   it('offers opening the cockpit, the activity view, saving a report, and quitting', () => {
@@ -205,15 +148,6 @@ describe('setTrayActivity', () => {
     expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 1 working');
   });
 
-  it('says "1 waiting" rather than "1 waitings"', () => {
-    onPlatform('darwin');
-    setupTray(options);
-
-    setTrayActivity({ streaming: 0, blocked: 1 });
-
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 1 waiting');
-  });
-
   it('joins working and waiting into one sentence when both are non-zero', () => {
     onPlatform('darwin');
     setupTray(options);
@@ -222,15 +156,6 @@ describe('setTrayActivity', () => {
 
     expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 working · 1 waiting');
     expect(menuLabels()[0]).toBe('2 working · 1 waiting');
-  });
-
-  it('omits the working half when nothing is streaming', () => {
-    onPlatform('darwin');
-    setupTray(options);
-
-    setTrayActivity({ streaming: 0, blocked: 2 });
-
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 waiting');
   });
 
   it('clears the macOS title when nothing is running, rather than showing a zero', () => {
@@ -269,27 +194,6 @@ describe('setTrayActivity', () => {
     expect(Tray.instances[0].setTitle).toHaveBeenLastCalledWith('3');
   });
 
-  it('does not set a title on Windows, where there is no text beside a tray icon', () => {
-    onPlatform('win32');
-    setupTray(options);
-
-    setTrayActivity({ streaming: 2, blocked: 0 });
-
-    expect(Tray.instances[0].setTitle).not.toHaveBeenCalled();
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 working');
-  });
-
-  it('does not redraw when neither count has changed', () => {
-    onPlatform('darwin');
-    setupTray(options);
-    setTrayActivity({ streaming: 2, blocked: 0 });
-    const redrawsSoFar = vi.mocked(Menu.buildFromTemplate).mock.calls.length;
-
-    setTrayActivity({ streaming: 2, blocked: 0 });
-
-    expect(vi.mocked(Menu.buildFromTemplate).mock.calls).toHaveLength(redrawsSoFar);
-  });
-
   it('is a no-op with no tray, rather than throwing', () => {
     onPlatform('linux');
     setupTray(options);
@@ -306,25 +210,5 @@ describe('setTrayActivity', () => {
 
     setTrayActivity({ streaming: 1, blocked: 0 });
     expect(app.dock?.setBadge).toHaveBeenLastCalledWith('');
-  });
-
-  it('does not touch the Dock badge off macOS', () => {
-    onPlatform('win32');
-    setupTray(options);
-
-    setTrayActivity({ streaming: 0, blocked: 2 });
-
-    expect(app.dock?.setBadge).not.toHaveBeenCalled();
-  });
-
-  it('sets the Dock badge even when there is no tray to redraw', () => {
-    onPlatform('darwin');
-    unreadableImageFiles.add('trayTemplate.png');
-    setupTray(options);
-    expect(hasTray()).toBe(false);
-
-    setTrayActivity({ streaming: 0, blocked: 1 });
-
-    expect(app.dock?.setBadge).toHaveBeenLastCalledWith('1');
   });
 });

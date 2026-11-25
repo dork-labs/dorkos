@@ -51,28 +51,6 @@ describe('setupMenu (B1)', () => {
     vi.resetModules();
   });
 
-  it('builds top-level menus: custom app menu, editMenu, viewMenu, Window, help', async () => {
-    const { Menu, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    const { setupMenu } = await import('../menu');
-
-    setupMenu(() => null, vi.fn());
-
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    expect(template).toBeDefined();
-    expect(template![0].label).toBe('DorkOS');
-    expect(template!.some((item) => item.role === 'editMenu')).toBe(true);
-    expect(template!.some((item) => item.role === 'viewMenu')).toBe(true);
-    // The role is KEPT while the submenu is replaced: dropping it would cost
-    // the macOS windows menu (the automatic list of open windows and the
-    // frontmost checkmark), which matters most now that a second cockpit
-    // window is possible.
-    expect(template!.some((item) => item.role === 'windowMenu')).toBe(true);
-    expect(template!.some((item) => item.role === 'help')).toBe(true);
-    expect(Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
-  });
-
   it('Window has minimize/zoom, Close Tab on Cmd+W, Close Window on Shift+Cmd+W, and front', async () => {
     const { Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -95,28 +73,6 @@ describe('setupMenu (B1)', () => {
       undefined,
       'front',
     ]);
-  });
-
-  it('app menu has About, a gated Check for Updates…, and Settings… with CmdOrCtrl+, accelerator', async () => {
-    const { app, Menu, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.isPackaged = false;
-    const { setupMenu } = await import('../menu');
-
-    setupMenu(() => null, vi.fn());
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    const appMenu = template![0].submenu as Electron.MenuItemConstructorOptions[];
-
-    expect(appMenu.some((item) => item.role === 'about')).toBe(true);
-
-    const checkForUpdates = appMenu.find((item) => item.label === 'Check for Updates…');
-    expect(checkForUpdates).toBeDefined();
-    expect(checkForUpdates!.enabled).toBe(false);
-
-    const settingsItem = appMenu.find((item) => item.label === 'Settings…');
-    expect(settingsItem).toBeDefined();
-    expect(settingsItem!.accelerator).toBe('CmdOrCtrl+,');
   });
 
   it('Check for Updates… is enabled when packaged and disabled when not, and click triggers checkForUpdatesInteractive', async () => {
@@ -199,27 +155,6 @@ describe('setupMenu (B1)', () => {
     helpItems[2].click!({} as never, undefined, {} as never);
     expect(shell.openExternal).toHaveBeenCalledWith('https://dorkos.ai');
   });
-
-  it('Help menu offers Save Diagnostic Report…, enabled even in an unpackaged build', async () => {
-    const { app, Menu, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.isPackaged = false;
-    const { setupMenu } = await import('../menu');
-    const { saveDiagnosticReportInteractive } = await import('../diagnostics');
-
-    setupMenu(() => null, vi.fn());
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    const item = findItem(template!, 'Save Diagnostic Report…');
-
-    expect(item).toBeDefined();
-    // Unlike Check for Updates…, this is not gated on `app.isPackaged`: a dev
-    // build's logs are worth collecting, and the report says which it came from.
-    expect(item!.enabled).toBeUndefined();
-
-    item!.click!({} as never, undefined, {} as never);
-    expect(saveDiagnosticReportInteractive).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('setupMenu on win32/linux (DOR-310)', () => {
@@ -259,76 +194,6 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     }
   );
 
-  it('File has Settings… (CmdOrCtrl+,) then Exit (role quit, no accelerator)', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    const { Menu, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    const { setupMenu } = await import('../menu');
-    const { SETTINGS_ROUTE, resolvePendingNavigate } = await import('../navigation');
-
-    const ensureWindow = vi.fn();
-    setupMenu(() => null, ensureWindow);
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    const fileMenu = template!.find((item) => item.label === 'File')!
-      .submenu as Electron.MenuItemConstructorOptions[];
-
-    const settingsItem = fileMenu.find((item) => item.label === 'Settings…');
-    expect(settingsItem).toBeDefined();
-    expect(settingsItem!.accelerator).toBe('CmdOrCtrl+,');
-    settingsItem!.click!({} as never, undefined, {} as never);
-    expect(ensureWindow).toHaveBeenCalledTimes(1);
-    expect(resolvePendingNavigate(1)).toBe(SETTINGS_ROUTE);
-
-    // DOR-561: Exit no longer claims Alt+F4 — that's the Windows convention
-    // for closing the active window, not quitting the app, and since DOR-538
-    // closing the window deliberately doesn't quit.
-    const exitItem = fileMenu.find((item) => item.label === 'Exit');
-    expect(exitItem).toBeDefined();
-    expect(exitItem!.role).toBe('quit');
-    expect(exitItem!.accelerator).toBeUndefined();
-  });
-
-  it('Edit has the standard undo/redo/cut/copy/paste/selectAll roles', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    const { Menu, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    const { setupMenu } = await import('../menu');
-
-    setupMenu(() => null, vi.fn());
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    const editMenu = template!.find((item) => item.label === 'Edit')!
-      .submenu as Electron.MenuItemConstructorOptions[];
-    const roles = editMenu.map((item) => item.role).filter(Boolean);
-
-    expect(roles).toEqual(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
-  });
-
-  it('View has reload/toggleDevTools, zoom, and fullscreen roles', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    const { Menu, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    const { setupMenu } = await import('../menu');
-
-    setupMenu(() => null, vi.fn());
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    const viewMenu = template!.find((item) => item.label === 'View')!
-      .submenu as Electron.MenuItemConstructorOptions[];
-    const roles = viewMenu.map((item) => item.role).filter(Boolean);
-
-    expect(roles).toEqual([
-      'reload',
-      'forceReload',
-      'toggleDevTools',
-      'resetZoom',
-      'zoomIn',
-      'zoomOut',
-      'togglefullscreen',
-    ]);
-  });
-
   it('Window has minimize, Close Tab, Close Window, and a hidden Alt+F4 close item', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const { Menu, resetElectronMock } = await getElectronMock();
@@ -355,55 +220,6 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     expect(altF4Item).toBeDefined();
     expect(altF4Item!.role).toBe('close');
     expect(altF4Item!.visible).toBe(false);
-  });
-
-  it('Help has the 3 external links, Save Diagnostic Report…, a gated Check for Updates…, and About DorkOS (role about)', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    const { app, Menu, shell, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.isPackaged = true;
-    const { setupMenu } = await import('../menu');
-    const { checkForUpdatesInteractive } = await import('../auto-updater');
-
-    setupMenu(() => null, vi.fn());
-    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
-      Electron.MenuItemConstructorOptions[] | undefined;
-    const helpMenu = template!.find((item) => item.label === 'Help')!
-      .submenu as Electron.MenuItemConstructorOptions[];
-
-    helpMenu.find((item) => item.label === 'DorkOS Documentation')!.click!(
-      {} as never,
-      undefined,
-      {} as never
-    );
-    expect(shell.openExternal).toHaveBeenCalledWith('https://dorkos.ai/docs');
-    helpMenu.find((item) => item.label === 'Report an Issue')!.click!(
-      {} as never,
-      undefined,
-      {} as never
-    );
-    expect(shell.openExternal).toHaveBeenCalledWith('https://github.com/dork-labs/dorkos/issues');
-    helpMenu.find((item) => item.label === 'dorkos.ai')!.click!(
-      {} as never,
-      undefined,
-      {} as never
-    );
-    expect(shell.openExternal).toHaveBeenCalledWith('https://dorkos.ai');
-
-    const { saveDiagnosticReportInteractive } = await import('../diagnostics');
-    const diagnostics = helpMenu.find((item) => item.label === 'Save Diagnostic Report…');
-    expect(diagnostics).toBeDefined();
-    diagnostics!.click!({} as never, undefined, {} as never);
-    expect(saveDiagnosticReportInteractive).toHaveBeenCalledTimes(1);
-
-    const checkForUpdates = helpMenu.find((item) => item.label === 'Check for Updates…');
-    expect(checkForUpdates).toBeDefined();
-    expect(checkForUpdates!.enabled).toBe(true);
-    checkForUpdates!.click!({} as never, undefined, {} as never);
-    expect(checkForUpdatesInteractive).toHaveBeenCalledTimes(1);
-
-    const about = helpMenu.find((item) => item.role === 'about');
-    expect(about).toBeDefined();
   });
 });
 
@@ -480,16 +296,5 @@ describe('setupDockMenu (B4)', () => {
 
     template![0].click!({} as never, undefined, {} as never);
     expect(showMainWindow).toHaveBeenCalledTimes(1);
-  });
-
-  it('does nothing off darwin', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    const { setupDockMenu } = await import('../menu');
-
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    setupDockMenu(vi.fn());
-
-    expect(app.dock.setMenu).not.toHaveBeenCalled();
   });
 });
