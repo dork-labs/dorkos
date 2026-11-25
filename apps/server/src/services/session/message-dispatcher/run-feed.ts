@@ -138,6 +138,31 @@ export function feedRun(
 }
 
 /**
+ * Chats whose current dispatcher turn has seen the agent act, by queue key,
+ * outside a pause's hold (§4.7). Set by the launch's `onActed`, cleared at
+ * the next launch's `turn_start`; read at `turn_end`.
+ */
+const actedChats = new Set<string>();
+
+/**
+ * The agent acted in the chat's current turn, and no pause holds it.
+ *
+ * @param sessionId - The chat, by any id it answers to.
+ */
+export function noteTurnActed(sessionId: string): void {
+  actedChats.add(queueKeyOf(sessionId));
+}
+
+/**
+ * A new turn of the chat begins: whether its agent acted is not known yet.
+ *
+ * @param sessionId - The chat, by any id it answers to.
+ */
+export function forgetTurnActed(sessionId: string): void {
+  actedChats.delete(queueKeyOf(sessionId));
+}
+
+/**
  * How a `turn_end` the projector just ingested ended the turn, read off the
  * status it settled to (§4.4): a stop the runtime's own `turn_end` reported,
  * a failure, or a turn that finished. A turn that hit a usage limit is told
@@ -158,6 +183,7 @@ function observedTurnEnd(sessionId: string): ObservedTurnEnd | undefined {
   return {
     ending,
     ...(limit && limit.state === 'limited' ? { limitSince: limit.since } : {}),
+    ...(actedChats.has(queueKeyOf(sessionId)) ? { acted: true } : {}),
   };
 }
 

@@ -72,6 +72,12 @@ export interface ObservedTurnEnd {
    * `limited` when that limit began during it.
    */
   limitSince?: string;
+  /**
+   * The agent acted in this turn before its `turn_end` (a text, a tool call,
+   * a held card), so no pause can put the turn back any more: its person's
+   * "finished" is told now, not at settle (§4.7).
+   */
+  acted?: boolean;
 }
 
 /** The Mac dispatcher's moments, each one write (or none) on the run record (§4.7). */
