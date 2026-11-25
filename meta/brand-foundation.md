@@ -62,7 +62,7 @@ DorkOS is structurally neutral across agent vendors. Agents can run on Claude Co
 
 **Trusted by default.** Agents are trusted professionals; people are colleagues, not babysitters. The safety net is a record anyone in the space can read, not a permission prompt for every step. **Trust goes to your agents, not to strangers:** messages from outsiders never give an agent full power, code from strangers still needs a yes, and the front-door settings (login, remote access, credentials, package sources) belong to the Owner.
 
-Security against strangers stays a stated brand position: localhost-first defaults, no silent network exposure, a published threat model and a disclosure policy. Full power by default is built, and the audit trail's state is in [`ROADMAP.md`](ROADMAP.md); until they do, public copy states the principle and never claims them as shipped behavior (the demo-claim gate).
+Security against strangers stays a stated brand position: localhost-first defaults, no silent network exposure, a published threat model and a disclosure policy. Full power by default and the audit trail are built. Public copy claims only what the demo-claim gate in [`ROADMAP.md`](ROADMAP.md) lists, and never calls the record tamper-proof.
 
 ### Target Audience
 
@@ -140,7 +140,7 @@ The full picture, with every capability labelled **Built**, **Next** or **Later*
 - Shared canvas in rooms (**Built**); live shared docs (**Roadmap**)
 - Connections to outside tools such as Gmail, plus Telegram and Slack (**Built**)
 - Schedules (Tasks) (**Built**)
-- The record: the Activity page (**Built**, not a complete audit trail); the full audit trail (**Next**)
+- The record: the Activity page and the audit trail behind it, readable by you, and by your agents except sign-in lines and your own chats (**Built**); other people in a shared space reading it (**Next**, with team spaces)
 - Access levels: Owner, Admin, Member, Guest (**Roadmap**)
 - Groups, projects, tasks in projects and tiered goals, plus a health check for the organisation (**Roadmap**; today's Tasks are schedules)
 - Mini apps, the lead differentiator: an agent's `create_extension` tool writes a starter, the agent fills it in, DorkOS builds it and turns it on, a person says yes in Activity or Settings, and it opens in fixed places (its own page, the side panel, the Activity page, the status bar, settings tabs, or a sidebar menu item) (**Built**; the app calls them extensions). Live chat widgets and MCP Apps are supporting proof (**Built**). Every agent knowing how, the "inside DorkOS or its own website" choice, and ready-made founder mini apps (**Roadmap**)

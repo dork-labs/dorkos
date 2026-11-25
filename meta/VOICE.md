@@ -107,7 +107,7 @@ A person reads a name, never an id. When an agent or a page points at a chat, an
 
 - Pair running it yourself with the claim that is true: "it listens only on your own machine by default." Never "sign-in required the moment you expose it".
 - State every protection together with the login setting it depends on. A protection that holds only when login is on, or only on your own machine, says so in the same sentence. The full rule and its reasoning (DOR-509) are under Pillar 3 of [`archive/positioning-202607/02-positioning.md`](archive/positioning-202607/02-positioning.md).
-- Trust by default is a principle until it ships. Public copy may say "agents are trusted colleagues; you can see what each one did on the Activity page". It must not claim that every action is recorded, that there is an audit trail anyone can read, that there are no permission prompts, or that agents have full power by default, until [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate) lists them as built.
+- Trust by default reaches public copy only as far as the gate lists it. Public copy may say "agents are trusted colleagues; you can see what each one did on the Activity page". It may call that record an audit trail (story copy still prefers the plain words in the table above), but never "tamper-proof", "immutable" or "tamper-evident". It must not claim that every action is recorded or that other people in a shared space can read the record. Anything else about trust (no permission prompts, full power by default) may be claimed only in the words [`ROADMAP.md`](ROADMAP.md#the-demo-claim-gate) lists as built.
 
 ## How this is enforced
 
