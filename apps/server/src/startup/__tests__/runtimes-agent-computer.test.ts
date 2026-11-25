@@ -77,14 +77,6 @@ vi.mock('../../services/runtimes/opencode/index.js', () => ({
 }));
 
 const { registerRuntimes } = await import('../runtimes.js');
-const { claudeCodeFacts } = await import('../../services/session/resolution/claude-code-facts.js');
-const { runtimeUnlessHeld } =
-  await import('../../services/runtimes/claude-code/folder-settings/folder-config-consent.js');
-const { isCreditsClaudeRoot } = await import('../../services/runtimes/claude-code/credits-root.js');
-const { claudeTranscriptPath } =
-  await import('../../services/runtimes/claude-code/sessions/project-slug.js');
-const { protectedPathRoots } =
-  await import('../../services/core/protected-paths/protected-path-roots.js');
 
 const DEPS = { db: {} as never, dorkHome: '/tmp/dork', currentCreditsRelay: () => null };
 
@@ -103,21 +95,6 @@ describe('registering runtimes on an agent computer', () => {
       doeRuntime: null,
       relayAgentRuntime: null,
       creditsRelay: null,
-    });
-  });
-
-  it('hands turn code Claude Code’s folder answers though Claude Code is not registered', async () => {
-    // Purpose: fails if the startup stops registering them, or registers them only beside the
-    // Claude Code runtime: the agent-file pin holds a manifest's runtime on every server
-    // (DOR-4928), and unregistered, turn code honours no agent file's runtime at all and the
-    // protected-path policy refuses every path (that half: protected-path-roots.test.ts).
-    await registerRuntimes(DEPS);
-    expect(() => protectedPathRoots('/work')).not.toThrow();
-    expect(registered.types).not.toContain('claude-code');
-    expect(claudeCodeFacts()).toEqual({
-      runtimeUnlessHeld,
-      isCreditsRoot: isCreditsClaudeRoot,
-      transcriptPath: claudeTranscriptPath,
     });
   });
 

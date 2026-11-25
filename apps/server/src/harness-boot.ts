@@ -86,6 +86,10 @@ export interface InProcessTestServer {
  * @returns The server's routing and a teardown that closes the DB.
  */
 export async function bootInProcessTestServer(dorkHome: string): Promise<InProcessTestServer> {
+  // First, as in `start()` (DOR-4928): until Claude Code's folder facts are registered the
+  // protected-path policy refuses every path and turn code honours no agent file's runtime.
+  registerClaudeCodeFacts();
+
   // Config store first — the session gate reads it on every request; without
   // it every request 500s (spec eval-harness Errata, in-process boot recipe).
   initConfigManager(dorkHome);
@@ -120,11 +124,6 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // (spec `tool-only-room-replies` §D13). Scoped to the sandbox DB like
   // everything else here.
   initAgentIdentityService(db);
-
-  // Claude Code's folder facts, as `start()` registers them before any runtime: the
-  // protected-path policy refuses every path until the account folders are registered,
-  // and a manifest's runtime is never honoured without the agent-file pin (DOR-4928).
-  registerClaudeCodeFacts();
 
   // Register the deterministic TestModeRuntime as default — a dynamic import so
   // it never enters a production module graph (the guard index.ts uses too).

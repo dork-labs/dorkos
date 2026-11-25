@@ -3,7 +3,8 @@
  * neither may import (DOR-4928): the agent-file runtime pin, the credits folder and a
  * transcript's path go to session's port, and the account folders to the protected-path
  * policy. One helper, so every boot that runs turns registers the same answers: the
- * server's (`startup/runtimes.ts`) and the in-process test server's (`harness-boot.ts`).
+ * server's (`start()` in `index.ts`) and the in-process test server's (`harness-boot.ts`),
+ * each as its first step.
  *
  * @module startup/register-claude-code-facts
  */
