@@ -60,10 +60,11 @@ function oneLine(text: string, limit: number): string {
  * is left out, so a turn always runs.
  *
  * @param home - The agent's registered home.
- * @param cwd - The session's working folder.
+ * @param cwd - The session's working folder, when the caller knows it.
  */
-export function buildHomeSkillsBlock(home: AgentHome, cwd: string): string {
-  if (isInsideHome(home, cwd)) return '';
+export function buildHomeSkillsBlock(home: AgentHome, cwd: string | undefined): string {
+  // No working folder means nothing to compare with, so nothing is listed.
+  if (!cwd || isInsideHome(home, cwd)) return '';
   const root = path.join(home, AGENTS_SKILLS_DIR);
   const lines: string[] = [];
   const skills = scanSkillDirs(root, AGENTS_SKILLS_DIR, { includeManagedProjections: true });

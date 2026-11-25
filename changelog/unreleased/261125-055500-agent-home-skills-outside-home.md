@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(runtimes): an agent working outside its home still knows its own skills'
+  - 'fix(runtimes): list no home skills when the caller gives no working folder'
 ---
 
 ### Fixed
