@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertBaseIsAncestor,
+  assertHotfixBaseTag,
   assertReleaseBranchName,
   assertReleaseBranchTip,
   assertReleaseCherryPicks,
+  assertRoutineBase,
   assertVersionOnNpm,
   checkReleaseCherryPicks,
   resolveTagCommit,
   type ReleaseBranchCommit,
 } from '../../scripts/release-branch/rules.js';
 import { parseReleaseBranchArgs } from '../../scripts/release-branch/proof.js';
-import { assertPublishApproval } from '../../scripts/release-branch/publish-gate.js';
+import {
+  assertPublishApproval,
+  assertTarballManifest,
+  tarballIntegrity,
+} from '../../scripts/release-branch/publish-gate.js';
 
 // Made-up SHAs; shapes copied from real `gh api` responses.
 const sha = (c: string) => c.repeat(40);
@@ -432,5 +438,40 @@ describe('publish approval', () => {
       expect(() =>
         assertPublishApproval([approval('release-approver')], bad, 'dev-account')
       ).toThrow('GitHub accounts');
+  });
+});
+
+// The release gate's own checks on what it publishes and where the branch was
+// cut. Each is the only test of its function.
+describe('release bases', () => {
+  it("routine: the merge-base must be QA's pin", () => {
+    expect(() => assertRoutineBase(pin, pin)).not.toThrow();
+    expect(() => assertRoutineBase(sha('e'), pin)).toThrow("not at QA's pin");
+  });
+  it('hotfix: the base tag must be the previous patch', () => {
+    expect(() => assertHotfixBaseTag('v1.2.2', '1.2.3')).not.toThrow();
+    for (const tag of ['v1.2.1', 'v1.1.2', '1.2.2', 'v1.2.3', 'v1.2.2-rc.1', 'main'])
+      expect(() => assertHotfixBaseTag(tag, '1.2.3')).toThrow('previous patch tag');
+    expect(() => assertHotfixBaseTag('v1.2.0', '1.2.0')).toThrow('previous patch tag');
+  });
+});
+
+describe('tarball integrity', () => {
+  it("matches npm's dist.integrity form", () => {
+    // sha512 of the empty input, base64, as npm prints it.
+    expect(tarballIntegrity(new Uint8Array())).toBe(
+      'sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg=='
+    );
+  });
+});
+
+describe('tarball manifest', () => {
+  it('requires the exact package and version', () => {
+    expect(() => assertTarballManifest(pkg('1.2.3'), 'dorkos', '1.2.3')).not.toThrow();
+    expect(() => assertTarballManifest(pkg('1.2.4'), 'dorkos', '1.2.3')).toThrow(
+      'not dorkos@1.2.3'
+    );
+    expect(() => assertTarballManifest(pkg('1.2.3'), '@dork-labs/cloud-api', '1.2.3')).toThrow();
+    expect(() => assertTarballManifest('nope', 'dorkos', '1.2.3')).toThrow();
   });
 });
