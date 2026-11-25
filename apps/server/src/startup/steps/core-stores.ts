@@ -32,7 +32,7 @@ import {
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
 import { installWorkLinkStore } from '../../services/work-graph/index.js';
 import { installRunRecord } from '../../services/runs/index.js';
-import { liveRuntimeCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
+import { knownChatCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
 import { resolveAgentIdForPath } from '../../services/mesh/agent-path-lookup.js';
 import { ulid } from 'ulidx';
 import { projectRegistry } from '../../services/projects/project-registry.js';
@@ -160,12 +160,13 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
 
   // The run record, and this boot's epoch: the owner of every run this process
   // starts (spec `turns-survive-restarts` §6.1). Before anything can launch a turn.
-  // Its outbox names a chat by the folder its runtime runs it in.
+  // Its outbox names a chat by the folder it runs in, when the emitter's own
+  // naming did not travel with the notice.
   installRunRecord(db, {
     epoch: ulid(),
     handlers: {
       placeOf: (sessionId) => {
-        const cwd = liveRuntimeCwd(db, sessionId);
+        const cwd = knownChatCwd(db, sessionId);
         const agentId = resolveAgentIdForPath(cwd);
         return { ...(cwd ? { cwd } : {}), ...(agentId ? { agentId } : {}) };
       },

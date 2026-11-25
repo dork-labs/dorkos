@@ -21,11 +21,14 @@
  */
 import type { RunStore, TurnRun } from '../run-store.js';
 import type { EffectStore } from './effect-store.js';
-import { turnFinishedNotice } from './handlers/notify-person.js';
+import { turnFinishedNotice, type ChatPlace } from './handlers/notify-person.js';
 
 /** The runs this process has been asked to tell their person about. */
 export class TurnNotices {
-  private readonly owed = new Set<string>();
+  /** Owed runs, with the place the emitter named, by run id. */
+  private readonly owed = new Map<string, ChatPlace>();
+  /** Runs whose agent acted outside a pause's hold, by run id (ids survive a rekey). */
+  private readonly acted = new Set<string>();
 
   /**
    * Build the ledger over the record and the outbox.
@@ -46,14 +49,25 @@ export class TurnNotices {
    *
    * @param chatId - The chat, by any id it answers to.
    * @param turnRef - The turn, by its `turn_start` seq on the chat's stream.
+   * @param place - The chat's folder and agent as the emitter knows them, for the row.
    * @returns Whether the record took the notice over.
    */
-  claim(chatId: string, turnRef: number): boolean {
+  claim(chatId: string, turnRef: number, place: ChatPlace = {}): boolean {
     const live = this.runs.liveRunOf(chatId);
     if (!live || (live.status !== 'started' && live.status !== 'running')) return false;
     if (live.runtimeTurnRef !== turnRef) return false;
-    this.owed.add(live.id);
+    this.owed.set(live.id, place);
     return true;
+  }
+
+  /**
+   * The run's agent acted, and no pause holds the turn: from here on no pause
+   * can put it back (§4.7).
+   *
+   * @param runId - The run.
+   */
+  noteActed(runId: string): void {
+    this.acted.add(runId);
   }
 
   /**
@@ -61,35 +75,38 @@ export class TurnNotices {
    * notice now when the agent acted.
    *
    * @param run - The run, as stored after its ending was recorded.
-   * @param acted - Whether the agent acted before `turn_end`.
    */
-  atTurnEnd(run: TurnRun, acted: boolean): void {
-    if (acted) this.write(run);
+  atTurnEnd(run: TurnRun): void {
+    if (this.acted.has(run.id)) this.write(run);
   }
 
   /**
-   * At settle, inside the transaction that ended the run: write the notice it
+   * At settle (or a graceful shutdown's end of a turn whose `turn_end` was
+   * seen), inside the transaction that ended the run: write the notice it
    * still owes.
    *
    * @param run - The run, as stored after its move to `ended`.
    */
   atSettle(run: TurnRun): void {
     this.write(run);
+    this.forget(run.id);
   }
 
   /**
-   * A pause put the run's turn back: it owes nothing.
+   * The run owes nothing any more: a pause put its turn back, or it ended.
    *
    * @param runId - The run.
    */
   forget(runId: string): void {
     this.owed.delete(runId);
+    this.acted.delete(runId);
   }
 
   /** Write the notice a run owes, once. */
   private write(run: TurnRun): void {
-    if (!this.owed.has(run.id)) return;
-    this.effects.insert(turnFinishedNotice(run, run.ending ?? 'completed', this.now()));
+    const place = this.owed.get(run.id);
+    if (place === undefined) return;
+    this.effects.insert(turnFinishedNotice(run, run.ending ?? 'completed', this.now(), place));
     this.owed.delete(run.id);
   }
 }

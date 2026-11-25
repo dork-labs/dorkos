@@ -72,12 +72,6 @@ export interface ObservedTurnEnd {
    * `limited` when that limit began during it.
    */
   limitSince?: string;
-  /**
-   * The agent acted in this turn before its `turn_end` (a text, a tool call,
-   * a held card), so no pause can put the turn back any more: its person's
-   * "finished" is told now, not at settle (§4.7).
-   */
-  acted?: boolean;
 }
 
 /** The Mac dispatcher's moments, each one write (or none) on the run record (§4.7). */
@@ -163,6 +157,15 @@ export interface DispatcherRunFeed {
    * @param observed - What the `turn_end` said.
    */
   turnEnded(chatKey: string, observed: ObservedTurnEnd): void;
+  /**
+   * The run's agent acted (a text, a tool call, a held card) and no pause
+   * holds its turn, so no pause can put it back any more: its person's
+   * "finished" is told at `turn_end`, not at settle (§4.7). Keyed by the run,
+   * whose id a rekey never changes.
+   *
+   * @param runId - The run.
+   */
+  turnActed(runId: string): void;
   /**
    * A pause cut the run's turn before the agent did anything and its row is
    * back in line, held (transitions 14 and 15).

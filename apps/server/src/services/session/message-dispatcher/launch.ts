@@ -60,7 +60,7 @@ import type { DispatchPlan, InFlightTurn } from './types.js';
 import { joinWaitingChatRows } from './join-chat-rows.js';
 import { isOwnersCleanSend } from './owner-send.js';
 import { withKeptCeiling } from './carried-limits.js';
-import { feedRun, forgetTurnActed, launchVerdictOf, noteTurnActed } from './run-feed.js';
+import { feedRun, launchVerdictOf } from './run-feed.js';
 import { forgetHeldRuns, holdRun, releaseRun } from '../turn-port/facts.js';
 import {
   putBackForPause,
@@ -327,7 +327,6 @@ export function launchDispatchInner(
         // The run is `started` and the row out of line FIRST, before the pause
         // check below (§4.7): whatever a pause then does to this turn starts
         // from a turn the record knows started.
-        forgetTurnActed(sessionKey);
         recordTurnStart(plan, seq);
         // Paused while this launch was under way: the pause refuses the turn, so
         // the row is kept and nobody is told it started.
@@ -373,7 +372,7 @@ export function launchDispatchInner(
       // Past this, no pause can put the turn back, so its "finished" is told
       // at `turn_end` rather than at settle (§4.7). Not while a pause holds it.
       onActed: () => {
-        if (heldByPause === undefined) noteTurnActed(sessionKey);
+        if (heldByPause === undefined) feedRun(plan, 'acted', (feed, id) => feed.turnActed(id));
       },
       onError: turn.onError,
       onSettled: (turnOutcome, reason, agentActed) => {

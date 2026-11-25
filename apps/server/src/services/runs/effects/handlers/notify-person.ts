@@ -48,6 +48,8 @@ const TurnFinishedPayloadSchema = z.strictObject({
   ending: z.string().min(1),
   /** When the turn finished: its `turn_end`, or its settle. */
   at: z.string().min(1),
+  /** What to call the chat, as the emitter's folder named it: DorkOS copy, not a path. */
+  sessionLabel: z.string().min(1).optional(),
   agentId: z.string().min(1).optional(),
 });
 
@@ -57,8 +59,15 @@ const TurnFinishedPayloadSchema = z.strictObject({
  * @param run - The run.
  * @param ending - Its ending as recorded now.
  * @param now - The clock, epoch ms: when the turn finished.
+ * @param place - The chat's folder and agent as the emitter knew them.
  */
-export function turnFinishedNotice(run: TurnRun, ending: string, now: number): NewEffect {
+export function turnFinishedNotice(
+  run: TurnRun,
+  ending: string,
+  now: number,
+  place: ChatPlace = {}
+): NewEffect {
+  const agentId = place.agentId ?? run.agentId ?? undefined;
   return {
     kind: 'notify_person',
     key: `notify:${run.id}:${ending}`,
@@ -70,7 +79,8 @@ export function turnFinishedNotice(run: TurnRun, ending: string, now: number): N
       sessionId: run.sessionId,
       ending,
       at: new Date(now).toISOString(),
-      ...(run.agentId !== null ? { agentId: run.agentId } : {}),
+      ...(place.cwd ? { sessionLabel: sessionLabelFor(place.cwd) } : {}),
+      ...(agentId ? { agentId } : {}),
     } satisfies z.infer<typeof TurnFinishedPayloadSchema>,
     delivery: 'repeatable',
     notAfter: now + NOTIFY_PERSON_NOT_AFTER_MS,
@@ -107,14 +117,18 @@ export function notifyPersonHandler(deps: NotifyPersonDeps = {}): EffectHandler 
       const parsed = TurnFinishedPayloadSchema.safeParse(effect.payload);
       if (!parsed.success) return { kind: 'drop', reason: 'unreadable_payload' };
       const notice = parsed.data;
-      const place = deps.placeOf?.(notice.sessionId) ?? {};
+      // What the emitter named, else what this boot can still find.
+      const place =
+        notice.sessionLabel !== undefined && notice.agentId !== undefined
+          ? {}
+          : (deps.placeOf?.(notice.sessionId) ?? {});
       const agentId = notice.agentId ?? place.agentId;
       let stored: string | undefined;
       const result = await notify(
         'turn.completed',
         {
           sessionId: notice.sessionId,
-          sessionLabel: sessionLabelFor(place.cwd),
+          sessionLabel: notice.sessionLabel ?? sessionLabelFor(place.cwd),
           completedAt: notice.at,
           runId: notice.runId,
           runEnding: notice.ending,

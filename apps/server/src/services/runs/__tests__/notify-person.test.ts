@@ -21,10 +21,16 @@ import {
 } from '../../session/chat-messages/chat-started-turns.js';
 import { registerBeatTurn, resetBeatTurns } from '../../heartbeats/beat-turns.js';
 import { SessionStateProjector } from '../../session/session-state-projector.js';
+import { resetAgentPathLookup, setAgentPathLookup } from '../../mesh/agent-path-lookup.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import {
   createRunRecord,
   getRunRecord,
   installRunRecord,
+  markRunsShutdown,
   startRunEffects,
   uninstallRunRecord,
   type RunRecord,
@@ -62,10 +68,9 @@ function bootB(): RunRecord {
 /** The emitter handed the turn over, and `turn_end` recorded it: as the dispatcher does. */
 function turnEndedAfterActing(record: RunRecord, chatKey: string, acted = true): void {
   expect(record.notices.claim(chatKey, 1)).toBe(true);
-  createRunFactsSink(record.store, record.notices).dispatcher.turnEnded(chatKey, {
-    ending: 'completed',
-    ...(acted ? { acted: true } : {}),
-  });
+  const { dispatcher } = createRunFactsSink(record.store, record.notices);
+  if (acted) dispatcher.turnActed(record.store.liveRunOf(chatKey)!.id);
+  dispatcher.turnEnded(chatKey, { ending: 'completed' });
 }
 
 /** Every "finished" row the outbox wrote for a run. */
@@ -94,6 +99,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetAgentPathLookup();
+  clearTestHomes();
   uninstallRunRecord();
   setNotificationService(null);
   resetChatStartedTurns();
@@ -253,10 +260,9 @@ describe('the projector’s emitter hands a run’s turn to the record, by the t
       await flush();
       expect(finishedRows()).toHaveLength(0);
 
-      createRunFactsSink(store, notices).dispatcher.turnEnded('sess-with-run', {
-        ending: 'completed',
-        acted: true,
-      });
+      const { dispatcher } = createRunFactsSink(store, notices);
+      dispatcher.turnActed(run.id);
+      dispatcher.turnEnded('sess-with-run', { ending: 'completed' });
       await worker.runOnce();
       expect(finishedRows()).toEqual([
         expect.objectContaining({ dedupeKey: `notify:${run.id}:completed` }),
@@ -284,10 +290,9 @@ describe('the projector’s emitter hands a run’s turn to the record, by the t
         const run = runningRun(store, chat, seq);
         projector.ingest({ type: 'turn_end' } as never);
         await flush();
-        createRunFactsSink(store, notices).dispatcher.turnEnded(chat, {
-          ending: 'completed',
-          acted: true,
-        });
+        const { dispatcher } = createRunFactsSink(store, notices);
+        dispatcher.turnActed(run.id);
+        dispatcher.turnEnded(chat, { ending: 'completed' });
         expect(effects.listForRun(run.id)).toEqual([]);
       }
       expect(finishedRows()).toHaveLength(0);
@@ -314,5 +319,96 @@ describe('the projector’s emitter hands a run’s turn to the record, by the t
     } finally {
       off();
     }
+  });
+
+  it('a run on a runtime with no folder of its own is named, and its agent stamped, as the emitter would', async () => {
+    registerEveryFolderAsHome();
+    setAgentPathLookup({
+      getByPath: (dir) => (dir === '/Users/dev/acme' ? { id: 'agent-acme' } : undefined),
+    });
+    // No `placeOf`: like Codex or OpenCode, nothing but the emitter knows the folder.
+    installRunRecord(db, { epoch: BOOT_A, ownerHolds: () => true });
+    startRunEffects();
+    const { store, notices, worker } = getRunRecord()!;
+    const off = watchSessionLifecycle();
+    try {
+      const { projector, seq } = openTurn('sess-codex');
+      projector.cwd = '/Users/dev/acme';
+      const run = runningRun(store, 'sess-codex', seq); // a dispatcher run: no agent on it
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      const { dispatcher } = createRunFactsSink(store, notices);
+      dispatcher.turnActed(run.id);
+      dispatcher.turnEnded('sess-codex', { ending: 'completed' });
+      await worker.runOnce();
+
+      const loose = openTurn('sess-loose');
+      loose.projector.cwd = '/Users/dev/acme';
+      loose.projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+
+      const [byRun, byEmitter] = [
+        finishedRows().find((row) => row.sessionId === 'sess-codex'),
+        finishedRows().find((row) => row.sessionId === 'sess-loose'),
+      ];
+      expect(byRun).toMatchObject({ title: 'acme finished', agentId: 'agent-acme' });
+      expect(byEmitter).toMatchObject({ title: byRun!.title, agentId: byRun!.agentId });
+    } finally {
+      off();
+    }
+  });
+
+  it('a window the runtime reopened (DOR-1100) is another turn: its own row, beside the run’s', async () => {
+    installRunRecord(db, { epoch: BOOT_A, ownerHolds: () => true });
+    startRunEffects();
+    const { store, notices, worker } = getRunRecord()!;
+    const off = watchSessionLifecycle();
+    try {
+      const { projector, seq } = openTurn('sess-reopened');
+      const run = runningRun(store, 'sess-reopened', seq);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      const { dispatcher } = createRunFactsSink(store, notices);
+      dispatcher.turnActed(run.id);
+      dispatcher.turnEnded('sess-reopened', { ending: 'completed' });
+      // A background task finished and woke the agent: a new window, a new
+      // turn_start seq, on the same live run (DOR-1100).
+      projector.ingest({ type: 'turn_start', origin: 'runtime' } as never);
+      projector.ingest({ type: 'turn_end' } as never);
+      await flush();
+      await worker.runOnce();
+
+      // Two, as today: the emitter tells every window that settles to idle,
+      // and the reopened one is work the person did not see finish yet.
+      expect(finishedRows().map((row) => row.dedupeKey)).toEqual(
+        expect.arrayContaining([`notify:${run.id}:completed`, expect.stringMatching(/^turn:/)])
+      );
+      expect(finishedRows()).toHaveLength(2);
+    } finally {
+      off();
+    }
+  });
+});
+
+describe('a graceful shutdown', () => {
+  it('saves the "finished" a turn past its turn_end still owes, for the next boot to tell once', async () => {
+    installRunRecord(db, { epoch: BOOT_A, now: clock, ownerHolds: () => true });
+    const { store, notices } = getRunRecord()!;
+    const run = runningRun(store, 'sess-shutdown');
+    notices.claim('sess-shutdown', 1);
+    // `turn_end` seen before the agent showed anything: the notice waited for settle.
+    createRunFactsSink(store, notices).dispatcher.turnEnded('sess-shutdown', {
+      ending: 'completed',
+    });
+
+    markRunsShutdown();
+    expect(store.get(run.id)).toMatchObject({ status: 'ended', ending: 'completed' });
+    expect(getRunRecord()!.effects.listForRun(run.id)).toEqual([
+      expect.objectContaining({ key: `notify:${run.id}:completed`, state: 'pending' }),
+    ]);
+
+    const b = bootB();
+    expect(await b.worker.runOnce()).toBe(1);
+    expect(rowsFor(run.id)).toHaveLength(1);
   });
 });

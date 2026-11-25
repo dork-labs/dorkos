@@ -18,6 +18,7 @@ import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.j
 import { writeStopReceipt, writeStopRequest, type StopRequestRef } from './run-stops.js';
 import { EffectStore } from './effects/effect-store.js';
 import { TurnNotices } from './effects/turn-notices.js';
+import type { ChatPlace } from './effects/handlers/notify-person.js';
 import { effectHandlers, type EffectHandlerDeps } from './effects/handlers/index.js';
 import { EffectWorker } from './effects/worker.js';
 
@@ -140,11 +141,16 @@ export function getRunRecord(): RunRecord | undefined {
  *
  * @param sessionId - The chat, by any id it answers to.
  * @param turnRef - The turn, by its `turn_start` seq, as the status change carries it.
+ * @param place - The chat's folder and agent as the emitter knows them: the row's name and agent.
  */
-export function claimTurnFinished(sessionId: string, turnRef: number | undefined): boolean {
+export function claimTurnFinished(
+  sessionId: string,
+  turnRef: number | undefined,
+  place: ChatPlace = {}
+): boolean {
   if (!installed?.worker.isRunning || turnRef === undefined) return false;
   try {
-    return installed.notices.claim(sessionId, turnRef);
+    return installed.notices.claim(sessionId, turnRef, place);
   } catch (err) {
     logger.warn('[runs] could not hand a finished turn to its run', {
       sessionId,
@@ -216,7 +222,8 @@ export function recordStopReceipt(
  * already seen keeps the ending it recorded, so a turn that finished and was
  * draining background work does not read as cut short. A run still `starting`
  * is left: its runtime never saw its words, and the next boot puts it back in
- * line. Then stops renewing leases.
+ * line. A turn past its `turn_end` that still owes its person a "finished"
+ * gets it in the same write. Then stops renewing leases.
  *
  * @returns How many runs it ended.
  */
@@ -230,6 +237,9 @@ export function markRunsShutdown(): number {
     store.transaction(() => {
       for (const run of store.ownTurnsRunning()) {
         store.endTurn(run, 'shutdown');
+        // Its `turn_end` was seen: it finished, so a "finished" it still owes
+        // is saved with its end, for the next boot to tell (§6.2).
+        if (run.ending !== null) installed!.notices.atSettle(store.get(run.id)!);
         ended += 1;
       }
     });

@@ -94,10 +94,9 @@ describe('a follow-up is saved in the same write as the run’s state change (§
     const run = runningRun(store);
     expect(notices.claim(CHAT, 1)).toBe(true);
 
-    createRunFactsSink(store, notices).dispatcher.turnEnded(CHAT, {
-      ending: 'completed',
-      acted: true,
-    });
+    const sink = createRunFactsSink(store, notices);
+    sink.dispatcher.turnActed(run.id);
+    sink.dispatcher.turnEnded(CHAT, { ending: 'completed' });
 
     // Still `running`: its status moves at settle, its notice does not wait.
     expect(store.get(run.id)).toMatchObject({ status: 'running', ending: 'completed' });
@@ -126,7 +125,8 @@ describe('a follow-up is saved in the same write as the run’s state change (§
 
     expect(() =>
       store.transaction(() => {
-        sink.dispatcher.turnEnded(CHAT, { ending: 'completed', acted: true });
+        sink.dispatcher.turnActed(run.id);
+        sink.dispatcher.turnEnded(CHAT, { ending: 'completed' });
         throw new Error('power cut before the commit');
       })
     ).toThrow('power cut');
@@ -163,7 +163,8 @@ describe('a follow-up is saved in the same write as the run’s state change (§
 
     const told = runningRun(store, 'chat-told');
     notices.claim('chat-told', 1);
-    sink.dispatcher.turnEnded('chat-told', { ending: 'completed', acted: true });
+    sink.dispatcher.turnActed(told.id);
+    sink.dispatcher.turnEnded('chat-told', { ending: 'completed' });
     sink.report({ kind: 'ended', runId: told.id, ending: 'completed' });
     expect(effects.listForRun(told.id)).toHaveLength(1);
   });
@@ -463,6 +464,45 @@ describe('wake-ups (§6.1)', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(passes).toHaveBeenCalledTimes(3);
     worker.stop();
+  });
+
+  it('a store that cannot say when work is next due is asked again on the next tick, never thrown out of the loop', async () => {
+    const { worker, effects, passes } = counted();
+    const due = vi.spyOn(effects, 'nextWorkAt').mockImplementationOnce(() => {
+      throw new Error('database is locked');
+    });
+    worker.start();
+    // An unhandled rejection here would fail the test run (and exit a server).
+    await expect.poll(() => due.mock.calls.length).toBe(1);
+    await expect.poll(() => passes.mock.calls.length, { timeout: 3_000 }).toBe(2);
+    worker.stop();
+  });
+
+  it('sleeps until the earliest effect falls due, not a tick a second', async () => {
+    vi.useFakeTimers();
+    try {
+      const seen: string[] = [];
+      const { worker, effects, passes } = (() => {
+        const parts = workerOn(db, BOOT_A, { notify_person: recorder(seen) });
+        return { ...parts, passes: vi.spyOn(parts.worker, 'runOnce') };
+      })();
+      effects.insert(followUp('later', { availableAt: now + 5_000 }));
+      worker.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(passes).toHaveBeenCalledTimes(1);
+
+      now += 4_000;
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(passes).toHaveBeenCalledTimes(1); // no one-second ticks in between
+
+      now += 1_000;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(passes).toHaveBeenCalledTimes(2);
+      expect(seen).toHaveLength(1);
+      worker.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('no pass runs after stop, whatever was armed or asked for', async () => {

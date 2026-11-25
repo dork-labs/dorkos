@@ -278,18 +278,25 @@ export function watchSessionLifecycle(): () => void {
       // A beat finishing is not news either: only what the agent raises through
       // `end_beat` reaches a person (spec `heartbeats` §7.4).
       if (isBeatTurn(sessionId)) return;
+      const agentId = resolveAgentIdForPath(cwd);
       // A turn the run record holds, named by the turn this transition
-      // belongs to, is told by its run's `notify_person` effect: it survives a
-      // restart and is never said for a turn a pause put back (spec
-      // `turns-survive-restarts` §6.2). A turn with no run is told here.
-      if (claimTurnFinished(sessionId, turnRef)) return;
+      // belongs to, is told by its run's `notify_person` effect, with the same
+      // name and agent this row would carry: it survives a restart and is never
+      // said for a turn a pause put back (spec `turns-survive-restarts` §6.2).
+      // A turn with no run is told here.
+      if (
+        claimTurnFinished(sessionId, turnRef, {
+          ...(cwd ? { cwd } : {}),
+          ...(agentId ? { agentId } : {}),
+        })
+      )
+        return;
       // Deliberately raised for every finished turn, including one the operator
       // started by typing here. The seam carries no principal — a turn can be
       // started from the composer, a room, a bridge or a schedule, and the
       // projector knows none of them — so an own-action drop here would be a
       // guess. Presence filtering (spec task 4.1) is what will keep this quiet
       // for somebody watching the session it happened in.
-      const agentId = resolveAgentIdForPath(cwd);
       void notify('turn.completed', {
         sessionId,
         sessionLabel: sessionLabelFor(cwd),

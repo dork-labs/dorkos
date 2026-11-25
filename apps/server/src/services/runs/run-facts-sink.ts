@@ -340,8 +340,10 @@ function dispatcherFeed(store: RunStore, notices: TurnNotices | undefined): Disp
           store.annotate(live.id, { ending: observedEnding(live, observed) });
         }
         // The agent acted, so no pause can put the turn back: told now (§4.7).
-        notices?.atTurnEnd(store.get(live.id)!, observed.acted === true);
+        notices?.atTurnEnd(store.get(live.id)!);
       }),
+
+    turnActed: (runId) => notices?.noteActed(runId),
 
     pauseCut: (runId) =>
       store.transaction(() => {
