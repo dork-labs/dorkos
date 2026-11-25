@@ -2612,9 +2612,9 @@ jobs:
       # that needs history or tags. (The DOR-884/DOR-339 tag reasoning lives on
       # the shard job's checkout, which is where the suites run.)
       # The fan-in runs scripts from the tree it checks out, so it validates a
-      # bisect sha itself rather than trusting the legs (Security, #4442).
+      # bisect sha itself rather than trusting the legs (Security, #4442). No if:
+      # it runs on every event and is a no-op unless bisect_sha is set.
       - name: A bisect run tests a merge on main
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ inputs.bisect_sha }}
