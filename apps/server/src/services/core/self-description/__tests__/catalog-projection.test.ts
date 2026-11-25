@@ -368,3 +368,26 @@ describe('projectCatalog — the area filter (spec agent-permissions D2)', () =>
     }
   });
 });
+
+describe('projectCatalog — who may call it (http.audience)', () => {
+  const mine: SerializedCapability = {
+    ...entry('demo.mine', 'Mine', 'Only a person runs this.'),
+    surfaces: { http: { method: 'post', path: '/api/demo', audience: 'person' } },
+  };
+  const catalog: CapabilityCatalog = {
+    ...synthetic,
+    capabilities: [mine, ...synthetic.capabilities],
+  };
+
+  it('marks a person-only capability on its compact entry, and no other', () => {
+    const res = projectCatalog(catalog, parse({ detail: 'compact' }));
+    const byId = new Map(res.capabilities.map((c) => [c.id, c]));
+    expect(byId.get('demo.mine')).toMatchObject({ audience: 'person' });
+    expect(byId.get('mcp.add')).not.toHaveProperty('audience');
+  });
+
+  it('keeps it on the full entry’s http surface', () => {
+    const res = projectCatalog(catalog, parse({ domain: 'demo', detail: 'full' }));
+    expect(res.capabilities[0]).toMatchObject({ surfaces: { http: { audience: 'person' } } });
+  });
+});

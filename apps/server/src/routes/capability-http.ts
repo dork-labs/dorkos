@@ -26,8 +26,16 @@
  *
  * ## Hand routes
  *
- * A hand route may not claim a capability's METHOD + path:
- * {@link assertNoCapabilityRouteCollisions} throws when the app is built.
+ * Hono runs the first route registered that matches a request, so the mount is
+ * registered before every hand route group, and its own routes run static
+ * before param ({@link compareRouteSpecificity}): `GET /api/sessions/running`
+ * is answered before any `GET /api/sessions/:id` can be.
+ * {@link assertNoCapabilityRouteCollisions} throws when the app is built if a
+ * hand route claims a capability's METHOD + path, if a hand route registered
+ * earlier would answer any of a capability's requests, if a capability would
+ * answer requests a more specific hand route registered later is meant for, or
+ * if hand middleware registered after the mount covers a capability path (it
+ * would never run for it: the capability's own gate must do its job).
  * {@link HAND_SERVED_CAPABILITIES} lists the capabilities whose path a hand
  * route still serves while it moves onto this mount; the list may only shrink.
  *
@@ -159,9 +167,15 @@ function requestInput(c: Context<ApiEnv>, surface: HttpSurface): unknown {
 export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   const claimed = new Map<string, string>();
-  for (const capability of deps.capabilities) {
+  // Static before param, so a fixed path is never answered by a sibling's `:id`.
+  // Only the served ones are sorted, so the comparator sees no surface-less entry.
+  const ordered = deps.capabilities
+    .filter((capability): capability is ServedCapability => capability.surfaces.http !== undefined)
+    .sort((a, b) =>
+      compareRouteSpecificity(honoPath(a.surfaces.http.path), honoPath(b.surfaces.http.path))
+    );
+  for (const capability of ordered) {
     const surface = capability.surfaces.http;
-    if (!surface) continue;
     const path = honoPath(surface.path);
     const key = routeKey(surface.method, path);
     const other = claimed.get(key);
@@ -190,38 +204,124 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
   return router;
 }
 
+/** One segment of a route pattern, by what it matches. */
+type PatternSegment = { kind: 'static'; value: string } | { kind: 'param' } | { kind: 'rest' };
+
+/** A `:name{regex}` whose pattern can match a `/` (`{.+}`, `{.*}`), so it spans segments. */
+const SPLAT_PARAM = /^:[^{]*\{.*(?<!\\)\.[+*].*\}$/;
+
 /**
- * Refuse an app where a hand route claims a path the mount serves.
+ * A Hono path's segments: `*` and a splat param (`:path{.+}`) match the rest,
+ * any other `:name` (with any `{regex}`) one segment.
+ */
+function patternSegments(path: string): PatternSegment[] {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .map((segment): PatternSegment =>
+      segment === '*' || SPLAT_PARAM.test(segment)
+        ? { kind: 'rest' }
+        : segment.startsWith(':')
+          ? { kind: 'param' }
+          : { kind: 'static', value: segment }
+    );
+}
+
+/** Whether some request path matches both patterns. A `*` matches zero or more segments. */
+function patternsOverlap(a: readonly PatternSegment[], b: readonly PatternSegment[]): boolean {
+  const [x, y] = [a[0], b[0]];
+  if (x?.kind === 'rest' || y?.kind === 'rest') return true;
+  if (!x || !y) return !x && !y;
+  if (x.kind === 'static' && y.kind === 'static' && x.value !== y.value) return false;
+  return patternsOverlap(a.slice(1), b.slice(1));
+}
+
+/** How specific one segment is: a fixed word, then the end of the path, then a param, then `*`. */
+function segmentRank(segment: PatternSegment | undefined): number {
+  if (!segment) return 2;
+  return segment.kind === 'static' ? 3 : segment.kind === 'param' ? 1 : 0;
+}
+
+/**
+ * Order two Hono paths most specific first, segment by segment: a fixed word
+ * before a `:param`, a `:param` before `*`. The mount registers its routes in
+ * this order.
  *
- * Hono runs the first matching route, so a hand route on a capability's path
- * would silently take its requests, or silently lose them, by mount order.
- * Middleware (`ALL` entries) is not a claim.
+ * @param a - One path.
+ * @param b - The other.
+ * @returns Negative when `a` is more specific, positive when `b` is, else 0.
+ */
+export function compareRouteSpecificity(a: string, b: string): number {
+  const [x, y] = [patternSegments(a), patternSegments(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    const diff = segmentRank(y[i]) - segmentRank(x[i]);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Refuse an app where a hand route takes, shadows or is shadowed by a path the
+ * mount serves.
+ *
+ * Hono runs the first matching route, so the order routes were registered in
+ * decides who answers a request two patterns both match. For each capability
+ * path it refuses: a hand route on the same METHOD + path; a hand route
+ * registered before it that matches any of its requests; a hand route
+ * registered after it that is more specific on a request both match (the
+ * capability would take it); and hand middleware (`ALL`) registered after it
+ * on a path it covers, which would never run for the capability. Middleware
+ * registered before the mount runs first, as for every route, and is not a
+ * claim.
  *
  * @param app - The built app, every route group mounted.
  * @param capabilities - What the mount serves.
- * @throws Naming every path claimed twice.
+ * @throws Naming every conflict.
  */
 export function assertNoCapabilityRouteCollisions(
   app: Pick<Hono, 'routes'>,
   capabilities: readonly CapabilityDefinition[]
 ): void {
-  const counts = new Map<string, number>();
-  for (const route of app.routes) {
-    if (route.method === 'ALL') continue;
-    const key = routeKey(route.method, route.path);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const collisions: string[] = [];
+  const routes = app.routes.map((route, index) => ({
+    index,
+    label: `${route.method.toUpperCase()} ${route.path}`,
+    method: route.method.toUpperCase(),
+    path: route.path,
+    shape: routeKey(route.method, route.path),
+    segments: patternSegments(route.path),
+  }));
+  const conflicts: string[] = [];
   for (const capability of capabilities) {
     const surface = capability.surfaces.http;
     if (!surface) continue;
-    const key = routeKey(surface.method, honoPath(surface.path));
-    if ((counts.get(key) ?? 0) > 1) collisions.push(`${key} (${capability.id})`);
+    const method = surface.method.toUpperCase();
+    const path = honoPath(surface.path);
+    const shape = routeKey(method, path);
+    const segments = patternSegments(path);
+    const own = routes.find((route) => route.shape === shape);
+    const at = own?.index ?? -1;
+    const name = `${shape} (${capability.id})`;
+    for (const route of routes) {
+      if (route === own) continue;
+      if (route.method === 'ALL') {
+        if (route.index > at && patternsOverlap(segments, route.segments)) {
+          conflicts.push(`${name} skips middleware ${route.label}`);
+        }
+        continue;
+      }
+      if (route.method !== method || !patternsOverlap(segments, route.segments)) continue;
+      if (route.shape === shape) conflicts.push(`${name} is claimed by ${route.label}`);
+      else if (route.index < at) conflicts.push(`${name} is shadowed by ${route.label}`);
+      else if (compareRouteSpecificity(route.path, path) <= 0) {
+        conflicts.push(`${name} shadows ${route.label}`);
+      }
+    }
   }
-  if (collisions.length > 0) {
+  if (conflicts.length > 0) {
     throw new Error(
-      `A hand route claims a path a capability serves: ${collisions.join(', ')}. ` +
-        'Delete the hand route; the capability mount serves it.'
+      `A hand route conflicts with a path a capability serves: ${conflicts.join('; ')}. ` +
+        'Delete the hand route (the capability mount serves it), give one another path, ' +
+        "or fold the middleware's check into the capability."
     );
   }
 }

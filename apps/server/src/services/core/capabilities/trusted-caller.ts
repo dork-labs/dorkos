@@ -113,6 +113,9 @@
  *
  * @module services/core/capabilities/trusted-caller
  */
+import { PERSON_ONLY_CODE, PERSON_ONLY_MESSAGE } from '@dorkos/shared/capabilities';
+import type { CapabilityDefinition } from './capability-definition.js';
+import { CapabilityToolError } from './mcp-envelope.js';
 import {
   resolveDecisionAuthority,
   type DecisionAuthorityRequest,
@@ -182,4 +185,107 @@ export function trustedCaller(request: DecisionAuthorityRequest): TrustedCaller 
  */
 export function isTrustedCaller(value: unknown): value is TrustedCaller {
   return value instanceof TrustedCallerMarker;
+}
+
+/** The proof that a caller is a person, for a person-only capability. Minted only by {@link personCaller}. */
+class PersonCallerMarker {
+  /** What it proves, for a reader of a logged context. */
+  readonly proves = 'person' as const;
+}
+
+/**
+ * Proof that a caller is a person, which a person-only capability
+ * (`surfaces.http.audience: 'person'`) needs before `registry.invoke` runs it
+ * (ADR 261123-170830). Unlike {@link TrustedCaller} it skips no gate: it only
+ * opens the person-only door, and the tier and permission gate still run.
+ */
+export type PersonCaller = PersonCallerMarker;
+
+/** What the person check reads beyond the decide endpoint's facts. */
+export interface PersonCallerRequest extends DecisionAuthorityRequest {
+  /**
+   * Whether the request carried an `Authorization` header. The app proves a
+   * person with a session cookie and never sends one, so a bearer token or an
+   * API key without `X-DorkOS-Agent` is a program, not a person.
+   */
+  authorizationPresented: boolean;
+}
+
+/**
+ * Mint a {@link PersonCaller} when the caller is a person: the same bar as
+ * {@link trustedCaller} (no agent header, no approval token, and wherever a
+ * person must prove a session, a browser session), and no `Authorization`
+ * header at all.
+ *
+ * @param request - What the caller presented; see {@link PersonCallerRequest}.
+ * @returns The marker for a person, otherwise `undefined`.
+ */
+export function personCaller(request: PersonCallerRequest): PersonCaller | undefined {
+  if (request.authorizationPresented) return undefined;
+  return trustedCaller(request) ? new PersonCallerMarker() : undefined;
+}
+
+/**
+ * Whether a value is a genuine {@link PersonCaller}: an `instanceof` check, so
+ * a look-alike object is not one.
+ *
+ * @param value - The value to test.
+ * @returns True only for a marker {@link personCaller} minted.
+ */
+export function isPersonCaller(value: unknown): value is PersonCaller {
+  return value instanceof PersonCallerMarker;
+}
+
+/** The caller facts {@link assertCallerProofs} checks. */
+export interface SuppliedCallerProofs {
+  /** The trusted-caller marker, when the surface minted one. */
+  readonly trusted?: unknown;
+  /** The person proof, when the surface minted one. */
+  readonly person?: unknown;
+  /** The agent the call came from, when one identified itself. */
+  readonly identity?: { readonly agentPath: string };
+}
+
+/**
+ * Check the proofs a call carries before `registry.invoke` runs it.
+ *
+ * - A present `trusted` that is not a genuine marker is refused LOUDLY rather
+ *   than quietly downgraded: the only ways to get one are a caller forging the
+ *   field or a module minting it wrongly, and truthiness is not enough
+ *   (`JSON.parse(JSON.stringify(marker))` is a truthy plain object).
+ * - Trusted means "no machine principal presented itself", and an identity IS
+ *   one, so the pair is refused rather than a winner picked.
+ * - A person-only capability (`surfaces.http.audience: 'person'`) runs only
+ *   with a {@link PersonCaller} or a trusted marker, whatever door the call
+ *   came through (ADR 261123-170830); anything else is refused `PERSON_ONLY`.
+ *
+ * @param id - The capability id, for the error.
+ * @param capability - The capability, for its audience.
+ * @param supplied - The invocation context's proofs.
+ * @throws An `Error` for a forged or contradictory proof, a
+ *   {@link CapabilityToolError} `PERSON_ONLY` for a caller that is not a person.
+ */
+export function assertCallerProofs(
+  id: string,
+  capability: Pick<CapabilityDefinition, 'surfaces'>,
+  supplied: SuppliedCallerProofs
+): void {
+  if (supplied.trusted !== undefined && !isTrustedCaller(supplied.trusted)) {
+    throw new Error(
+      `Capability registry: "${id}" was invoked with a \`trusted\` value that is not a ` +
+        `trusted-caller marker. Only \`trustedCaller\` can mint one; a value that merely ` +
+        `looks like it (a JSON round-trip, a hand-built object) is not trust.`
+    );
+  }
+  if (supplied.trusted && supplied.identity) {
+    throw new Error(
+      `Capability registry: "${id}" was invoked with both a trusted-caller marker and an agent ` +
+        `identity (${supplied.identity.agentPath}). A trusted call is one no machine principal ` +
+        `made; these cannot both hold.`
+    );
+  }
+  const personOnly = capability.surfaces.http?.audience === 'person';
+  if (personOnly && !isPersonCaller(supplied.person) && !supplied.trusted) {
+    throw new CapabilityToolError({ error: PERSON_ONLY_MESSAGE, code: PERSON_ONLY_CODE });
+  }
 }

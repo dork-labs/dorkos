@@ -106497,6 +106497,12 @@
                               "summary": {
                                 "type": "string"
                               },
+                              "audience": {
+                                "type": "string",
+                                "enum": [
+                                  "person"
+                                ]
+                              },
                               "source": {
                                 "type": "object",
                                 "properties": {
@@ -106670,6 +106676,12 @@
                                       },
                                       "path": {
                                         "type": "string"
+                                      },
+                                      "audience": {
+                                        "type": "string",
+                                        "enum": [
+                                          "person"
+                                        ]
                                       }
                                     },
                                     "required": [
