@@ -70,7 +70,7 @@ check 'a bad sha is skipped' 'skip bad-sha' "$out"
 
 # A ROLLING run (one run for several merges) is rolling-bisect.yml's from its
 # first failure: never re-run here (a re-run of an old push run would join
-# browser-test's `gate` concurrency group and cancel, or be cancelled by, a
+# its workflow's `gate` concurrency group and cancel, or be cancelled by, a
 # newer push run), never reverted here. Nov 25, 7878dda.
 d '.workflow = "browser-test" | .rolling = true | .attempt = 1 | .parentConclusion = "none"'
 check 'rolling, attempt 1, parent never ran: skip, no re-run' 'skip rolling' "$out"
@@ -146,6 +146,11 @@ echo '{"workflow_runs":[]}' >"$tmp/fx/wfruns"
 check 'browser-test is rolling' true "$(jq -r .rolling "$tmp/facts.json")"
 check 'its parent never ran' none "$(jq -r .parentConclusion "$tmp/facts.json")"
 check 'rolling facts at attempt 1: no re-run, the bisect has it' 'skip rolling' "$("$SCRIPT" decide "$tmp/facts.json")"
+# test.yml's push run is rolling too (DOR-5130), and bisected since DOR-5254.
+jq '.run_attempt = 1 | .name = "test"' "$tmp/fx/run" >"$tmp/fx/run.new" && mv "$tmp/fx/run.new" "$tmp/fx/run"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>"$tmp/err"
+check 'test is rolling' true "$(jq -r .rolling "$tmp/facts.json")"
+check 'a test failure is never re-run here: the bisect has it' 'skip rolling' "$("$SCRIPT" decide "$tmp/facts.json")"
 
 # --- the rolling list cannot drift from the workflows that act on it ---
 rolling_list=$(sed -n "s/^ROLLING_WORKFLOWS='\(.*\)'$/\1/p" "$SCRIPT" | jq -c 'sort')
@@ -153,6 +158,7 @@ bisect_list=$(awk '/^on:/{on=1} on && /^  workflow_run:/{wr=1} wr && /^    workf
   "$repo_root/.github/workflows/rolling-bisect.yml" |
   sed 's/^ *workflows: *//' | tr -d '[]' | tr ',' '\n' | sed 's/^ *//; s/ *$//' | sed '/^$/d' | jq -Rsc 'split("\n") | map(select(. != "")) | sort')
 check 'ROLLING_WORKFLOWS is rolling-bisect.yml'"'"'s workflows:' "$bisect_list" "$rolling_list"
+check 'test (the unit suite) is in the rolling list (DOR-5254)' yes "$(jq -e 'index("test") != null' <<<"$rolling_list" >/dev/null && echo yes || echo no)"
 check 'the rolling list is not empty' yes "$([ "$(jq length <<<"$rolling_list")" -gt 0 ] && echo yes || echo no)"
 alert_expr=$(grep -E '^ *ROLLING:' "$repo_root/.github/workflows/after-merge-alert.yml")
 for w in $(jq -r '.[]' <<<"$rolling_list"); do
