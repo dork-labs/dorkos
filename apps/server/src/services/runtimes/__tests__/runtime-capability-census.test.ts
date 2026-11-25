@@ -1,8 +1,10 @@
 /**
- * The runtime capabilities census — the pin between the matrix in
- * `packages/test-utils/src/runtime-capability-matrix.ts` and the tests that are
- * supposed to prove it (DOR-2720). Modeled on the Harness Sync census
- * (`packages/harness/src/__tests__/capabilities-census.test.ts`).
+ * The runtime capabilities census: the pin between the matrix in
+ * `packages/test-utils/src/runtime-capability-matrix.ts` and the tests meant to
+ * prove it (DOR-2720), modeled on `packages/harness/src/__tests__/capabilities-census.test.ts`.
+ * computer-local is not a column: it is OpenCode over a guest client, with no
+ * capability of its own; `opencode/computer/__tests__/conformance.test.ts` runs
+ * the shared suite on it (DOR-4902).
  *
  * A cell's status and evidence are claims. This test makes them structural:
  *
@@ -18,8 +20,7 @@
  *    that does not;
  * 6. every cell but `supported` says why, and every `planned` cell names its
  *    ticket;
- * 7. `contributing/capabilities/runtimes.md` is exactly what the registry
- *    renders.
+ * 7. `contributing/capabilities/runtimes.md` is exactly what the registry renders.
  * 8. Explicit `U` and `E` references name runnable test titles in their
  *    source files. Each `L` cell cites a checked-in live receipt for that
  *    runtime and a passing case in that receipt.

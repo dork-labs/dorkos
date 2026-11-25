@@ -414,7 +414,7 @@ Pin it the same way claude-code does: build your live tool server in a test, lis
 
 ### 4. Wire the conformance suite
 
-Every adapter must clear the shared behavioral gate before its UI activates. Add `__tests__/conformance.test.ts`:
+Every adapter must clear the shared behavioral gate before its UI activates. Add `__tests__/conformance.test.ts` (the computer-local runtime, OpenCode inside an agent computer, has its own at `opencode/computer/__tests__/conformance.test.ts`, with the VM faked):
 
 ```typescript
 import { vi } from 'vitest';

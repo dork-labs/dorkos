@@ -71,7 +71,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { OpencodeClient, GlobalEvent, Message, Part } from '@opencode-ai/sdk';
+import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
 import { runtimeConformance, runtimeGuardConformance, type HandedGrants } from '@dorkos/test-utils';
 import { prepareFreeLocalRun } from './free-local/free-local-run.js';
 
@@ -181,14 +181,18 @@ import {
   permissionRequest,
   providerAuthError,
   serverConnected,
-  sessionCompacted,
   sessionError,
   sessionIdle,
-  sessionInfo,
   statusEvent,
   textPart,
   userMessage,
 } from './opencode-sse-fixtures.js';
+import {
+  CONFORMANCE_PROMPT,
+  makeConformanceClient,
+  opencodeCompactingTurn,
+  type StoredMessages,
+} from './conformance-client.js';
 
 /**
  * The provider's own words for a dead credential — what the mocked sidecar is
@@ -213,12 +217,6 @@ function opencodeAuthFailedTurn(sessionID: string): OpenCodeWireEvent[] {
     sessionIdle(sessionID),
   ];
 }
-
-/**
- * What the sidecar's durable store holds for a session — the shape
- * `session.messages` answers with, and the one `getMessageHistory` reads.
- */
-type StoredMessages = Array<{ info: Message; parts: Part[] }>;
 
 /**
  * How the sidecar's own store records that same credential failure, and what a
@@ -246,20 +244,6 @@ function opencodeAuthFailedStore(sessionID: string): StoredMessages {
       }),
       parts: [],
     },
-  ];
-}
-
-/**
- * A turn that compacts before going idle. OpenCode reports compaction as a
- * single post-hoc `session.compacted` — the mapper emits an `operation_progress`
- * `done` (honest degradation: no start signal) plus the `compact_boundary` row.
- */
-function opencodeCompactingTurn(sessionID: string): OpenCodeWireEvent[] {
-  return [
-    statusEvent(sessionID, { type: 'busy' }),
-    sessionCompacted(sessionID),
-    statusEvent(sessionID, { type: 'idle' }),
-    sessionIdle(sessionID),
   ];
 }
 
@@ -393,82 +377,6 @@ afterAll(async () => {
 });
 
 /**
- * The prompt every conformance turn sends. Shared with the suite (via
- * `messageContent`) and with the scripted turn's echo of it, so the sidecar
- * mock cannot drift from what was actually sent — the invariant that forbids a
- * turn from speaking its own prompt back is only as honest as that match.
- */
-const CONFORMANCE_PROMPT = 'conformance ping';
-
-/**
- * Mock sidecar client for one conformance runtime. The conformance suite
- * drains `sendMessage` to completion and cannot push wire events mid-turn, so
- * every `/global/event` connection is minted with ONE full scripted turn
- * PRE-QUEUED (the caller-provided `turn`): the runtime registers the turn's
- * demux listener before the hub's pump connects, and `TurnEventQueue`
- * buffers, so early-queued events are simply drained once mapping starts.
- * `session.get` reports the SAME directory the event envelopes carry — the
- * demux key is strict string equality on `{directory, sessionID}`, and any
- * drift drops every event.
- */
-function makeConformanceClient(turn: OpenCodeWireEvent[], stored?: StoredMessages) {
-  const info = sessionInfo(OC_SESSION_A, PROJECT_DIR);
-  return {
-    global: {
-      event: vi.fn(async (options?: { signal?: AbortSignal }) => {
-        const queue = new TurnEventQueue<GlobalEvent>();
-        // End (never fail) on hub abort: the post-turn unsubscribe must read
-        // as a quiet client-side wind-down, not a sidecar drop.
-        options?.signal?.addEventListener('abort', () => queue.end(), { once: true });
-        queue.push(globalEvent(PROJECT_DIR, serverConnected()));
-        for (const event of turn) {
-          queue.push(globalEvent(PROJECT_DIR, event));
-        }
-        return { stream: queue };
-      }),
-    },
-    app: { agents: vi.fn(async () => ({ data: [] })) },
-    session: {
-      create: vi.fn(async () => ({ data: info })),
-      get: vi.fn(async () => ({ data: info })),
-      list: vi.fn(async () => ({ data: [] })),
-      // The turn as read back from the sidecar's durable store — OpenCode has
-      // real native history, so the suite runs with `expectHistory: true`.
-      // A caller that scripted a FAILED turn passes what that failure was
-      // stored as instead: the sidecar records the outcome it actually had,
-      // and a store still answering with a tidy success would make any
-      // assertion about a reopened failed turn meaningless.
-      messages: vi.fn(async () => ({
-        data: stored ?? [
-          {
-            info: userMessage(OC_SESSION_A, 'msg_0000'),
-            parts: [
-              textPart(OC_SESSION_A, 'prt_u1', CONFORMANCE_PROMPT, { messageID: 'msg_0000' }),
-            ],
-          },
-          {
-            info: assistantMessage(OC_SESSION_A, { completed: true }),
-            parts: [textPart(OC_SESSION_A, 'prt_text01', 'pong from opencode', { end: true })],
-          },
-        ],
-      })),
-      update: vi.fn(async () => ({ data: info })),
-      fork: vi.fn(async () => ({ data: info })),
-      promptAsync: vi.fn(async () => ({})),
-      // The command-intent (compact) trigger: OpenCodeRuntime.executeCommandIntent
-      // calls session.summarize, then drains the SAME per-turn demux tap as a
-      // prompt — so the pre-queued turn's terminal (session.idle → done)
-      // satisfies the conformance dispatch gate.
-      summarize: vi.fn(async () => ({})),
-      abort: vi.fn(async () => ({ data: true })),
-      todo: vi.fn(async () => ({ data: [] })),
-    },
-    postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
-    provider: { list: vi.fn(async () => ({ data: { all: [], default: {}, connected: [] } })) },
-  };
-}
-
-/**
  * `contextReadingTurn` (DOR-2732): one reply on a fresh session, its events.
  *
  * @param runtime - The runtime to drive.
@@ -492,7 +400,7 @@ function makeMockedProvider(
   }),
   stored?: StoredMessages
 ): OpenCodeClientProvider {
-  const client = makeConformanceClient(turn, stored) as unknown as OpencodeClient;
+  const client = makeConformanceClient(turn, PROJECT_DIR, stored) as unknown as OpencodeClient;
   lastClient = client as unknown as ReturnType<typeof makeConformanceClient>;
   return {
     getClient: async () => client,
