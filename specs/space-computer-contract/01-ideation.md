@@ -10,7 +10,7 @@ status: ideation
 **Slug:** space-computer-contract
 **Linear:** epic DOR-5152; this part DOR-5165 (design note) and DOR-5166 (build)
 **Decision:** ADR [`261124-150516`](../../decisions/261124-150516-space-side-and-computer-side-one-contract-two-entries.md)
-**Status:** ideation. The first part, the permission gate, has its Security answers (an independent security read, 2026-11-24) and needs the operator's ruling before anything here is specified.
+**Status:** ideation. The first part, the permission gate, has its Security answers (an independent security read, 2026-11-24) and the operator's rulings on its four questions (2026-11-25), so it can be specified.
 
 ## What the contract is
 
