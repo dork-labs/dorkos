@@ -120,7 +120,6 @@ const SAMPLES: Record<string, readonly unknown[]> = {
       ...FULL_INPUT,
       notAfter: 1_764_000_000_000,
       accountHint: 'account-1',
-      askedByRef: 'dork:agent:01KJXYKJYW4N8QGQ5W4GB6YM9J',
       sourceRef: 'extension-send:3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c',
     },
   ],
@@ -410,12 +409,11 @@ describe('a start request', () => {
     ).toBe(false);
   });
 
-  it('names who asked by a dork: reference, and where the words wait by <kind>:<id>', () => {
-    // Purpose: fails if a caller could put a free-form asker or source on the record.
+  it('names where the words wait by <kind>:<id>, and takes no asker yet (T6)', () => {
+    // Purpose: fails if a caller could put a free-form source on the record, or an asker early.
     const parse = (extra: Record<string, unknown>) =>
       StartTurnInputSchema.safeParse({ ...MINIMAL_INPUT, ...extra }).success;
-    expect(parse({ askedByRef: 'dork:chat:3f1c2b7a' })).toBe(true);
-    expect(parse({ askedByRef: 'the owner' })).toBe(false);
+    expect(parse({ askedByRef: 'dork:chat:3f1c2b7a' })).toBe(false);
     expect(parse({ sourceRef: 'extension-send:row-1' })).toBe(true);
     expect(parse({ sourceRef: 'row-1' })).toBe(false);
     expect(parse({ sourceRef: 'Extension:row 1' })).toBe(false);

@@ -34,6 +34,7 @@
  * @module services/runs/turn-port
  */
 import {
+  RunIdSchema,
   StartTurnInputSchema,
   wordsWaitInComposer,
   type StartTurnInput,
@@ -115,10 +116,14 @@ export class SpaceTurnPort {
    * Start a turn: save the run and its `start_turn` and answer at once.
    *
    * @param input - A {@link StartTurnInput}; parsed here, so a caller cannot pass more.
+   * @param opts.runId - The run's id, when the caller minted it (a ULID): a caller
+   *   that keeps the words in its own row names the run by that row's id, so the
+   *   row, the run, the queue row its words become and the caller's receipt share
+   *   one id. Not part of the port's payload; the space side mints every run id.
    * @returns The run's id, its status (`queued`) and its place among the chat's waiting runs.
    * @throws {TurnStartRefusedError} When the start is refused before anything is saved.
    */
-  start(input: StartTurnInput): StartTurnResult {
+  start(input: StartTurnInput, opts: { runId?: string } = {}): StartTurnResult {
     const parsed = StartTurnInputSchema.safeParse(input);
     if (!parsed.success) {
       const tooLong =
@@ -135,6 +140,12 @@ export class SpaceTurnPort {
           );
     }
     const start = parsed.data;
+    if (opts.runId !== undefined && !RunIdSchema.safeParse(opts.runId).success) {
+      throw new TurnStartRefusedError(
+        'invalid_input',
+        'The turn could not be started: bad run id.'
+      );
+    }
     const home = this.deps.agentHome?.();
     if (start.agentId !== undefined && home && home(start.agentId) === undefined) {
       throw new TurnStartRefusedError(
@@ -145,12 +156,12 @@ export class SpaceTurnPort {
     const { runs, effects } = this.deps;
     const run = runs.transaction(() => {
       let created = runs.create({
+        ...(opts.runId !== undefined ? { id: opts.runId } : {}),
         chatKey: start.sessionId,
         status: 'queued',
         openedBy: 'caller',
         origin: start.origin,
         ...(start.agentId !== undefined ? { agentId: start.agentId } : {}),
-        ...(start.askedByRef !== undefined ? { askedByRef: start.askedByRef } : {}),
         ...(start.sourceRef !== undefined ? { sourceRef: start.sourceRef } : {}),
         ...(start.notAfter !== undefined ? { notAfter: start.notAfter } : {}),
       });

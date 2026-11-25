@@ -316,11 +316,11 @@ export function wireOriginOf(origin: TurnOrigin): WireOrigin {
 }
 
 /**
- * Whether a turn's words wait as a queue row a person can see, edit and
- * reorder (spec §3.5): a person's own message, or another chat's message.
- * Every other origin's words stay at their source (a room entry, a mini
- * app's send, a wake) and wait on the space side until the chat is free, so
- * no prompt nobody typed ever sits in a person's composer. On a Mac, a run
+ * Whether a turn's words wait as a queue row a person can see, edit, reorder
+ * and remove (spec §3.5): a person's own message, another chat's message, or
+ * a mini app's message to an agent (`ctx.agent.send`). Every other origin's
+ * words stay at their source (a room entry, a wake, a heartbeat raise) and
+ * wait on the space side until the chat is free. On a Mac, a run
  * whose words wait in the composer skips admission's chat-busy check and is
  * queued as a row; any other run is handed over only when no live run holds
  * its chat, and the computer face refuses it `chat_busy` otherwise.
@@ -332,7 +332,8 @@ export function wordsWaitInComposer(origin: TurnOrigin): boolean {
   return (
     origin.kind === 'interactive' ||
     origin.kind === 'session-relay' ||
-    origin.kind === 'chat-message'
+    origin.kind === 'chat-message' ||
+    origin.kind === 'extension-message'
   );
 }
 
@@ -529,18 +530,12 @@ const callerTurnFields = {
  * {@link TurnStartRequest}.
  *
  * Three record columns get their input fields with the callers that need
- * them: `askedByRef` and `sourceRef` with T5 (a mini app's send keeps its
- * words in its own row), `startKey` with T7. The schema is strict, so adding
- * an optional field later changes nothing a caller sends today.
+ * them: `sourceRef` with T5 (a mini app keeps its words in its own row),
+ * `askedByRef` with T6, `startKey` with T7. The schema is strict, so adding an
+ * optional field later changes nothing a caller sends today.
  */
 export const StartTurnInputSchema = z.strictObject({
   ...callerTurnFields,
-  /**
-   * Who asked, as a `dork:` reference (spec §4.1, `asked_by_ref`): a chat, a
-   * room, a task run, a person or an agent. Kept on the record; never sent to
-   * the computer.
-   */
-  askedByRef: DorkReferenceSchema.optional(),
   /**
    * Where the words wait until the turn starts, when the caller keeps them in
    * a store of its own (spec §4.1, `source_ref`): `<kind>:<id>`, read back by

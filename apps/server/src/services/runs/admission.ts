@@ -16,7 +16,9 @@
  *    dispatcher queues it as a row a person can see (§4.7).
  * 3. **The machine is full.** A run nobody typed into waits (`machine_full`)
  *    while every slot under `runtimes.maxAgentChats` is taken, and is woken
- *    when a run lets go of one. The check and the slot's claim happen in one
+ *    when a run lets go of one. Words that wait in the composer of a chat a
+ *    live run holds add no turn beside it, so they take no slot (as a mini
+ *    app's message into a busy chat never has). The check and the slot's claim happen in one
  *    synchronous step: nothing awaits between this answer and the computer
  *    face's own claim at the top of `dispatchSessionMessage`.
  * 4. **The account** the caller hinted passes through as `accountRef`
@@ -79,11 +81,13 @@ export function admit(
   deps: AdmissionDeps
 ): AdmissionVerdict {
   if (!personTyped(run.origin) && deps.isPaused(run.agentId, start.cwd)) return { wait: 'paused' };
-  if (!wordsWaitInComposer(run.origin)) {
-    const live = deps.runs.liveRunOf(run.sessionId);
-    if (live && live.id !== run.id) return { wait: 'chat_busy' };
+  const live = deps.runs.liveRunOf(run.sessionId);
+  const chatBusy = live !== undefined && live.id !== run.id;
+  const composer = wordsWaitInComposer(run.origin);
+  if (!composer && chatBusy) return { wait: 'chat_busy' };
+  if (countsTowardCap(run.origin) && !(composer && chatBusy) && deps.machineFull()) {
+    return { wait: 'machine_full' };
   }
-  if (countsTowardCap(run.origin) && deps.machineFull()) return { wait: 'machine_full' };
   return {
     go: true,
     ...(start.accountHint !== undefined ? { accountRef: start.accountHint } : {}),

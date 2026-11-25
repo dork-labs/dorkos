@@ -106,10 +106,9 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       const request = TurnStartRequestSchema.parse(input);
       if (holds(request.runId)) return { refused: 'already_held' };
       const composer = wordsWaitInComposer(request.origin);
-      if (!composer) {
-        const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
-        if (live !== undefined && live !== request.runId) return { refused: 'chat_busy' };
-      }
+      const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
+      const chatBusy = live !== undefined && live !== request.runId;
+      if (!composer && chatBusy) return { refused: 'chat_busy' };
       if (
         request.prepare ||
         request.systemPromptAppend !== undefined ||
@@ -142,7 +141,8 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
         clientId: clientIdOf(request.runId, request.origin),
         meshCore: deps.meshCore() as MeshCore | undefined,
         roomSessionPlace: deps.roomSessionPlace(),
-        countsTowardLaunchCap: !personTyped(request.origin),
+        // A composer's words into a busy chat add no turn beside the running one.
+        countsTowardLaunchCap: !personTyped(request.origin) && !(composer && chatBusy),
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),

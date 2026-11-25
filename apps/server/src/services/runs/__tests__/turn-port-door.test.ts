@@ -119,14 +119,18 @@ async function pass(): Promise<void> {
   await settle();
 }
 
-/** A mini app's message for the agent, through the space face. */
+/**
+ * A test caller whose words stay at their source, through the space face: DorkOS
+ * carrying on in a chat (`resume`), as a wake will from T7. No production
+ * caller sends such a run through the port in T5.
+ */
 function startFromApp(content: string, extra: Partial<StartTurnInput> = {}) {
   return record.port.start({
     sessionId,
     agentId: AGENT.id,
     cwd: AGENT.home,
     content,
-    origin: { kind: 'extension-message' },
+    origin: { kind: 'resume' },
     tier: 'owner',
     ...extra,
   });
@@ -263,7 +267,7 @@ describe('the space face', () => {
     expect(run).toMatchObject({
       status: 'queued',
       agentId: AGENT.id,
-      origin: { kind: 'extension-message' },
+      origin: { kind: 'resume' },
     });
     expect(startEffect(run.id)).toMatchObject({
       key: `start:${run.id}:1`,
@@ -283,6 +287,42 @@ describe('the space face', () => {
     ]);
     // Transition 7 settled the effect in its own write.
     expect(startEffect(run.id).state).toBe('done');
+  });
+
+  it('hands a mini app’s message to a busy chat at once, as a queue row under its own id', async () => {
+    // Purpose: fails if a composer's words were held back as chat_busy, or queued under another id.
+    await personWorking();
+    const messageId = '01KMXNXAPPMSGXYZ000000000A';
+    const answer = record.port.start(
+      {
+        sessionId,
+        agentId: AGENT.id,
+        cwd: AGENT.home,
+        content: 'from the app: when you can',
+        origin: { kind: 'extension-message' },
+        tier: 'owner',
+      },
+      { runId: messageId }
+    );
+    expect(answer.runId).toBe(messageId);
+    await pass();
+    expect(handed).toEqual([messageId]);
+    expect(record.store.get(messageId)).toMatchObject({
+      status: 'queued',
+      waitReason: null,
+      queueMessageId: messageId,
+    });
+    expect(
+      db
+        .select()
+        .from(sessionMessageQueue)
+        .all()
+        .map((row) => row.id)
+    ).toEqual([messageId]);
+    expect(startEffect(messageId).state).toBe('leased');
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(record.store.get(messageId)?.status).toMatch(/ended|settled/u));
+    expect(startEffect(messageId).state).toBe('done');
   });
 
   it('refuses at start() what it can judge itself, and saves nothing', () => {
@@ -464,7 +504,7 @@ function requestFor(runId: string, content: string) {
     agentId: AGENT.id,
     cwd: AGENT.home,
     content,
-    origin: { kind: 'extension-message' as const },
+    origin: { kind: 'resume' as const },
     wireOrigin: 'chat' as const,
     tier: 'owner' as const,
   };
@@ -675,7 +715,7 @@ describe('the door’s refusals (§3.1)', () => {
       sessionId,
       cwd: AGENT.home,
       content: 'held in memory for the second boot',
-      origin: { kind: 'extension-message' },
+      origin: { kind: 'resume' },
       tier: 'owner',
     });
     await pass();
@@ -686,7 +726,7 @@ describe('the door’s refusals (§3.1)', () => {
       agentId: AGENT.id,
       cwd: AGENT.home,
       content: 'for a gone agent, again',
-      origin: { kind: 'extension-message' },
+      origin: { kind: 'resume' },
       tier: 'owner',
     });
     await pass();

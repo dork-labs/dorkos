@@ -46,6 +46,13 @@ export interface HandedStarts {
    * @param run - The run, `queued`.
    */
   reopen(run: TurnRun): void;
+  /**
+   * A run's words became a queue row: its watchers hear it, so a caller that
+   * kept the words in its own row can let them go (they are the queue's now).
+   *
+   * @param run - The run, as stored with its row.
+   */
+  rowTaken(run: TurnRun): void;
 }
 import {
   isUniqueViolation,
@@ -245,7 +252,9 @@ function dispatcherFeed(
 
     queueRowTaken: (runId, queueMessageId) =>
       store.transaction(() => {
-        if (store.get(runId)?.status === 'queued') store.annotate(runId, { queueMessageId });
+        if (store.get(runId)?.status !== 'queued') return;
+        store.annotate(runId, { queueMessageId });
+        starts?.rowTaken(store.get(runId)!);
       }),
 
     handBack: (runId) =>

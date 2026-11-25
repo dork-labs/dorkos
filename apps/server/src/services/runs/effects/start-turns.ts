@@ -82,6 +82,15 @@ export class StartTurns implements HandedStarts {
   }
 
   /**
+   * A run's words became a queue row: tell its watchers.
+   *
+   * @param run - The run, as stored with its row.
+   */
+  rowTaken(run: TurnRun): void {
+    this.port()?.moved(run);
+  }
+
+  /**
    * Cancel a run that never started (transition 5 from `queued`, 9 from
    * `starting`), keeping why; its `start_turn` ends in the same write.
    * Nothing is written for a run already past those.

@@ -109,8 +109,6 @@ export interface TurnRun {
   queueMessageId: string | null;
   /** Where the words wait when they are not in the queue (`<kind>:<id>`, §4.1). */
   sourceRef: string | null;
-  /** Who asked, as a `dork:` reference. */
-  askedByRef: string | null;
   /** Epoch ms: a run still waiting past this is cancelled as `expired`. */
   notAfter: number | null;
   runtime: string | null;
@@ -173,9 +171,8 @@ export interface NewRun {
   openedBy: TurnRun['openedBy'];
   origin: TurnOrigin | null;
   queueMessageId?: string;
-  /** A caller on the turn port: where its words wait, who asked, and its deadline. */
+  /** A caller on the turn port: where its words wait, and its deadline. */
   sourceRef?: string;
-  askedByRef?: string;
   notAfter?: number;
   agentId?: string;
   runtime?: string;
@@ -509,7 +506,6 @@ export class RunStore {
           status: input.status,
           queueMessageId: input.queueMessageId ?? null,
           sourceRef: input.sourceRef ?? null,
-          askedByRef: input.askedByRef ?? null,
           notAfter: input.notAfter ?? null,
           runtime: input.runtime ?? null,
           runtimeTurnRef: input.runtimeTurnRef ?? null,

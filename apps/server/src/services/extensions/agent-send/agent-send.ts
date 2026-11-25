@@ -19,14 +19,16 @@
  *    named app and being data, not instructions. The fenced block is the
  *    message itself, so it survives the queue and a restart byte for byte.
  * 3. **How it is sent.** Through the turn port (`services/runs`, spec
- *    `turns-survive-restarts` §3): `start()` saves a run for it and answers at
- *    once, and the run is handed to the chat when the chat is free. Its words
- *    stay in this message's own row (the run's `sourceRef`) until its turn
- *    starts, so a restart in between loses nothing and puts no prompt nobody
- *    typed into a person's composer. A busy chat makes it wait for the turn
- *    ahead of it to end, with **no time limit**, so there is no
- *    `hold_expired`: a waiting message leaves by running, and the extension
- *    hears either way.
+ *    `turns-survive-restarts` §3): `start()` saves a run under the message's
+ *    own id and answers at once, and the run is handed to the chat at once. A
+ *    mini app's words belong in a composer (§3.5): the dispatcher queues them
+ *    as a row under that same id, so a busy chat HOLDS the message where the
+ *    person can see, reorder or remove it, and runs it when the current turn
+ *    ends. Until the row is written the words stay in this message's own row
+ *    (the run's `sourceRef`), so a restart in between loses nothing; once the
+ *    queue has them, this row lets them go. **That hold has no time limit**,
+ *    so there is no `hold_expired`: a waiting message leaves the queue by
+ *    running, or by a person removing it, and either way the extension hears.
  * 4. **What the extension can NOT say.** The input is strict: a `cwd`,
  *    `permissionMode`, `forAgent`, `runtime` or any other field is refused, so
  *    an extension cannot pick where the turn stands, who it acts as, or how
@@ -47,8 +49,9 @@
  *
  * `send` answers at once with `{ messageId, status, reason?, sessionId }`:
  * `queued` from the moment its run is saved, with `busy` when another turn
- * holds the chat and `at_capacity` when the machine is full, as admission saw
- * it then. What follows reaches the extension through
+ * holds the chat and `at_capacity` when admission held it for room; a message
+ * simply not handed over yet has no reason. A resend answers with where the
+ * message is now. What follows reaches the extension through
  * `ctx.agent.subscribe`, read off the run (`agent-send-runs.ts`):
  * `turn.started` (the ack), then `turn.done`, or `turn.failed` with a reason
  * when the message will never run. These are server-side and not tied to
@@ -66,6 +69,7 @@
  */
 import { outsideAuditScope } from '../../audit/audit-context.js';
 import crypto from 'node:crypto';
+import { ulid } from 'ulidx';
 import type { MeshCore } from '@dorkos/mesh';
 import {
   AgentSendError,
@@ -403,7 +407,8 @@ export class AgentSendService {
     const target = await this.resolveTarget(extensionId, request.to);
     const name = this.deps.extensionName(extensionId);
     const row = this.deps.store.insert({
-      id: crypto.randomUUID(),
+      // A ULID: the message, its run and the queue row its words become share it.
+      id: ulid(),
       extensionId,
       idempotencyKey: request.idempotencyKey,
       agentId: target.agent?.id ?? null,
@@ -535,21 +540,24 @@ export class AgentSendService {
     const name = sanitizeIdentity(this.deps.extensionName(row.extensionId)) ?? row.extensionId;
     let runId: string;
     try {
-      ({ runId } = door.start({
-        sessionId,
-        ...(target.agent ? { agentId: target.agent.id } : {}),
-        // An existing chat runs in its own folder whatever this names.
-        cwd: row.cwd ?? target.agent?.path ?? DEFAULT_CWD,
-        content: row.content ?? '',
-        origin: { kind: 'extension-message' },
-        tier: 'owner',
-        sourceRef: sendSourceRef(row.id),
-        ...(reservation
-          ? {
-              seedContext: `This chat was opened by the ${name} app so it can send this agent messages.`,
-            }
-          : {}),
-      }));
+      ({ runId } = door.start(
+        {
+          sessionId,
+          ...(target.agent ? { agentId: target.agent.id } : {}),
+          // An existing chat runs in its own folder whatever this names.
+          cwd: row.cwd ?? target.agent?.path ?? DEFAULT_CWD,
+          content: row.content ?? '',
+          origin: { kind: 'extension-message' },
+          tier: 'owner',
+          sourceRef: sendSourceRef(row.id),
+          ...(reservation
+            ? {
+                seedContext: `This chat was opened by the ${name} app so it can send this agent messages.`,
+              }
+            : {}),
+        },
+        { runId: row.id }
+      ));
     } catch (err) {
       reservation?.cancel();
       this.deps.store.update(row.id, { sessionId: target.sessionId });
@@ -559,9 +567,14 @@ export class AgentSendService {
     }
     if (reservation) this.reservations.set(row.id, reservation);
     if (target.agent) this.deps.store.keepChat(row.extensionId, target.agent.id, sessionId);
-    // Why it waits, as admission saw it when the run was saved.
-    const reason = stepOf(door.get(runId)!);
-    return { kind: 'sent', sessionId, reason: reason.kind === 'waiting' ? reason.reason : null };
+    // Why it waits, when there is a reason: a turn holds the chat, or admission
+    // held the run for room. A message only not handed over yet has none.
+    const busy = door
+      .list(sessionId)
+      .some((run) => run.id !== runId && ['starting', 'started', 'running'].includes(run.status));
+    const held = stepOf(door.get(runId)!);
+    const reason = busy ? 'busy' : held.kind === 'waiting' ? held.reason : null;
+    return { kind: 'sent', sessionId, reason };
   }
 
   /** Try every held message again, oldest first. One drain at a time. */
@@ -628,8 +641,11 @@ export class AgentSendService {
     const sessionId = row.sessionId ?? run.sessionId;
     if (step.kind === 'waiting') {
       // A pause cut its turn before the agent read it: it waits again and
-      // starts afresh (DOR-4353). The receipt stays the first one.
+      // starts afresh (DOR-4353).
       if (row.status === 'started') this.deps.store.update(row.id, { status: 'queued' });
+      // Its words are a queue row now, the person's to see: this row lets them go.
+      else if (run.queueMessageId !== null && row.content !== null)
+        this.deps.store.update(row.id, { content: null });
       return;
     }
     // A watcher reads the run as it stands, so a turn that started and ended

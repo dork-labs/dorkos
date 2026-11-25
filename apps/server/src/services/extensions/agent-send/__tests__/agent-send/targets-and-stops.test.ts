@@ -51,10 +51,11 @@ describe('ctx.agent.send — capacity', () => {
       }
     );
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    // The resend still answers with the first receipt.
+    // The resend answers with where the message is now, and sends nothing.
     expect(await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' })).toEqual(
-      receipt
+      { messageId: receipt.messageId, status: 'started', sessionId: h.session }
     );
+    expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('holds a message whose new chat the extension’s own start limits refuse, then sends it', async () => {
@@ -263,7 +264,7 @@ describe('ctx.agent.send — the extension stops', () => {
 });
 
 describe('ctx.agent.send — across a restart', () => {
-  it('a message still waiting runs after a restart; one an earlier build left can only be called interrupted', async () => {
+  it('a message queued in the chat runs after a restart with its mark; one an earlier build left reads interrupted', async () => {
     let clock = Date.now();
     uninstallRunRecord();
     bootTurnPort({ now: () => clock });
@@ -272,7 +273,7 @@ describe('ctx.agent.send — across a restart', () => {
     await h.service.start();
     h.service.subscribe(EXT, (event) => h.events.push(event));
 
-    // A message waiting behind the person's turn when the process dies.
+    // A message queued behind the person's turn when the process dies.
     const first = gate();
     await personTurn(first.wait);
     const waiting = await h.service.send(EXT, {
@@ -281,7 +282,7 @@ describe('ctx.agent.send — across a restart', () => {
       idempotencyKey: 'w',
     });
     await settle();
-    expect(runOfMessage(waiting.messageId)?.waitReason).toBe('chat_busy');
+    expect(h.queue.list(h.session).map((row) => row.id)).toEqual([waiting.messageId]);
 
     // The process dies with both in flight: nothing shuts down, and the next
     // boot starts once every lease has run out.
@@ -303,27 +304,47 @@ describe('ctx.agent.send — across a restart', () => {
       failureReason: null,
       content: null,
     });
-    h.runtime.withScenarios([quickTurn()]);
+    h.runtime.withScenarios([quickTurn(), quickTurn()]);
+    h.runtime.sendMessage.mockClear();
 
     bootTurnPort({ epoch: '01BOOTEPOCHAGENTSEND000001', now: () => clock });
     h.service = build();
     await h.service.start();
     // Kept while nobody listened, delivered to the first listener.
     h.service.subscribe(EXT, (event) => h.events.push(event));
-    await vi.waitFor(() => expect(h.events).toHaveLength(3), { timeout: 3_000 });
+    await settle();
+    // Its row is still in the queue: never handed over twice.
+    expect(h.queue.list(h.session).map((row) => row.id)).toEqual([waiting.messageId]);
+    expect(h.dispatched.filter((opts) => opts.runId === waiting.messageId)).toHaveLength(1);
 
-    expect(h.events).toEqual([
+    // The next message to the chat picks the older one up first, as every dispatch does.
+    const next = await h.service.send(EXT, {
+      to: h.session,
+      text: 'and this',
+      idempotencyKey: 'n',
+    });
+    await vi.waitFor(() => expect(h.events).toHaveLength(5), { timeout: 3_000 });
+
+    expect(h.events[0]).toEqual(
       expect.objectContaining({
         kind: 'turn.failed',
         messageId: 'm-running',
         reason: 'interrupted',
-      }),
-      { kind: 'turn.started', messageId: waiting.messageId, sessionId: h.session },
-      { kind: 'turn.done', messageId: waiting.messageId, sessionId: h.session, outcome: 'ok' },
-    ]);
-    expect(h.runtime.sendMessage.mock.calls.map((call) => call[1])).toContainEqual(
-      expect.stringContaining('survive this')
+      })
     );
+    // Both ran, each once (which goes first is the dispatcher's own order).
+    for (const messageId of [waiting.messageId, next.messageId]) {
+      expect(h.events.filter((e) => e.messageId === messageId).map((e) => e.kind)).toEqual([
+        'turn.started',
+        'turn.done',
+      ]);
+    }
+    // The row the restart left carries the outsider mark too, read from who
+    // queued it (DOR-4594).
+    const adopted = h.runtime.sendMessage.mock.calls.find((call) =>
+      String(call[1]).includes('survive this')
+    );
+    expect(adopted?.[2]).toMatchObject({ carriedMarks: { outsider: true } });
     first.open();
   });
 });

@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderAppMessage } from '../../agent-send-message.js';
 import { dispatchMessage } from '../../../../session/message-dispatcher.js';
 import { turnFacts } from '../../../../session/turn-port/index.js';
+import { cancelQueuedMessage } from '../../../../session/queued-message-edits.js';
 import { holdRun, releaseRun } from '../../../../session/turn-port/facts.js';
 
 describe('ctx.agent.send — an idle chat', () => {
@@ -38,9 +39,17 @@ describe('ctx.agent.send — an idle chat', () => {
     await settle();
 
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    expect(h.runtime.sendMessage.mock.calls[0]?.[1]).toBe(
-      renderAppMessage('Flow Dashboard', EXT, 'hello', undefined, 'abcd1234')
+    // The id on the receipt is the id the runtime ran, and the run's.
+    expect(h.runtime.sendMessage).toHaveBeenCalledWith(
+      h.session,
+      renderAppMessage('Flow Dashboard', EXT, 'hello', undefined, 'abcd1234'),
+      expect.objectContaining({ messageId: receipt.messageId })
     );
+    expect(runOfMessage(receipt.messageId)?.id).toBe(receipt.messageId);
+    // A mini app's turn carries the outsider mark (DOR-4594).
+    expect(h.runtime.sendMessage.mock.calls[0]?.[2]).toMatchObject({
+      carriedMarks: { outsider: true },
+    });
     expect(h.events).toEqual([
       { kind: 'turn.started', messageId: receipt.messageId, sessionId: h.session },
       { kind: 'turn.done', messageId: receipt.messageId, sessionId: h.session, outcome: 'ok' },
@@ -51,8 +60,8 @@ describe('ctx.agent.send — an idle chat', () => {
   });
 });
 
-describe('ctx.agent.send — a busy chat makes the message wait', () => {
-  it('waits at its source, never as a queue row, then runs when the running turn ends', async () => {
+describe('ctx.agent.send — a busy chat holds the message', () => {
+  it('queues it under the receipt’s id, then runs it when the running turn ends', async () => {
     const first = gate();
     await personTurn(first.wait);
 
@@ -69,25 +78,56 @@ describe('ctx.agent.send — a busy chat makes the message wait', () => {
       reason: 'busy',
       sessionId: h.session,
     });
-    // Waiting, not refused, and not run beside the person's turn: and no
-    // prompt nobody typed sits in the person's queue.
+    // Held, not refused, and not run beside the person's turn: in the queue,
+    // where the person can see it, under the receipt's own id.
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    expect(h.queue.list(h.session)).toEqual([]);
+    expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
     expect(runOfMessage(receipt.messageId)).toMatchObject({
       status: 'queued',
-      waitReason: 'chat_busy',
+      waitReason: null,
+      queueMessageId: receipt.messageId,
     });
+    // The queue has the words now; the message's own row let them go.
+    expect(h.store.get(receipt.messageId)?.content).toBeNull();
     expect(h.events).toEqual([]);
+    // A message into a busy chat adds no turn beside it, so it takes no cap slot.
+    expect(h.dispatched[0]).toMatchObject({ countsTowardLaunchCap: false });
+    expect(h.dispatched[0]).not.toHaveProperty('wordsAtSource');
 
     first.open();
     await settle();
 
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(2);
-    // It went to the chat as a run whose words stay at their source.
-    expect(h.dispatched[0]).toMatchObject({ wordsAtSource: true, countsTowardLaunchCap: true });
+    expect(h.queue.list(h.session)).toEqual([]);
     expect(h.events).toEqual([
       { kind: 'turn.started', messageId: receipt.messageId, sessionId: h.session },
       { kind: 'turn.done', messageId: receipt.messageId, sessionId: h.session, outcome: 'ok' },
+    ]);
+  });
+
+  it('tells the extension when a person removes the waiting message', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await h.service.send(EXT, {
+      to: h.session,
+      text: 'maybe',
+      idempotencyKey: 'k1',
+    });
+    await settle();
+
+    cancelQueuedMessage(h.session, receipt.messageId);
+    first.open();
+    await settle();
+
+    expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.events).toEqual([
+      {
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        sessionId: h.session,
+        reason: 'removed',
+        message: expect.any(String),
+      },
     ]);
   });
 
@@ -157,9 +197,9 @@ describe('ctx.agent.send — a busy chat makes the message wait', () => {
   });
 });
 
-it('has no hold limit: a message waiting 30 minutes behind a turn still runs', async () => {
-  // It waits on the space side, tried again on the outbox's backoff and woken
-  // the moment the turn ahead of it ends. No `turn.failed`, ever.
+it('has no hold limit: a message queued for 30 minutes still runs', async () => {
+  // It waits in the chat's queue behind the turn, and runs when it ends. No
+  // `turn.failed`, ever.
   vi.useFakeTimers();
   const first = gate();
   h.runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
@@ -181,11 +221,8 @@ it('has no hold limit: a message waiting 30 minutes behind a turn still runs', a
   await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
 
   expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
-  expect(h.queue.list(h.session)).toEqual([]);
-  expect(runOfMessage(receipt.messageId)).toMatchObject({
-    status: 'queued',
-    waitReason: 'chat_busy',
-  });
+  expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
+  expect(runOfMessage(receipt.messageId)?.status).toBe('queued');
   expect(h.events).toEqual([]);
 
   first.open();
@@ -212,6 +249,8 @@ describe('ctx.agent.send — idempotency', () => {
     expect(two).toEqual(one);
     expect(four).toEqual(three);
     expect(h.store.listByStatus(['queued'])).toHaveLength(2);
+    await settle();
+    expect(h.queue.list(h.session)).toHaveLength(2);
     expect([one, three].map((receipt) => runOfMessage(receipt.messageId)?.status)).toEqual([
       'queued',
       'queued',

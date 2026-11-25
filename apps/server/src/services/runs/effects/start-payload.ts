@@ -3,7 +3,7 @@
  * §6.1): the caller's turn options that are not a record column, so the
  * handler can build the computer face's request after a restart. References,
  * settings and DorkOS copy only: the words stay where their caller keeps them
- * (`turn-port.ts`), and who the turn is for, what started it, who asked and
+ * (`turn-port.ts`), and who the turn is for, what started it, where its words wait and
  * its deadline are the run's own columns.
  *
  * @module services/runs/effects/start-payload
@@ -41,7 +41,6 @@ export function startPayloadOf(start: StartTurnInput): StartPayload {
     agentId: _agentId,
     content: _content,
     origin: _origin,
-    askedByRef: _askedByRef,
     sourceRef: _sourceRef,
     notAfter: _notAfter,
     ...payload

@@ -138,7 +138,12 @@ export function describeInputProblem(input: unknown): string {
   return 'Send { to, text, idempotencyKey } and an optional context.';
 }
 
-/** The receipt a stored message answers with: the first one, or `failed` once it has. */
+/**
+ * The receipt a stored message answers with: where it is now (`queued`, then
+ * `started` once its turn began), or `failed` once it has.
+ *
+ * @param row - The stored message.
+ */
 export function receiptOf(row: AgentSendRecord): AgentSendReceipt {
   if (row.status === 'failed') {
     return {
@@ -148,10 +153,13 @@ export function receiptOf(row: AgentSendRecord): AgentSendReceipt {
       sessionId: row.sessionId,
     };
   }
+  // A resend answers with where the message is now: running (or done) once
+  // its turn started, else waiting, with the reason it was given.
+  const status = row.status === 'started' || row.status === 'done' ? 'started' : 'queued';
   return {
     messageId: row.id,
-    status: row.receiptStatus,
-    ...(row.receiptStatus === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
+    status,
+    ...(status === 'queued' && row.receiptReason ? { reason: row.receiptReason } : {}),
     sessionId: row.sessionId,
   };
 }
