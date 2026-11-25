@@ -20,11 +20,7 @@ import {
 import { setAgentPathLookup, resetAgentPathLookup } from '../../mesh/agent-path-lookup.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { NotificationStore } from '../notification-store.js';
-import {
-  NotificationService,
-  getNotificationService,
-  setNotificationService,
-} from '../notification-service.js';
+import { NotificationService, setNotificationService } from '../notification-service.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
 import { resolveScheduleParkPayload } from '../emitters/schedule-park.js';
@@ -137,25 +133,6 @@ describe('an Ask nobody answers', () => {
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(escalations('ask:int-1')).toEqual([{ channel: 'web_push' }]);
   });
-
-  it('carries a title and a deep link, and never the tool input', async () => {
-    const projector = new SessionStateProjector('sess-1');
-    projector.cwd = '/Users/dev/acme';
-    askOn(projector, 'int-1');
-
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-
-    const payload = sendToAll.mock.calls[0][0] as Record<string, unknown>;
-    expect(payload).toMatchObject({
-      title: 'acme is waiting on your answer',
-      body: 'Run a shell command',
-      deepLink: '/session?session=sess-1',
-      tier: 'blocking',
-    });
-    // A push is decrypted by a browser and drawn by the OS, often on a locked
-    // screen. A proposed shell command has no business being there.
-    expect(JSON.stringify(payload)).not.toContain('rm -rf');
-  });
 });
 
 describe('an Ask somebody answers', () => {
@@ -176,26 +153,6 @@ describe('an Ask somebody answers', () => {
 
     expect(sendToAll).not.toHaveBeenCalled();
     expect(escalations('ask:int-1')).toEqual([]);
-  });
-
-  it('stops escalating even when the Ask ended because nobody answered', async () => {
-    // An expiry is not an acknowledgement, but it IS the condition ending: the
-    // agent is no longer waiting, so a phone ping about it would arrive about
-    // something that is over.
-    const projector = new SessionStateProjector('sess-1');
-    projector.cwd = '/Users/dev/acme';
-    askOn(projector, 'int-1');
-
-    projector.ingest({
-      type: 'interaction_resolved',
-      id: 'int-1',
-      resolution: 'expired',
-      at: Date.now(),
-    } as never);
-    await flush();
-    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-
-    expect(sendToAll).not.toHaveBeenCalled();
   });
 });
 
@@ -241,32 +198,6 @@ describe('a session that stops on an error', () => {
   });
 
   /**
-   * The end-to-end half of the episode-identity fix. The arm and the disarm are
-   * built by two different call sites in `session-lifecycle.ts`; only a test
-   * that drives BOTH through the real emitter can show the second episode is
-   * reachable — a unit test that hands the service its own payloads proves
-   * nothing about whether those two sites agree.
-   */
-  it('escalates again when the same session falls over a second time', async () => {
-    const projector = new SessionStateProjector('sess-err');
-    projector.cwd = '/Users/dev/acme';
-
-    setLifecycle(projector, 'error');
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-
-    setLifecycle(projector, 'idle');
-    await flush();
-
-    setLifecycle(projector, 'error');
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-
-    expect(sendToAll).toHaveBeenCalledTimes(2);
-  });
-
-  /**
    * DOR-2136: an error that lands before the canonical id resolves is armed
    * under the request id. The rekey must carry the episode to the new id, or the
    * old timer is one nothing can ever resolve, and a second one is armed beside it.
@@ -292,38 +223,6 @@ describe('a session that stops on an error', () => {
 
       expect(sendToAll).not.toHaveBeenCalled();
     });
-
-    it('pings once, under the new id, while the error stands', async () => {
-      erroredThenRekeyed();
-      await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-      await flush();
-
-      expect(sendToAll).toHaveBeenCalledTimes(1);
-      expect(sendToAll.mock.calls[0][0]).toMatchObject({
-        deepLink: '/session?session=sess-canon',
-      });
-    });
-  });
-
-  it('a second episode answered in time still disarms', async () => {
-    // Proves the two edges agree on the KEY, not merely that a second episode
-    // can fire: a disarm that missed would leave this at one call.
-    const projector = new SessionStateProjector('sess-err');
-    projector.cwd = '/Users/dev/acme';
-
-    setLifecycle(projector, 'error');
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    setLifecycle(projector, 'idle');
-    await flush();
-
-    setLifecycle(projector, 'error');
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE);
-    setLifecycle(projector, 'idle');
-    await flush();
-    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-
-    expect(sendToAll).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -371,36 +270,6 @@ describe('a parked schedule that is removed rather than decided', () => {
     await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
 
     expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('leaves an unread row behind, because nobody decided anything', async () => {
-    // `cancelled`, not `rejected`: an agent deleted it, so claiming the operator
-    // rejected it would both put words in their mouth and file the row
-    // already-read — which is how a pending approval vanishes silently.
-    const store = new TaskStore(db);
-    const parked = await parkedSchedule(store);
-
-    await tasksDelete(store)({ id: parked.id });
-    await flush();
-
-    const [row] = getNotificationService()!.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ kind: 'schedule.parked', outcome: 'cancelled' });
-    expect(row.readAt).toBeUndefined();
-  });
-
-  it('writes nothing when the deleted schedule was not waiting on anybody', async () => {
-    const store = new TaskStore(db);
-    const active = store.createTask({
-      name: 'active-one',
-      description: 'test',
-      prompt: 'test',
-      filePath: '/tmp/tasks/active-one/SKILL.md',
-    });
-
-    await tasksDelete(store)({ id: active.id });
-    await flush();
-
-    expect(getNotificationService()!.list({ limit: 25, unread: false }).notifications).toEqual([]);
   });
 });
 

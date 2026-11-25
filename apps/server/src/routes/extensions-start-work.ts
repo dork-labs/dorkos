@@ -10,7 +10,8 @@
  * 'extension'`), with or without a click.
  *
  * Refusals answer `{ error, code }`: `404 not_a_project`, `409
- * account_not_allowed_here`, `429 start_limit`; a malformed body is `400`.
+ * account_not_allowed_here`, `409 agent_paused`, `429 start_limit`; a
+ * malformed body is `400`.
  * Nothing is started on any of them.
  *
  * @module routes/extensions-start-work
@@ -49,6 +50,7 @@ const CODE_FOR: Record<StartWorkError['code'], ProblemCode> = {
   not_a_project: 'not_found',
   account_not_allowed_here: 'account_not_allowed_here',
   start_limit: 'rate_limited',
+  agent_paused: 'agent_paused',
 };
 
 /**
@@ -59,6 +61,7 @@ const DETAIL_FOR: Record<StartWorkError['code'], string> = {
   not_a_project: 'Choose a folder inside one of your projects.',
   account_not_allowed_here: 'That account can’t be used in this project. Pick another.',
   start_limit: 'Too many chats started or working. Try again later.',
+  agent_paused: 'The agent is paused. Resume it, then try again.',
 };
 
 /**

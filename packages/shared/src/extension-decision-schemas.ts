@@ -372,6 +372,7 @@ export const START_WORK_ERROR_CODES = [
   'not_a_project',
   'account_not_allowed_here',
   'start_limit',
+  'agent_paused',
 ] as const;
 
 /** One of {@link START_WORK_ERROR_CODES}. */

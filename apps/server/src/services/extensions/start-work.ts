@@ -58,7 +58,13 @@ import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { ProjectRegistry } from '../projects/project-registry.js';
-import { RUN_ENDS, turnPort, type SpaceTurnPort, type TurnRun } from '../runs/index.js';
+import {
+  RUN_ENDS,
+  TurnStartRefusedError,
+  turnPort,
+  type SpaceTurnPort,
+  type TurnRun,
+} from '../runs/index.js';
 import { listProjectorStatuses } from '../session/session-state-projector.js';
 import type {
   SessionStartedByStore,
@@ -326,7 +332,8 @@ export class StartWorkService {
    * @param opts.permissionCeiling - The loosest level the chat's first turn may
    *   run at: the runtime's default when a person asked over Wi-Fi (DOR-3037).
    * @returns The new chat's id.
-   * @throws StartWorkError when a rule refuses it (nothing was started).
+   * @throws StartWorkError when a rule refuses it, a paused agent included
+   *   (nothing was started).
    * @throws StartWorkInputError when the input breaks a length rule.
    */
   async start(
@@ -391,6 +398,11 @@ export class StartWorkService {
       }));
     } catch (err) {
       reservation.cancel();
+      // The door refuses a paused agent's start at once and keeps nothing; its
+      // sentence names the agent ("Ana is paused.").
+      if (err instanceof TurnStartRefusedError && err.reason === 'agent_paused') {
+        throw new StartWorkError('agent_paused', `${err.message} Resume it, then try again.`);
+      }
       throw err;
     }
     void this.deps.activity

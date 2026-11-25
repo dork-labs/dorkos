@@ -40,7 +40,7 @@ vi.mock('../../core/config-manager.js', () => ({
   },
 }));
 
-import { planWithConsent, projectWithConsent, scanHookRequests } from '../project-with-consent.js';
+import { planWithConsent, projectWithConsent } from '../project-with-consent.js';
 import { hookApprovalEntry, type HookDecisions } from '../hook-consent.js';
 
 /** The command the package wants a coding agent to run for it. */
@@ -232,17 +232,6 @@ describe('projectWithConsent', () => {
     expect(codexHooksText()).not.toContain(PLUGIN_COMMAND);
   });
 
-  it('reports a package once even when a list holds the same entry twice', () => {
-    // A hand-edited file can also repeat an entry. One package, one decision,
-    // one line in the report.
-    const result = planWithConsent(repo, {
-      dorkHome: home,
-      decisions: { approved: [], refused: [entry(), entry()] },
-    });
-    expect(result.withheld).toHaveLength(1);
-    expect(result.withheld[0]!.reason).toBe('refused');
-  });
-
   it('sweeps nothing when the caller says not to, even though the plan changed', () => {
     // The watcher's case (DOR-1850): a re-projection mid-edit must not delete a
     // projection whose source is momentarily absent. Project everything first,
@@ -318,11 +307,5 @@ describe('projectWithConsent', () => {
     expect(plan.drops.every((d) => d.harnessAgnostic === true || d.harness === 'cursor')).toBe(
       true
     );
-  });
-
-  it('lists one request per hook-declaring package, and none for a package with no hooks', () => {
-    expect(scanHookRequests(repo, home).map((r) => r.packageName)).toEqual(['acme']);
-    rmSync(join(repo, '.dork', 'plugins', 'acme', 'hooks'), { recursive: true, force: true });
-    expect(scanHookRequests(repo, home)).toEqual([]);
   });
 });

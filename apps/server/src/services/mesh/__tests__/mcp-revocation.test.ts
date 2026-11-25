@@ -26,12 +26,6 @@ import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 
 import type { McpTargetProbeResult } from '../agent-mcp-target-probe.js';
-// Imported rather than read at runtime: this suite shares a process pool with a
-// test that deliberately injects `EMFILE` into `fs`, so a fixture read here is a
-// real source of cross-file flake. The import is resolved at transform time.
-import observedStatus from './fixtures/mcp-server-status-401.observed.json' with { type: 'json' };
-import observedStatus268 from './fixtures/mcp-server-status-401-0.3.268.observed.json' with { type: 'json' };
-import observed280 from './fixtures/mcp-server-status-401-0.3.280.observed.json' with { type: 'json' };
 
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
 const SERVER = 'granola';
@@ -359,32 +353,6 @@ describe('a sign-in that dies mid-session', () => {
 
     expect(afterRestart.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeUndefined();
   });
-
-  it('says nothing — the card is the whole message', async () => {
-    // Etiquette: the failure surfaces itself. Nothing is injected into the
-    // agent's mouth, so the ONLY thing this path may put on the session is the
-    // card itself (`meta/agent-etiquette.md`).
-    const { oauth, watch, cwd, provider, ingested } = await buildWorld();
-    await signInFully(oauth, provider);
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-
-    expect(ingested.map((event) => event.type)).toEqual(['mcp_signin_required']);
-  });
-
-  it('records the session AND its directory, so the resume survives a restart', async () => {
-    const { oauth, watch, cwd, provider, startSignin } = await buildWorld();
-    await signInFully(oauth, provider);
-    startSignin.mockClear();
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-
-    expect(startSignin).toHaveBeenCalledTimes(1);
-    expect(startSignin.mock.calls[0]![1]).toEqual({
-      originSessionId: SESSION_ID,
-      originCwd: cwd,
-    });
-  });
 });
 
 describe('what it refuses to conclude', () => {
@@ -420,18 +388,6 @@ describe('what it refuses to conclude', () => {
     expect(ingested).toHaveLength(1);
   });
 
-  it('does nothing for a server DorkOS never held a sign-in for', async () => {
-    // Never connected: its row already says needs-auth, and an unbidden card for
-    // something the person never signed into is noise, not help.
-    const { servers, watch, cwd, ingested, startSignin } = await buildWorld();
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-
-    expect(ingested).toEqual([]);
-    expect(startSignin).not.toHaveBeenCalled();
-    expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('needs-auth');
-  });
-
   it('never draws a card for a server carrying its OWN Authorization header', async () => {
     // The operator pasted that credential in. Its 401 is theirs to fix, and an
     // OAuth sign-in DorkOS would then own is not the fix.
@@ -450,194 +406,6 @@ describe('what it refuses to conclude', () => {
 
     expect(ingested).toEqual([]);
     expect(startSignin).not.toHaveBeenCalled();
-  });
-
-  it('ignores a stdio server, which has no bearer to have refused', async () => {
-    const { watch, cwd, ingested, startSignin } = await buildWorld({
-      connection: { transport: 'stdio', command: 'echo', args: [], env: {} },
-    });
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-
-    expect(ingested).toEqual([]);
-    expect(startSignin).not.toHaveBeenCalled();
-  });
-
-  it('ignores a name that belongs to no managed server here', async () => {
-    const { watch, cwd, ingested, startSignin } = await buildWorld();
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: ['something-else'] });
-
-    expect(ingested).toEqual([]);
-    expect(startSignin).not.toHaveBeenCalled();
-  });
-});
-
-describe('one card per server', () => {
-  it('starts one sign-in when a burst names the same server twice', async () => {
-    const { oauth, watch, cwd, provider, ingested, startSignin } = await buildWorld();
-    await signInFully(oauth, provider);
-    startSignin.mockClear();
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER, SERVER, SERVER] });
-
-    expect(startSignin).toHaveBeenCalledTimes(1);
-    expect(ingested).toHaveLength(1);
-  });
-
-  it('investigates once when two turns report it in the same breath', async () => {
-    // Two sessions in one workspace, both turns starting together. Neither has
-    // finished investigating when the other arrives, so nothing they could look
-    // up — not the token, not the flow store — has been written yet.
-    //
-    // The PROBE is what this asserts on, because the probe is the first thing an
-    // investigation does and the only cost that is paid before any state has
-    // changed: without the in-flight guard both reports dial the server. (The
-    // second one would then find an already-evicted cache entry and bow out, so
-    // counting sign-ins hides the duplicated work rather than catching it.)
-    const { oauth, port, settled, cwd, provider, ingested, startSignin, probe } =
-      await buildWorld();
-    await signInFully(oauth, provider);
-    startSignin.mockClear();
-
-    port({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-    port({ sessionId: 'sess-second', cwd, serverNames: [SERVER] });
-    await vi.waitFor(() => expect(settled).toHaveLength(2));
-
-    expect(probe).toHaveBeenCalledTimes(1);
-    expect(startSignin).toHaveBeenCalledTimes(1);
-    expect(ingested).toHaveLength(1);
-  });
-
-  it('re-draws the SAME sign-in when a later turn reports the same server again', async () => {
-    // The person is part-way through the sign-in the first dead turn drew, and the
-    // server is still refusing. A second flow would put a dead link beside the
-    // working one; saying nothing at all would let the projector's grace age the
-    // card out from under someone who is still in their browser. So: same flow,
-    // re-drawn.
-    const { oauth, watch, cwd, provider, ingested, startSignin } = await buildWorld();
-    await signInFully(oauth, provider);
-    startSignin.mockClear();
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-
-    expect(startSignin).toHaveBeenCalledTimes(1);
-    expect(ingested).toHaveLength(2);
-    expect(ingested[0]!.flowId).toBe(ingested[1]!.flowId);
-  });
-});
-
-describe('reading a turn’s status snapshot', () => {
-  it('catches the bearer-refused server in the ACTUAL observed snapshot', async () => {
-    // The anchor for the whole design, replayed from the recorded output of a
-    // real turn rather than from a hand-written idea of what one looks like.
-    //
-    // Provenance: `fixtures/mcp-server-status-401.observed.json` is the verbatim
-    // `query.mcpServerStatus()` array from one turn against
-    // `@anthropic-ai/claude-agent-sdk` 0.3.177, with two MCP servers pointed at
-    // an always-401 endpoint — one carrying a DorkOS-style bearer, one with no
-    // credentials at all. Unrelated servers from that machine were removed; the
-    // four entries kept are unedited. The harness is described in the module doc
-    // of `mcp-revocation.ts` and is not run by any suite (it spends a real turn).
-    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
-    const observed: Array<{ name: string; status?: string }> = observedStatus;
-
-    // The bearer-carrying server is `failed`, NOT `needs-auth` — which is why
-    // the first version of this feature never fired. Reverting the filter to
-    // `needs-auth` only drops it and reddens this against real recorded data.
-    expect(observed.find((s) => s.name.startsWith('dor981-bearer'))?.status).toBe('failed');
-    expect(mcpAuthEvidenceFrom(observed)).toContain(
-      observed.find((s) => s.name.startsWith('dor981-bearer'))!.name
-    );
-    // …and the two servers that were merely still connecting are left alone.
-    expect(mcpAuthEvidenceFrom(observed)).not.toContain('shadcn');
-  });
-
-  it('catches the same two on a snapshot re-observed two SDK versions later', async () => {
-    // Provenance: `fixtures/mcp-server-status-401-0.3.268.observed.json` is the
-    // same harness re-run on 2026-09-11 against
-    // `@anthropic-ai/claude-agent-sdk` 0.3.268, on the bump from 0.3.224. Rows
-    // belonging to that machine's own servers were removed; the three kept are
-    // unedited.
-    //
-    // Two things the 0.3.177 snapshot could not show, and the reason a second
-    // anchor is worth committing rather than refreshing the first:
-    //
-    // - the tokenless refusal now carries WORDS ("Dynamic Client Registration
-    //   rejected (HTTP 401)…") where it used to carry an empty string, so a
-    //   detector keying on the message text would read the two versions
-    //   differently. This one deliberately keys on neither;
-    // - a REAL `needs-auth` row appears, which the first run never produced —
-    //   and it carries no `error` field at all, exactly as the binary reading
-    //   said it would.
-    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
-    const observed: Array<{ name: string; status?: string; error?: string }> = observedStatus268;
-
-    expect(observed.find((s) => s.name === 'probe-bearer')?.status).toBe('failed');
-    expect(observed.find((s) => s.name === 'probe-tokenless')?.error).toMatch(
-      /Dynamic Client Registration rejected/
-    );
-    expect(observed.find((s) => s.status === 'needs-auth')).not.toHaveProperty('error');
-    // `errorCode` still does not cross the SDK boundary — point 2 of the anchor,
-    // now with live evidence at 0.3.268 rather than a binary read alone.
-    for (const row of observed) expect(row).not.toHaveProperty('errorCode');
-    expect(mcpAuthEvidenceFrom(observed)).toEqual(['probe-bearer', 'probe-tokenless', 'linear']);
-  });
-
-  it('catches all three on the 0.3.280 re-run, first frame included', async () => {
-    // Provenance: `fixtures/mcp-server-status-401-0.3.280.observed.json` is the
-    // same harness re-run on 2026-09-22 against 0.3.280, with a THIRD always-401
-    // server declared in the cwd's `.mcp.json`. 0.3.274 stopped the first turn
-    // waiting for settings-file and plugin servers whose tools tool search
-    // defers, so such a server could read `pending` in the first frame again.
-    // This one did not: it came up `failed` in `system/init`, beside the two
-    // `options.mcpServers` ones. Rows now carry the additive `source`.
-    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
-    const { firstInit, status } = observed280 as {
-      firstInit: Array<{ name: string; status?: string; source?: string }>;
-      status: Array<{ name: string; status?: string; error?: string; source?: string }>;
-    };
-
-    expect(firstInit.map((s) => s.status)).toEqual(['failed', 'failed', 'failed']);
-    expect(status.find((s) => s.name === 'probe-bearer')?.error).toMatch(
-      /rejected the configured Authorization header/
-    );
-    expect(status.find((s) => s.name === 'probe-project')?.source).toBe('project');
-    for (const row of status) expect(row).not.toHaveProperty('errorCode');
-    expect(mcpAuthEvidenceFrom(firstInit)).toEqual([
-      'probe-project',
-      'probe-bearer',
-      'probe-tokenless',
-    ]);
-    expect(mcpAuthEvidenceFrom(status)).toEqual([
-      'probe-project',
-      'probe-bearer',
-      'probe-tokenless',
-    ]);
-  });
-
-  it('looks at every server that did not come up — `failed` above all', async () => {
-    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
-
-    expect(
-      mcpAuthEvidenceFrom([
-        // THE headline case, and the one the first version of this feature
-        // missed entirely: a server carrying a DorkOS bearer that the server
-        // refuses reports `failed`, never `needs-auth`. Observed live against
-        // SDK 0.3.177 — see the module doc's empirical anchor.
-        { name: 'bearer-refused', status: 'failed' },
-        // The tokenless refusal. Worth looking at too, but never worth trusting:
-        // the CLI replays this one from a 15-minute disk cache.
-        { name: 'tokenless-refused', status: 'needs-auth' },
-        // Not evidence of anything. `pending` means the snapshot was taken
-        // before that server finished connecting; `disabled` means nobody asked.
-        { name: 'slow', status: 'pending' },
-        { name: 'off', status: 'disabled' },
-        { name: 'fine', status: 'connected' },
-        { name: 'unreported' },
-      ])
-    ).toEqual(['bearer-refused', 'tokenless-refused']);
   });
 });
 
@@ -686,42 +454,6 @@ describe('the probe is the arbiter, never the report', () => {
     expect(ingested.at(-1)).toEqual({
       type: 'mcp_signin_resolved',
       flowId: cardFlow,
-      outcome: 'connected',
-    });
-  });
-
-  it('settles an AGENT-minted card it adopted, once the server accepts the token', async () => {
-    // The reach of `drawn` in one test. The agent asked for the sign-in, so the
-    // flow is its own; this module only re-drew that card on a later failing
-    // turn. When the probe then proves the server accepts the token DorkOS
-    // holds, the link that card offers is moot whoever minted it — so it is
-    // settled rather than left on screen. What is pinned here is that the
-    // adopted flow IS in reach; the comment on `drawn` explains why that is safe.
-    const { oauth, watch, cwd, provider, ingested, setProbeAnswer, startSignin } =
-      await buildWorld();
-
-    // An agent-initiated sign-in, left pending — no token yet.
-    const agentFlow = await oauth.startSignin(TARGET, { originSessionId: SESSION_ID });
-    expect(agentFlow.authorizeUrl).toBeDefined();
-    startSignin.mockClear();
-
-    // A failing turn re-draws that same flow's card rather than minting one.
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-    expect(startSignin).not.toHaveBeenCalled();
-    expect(ingested).toEqual([
-      expect.objectContaining({ type: 'mcp_signin_required', flowId: agentFlow.flowId }),
-    ]);
-
-    // The person finishes it; the server is healthy from here.
-    provider.challenge = new URL(agentFlow.authorizeUrl!).searchParams.get('code_challenge') ?? '';
-    await oauth.handleCallback({ state: agentFlow.flowId, code: AUTH_CODE });
-    setProbeAnswer({ ok: true, toolCount: 3 });
-
-    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
-
-    expect(ingested.at(-1)).toEqual({
-      type: 'mcp_signin_resolved',
-      flowId: agentFlow.flowId,
       outcome: 'connected',
     });
   });

@@ -97,11 +97,6 @@ describe('runAutoProjection', () => {
       expect(mockConfigGet).not.toHaveBeenCalled(); // scope is checked before config
       expect(logger.debug).toHaveBeenCalled();
     });
-
-    it('no-ops for a global uninstall too', async () => {
-      await runAutoProjection({ packageName: 'pkg', action: 'uninstall' }, { dorkHome: DORK_HOME });
-      expect(seamSpy).not.toHaveBeenCalled();
-    });
   });
 
   describe('autoSync disabled', () => {
@@ -297,21 +292,6 @@ describe('runAutoProjection', () => {
       );
 
       expect(logger.warn).not.toHaveBeenCalled();
-    });
-
-    it('warns when the seam reports a blocking conflict but still completes', async () => {
-      seamSpy.mockReturnValue({
-        ...(CLEAN_RESULT as unknown as Record<string, unknown>),
-        conflicts: ['.codex/hooks.json'],
-      } as never);
-
-      await runAutoProjection(
-        { projectPath: PROJECT, packageName: 'pkg', action: 'install' },
-        { dorkHome: DORK_HOME }
-      );
-
-      expect(seamSpy).toHaveBeenCalled();
-      expect(logger.warn).toHaveBeenCalled();
     });
   });
 

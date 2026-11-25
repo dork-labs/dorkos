@@ -98,12 +98,18 @@ export interface StartWorkResponse {
   sessionId: string;
 }
 
-/** Codes: 'not_a_project' | 'account_not_allowed_here' | 'start_limit'. `message` is plain words. */
+/**
+ * Codes: 'not_a_project' | 'account_not_allowed_here' | 'start_limit' |
+ * 'agent_paused' (the agent is paused; nothing is kept). `message` is plain words.
+ */
 export declare class StartWorkError extends Error {
   /** Which rule refused the start. */
-  readonly code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit';
+  readonly code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit' | 'agent_paused';
   /** Refuse a start. */
-  constructor(code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit', message: string);
+  constructor(
+    code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit' | 'agent_paused',
+    message: string
+  );
 }
 
 /** `ctx.sessions`. */

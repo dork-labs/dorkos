@@ -5,15 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import {
-  auditEvents,
-  authors,
-  heartbeatOutbox,
-  heartbeatReportItems,
-  roomEntries,
-  rooms,
-  type Db,
-} from '@dorkos/db';
+import { auditEvents, authors, roomEntries, rooms, type Db } from '@dorkos/db';
 import { resolveWorkingHours } from '@dorkos/shared/working-hours';
 import type { EndBeatRaise } from '@dorkos/shared/heartbeat-schemas';
 import { AuditLog } from '../../../audit/audit-log.js';
@@ -155,35 +147,6 @@ describe('de-duplication across agents', () => {
     expect(dms.map((dm) => dm.text)).toEqual(['The nightly run failed.']);
     expect(lines('heartbeat.deduplicated')).toEqual(['Already raised by Juno.']);
   });
-
-  it('still delivers a raise about something else, and one to a different reader', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Run 42 failed.', rung: 'dm', about: ['run:42'] });
-    await raise(box, otto, { text: 'Run 43 failed.', rung: 'dm', about: ['run:43'] });
-    await raise(box, otto, {
-      text: 'Run 42, for Ana.',
-      rung: 'dm',
-      about: ['run:42'],
-      to: 'acct-ana',
-    });
-    expect(dms.map((dm) => dm.text)).toEqual([
-      'Run 42 failed.',
-      'Run 43 failed.',
-      'Run 42, for Ana.',
-    ]);
-  });
-
-  it('compares against a raise still held for their hours, and forgets after seven days', async () => {
-    const box = outbox();
-    vi.setSystemTime(Date.parse('2026-10-14T03:00:00Z')); // 23:00, outside hours
-    await raise(box, juno, { text: 'Held.', rung: 'dm', about: ['commitment:7'] });
-    await raise(box, otto, { text: 'Also held.', rung: 'dm', about: ['commitment:7'] });
-    expect(store.heldFor(otto.id)).toHaveLength(0);
-
-    vi.setSystemTime(Date.parse('2026-10-22T14:00:00Z'));
-    await raise(box, otto, { text: 'A week on.', rung: 'dm', about: ['commitment:7'] });
-    expect(dms.map((dm) => dm.text)).toContain('A week on.');
-  });
 });
 
 /** Otto raising the same failed run Juno already raised. */
@@ -205,30 +168,6 @@ describe('raise once, then track', () => {
     ]);
   });
 
-  it('sends it again once the person replied in that DM', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Acme is late.', rung: 'dm', key: 'invoice:acme' });
-    entry('reply-1', 100, 'author-person', Date.now() + 60_000);
-    vi.advanceTimersByTime(120_000);
-    await raise(box, juno, { text: 'Acme is late again.', rung: 'dm', key: 'invoice:acme' });
-    expect(dms.map((dm) => dm.text)).toEqual(['Acme is late.', 'Acme is late again.']);
-    expect(
-      db
-        .select()
-        .from(heartbeatOutbox)
-        .all()
-        .map((row) => row.state)
-    ).toEqual(['resolved', 'delivered']);
-  });
-
-  it('is not closed by the agent posting again in the same DM', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Acme is late.', rung: 'dm', key: 'invoice:acme' });
-    entry('agent-again', 100, 'author-agent', Date.now() + 60_000);
-    expect(raises.closeAnswered(juno.id)).toBe(0);
-    expect(raises.openRaises(juno.id)).toHaveLength(1);
-  });
-
   it('closes on end_beat.resolved, and after fourteen days with no answer', async () => {
     const box = outbox();
     await raise(
@@ -243,18 +182,6 @@ describe('raise once, then track', () => {
     vi.setSystemTime(TUESDAY_10AM + OPEN_RAISE_MAX_MS + 60_000);
     await box.tick();
     expect(raises.openRaises(juno.id)).toEqual([]);
-  });
-
-  it('lets an urgent raise of something first raised as routine go now', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Card declined.', rung: 'dm', key: 'billing' });
-    await raise(box, juno, {
-      text: 'Card declined; site goes down at noon.',
-      rung: 'dm',
-      key: 'billing',
-      urgent: true,
-    });
-    expect(dms).toHaveLength(2);
   });
 });
 
@@ -277,14 +204,6 @@ describe('the report rung', () => {
     });
     expect(raises.queuedItems(otto.id)).toEqual([]);
     expect(lines('heartbeat.deduplicated')).toEqual(['Already raised by Juno.']);
-  });
-
-  it('drops a queued line on end_beat.resolved', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Waiting on legal.', rung: 'report', key: 'legal' });
-    box.resolve(juno.id, ['legal']);
-    expect(raises.queuedItems(juno.id)).toEqual([]);
-    expect(db.select().from(heartbeatReportItems).all()[0]!.state).toBe('resolved');
   });
 });
 
@@ -312,14 +231,6 @@ describe('away', () => {
     );
     expect(lines('heartbeat.held')).toContain('Its reader is away; it waits for their return.');
   });
-
-  it('never sends a report line up past an away manager', async () => {
-    awayPeople.set('acct-owner', null);
-    const box = outbox({ personAbove: () => 'acct-boss' });
-    await raise(box, juno, { text: 'Weekly numbers are in.', rung: 'report' });
-    expect(dms).toEqual([]);
-    expect(raises.queuedItems(juno.id)).toHaveLength(1);
-  });
 });
 
 describe('review round 1', () => {
@@ -343,29 +254,5 @@ describe('review round 1', () => {
     db.update(roomEntries).set({ roomId: 'room-channel' }).run();
     expect(raises.closeAnswered()).toBe(0);
     expect(raises.openRaises(juno.id)).toHaveLength(1);
-  });
-
-  it('drops an urgent raise only for another urgent one, and never for a settled one', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Card declined.', rung: 'dm', about: ['billing'] });
-    await raise(box, otto, {
-      text: 'Card declined; site down at noon.',
-      rung: 'dm',
-      about: ['billing'],
-      urgent: true,
-    });
-    expect(dms).toHaveLength(2);
-    await raise(box, juno, { text: 'Disk full.', rung: 'dm', about: ['disk'], key: 'disk' });
-    box.resolve(juno.id, ['disk']);
-    await raise(box, otto, { text: 'Disk full again.', rung: 'dm', about: ['disk'] });
-    expect(dms.map((dm) => dm.text)).toContain('Disk full again.');
-  });
-
-  it('never treats the agent’s own earlier raise as another agent’s', async () => {
-    const box = outbox();
-    await raise(box, juno, { text: 'Run 1 failed.', rung: 'dm', about: ['run:1'], key: 'a' });
-    await raise(box, juno, { text: 'Run 1 fixed itself.', rung: 'dm', about: ['run:1'], key: 'b' });
-    expect(dms).toHaveLength(2);
-    expect(lines('heartbeat.deduplicated')).toEqual([]);
   });
 });

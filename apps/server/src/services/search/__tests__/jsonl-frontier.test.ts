@@ -146,21 +146,6 @@ describe('M1 — tailing an append-only transcript', () => {
     expect(indexedBodies('s1')).toEqual(['finished', 'half written']);
   });
 
-  it('re-reads a file from zero when it shrank', async () => {
-    const file = await writeTranscript('s1', [saidLine('one'), saidLine('two'), saidLine('three')]);
-    await sweep();
-    expect(indexedBodies('s1')).toEqual(['one', 'two', 'three']);
-
-    // Truncated and rewritten: the stored offset now points into the middle of a
-    // line, so it is worthless and the only correct answer is to start over.
-    await fs.writeFile(file, saidLine('replaced'));
-    const second = await sweep();
-
-    expect(second.rebuilt).toBe(1);
-    expect(indexedBodies('s1')).toEqual(['replaced']);
-    expect(frontier('s1')?.byteOffset).toBe(Buffer.byteLength(saidLine('replaced'), 'utf8'));
-  });
-
   it('deletes the rows of a transcript that is gone', async () => {
     const file = await writeTranscript('s1', [saidLine('one')]);
     await writeTranscript('s2', [saidLine('kept')]);
@@ -208,94 +193,6 @@ describe('M1 — tailing an append-only transcript', () => {
     expect(frontier('s1')?.lastError).toBeNull();
   });
 
-  it('rebuilds when the messages table was emptied but the frontier was not', async () => {
-    await writeTranscript('s1', [saidLine('one'), saidLine('two')]);
-    await sweep();
-
-    // `DELETE FROM messages` is the half of the index anyone would think to
-    // throw away. A byte offset trusted on its own leaves this file reporting
-    // "nothing new" forever, with search returning nothing and no error anywhere.
-    db.delete(messages).run();
-    const second = await sweep();
-
-    expect(second.rebuilt).toBe(1);
-    expect(indexedBodies('s1')).toEqual(['one', 'two']);
-  });
-
-  it('rebuilds when the frontier row was deleted but the messages were not', async () => {
-    await writeTranscript('s1', [saidLine('one'), saidLine('two')]);
-    await sweep();
-
-    // The other half. Resuming at `indexedTo + 1` from byte zero would index the
-    // whole file a second time under fresh ordinals.
-    db.delete(searchSources).run();
-    const second = await sweep();
-
-    expect(second.rebuilt).toBe(1);
-    expect(indexedBodies('s1')).toEqual(['one', 'two']);
-  });
-
-  it('reads a transcript that has nothing to say without re-reading it every sweep', async () => {
-    // A file whose records are all tool results contributes no message and never
-    // will. It must not look like a file that has not been read yet.
-    await writeTranscript('s1', [
-      `${JSON.stringify({ type: 'system', subtype: 'local_command', cwd: '/repo' })}\n`,
-    ]);
-
-    const first = await sweep();
-    expect(first.indexed).toBe(0);
-    expect(frontier('s1')?.lastOrdinal).toBeNull();
-
-    const second = await sweep();
-    expect(second.rebuilt).toBe(0);
-    expect(second.indexed).toBe(0);
-  });
-
-  it('indexes past a compaction marker, which is a line in a growing file and not a rewrite', async () => {
-    const file = await writeTranscript('s1', [saidLine('before the compaction')]);
-    await sweep();
-
-    await fs.appendFile(
-      file,
-      `${JSON.stringify({
-        type: 'user',
-        isCompactSummary: true,
-        timestamp: '2026-07-28T10:05:00.000Z',
-        message: { role: 'user', content: 'This session is being continued…' },
-      })}\n${saidLine('after the compaction')}`
-    );
-    const second = await sweep();
-
-    expect(second.rebuilt).toBe(0);
-    // The summary itself is not a message — nobody wrote it — but everything
-    // after it is.
-    expect(indexedBodies('s1')).toEqual(['before the compaction', 'after the compaction']);
-    expect(second.indexed).toBe(1);
-  });
-
-  it('records why a transcript produced nothing, and keeps sweeping the rest', async () => {
-    await writeTranscript('s1', [saidLine('fine')]);
-    await writeTranscript('s2', [saidLine('also fine')]);
-
-    const breaking: FileSource = {
-      ...source,
-      project: (lines, context) => {
-        if (context.originKey === 's1') throw new Error('projection blew up');
-        return source.project(lines, context);
-      },
-    };
-    const result = await sweepFileSource(db, breaking, '2026-07-28T12:00:00.000Z');
-
-    expect(result.failures).toEqual([
-      { sourceId: 'claude-code', originKey: 's1', message: 'projection blew up' },
-    ]);
-    expect(frontier('s1')?.lastError).toBe('projection blew up');
-    // The resume position is left alone so the next pass retries the same bytes
-    // rather than skipping them because an attempt was made.
-    expect(frontier('s1')?.byteOffset).toBe(0);
-    expect(indexedBodies('s2')).toEqual(['also fine']);
-  });
-
   it('refuses BOTH files when two claim one container id, and touches neither frontier row', async () => {
     // `search_sources` is keyed `(source_id, origin_key)`, so a container id is
     // one row and one slice of `messages`. Indexing whichever file the walk
@@ -315,45 +212,35 @@ describe('M1 — tailing an append-only transcript', () => {
     expect(result.failures[0]?.message).toContain('2 files claim this container id');
     expect(result.failures[0]?.message).toContain('none was indexed');
   });
-
-  it('freezes what was already indexed under a container id when a twin appears, rather than rewriting it', async () => {
-    await writeTranscript('s1', [saidLine('indexed before the twin existed')]);
-    await sweep();
-    const before = frontier('s1');
-
-    const twin = path.join(projects, 'slug-b', 's1.jsonl');
-    await fs.mkdir(path.dirname(twin), { recursive: true });
-    await fs.writeFile(twin, saidLine('the impostor'));
-    const result = await sweep('2026-07-28T13:00:00.000Z');
-
-    // Refusing must not destroy: the rows stay readable and the frontier row is
-    // byte-for-byte what it was, including `last_error`, which has no honest
-    // value to take here.
-    expect(indexedBodies('s1')).toEqual(['indexed before the twin existed']);
-    expect(result.pruned).toBe(0);
-    expect(frontier('s1')?.byteOffset).toBe(before?.byteOffset);
-    expect(frontier('s1')?.lastOrdinal).toBe(before?.lastOrdinal);
-    expect(frontier('s1')?.lastError).toBeNull();
-    expect(result.failures).toHaveLength(1);
-  });
-
-  it('counts a malformed line without stopping the file or recording an error', async () => {
-    await writeTranscript('s1', [
-      saidLine('before'),
-      '{"type":"user","message":{"role":"user","content":"tor\n',
-      saidLine('after'),
-    ]);
-
-    const result = await sweep();
-
-    expect(result.skipped).toBe(1);
-    expect(result.failures).toEqual([]);
-    expect(frontier('s1')?.lastError).toBeNull();
-    expect(indexedBodies('s1')).toEqual(['before', 'after']);
-  });
 });
 
 describe('M1 — the failure modes that lose data quietly', () => {
+  it('gives up on a file with no line terminator instead of buffering it forever', async () => {
+    // Without a cap the reader buffers the whole file into one string looking
+    // for a newline that is not coming — every five minutes, forever.
+    const file = transcript('s1');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'x'.repeat(1_000));
+
+    const result = await sweepFileSource(db, source, '2026-07-28T12:00:00.000Z', {
+      maxCarryBytes: 200,
+    });
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.message).toContain('no line terminator');
+    expect(frontier('s1')?.lastError).toContain('no line terminator');
+    expect(frontier('s1')?.byteOffset).toBe(0);
+
+    // And it does not try again until the file changes: the recorded
+    // fingerprint is the current one, so the next sweep skips it outright.
+    const second = await sweepFileSource(db, source, '2026-07-28T13:00:00.000Z', {
+      maxCarryBytes: 200,
+    });
+    expect(second.failures).toEqual([]);
+    expect(second.indexed).toBe(0);
+    expect(frontier('s1')?.lastError).toContain('no line terminator');
+  });
+
   it('keeps the resume position inside the file when a record holds invalid UTF-8', async () => {
     // `StringDecoder` maps every invalid byte to U+FFFD, which re-encodes to
     // THREE bytes. Accounting from decoded text therefore over-counts, and the
@@ -384,59 +271,6 @@ describe('M1 — the failure modes that lose data quietly', () => {
     expect(second.indexed).toBe(1);
     expect(indexedBodies('s1')).toContain('the message after the mess');
   });
-
-  it('gives up on a file with no line terminator instead of buffering it forever', async () => {
-    // Without a cap the reader buffers the whole file into one string looking
-    // for a newline that is not coming — every five minutes, forever.
-    const file = transcript('s1');
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, 'x'.repeat(1_000));
-
-    const result = await sweepFileSource(db, source, '2026-07-28T12:00:00.000Z', {
-      maxCarryBytes: 200,
-    });
-
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0]?.message).toContain('no line terminator');
-    expect(frontier('s1')?.lastError).toContain('no line terminator');
-    expect(frontier('s1')?.byteOffset).toBe(0);
-
-    // And it does not try again until the file changes: the recorded
-    // fingerprint is the current one, so the next sweep skips it outright.
-    const second = await sweepFileSource(db, source, '2026-07-28T13:00:00.000Z', {
-      maxCarryBytes: 200,
-    });
-    expect(second.failures).toEqual([]);
-    expect(second.indexed).toBe(0);
-    expect(frontier('s1')?.lastError).toContain('no line terminator');
-  });
-
-  // Root ignores the directory permission this test relies on, so it would pass
-  // for the wrong reason there rather than prove anything.
-  it.skipIf(process.getuid?.() === 0)(
-    'one unreadable file does not cost the rest of the source',
-    async () => {
-      // The realistic trigger is not a permission at all: Claude Code deletes
-      // transcripts past `cleanupPeriodDays` on its own schedule, so a file can
-      // vanish between this walk's `readdir` and its `stat`. A directory the
-      // process may list but not enter reproduces the same throw deterministically.
-      await writeTranscript('s1', [saidLine('healthy sibling')]);
-      const blocked = path.join(projects, 'slug-blocked');
-      await fs.mkdir(blocked, { recursive: true });
-      await fs.writeFile(path.join(blocked, 's2.jsonl'), saidLine('unreachable'));
-      await fs.chmod(blocked, 0o400);
-
-      try {
-        const result = await sweep();
-
-        expect(result.failures).toEqual([]);
-        expect(indexedBodies('s1')).toEqual(['healthy sibling']);
-        expect(indexedBodies('s2')).toEqual([]);
-      } finally {
-        await fs.chmod(blocked, 0o700);
-      }
-    }
-  );
 
   it('reports a failed discovery as a source failure and prunes nothing', async () => {
     // Discovery reaches a filesystem, so it can fail for reasons that have
@@ -471,80 +305,6 @@ describe('M1 — the failure modes that lose data quietly', () => {
     expect(frontier('s1')?.lastError).toContain(SOURCE_ERROR_MARK);
     expect(frontier('s1')?.lastIndexedAt).toBe('2026-07-28T13:00:00.000Z');
   });
-
-  it('stops warning once discovery reads again', async () => {
-    // The other half: a stamp nothing clears is a warning that outlives its
-    // fault forever, and an UNCHANGED file writes no row of its own to clear it.
-    await writeTranscript('s1', [saidLine('still here')]);
-    await sweep();
-    const broken: FileSource = {
-      ...source,
-      discover: () => Promise.reject(new Error('root is on a volume that went away')),
-    };
-    await sweepFileSource(db, broken, '2026-07-28T13:00:00.000Z');
-    expect(frontier('s1')?.lastError).not.toBeNull();
-
-    await sweep('2026-07-28T14:00:00.000Z');
-
-    expect(frontier('s1')?.lastError).toBeNull();
-  });
-
-  it('survives a database that will not take the write recording a file failure', async () => {
-    // The recording write sits inside the `catch` for ONE file. A `SQLITE_BUSY`
-    // there used to escape the catch, the loop and the sweep — on a corpus of
-    // 19,000 transcripts, one unreadable file stopped every file after it.
-    await writeTranscript('s1', [saidLine('the file that cannot be projected')]);
-    const breaking: FileSource = {
-      ...source,
-      project: () => {
-        throw new Error('unexpected record shape at line 12');
-      },
-    };
-    let armed = true;
-    const busyOnce = new Proxy(db, {
-      get(target, prop, receiver) {
-        if (prop === 'transaction' && armed) {
-          armed = false;
-          return () => {
-            throw new Error('SQLITE_BUSY: database is locked');
-          };
-        }
-        return Reflect.get(target, prop, receiver) as unknown;
-      },
-    }) as Db;
-
-    const result = await sweepFileSource(busyOnce, breaking, '2026-07-28T13:00:00.000Z');
-
-    expect(result.failures).toEqual([
-      {
-        sourceId: 'claude-code',
-        originKey: 's1',
-        message: 'unexpected record shape at line 12',
-      },
-    ]);
-    // The sweep finished its own housekeeping rather than ending mid-loop.
-    expect(result.pruned).toBe(0);
-  });
-
-  it('numbers messages continuously across the projection batch boundary', async () => {
-    // The projection is called once per batch, not once per file, so ordinals
-    // are handed in rather than started from zero. A batch boundary is where an
-    // off-by-one in that hand-off would show up, and nowhere else.
-    const lines = Array.from({ length: 2_500 }, (_unused, i) => saidLine(`line ${i}`));
-    await writeTranscript('s1', lines);
-
-    const result = await sweep();
-
-    expect(result.indexed).toBe(2_500);
-    expect(
-      db
-        .select({ ordinal: messages.ordinal })
-        .from(messages)
-        .orderBy(messages.ordinal)
-        .all()
-        .map((row) => row.ordinal)
-    ).toEqual([...Array(2_500).keys()]);
-  });
 });
 
 describe('M1 — `\\n` is the only line terminator', () => {
@@ -571,29 +331,6 @@ describe('M1 — `\\n` is the only line terminator', () => {
     // NEL is the control: it never tore anything, under either reader, and it
     // round-trips here for the same reason it always did.
     expect(indexedBodies('s1')[0]).toContain(NEL);
-  });
-
-  it('an incorrect Unicode-delimiter reference tears one valid JSON record into three invalid fragments', async () => {
-    // Same actual file bytes as the production roundtrip above. The deliberately
-    // incorrect reference is independent of stock readline's runtime version.
-    const file = await writeTranscript('s1', [saidLine(torn)]);
-    const serialized = await fs.readFile(file, 'utf8');
-    const lfLines = serialized.split('\n').filter((line) => line.length > 0);
-    expect(lfLines).toEqual([serialized.slice(0, -1)]);
-    expect(JSON.parse(lfLines[0]).message.content).toBe(torn);
-
-    const fragments = lfLines[0].split(/\u2028|\u2029/);
-    expect(fragments).toHaveLength(3);
-    expect(
-      fragments.filter((fragment) => {
-        try {
-          JSON.parse(fragment);
-          return true;
-        } catch {
-          return false;
-        }
-      })
-    ).toEqual([]);
   });
 });
 

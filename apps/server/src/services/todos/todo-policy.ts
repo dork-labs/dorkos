@@ -9,10 +9,15 @@
  * starts an agent turn (Security, #3460). With an owner account it may not. It never reassigns,
  * retitles or redates anything, and every change it makes lowers the row to the stranger bound.
  *
+ * The owner's sign-in on a Wi-Fi device not let run agents (`held`, DOR-5070) gets that allowance
+ * too, but may never give an agent work ({@link mayGiveAgentWork}): otherwise anyone on the
+ * network could hand an agent a task (Security, 2026-11-25).
+ *
  * @module services/todos/todo-policy
  */
 import type { TodoRow } from '@dorkos/db';
 import type { TodoActor } from './todo-authority.js';
+import { HELD_DEVICE_REFUSAL, TodoPromiseError } from './todo-promise-types.js';
 
 /**
  * Who may write a field:
@@ -123,4 +128,33 @@ export function mayEdit(row: TodoRow, actor: TodoActor): boolean {
  */
 export function mayRank(row: TodoRow, actor: TodoActor): boolean {
   return mayChangeState(row, actor);
+}
+
+/**
+ * Whether an actor may give an agent work: make a to-do assigned to an agent, or change or answer
+ * for an agent's promise, any of which can wake it. Everyone may but a person on a Wi-Fi device
+ * not let run agents (`held`); that person may still make and finish their own to-dos.
+ *
+ * @param actor - Who is asking.
+ */
+export function mayGiveAgentWork(actor: {
+  readonly kind: string;
+  readonly held?: boolean;
+}): boolean {
+  return !(actor.kind === 'person' && actor.held === true);
+}
+
+/**
+ * Refuse with `HELD_DEVICE` unless {@link mayGiveAgentWork}. Every service that gives an agent work
+ * asks here, so the HTTP doors and anything later share one rule and one sentence.
+ *
+ * @param actor - Who is asking.
+ * @throws {TodoPromiseError} `HELD_DEVICE` for a person on a held Wi-Fi device.
+ */
+export function requireMayGiveAgentWork(actor: {
+  readonly kind: string;
+  readonly held?: boolean;
+}): void {
+  if (mayGiveAgentWork(actor)) return;
+  throw new TodoPromiseError('HELD_DEVICE', HELD_DEVICE_REFUSAL);
 }

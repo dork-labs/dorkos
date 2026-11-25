@@ -64,6 +64,7 @@ import {
   listDoeCreditsModels,
   peekDoeCreditsPick,
 } from './auto-model.js';
+import { skillCommandsFor } from '../shared/home-skill-commands.js';
 /** Host injection permits real offline fixtures without replacing the adapter's session behavior. */
 export interface DoeRuntimeOptions {
   directory?: string;
@@ -377,9 +378,12 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
   getConnectedProvider(): string | null {
     return this.inference()?.provider ?? null;
   }
-  /** Command intent discovery is handled by the platform rather than vendor slash commands. */
-  async getCommands(): Promise<CommandRegistry> {
-    return { commands: [], lastScanned: new Date().toISOString() };
+  /**
+   * The folder's skills as `/` commands, plus the agent's own outside its home (DOR-5262), as
+   * Codex lists them. A chosen one reaches the model as text, and it loads the skill by name.
+   */
+  async getCommands(_force?: boolean, cwd?: string, agentPath?: string): Promise<CommandRegistry> {
+    return { commands: skillCommandsFor(cwd, agentPath), lastScanned: new Date().toISOString() };
   }
   /** Turns own their cleanup; idle metadata does not expire out of session listing. */
   checkSessionHealth(): void {}

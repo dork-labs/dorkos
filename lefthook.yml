@@ -59,8 +59,9 @@
 # `typecheck` is a required check on every PR and in the merge queue, so no
 # type error can land; the worst a missed one costs is a red PR. To typecheck
 # locally while debugging, use `pnpm verify:preopen` (affected-only), or one package with
-# `pnpm --filter <pkg> typecheck`. Claude Code sessions also typecheck the
-# edited file's package after every edit (`.claude/hooks/typecheck-changed.sh`).
+# `pnpm heavy pnpm --filter <pkg> typecheck` (it joins the load gate). The per-edit
+# Claude Code typecheck hook was retired on Nov 25 (it ran out of memory on
+# apps/server every time).
 pre-commit:
   # STREAM THE OUTPUT AS IT ARRIVES, for the reason the `pre-push` block spells
   # out at length: lefthook buffers a command's output and prints it only once

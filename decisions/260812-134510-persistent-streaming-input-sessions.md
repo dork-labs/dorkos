@@ -15,6 +15,8 @@ superseded-by: null
 
 Accepted — implemented by spec `persistent-session-runtime` phase P3 (PRs #975, #976, #979, #980, #981, #982, #983, #993).
 
+**Amended by** [261124-174221](261124-174221-one-memory-aware-budget-for-agent-work-on-a-computer.md) (accepted 2026-11-25, not built yet: DOR-5192): the warm process count becomes one input to one memory-aware budget for the computer, and a host with nothing reclaimable waits instead of being refused. Until that is built, the code does what this record says.
+
 **Amended by** [260915-202228](260915-202228-a-warm-process-ends-only-when-it-is-quiet.md) (A warm process ends only when it is quiet, and everything it says is projected). That ADR was accepted, so these retirements are in effect.
 
 **Exactly these passages are retired:**

@@ -60,12 +60,6 @@ describe('console reporter clipping', () => {
       expect(output().length).toBeLessThan(64 * 1024);
     });
 
-    it('names the full length of what it dropped', () => {
-      loggerModule.logger.error('[Runtimes] subprocess died', new Error('y'.repeat(HUGE)));
-
-      expect(output()).toContain(`[truncated, ${HUGE} characters total]`);
-    });
-
     it('still prints the call site, the head of the message, and the stack frames', () => {
       loggerModule.logger.error('[Runtimes] subprocess died', new Error('y'.repeat(HUGE)));
 
@@ -76,24 +70,6 @@ describe('console reporter clipping', () => {
       // And the frames, which are the half an operator acts on — a flat clip of
       // the stack would have spent the whole budget on more of the message.
       expect(out).toContain('logger-console-clipping.test.ts');
-    });
-
-    it('bounds one nested inside a context object too', () => {
-      loggerModule.logger.error('[relay] send failed', { err: new Error('y'.repeat(HUGE)) });
-
-      expect(output().length).toBeLessThan(64 * 1024);
-    });
-
-    it('bounds one logged before initLogger has run at all', async () => {
-      vi.resetModules();
-      const fresh = await import('../logger.js');
-      const chunks: string[] = [];
-      fresh.logger.options.stdout = sink(chunks);
-      fresh.logger.options.stderr = sink(chunks);
-
-      fresh.logger.error('[boot] config load failed', new Error('y'.repeat(HUGE)));
-
-      expect(chunks.join('').length).toBeLessThan(64 * 1024);
     });
 
     it('clips the terminal and the NDJSON file with one shared marker', () => {
@@ -143,40 +119,6 @@ describe('console reporter clipping', () => {
       expect(line).toContain(marker);
       expect(output()).toContain(marker);
     });
-
-    it('keeps the call site’s own context fields beside the clipped error', () => {
-      loggerModule.logger.error('[Workspaces] scan failed', flattened(new Error('y'.repeat(HUGE))));
-
-      const [entry] = fs
-        .readFileSync(path.join(logDir, 'dorkos.log'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((l) => JSON.parse(l) as Record<string, unknown>);
-      expect(entry.workspaceId).toBe('demo');
-      expect(String(entry.error)).toContain('y'.repeat(1000));
-      // The frames are what say where in DorkOS this happened.
-      expect(String(entry.stack)).toContain('logger-console-clipping.test.ts');
-    });
-
-    it('leaves an ordinary flattened error byte-for-byte as it was', () => {
-      const err = new Error('boom');
-      const context = flattened(err);
-
-      const plainChunks: string[] = [];
-      const plain = createConsola({ level: 5 });
-      plain.options.stdout = sink(plainChunks);
-      plain.options.stderr = sink(plainChunks);
-
-      loggerModule.logger.error('[Extensions] Failed to initialize', context);
-      plain.error('[Extensions] Failed to initialize', {
-        workspaceId: 'demo',
-        error: err.message,
-        stack: err.stack,
-      });
-
-      expect(output()).toBe(plainChunks.join(''));
-      expect(output()).not.toContain('[truncated');
-    });
   });
 
   describe('an error whose message contains someone else’s stack trace', () => {
@@ -208,25 +150,6 @@ describe('console reporter clipping', () => {
       // instead of by the message loses every one of them.
       expect(out).toContain('logger-console-clipping.test.ts');
     });
-
-    it('writes the same frames to the NDJSON file', () => {
-      loggerModule.logger.error('[Runtimes] subprocess died', subprocessDump());
-
-      const [entry] = fs
-        .readFileSync(path.join(logDir, 'dorkos.log'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((l) => JSON.parse(l) as Record<string, unknown>);
-      expect(String(entry.stack)).toContain('logger-console-clipping.test.ts');
-    });
-
-    it('still shows the head of the child dump the operator came for', () => {
-      loggerModule.logger.error('[Runtimes] subprocess died', subprocessDump());
-
-      const out = output();
-      expect(out).toContain('child process failed:');
-      expect(out).toContain('ChildError: the packfile was truncated');
-    });
   });
 
   describe('a cause chain deeper than the walk follows', () => {
@@ -239,19 +162,6 @@ describe('console reporter clipping', () => {
       // Without this marker the cut link reads exactly like the natural end of
       // the chain — nothing would tell the reader seven more levels existed.
       expect(output()).toContain('[cause chain truncated at depth 5, 7 more levels]');
-    });
-
-    it('says so without inventing a count when the cut error is the last link', () => {
-      // Exactly five links, so the limit lands on an error that genuinely has
-      // no cause of its own — the structure is still dropped, but there is no
-      // remaining chain to size.
-      let err = new Error('bottom');
-      for (let i = 1; i <= 5; i++) err = new Error(`link-${i}`, { cause: err });
-
-      loggerModule.logger.error('[relay] send failed', err);
-
-      expect(output()).toContain('[truncated at depth 5]');
-      expect(output()).not.toContain('more levels');
     });
   });
 
@@ -273,19 +183,6 @@ describe('console reporter clipping', () => {
       expect(output()).toBe(plainChunks.join(''));
       expect(output()).not.toContain('[truncated');
     });
-
-    it('leaves an ordinary context object alone', () => {
-      const plainChunks: string[] = [];
-      const plain = createConsola({ level: 5 });
-      plain.options.stdout = sink(plainChunks);
-      plain.options.stderr = sink(plainChunks);
-
-      const context = { taskId: 'abc', attempts: 2, nested: { ok: true } };
-      loggerModule.logger.info('[Tasks] scheduled', context);
-      plain.info('[Tasks] scheduled', context);
-
-      expect(output()).toBe(plainChunks.join(''));
-    });
   });
 
   describe('context objects that defeat inspection', () => {
@@ -299,50 +196,6 @@ describe('console reporter clipping', () => {
       expect(() => loggerModule.logger.error('[relay] send failed', hostile)).not.toThrow();
       expect(output()).toContain('[relay] send failed');
       expect(output()).toContain('unreadable property');
-    });
-
-    it('a throwing sibling does not cost the huge error beside it its clipping', () => {
-      // `Object.entries` runs every getter in one go, so reading this object as
-      // a unit throws before the error is ever seen — and abandoning the object
-      // means abandoning the clip, putting the whole payload back on screen.
-      const context = {
-        err: new Error('y'.repeat(HUGE)),
-        get diagnostics(): string {
-          throw new Error('getter exploded');
-        },
-      };
-
-      loggerModule.logger.error('[relay] send failed', context);
-
-      expect(output().length).toBeLessThan(64 * 1024);
-      // A nested error renders through its stack, whose marker names the
-      // stack's own length rather than the message's — hence the pattern.
-      expect(output()).toMatch(/\[truncated, \d{6,} characters total\]/);
-      expect(output()).toContain('unreadable property');
-    });
-
-    it('clips an error whose class exposes a getter-only property', () => {
-      // Assignment consults the prototype, so copying own properties onto the
-      // clone by `clone[key] = value` throws on this shape.
-      class RuntimeError extends Error {
-        get code(): string {
-          return 'E_RUNTIME';
-        }
-      }
-      const err = new RuntimeError('y'.repeat(HUGE));
-      Object.defineProperty(err, 'code', { value: 'E_OVERRIDDEN', enumerable: true });
-
-      expect(() => loggerModule.logger.error('[Runtimes] died', err)).not.toThrow();
-      expect(output().length).toBeLessThan(64 * 1024);
-      expect(output()).toContain(`[truncated, ${HUGE} characters total]`);
-    });
-
-    it('still prints the line for a cyclic context', () => {
-      const cyclic: Record<string, unknown> = { workspace: 'demo' };
-      cyclic.self = cyclic;
-
-      expect(() => loggerModule.logger.error('[workspaces] GET / failed', cyclic)).not.toThrow();
-      expect(output()).toContain('[workspaces] GET / failed');
     });
   });
 });

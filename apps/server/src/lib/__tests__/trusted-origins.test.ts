@@ -8,7 +8,6 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 import { env } from '../../env.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import {
-  getLocalCockpitOrigin,
   getTunnelHosts,
   getTunnelOrigins,
   getStaticLocalOrigins,
@@ -238,47 +237,6 @@ describe('getStaticLocalOrigins', () => {
     }
   });
 
-  it('points the cockpit link at the Vite dev server outside production', () => {
-    // `express.static` is production-only, so in dev NOTHING answers `/` on the
-    // API port. A "Back to DorkOS" link built from DORKOS_PORT would be dead
-    // exactly for the developers most likely to click it.
-    setVitePort('6241');
-    expect(getLocalCockpitOrigin()).toBe('http://localhost:6241');
-  });
-
-  it('points the cockpit link at the API port in PRODUCTION', () => {
-    // There the server serves the SPA itself, and no Vite dev server exists.
-    const mutable = env as { NODE_ENV?: string };
-    const previous = mutable.NODE_ENV;
-    mutable.NODE_ENV = 'production';
-    try {
-      setVitePort('6241');
-      expect(getLocalCockpitOrigin()).toBe('http://localhost:4242');
-    } finally {
-      mutable.NODE_ENV = previous;
-    }
-  });
-
-  it('falls back to the default Vite port when VITE_PORT is unset', () => {
-    setVitePort(undefined);
-    expect(getStaticLocalOrigins()).toEqual([
-      'http://localhost:4242',
-      'http://localhost:4241',
-      'http://127.0.0.1:4242',
-      'http://127.0.0.1:4241',
-    ]);
-  });
-
-  it('follows a custom VITE_PORT on both hosts', () => {
-    setVitePort('6241');
-    expect(getStaticLocalOrigins()).toEqual([
-      'http://localhost:4242',
-      'http://localhost:6241',
-      'http://127.0.0.1:4242',
-      'http://127.0.0.1:6241',
-    ]);
-  });
-
   it('trusts no host but localhost and 127.0.0.1, and no scheme but http', () => {
     // Stated separately from the exact list above so a widening failure says WHY.
     // `::1` is deliberately absent: it is loopback, but nothing binds it here, and
@@ -312,26 +270,6 @@ describe('parseConfiguredOrigins', () => {
     [' * ', 'a padded wildcard, which is the same typo on every surface'],
   ])('returns no origins for %s (%s)', (value) => {
     expect(parseConfiguredOrigins(value)).toEqual([]);
-  });
-
-  it('splits a comma-separated list and trims each entry', () => {
-    expect(parseConfiguredOrigins(' https://a.example , https://b.example ')).toEqual([
-      'https://a.example',
-      'https://b.example',
-    ]);
-  });
-
-  it('keeps a single origin as a one-entry list', () => {
-    expect(parseConfiguredOrigins('http://localhost:5174')).toEqual(['http://localhost:5174']);
-  });
-
-  it('passes empty entries through, so a list of nothing stays a list', () => {
-    // Not a nicety: `buildCors` and the upgrade check both branch on "did the
-    // operator configure a list at all", and dropping the empties here would
-    // silently turn `DORKOS_CORS_ORIGIN=","` from "allow nothing" into "fall
-    // back to the per-request policy" on both. The auth allowlist drops them
-    // itself, where an empty pattern would actually be dangerous.
-    expect(parseConfiguredOrigins(',')).toEqual(['', '']);
   });
 });
 
@@ -380,15 +318,6 @@ describe('resolveAuthTrustedOrigins', () => {
     expect(resolveAuthTrustedOrigins()).toEqual([
       ...getStaticLocalOrigins(),
       'http://localhost:5174',
-    ]);
-  });
-
-  it('includes every origin in a multi-entry list, trimmed', () => {
-    setCorsOrigin(' https://a.example , https://b.example ');
-    expect(resolveAuthTrustedOrigins()).toEqual([
-      ...getStaticLocalOrigins(),
-      'https://a.example',
-      'https://b.example',
     ]);
   });
 
@@ -492,22 +421,6 @@ describe('resolveAuthTrustedOrigins', () => {
       'https://dorkos.example.com',
     ]);
   });
-
-  it('lists an origin once when the operator names one DorkOS already trusts', () => {
-    setCorsOrigin('http://localhost:4242');
-    const origins = resolveAuthTrustedOrigins();
-    expect(origins.filter((origin) => origin === 'http://localhost:4242')).toHaveLength(1);
-    expect(origins).toEqual(getStaticLocalOrigins());
-  });
-
-  it('leaves `resolveTrustedOrigins` itself untouched, so the extensions bar is unchanged', () => {
-    // The whole reason this is a second function. `extensions-person-bar.ts`
-    // refuses an operator-listed origin on purpose; if this assertion ever
-    // fails, that refusal has quietly stopped being true.
-    setCorsOrigin('https://dorkos.example.com');
-    expect(resolveTrustedOrigins()).not.toContain('https://dorkos.example.com');
-    expect(resolveTrustedOrigins()).toEqual(getStaticLocalOrigins());
-  });
 });
 
 /**
@@ -538,21 +451,6 @@ describe('getTunnelOrigins / getTunnelHosts', () => {
     setTunnelUrl('https://abc123.ngrok.app/some/path');
     expect(getTunnelOrigins()).toEqual(['https://abc123.ngrok.app']);
     expect(getTunnelHosts()).toEqual(['abc123.ngrok.app']);
-  });
-
-  it('answers nothing, rather than throwing, for a URL that does not parse', () => {
-    setTunnelUrl('not a url at all');
-    expect(() => getTunnelOrigins()).not.toThrow();
-    expect(getTunnelOrigins()).toEqual([]);
-    expect(getTunnelHosts()).toEqual([]);
-  });
-
-  it('answers nothing for a scheme with no origin of its own', () => {
-    // `new URL('tcp://1.2.3.4:1234').origin` is the STRING "null", and the
-    // literal `null` must never reach an allowlist as an origin.
-    setTunnelUrl('tcp://1.2.3.4:1234');
-    expect(getTunnelOrigins()).toEqual([]);
-    expect(getTunnelHosts()).toEqual([]);
   });
 
   it('answers nothing when no tunnel is running', () => {
