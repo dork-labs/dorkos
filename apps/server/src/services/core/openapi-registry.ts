@@ -5475,7 +5475,7 @@ registry.registerPath({
       description: "The agent's permissions",
       content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
     },
-    404: problemResponse('`not_found`: no such agent'),
+    404: problemResponse('`agent_not_found`: no such agent'),
   },
 });
 
@@ -5493,7 +5493,7 @@ registry.registerPath({
       description: "The agent's level",
       content: { 'application/json': { schema: AgentLevelResponseSchema } },
     },
-    404: problemResponse('`not_found`: no such agent'),
+    404: problemResponse('`agent_not_found`: no such agent'),
   },
 });
 
@@ -5518,7 +5518,7 @@ registry.registerPath({
         },
       },
     },
-    404: problemResponse('`not_found`: no such agent'),
+    404: problemResponse('`agent_not_found`: no such agent'),
     ...PERMISSION_WRITE_REFUSALS,
   },
 });

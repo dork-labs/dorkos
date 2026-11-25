@@ -97,6 +97,18 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
         content: { 'application/json': { schema: StepUpRequiredBodySchema } },
       },
       410: problemResponse('`expired`: it expired before it was decided'),
+      400: problemResponse(
+        '`invalid_request`: the body failed its checks, or the permission service refused the ' +
+          "setting `answer: 'always'` would write (an unknown action, or one never Allowed)"
+      ),
+      412: problemResponse(
+        '`precondition_failed`: an agent-raise card no longer counts, because the agent read ' +
+          'outside words since it asked'
+      ),
+      500: problemResponse(
+        "`internal_error`: Always allow couldn't be saved, so nothing was allowed; or another " +
+          "answer won and the saved Always allow couldn't be taken back"
+      ),
     },
   });
 

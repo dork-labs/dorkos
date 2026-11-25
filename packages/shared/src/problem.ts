@@ -98,6 +98,8 @@ export const PROBLEM_CODE_LIST = [
   { code: 'request_too_large', status: 413, title: 'The request is over the size limit.' },
   { code: 'unsupported_media_type', status: 415, title: 'DorkOS can’t read that kind of content.' },
   { code: 'not_found', status: 404, title: 'That doesn’t exist here.' },
+  /** No agent on the team has that id: a different way out than a missing card or route. */
+  { code: 'agent_not_found', status: 404, title: 'No agent has that id.' },
   { code: 'session_not_found', status: 404, title: 'That chat wasn’t found.' },
   { code: 'unknown_capability', status: 404, title: 'That action doesn’t exist.' },
   // The state it met.
@@ -415,7 +417,11 @@ export const PROBLEM_CODE_LIST = [
   },
   // Approvals.
   /** Always allow isn't offered for this request: answer it once instead. */
-  { code: 'always_not_offered', status: 409, title: 'This request can only be allowed once.' },
+  {
+    code: 'always_not_offered',
+    status: 409,
+    title: 'Always allow isn’t offered for this request.',
+  },
   // Tasks, to-dos, the work queue and settings.
   {
     code: 'schedule_package_owned',

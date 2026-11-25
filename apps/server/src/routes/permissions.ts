@@ -172,7 +172,7 @@ const PERMISSION_PROBLEM: Record<PermissionErrorCode, { code: ProblemCode; detai
     detail: 'That action always shows its changes first. Choose Ask or Blocked.',
   },
   INVALID_STOP: { code: 'invalid_request', detail: 'That isn’t a Files & commands stop.' },
-  UNKNOWN_AGENT: { code: 'not_found', detail: 'No agent with that id.' },
+  UNKNOWN_AGENT: { code: 'agent_not_found', detail: 'No agent with that id.' },
   UNKNOWN_EVENT: { code: 'not_found', detail: 'That change isn’t in the history.' },
   NOT_UNDOABLE: {
     code: 'conflict',
@@ -362,7 +362,7 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     router.get('/agents/:id/level', async (c) => {
       const id = c.req.param('id');
       const level = await readAgentLevel(id);
-      if (!level) return problem(c, 'not_found', { detail: 'No agent with that id.' });
+      if (!level) return problem(c, 'agent_not_found', { detail: 'No agent with that id.' });
       return c.json(level);
     });
   }

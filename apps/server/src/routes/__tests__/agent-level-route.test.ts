@@ -57,7 +57,7 @@ describe('GET /api/agents/:id/level', () => {
   it('answers 404 for an id no agent has', async () => {
     const res = await request(build(async () => null)).get('/api/agents/nobody/level');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('not_found');
+    expect(res.body.code).toBe('agent_not_found');
   });
 
   it.each(['put', 'patch', 'post', 'delete'] as const)('has no %s', async (method) => {

@@ -52,6 +52,7 @@ describe('PROBLEM_CODE_LIST', () => {
     ['spend_limit_reached', 409],
     ['always_not_offered', 409],
     ['managed_by_desktop', 409],
+    ['agent_not_found', 404],
   ] as const)('sends %s with status %i by default', (code, status) => {
     expect(PROBLEM_CODES[code].status).toBe(status);
   });

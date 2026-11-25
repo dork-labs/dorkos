@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): the last route groups answer errors as problem documents (DOR-4979)'
+  - 'fix(api): review round 1 on the last route groups (DOR-4979)'
 ---
 
 ### Changed

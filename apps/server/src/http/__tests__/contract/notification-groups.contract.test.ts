@@ -603,7 +603,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     expect: {
       status: 404,
       headers: PROBLEM_TYPE,
-      schema: z.object({ code: z.literal('not_found') }).loose(),
+      schema: z.object({ code: z.literal('agent_not_found') }).loose(),
     },
   },
   {
@@ -628,7 +628,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     expect: {
       status: 404,
       headers: PROBLEM_TYPE,
-      schema: z.object({ code: z.literal('not_found') }).loose(),
+      schema: z.object({ code: z.literal('agent_not_found') }).loose(),
     },
   },
   {

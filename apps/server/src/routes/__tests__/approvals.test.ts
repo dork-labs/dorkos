@@ -28,6 +28,7 @@ import type { ActivityService } from '../../services/activity/activity-service.j
 import { registerSessionApprovalStepUpCases } from './session-approval-step-up.cases.js';
 import { registerApprovalStepUpCases } from './approvals-step-up.cases.js';
 import { createApprovalsRoutes } from '../approvals.js';
+import { PermissionError } from '../../services/core/permissions/index.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 import { UPGRADE_WRITER } from '../../services/core/permissions/permission-history.js';
@@ -698,6 +699,28 @@ describe('approvals routes', () => {
       expect(approvals.getPending(ticket.approvalId)).toBeDefined();
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
       expect(world.agents.get('agent-dorkbot')?.permissions).toBeUndefined();
+      expect(emitted).toEqual([]);
+    });
+
+    // The permission service's own refusal reaches the caller through
+    // `permissionProblemBody`: its code and a fixed sentence, never its message.
+    it('answers 400 invalid_request when the permission service refuses the setting', async () => {
+      const ticket = requestRoom();
+      vi.spyOn(world.service, 'setAgent').mockRejectedValue(
+        new PermissionError('ALWAYS_ASKS', '"Open a room" always shows you what it would change.')
+      );
+
+      const res = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ answer: 'always' });
+
+      expect(res.status).toBe(400);
+      expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(res.body).toMatchObject({
+        code: 'invalid_request',
+        detail: 'That action always shows its changes first. Choose Ask or Blocked.',
+      });
+      expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
       expect(emitted).toEqual([]);
     });
 
