@@ -193,7 +193,7 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
     }
     claimed.set(key, capability.id);
     const served = capability as ServedCapability;
-    router.on(surface.method.toUpperCase(), path, (c) => {
+    const handler = (c: Context<ApiEnv>) => {
       const registry = deps.registry();
       // The path is declared on every server, but its domain may not have
       // started on this one (no mesh, say): not here, rather than "unknown".
@@ -206,9 +206,28 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
         input: requestInput(c, surface),
         ...(surface.success ? { success: surface.success } : {}),
       });
-    });
+    };
+    MOUNT_HANDLERS.add(handler);
+    router.on(surface.method.toUpperCase(), path, handler);
   }
   return router;
+}
+
+/**
+ * Every handler the mount registered, so the collision check knows the mount's
+ * own routes by what they run, never by where they sit in the app.
+ */
+const MOUNT_HANDLERS = new WeakSet<object>();
+
+/**
+ * Whether a route of the built app is one the mount registered. Hono wraps a
+ * sub-app's handler when the sub-app has its own error handler, and keeps the
+ * original on `__COMPOSED_HANDLER`.
+ */
+function isMountRoute(handler: unknown): boolean {
+  if (typeof handler !== 'function') return false;
+  const inner = (handler as { __COMPOSED_HANDLER?: unknown }).__COMPOSED_HANDLER;
+  return MOUNT_HANDLERS.has(handler) || (typeof inner === 'function' && MOUNT_HANDLERS.has(inner));
 }
 
 /** One segment of a route pattern, by what it matches. */
@@ -297,6 +316,7 @@ export function assertNoCapabilityRouteCollisions(
     path: route.path,
     shape: routeKey(route.method, route.path),
     segments: patternSegments(route.path),
+    mounted: isMountRoute(route.handler),
   }));
   const served = capabilities.flatMap((capability) => {
     const surface = capability.surfaces.http;
@@ -304,21 +324,19 @@ export function assertNoCapabilityRouteCollisions(
     const method = surface.method.toUpperCase();
     const path = honoPath(surface.path);
     const shape = routeKey(method, path);
-    // The first route on its METHOD + path is the mount's own: the mount is
-    // registered before every hand route.
-    const own = routes.find((route) => route.shape === shape);
+    // The mount's own route on this METHOD + path, if the app mounted it.
+    const own = routes.find((route) => route.mounted && route.shape === shape);
     return [{ capability, method, path, shape, own }];
   });
-  // The mount orders its own routes itself (static before param), so one of
-  // them never shadows another.
-  const mounted = new Set(served.map(({ own }) => own));
   const conflicts: string[] = [];
   for (const { capability, method, path, shape, own } of served) {
     const segments = patternSegments(path);
     const at = own?.index ?? -1;
     const name = `${shape} (${capability.id})`;
     for (const route of routes) {
-      if (mounted.has(route)) continue;
+      // The mount orders its own routes itself (static before param), so one
+      // of them never shadows another.
+      if (route.mounted) continue;
       if (route.method === 'ALL') {
         const skip = `${method} ${path} skips ${route.label}`;
         if (

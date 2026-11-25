@@ -254,6 +254,14 @@ describe('mount order', () => {
     expect(() => assertNoCapabilityRouteCollisions(claimed, [any, fixed])).toThrow(
       /\(demo.fixed\) is claimed by GET \/api\/demo\/fixed/
     );
+    // One registered before the mount is a hand route too, never the mount's
+    // own, so it cannot slip past the shadow check for its neighbours.
+    const early = app([any, fixed], {
+      before: (hand) => hand.get('/api/demo/fixed', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(early, [any, fixed])).toThrow(
+      /\(demo.any\) is shadowed by GET \/api\/demo\/fixed/
+    );
   });
 
   it('reads a regex splat param (`:path{.+}`) as spanning segments', () => {

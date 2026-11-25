@@ -73,7 +73,17 @@ export const activityListCapability = defineCapability({
     // The mount serves `GET /api/activity`; its query string is the input.
     http: { method: 'get', path: '/api/activity' },
   },
-  invoke: async (deps, input) => activityServiceOf(deps).list(input),
+  invoke: async (deps, input) => {
+    const service = activityServiceOf(deps);
+    try {
+      return await service.list(input);
+    } catch {
+      throw new CapabilityToolError({
+        error: 'The activity feed couldn’t be read.',
+        code: 'ACTIVITY_READ_FAILED',
+      });
+    }
+  },
 });
 
 /**

@@ -117,7 +117,10 @@ describe('Activity routes', () => {
       vi.spyOn(activityService, 'list').mockRejectedValueOnce(new Error('disk gone'));
       const res = await request(fixtureServer).get('/api/activity');
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('internal_error');
+      expect(res.body).toMatchObject({
+        code: 'internal_error',
+        detail: 'The activity feed couldn’t be read.',
+      });
       expect(JSON.stringify(res.body)).not.toContain('disk gone');
     });
 
