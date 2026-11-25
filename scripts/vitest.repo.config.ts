@@ -45,6 +45,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
+  // Reads codex-binary-macos.yml and scripts/codex-macos-scope.sh (DOR-4402).
+  '__tests__/codex-macos-workflow.test.ts',
   '__tests__/codex-sandbox-job.test.ts',
   // Reads docker/seccomp/, apps/site/public/, docs/self-hosting/docker.mdx and
   // the cli-smoke-test workflow (DOR-3800).

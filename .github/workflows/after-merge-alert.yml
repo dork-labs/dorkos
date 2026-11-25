@@ -27,6 +27,7 @@ on:
       - lint
       - credential-free-build
       - docs-openapi-check
+      - Codex binary (macOS)
     types: [completed]
 
 permissions:

@@ -87,6 +87,8 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 
+`codex-sandbox-macos` (`codex-binary-macos.yml`, DOR-4402) reports on every PR and queue build so it can join this list: it runs the Codex binary suites on a hosted macOS runner only when `scripts/codex-macos-scope.sh`, read from the base commit, says the change can reach them, skips the macOS run in the queue when the check already passed on the PR head, and runs again on `main` after each such merge, where `after-merge-alert.yml` reports a red to the author.
+
 That block is generated from `ci/required-checks.json`, and the census fails when it drifts, here or in the `creating-pull-requests` skill. To ask the live repo:
 
 ```bash

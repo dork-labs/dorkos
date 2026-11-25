@@ -73,6 +73,14 @@ tracked:
   - id: tracked.escaped
     unit: count
     definition: Fix PRs citing a regression from a PR merged at most 7 days earlier (a prose match, too gameable to score).
+  - id: tracked.codex-macos-escapes
+    unit: count
+    definition: >-
+      Codex sandbox regressions that fail only on macOS and reached main, per
+      14 days: a macOS-only failure of the Codex binary suites found after
+      merge (a red codex-sandbox-macos push run on main, a report from a Mac)
+      that no pull request or queue run caught. Hand-counted from
+      after-merge-alert issues and Linear; not computed by the daily collector.
   - id: tracked.time-to-detect
     unit: minutes
     definition: >-
