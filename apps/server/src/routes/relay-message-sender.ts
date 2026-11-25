@@ -25,6 +25,8 @@
  * caller's copy of it is always dropped, and the server's own copy is sealed
  * for the sender it goes from (`sealTurnLimits`), so the turn can tell the two
  * apart. A message from `relay.external.http` always carries the outsider mark.
+ * A message that starts a new chat carries, in that sealed copy, where the
+ * server placed the chat (`relayNewChatPlace`, DOR-5209).
  *
  * @module routes/relay-message-sender
  */
@@ -33,6 +35,7 @@ import {
   HTTP_RELAY_SENDER,
   sealTurnLimits,
   TURN_SHAPING_PAYLOAD_FIELDS,
+  type NewChatPlace,
 } from '@dorkos/relay';
 import type { RelaySendMessageRequest } from '@dorkos/shared/relay-schemas';
 import type { RequestFacts } from '../http/request-facts.js';
@@ -45,8 +48,13 @@ export const PERSON_SENDER_REFUSAL =
 /** Looks up the relay address of the agent at a home, when the registry knows it. */
 export type AgentSubjectLookup = (agentPath: string) => string | undefined;
 
-/** What the route sends: who from, and the payload, or why it refuses. */
-export type RelayMessageSend = { refused: { detail: string } } | { from: string; payload: unknown };
+/** What the route sends: who from, and the payload. */
+export interface RelayMessageSend {
+  /** The sender the server sends it from. */
+  from: string;
+  /** The payload, as the server sends it. */
+  payload: unknown;
+}
 
 /**
  * Payload fields only the person may set, beyond the turn-shaping ones: the
@@ -54,6 +62,19 @@ export type RelayMessageSend = { refused: { detail: string } } | { from: string;
  * is talking and where.
  */
 const NOT_THE_PERSONS_TO_NAME = ['responseContext', 'senderName', 'channelName'] as const;
+
+/**
+ * Why this caller may not send from this address, or `null` when it may: only
+ * the person sends from a person's address, and a verified agent is sent from
+ * its own instead, so only a caller DorkOS cannot name is refused.
+ *
+ * @param facts - The request's facts.
+ * @param from - The sender the request names.
+ */
+export function personSenderRefusal(facts: RequestFacts, from: string): { detail: string } | null {
+  const named = sessionLauncherOf(facts).kind === 'unidentified' && from.startsWith('relay.human.');
+  return named ? { detail: PERSON_SENDER_REFUSAL } : null;
+}
 
 /** Whether a value is a plain JSON object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,23 +96,23 @@ function asObject(payload: unknown): Record<string, unknown> {
 }
 
 /**
- * Who this message is from, and what it carries, as the route sends it.
+ * Who this message is from, and what it carries, as the route sends it once
+ * {@link personSenderRefusal} lets it through.
  *
  * @param facts - The request's facts.
  * @param data - The validated request body.
  * @param agentSubjectOf - The registry lookup for an agent's own address.
+ * @param newChat - Where the server placed the new chat this message starts, if it starts one.
  */
 export function relayMessageSender(
   facts: RequestFacts,
   data: Pick<RelaySendMessageRequest, 'from' | 'payload'>,
-  agentSubjectOf?: AgentSubjectLookup
+  agentSubjectOf?: AgentSubjectLookup,
+  newChat?: NewChatPlace
 ): RelayMessageSend {
   const launcher = sessionLauncherOf(facts);
   if (launcher.kind === 'person') {
     return { from: data.from, payload: without(data.payload, [CARRIED_TURN_LIMITS_FIELD]) };
-  }
-  if (launcher.kind === 'unidentified' && data.from.startsWith('relay.human.')) {
-    return { refused: { detail: PERSON_SENDER_REFUSAL } };
   }
   const from =
     (launcher.kind === 'agent' ? agentSubjectOf?.(launcher.agentPath) : undefined) ??
@@ -105,10 +126,9 @@ export function relayMessageSender(
     ...launcherTurnCeiling(launcher, facts),
     // Spelled out, so a check that reads only the marks sees an outsider (DOR-5201).
     ...(from === HTTP_RELAY_SENDER ? { carriedMarks: { outsider: true as const } } : {}),
+    ...(newChat !== undefined ? { newChat } : {}),
   };
-  if (limits.permissionCeiling === undefined && limits.carriedMarks === undefined) {
-    return { from, payload };
-  }
+  if (Object.keys(limits).length === 0) return { from, payload };
   const stamp = sealTurnLimits(from, limits);
   return { from, payload: { ...asObject(payload), [CARRIED_TURN_LIMITS_FIELD]: stamp } };
 }

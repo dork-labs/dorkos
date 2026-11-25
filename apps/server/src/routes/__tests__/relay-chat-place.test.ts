@@ -6,7 +6,7 @@
  * agent whose token verified meets the sessions route's own place rule and
  * gets its answer: its own chat goes through, another agent's chat does not.
  * A message to an agent's own address, and anything the person sends, are
- * unchanged.
+ * unchanged. A chat nothing holds yet is a new chat (`relay-new-chat-place.test.ts`).
  *
  * The runtime registry runs on a real throwaway database, so "a chat" is a
  * real binding row; only the bus and Mesh's list of homes are fakes.
@@ -217,11 +217,6 @@ describe("a verified agent's message into a chat", () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('desk_not_own');
     expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
-  });
-
-  it('delivers to a chat address no runtime holds yet, as before', async () => {
-    const res = await send(`relay.agent.claude-code.${FRESH_CHAT}`, asRio);
-    expect(res.status).toBe(200);
   });
 
   it('delivers into its own chat, from its own address', async () => {

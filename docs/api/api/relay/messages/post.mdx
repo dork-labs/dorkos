@@ -24,8 +24,13 @@ _openapi:
           address (`relay.agent.<runtime>.<sessionId>`) meets the same place
           rule as `POST /api/sessions/{id}/messages`: its own chat, or a chat
           about a folder no agent owns, is delivered, and another agent's chat
-          is refused with `DESK_NOT_OWN`. Reserved server senders, destinations,
-          and reply addresses are refused.
+          is refused with `DESK_NOT_OWN`. A message from anyone but the person
+          to an id no chat holds starts a new chat where `POST
+          /api/sessions/{id}/messages` would start one that names no folder: a
+          verified agent that Mesh lists gets a chat in its own home, run as
+          that agent, and a place that route refuses is refused with its answer
+          (`protected_folder`, `desk_not_own`). Reserved server senders,
+          destinations, and reply addresses are refused.
 
 
           With login off, no app credential is required. The Host allowlist

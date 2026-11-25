@@ -1,7 +1,8 @@
 /**
  * The payload field that carries what a message's sender holds onto the turn
- * it starts (DOR-5151), the one way to read a payload without it, and the
- * seal that tells the server's copy from anyone else's (DOR-5201).
+ * it starts (DOR-5151), the one way to read a payload without it, the seal
+ * that tells the server's copy from anyone else's (DOR-5201), and where the
+ * server placed a new chat the message starts (DOR-5209).
  *
  * @module relay/lib/carried-turn-limits
  */
@@ -9,10 +10,11 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 /**
  * The payload field that carries the limits the sender's own turns hold onto
- * the turn its message starts: `{ permissionCeiling?, carriedMarks?, seal? }`,
+ * the turn its message starts: `{ permissionCeiling?, carriedMarks?, newChat?, seal? }`,
  * as `launcherTurnCeiling` builds them on the server. The server sets it; a
  * route that forwards a caller's payload removes the caller's copy. Every bound
- * in it can only hold a turn lower, never raise it. It is never part of the
+ * in it can only hold a turn lower, never raise it. `newChat` is where the
+ * server placed the chat the message starts ({@link sealedNewChatPlace}). It is never part of the
  * message's words: {@link withoutCarriedTurnLimits} drops it wherever a
  * payload is read as the message's words (the prompt and the conversation
  * preview). Raw envelope reads, such as dead letters and an inbox, still show
@@ -83,4 +85,48 @@ export function withoutCarriedTurnLimits(payload: unknown): unknown {
   }
   const { [CARRIED_TURN_LIMITS_FIELD]: _carried, ...words } = payload as Record<string, unknown>;
   return words;
+}
+
+/**
+ * Where the server placed a new chat a message starts (DOR-5209): the folder it
+ * opens in and the agent it runs as, decided by the sessions route's own place
+ * rule. Tied to the key the turn runs under, so it places that chat only.
+ */
+export interface NewChatPlace {
+  /** The key the message's turn runs under. */
+  sessionKey: string;
+  /** The folder the chat opens in. */
+  cwd?: string;
+  /** The home of the agent the chat runs as. */
+  forAgent?: string;
+}
+
+/**
+ * The place the server sealed onto this message for the new chat under
+ * `sessionKey` ({@link NewChatPlace}), or `undefined` when there is none: no
+ * place, a copy the server did not seal for this sender, or a place for
+ * another chat.
+ *
+ * @param payload - A relay envelope's payload.
+ * @param from - The envelope's sender.
+ * @param sessionKey - The key the message's turn runs under.
+ */
+export function sealedNewChatPlace(
+  payload: unknown,
+  from: string,
+  sessionKey: string
+): Omit<NewChatPlace, 'sessionKey'> | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const carried = (payload as Record<string, unknown>)[CARRIED_TURN_LIMITS_FIELD];
+  if (typeof carried !== 'object' || carried === null) return undefined;
+  const limits = carried as Record<string, unknown>;
+  if (!isSealedTurnLimits(from, limits)) return undefined;
+  const place = limits.newChat;
+  if (typeof place !== 'object' || place === null) return undefined;
+  const { sessionKey: key, cwd, forAgent } = place as Record<string, unknown>;
+  if (key !== sessionKey) return undefined;
+  return {
+    ...(typeof cwd === 'string' && cwd !== '' ? { cwd } : {}),
+    ...(typeof forAgent === 'string' && forAgent !== '' ? { forAgent } : {}),
+  };
 }
