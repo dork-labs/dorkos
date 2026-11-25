@@ -26,7 +26,7 @@
  *
  * @module services/runtimes/claude-code/repo-settings/repo-config-parts
  */
-import { lstatSync, realpathSync } from 'node:fs';
+import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, collectCommands } from '../folder-settings/folder-config-pin.js';
 import {
@@ -40,6 +40,7 @@ import {
   isWithin,
   readScript,
   readSettingsFile,
+  realOrResolved,
   repoRelative,
   sha256,
   trimmedStrings,
@@ -90,15 +91,6 @@ const CLEAN: RepoReading = {
   working: { rules: [], dirs: [] },
 };
 
-/** A path by its real path, or resolved when it is not there. */
-function real(p: string): string {
-  try {
-    return realpathSync.native(p);
-  } catch {
-    return path.resolve(p);
-  }
-}
-
 /** A repo-relative path under `prefix` (`''` at the repo top). */
 function under(prefix: string, rel: string): string {
   return prefix ? `${prefix}/${rel}` : rel;
@@ -125,7 +117,7 @@ function symlinkTarget(abs: string): string | undefined {
   } catch {
     return undefined;
   }
-  return real(abs);
+  return realOrResolved(abs);
 }
 
 /** The allow rules and folder entries of a picked settings object, read as the call-time check reads them. */
@@ -159,8 +151,8 @@ export async function readRepoConfig(
   baseline: RepoBaseline,
   dorkHome: string
 ): Promise<RepoReading> {
-  const root = real(baseline.root);
-  const here = real(cwd);
+  const root = realOrResolved(baseline.root);
+  const here = realOrResolved(cwd);
   // Outside the tree git was pinned to: something is wrong, so nothing is
   // trusted (the caller pauses everything), never "nothing changed" (M1).
   if (!isWithin(root, here)) throw new Error(`${here} is outside its repo's work tree`);

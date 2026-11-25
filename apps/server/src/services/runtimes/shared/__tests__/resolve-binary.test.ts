@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { existsSync } from 'node:fs';
-import { resolveRuntimeBinary } from '../resolve-binary.js';
+import { resolveRuntimeBinary, resolveRuntimeBinarySync } from '../resolve-binary.js';
 
 // Existence is the only real-world dependency; mock it so the precedence and
 // authoritative short-circuit rules are tested in isolation.
@@ -103,6 +103,37 @@ describe('resolveRuntimeBinary', () => {
       { resolve: () => null },
       { resolve: () => '/nope' },
       { resolve: async () => null },
+    ]);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('resolveRuntimeBinarySync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('walks the same ladder synchronously, trusting a verified rung without a second check', () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    // Claude Code's rungs each check their own path (several packages, a version gate).
+    const result = resolveRuntimeBinarySync([
+      { resolve: () => null, verified: true },
+      { resolve: () => '/unchecked' },
+      { resolve: () => '/checked-by-rung', verified: true },
+    ]);
+
+    expect(result).toBe('/checked-by-rung');
+    expect(existsSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at a set-but-absent authoritative path', () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    const result = resolveRuntimeBinarySync([
+      { resolve: () => '/configured', authoritative: true },
+      { resolve: () => '/fallback', verified: true },
     ]);
 
     expect(result).toBeNull();

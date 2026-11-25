@@ -29,7 +29,7 @@
  * It mints one environment variable per header, names it in the entry's
  * `env_http_headers`, and hands the values back in
  * {@link CodexMcpConversion.env} for the thread loader to put in the
- * subprocess environment — the same split `dorkos-header-env.ts` already makes
+ * subprocess environment — the same split `header-env.ts` makes
  * for the `dorkos` server's own turn-binding headers.
  *
  * @module services/runtimes/codex/mcp-server-config
@@ -50,6 +50,7 @@ import { managedConfigHeld } from '../shared/policy/managed-config.js';
 import { RESERVED_MCP_SERVER_NAMES } from '@dorkos/shared/global-mcp-schemas';
 import { logger } from '../../../lib/logger.js';
 import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
+import { redirectHeaders } from './header-env.js';
 
 /**
  * One `mcp_servers.<name>` config entry. The SDK's `CodexConfigObject` is not
@@ -131,7 +132,9 @@ export function toCodexMcpServerConfig(
         env: {},
       };
     case 'http': {
-      const { names, values } = redirectHeadersToEnv(name, connection.headers, takenEnvVars);
+      const { names, values } = redirectHeaders(connection.headers, (header) =>
+        mintHeaderEnvVar(name, header, takenEnvVars)
+      );
       return {
         config: {
           url: connection.url,
@@ -147,36 +150,12 @@ export function toCodexMcpServerConfig(
 }
 
 /**
- * Split a server's headers into the NAMES Codex reads them from and the VALUES
- * the subprocess environment carries.
+ * A free environment-variable name for one server's one header.
  *
  * Every header is redirected, not just the ones that look like credentials.
  * There is no reliable way to tell a secret header from an innocent one — the
  * static-header field is exactly where people paste API keys — and a heuristic
- * that guesses wrong puts a live credential on the command line, which is the
- * failure this whole function exists to make impossible.
- *
- * @param serverName - The owning server's name, for a readable variable name.
- * @param headers - The connection's headers, or undefined when it has none.
- * @param taken - Names already minted; mutated with each new one.
- */
-function redirectHeadersToEnv(
-  serverName: string,
-  headers: Record<string, string> | undefined,
-  taken: Set<string>
-): { names: Record<string, string>; values: Record<string, string> } {
-  const names: Record<string, string> = {};
-  const values: Record<string, string> = {};
-  for (const [header, value] of Object.entries(headers ?? {})) {
-    const envVar = mintHeaderEnvVar(serverName, header, taken);
-    names[header] = envVar;
-    values[envVar] = value;
-  }
-  return { names, values };
-}
-
-/**
- * A free environment-variable name for one server's one header.
+ * that guesses wrong puts a live credential on the command line.
  *
  * Derived from the two names so a person reading `--config` output or a process
  * environment can tell which header it holds, then suffixed until it is unused:

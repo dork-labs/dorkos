@@ -22,14 +22,14 @@
  *
  * @module services/runtimes/claude-code/tooling/provision
  */
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { logger, logError } from '../../../../lib/logger.js';
+import { logger } from '../../../../lib/logger.js';
+import {
+  createNpmProvisioner,
+  readInstalledPackageVersion,
+} from '../../shared/program/provision-npm.js';
 
 /**
  * `@anthropic-ai/claude-agent-sdk` version whose per-platform binary package is
@@ -115,40 +115,6 @@ export function resolveClaudeProvisionDir(): string {
 }
 
 /**
- * The version actually installed in a provisioned per-platform package, read
- * from that package's own `package.json`.
- *
- * Returns `null` — never throws — when the file is missing, unreadable or
- * malformed. Callers treat that exactly like a mismatch, which is the safe
- * default: an install whose version cannot be established is one that cannot be
- * trusted to speak the pinned SDK's protocol.
- *
- * @param pkg - The per-platform package name whose install is being read.
- */
-function readProvisionedClaudeVersion(pkg: string): string | null {
-  try {
-    const manifest = path.join(
-      resolveClaudeProvisionDir(),
-      'node_modules',
-      ...pkg.split('/'),
-      'package.json'
-    );
-    const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf-8'));
-    if (
-      parsed !== null &&
-      typeof parsed === 'object' &&
-      'version' in parsed &&
-      typeof parsed.version === 'string'
-    ) {
-      return parsed.version;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Absolute path to the provisioned `claude` binary, or `null` when nothing
  * USABLE was provisioned for this host.
  *
@@ -183,7 +149,9 @@ export function resolveProvisionedClaudePath(): string | null {
   for (const pkg of claudePlatformPackages()) {
     const binary = path.join(dir, 'node_modules', ...pkg.split('/'), CLAUDE_BIN);
     if (!existsSync(binary)) continue;
-    const installed = readProvisionedClaudeVersion(pkg);
+    const installed = readInstalledPackageVersion(
+      path.join(dir, 'node_modules', ...pkg.split('/'), 'package.json')
+    );
     if (installed === CLAUDE_SDK_VERSION) return binary;
     logger.info(
       installed
@@ -194,139 +162,18 @@ export function resolveProvisionedClaudePath(): string | null {
   return null;
 }
 
-/** Package-manager-agnostic installer invocation: a scoped `npm install --prefix`. */
-function npmInstallArgs(dir: string, spec: string): { cmd: string; args: string[] } {
-  return {
-    cmd: process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    args: ['install', '--prefix', dir, '--no-audit', '--no-fund', '--loglevel=error', spec],
-  };
-}
-
-/** Condense installer failure into an honest, non-raw Connect message. */
-function honestInstallError(detail: string): string {
-  const firstLine = detail
-    .split(/\r?\n/)
-    .find((l) => l.trim())
-    ?.trim();
-  const suffix = firstLine ? ` (${firstLine})` : '';
-  return `Could not install Claude Code${suffix}. Check your network and try again.`;
-}
-
-/** Best-effort removal of the (possibly partial) provisioning tree; never throws. */
-async function cleanupProvisionDir(dir: string): Promise<void> {
-  try {
-    await rm(dir, { recursive: true, force: true });
-  } catch (err) {
-    logger.warn('[ClaudeCode] failed to clean up partial provisioning tree', logError(err));
-  }
-}
-
-/**
- * Shared in-flight provisioning promise. Concurrent callers piggyback on one
- * install rather than racing a second `npm install` (and its cleanup `rm -rf`)
- * into the same scoped dir. Cleared once the install settles.
- */
-let inFlightProvision: Promise<RuntimeProvisionResult> | null = null;
-
 /**
  * Install this platform's Claude Code binary package on demand into the
- * dork-home-scoped location.
- *
- * De-dupes concurrent calls (double-click, two tabs, a retry racing the
- * original). Streams installer progress to `onProgress` (if supplied) and
- * resolves to the terminal result. On a non-zero exit, a spawn error, or an
- * exit-0 that left no resolvable binary, the partial tree is removed and the
- * result carries an honest error. Never rejects: failures are returned, not
- * thrown, so the endpoint always resolves to a Connect/error state.
- *
- * @param onProgress - Optional callback for streamed install progress frames.
- * @returns The terminal provisioning result.
+ * dork-home-scoped location, through the shared npm provisioner: concurrent
+ * calls share one install, progress streams to `onProgress`, and a failed
+ * install (or an exit-0 that left no usable binary) is removed and answers with
+ * an honest error. Never rejects.
  */
-export async function provisionClaudeCode(
-  onProgress?: (progress: RuntimeProvisionProgress) => void
-): Promise<RuntimeProvisionResult> {
-  if (inFlightProvision) {
-    onProgress?.({ stage: 'starting', message: 'Claude Code install already in progress…' });
-    return inFlightProvision;
-  }
-  const run = runProvisionClaudeCode(onProgress);
-  inFlightProvision = run;
-  try {
-    return await run;
-  } finally {
-    inFlightProvision = null;
-  }
-}
-
-/**
- * Perform one on-demand install into the dork-home-scoped location. The
- * concurrency guard lives in {@link provisionClaudeCode}; this does the work.
- *
- * @param onProgress - Optional callback for streamed install progress frames.
- * @returns The terminal provisioning result.
- */
-async function runProvisionClaudeCode(
-  onProgress?: (progress: RuntimeProvisionProgress) => void
-): Promise<RuntimeProvisionResult> {
-  const dir = resolveClaudeProvisionDir();
-  const spec = `${claudePlatformPackages()[0]}@${CLAUDE_SDK_VERSION}`;
-  onProgress?.({ stage: 'starting', message: `Installing ${spec}…` });
-
-  try {
-    await mkdir(dir, { recursive: true });
-  } catch (err) {
-    await cleanupProvisionDir(dir);
-    const message = err instanceof Error ? err.message : String(err);
-    onProgress?.({ stage: 'error', message });
-    return { ok: false, error: honestInstallError(message) };
-  }
-
-  const { cmd, args } = npmInstallArgs(dir, spec);
-
-  return new Promise<RuntimeProvisionResult>((resolve) => {
-    let stderr = '';
-    let settled = false;
-    const finish = (result: RuntimeProvisionResult): void => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-    };
-
-    const child = spawn(cmd, args, {
-      env: runtimeEnvironment('claude-code', 'provision'),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    child.stdout?.on('data', (chunk: Buffer) => {
-      onProgress?.({ stage: 'installing', message: chunk.toString() });
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      stderr += text;
-      onProgress?.({ stage: 'installing', message: text });
-    });
-
-    child.once('error', (err: Error) => {
-      void cleanupProvisionDir(dir).then(() => {
-        onProgress?.({ stage: 'error', message: err.message });
-        finish({ ok: false, error: honestInstallError(err.message) });
-      });
-    });
-
-    child.once('exit', (code: number | null) => {
-      if (code === 0) {
-        const binaryPath = resolveProvisionedClaudePath();
-        if (binaryPath) {
-          onProgress?.({ stage: 'done', message: 'Claude Code installed.' });
-          return finish({ ok: true, binaryPath });
-        }
-        // Installer succeeded but left no runnable binary — treat as failure.
-      }
-      void cleanupProvisionDir(dir).then(() => {
-        const detail = stderr.trim() || `Installer exited with code ${code}`;
-        onProgress?.({ stage: 'error', message: detail });
-        finish({ ok: false, error: honestInstallError(detail) });
-      });
-    });
-  });
-}
+export const provisionClaudeCode = createNpmProvisioner({
+  runtime: 'claude-code',
+  label: 'Claude Code',
+  logTag: '[ClaudeCode]',
+  dir: resolveClaudeProvisionDir,
+  spec: () => `${claudePlatformPackages()[0]}@${CLAUDE_SDK_VERSION}`,
+  installedBinary: resolveProvisionedClaudePath,
+});

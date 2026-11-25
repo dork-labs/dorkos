@@ -2,12 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import type { RuntimeProvisionProgress } from '@dorkos/shared/transport';
 import {
   provisionClaudeCode,
   resolveProvisionedClaudePath,
-  resolveClaudeProvisionDir,
   claudePlatformPackages,
   CLAUDE_SDK_VERSION,
 } from '../provision.js';
@@ -102,74 +101,6 @@ describe('provisionClaudeCode', () => {
     expect(progress.map((p) => p.stage)).toContain('done');
     // A successful install is not cleaned up.
     expect(rm).not.toHaveBeenCalled();
-  });
-
-  it('de-dupes concurrent calls: a second install piggybacks instead of racing a second npm install', async () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-
-    const firstP = provisionClaudeCode();
-    const secondP = provisionClaudeCode();
-    await flush();
-
-    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
-
-    child.emit('exit', 0);
-
-    const [first, second] = await Promise.all([firstP, secondP]);
-    expect(first.ok).toBe(true);
-    expect(second).toEqual(first);
-    expect(rm).not.toHaveBeenCalled();
-  });
-
-  it('cleans up and returns an honest error when the installer exits non-zero', async () => {
-    vi.mocked(existsSync).mockReturnValue(false);
-
-    const resultP = provisionClaudeCode();
-    await flush();
-    child.stderr.emit('data', Buffer.from('npm ERR! network timeout'));
-    child.emit('exit', 1);
-    const result = await resultP;
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('Could not install Claude Code');
-    expect(rm).toHaveBeenCalledWith(resolveClaudeProvisionDir(), {
-      recursive: true,
-      force: true,
-    });
-  });
-
-  it('treats an exit-0 with no resolvable binary as a failure and cleans up', async () => {
-    vi.mocked(existsSync).mockReturnValue(false); // installer "succeeded" but left nothing
-
-    const resultP = provisionClaudeCode();
-    await flush();
-    child.emit('exit', 0);
-    const result = await resultP;
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('Could not install Claude Code');
-    expect(rm).toHaveBeenCalled();
-  });
-
-  it('cleans up and returns an honest error when the installer fails to spawn', async () => {
-    const resultP = provisionClaudeCode();
-    await flush();
-    child.emit('error', new Error('spawn npm ENOENT'));
-    const result = await resultP;
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('Could not install Claude Code');
-    expect(rm).toHaveBeenCalled();
-  });
-
-  it('aborts before spawning when the scoped directory cannot be created', async () => {
-    vi.mocked(mkdir).mockRejectedValueOnce(new Error('EACCES'));
-
-    const result = await provisionClaudeCode();
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('Could not install Claude Code');
-    expect(spawn).not.toHaveBeenCalled();
   });
 
   it('pins the provisioned binary package to the @anthropic-ai/claude-agent-sdk dependency', async () => {

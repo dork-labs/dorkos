@@ -49,8 +49,6 @@
  *
  * @module services/runtimes/claude-code/repo-settings/repo-baseline
  */
-import { realpathSync } from 'node:fs';
-import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { hooksChangedBetween } from './repo-baseline-move.js';
 import { recordBaseline, recordedBaseline, type RecordedBaseline } from './repo-config-consent.js';
@@ -63,6 +61,7 @@ import {
   resolveDefaultBranch,
 } from './repo-git.js';
 import { listTreeThroughLinks } from './repo-tree-links.js';
+import { realOrResolved } from './repo-files.js';
 
 /** Why there is no trusted commit to compare against. */
 export type UntrustedReason =
@@ -97,15 +96,6 @@ export interface RepoBaseline {
 /** Logged once per process: git is not installed. */
 let warnedNoGit = false;
 
-/** A path by its real path, or resolved when it is not there. */
-function real(p: string): string {
-  try {
-    return realpathSync.native(p);
-  } catch {
-    return path.resolve(p);
-  }
-}
-
 /**
  * Resolve what `cwd`'s repo settings are compared against, and move the
  * recorded commit forward when the default branch did and its hooks did not.
@@ -128,7 +118,7 @@ export async function resolveRepoBaseline(cwd: string, dorkHome: string): Promis
   if (!repo) {
     return { status: 'compared', root: cwd, commits: [], untrusted: 'not-a-repo', oidLength: 40 };
   }
-  const commonDir = real(repo.commonDir);
+  const commonDir = realOrResolved(repo.commonDir);
   const base = { status: 'compared' as const, root: repo.root, commonDir };
   const branch = await resolveDefaultBranch(repo.root);
   if (!branch) return { ...base, commits: [], untrusted: 'no-default-branch', oidLength: 40 };
@@ -183,7 +173,7 @@ export async function resolveRepoBaseline(cwd: string, dorkHome: string): Promis
 export async function pinRepoBaseline(folder: string): Promise<boolean> {
   const repo = await locateRepo(folder);
   if (!repo) return false;
-  const commonDir = real(repo.commonDir);
+  const commonDir = realOrResolved(repo.commonDir);
   if (recordedBaseline(commonDir)) return false;
   const branch = await resolveDefaultBranch(repo.root);
   if (!branch) return false;
