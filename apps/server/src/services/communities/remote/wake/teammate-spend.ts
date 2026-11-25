@@ -163,6 +163,44 @@ export class TeammateSpend {
   }
 
   /**
+   * Whether every space with a limit still allows a teammate's turn this month: the answer for a
+   * turn whose teammate chain names no room DorkOS can prove came from (`UNPROVEN_TEAMMATE_ORIGIN`).
+   */
+  allowsEvery(): boolean {
+    return this.limited().every(({ ref, ownerKey }) => this.allows(ref, ownerKey));
+  }
+
+  /**
+   * Count one teammate turn whose chain names no room DorkOS can prove against every space with a
+   * limit, so the turn counts against the space it really came from, whichever that was. Each
+   * space's month then reads as approximate, since the turn may not have been its teammates'. A
+   * space whose count can't be written is logged, and the rest are still counted.
+   *
+   * @param costUsd - What the runtime reported the turn cost, or `undefined` when it reported
+   *   nothing.
+   */
+  async recordEvery(costUsd: number | undefined): Promise<void> {
+    for (const { ref, ownerKey } of this.limited()) {
+      try {
+        await this.record(ref, ownerKey, costUsd, true);
+      } catch (error) {
+        logger.warn('[TeammateSpend] Could not count a teammate turn against a space', {
+          communityRef: ref,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  /** Every connection with a monthly limit set. */
+  private limited(): { ref: CommunityRef; ownerKey: string }[] {
+    return Object.keys(this.data.limits).map((entry) => {
+      const split = entry.indexOf('\0');
+      return { ownerKey: entry.slice(0, split), ref: entry.slice(split + 1) as CommunityRef };
+    });
+  }
+
+  /**
    * The limit and this month's spending, for the owner's screen.
    *
    * @param ref - The connection.
@@ -212,10 +250,18 @@ export class TeammateSpend {
    * @param ownerKey - The connection's local owner.
    * @param costUsd - What the runtime reported the turn cost, or `undefined` when it reported
    *   nothing, which counts at {@link TEAMMATE_TURN_ESTIMATE_USD}.
+   * @param approximate - Whether the turn may not belong to this space, so the month reads as
+   *   approximate whatever the cost.
    */
-  async record(ref: CommunityRef, ownerKey: string, costUsd: number | undefined): Promise<void> {
+  async record(
+    ref: CommunityRef,
+    ownerKey: string,
+    costUsd: number | undefined,
+    approximate = false
+  ): Promise<void> {
     let reached: Parameters<TeammateLimitReached>[0] | null = null;
-    const counted = countedCost(costUsd);
+    const reported = countedCost(costUsd);
+    const counted = { ...reported, estimated: reported.estimated || approximate };
     await this.exclusive(async (data) => {
       const current = this.spentThisMonth(data.months[key(ref, ownerKey)]);
       const next: Month = {

@@ -1,6 +1,9 @@
-import { sealTurnLimits } from '../../../../../../../packages/relay/src/lib/carried-turn-limits.js';
-import { turnPowerOptions } from '../../../../../../../packages/relay/src/adapters/claude-code/turn-shaping-sender.js';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+// The package root, as the route that seals the limits imports it; this suite resolves it to
+// source, the same module `turnPowerOptions` checks the seal with.
+import { sealTurnLimits } from '@dorkos/relay';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
+import { turnPowerOptions } from '../../../../../../../packages/relay/src/adapters/claude-code/turn-shaping-sender.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { UnclaimedChatStore, type UnclaimedChat } from '../../unclaimed-chat-store.js';
 import type { UnclaimedChatBurst } from '../../binding-router.js';
@@ -122,7 +125,7 @@ describe('BindingRouter gates', () => {
       });
     });
 
-    it('never counts a chain nobody sealed, though it still marks the turn', async () => {
+    it('reads a chain nobody sealed as unproven, naming no room of its own', async () => {
       h.bind();
       await h.handler(
         envelope({
@@ -131,7 +134,7 @@ describe('BindingRouter gates', () => {
         })
       );
       expect(turnOf(h.lastPayload())).toEqual({
-        permissionCeiling: ['runtime-default', { ...CHAIN, teammate: [] }],
+        permissionCeiling: ['runtime-default', { ...CHAIN, teammate: [UNPROVEN_TEAMMATE_ORIGIN] }],
       });
     });
   });

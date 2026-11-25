@@ -750,6 +750,19 @@ export const AGENT_CANCEL_SUBJECT_PREFIX = 'relay.control.agent-cancel.';
  */
 export const A2A_GATEWAY_PRINCIPAL = 'relay.system.a2a.gateway';
 
+/**
+ * The sender an A2A caller's message reaches an agent from. It shapes nothing
+ * about the turn; the turn reads its words, and names who is talking as
+ * {@link A2A_CLIENT_NAME}.
+ */
+export const A2A_GATEWAY_SENDER = 'a2a-gateway';
+
+/**
+ * Who a turn the A2A gateway starts is told is talking. The gateway builds
+ * every message it sends, so the name is a constant, never a caller's.
+ */
+export const A2A_CLIENT_NAME = 'a2a-client';
+
 /** Why a turn is being stopped, in the words its runner writes to the log. */
 export const AgentCancelReasonSchema = z.enum(['caller_canceled', 'caller_timeout']);
 

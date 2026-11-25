@@ -3,7 +3,7 @@
  * relay path to the turn (DOR-5201). A real `RelayCore` on a throwaway data
  * folder publishes the message through its whole publish pipeline, and the
  * Claude Code adapter reads it into the turn. A teammate's chain the server
- * sealed reaches the turn whole; one nobody sealed reaches it naming no room.
+ * sealed reaches the turn whole; one nobody sealed reaches it as unproven.
  * (Adapter delivery hands the envelope over in memory; a trip through JSON, as
  * a stored envelope takes, is pinned in `turn-shaping-sender.test.ts`.)
  */
@@ -17,6 +17,7 @@ import type { AgentRuntimeLike } from '../adapters/claude-code/index.js';
 import type { RelayPublisher, AdapterRegistryLike, AdapterContext } from '../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
 import { CARRIED_TURN_LIMITS_FIELD, sealTurnLimits } from '../lib/carried-turn-limits.js';
 
 const SENDER = 'relay.agent.default.porter';
@@ -101,10 +102,10 @@ describe('sealed turn limits over the real relay path', () => {
     ]);
   });
 
-  it('carries a chain nobody sealed onto the turn naming no room', async () => {
+  it('carries a chain nobody sealed onto the turn as unproven, naming no room of its own', async () => {
     expect(await ceilingOf({ permissionCeiling: CHAIN })).toEqual([
       'runtime-default',
-      { ...CHAIN, teammate: [] },
+      { ...CHAIN, teammate: [UNPROVEN_TEAMMATE_ORIGIN] },
     ]);
   });
 });

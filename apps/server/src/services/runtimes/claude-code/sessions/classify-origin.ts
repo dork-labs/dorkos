@@ -1,3 +1,4 @@
+import { A2A_GATEWAY_SENDER } from '@dorkos/shared/relay-schemas';
 import type { SessionOrigin } from '@dorkos/shared/types';
 
 const RELAY_CONTEXT_START = '<relay_context>';
@@ -42,7 +43,7 @@ function composeChannelLabel(platformLabel: string, sender?: string, chat?: stri
 
 /** Classify a `<relay_context>` block's `From:` value into an origin + label, first-match-wins. */
 function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?: string } {
-  if (from === 'a2a-gateway') {
+  if (from === A2A_GATEWAY_SENDER) {
     return { origin: 'external', originLabel: 'A2A client' };
   }
   if (from === 'relay.external.mcp') {

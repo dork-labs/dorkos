@@ -4,7 +4,8 @@
  * there that can't be read holds the turn at the runtime's default and marks it.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { turnPowerOptions } from '../turn-shaping-sender.js';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
+import { HTTP_RELAY_SENDER, turnPowerOptions } from '../turn-shaping-sender.js';
 import { CARRIED_TURN_LIMITS_FIELD, sealTurnLimits } from '../../../lib/carried-turn-limits.js';
 import { extractPayloadContent } from '../../../lib/payload-utils.js';
 
@@ -43,8 +44,8 @@ describe('turnPowerOptions', () => {
   });
 
   describe('a teammate’s chain, which counts the turn against a space’s monthly limit', () => {
-    /** The chain with no room named: the turn is still marked, and counted against no space. */
-    const marked = { ...TEAMMATE, teammate: [] };
+    /** The chain as unproven: still a teammate's, held to and counted against every space. */
+    const marked = { ...TEAMMATE, teammate: [UNPROVEN_TEAMMATE_ORIGIN] };
 
     it.each([
       ['written by the caller', { permissionCeiling: TEAMMATE }, SENDER],
@@ -63,7 +64,7 @@ describe('turnPowerOptions', () => {
       ],
       ['read with no sender', sealTurnLimits(SENDER, { permissionCeiling: TEAMMATE }), undefined],
     ])(
-      'names no room when %s, and still marks the turn and holds its bound',
+      'names no room of its own when %s, and still reads as a teammate’s and holds its bound',
       (_name, carried, from) => {
         const payload = { [CARRIED_TURN_LIMITS_FIELD]: carried };
         expect(turnPowerOptions(false, false, payload, from)).toEqual({
@@ -72,7 +73,7 @@ describe('turnPowerOptions', () => {
       }
     );
 
-    it('names no room for a stamp sealed before a restart, and still marks the turn', async () => {
+    it('names no room of its own for a stamp sealed before a restart, and still reads as a teammate’s', async () => {
       // A fresh copy of the module has a fresh key, as the server has after it restarts.
       vi.resetModules();
       const before = await import('../../../lib/carried-turn-limits.js');
@@ -97,6 +98,44 @@ describe('turnPowerOptions', () => {
       expect(turnPowerOptions(false, false, payload, SENDER)).toEqual({
         permissionCeiling: ['runtime-default', TEAMMATE],
       });
+    });
+  });
+
+  describe('a message from the outside HTTP address', () => {
+    it.each([
+      ['carrying no limits', null],
+      ['carrying limits that name no mark', { [CARRIED_TURN_LIMITS_FIELD]: {} }],
+      [
+        'carrying a sealed stamp that names no mark',
+        {
+          [CARRIED_TURN_LIMITS_FIELD]: sealTurnLimits(HTTP_RELAY_SENDER, {
+            permissionCeiling: 'runtime-default',
+          }),
+        },
+      ],
+    ])('is held and marked as an outsider’s when %s', (_name, payload) => {
+      expect(turnPowerOptions(false, false, payload, HTTP_RELAY_SENDER)).toMatchObject({
+        carriedMarks: { outsider: true },
+      });
+      expect(
+        [turnPowerOptions(false, false, payload, HTTP_RELAY_SENDER).permissionCeiling].flat()
+      ).toContain('runtime-default');
+    });
+  });
+
+  it.each(['relay.external.mcp', 'relay.external.other'])(
+    'holds and marks a message from %s, as from every outside sender',
+    (from) => {
+      expect(turnPowerOptions(false, false, { content: 'hi' }, from)).toEqual({
+        permissionCeiling: 'runtime-default',
+        carriedMarks: { outsider: true },
+      });
+    }
+  );
+
+  it('leaves a sender outside the family unmarked', () => {
+    expect(turnPowerOptions(false, false, { content: 'hi' }, 'relay.externally.agent')).toEqual({
+      permissionCeiling: 'runtime-default',
     });
   });
 
