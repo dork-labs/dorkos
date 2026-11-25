@@ -65,6 +65,7 @@ export const notifications = sqliteTable(
         'extension.approval',
         'extension.decision',
         'extension.stopped',
+        'extension.work_not_started',
         'community.owner-replacement',
         'community.teammate-limit',
         'community.teammate-limits-reset',
