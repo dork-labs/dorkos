@@ -30,7 +30,6 @@ import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { onDispatchLifecycle } from '../session/message-dispatcher.js';
 import { auditTrail } from '../audit/audit-trail.js';
 import type { HeartbeatRouterDeps } from '../../routes/heartbeats.js';
-import type { HeartbeatTriageRouterDeps } from '../../routes/heartbeat-triage.js';
 import { liveWakersOffReader } from './wakers-off/live-wakers-off.js';
 import { setWakersOffReader } from './wakers-off/wakers-off-capability.js';
 import type { SessionOriginResolvers } from '../session/origin/session-origin-overlays.js';
@@ -72,13 +71,11 @@ import {
 /** What the composition root hands over. */
 export interface HeartbeatsWiringDeps extends DeliveryDeps {
   /**
-   * Where the routes' reads go: the status route's
-   * (`GET /api/agents/:id/heartbeat`) and the credits answer's
-   * (`PUT /api/heartbeats/triage-credits`), both mounted by `http/hono-api.ts`.
+   * Where the status route's reads go (`GET /api/agents/:id/heartbeat`,
+   * mounted by `http/hono-api.ts`).
    */
   routes: {
     heartbeat?: HeartbeatRouterDeps;
-    heartbeatTriage?: HeartbeatTriageRouterDeps;
   };
   /** The session list's origin overlays, which gain the chat list's Heartbeat label. */
   origins: SessionOriginResolvers;
@@ -207,7 +204,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   const presenceOf = () => ({ hours: hours(), away: configManager.get('profile').away ?? null });
   const nameOf = (id: string) =>
     agents.get(id)?.name ?? configManager.get('profile').displayName ?? 'your manager';
-  const triage = mountTriage({ routes: deps.routes, db, raises, timezone: () => hours().timezone });
+  const triage = mountTriage({ db, raises, timezone: () => hours().timezone });
   const outbox = new BeatOutbox({
     store,
     raises,

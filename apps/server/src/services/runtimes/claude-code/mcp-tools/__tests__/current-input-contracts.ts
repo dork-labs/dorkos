@@ -56,7 +56,9 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         // +5 total for the to-do and promise doors and what cannot wake (no MCP surface, DOR-4978).
         // +4 total for a person's to-do writes and promise changes (person-only, no MCP surface,
         // DOR-4978).
-        total: 160,
+        // +1 total for the owner's answer to the credits offer (person-only, no MCP surface,
+        // DOR-4978).
+        total: 161,
         relevant: 132,
         ordinary: 120,
         inSession: 119,

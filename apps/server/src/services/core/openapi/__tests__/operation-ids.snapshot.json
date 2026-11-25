@@ -478,7 +478,7 @@
   "PUT /api/extensions/{id}/project-settings": "extensions.updateProjectSettings",
   "PUT /api/extensions/{id}/secrets/{key}": "extensions.updateSecrets",
   "PUT /api/files/content": "files.updateContent",
-  "PUT /api/heartbeats/triage-credits": "heartbeats.updateTriageCredits",
+  "PUT /api/heartbeats/triage-credits": "heartbeat.choose_triage_credits",
   "PUT /api/mesh/topology/access": "mesh.updateTopologyAccess",
   "PUT /api/permissions/preset": "permissions.updatePreset",
   "PUT /api/read-cursors/{kind}/{id}": "readCursors.update",
