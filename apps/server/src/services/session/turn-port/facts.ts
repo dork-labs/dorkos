@@ -182,6 +182,13 @@ export interface DispatcherRunFeed {
    */
   queueRowMoved(queueMessageId: string, toChatKey: string): void;
   /**
+   * A chat's queue was reordered, so a waiting run's place in line changed
+   * (`queuePosition`, §4.6). No run is written; every window is told.
+   *
+   * @param chatKey - The chat, by the id its queue rows are kept under.
+   */
+  queueReordered(chatKey: string): void;
+  /**
    * The chat's `turn_end` was ingested: record its ending on the chat's
    * `started` or `running` run at once, before its status moves at settle.
    *

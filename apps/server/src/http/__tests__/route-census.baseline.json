@@ -359,6 +359,7 @@
     "GET /api/sessions/:id/limit-history",
     "GET /api/sessions/:id/messages",
     "GET /api/sessions/:id/queue",
+    "GET /api/sessions/:id/runs",
     "GET /api/sessions/:id/runtime-type",
     "GET /api/sessions/:id/settings",
     "GET /api/sessions/:id/tasks",

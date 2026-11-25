@@ -35,6 +35,7 @@
  */
 import type { ZodError, ZodType } from 'zod';
 import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
+import { ChatRunSchema, RunNoticeSchema } from '@dorkos/shared/run-schemas';
 import {
   HistoryMessageSchema,
   MessagePartSchema,
@@ -169,6 +170,20 @@ function keepValidItems<T>(
   return kept;
 }
 
+/**
+ * A chat's runs as a window one version behind the server can read them
+ * (spec `turns-survive-restarts` §4.6): a line it does not know yet reads as
+ * no line, and a run whose status it does not know is left out, never the
+ * whole list.
+ */
+function salvageRuns(raw: unknown, field: string, unreadable: UnreadableEntry[]): unknown {
+  if (!Array.isArray(raw)) return raw;
+  const lenient = raw.map((run) =>
+    isRecord(run) && !RunNoticeSchema.safeParse(run.notice).success ? { ...run, notice: null } : run
+  );
+  return keepValidItems(ChatRunSchema, lenient, field, unreadable);
+}
+
 function salvageTurnEvents(raw: unknown, unreadable: UnreadableEntry[]): unknown {
   if (!Array.isArray(raw)) return raw;
   const kept: SessionEvent[] = [];
@@ -258,6 +273,7 @@ export function parseSessionSnapshot(data: unknown): SnapshotParseResult {
       unreadable
     ),
     canvas: keepValidItems(shape.canvas.element, data.canvas, 'canvas', unreadable),
+    runs: salvageRuns(data.runs, 'runs', unreadable),
   };
   const retry = SessionSnapshotSchema.safeParse(candidate);
   return retry.success
@@ -275,6 +291,14 @@ export function parseSessionSnapshot(data: unknown): SnapshotParseResult {
 export function parseSessionEvent(data: unknown): SessionEventParseResult {
   const parsed = SessionEventSchema.safeParse(data);
   if (parsed.success) return { ok: true, event: parsed.data, unreadable: null };
+  if (isRecord(data) && data.type === 'run_update') {
+    const dropped: UnreadableEntry[] = [];
+    const runs = SessionEventSchema.safeParse({
+      ...data,
+      runs: salvageRuns(data.runs, 'runs', dropped),
+    });
+    if (runs.success) return { ok: true, event: runs.data, unreadable: dropped[0] ?? null };
+  }
   if (isRecord(data) && typeof data.type === 'string' && BLOCKING_PROMPT_TYPES.has(data.type)) {
     const standIn = SessionEventSchema.safeParse({
       type: 'error',

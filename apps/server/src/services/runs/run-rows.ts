@@ -77,6 +77,7 @@ export function toRun(row: TurnRunRow): TurnRun {
     waitReason: row.waitReason,
     attempt: row.attempt,
     attemptReason: row.attemptReason,
+    continuesRunId: row.continuesRunId,
     queueMessageId: row.queueMessageId,
     sourceRef: row.sourceRef,
     notAfter: row.notAfter,

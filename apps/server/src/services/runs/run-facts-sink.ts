@@ -420,6 +420,8 @@ function dispatcherFeed(
       }),
 
     rekeyChat: (fromChatKey, toChatKey) => store.rekeyChat(fromChatKey, toChatKey),
+
+    queueReordered: (chatKey) => store.noteChatChanged(chatKey),
   };
 }
 

@@ -149,7 +149,10 @@ export const sessionMessageQueue = sqliteTable(
     // edited and reordered by every window. `in_turn`: a turn started with them and the runtime has
     // not read them yet, so the row is kept (a restart between the two must not lose them) but is
     // hidden from the queue's list, clear, move and edits; it is deleted once the runtime reads it.
-    state: text('state', { enum: ['waiting', 'in_turn'] })
+    // `restored`: DorkOS restarted before the runtime read them, so they came back as a draft (§7.3):
+    // listed and flagged, never started by the pump or adopted, used up when sent or discarded. No
+    // CHECK holds the column, so a new word here needs no migration.
+    state: text('state', { enum: ['waiting', 'in_turn', 'restored'] })
       .notNull()
       .default('waiting'),
   },

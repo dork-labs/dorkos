@@ -18,3 +18,15 @@ export function isPausedComposerRow(
     row.fromChats === undefined
   );
 }
+
+/**
+ * A restored draft every window may show in its composer (spec
+ * `turns-survive-restarts` §7.3): words a turn started with that came back
+ * after a restart. Unlike a paused row, any window shows it, not only the one
+ * that typed it; another chat's words never fill a person's composer.
+ *
+ * @param row - The public queue row
+ */
+export function isRestoredDraftRow(row: QueuedMessage): boolean {
+  return row.restored === true && row.canRestoreToComposer === true && row.fromChats === undefined;
+}
