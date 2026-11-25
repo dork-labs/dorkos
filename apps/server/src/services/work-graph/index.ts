@@ -18,13 +18,17 @@
  * - **A fork**: the fork's id is recorded `forked_from` its source chat
  *   ({@link recordChatFork}, called by `POST /api/sessions/:id/fork`).
  * - **A start** (DOR-5263): a chat that another chat started (the
- *   `session_start` tool, a spin-off, a carry-over) is recorded as the starting
- *   chat `started` the new one, in the same step as its `session_started_by`
- *   row, through `onSessionStartRecorded`
+ *   `session_start` tool, a spin-off) is recorded as the starting chat
+ *   `started` the new one, in the same step as its `session_started_by` row,
+ *   through `onSessionStartRecorded`
  *   (`session/origin/session-started-by-store.ts`). A start no chat made (an
  *   extension's own, or the work queue's) records nothing: it has no starting
- *   chat to name. A second record of the same start is not announced, so it
- *   records nothing new.
+ *   chat to name. A carry-over to another account records nothing either: it
+ *   is a move, not a new start, and the lineage query follows carries from
+ *   `session_started_by` itself. A second record of the same start is not
+ *   announced, so it records nothing new. The link stays even when the start
+ *   is cancelled before its chat launches, so read starts through the lineage
+ *   query (W3, DOR-4969), not this table alone.
  *
  * One read site: the re-key edges are registered as the durable record
  * `followChatRekey` asks once the in-memory redirect is gone
@@ -84,8 +88,8 @@ export function installWorkLinkStore(db: Db): WorkLinkStore {
   stopRekeyReads ??= registerDurableRekeyResolver(
     (chatId) => store?.resolveRekey(chatId) ?? chatId
   );
-  stopStartWrites ??= onSessionStartRecorded(({ sessionId, startedBySessionId }) => {
-    if (startedBySessionId !== null) recordChatStart(startedBySessionId, sessionId);
+  stopStartWrites ??= onSessionStartRecorded(({ sessionId, startedBySessionId, carried }) => {
+    if (startedBySessionId !== null && !carried) recordChatStart(startedBySessionId, sessionId);
   });
   return store;
 }

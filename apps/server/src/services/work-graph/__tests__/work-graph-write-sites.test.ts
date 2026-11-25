@@ -254,6 +254,22 @@ describe('the start write site', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('records nothing for a carry to another account: a move is not a start', () => {
+    const { service, starts } = startWork();
+    service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'parent-chat' });
+    const carried = service.reserveFromChat({
+      sessionId: 'successor-chat',
+      parentSessionId: 'child-chat',
+      carry: true,
+    });
+    expect(carried.ok && carried.reservation).toBeTruthy();
+    expect(starts.get('successor-chat')).toMatchObject({
+      carried: true,
+      startedBySessionId: 'child-chat',
+    });
+    expect(startedEdges()).toEqual(['dork:chat:parent-chat -> dork:chat:child-chat']);
+  });
+
   it('records nothing new when the same start is recorded again', () => {
     const { service, starts } = startWork();
     service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'parent-chat' });

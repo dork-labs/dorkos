@@ -110,6 +110,8 @@ export interface RecordedStart {
   sessionId: string;
   /** The chat that started it, or null when no chat did. */
   startedBySessionId: string | null;
+  /** A move of a started chat to another account, not a new start. */
+  carried: boolean;
 }
 
 const startListeners = new Set<(start: RecordedStart) => void>();
@@ -166,6 +168,7 @@ export class SessionStartedByStore {
       announceStart({
         sessionId: record.sessionId,
         startedBySessionId: record.startedBySessionId,
+        carried: record.carried ?? false,
       });
     return written;
   }
