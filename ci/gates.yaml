@@ -341,6 +341,20 @@ gates:
     source: .github/workflows/daily-release.yml
     purpose: Never gates a merge. Uploads the day's timed-slot artifact once a slot run's plan and chosen step finished, so no later cron or backstop run repeats the day's slot.
 
+  # --- release-watch.yml ---
+  - id: wf.release-watch.due
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Lets a watch go on once Release Publish succeeds, and on the after-push tick or the hourly cron only while the newest npm release is under 24 hours old and was last watched 55 minutes ago or more, and marks it watched (release-watch.sh due, DOR-5123).
+  - id: wf.release-watch.npx
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Checks that `npx -y dorkos@X.Y.Z --version` prints X.Y.Z from a clean npm cache on Linux, macOS and Windows, for the newest release's first 24 hours.
+  - id: wf.release-watch.surfaces
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Checks the newest release's three npm packages, its GHCR image's health, the Homebrew formula and both dorkos.ai download links, and lists new issues naming it, for its first 24 hours.
+  - id: wf.release-watch.report
+    source: .github/workflows/release-watch.yml
+    purpose: Never gates a merge. Opens or updates one release-watch issue per version and failing check group, and closes it when the group passes again (DOR-5123).
+
   # --- pr-gates.yml ---
   - id: wf.pr-gates.pr-gates
     source: .github/workflows/pr-gates.yml

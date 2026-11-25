@@ -292,6 +292,16 @@ tracked:
       scan starting within 15 minutes after its retry rung passed. Read from
       the Actions runs API by hand (ledger 261124-161126); not computed by the
       daily collector.
+  - id: tracked.release-break-to-alert
+    unit: minutes
+    definition: >-
+      Per published release with a broken install surface (npx on any of
+      Linux, macOS or Windows, an npm package, the GHCR image, the Homebrew
+      formula, a dorkos.ai download link), minutes from its npm publish to the
+      first issue or room post naming the break; the window's max. A break
+      found by a person counts at the time they reported it. Read by hand from
+      the release-watch issues and the release's own issues (ledger
+      261125-053159); not computed by the daily collector.
 
 slo_metrics:
   - headroom
