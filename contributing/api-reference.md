@@ -147,7 +147,7 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 
 **Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. It reads nothing else from a body that is not a problem document, except the deliberate exceptions below that the app still receives (the login gate and the two `428`s). A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
 
-**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body. The old shape is gone from every route and every reader (DOR-4979), with no compatibility window. The lint rule `problem-only/no-error-body` (`apps/server/eslint-rules/problem-only.js`) refuses a `.json({ error … })` call in `routes/`, `http/` and `middleware/`; a body that keeps another shape on purpose carries a scoped `eslint-disable-next-line` with its reason.
+**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body. The old shape is gone from every route and every reader (DOR-4979), with no compatibility window. The lint rule `problem-only/no-error-body` (`apps/server/eslint-rules/problem-only.js`) refuses, in `routes/`, `http/` and `middleware/`, a `.json(…)` call whose argument is an object literal with an `error` member, or a module-level `const` holding one; a body that keeps another shape on purpose carries a scoped `eslint-disable-next-line` with its reason. It does not see a conditional argument (`c.json(ok ? a : { error })`), a body built elsewhere and imported, `c.body(JSON.stringify(…))` or `new Response(…)`: review those by hand.
 
 **The deliberate exceptions.** These answer another shape on purpose, and stay that way:
 
@@ -156,7 +156,7 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 - MCP's JSON-RPC errors and the OAuth bodies (`/mcp`, the connector MCP listener, the stand-in OAuth server for tests).
 - Better Auth's own `{ code, message }` on `/api/auth/*`, which DorkOS does not write (DorkOS's own refusals in front of it, such as the sign-in rate limit and the front-door bar, are problems).
 - `200` answers that carry `{ ok: false }` by design: a result, not an error.
-- The space server and everything under `services/spaces`, `apps/space` and `community-wire*` (frozen: ADR `261018-124422`), and `spaces-enabled` in front of it. The app's space pages read that wire in `apps/client/src/space`.
+- The space server and everything under `services/spaces`, `apps/space` and `community-wire*` (frozen: ADR `261018-124422`). The app's space pages read that wire in `apps/client/src/space`. The app's own space routes are not part of it: while the spaces experiment is off, the gate in front of them (`middleware/spaces-enabled.ts`) answers `404 spaces_disabled`.
 - Refusals written to a raw socket (managed and own-tunnel ingress), the credits relay's model-API error format, and the `linear-issues` core extension's own routes.
 - The video proxy (`/api/extensions/media/{ticket}`) answers `415`, `416` and `502` with no body: a `<video>` element reads nothing from it.
 - An SSE stream's in-band `event: error` (discovery), which is a stream event, not a response.
@@ -315,7 +315,7 @@ A new endpoint is a capability ([Adding a New Endpoint](#adding-a-new-endpoint))
 
 Then regenerate the docs (above), so `docs/api/openapi.json` and the census both list it. `hand-registered-path` notes the new call, but only as advice.
 
-A new route is a capability with an `http` surface, served by the generic mount and documented by the OpenAPI projection. The path, parameter and paging rules above still apply to it. `hand-registered-path` still only advises until the pending list is empty. One gap stays open: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
+A new route is a capability with an `http` surface, served by the generic mount and documented by the OpenAPI projection. The path, parameter and paging rules above still apply to it. `hand-registered-path` still only advises until the pending list is empty.
 
 **Never raise a number in the baseline by hand.** `--update` only lowers or removes entries, and CI runs the check with `--base`, which refuses any entry that is higher than the base's or new.
 

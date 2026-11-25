@@ -574,8 +574,9 @@ async function launchSessionMessage(
     return {
       refused: 'DESK_NOT_OWN',
       message:
-        `This chat would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
-        `which is never where an agent works. Start it in the agent's own folder instead.`,
+        // No path: this sentence reaches a problem's `detail`, which never carries one.
+        "This chat's folder is inside a room's files, which is never where an agent works. " +
+        "Start it in the agent's own folder instead.",
     };
   }
 

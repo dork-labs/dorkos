@@ -193,7 +193,11 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
           description: 'The action completed',
           content: { 'application/json': { schema: z.unknown() } },
         },
-        403: problemResponse('This caller cannot change access here'),
+        403: problemResponse(
+          path.startsWith('/api/auth/')
+            ? 'This caller cannot change access here. DorkOS’s own refusal is a problem document; Better Auth may still answer its own `{ message, code }` after it'
+            : 'This caller cannot change access here'
+        ),
       },
     });
   }

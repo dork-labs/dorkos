@@ -297,6 +297,7 @@ import {
 } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
 import { INTERNAL_ERROR_RESPONSE, problemResponse } from './openapi/problem-openapi.js';
+import { documentSpacesGate } from './openapi/spaces-gate-openapi.js';
 import { PROBLEM_CONTENT_TYPE, ProblemSchema } from '@dorkos/shared/problem';
 import {
   CanvasChannelEventSchema,
@@ -7652,6 +7653,7 @@ registerExtensionMediaOpenApi(registry);
 registerConfigBackupsOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
+documentSpacesGate(registry);
 registerSecuritySchemes(registry);
 
 // --- Generator ---

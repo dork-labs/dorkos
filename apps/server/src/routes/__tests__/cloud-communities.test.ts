@@ -1217,9 +1217,9 @@ describe('GET /api/cloud/communities/sign-in with spaces off', () => {
   it('refuses while there is no official space, and refuses hosting either way', async () => {
     gated.officialOrigin = null;
     const none = await request(gatedServer).get('/api/cloud/communities/sign-in').expect(404);
-    expect(none.body.code).toBe('SPACES_DISABLED');
+    expect(none.body.code).toBe('spaces_disabled');
     gated.officialOrigin = 'https://community.example.invalid';
     const hosted = await request(gatedServer).get('/api/cloud/communities').expect(404);
-    expect(hosted.body.code).toBe('SPACES_DISABLED');
+    expect(hosted.body.code).toBe('spaces_disabled');
   });
 });

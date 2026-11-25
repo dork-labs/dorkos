@@ -172,14 +172,17 @@ export function createMcpEndpoint(serverFactory: McpServerFactory): Hono<ApiEnv>
       return await transport.handleRequest(c.req.raw, { parsedBody: readJsonBody(c) });
     } catch (err) {
       logger.error('[MCP] Request handling error', err);
+      // eslint-disable-next-line problem-only/no-error-body -- MCP answers in JSON-RPC, not problem documents.
       return c.json(INTERNAL_ERROR, 500);
     }
   });
 
   // GET: Server-initiated SSE stream — not needed in stateless mode
+  // eslint-disable-next-line problem-only/no-error-body -- MCP answers in JSON-RPC, not problem documents.
   router.get('/', (c) => c.json(STATELESS_REFUSAL, 405));
 
   // DELETE: Session termination — not applicable in stateless mode
+  // eslint-disable-next-line problem-only/no-error-body -- MCP answers in JSON-RPC, not problem documents.
   router.delete('/', (c) => c.json(STATELESS_REFUSAL, 405));
 
   return router;

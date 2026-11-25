@@ -36,6 +36,22 @@ describe('the problem-only lint', () => {
       expect(await errorBodies(path, OLD_SHAPES)).toBe(3);
   });
 
+  it('refuses a module-level const body with an `error` member, as the spaces gate had', async () => {
+    // Purpose: fails if `c.json(SPACES_DISABLED_BODY, 404)` could slip past again.
+    const named = [
+      'declare const c: { json(body: unknown, status?: number): Response };',
+      "const DISABLED_BODY = { error: 'Off.', code: 'OFF' } as const;",
+      "const FINE = { ok: true, code: 'x' };",
+      'export const a = () => c.json(DISABLED_BODY, 404);',
+      'export const b = () => c.json(FINE);',
+      'export function d() {',
+      "  const local = { error: 'not module level' };",
+      '  return c.json(local);',
+      '}',
+    ].join('\n');
+    expect(await errorBodies('src/middleware/example.ts', named)).toBe(1);
+  });
+
   it('leaves problems, successes and other folders alone', async () => {
     const fine = [
       'declare const c: { json(body: unknown, status?: number): Response };',

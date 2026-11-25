@@ -16,13 +16,14 @@ import type { IncomingMessage } from 'node:http';
 import type { HttpBindings } from '@hono/node-server';
 import type { MiddlewareHandler } from 'hono';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
+import { problem } from '@dorkos/http-kit';
 import { spacesEnabled } from '../services/communities/spaces-config.js';
 import { getOfficialSpace } from '../services/communities/remote/state.js';
 
 export { spacesEnabled };
 
-/** The `code` a space route answers with while the spaces experiment is off. */
-export const SPACES_DISABLED_CODE = 'SPACES_DISABLED';
+/** The problem code a space route answers with while the spaces experiment is off. */
+export const SPACES_DISABLED_CODE = 'spaces_disabled';
 
 /**
  * `spaceReachable(ref)` (spec `official-community-space` D5): whether one space may be reached
@@ -36,11 +37,9 @@ export function spaceReachable(ref: CommunityRef): boolean {
   return getOfficialSpace().reachable(ref);
 }
 
-/** The 404 body every space route answers with while spaces are off. */
-const SPACES_DISABLED_BODY = {
-  error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
-  code: SPACES_DISABLED_CODE,
-} as const;
+/** The sentence of the 404 problem every space route answers with while spaces are off. */
+const SPACES_DISABLED_DETAIL =
+  'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.';
 
 /**
  * What a space gate asks about the official space (spec `official-community-space` D5). The
@@ -57,7 +56,7 @@ export interface SpaceAccess {
 
 /** What a space gate decided about one request. */
 type GateDecision =
-  /** Refuse it with {@link SPACES_DISABLED_BODY}. */
+  /** Refuse it: 404 {@link SPACES_DISABLED_CODE}. */
   | { pass: false }
   /** Let it through; `officialOrigin` is set when only the official space may be answered. */
   | { pass: true; officialOrigin?: string };
@@ -129,7 +128,7 @@ function spaceGate<E extends SpaceGateEnv>(
     const mount = c.req.routePath.replace(/\/\*$/, '');
     const below = c.req.path.slice(mount.length);
     const decision = decideSpaceGate(rule, c.req.method, below, c.get('body'), access());
-    if (!decision.pass) return c.json(SPACES_DISABLED_BODY, 404);
+    if (!decision.pass) return problem(c, SPACES_DISABLED_CODE, { detail: SPACES_DISABLED_DETAIL });
     if (decision.officialOrigin !== undefined) {
       officialOrigins.set(c.env.incoming, decision.officialOrigin);
     }
