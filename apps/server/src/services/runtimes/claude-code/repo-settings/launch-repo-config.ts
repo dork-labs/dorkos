@@ -35,11 +35,14 @@
  *
  * Skipped for a turn that stands in its agent's registered home itself (not a
  * folder below it, which can hold settings of its own), which the agent-home
- * pin covers (`launch-folder-config.ts`). All proven on the real CLI
+ * pin covers (`launch-folder-config.ts`) and the folder allow list
+ * (`tool-gate/folder-file-allows.ts`). All proven on the real CLI
  * (`repo-config-switches.binary.test.ts`).
+
  *
  * @module services/runtimes/claude-code/repo-settings/launch-repo-config
  */
+import { realpathSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
@@ -93,6 +96,12 @@ export interface RepoConfigLaunch {
   askRules: string[];
   /** The repo's top, for the instructions a paused launch still passes; `null` outside one. */
   repoRoot: string | null;
+  /**
+   * The working folder's committed settings when this check compared them and the launch loads
+   * them: the folder by real path, and the allow rules and folder entries from the read compared.
+   * Absent at Full, in the agent's home and whenever anything paused them.
+   */
+  compared?: { folder: string; rules: string[]; dirs: string[] };
 }
 
 /** Nothing paused. */
@@ -112,6 +121,15 @@ const ALL_PAUSED: RepoConfigLaunch = {
   askRules: [],
   repoRoot: null,
 };
+
+/** A folder by its real path, or as given when it can't be resolved. */
+function realFolder(folder: string): string {
+  try {
+    return realpathSync.native(folder);
+  } catch {
+    return path.resolve(folder);
+  }
+}
 
 /** Whether `cwd` is the home folder itself, by real path. */
 async function isHomeItself(cwd: string, home: string): Promise<boolean> {
@@ -251,6 +269,10 @@ async function checkRepoConfig(
       });
     } else {
       if (!quiet) noteRunning('hooks', cwd, wt);
+    }
+    if (!decision.pauseHooks) {
+      // By real path, as the read compared; synchronous so the launch waits on no extra I/O.
+      decision.compared = { folder: realFolder(cwd), ...reading.working };
     }
     const mcp = reading.mcpJson;
     if (mcp && !(mcp.approvable && isRepoConfigApproved('mcpJson', mcp.digest))) {

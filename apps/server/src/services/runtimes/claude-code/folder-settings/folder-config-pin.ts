@@ -68,7 +68,8 @@ export interface FolderConfigParts {
 /**
  * The keys of a folder's Claude Code settings that run code or decide which
  * MCP servers start. Nothing else in the file is pinned: a changed allow list
- * has its own approval (`agent-folder-allows.ts`), and the rest is preference.
+ * has its own approval (`agent-folder-allows.ts`, `tool-gate/folder-file-allows.ts`),
+ * and the rest is preference.
  */
 export const CODE_SETTINGS_KEYS = [
   'hooks',

@@ -59,6 +59,19 @@ export interface LocalSettingsReading {
   detail: string;
   /** False when a file can't be read: never approved, never asked about. */
   approvable: boolean;
+  /** The allow rules and folder entries, trimmed, from this same read; none when it didn't parse. */
+  widening: { rules: string[]; dirs: string[] };
+}
+
+/** No allow rules and no folder entries. */
+const NO_WIDENING = { rules: [], dirs: [] };
+
+/** The strings in an array, trimmed, blanks dropped. */
+function trimmedStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : []
+  );
 }
 
 /**
@@ -72,7 +85,13 @@ export function readLocalSettings(cwd: string, dorkHome: string): LocalSettingsR
   const read = readSettingsFile(path.join(cwd, '.claude', 'settings.local.json'));
   if (read.kind === 'absent') return null;
   if (read.kind === 'unverifiable') {
-    return { digest: 'unverifiable', keys: ['settings.local.json'], detail: '', approvable: false };
+    return {
+      digest: 'unverifiable',
+      keys: ['settings.local.json'],
+      detail: '',
+      approvable: false,
+      widening: NO_WIDENING,
+    };
   }
   if (read.kind === 'malformed') {
     // Claude Code skips a file it can't parse; it is still content a person
@@ -82,9 +101,44 @@ export function readLocalSettings(cwd: string, dorkHome: string): LocalSettingsR
       keys: ['settings.local.json'],
       detail: read.text,
       approvable: true,
+      widening: NO_WIDENING,
     };
   }
-  const picked = pickPowerSettings(read.value);
+  return readingOf(cwd, dorkHome, read.value);
+}
+
+/**
+ * What the local file would read as once Claude Code adds `rules` to its `permissions.allow`, as it
+ * does when a person answers Always allow there: each one not already listed, appended in order
+ * (DOR-5237). `undefined` when the file as it stands is one DorkOS can't predict an edit of.
+ *
+ * @param cwd - The folder the turn launches in.
+ * @param dorkHome - DorkOS's data folder.
+ * @param rules - The allow rules the answer adds.
+ */
+export function readLocalSettingsWithAllows(
+  cwd: string,
+  dorkHome: string,
+  rules: readonly string[]
+): LocalSettingsReading | null | undefined {
+  const read = readSettingsFile(path.join(cwd, '.claude', 'settings.local.json'));
+  if (read.kind === 'unverifiable' || read.kind === 'malformed') return undefined;
+  const value = read.kind === 'absent' ? {} : read.value;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const permissions = (value as { permissions?: unknown }).permissions ?? {};
+  if (permissions === null || typeof permissions !== 'object' || Array.isArray(permissions)) {
+    return undefined;
+  }
+  const allow = (permissions as { allow?: unknown }).allow ?? [];
+  if (!Array.isArray(allow)) return undefined;
+  const next = [...allow];
+  for (const rule of rules) if (!next.includes(rule)) next.push(rule);
+  return readingOf(cwd, dorkHome, { ...value, permissions: { ...permissions, allow: next } });
+}
+
+/** The reading of one parsed local settings value; `null` when it adds nothing that runs code. */
+function readingOf(cwd: string, dorkHome: string, value: unknown): LocalSettingsReading | null {
+  const picked = pickPowerSettings(value);
   if (!picked) return null;
   const pickedPermissions = (picked.permissions ?? null) as Record<string, unknown> | null;
 
@@ -122,5 +176,9 @@ export function readLocalSettings(cwd: string, dorkHome: string): LocalSettingsR
     keys,
     detail,
     approvable,
+    widening: {
+      rules: trimmedStrings(pickedPermissions?.allow),
+      dirs: trimmedStrings(pickedPermissions?.additionalDirectories),
+    },
   };
 }

@@ -398,6 +398,32 @@ describe('review fixes', () => {
   });
 });
 
+describe('what the check reports it compared (DOR-5237)', () => {
+  it('reports the working folder’s committed rules when it compared and loaded them', async () => {
+    const wt = repo.addWorktree('wt');
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    expect(decision.pauseHooks).toBe(false);
+    expect(decision.compared).toEqual({
+      folder: fs.realpathSync(wt),
+      rules: [],
+      dirs: [],
+    });
+  });
+
+  it('reports nothing at Full, in the agent home, or when it paused them', async () => {
+    const wt = repo.addWorktree('wt');
+    expect((await resolveRepoConfigForLaunch(turn(wt, { full: true }))).compared).toBeUndefined();
+    expect((await resolveRepoConfigForLaunch(turn(wt, { home: wt }))).compared).toBeUndefined();
+    writeFile(path.join(wt, '.claude/settings.json'), {
+      ...GUARD_SETTINGS,
+      permissions: { allow: ['Bash'] },
+    });
+    const paused = await resolveRepoConfigForLaunch(turn(wt));
+    expect(paused.pauseHooks).toBe(true);
+    expect(paused.compared).toBeUndefined();
+  });
+});
+
 describe('trusting a default branch DorkOS has not pinned', () => {
   /** The one commit recorded for the fixture repo, if any. */
   const recordedSha = () =>

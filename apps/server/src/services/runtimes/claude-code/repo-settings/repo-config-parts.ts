@@ -74,13 +74,20 @@ export interface RepoReading {
   mcpJson: RepoDrift | null;
   /** The servers the default branch's `.mcp.json` files declare, minus any its settings disable. */
   baselineServers: Record<string, unknown>;
+  /** The allow rules and folder entries of the working settings, from the read this compared. */
+  working: { rules: string[]; dirs: string[] };
 }
 
 /** The settings keys that pick which `.mcp.json` servers start. */
 const MCP_KEYS = ['enableAllProjectMcpServers', 'enabledMcpjsonServers', 'disabledMcpjsonServers'];
 
 /** Nothing differs. */
-const CLEAN: RepoReading = { hooks: null, mcpJson: null, baselineServers: {} };
+const CLEAN: RepoReading = {
+  hooks: null,
+  mcpJson: null,
+  baselineServers: {},
+  working: { rules: [], dirs: [] },
+};
 
 /** A path by its real path, or resolved when it is not there. */
 function real(p: string): string {
@@ -118,6 +125,13 @@ function symlinkTarget(abs: string): string | undefined {
     return undefined;
   }
   return real(abs);
+}
+
+/** The `permissions.additionalDirectories` entries of a picked settings object. */
+function folderEntries(picked: Record<string, unknown> | null): string[] {
+  const dirs = (picked?.permissions as { additionalDirectories?: unknown } | undefined)
+    ?.additionalDirectories;
+  return Array.isArray(dirs) ? dirs.filter((dir): dir is string => typeof dir === 'string') : [];
 }
 
 /** The `permissions.allow` rules of a picked settings object. */
@@ -401,7 +415,8 @@ export async function readRepoConfig(
           detail: mcpDiffs.join('\n\n'),
           approvable: mcpApprovable,
         };
-  return { hooks, mcpJson, baselineServers };
+  const working = { rules: allowRules(workingPicked), dirs: folderEntries(workingPicked) };
+  return { hooks, mcpJson, baselineServers, working };
 }
 
 /**

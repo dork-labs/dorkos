@@ -13,7 +13,11 @@ import type { MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { resolveLaunch } from '../launch-resolver.js';
 import { folderAllowsWaitingStatus } from '../../folder-settings/apply-folder-allows.js';
-import { recordFolderAllowApproval } from '../../folder-settings/folder-allow-consent.js';
+import {
+  lastApprovedRules,
+  recordFolderAllowApproval,
+} from '../../folder-settings/folder-allow-consent.js';
+import { FOLDER_RULE_ASK_REASON } from '../../tool-gate/held-turn-hook.js';
 import {
   _internal,
   setFolderAllowApprovalGateway,
@@ -263,5 +267,146 @@ describe('an agent folder allow list at launch', () => {
     // the repo settings check's to ask about (DOR-3298), and only that card shows.
     const capabilities = asked.map((input) => (input as { capabilityId?: string }).capabilityId);
     expect(capabilities.filter((id) => !id?.startsWith('runtime.apply_repo_'))).toHaveLength(0);
+  });
+});
+
+describe('folder settings below Full (DOR-5237)', () => {
+  const PROBE = { command: 'touch probe-file' };
+
+  /** What every PreToolUse hook the launch carries answers for one Bash call. */
+  function hookAnswers(options: Awaited<ReturnType<typeof launch>>['sdkOptions']) {
+    return hookAnswersFor(options, 'Bash', PROBE);
+  }
+
+  /** What every PreToolUse hook the launch carries answers for one call. */
+  async function hookAnswersFor(
+    options: Awaited<ReturnType<typeof launch>>['sdkOptions'],
+    toolName: string,
+    toolInput: Record<string, unknown>
+  ) {
+    const answers: unknown[] = [];
+    for (const entry of options.hooks?.PreToolUse ?? []) {
+      if (entry.matcher && !new RegExp(entry.matcher).test(toolName)) continue;
+      for (const hook of entry.hooks) {
+        answers.push(
+          await hook(
+            {
+              hook_event_name: 'PreToolUse',
+              session_id: 'sdk-1',
+              transcript_path: path.join(root, 't.jsonl'),
+              cwd: home,
+              tool_name: toolName,
+              tool_input: toolInput,
+              tool_use_id: 'tool-1',
+            } as never,
+            'tool-1',
+            { signal: new AbortController().signal }
+          )
+        );
+      }
+    }
+    return answers;
+  }
+  const folderAsk = expect.objectContaining({
+    hookSpecificOutput: expect.objectContaining({
+      permissionDecision: 'ask',
+      permissionDecisionReason: FOLDER_RULE_ASK_REASON,
+    }),
+  });
+
+  beforeEach(() => {
+    writeFileSync(
+      path.join(home, '.claude', 'settings.local.json'),
+      JSON.stringify({ permissions: { allow: ['Bash'] } })
+    );
+  });
+
+  it('puts to a person a call only a rule nobody approved allows', async () => {
+    const resolved = await launch(home, { mode: 'default' });
+    expect(await hookAnswers(resolved.sdkOptions)).toContainEqual(folderAsk);
+  });
+
+  it('counts a folder this turn was granted as opened, and asks before any other', async () => {
+    const shared = path.join(root, 'shared');
+    mkdirSync(shared, { recursive: true });
+    const elsewhere = path.join(root, 'elsewhere');
+    writeFileSync(
+      path.join(home, '.claude', 'settings.local.json'),
+      JSON.stringify({ permissions: { additionalDirectories: [shared] } })
+    );
+    const resolved = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session: makeSession('default'),
+      opts: makeOpts(home),
+      messageOpts: { additionalDirectories: [{ path: shared, access: 'read' }] } as never,
+      effectiveCwd: home,
+    });
+    // A write: a read inside a granted folder is let through on its own.
+    const asked = (file: string) =>
+      hookAnswersFor(resolved.sdkOptions, 'Write', { file_path: file, content: 'x' });
+    expect(await asked(path.join(shared, 'a.md'))).not.toContainEqual(folderAsk);
+    // Any folder nobody opened puts every file call to a person, wherever it points.
+    writeFileSync(
+      path.join(home, '.claude', 'settings.local.json'),
+      JSON.stringify({ permissions: { additionalDirectories: [shared, elsewhere] } })
+    );
+    expect(await asked(path.join(elsewhere, 'a.md'))).toContainEqual(folderAsk);
+  });
+
+  it('asks after a live drop from Full, whatever the folder’s committed settings say', async () => {
+    const plain = path.join(root, 'plain');
+    mkdirSync(path.join(plain, '.claude'), { recursive: true });
+    writeFileSync(
+      path.join(plain, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['Bash'] } })
+    );
+    const session = makeSession('bypassPermissions');
+    const resolved = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session,
+      opts: makeOpts(plain),
+      effectiveCwd: plain,
+    });
+    expect(await hookAnswers(resolved.sdkOptions)).not.toContainEqual(folderAsk);
+    // The person lowers the chat while the process keeps running.
+    session.permissionMode = 'default';
+    expect(await hookAnswers(resolved.sdkOptions)).toContainEqual(folderAsk);
+  });
+
+  it('asks nothing at Full', async () => {
+    const resolved = await launch(home, { mode: 'bypassPermissions' });
+    expect(await hookAnswers(resolved.sdkOptions)).not.toContainEqual(folderAsk);
+  });
+
+  it('keeps a person’s Always allow, so the call stops asking', async () => {
+    writeFileSync(path.join(home, '.claude', 'settings.local.json'), JSON.stringify({}));
+    const session = makeSession('default');
+    const resolved = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session,
+      opts: makeOpts(home),
+      effectiveCwd: home,
+    });
+    const suggestions = [
+      {
+        type: 'addRules' as const,
+        behavior: 'allow' as const,
+        destination: 'localSettings' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'touch probe-file *' }],
+      },
+    ];
+    const answer = resolved.sdkOptions.canUseTool!('Bash', PROBE, {
+      signal: new AbortController().signal,
+      suggestions,
+      toolUseID: 'tool-1',
+    } as never);
+    await vi.waitFor(() => expect(session.pendingInteractions.has('tool-1')).toBe(true));
+    const pending = session.pendingInteractions.get('tool-1') as { resolve: (r: unknown) => void };
+    pending.resolve(suggestions);
+    expect(await answer).toMatchObject({ behavior: 'allow', updatedPermissions: suggestions });
+    expect(lastApprovedRules(AGENT.id, home)).toEqual(['Bash(touch probe-file *)']);
   });
 });
