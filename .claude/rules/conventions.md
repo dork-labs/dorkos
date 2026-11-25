@@ -50,7 +50,9 @@ Agents write most of this code and agents read it next, so a comment is context 
 | 300-500 | Consider splitting if multiple responsibilities exist |
 | 500+    | Must split — find extraction opportunities            |
 
-Extraction patterns: sub-components, custom hooks for stateful logic, pure functions to a `lib/` file, large type blocks to a types file. Exceptions: generated files, barrel `index.ts`, tightly coupled state machines, test files.
+Extraction patterns: sub-components, custom hooks for stateful logic, pure functions to a `lib/` file, large type blocks to a types file. Exceptions: generated files, barrel `index.ts`, tightly coupled state machines.
+
+TypeScript test files (`.ts`, `.tsx`) are held to 500 too (Hard Rule 9, `scripts/max-lines/test-baseline.json`): a big one may not grow. Split it by subject, with shared setup in one fixtures module. A shrink or deletion is noted, not failed, until `--update` locks it in.
 
 ## DRY
 
