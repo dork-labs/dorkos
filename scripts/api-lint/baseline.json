@@ -9,7 +9,7 @@
       "health": 2,
       "heartbeats": 1,
       "keep-awake": 1,
-      "marketplace": 5,
+      "marketplace": 4,
       "mesh": 1,
       "permissions": 2,
       "relay": 6,
@@ -21,22 +21,17 @@
       "todos": 1
     },
     "error-shape": {
-      "agents": 3,
-      "approvals": 6,
       "auth": 5,
       "config": 3,
       "connectors": 3,
       "extensions": 5,
       "heartbeats": 2,
-      "onboarding": 7,
       "permissions": 1,
       "relay": 4,
       "rooms": 5,
       "runtimes": 10,
       "step-up": 1,
-      "todo-promises": 7,
-      "workspaces": 2,
-      "your-browser": 2
+      "workspaces": 2
     },
     "hand-registered-path": {
       "apps/server/src/services/browser/profile-scan-openapi.ts": 1,

@@ -406,9 +406,6 @@ export const PROBLEM_CODE_LIST = [
   { code: 'signin_no_retry', status: 409, title: 'This sign-in can’t start again here.' },
   /** The browser won't keep a sign-in cookie over plain http at this address. */
   { code: 'sign_in_needs_https', status: 409, title: 'Open DorkOS over https to stay signed in.' },
-  // Money.
-  /** The monthly spending limit for paid actions is reached: nothing was spent. */
-  { code: 'spend_limit_reached', status: 409, title: 'This month’s spending limit is reached.' },
   /** The DorkOS desktop app starts and stops this server: restart or reset it there. */
   {
     code: 'managed_by_desktop',
