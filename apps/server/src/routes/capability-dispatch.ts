@@ -14,6 +14,7 @@
  * | --- | --- |
  * | The capability ran | the route's success status (`200` unless declared) |
  * | A person must approve first | `202`, the approval payload (not an error) |
+ * | An agent called a person-only capability (`http.audience: 'person'`) | `403` problem, `person_only` |
  * | The gate refused for good | `403` problem, {@link gateRefusalProblem} |
  * | A network sign-in asked for an `act` or `destructive` one without `allowFromWifi` | `403` problem, `not_from_wifi` |
  * | The input failed the capability's schema | `400` problem, `invalid_request` |
@@ -54,6 +55,9 @@ const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
 
 /** What an id no capability has answers. */
 const UNKNOWN_CAPABILITY = 'No action has that id. List them with `dorkos capabilities`.';
+
+/** What an agent reads when it calls a capability only a person may call. */
+const PERSON_ONLY = 'Only a person can do this, not an agent.';
 
 /** What an unexpected failure answers; the error itself goes to the log. */
 const CAPABILITY_FAILED = 'DorkOS hit an error running that action. Try again.';
@@ -101,6 +105,12 @@ export async function dispatchCapability(
   }
 
   const facts = honoRequestFacts(c);
+  // A person-only capability (ADR 261123-170830, decision 1 of DOR-4978): any
+  // caller that presented an agent token, resolved or not, is refused before
+  // the gate or the handler sees it.
+  if (capability.surfaces.http?.audience === 'person' && presentsAgentIdentity(facts)) {
+    return problem(c, 'person_only', { detail: PERSON_ONLY });
+  }
   // A Wi-Fi sign-in reads through capabilities, but acts at the computer
   // (DOR-2969): an `act` or `destructive` one is refused before it runs,
   // unless it only lowers an agent's power (`allowFromWifi`, e.g. a pause).

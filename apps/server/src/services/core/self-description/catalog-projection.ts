@@ -98,6 +98,8 @@ const surfacesSchema = z.object({
     .object({
       method: z.enum(['get', 'post', 'put', 'patch', 'delete']),
       path: z.string(),
+      /** `person` when only a person may call it; absent when anyone the tier gate lets through may. */
+      audience: z.literal('person').optional(),
     })
     .optional(),
 });
@@ -165,6 +167,8 @@ export const compactCapabilitySchema = z.object({
   tier: z.enum(CAPABILITY_TIERS),
   /** First sentence of the description, elided to one line. */
   summary: z.string(),
+  /** `person` when only a person may call it, so an agent knows not to try. */
+  audience: z.literal('person').optional(),
   /**
    * The extension this capability came from; absent on a core capability. Kept
    * on the compact entry because which extension a tool belongs to is part of
@@ -360,6 +364,7 @@ function toCompact(entry: SerializedEntry): z.infer<typeof compactCapabilitySche
     title: entry.title,
     tier: entry.tier,
     summary: summarize(entry.description),
+    ...(entry.surfaces.http?.audience ? { audience: entry.surfaces.http.audience } : {}),
     ...(entry.source ? { source: entry.source } : {}),
   };
 }

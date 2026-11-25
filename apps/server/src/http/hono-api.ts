@@ -387,6 +387,17 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       }
     },
   });
+  // Every capability's own REST path, before any hand group so none can shadow
+  // one (`assertNoCapabilityRouteCollisions` below proves it); each request
+  // reads the registry boot handed over (ADR 261123-170830).
+  const capabilityRoutes = mountedCapabilities();
+  app.route(
+    '/',
+    createCapabilityHttpRoutes({
+      registry: () => deps.capabilities,
+      capabilities: capabilityRoutes,
+    })
+  );
   app.route('/api/health', createHealthRoutes(deps));
   app.route('/api/your-browser', createYourBrowserRoutes());
   // Sessions, their messages and the per-session stream. Its WebSocket twin on
@@ -546,24 +557,13 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // several prefixes. Each registers only its own concrete paths, so the mount
   // claims nothing else: every other path still reaches its group or the `/api` 404.
   if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
-  // Every capability's own REST path (`/api/agents/pauses`,
-  // `/api/agents/:agentId/mcp-servers`, …), built from the declarations; each
-  // request reads the registry boot handed over (ADR 261123-170830).
-  const capabilityRoutes = mountedCapabilities();
-  app.route(
-    '/',
-    createCapabilityHttpRoutes({
-      registry: () => deps.capabilities,
-      capabilities: capabilityRoutes,
-    })
-  );
   if (deps.agentInstructions) {
     app.route('/api', createAgentInstructionsRoutes(deps.agentInstructions));
   }
   if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
-  // Six groups answer under `/api/agents`: the two above, and these four.
-  // Each registers only its own concrete paths, and no two share one: the
+  // Six groups answer under `/api/agents`: the capability mount, agent instructions
+  // and these four. Each registers only its own concrete paths, and no two share one: the
   // agents group's paths are all fixed words (`/current`, `/resolve`,
   // `/create`), never an `:id`, so no order between them changes an answer.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));

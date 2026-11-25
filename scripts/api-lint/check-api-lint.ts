@@ -49,10 +49,10 @@
  * lines and never set exit 1, and `--base` does not judge its entries.
  * `--update` sets its entries to the measured counts, up or down, so the
  * baseline tracks reality and the rule does not go red the day it starts
- * blocking. `hand-registered-path` is advisory until the
- * capability HTTP mount (DOR-4978) merges, which makes a capability `http`
- * surface the way to add a route; until then a documented `registerPath` is
- * the only way.
+ * blocking. `hand-registered-path` is advisory, and skips the routes on the
+ * permanent hand-route allowlist (`apps/server/src/http/hand-routes/allowlist.ts`).
+ * It flips to blocking when the pending list (`pending.json` beside
+ * it) is empty: from then every other route is a capability `http` surface.
  *
  * Exit 2 means it could not run (an unreadable input, a bad or empty `--base`,
  * a flag with no value): a gate that cannot measure must not pass.
@@ -82,6 +82,7 @@ import {
   type Counts,
   type UnitCounts,
 } from './baseline-file.ts';
+import { HAND_ROUTE_ALLOWLIST } from '../../apps/server/src/http/hand-routes/allowlist.ts';
 import { ApiLintError, operations, parseCensus, parseSpec } from './document.ts';
 import {
   duplicateOperationIds,
@@ -188,7 +189,8 @@ function readInput(root: string, path: string): { text: string; where: string } 
 }
 
 /**
- * Every `registerPath(` call in the hand registry, by file.
+ * Every `registerPath(` call in the hand registry, by file, less those that
+ * document a route on the permanent hand-route allowlist.
  *
  * @param root - The tree to measure.
  */
@@ -209,7 +211,7 @@ export function handRegistryItems(root: string): Items {
     } catch {
       continue; // deleted in the working tree
     }
-    const lines = registerPathLines(text).map((line) => `${file}:${line}`);
+    const lines = registerPathLines(text, HAND_ROUTE_ALLOWLIST).map((line) => `${file}:${line}`);
     if (lines.length > 0) items[file] = lines;
   }
   return items;

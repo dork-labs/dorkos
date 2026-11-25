@@ -18,7 +18,7 @@
  * @module services/core/capabilities/registry
  */
 import { assertNarrowDeclarations } from './declarations/narrow-declarations.js';
-import { assertHttpInputReachable } from './input-projection.js';
+import { assertHttpSurface } from './input-projection.js';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
 import {
@@ -619,7 +619,7 @@ export function composeRegistry(
         claim(cliVerbs, key, id, 'CLI verb');
       }
       if (surfaces.http) {
-        assertHttpInputReachable(capability);
+        assertHttpSurface(capability);
         claim(
           httpRoutes,
           `${surfaces.http.method.toUpperCase()} ${surfaces.http.path}`,
