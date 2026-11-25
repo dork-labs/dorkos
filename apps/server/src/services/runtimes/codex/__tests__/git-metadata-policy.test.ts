@@ -6,6 +6,7 @@ import path from 'node:path';
 import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { gitMetadataReadRules } from '../policy/git-metadata.js';
+import { codexExactKeys } from '../policy/codex-path-keys.js';
 
 const MODES = ['default', 'acceptEdits', 'bypassPermissions'];
 const INSIDE_GIT = 'Codex can’t work inside a Git folder. Choose the project folder instead.';
@@ -207,6 +208,32 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
       }
     }
   );
+
+  it('on Linux, refuses a folder Codex would read as a pattern below Full only', () => {
+    const cwd = path.join(root, 'site [old]');
+    const plain = path.join(root, 'plain');
+    for (const dir of [cwd, plain]) fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      for (const mode of ['default', 'acceptEdits'])
+        expect(() => render(cwd, mode)).toThrow(
+          'On Linux, Codex needs Full for a folder with * ? [ ] { } in its path.'
+        );
+      expect(render(cwd, 'bypassPermissions')[':root']).toBe('write');
+      expect(render(plain, 'acceptEdits')[key(path.join(plain, '.git'))]).toBe('read');
+      // Without a repository: the folder's own secret globs refuse alone.
+      const bare = path.join(root, 'bare [old]');
+      fs.mkdirSync(bare);
+      expect(() => render(bare, 'default')).toThrow(/needs Full/);
+      // And an exact key alone refuses too, wherever it came from.
+      expect(() =>
+        codexExactKeys({ [key(path.join(cwd, '.git'))]: 'read' }, undefined, true)
+      ).toThrow(/needs Full/);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
 
   it('starts a worktree whose git folder is gone at every level, keeping its pointer read-only', () => {
     const cwd = path.join(root, 'tree');

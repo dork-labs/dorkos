@@ -223,7 +223,7 @@ nativeSuite('the protected profile without the request’s selection', { timeout
 async function probe(
   root: string,
   cwd: string,
-  mode: (typeof MODES)[number] | { filesystem: Record<string, string> },
+  mode: (typeof MODES)[number] | { filesystem: Record<string, unknown> },
   cmd: string
 ): Promise<{ output: string; returned: string }> {
   const [home, data, codexHome] = ['home', 'data', 'codex-home'].map((name) =>
@@ -315,7 +315,7 @@ gitSuite('Codex Git files in folders it once refused', { timeout: 90_000 }, () =
   }
 
   it.each(MODES)(
-    'a repository named `site [old]` starts at %s with its Git files protected',
+    'a repository named `site [old]` starts at %s with its Git files protected (Linux: Full only)',
     async (mode) => {
       const root = tempRoot();
       const project = path.join(root, 'site [old]');
@@ -335,6 +335,14 @@ gitSuite('Codex Git files in folders it once refused', { timeout: 90_000 }, () =
       fs.writeFileSync(path.join(project, 'sub', '.env'), 'CANARY-folder-secret');
       const ordinary = path.join(project, 'ordinary.txt');
       fs.writeFileSync(ordinary, 'original-ordinary');
+      if (process.platform === 'linux' && mode !== 'bypassPermissions') {
+        // Bubblewrap below Full read these secrets through every spelling; see
+        // the measuring row below. Refused before any Codex process starts.
+        await expect(probe(root, project, mode, 'true')).rejects.toThrow(
+          'On Linux, Codex needs Full for a folder with * ? [ ] { } in its path.'
+        );
+        return;
+      }
       const { output, returned } = await probe(
         root,
         project,
@@ -462,5 +470,38 @@ gitSuite('Codex Git files in folders it once refused', { timeout: 90_000 }, () =
         raw: { slashed: false, lookalike: true },
         doubled: { slashed: true, lookalike: false },
       });
+  });
+  // Why Linux refuses below Full: an escaped glob, and a scoped exact key
+  // beside a glob, each measured at Edit on this platform's binary.
+  it('measures escaped and scoped keys below Full', async () => {
+    const root = tempRoot();
+    const bracketed = path.join(root, 'site [old]');
+    const plain = path.join(root, 'plain');
+    for (const dir of [bracketed, plain]) {
+      fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'sub'));
+      fs.writeFileSync(path.join(dir, 'sub', '.env'), `CANARY-${path.basename(dir)}`);
+    }
+    const slash = (dir: string) => dir.split(path.sep).join('/');
+    const cases = {
+      escaped: { [`${slash(root)}/site [[]old]/**/.env`]: 'deny' },
+      scoped: {
+        [`${slash(plain)}/.git`]: { '.': 'read' },
+        [`${slash(plain)}/**/.env`]: 'deny',
+      },
+    } as const;
+    const denied: Record<string, boolean> = {};
+    for (const [name, filesystem] of Object.entries(cases)) {
+      const dir = name === 'escaped' ? bracketed : plain;
+      const { output } = await probe(
+        root,
+        dir,
+        { filesystem },
+        `cat ${quote(path.join(dir, 'sub', '.env'))}`
+      );
+      denied[name] = !output.includes(`CANARY-${path.basename(dir)}`);
+    }
+    console.info('Codex glob-character keys below Full', { platform: process.platform, denied });
+    if (process.platform === 'darwin') expect(denied).toEqual({ escaped: true, scoped: true });
   });
 });

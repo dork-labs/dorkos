@@ -34,7 +34,8 @@ export interface CodexFilePolicy {
 function protectedEntries(
   { roots, writable }: CodexFilePolicy,
   onMissingTargets?: (targets: string[]) => void,
-  metadataFolders: readonly string[] = []
+  metadataFolders: readonly string[] = [],
+  linuxBelowFull = false
 ): Record<string, CodexFilesystemValue> {
   const entries: Record<string, 'read' | 'deny'> = {};
   // The keys built as globs; any other key is an exact path, whatever it holds.
@@ -147,7 +148,9 @@ function protectedEntries(
         const slashed = spelling.split(path.sep).join('/');
         // A glob's fixed part is escaped, so a folder like `site [old]` is matched as written.
         const file = glob
-          ? [codexGlobLiteral(slashed), ...(nested ? ['**'] : []), entry.path].join('/')
+          ? [codexGlobLiteral(slashed, linuxBelowFull), ...(nested ? ['**'] : []), entry.path].join(
+              '/'
+            )
           : path.join(spelling, entry.path).split(path.sep).join('/');
         // The pinned binary only supports deny access on wildcard paths.
         // Broader refusal preserves the shared policy where read-only cannot be expressed.
@@ -187,7 +190,7 @@ function protectedEntries(
     ...tmp.flatMap(spellings),
   ]);
   // The scan step adds only glob exclusions.
-  return codexExactKeys(scanned, (key) => globs.has(key) || !(key in collapsed));
+  return codexExactKeys(scanned, (key) => globs.has(key) || !(key in collapsed), linuxBelowFull);
 }
 
 /**
@@ -216,7 +219,14 @@ export function codexProtectedConfig(
   const metadataFolders = Object.keys(metadataRules).filter((file) =>
     fs.statSync(file).isDirectory()
   );
-  const protectedFiles = protectedEntries(policy, onMissingTargets, metadataFolders);
+  // Measured in CI: bubblewrap below Full misses these paths however they are spelled.
+  const linuxBelowFull = process.platform === 'linux' && mode !== 'danger-full-access';
+  const protectedFiles = protectedEntries(
+    policy,
+    onMissingTargets,
+    metadataFolders,
+    linuxBelowFull
+  );
   const profile = codexPermissionProfile(settings);
   return {
     // Codex rebuilds this layer without the request's selection (ChatGPT
@@ -242,7 +252,9 @@ export function codexProtectedConfig(
               )
             : {}),
           // Explicit restrictions also hold when /tmp is a broader writable root.
-          ...(mode !== 'danger-full-access' ? codexExactKeys(metadataRules) : {}),
+          ...(mode !== 'danger-full-access'
+            ? codexExactKeys(metadataRules, undefined, linuxBelowFull)
+            : {}),
           ...protectedFiles,
         },
         ...(mode === 'workspace-write'

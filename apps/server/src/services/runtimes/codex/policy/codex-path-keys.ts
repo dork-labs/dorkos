@@ -16,6 +16,10 @@
  *   and `a\\b` is no folder there; `[\\]` misses it on macOS. No spelling
  *   holds on both, so a glob over such a folder refuses instead.
  *
+ * On Linux below Full, CI's bubblewrap run (DOR-4542) read the secret files
+ * in `site [old]` through these spellings, though they hold at Full and on
+ * macOS at every level. So there, a path with glob characters refuses too.
+ *
  * @module services/runtimes/codex/policy/codex-path-keys
  */
 
@@ -29,20 +33,31 @@ export type CodexFilesystemValue = Access | { '.': Access };
 /** Characters that make Codex read part of a key as glob syntax. */
 const GLOB_CHARS = /[*?[\]{}]/;
 
+function refuseOnLinuxBelowFull(literal: string, linuxBelowFull: boolean): void {
+  if (linuxBelowFull && GLOB_CHARS.test(literal))
+    throw new CodexGitMetadataPolicyError(
+      'glob-path-linux',
+      new Error(`${literal} has glob characters, which Linux below Full can't match as written.`)
+    );
+}
+
 /**
  * A literal path, spelled for the fixed part of a glob key: each `*`, `?`,
  * `[`, `{` and `}` becomes a one-character class. A lone `]` stays as it is:
  * `[]]` would be an empty class to Codex's Seatbelt translation.
  *
  * @param literal - A path in Codex's slash spelling, with no glob meant.
- * @throws {CodexGitMetadataPolicyError} When the path holds a backslash.
+ * @param linuxBelowFull - Whether the profile is for Linux below Full.
+ * @throws {CodexGitMetadataPolicyError} When the path holds a backslash, or
+ *   glob characters on Linux below Full.
  */
-export function codexGlobLiteral(literal: string): string {
+export function codexGlobLiteral(literal: string, linuxBelowFull = false): string {
   if (literal.includes('\\'))
     throw new CodexGitMetadataPolicyError(
       'backslash-path',
       new Error(`${literal} has a backslash, which Codex reads as an escape.`)
     );
+  refuseOnLinuxBelowFull(literal, linuxBelowFull);
   return literal.replace(/[*?[{}]/g, (char) => `[${char}]`);
 }
 
@@ -52,15 +67,19 @@ export function codexGlobLiteral(literal: string): string {
  *
  * @param entries - Rendered entries, exact paths spelled as they are.
  * @param isGlob - Whether a key is a glob DorkOS built.
+ * @param linuxBelowFull - Whether the profile is for Linux below Full.
+ * @throws {CodexGitMetadataPolicyError} When such a path is rendered for Linux below Full.
  */
 export function codexExactKeys(
   entries: Readonly<Record<string, Access>>,
-  isGlob: (key: string) => boolean = () => false
+  isGlob: (key: string) => boolean = () => false,
+  linuxBelowFull = false
 ): Record<string, CodexFilesystemValue> {
   return Object.fromEntries(
-    Object.entries(entries).map(([key, access]) => [
-      key,
-      !isGlob(key) && GLOB_CHARS.test(key) ? { '.': access } : access,
-    ])
+    Object.entries(entries).map(([key, access]) => {
+      if (isGlob(key) || !GLOB_CHARS.test(key)) return [key, access];
+      refuseOnLinuxBelowFull(key, linuxBelowFull);
+      return [key, { '.': access }];
+    })
   );
 }
