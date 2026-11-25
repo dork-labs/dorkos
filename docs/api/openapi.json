@@ -109383,7 +109383,7 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 512,
+              "maxLength": 4096,
               "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,
@@ -109637,7 +109637,7 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 512,
+              "maxLength": 4096,
               "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,
@@ -110214,7 +110214,7 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 512,
+              "maxLength": 4096,
               "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,
@@ -110506,7 +110506,7 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 512,
+              "maxLength": 4096,
               "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,

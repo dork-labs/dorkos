@@ -54,7 +54,13 @@ import { readerFor } from '../../audit/audit-capabilities.js';
 import { readableSessionIds } from '../../audit/session-visibility.js';
 import type { AuditReader } from '../../audit/visibility.js';
 import { chatTitleOf } from '../../session/chat-messages/chat-message-wiring.js';
-import { getWorkGraphDb, getWorkLinkStore, LINEAGE_MAX_DEPTH, readChatLineage } from '../index.js';
+import {
+  getWorkGraphDb,
+  getWorkLinkStore,
+  LINEAGE_MAX_DEPTH,
+  readChatLineage,
+  readLineageReads,
+} from '../index.js';
 import { LineageReads } from '../lineage-reads.js';
 import { readAgentChats } from './agent-chats.js';
 import { agentChatIds } from './chat-bindings.js';
@@ -87,7 +93,7 @@ const READ_TOOL = {
 const cursorInput = z
   .string()
   .min(1)
-  .max(512)
+  .max(4096)
   .optional()
   .describe('The `nextCursor` of the page before; leave it out for the first page.');
 
@@ -264,7 +270,10 @@ export const workGraphReadDomain: CapabilityDomain = {
           depth: input.depth,
           forReader: true,
         });
-        return filterChatTree(lineage, readable, input);
+        const order = readLineageReads();
+        if (!order)
+          throw new CapabilityToolError({ code: 'NOT_READY', error: 'DorkOS is still starting.' });
+        return filterChatTree(lineage, readable, { ...input, reader }, order);
       },
     }),
     defineCapability({
@@ -295,8 +304,9 @@ export const workGraphReadDomain: CapabilityDomain = {
         const agentPath = agentFolder(audit, input.agentId);
         const { db, links } = workGraphDb();
         const chatIds = agentChatIds(db, agentPath);
-        const readable = readableSessionIds(readerFor(audit, context), chatIds);
-        return readWork({ ...input, chatIds }, readable, {
+        const reader = readerFor(audit, context);
+        const readable = readableSessionIds(reader, chatIds);
+        return readWork({ ...input, chatIds, reader }, readable, {
           links,
           aliases: new LineageReads({ db, links }),
         });
@@ -341,7 +351,7 @@ export const workGraphReadDomain: CapabilityDomain = {
         const { db, links } = workGraphDb();
         const chatIds = [lineage.chatId, ...lineage.descendants.map((d) => d.chatId)];
         return readWork(
-          { chatIds, kind: input.kind, cursor: input.cursor, limit: input.limit },
+          { chatIds, kind: input.kind, cursor: input.cursor, limit: input.limit, reader },
           readable,
           { links, aliases: new LineageReads({ db, links }) }
         );

@@ -28,7 +28,8 @@
 import { formatEntityRef, type EntityRef } from '@dorkos/shared/entity-ref';
 import type { WorkItem, WorkItemLink, WorkKind, WorkPage } from '@dorkos/shared/work-graph-reads';
 import type { LineageReads } from '../lineage-reads.js';
-import { decodePageCursor, encodePageCursor } from './page-cursor.js';
+import { decodePageCursor, encodePageCursor, pairOf } from './page-cursor.js';
+import type { AuditReader } from '../../audit/visibility.js';
 import { WORK_LINK_RELATIONS, type WorkLink, type WorkLinkStore } from '../work-link-store.js';
 
 /** The kinds of work listed when none is asked for. */
@@ -50,6 +51,8 @@ export interface WorkQuery {
   kind?: WorkKind | undefined;
   /** The `nextCursor` of the page before, if any. */
   cursor?: string | undefined;
+  /** Who is asking: a cursor is bound to the reader it was given to. */
+  reader: AuditReader;
   /** How many items this page holds at most. */
   limit: number;
 }
@@ -114,9 +117,7 @@ export function readWork(
 
   const ordered = [...items.values()].sort(newestFirst);
   const after =
-    query.cursor === undefined
-      ? null
-      : keyOf(decodePageCursor(query.cursor, 2) as [string, string]);
+    query.cursor === undefined ? null : keyOf(pairOf(decodePageCursor(query.reader, query.cursor)));
   const rest = after ? ordered.filter((item) => newestFirst(item, after) > 0) : ordered;
   const page = rest.slice(0, query.limit);
   const last = page.at(-1);
@@ -134,7 +135,7 @@ export function readWork(
     })),
     nextCursor:
       rest.length > page.length && last
-        ? encodePageCursor([last.firstRecordedOn, last.text])
+        ? encodePageCursor(query.reader, [last.firstRecordedOn, last.text])
         : null,
   };
 }

@@ -5,14 +5,18 @@
  *
  * A reader gets only the chats it may read (spec `audit-trail` §3.4): an
  * agent never gets a person's own chat, not its id, not its title, and not a
- * count of them. Chats it may not read are left out before the page is cut,
- * and a cursor is given only when a chat it may read follows.
+ * count of them. Chats it may not read are left out before the page is cut.
+ * A page that fills gives a cursor only when a chat the reader may read
+ * follows.
  *
  * **Bounded.** One page scans at most {@link AGENT_CHATS_SCAN_LIMIT} bindings,
  * so a reader whose agent has mostly private chats can't make one call read
- * them all. A page that stops at the bound with bindings left holds what it
- * found and a cursor to go on. The cursor is sealed (`./page-cursor.ts`): the
- * binding it stops at may be one the reader may not read.
+ * them all. A page that stops at that bound with bindings left holds what it
+ * found, which may be nothing, and still carries a cursor to go on. Such a
+ * page tells a reader that more bindings exist beyond the scan, not how many,
+ * whose or what they hold (Security accepted this, DOR-4970). The cursor is
+ * sealed and bound to its reader (`./page-cursor.ts`): the binding it stops
+ * at may be one the reader may not read.
  *
  * @module services/work-graph/reads/agent-chats
  */
@@ -22,7 +26,7 @@ import type { AgentChat, AgentChatsPage } from '@dorkos/shared/work-graph-reads'
 import { readableSessionIds } from '../../audit/session-visibility.js';
 import type { AuditReader } from '../../audit/visibility.js';
 import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
-import { decodePageCursor, encodePageCursor } from './page-cursor.js';
+import { decodePageCursor, encodePageCursor, pairOf } from './page-cursor.js';
 import { agentBindingsPage, type BindingCursor, type ChatBinding } from './chat-bindings.js';
 import type { Db } from '@dorkos/db';
 
@@ -67,7 +71,7 @@ export async function readAgentChats(
   const kept: ChatBinding[] = [];
   let after: BindingCursor | null = null;
   if (query.cursor !== undefined) {
-    const [createdAt, chatId] = decodePageCursor(query.cursor, 2) as [string, string];
+    const [createdAt, chatId] = pairOf(decodePageCursor(reader, query.cursor));
     after = { createdAt, chatId };
   }
   // Where a page that stops at the scan bound goes on from: the last binding it scanned.
@@ -96,7 +100,7 @@ export async function readAgentChats(
   const goOnFrom = kept.length > page.length ? last : stoppedAt;
   return {
     chats: await describeChats(page, reader, sources),
-    nextCursor: goOnFrom ? encodePageCursor([goOnFrom.createdAt, goOnFrom.chatId]) : null,
+    nextCursor: goOnFrom ? encodePageCursor(reader, [goOnFrom.createdAt, goOnFrom.chatId]) : null,
   };
 }
 

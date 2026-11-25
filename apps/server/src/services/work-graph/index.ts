@@ -67,6 +67,7 @@ import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js
 import { registerDurableRekeyResolver } from '../session/turn-identity/follow-chat-rekey.js';
 import { getRunRecord } from '../runs/index.js';
 import { ChatLineageReader, type ChatLineage, type ChatLineageOptions } from './chat-lineage.js';
+import { LineageReads, type LineageReadsDeps } from './lineage-reads.js';
 import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
 
 export {
@@ -162,15 +163,34 @@ export function getWorkGraphDb(): Db | null {
  *   chat has neither a binding nor a run, and nothing it started is shown.
  */
 export function readChatLineage(chatId: string, opts?: ChatLineageOptions): ChatLineage | null {
+  const deps = lineageDeps();
+  return deps ? new ChatLineageReader(deps).read(chatId, opts) : null;
+}
+
+/**
+ * The lineage query's batched reads over the same stores
+ * {@link readChatLineage} reads, so a caller learns a chat's parent and the
+ * order it sits in among its siblings exactly as the walk does (the W4 tree's
+ * cursor).
+ *
+ * @returns The reads, or `null` before startup installs the store.
+ */
+export function readLineageReads(): LineageReads | null {
+  const deps = lineageDeps();
+  return deps ? new LineageReads(deps) : null;
+}
+
+/** What the lineage reads read on this server, or `null` before startup installs the store. */
+function lineageDeps(): LineageReadsDeps | null {
   if (store === null || installedDb === null) return null;
   const startedBy = getSessionStartedByStore();
   const runs = getRunRecord()?.store;
-  return new ChatLineageReader({
+  return {
     db: installedDb,
     links: store,
     ...(startedBy ? { startedBy } : {}),
     ...(runs ? { runs } : {}),
-  }).read(chatId, opts);
+  };
 }
 
 /**

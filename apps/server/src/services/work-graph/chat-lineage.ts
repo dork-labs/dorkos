@@ -38,9 +38,19 @@
  * most {@link LINEAGE_MAX_VISITED} chats, and an answer holds at most
  * {@link LINEAGE_MAX_CHATS} shown chats. `truncated` says when a bound left
  * chats out. A read for one reader (`readable`, the W4 tree) leaves out the
- * chats that reader may not read before it counts, keeping one only as a
- * joint above a chat it may read, so the cap and `truncated` say nothing of
- * the rest.
+ * chats that reader may not read, keeping one only as a joint above a chat it
+ * may read. Then the answer's cap ({@link LINEAGE_MAX_CHATS}) and the early
+ * stop once the levels above hold that many count only the chats kept, so a
+ * left-out chat takes no place and does not set `truncated` by itself.
+ *
+ * **What a left-out chat still counts toward.** The two cost bounds stay the
+ * walk's, whoever reads: every chat walked counts toward
+ * {@link LINEAGE_MAX_VISITED}, and a level past {@link LINEAGE_MAX_DEPTH}
+ * stops the walk, kept chats or not. So in a very large or very deep tree,
+ * chats a reader may not read can still make the walk stop, setting
+ * `truncated` and leaving out readable chats below where it stopped. Both
+ * bounds are thousands of chats or 64 levels from anything a team makes, and
+ * they are what keeps one read from holding the server, so they stay.
  *
  * @module services/work-graph/chat-lineage
  */
@@ -128,9 +138,10 @@ export interface ChatLineageOptions {
   /**
    * The chats among these the reader may read. Given, a chat below the asked
    * one that the reader may not read is kept only when one it may read hangs
-   * below it (a joint), and the cap and `truncated` count only the chats kept,
-   * so neither says anything of the ones left out (Security, DOR-4970). Left
-   * out, every chat counts as readable: the answer is the unfiltered one.
+   * below it (a joint), and the answer's cap counts only the chats kept, so a
+   * left-out chat takes no place (Security, DOR-4970). The walk's cost bounds
+   * still count every chat walked (see the module doc). Left out, every chat
+   * counts as readable: the answer is the unfiltered one.
    */
   readable?: (chatIds: readonly string[]) => ReadonlySet<string>;
 }
