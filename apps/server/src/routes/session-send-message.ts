@@ -13,6 +13,7 @@ import {
   isSessionLaunchRefusal,
 } from '../services/session/launch/launch-session.js';
 import { sessionExists } from '../services/session/launch/session-exists.js';
+import { registeredSpellingOf } from '../services/session/launch/verify-chat-agent.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import { httpLaunchOf } from './session-launcher.js';
 import { sessionMessageReceipt } from './session-message-receipt.js';
@@ -121,10 +122,11 @@ export function mountSessionSendMessage(
         ? await preparePersonChat(db, sessionId, facts, source, deps.meshCore, parsed.data.cwd)
         : undefined;
     if (prepared && 'refusal' in prepared) return sendProblem(c, prepared.refusal.body);
+    // The acknowledged agent, named in any spelling of its folder (DOR-5117).
     if (
       prepared?.registeredAgentPath !== undefined &&
       parsed.data.agentPath !== undefined &&
-      prepared.registeredAgentPath !== parsed.data.agentPath
+      registeredSpellingOf(parsed.data.agentPath, [prepared.registeredAgentPath]) === undefined
     )
       return sendProblem(c, personChatMissing.body);
     const request = prepared

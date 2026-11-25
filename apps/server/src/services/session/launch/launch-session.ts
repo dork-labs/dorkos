@@ -62,7 +62,7 @@ import {
 } from './launch-caller.js';
 import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
 import { launchBindingSourceArgs, resolveChatPlace } from './resolve-chat-place.js';
-import { isRegisteredChatAgentPath } from './verify-chat-agent.js';
+import { registeredChatAgentPath } from './verify-chat-agent.js';
 import { recordedAgentOf, sessionToolWarnings } from './session-tool-warnings.js';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 
@@ -468,30 +468,29 @@ async function launchSessionMessage(
   if (named) return named;
 
   // `agentPath` is durable ownership provenance, not an ordinary cwd hint. A
-  // caller may name it only when Mesh currently knows that exact registered
-  // agent directory. This keeps the first-write session binding authoritative
-  // without letting client metadata manufacture an agent owner.
+  // caller may name it only when Mesh currently knows that registered agent
+  // directory, and it is recorded in Mesh's own spelling (a symlinked spelling
+  // of the same folder is the same agent, DOR-5117). This keeps the first-write
+  // session binding authoritative without letting client metadata manufacture
+  // an agent owner.
   const agentRegistration = {
     registeredAgentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath),
   };
   let verifiedAgentPath: string | undefined;
   if (agentPath !== undefined) {
-    if (!isRegisteredChatAgentPath(agentPath, agentRegistration)) {
+    verifiedAgentPath = registeredChatAgentPath(agentPath, agentRegistration);
+    if (verifiedAgentPath === undefined) {
       return {
         refused: 'INVALID_AGENT_PATH',
         message: 'Choose a registered agent before starting this chat',
       };
     }
-    verifiedAgentPath = agentPath;
   }
   // An agent's own chat is recorded as its own, as `session_start` records it;
   // every turn of a recorded chat then carries that agent (see `forAgent`
   // below). A chat with no recorded agent is not pinned (R3, still open).
   if (verifiedAgentPath === undefined && opts.launcher?.kind === 'agent') {
-    const own = opts.launcher.agentPath;
-    if (isRegisteredChatAgentPath(own, agentRegistration)) {
-      verifiedAgentPath = own;
-    }
+    verifiedAgentPath = registeredChatAgentPath(opts.launcher.agentPath, agentRegistration);
   }
 
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
