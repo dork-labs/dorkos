@@ -226,7 +226,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
   let roomId: string;
   let ownerAuthorId: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     installState.ownerId = null;
     installState.loginEnabled = false;
     resetAgentIdentityService();
@@ -244,6 +244,12 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     // Something for a read to find, written by the operator — the content the
     // laundered caller used to be handed.
     harness.service.post(roomId, { authorId: ownerAuthorId, text: 'a private note' });
+    // That post wakes Ana (she answers everything), and her turn's claim moves
+    // her read cursor past it. Wait for that turn: until it runs, Ana has not
+    // read the note, so her own post below is held as stale (`posted: false`,
+    // no entryId) rather than written, and the rows that post as Ana flaked
+    // on which got there first.
+    await harness.service.triggersIdle();
   });
 
   afterEach(() => {
@@ -356,6 +362,8 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
         .send({ roomId, text: 'on it' });
 
       expect(res.status).toBe(200);
+      // Posted, not held: a held post is a 200 too, with no entry to find.
+      expect(res.body.posted).toBe(true);
       const anaAuthorId = harness.authors.resolveAgent(ANA_PATH, 'Ana').id;
       expect(harness.store.getEntryById(roomId, res.body.entryId)?.authorId).toBe(anaAuthorId);
     });
@@ -438,6 +446,8 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       const res = await rpc(toolCall('post_to_room', { roomId, text: 'on it' }), token);
 
       expect(jsonRpc(res).result?.isError).toBeFalsy();
+      // Posted, not held: a held post is not an error either.
+      expect(JSON.parse(jsonRpc(res).result!.content![0]!.text!)).toMatchObject({ posted: true });
       const anaAuthorId = harness.authors.resolveAgent(ANA_PATH, 'Ana').id;
       const posted = harness.service.readHistory(roomId, ownerAuthorId, { limit: 5 });
       expect(posted.find((entry) => entry.body.text === 'on it')?.authorId).toBe(anaAuthorId);
