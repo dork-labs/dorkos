@@ -273,6 +273,16 @@ pre-push:
         computer_wall_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:computer-wall -- --base "$computer_wall_base"
       fail_text: Computer wall failed — fix the files listed above.
+    import-boundary:
+      # The services import boundary (DOR-4924), on the same branch point as
+      # max-lines above. The lint rule refuses a pair the baseline does not
+      # hold; this refuses a pair's count grown, and a pair added or raised by
+      # hand. Pure file reads, under a second.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push import-boundary
+        import_boundary_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:import-boundary -- --base "$import_boundary_base"
+      fail_text: Import boundary failed — fix the imports listed above.
     test-ratio:
       # The per-package test budget, on the same branch point as max-lines
       # above. Pure file reads, a few seconds.
