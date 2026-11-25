@@ -145,9 +145,23 @@ if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_r
 
 **What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error`. Every `detail` the chain writes is a fixed sentence: an exception's message or stack never goes on the wire, in any environment (it is logged instead). The upload refusals follow the same rule. A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
 
-**Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
+**Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. It reads nothing else from a body that is not a problem document, except the deliberate exceptions below that the app still receives (the login gate and the two `428`s). A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
 
-**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Each route moved to problem documents together with every caller that reads it (DOR-4979): there is no compatibility window, and a lint rule will ban `c.json({ error })`.
+**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body. The old shape is gone from every route and every reader (DOR-4979), with no compatibility window. The lint rule `problem-only/no-error-body` (`apps/server/eslint-rules/problem-only.js`) refuses a `.json({ error … })` call in `routes/`, `http/` and `middleware/`; a body that keeps another shape on purpose carries a scoped `eslint-disable-next-line` with its reason.
+
+**The deliberate exceptions.** These answer another shape on purpose, and stay that way:
+
+- The login gate's `401` `{ error: 'Unauthorized', code: 'AUTH_REQUIRED', signInWith? }` (the `AuthRequired` schema): every client reads its `code` to show the sign-in screen.
+- The `428` "confirm first" answers: `StepUpRequired` on every held write, `PasskeyCheckRequired` on the passkey-checked device writes, and an agent's raise card (`agent_raise_card`). They hold an action for a person; they are not refusals.
+- MCP's JSON-RPC errors and the OAuth bodies (`/mcp`, the connector MCP listener, the stand-in OAuth server for tests).
+- Better Auth's own `{ code, message }` on `/api/auth/*`, which DorkOS does not write (DorkOS's own refusals in front of it, such as the sign-in rate limit and the front-door bar, are problems).
+- `200` answers that carry `{ ok: false }` by design: a result, not an error.
+- The space server and everything under `services/spaces`, `apps/space` and `community-wire*` (frozen: ADR `261018-124422`), and `spaces-enabled` in front of it. The app's space pages read that wire in `apps/client/src/space`.
+- Refusals written to a raw socket (managed and own-tunnel ingress), the credits relay's model-API error format, and the `linear-issues` core extension's own routes.
+- The video proxy (`/api/extensions/media/{ticket}`) answers `415`, `416` and `502` with no body: a `<video>` element reads nothing from it.
+- An SSE stream's in-band `event: error` (discovery), which is a stream event, not a response.
+- Until 0.143 (DOR-5089), the `409` `{ error, code: 'extension-risk', stale }` a step-up page from before 0.141.0 reads.
+- Internal values that never reach a client: the approvals commit's `409 different-request`, and the `{ error, code }` refusal objects services hand their route, which turns them into problems.
 
 ### Codes that changed: Relay and connected apps
 
@@ -216,6 +230,17 @@ Approvals, permissions, to-do promises, onboarding, the harness, feedback, push,
   - `temporarily_unavailable` (503): `unavailable` on the load gate, `team_unavailable`, and `viewer_unavailable` (it was 404 or 409). `rate_limited` (429): `viewer_limit` and the admin limiter. `upstream_unavailable` (502): `models_unreachable` and the feedback history. `internal_error` (500): `DOC_INDEX_FAILED`, `ALWAYS_ALLOW_NOT_RECORDED`, `ALWAYS_ALLOW_NOT_UNDONE`, and every other failure, which used to echo the error's message.
 - **Kept as they were:** the login gate's `401 AUTH_REQUIRED` body, the `428` step-up and agent-card (`agent_raise_card`) bodies, and `200` answers that carry `{ ok: false }` by design.
 
+### Codes that changed: the last hand-built bodies
+
+The last answers built by hand moved to problem documents, and every reader dropped the old shape (DOR-4979).
+
+- A server that is stopping: `SERVER_STOPPING` → `temporarily_unavailable` (503, same headers).
+- The sign-in rate limit: `RATE_LIMITED` → `rate_limited` (429, now `application/problem+json`; `Retry-After` unchanged).
+- The mini app access page's decision: `MINI_APP_ACCESS_BAD_DECISION` and `MINI_APP_ACCESS_NO_ACCOUNT` → `invalid_request` (400); `MINI_APP_ACCESS_STALE` → `stale_page` (409, was 403); `MINI_APP_ACCESS_UNAVAILABLE` → `temporarily_unavailable` (503); a mini app that changed since the page opened → `precondition_failed` (412, was 409).
+- An agent's raise that gets no card: `agent_raise_unidentified` → `agent_identity_unverified` (401, was 403); `agent_raise_marked` → `forbidden` (403); `agent_raise_cap` → `rate_limited` (429); `agent_raise_unavailable` → `temporarily_unavailable` (503).
+- Document metrics (`GET /api/debug/doc-channels`): `DOC_METRICS_FORBIDDEN` → `owner_only` (403); `DOC_CHANNEL_METRICS_UNAVAILABLE` → `temporarily_unavailable` (503).
+- Readers: `readErrorBody` no longer reads `{ error, code }` or `{ message }`; the app no longer knows `NOT_FROM_WIFI` or `NEEDS_PERSON_AT_THIS_COMPUTER`, and the CLI no longer knows `API_NOT_FOUND`.
+
 ## Regenerating the published API docs (two steps, not one)
 
 Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
@@ -262,7 +287,7 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 | `verb-path`            | A static path segment that is a command word (`COMMAND_WORDS` in `rules.ts`, or any segment ending in `-all`). `pause`, `resume`, `halt`, `install`, `fork`, `merge` and `trigger` are allowed (`ALLOWED_VERBS`).                                                                                                                                                                 | Name the resource and let the method be the action: `POST /things`, not `POST /things/create`.                   |
 | `param-name`           | A resource whose `{param}` goes by more than one name in its group (`/rooms/{id}` beside `/rooms/{roomId}`): distinct names minus one.                                                                                                                                                                                                                                            | Use the name the group already uses.                                                                             |
 | `error-missing`        | An operation with no 4xx or 5xx response.                                                                                                                                                                                                                                                                                                                                         | Declare the error responses the handler can send.                                                                |
-| `error-shape`          | A 4xx or 5xx response with no body, or whose JSON body is not a `$ref` to a shared error schema (`SHARED_ERROR_SCHEMAS`: `ErrorResponse`).                                                                                                                                                                                                                                        | Point the body at `ErrorResponse`.                                                                               |
+| `error-shape`          | A 4xx or 5xx response with no body, or whose body is not a shared error schema (`SHARED_ERROR_SCHEMAS`: `Problem`, `AuthRequired`, `StepUpRequired`, `PasskeyCheckRequired`), an extension of one, or a choice between them.                                                                                                                                                      | Declare it with `problemResponse()`.                                                                             |
 | `list-paging`          | A GET whose last segment is static and whose 200 body is an array or holds one, but which lacks a `cursor` and `limit` query parameter or a `nextCursor` in its body.                                                                                                                                                                                                             | Page the list: accept `cursor` and `limit`, return `nextCursor`.                                                 |
 | `undocumented-route`   | A served route (from the census) with no documented operation. `ALL` middleware, wildcards, `/api/test` and `/api/ext/{id}` are left out; parameter names are ignored when matching. Known gap: an `ALL` or `/*` route answers requests but is never counted here, so a route served only that way can stay undocumented without a finding.                                       | Document the route, then regenerate the docs (above).                                                            |
 | `unserved-operation`   | A documented operation no served route answers.                                                                                                                                                                                                                                                                                                                                   | Serve it, or remove it from the document.                                                                        |
@@ -283,7 +308,7 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 A new endpoint is a capability ([Adding a New Endpoint](#adding-a-new-endpoint)). A hand route, kept only for an allowlisted shape, passes every blocking rule when it is a documented `registerPath` with:
 
 - a unique `operationId` (or none, and the generator derives one: see [Operation ids](#operation-ids));
-- at least one 4xx or 5xx response, each with a body that is `$ref: ErrorResponse`;
+- at least one 4xx or 5xx response, each a problem document (`problemResponse('…')`, or `INTERNAL_ERROR_RESPONSE` for a read that can only fail inside the server, both in `services/core/openapi/problem-openapi.ts`);
 - no command word in any static segment of its path (name the resource, let the method be the action);
 - the parameter name its group already uses for that resource;
 - on a list `GET`: `cursor` and `limit` query parameters and a `nextCursor` in the 200 body.
@@ -406,7 +431,7 @@ The session-list events (`session_upserted`/`session_removed`/`session_status`) 
 
 **Error responses:**
 
-- `503` - `{ error: 'Too many SSE clients' }` when `SSE.MAX_TOTAL_CLIENTS` (500) is exceeded
+- `503` `temporarily_unavailable` when `SSE.MAX_TOTAL_CLIENTS` (500) is exceeded
 
 **Keepalive:** `event: heartbeat\ndata: \n\n` every 15 seconds.
 
