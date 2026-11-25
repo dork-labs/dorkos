@@ -50,6 +50,7 @@ import { StartPayloadSchema, type StartPayload } from '../start-payload.js';
 import { busyRetriesOf, type StartTurns } from '../start-turns.js';
 import {
   EFFECT_MAX_ATTEMPTS,
+  failuresOf,
   retryDelayMs,
   type EffectAnswer,
   type EffectContext,
@@ -78,6 +79,13 @@ export function startTurnHandler(deps: StartTurnDeps): EffectHandler {
     handle: (effect, ctx) => handOver(deps, effect, ctx),
     onExpired: (effect) => {
       if (effect.runId !== null) deps.starts.cancel(effect.runId, 'expired');
+    },
+    checkHeld: (effect) => {
+      // Waiting for a launch this process no longer holds (its plan was
+      // dropped without a word to the record): hand it over again, now.
+      const run = effect.runId === null ? undefined : deps.runs.get(effect.runId);
+      if (run?.status !== 'queued' || run.queueMessageId !== null) return;
+      if (deps.computer()?.holds(run.id) === false) deps.starts.reopen(run, 0);
     },
     expireHeld: (effect) => {
       const run = effect.runId === null ? undefined : deps.runs.get(effect.runId);
@@ -144,7 +152,8 @@ async function handTo(
     if (!computer) throw new Error('The computer face is not wired yet');
     return await computer.start(request);
   } catch (err) {
-    if (effect.attempts < EFFECT_MAX_ATTEMPTS) throw err;
+    // Only the attempts that threw count; a wait for a busy chat is not one.
+    if (failuresOf(effect) + 1 < EFFECT_MAX_ATTEMPTS) throw err;
     deps.starts.cancel(request.runId, 'start_failed');
     return undefined;
   }
@@ -161,8 +170,9 @@ function waitFor(
   deps.starts.waiting(run.id, verdict.wait);
   const busyRetries = busyRetriesOf(effect) + 1;
   const retryAt = verdict.retryAt ?? ctx.now() + retryDelayMs(busyRetries);
-  ctx.release(retryAt, { busyRetries, waiting: verdict.wait });
-  return { kind: 'wait', retryAt, outcome: { busyRetries, waiting: verdict.wait } };
+  const outcome = { busyRetries, waiting: verdict.wait, failures: failuresOf(effect) };
+  ctx.release(retryAt, outcome);
+  return { kind: 'wait', retryAt, outcome };
 }
 
 /** The computer face's request: the run's identity, its words inline, and what admission decided. */

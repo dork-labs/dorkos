@@ -374,9 +374,10 @@ export class RunStore {
    *   hand the words back as a draft.
    * - `running`: ended (12) the same way.
    *
-   * A `queued` run with no queue row and no source whose words this process
-   * does not hold: an earlier boot made it, its words were in that process's
-   * memory, and they are gone. Cancelled (5) as `start_lost`, or it would
+   * A `queued` run with no queue row whose words this process does not hold
+   * and that nothing will hand over: an earlier boot made it, its words were
+   * in that process's memory (or its source has no start left to read them
+   * with), and they are gone. Cancelled (5) as `start_lost`, or it would
    * read as waiting forever. A run with a pending or leased `start_turn`
    * effect is never cancelled by this rule: the turn port handed it over,
    * and its words are at their source or with the space side, not in the
@@ -417,8 +418,8 @@ export class RunStore {
         and(
           eq(turnRuns.status, 'queued'),
           isNull(turnRuns.queueMessageId),
-          isNull(turnRuns.sourceRef),
-          // Handed over through the turn port: the space side holds its words (§4.7).
+          // Handed over through the turn port: the space side holds its words
+          // (§4.7). A run with a source but no open start is stranded: cancelled.
           sql`NOT EXISTS (SELECT 1 FROM "turn_effects" AS "start" WHERE "start"."run_id" =
             ${turnRuns.id} AND "start"."kind" = 'start_turn' AND "start"."state" IN ('pending', 'leased'))`,
           ...(chatKey !== undefined ? [eq(turnRuns.sessionId, chatKey)] : [])

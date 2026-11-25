@@ -66,6 +66,12 @@ export class StartTurns implements HandedStarts {
     // The others first: the run that let go waits out its own backoff.
     if (LIVE.has(from) && !LIVE.has(to)) this.effects.wakeAllStarts();
     if (from === 'starting' && to === 'queued' && run.queueMessageId === null) this.reopen(run);
+    if (
+      (from === 'started' || from === 'running') &&
+      to === 'queued' &&
+      run.queueMessageId === null
+    )
+      this.startAgain(run);
     this.port()?.moved(run);
   }
 
@@ -75,10 +81,37 @@ export class StartTurns implements HandedStarts {
    *
    * @param run - The run, `queued`.
    */
-  reopen(run: TurnRun): void {
+  reopen(run: TurnRun, delayMs?: number): void {
     const open = this.effects.openStartOf(run.id);
     if (!open) return;
-    this.effects.reopenStartOf(run.id, this.now() + retryDelayMs(busyRetriesOf(open) + 1));
+    this.effects.reopenStartOf(
+      run.id,
+      this.now() + (delayMs ?? retryDelayMs(busyRetriesOf(open) + 1))
+    );
+  }
+
+  /**
+   * A run without a queue row that had started is back in line (a pause cut
+   * its turn, transitions 14 and 15): its `start_turn` settled at `started`, so
+   * a fresh one is saved beside it, with the same options, or nothing would
+   * ever hand it over again.
+   *
+   * @param run - The run, `queued` again.
+   */
+  private startAgain(run: TurnRun): void {
+    const starts = this.effects.listForRun(run.id).filter((effect) => effect.kind === 'start_turn');
+    const last = starts.at(-1);
+    if (!last || starts.some((effect) => effect.state === 'pending' || effect.state === 'leased'))
+      return;
+    this.effects.insert({
+      kind: 'start_turn',
+      key: `start:${run.id}:${run.attempt}:${starts.length + 1}`,
+      runId: run.id,
+      ...(last.sessionId !== null ? { sessionId: last.sessionId } : {}),
+      payload: last.payload,
+      delivery: 'repeatable',
+      notAfter: last.notAfter,
+    });
   }
 
   /**

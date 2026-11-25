@@ -18,7 +18,7 @@ import {
   forgetOwnersCleanSend,
   noteOwnersCleanSend,
 } from '../../core/turn-power/held-chat-mark.js';
-import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
+import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
@@ -198,6 +198,16 @@ export function launchDispatchInner(
   // quiet past its timeout, or a launch still in `SessionTurnQueue` may hold
   // the chat with no slot. Otherwise the run is `starting` now (transition 4).
   const verdict = launchVerdictOf(plan);
+  if (verdict.kind === 'gone') {
+    // Its run ended before this launch began: nothing may start for it now.
+    pending.delete(plan.messageId);
+    logger.warn('[MessageDispatcher] a launch was dropped: its run had already ended', {
+      sessionId: plan.sessionKey,
+      runId: plan.runId,
+    });
+    plan.turn.onSettled?.('failed');
+    return Promise.resolve({ accepted: false });
+  }
   if (verdict.kind === 'busy') {
     // A known gap, accepted (spec §4.7, beside DOR-2346): between a Claude Code
     // SDK rebind and the running turn's next event, the in-memory slot can be

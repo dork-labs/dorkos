@@ -42,7 +42,7 @@ import {
   type RefusalReason,
   type TurnOrigin,
 } from '@dorkos/shared/turn-port';
-import { EXTENSION_CLIENT_PREFIX } from '../../extensions/agent-send/extension-client-id.js';
+import { EXTENSION_CLIENT_PREFIX } from '@dorkos/shared/extension-id';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import {
   dispatchSessionMessage,
@@ -52,6 +52,7 @@ import {
   type SessionLaunchRefusal,
 } from '../launch/launch-session.js';
 import { cancelPendingDispatch } from '../message-dispatcher/queue-upkeep.js';
+import { cancelQueuedMessage } from '../queued-message-edits.js';
 import { launching, pending } from '../message-dispatcher/state.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { isRunHeld, turnFacts } from './facts.js';
@@ -93,15 +94,19 @@ function clientIdOf(runId: string, origin: TurnOrigin): string {
  */
 export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurnPort {
   const dispatch = deps.dispatch ?? dispatchSessionMessage;
+  // Hand-overs still inside the launch path (its awaits before the dispatcher
+  // has the plan): held as surely as a pending or launching one.
+  const inFlight = new Set<string>();
   const holds = (runId: string): boolean =>
-    pending.has(runId) || launching.has(runId) || isRunHeld(runId);
+    inFlight.has(runId) || pending.has(runId) || launching.has(runId) || isRunHeld(runId);
   return {
     holds,
     withdraw: (runId) => {
-      if (launching.has(runId)) return false;
+      if (inFlight.has(runId) || launching.has(runId)) return false;
       if (pending.has(runId)) cancelPendingDispatch(runId);
       return true;
     },
+    removeQueued: (sessionId, runId) => cancelQueuedMessage(sessionId, runId) !== undefined,
     async start(input) {
       const request = TurnStartRequestSchema.parse(input);
       if (holds(request.runId)) return { refused: 'already_held' };
@@ -125,6 +130,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       }
       // Nothing awaits between admission's cap check and the launch path's own
       // claim of a slot, which it takes before its first await.
+      inFlight.add(request.runId);
       const result = await dispatch({
         sessionId: request.sessionId,
         origin: request.origin,
@@ -133,7 +139,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
         ...(composer ? {} : { wordsAtSource: true as const }),
         request: {
           content: request.content,
-          cwd: request.cwd,
+          ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
           ...(agentPath !== undefined ? { agentPath } : {}),
           ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
           ...(request.accountRef !== undefined ? { account: request.accountRef } : {}),
@@ -146,7 +152,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
-      });
+      }).finally(() => inFlight.delete(request.runId));
       if (isSessionLaunchRefusal(result)) {
         if (result.refused === 'LAUNCH_CAP_FULL') {
           throw new Error('The launch cap filled between admission and the hand-over');

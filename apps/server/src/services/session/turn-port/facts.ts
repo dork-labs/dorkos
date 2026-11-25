@@ -43,7 +43,11 @@ import type { RunFact, TurnOrigin, WaitReason, RunEnding } from '@dorkos/shared/
  *   lease runs out, so the launch looks again then.
  */
 export type LaunchVerdict =
-  { kind: 'starting' } | { kind: 'queued' } | { kind: 'busy'; retryAt?: number };
+  | { kind: 'starting' }
+  | { kind: 'queued' }
+  | { kind: 'busy'; retryAt?: number }
+  /** The run already ended without starting (cancelled, superseded): the launch is dropped. */
+  | { kind: 'gone' };
 
 /**
  * Why queue rows are leaving the table, which decides what becomes of a run

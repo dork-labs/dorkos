@@ -126,6 +126,9 @@ export function returnToQueue(plan: DispatchPlan): void {
   if (plan.wordsAtSource) {
     pending.delete(plan.messageId);
     handBackRun(plan);
+    // The launch path's settle is the only release of the launch slot this
+    // hand-over claimed (`countsTowardLaunchCap`); the next hand-over claims its own.
+    plan.turn.onSettled?.('failed');
     return;
   }
   if (plan.whenBusy !== 'queue') {

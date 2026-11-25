@@ -179,7 +179,7 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
           if (!pauses) return false;
           return agentId !== null
             ? pauses.pausedAgent(agentId) !== undefined
-            : pauses.isPaused(cwd) !== undefined;
+            : cwd !== undefined && pauses.isPaused(cwd) !== undefined;
         },
         machineFull: isAgentLaunchCapFull,
       },

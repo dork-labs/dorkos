@@ -126,10 +126,6 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
       taskStore: () => refs.taskStore,
     })
   );
-  // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of
-  // the person's agents a message. Built before extensions start, beside the
-  // start-work seam it opens kept chats through; Mesh is read at call time,
-  // since it starts later. Started once the runtimes are registered.
   // The computer face of the turn port (spec `turns-survive-restarts` §3.1):
   // the one way a run the space face saved reaches this Mac's dispatcher.
   setComputerTurnPort(
@@ -138,6 +134,10 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
       roomSessionPlace: () => refs.roomSessionPlacePort,
     })
   );
+  // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of
+  // the person's agents a message. Built before extensions start, beside the
+  // start-work seam it opens kept chats through; Mesh is read at call time,
+  // since it starts later. Started once the runtimes are registered.
   setAgentSendService(
     new AgentSendService({
       store: new AgentSendStore(db),

@@ -136,10 +136,12 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     machineFull: isAgentLaunchCapFull,
   };
   const admitRun = admission?.admit ?? admit;
-  const port = new SpaceTurnPort({
+  const port: SpaceTurnPort = new SpaceTurnPort({
     runs: store,
     effects,
     ...(agentHome ? { agentHome } : {}),
+    computer: computer ?? getComputerTurnPort,
+    starts: (): StartTurns => starts,
     preview: (run, start) => {
       if (run.origin === null) return undefined;
       const verdict = admitRun({ ...run, origin: run.origin }, start, {
@@ -149,7 +151,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
       return 'wait' in verdict ? verdict.wait : undefined;
     },
   });
-  const starts = new StartTurns(store, effects, () => port, now);
+  const starts: StartTurns = new StartTurns(store, effects, () => port, now);
   const worker = new EffectWorker({
     effects,
     runs: store,

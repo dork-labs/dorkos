@@ -36,6 +36,12 @@ import type {
 } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
 import type { TurnNotices } from './effects/turn-notices.js';
+import {
+  isUniqueViolation,
+  type RunEndingDetail,
+  type RunStore,
+  type TurnRun,
+} from './run-store.js';
 
 /** What the sink needs of the turn port's hand-overs (`effects/start-turns.ts`). */
 export interface HandedStarts {
@@ -54,12 +60,6 @@ export interface HandedStarts {
    */
   rowTaken(run: TurnRun): void;
 }
-import {
-  isUniqueViolation,
-  type RunEndingDetail,
-  type RunStore,
-  type TurnRun,
-} from './run-store.js';
 
 /**
  * Cancel a run that never started: from `queued` (5) or `starting` (9).
@@ -303,7 +303,10 @@ function dispatcherFeed(
     launchBegins: (runId): LaunchVerdict =>
       store.transaction((): LaunchVerdict => {
         const run = store.get(runId);
-        if (!run || run.status !== 'queued') return { kind: 'starting' };
+        if (!run) return { kind: 'starting' };
+        // A deadline or a door refusal ended it while its launch was on the way.
+        if (run.status === 'cancelled' || run.status === 'superseded') return { kind: 'gone' };
+        if (run.status !== 'queued') return { kind: 'starting' };
         const live = store.liveRunOf(run.sessionId);
         if (live && live.id !== run.id) {
           if (live.status === 'starting') return { kind: 'queued' };

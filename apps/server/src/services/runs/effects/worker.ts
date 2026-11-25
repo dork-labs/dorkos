@@ -80,6 +80,18 @@ export const EFFECT_RETRY_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000, 600_000] 
 /** A `repeatable` effect is dropped after this many failed attempts. */
 export const EFFECT_MAX_ATTEMPTS = 8;
 
+/**
+ * How many of an effect's attempts threw, as its last outcome counted. Kept
+ * apart from `attempts`, which counts every lease: a `start_turn` that waited
+ * for a busy chat leased and let go without failing.
+ *
+ * @param effect - The effect.
+ */
+export function failuresOf(effect: Pick<TurnEffect, 'outcome'>): number {
+  const outcome = effect.outcome as { failures?: unknown } | null | undefined;
+  return typeof outcome?.failures === 'number' ? outcome.failures : 0;
+}
+
 /** The longest a pass waits on one handler before it takes the next (see the module doc). */
 export const EFFECT_HANDLER_TIMEOUT_MS = 30_000;
 
@@ -151,6 +163,13 @@ export interface EffectHandler {
    * @param effect - The effect, still leased.
    */
   expireHeld?(effect: TurnEffect): void;
+  /**
+   * This boot holds the effect between passes (it answered `await`): a chance
+   * to hand it back when what it waited on is gone.
+   *
+   * @param effect - The effect, still leased.
+   */
+  checkHeld?(effect: TurnEffect): void;
 }
 
 /** The handler registry: one per kind that has one. */
@@ -358,6 +377,8 @@ export class EffectWorker {
     for (const effect of effects.heldPastDeadline(this.opts.epoch)) {
       handlers[effect.kind]?.expireHeld?.(effect);
     }
+    for (const effect of effects.heldBy(this.opts.epoch))
+      handlers[effect.kind]?.checkHeld?.(effect);
     for (const run of runs.endedRunsToSettle(SETTLE_BATCH)) {
       effects.transaction(() => this.settleRun(run.id));
     }
@@ -466,10 +487,12 @@ export class EffectWorker {
       });
       return;
     }
-    if (effect.attempts >= EFFECT_MAX_ATTEMPTS) {
+    const failures = failuresOf(effect) + 1;
+    if (failures >= EFFECT_MAX_ATTEMPTS) {
       this.end(effect, 'dropped', {
         reason: 'attempts_exhausted',
         attempts: effect.attempts,
+        failures,
         error,
       });
       logger.error('[runs] an effect was dropped after its last attempt', {
@@ -481,8 +504,8 @@ export class EffectWorker {
     }
     this.opts.effects.release(
       { id: effect.id, owner: this.opts.epoch },
-      this.now() + retryDelayMs(effect.attempts),
-      { error, attempt: effect.attempts }
+      this.now() + retryDelayMs(failures),
+      { error, attempt: effect.attempts, failures }
     );
   }
 }

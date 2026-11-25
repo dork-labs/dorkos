@@ -532,31 +532,10 @@ export class EffectStore {
   }
 
   /**
-   * Make a chat's waiting `start_turn` effects due now: the run that held the
-   * chat let go of it (spec §3.5, "released by that run's `ended` fact").
-   *
-   * @param sessionId - The chat, as its queue rows are kept.
-   */
-  wakeStartsOf(sessionId: string): void {
-    const now = this.now();
-    const changed = this.db
-      .update(turnEffects)
-      .set({ availableAt: now })
-      .where(
-        and(
-          eq(turnEffects.kind, 'start_turn'),
-          eq(turnEffects.sessionId, sessionId),
-          eq(turnEffects.state, 'pending'),
-          gt(turnEffects.availableAt, now)
-        )
-      )
-      .run().changes;
-    if (changed > 0) this.announceWork();
-  }
-
-  /**
-   * Make every waiting `start_turn` due now: a pause was lifted, and the runs
-   * it held may go (§3.5).
+   * Make every `start_turn` that waits for room due now: a run let go of its
+   * chat or its launch slot, or a pause was lifted (§3.5). Only a real wait
+   * (`chat_busy`, `machine_full`, `paused`, named in its outcome) is woken; an
+   * effect backing off after a throw keeps its backoff.
    */
   wakeAllStarts(): void {
     const now = this.now();
@@ -567,11 +546,26 @@ export class EffectStore {
         and(
           eq(turnEffects.kind, 'start_turn'),
           eq(turnEffects.state, 'pending'),
-          gt(turnEffects.availableAt, now)
+          gt(turnEffects.availableAt, now),
+          sql`json_extract(${turnEffects.outcome}, '$.waiting') IS NOT NULL`
         )
       )
       .run().changes;
     if (changed > 0) this.announceWork();
+  }
+
+  /**
+   * Every effect this boot holds right now.
+   *
+   * @param owner - This boot's epoch.
+   */
+  heldBy(owner: string): TurnEffect[] {
+    return this.db
+      .select()
+      .from(turnEffects)
+      .where(and(eq(turnEffects.state, 'leased'), eq(turnEffects.leaseOwner, owner)))
+      .all()
+      .map(toEffect);
   }
 
   /**

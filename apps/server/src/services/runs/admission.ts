@@ -52,7 +52,7 @@ export type AdmissionVerdict =
 export interface AdmissionDeps {
   runs: RunStore;
   /** Whether the agent a turn is for is paused: by Mesh id, else by its folder. */
-  isPaused: (agentId: string | null, cwd: string) => boolean;
+  isPaused: (agentId: string | null, cwd: string | undefined) => boolean;
   /** Whether every launch slot under `runtimes.maxAgentChats` is taken. */
   machineFull: () => boolean;
 }

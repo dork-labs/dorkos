@@ -482,8 +482,12 @@ const callerTurnFields = {
    * this computer's own computer face, never sent to an agent computer.
    */
   agentId: RelayAgentIdSchema.optional(),
-  /** The directory the turn runs in, absolute. */
-  cwd: z.string().min(1),
+  /**
+   * The directory the turn runs in, absolute. Absent, the chat runs where it
+   * always has: an existing chat in its own folder, a new one wherever the
+   * launch path's own ladder places it (an agent's home, else the default).
+   */
+  cwd: z.string().min(1).optional(),
   /**
    * The words, inline, as `turn.start` carries them: never empty, at most
    * `SESSION_RELAY_MAX_MESSAGE_LENGTH` (200,000) characters. Longer is

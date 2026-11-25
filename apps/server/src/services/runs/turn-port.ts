@@ -43,7 +43,8 @@ import {
 } from '@dorkos/shared/turn-port';
 import { SESSION_RELAY_MAX_MESSAGE_LENGTH } from '@dorkos/shared/session-relay';
 import { logger } from '../../lib/logger.js';
-import { chatKeyOf } from '../session/turn-port/index.js';
+import { chatKeyOf, type ComputerTurnPort } from '../session/turn-port/index.js';
+import type { StartTurns } from './effects/start-turns.js';
 import type { EffectStore } from './effects/effect-store.js';
 import { startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
@@ -96,6 +97,10 @@ export interface SpaceTurnPortDeps {
    * handler asks again before every hand-over; this decides nothing.
    */
   preview?: (run: TurnRun, start: StartPayload) => WaitReason | undefined;
+  /** The computer face, for taking back a run its caller no longer wants. */
+  computer?: () => ComputerTurnPort | undefined;
+  /** The record side of the hand-overs, for cancelling a run that never left here. */
+  starts?: () => StartTurns | undefined;
 }
 
 /** The space face. See the module documentation. */
@@ -203,6 +208,27 @@ export class SpaceTurnPort {
   }
 
   /**
+   * Take back a run that has not started, because its caller is gone (a mini
+   * app stopped or was removed): its queue row leaves the chat's queue, or a
+   * run still waiting here is cancelled. A launch already under way is left
+   * to end as it ends.
+   *
+   * @param runId - The run.
+   * @param why - Kept on the run when it is cancelled here.
+   */
+  withdraw(runId: string, why: string): void {
+    const run = this.deps.runs.get(runId);
+    if (run?.status !== 'queued') return;
+    const computer = this.deps.computer?.();
+    if (run.queueMessageId !== null) {
+      computer?.removeQueued(run.sessionId, run.queueMessageId);
+      return;
+    }
+    if (computer?.withdraw(run.id) === false) return;
+    this.deps.starts?.()?.cancel(run.id, why);
+  }
+
+  /**
    * Hear every committed status change of the runs `filter` names (all, when
    * absent), as the run reads after the transaction that changed it. A
    * listener that throws is logged and never stops the others.
@@ -268,7 +294,11 @@ export class SpaceTurnPort {
    * @param run - The run, as stored after the move.
    */
   moved(run: TurnRun): void {
-    if (run.status !== 'queued' && run.status !== 'starting') this.words.delete(run.id);
+    // Kept until the runtime has the words (`running`): a pause can cut a turn
+    // between `started` and its first event and put the run back in line.
+    const waiting =
+      run.status === 'queued' || run.status === 'starting' || run.status === 'started';
+    if (!waiting) this.words.delete(run.id);
     if (this.watchers.size === 0) return;
     // After the synchronous transaction it was called inside: a rolled-back
     // move is then read as it really stands, never as it was asked for.

@@ -33,7 +33,13 @@ import {
   type SessionLaunchRefusal,
 } from '../../session/launch/launch-session.js';
 import { createComputerTurnPort } from '../../session/turn-port/computer-turn-port.js';
-import { turnFacts, type ComputerTurnPort } from '../../session/turn-port/index.js';
+import {
+  isAgentLaunchCapFull,
+  turnFacts,
+  type ComputerTurnPort,
+} from '../../session/turn-port/index.js';
+import { holdRun, releaseRun } from '../../session/turn-port/facts.js';
+import { agentLaunchMaxLive } from '../../session/launch/launch-cap.js';
 import { logger } from '../../../lib/logger.js';
 import {
   getRunRecord,
@@ -67,6 +73,12 @@ let handed: string[];
 let forcedVerdict: AdmissionVerdict | undefined;
 let paused = false;
 let machineFull = false;
+/** When set, admission reads the real launch cap rather than the switch above. */
+let realCap = false;
+/** When set, the launch path waits on it before it goes on. */
+let launchGate: Promise<void> | undefined;
+/** The computer face the current boot installed. */
+let computer: ComputerTurnPort;
 /** When set, the launch path answers this refusal. */
 let refuseWith: SessionLaunchRefusal['refused'] | undefined;
 /** When set, the launch path throws. */
@@ -154,6 +166,7 @@ async function personWorking(): Promise<void> {
 /** The launch path, real unless a case asks it to refuse. */
 async function launchPath(opts: DispatchSessionMessageOpts) {
   handed.push(opts.runId ?? '?');
+  if (launchGate) await launchGate;
   if (launchThrows) throw new Error('The launch path broke, for the demo');
   if (refuseWith) return { refused: refuseWith, message: 'Refused for the demo.' } as const;
   return dispatchSessionMessage(opts);
@@ -173,14 +186,17 @@ function computerFace(): ComputerTurnPort {
 
 /** Build the run record as a boot does, over the same database. */
 function boot(epoch: string): RunRecord {
-  const computer = computerFace();
+  computer = computerFace();
   installRunRecord(db, {
     epoch,
     now: () => clock,
     computer: () => computer,
     agentHome: () => (id) => (id === AGENT.id ? AGENT.home : undefined),
     admission: {
-      admission: { isPaused: () => paused, machineFull: () => machineFull },
+      admission: {
+        isPaused: () => paused,
+        machineFull: () => (realCap ? isAgentLaunchCapFull() : machineFull),
+      },
       admit: (run, start, deps) => {
         if (forcedVerdict) return forcedVerdict;
         return admitReal(run, start, deps);
@@ -207,6 +223,8 @@ beforeEach(() => {
   forcedVerdict = undefined;
   paused = false;
   machineFull = false;
+  realCap = false;
+  launchGate = undefined;
   refuseWith = undefined;
   launchThrows = false;
   sources.clear();
@@ -735,5 +753,115 @@ describe('the door’s refusals (§3.1)', () => {
       endingDetail: { cancelledBecause: 'invalid_agent_path' },
     });
     expect(handed).not.toContain(agentRun.runId);
+  });
+});
+
+describe('what the review found (T5)', () => {
+  it('lets go of the launch slot when a refused launch hands its run back (the real cap)', async () => {
+    // Purpose: fails if each hand-back leaked one slot of `runtimes.maxAgentChats`.
+    realCap = true;
+    inner.acquireLock.mockReturnValue(false);
+    const { runId } = startFromApp('from the app: try again');
+    for (let i = 0; i < agentLaunchMaxLive() + 2; i++) {
+      clock = Math.max(clock, startEffect(runId).availableAt);
+      await pass();
+    }
+    expect(handed.length).toBeGreaterThan(agentLaunchMaxLive());
+    expect(isAgentLaunchCapFull()).toBe(false);
+    expect(record.store.get(runId)?.waitReason).not.toBe('machine_full');
+    inner.acquireLock.mockReturnValue(true);
+    clock = Math.max(clock, startEffect(runId).availableAt);
+    await pass();
+    expect(record.store.get(runId)?.status).toMatch(/ended|settled/u);
+  });
+
+  it('counts only throws toward giving up: many waits, then one throw, is not the end', async () => {
+    await personWorking();
+    forcedVerdict = { go: true };
+    const { runId } = startFromApp('from the app: patient');
+    for (let i = 0; i < 9; i++) {
+      await pass();
+      clock = startEffect(runId).availableAt;
+    }
+    forcedVerdict = undefined;
+    releaseLongTurn?.();
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    launchThrows = true;
+    clock = Math.max(clock, startEffect(runId).availableAt);
+    await pass();
+    expect(record.store.get(runId)?.status).toBe('queued');
+    expect(startEffect(runId)).toMatchObject({ state: 'pending', outcome: { failures: 1 } });
+    // A throw's backoff is its own: another run ending does not cut it short.
+    const before = startEffect(runId).availableAt;
+    record.effects.wakeAllStarts();
+    expect(startEffect(runId).availableAt).toBe(before);
+    launchThrows = false;
+    clock = before;
+    await pass();
+    expect(record.store.get(runId)?.status).toMatch(/ended|settled/u);
+  });
+
+  it('holds a hand-over still inside the launch path, and drops a launch whose run already ended', async () => {
+    let open!: () => void;
+    launchGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { runId } = startFromApp('from the app: on its way');
+    const handing = record.worker.runOnce();
+    await vi.waitFor(() => expect(handed).toEqual([runId]));
+    // Its deadline cannot take it back now: the launch path has it.
+    expect(computer.holds(runId)).toBe(true);
+    expect(computer.withdraw(runId)).toBe(false);
+    open();
+    await handing;
+    await settle();
+    expect(record.store.get(runId)?.status).toMatch(/ended|settled/u);
+
+    const cancelled = startFromApp('from the app: too late').runId;
+    record.starts.cancel(cancelled, 'expired');
+    expect(turnFacts()!.dispatcher.launchBegins(cancelled)).toEqual({ kind: 'gone' });
+  });
+
+  it('hands over again, in the same process, a run whose dispatcher plan was lost', async () => {
+    inFlight.set(sessionId, {
+      clientId: 'summary',
+      token: Symbol('summary'),
+      startedAt: Date.now(),
+      sawTurnStart: false,
+    });
+    const { runId } = startFromApp('from the app: found again');
+    await pass();
+    expect(pending.has(runId)).toBe(true);
+    // The plan goes with no word to the record (a reset, a bug).
+    pending.delete(runId);
+    await pass();
+    expect(handed).toEqual([runId, runId]);
+    expect(pending.has(runId)).toBe(true);
+    inFlight.delete(sessionId);
+    schedulePump(sessionId);
+    await vi.waitFor(() => expect(record.store.get(runId)?.status).toMatch(/ended|settled/u));
+  });
+
+  it('saves a fresh start_turn for a run without a row that a pause put back in line', () => {
+    const { runId } = startFromApp('from the app: cut short');
+    const facts = turnFacts()!;
+    holdRun(runId);
+    facts.dispatcher.launchBegins(runId);
+    facts.report({
+      kind: 'started',
+      runId,
+      sessionId,
+      openedBy: 'caller',
+      runtime: inner.type,
+      runtimeTurnRef: 1,
+    });
+    facts.dispatcher.pauseCut(runId);
+    releaseRun(runId);
+    const starts = record.effects.listForRun(runId).filter((e) => e.kind === 'start_turn');
+    expect(starts.map((e) => e.state)).toEqual(['done', 'pending']);
+    expect(starts[1]?.key).toBe(`start:${runId}:1:2`);
+    // Its words stay with the space side until the runtime has them.
+    expect(record.port.wordsOf(record.store.get(runId)!)).toBe('from the app: cut short');
   });
 });

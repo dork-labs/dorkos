@@ -30,6 +30,15 @@ export interface ComputerTurnPort {
    * @param runId - The run.
    */
   holds(runId: string): boolean;
+  /**
+   * Take a run's words off the chat's queue, as a person's Remove does: its
+   * run is cancelled with the row (`removed`), unless its launch is under way.
+   *
+   * @param sessionId - The chat.
+   * @param runId - The run, whose queue row has the same id.
+   * @returns Whether a row was removed.
+   */
+  removeQueued(sessionId: string, runId: string): boolean;
 }
 
 let installed: ComputerTurnPort | undefined;
