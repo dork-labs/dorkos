@@ -1,4 +1,10 @@
-import { expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import {
+  expect,
+  type APIRequestContext,
+  type Page,
+  type Response,
+  type Route,
+} from '@playwright/test';
 import { test } from '../../fixtures/base';
 import { appFrame, appPage } from '../../pages/app-frame.js';
 
@@ -91,6 +97,21 @@ function holdBundles(page: Page) {
   };
 }
 
+/**
+ * Wait until a released bundle has fully reached the page, then two frames
+ * more, so whatever its late import renders is on screen before the test reads
+ * the page. Replaces a fixed sleep that guessed how long that takes.
+ */
+async function landed(page: Page, response: Promise<Response>): Promise<void> {
+  await (await response).finished();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+}
+
 /** The app's page heading, drawn inside its own sandboxed frame (DOR-3293). */
 function pageHeading(page: Page) {
   return appFrame(appPage(page), 'Hello World').getByRole('heading', { name: 'Hello, there' });
@@ -125,8 +146,9 @@ test.describe('An app’s page while the app is still starting', () => {
       await bundles.arrived(2);
 
       // The first load finishes first; the reload is still importing.
+      const first = page.waitForResponse((response) => BUNDLE(new URL(response.url())));
       await bundles.release(1);
-      await page.waitForTimeout(1_000);
+      await landed(page, first);
       await expect(page.getByText(NOT_AVAILABLE)).toHaveCount(0);
       await expect(page.getByTestId('extension-page-loading')).toBeVisible();
 
@@ -170,8 +192,9 @@ test.describe('An app’s page while the app is still starting', () => {
       await expect(page.getByText('Hello World isn’t allowed to run yet.')).toBeVisible();
 
       // The first load's import comes back late, with the list it read before.
+      const first = page.waitForResponse((response) => BUNDLE(new URL(response.url())));
       await bundles.release(1);
-      await page.waitForTimeout(1_500);
+      await landed(page, first);
       await expect(page.getByText('Hello World isn’t allowed to run yet.')).toBeVisible();
       await expect(page.getByText(/doesn’t have this page/)).toHaveCount(0);
     } finally {

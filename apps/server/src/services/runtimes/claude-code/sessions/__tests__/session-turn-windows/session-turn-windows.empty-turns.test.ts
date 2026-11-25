@@ -13,6 +13,7 @@ import {
   apiRetryMessage,
   harness,
   settled,
+  useFakeClock,
 } from './session-turn-windows.fixtures.js';
 
 // Spec `warm-process-lifecycle` D5, tests T1–T2 (DOR-2064). A relaunched CLI
@@ -20,6 +21,7 @@ import {
 // dispatched window's first `result` can arrive with nothing in the turn.
 describe('an empty dispatched window waits for its answer (DOR-2064)', () => {
   it('T1: carries the answer that runs after an early zero-content result the dispatch named', async () => {
+    useFakeClock();
     const h = harness({ graceMs: 40, emptyCloseCapMs: 5_000 });
     await h.dispatch([{ content: 'what did the helper find?', messageId: 'm1' }]);
     h.live().emit(resultMessage('m1'));
@@ -27,8 +29,8 @@ describe('an empty dispatched window waits for its answer (DOR-2064)', () => {
     h.live().emit(initMessage());
 
     // Well past the 40ms grace: only the extension to the empty-close cap keeps
-    // the window open across it. The sleep IS the gap under test.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // the window open across it. The 200ms advance IS the gap under test.
+    await vi.advanceTimersByTimeAsync(200);
     h.live().emit(textDeltaMessage('three tests fail'));
     h.live().emit(resultMessage('m1'));
 
