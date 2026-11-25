@@ -81,6 +81,14 @@ describe('a turn whose process died', () => {
     expect(session().status?.lifecycle).toBe('streaming');
   });
 
+  it('never reads a run as working when this window’s stream opened no turn', () => {
+    // A boot that is gone left its run `running`; the record has not retired
+    // it yet (§7.1), and the stream this boot serves never opened its turn.
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ runs: [run()] }));
+
+    expect(session().status?.lifecycle).toBe('idle');
+  });
+
   it('drops the line once anything newer is sent', () => {
     const next = run({ id: '01RUNNEXT00000000000000000', chatSeq: 2, status: 'queued' });
     expect(runNoticeOf([DIED])).toBe('restart_stopped');

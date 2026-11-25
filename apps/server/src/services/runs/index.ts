@@ -138,9 +138,9 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     // Read at call time: nothing moves a run before the record is built.
     onMoved: (run, from) => {
       starts.onRunMoved(run, from);
-      announcer.changed(run);
+      announcer.changed(run.sessionId);
     },
-    onCreated: (run) => announcer.changed(run),
+    onChanged: (chatKey) => announcer.changed(chatKey),
   });
   // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
   const admissionSources = admission?.admission ?? {

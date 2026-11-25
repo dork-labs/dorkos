@@ -231,7 +231,7 @@ describe('a restored draft in the composer (spec `turns-survive-restarts` §7.3)
     expect(result.current.restoredDraft).toBe(false);
   });
 
-  it('leaves the box when another window used it up, keeping any edit', async () => {
+  it('leaves the box when another window used it up', async () => {
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.restoredDraft).toBe(true));
 
@@ -239,6 +239,17 @@ describe('a restored draft in the composer (spec `turns-survive-restarts` §7.3)
 
     await waitFor(() => expect(result.current.input).toBe(''));
     expect(result.current.restoredDraft).toBe(false);
+  });
+
+  it('keeps the person’s edit when another window used the draft up', async () => {
+    const { result, rerender } = setup();
+    await waitFor(() => expect(result.current.restoredDraft).toBe(true));
+    act(() => result.current.setInput('Words a restart handed back, reworded'));
+
+    rerender({ restored: [] });
+
+    await waitFor(() => expect(result.current.restoredDraft).toBe(false));
+    expect(result.current.input).toBe('Words a restart handed back, reworded');
   });
 
   it.each([

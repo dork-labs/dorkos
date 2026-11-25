@@ -24,15 +24,31 @@ const LIVE: ReadonlySet<string> = new Set(LIVE_RUN_STATUSES);
 
 /**
  * The line a person sees about a run's ending (§7.4), or `null`. Only the
- * case the record can already prove: a run whose process died and that
- * nothing continues. The other lines wait for recovery's facts (T15).
+ * case the record can already prove: a run that ended `process_died` or
+ * `shutdown` (§7.1's undecided endings), that recovery has not decided and
+ * nothing continues. Once T15 stamps a decision, the line follows it. Never:
+ *
+ * - for a run ended from `started` (`delivery: unknown`): the runtime may not
+ *   have read its words, so a person's message comes back as a restored
+ *   draft with its own line (§7.3, step 4), not "send a message to continue";
+ * - for a run this boot owned: this process never restarted, so the line
+ *   would be false (a write that failed leaves a run with no owner here).
  *
  * @param run - The run.
  * @param continued - Whether a later run continues it.
+ * @param epoch - This boot's epoch.
  */
-function noticeOf(run: TurnRun, continued: boolean): RunNotice | null {
+function noticeOf(run: TurnRun, continued: boolean, epoch: string): RunNotice | null {
   const finished = run.status === 'ended' || run.status === 'settled';
-  return finished && run.ending === 'process_died' && !continued ? 'restart_stopped' : null;
+  const restarted = run.ending === 'process_died' || run.ending === 'shutdown';
+  const shown =
+    finished &&
+    restarted &&
+    run.recoveryDecidedAt === null &&
+    !continued &&
+    run.endingDetail.delivery !== 'unknown' &&
+    run.ownerEpoch !== epoch;
+  return shown ? 'restart_stopped' : null;
 }
 
 /**
@@ -86,14 +102,17 @@ export function chatRunsOf(runs: RunStore, effects: EffectStore, chatId: string)
   };
   const shown = open.map((run) => viewOf(run, placeOf(run), null));
   if (!lastEnded || open.some((run) => LIVE.has(run.status))) return shown;
-  const ended = viewOf(lastEnded, null, noticeOf(lastEnded, continued));
+  const ended = viewOf(lastEnded, null, noticeOf(lastEnded, continued, runs.epoch));
   return [...shown, ended].sort((a, b) => a.chatSeq - b.chatSeq);
 }
 
 /**
- * Puts a chat's runs on its stream as `run_update` after a run changes, once
+ * Puts a chat's runs on its stream as `run_update` after they change, once
  * per chat per tick: the changes one transaction makes go out as one event,
- * read after it commits, so a rolled-back change is never announced.
+ * read after it commits, so a rolled-back change is never announced. A
+ * change is a status move, a run created, a column annotated (an ask opening
+ * or closing, an ending at `turn_end`, a queue row taken), runs moved to
+ * another chat, or the chat's queue reordered (a waiting run's place).
  */
 export class RunAnnouncer {
   private readonly due = new Set<string>();
@@ -106,13 +125,13 @@ export class RunAnnouncer {
   constructor(private readonly view: (chatKey: string) => ChatRun[]) {}
 
   /**
-   * A run was created or moved: announce its chat's runs after this tick.
+   * A chat's runs changed: announce them after this tick.
    *
-   * @param run - The run, as stored.
+   * @param chatKey - The chat, by the id its queue rows are kept under.
    */
-  changed(run: Pick<TurnRun, 'sessionId'>): void {
+  changed(chatKey: string): void {
     if (this.due.size === 0) queueMicrotask(() => this.flush());
-    this.due.add(run.sessionId);
+    this.due.add(chatKey);
   }
 
   /** Announce every chat a change touched. Never throws. */

@@ -591,6 +591,8 @@ export class MessageQueueStore {
     const others = this.rows(row.sessionId).filter((r) => r.id !== messageId);
     const anchorIndex = others.findIndex((r) => r.id === anchorId);
     if (anchorIndex === -1) return undefined;
+    // A waiting run's place is read from the queue (§4.6): its windows hear the move.
+    reportToRuns('reorder', (feed) => feed.queueReordered(row.sessionId), { messageId });
 
     // Where the moved row goes in the order the OTHER rows already hold.
     const slot = 'before' in target ? anchorIndex : anchorIndex + 1;

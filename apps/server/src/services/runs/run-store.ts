@@ -232,8 +232,13 @@ export interface RunStoreOptions {
    * settles, goes back to `pending`, or wakes its chat's waiting starts (§6.2).
    */
   onMoved?: (run: TurnRun, from: RunStatus) => void;
-  /** Called inside the transaction that creates a run, with the run as stored (`run_update`, §4.6). */
-  onCreated?: (run: TurnRun) => void;
+  /**
+   * Called when a chat's runs read differently without a status move (§4.6,
+   * `run_update`): a run created, a column annotated, runs moved to another
+   * chat, or {@link noteChatChanged}. Inside the write's transaction; with the
+   * chat, by the id its queue rows are kept under.
+   */
+  onChanged?: (chatKey: string) => void;
 }
 
 /** The run record over the machine store's `turn_runs` table. */
@@ -560,9 +565,8 @@ export class RunStore {
         })
         .run();
       if (input.status === 'queued' && input.queueMessageId === undefined) this.heldWords.add(id);
-      const created = this.get(id)!;
-      this.opts.onCreated?.(created);
-      return created;
+      this.opts.onChanged?.(chatKey);
+      return this.get(id)!;
     });
   }
 
@@ -631,6 +635,18 @@ export class RunStore {
    */
   annotate(runId: string, patch: RunPatch): void {
     this.db.update(turnRuns).set(patchColumns(patch)).where(eq(turnRuns.id, runId)).run();
+    const chatKey = this.opts.onChanged && this.get(runId)?.sessionId;
+    if (chatKey) this.opts.onChanged?.(chatKey);
+  }
+
+  /**
+   * A chat's runs read differently though no run was written: its queue was
+   * reordered, so a waiting run's place changed (§4.6, `queuePosition`).
+   *
+   * @param chatId - The chat, by any id it has had.
+   */
+  noteChatChanged(chatId: string): void {
+    this.opts.onChanged?.(chatKeyOf(chatId));
   }
 
   /** The owner columns a run gets when it goes live: this boot, leased from now. */
@@ -748,6 +764,8 @@ export class RunStore {
         .set({ sessionId: toChatKey, chatSeq: tail + 1 })
         .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, 'queued')))
         .run();
+      this.opts.onChanged?.(run.sessionId);
+      this.opts.onChanged?.(toChatKey);
     });
   }
 
@@ -784,6 +802,8 @@ export class RunStore {
           .where(eq(turnRuns.id, run.id))
           .run();
       });
+      this.opts.onChanged?.(fromChatKey);
+      this.opts.onChanged?.(toChatKey);
     });
   }
 }

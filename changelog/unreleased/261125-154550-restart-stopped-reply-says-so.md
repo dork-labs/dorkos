@@ -2,6 +2,7 @@
 covers:
   - 'feat(runs): every window reads a chat’s status from its run record (DOR-5212)'
   - 'fix(runs): a snapshot’s runs settle the turn after the subagent rebase, never in place (DOR-5212)'
+  - 'fix(runs): the restart line covers a graceful restart, and every run change reaches every window (DOR-5212)'
 ---
 
 ### Fixed

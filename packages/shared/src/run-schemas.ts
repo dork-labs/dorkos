@@ -59,11 +59,15 @@ export type WaitReason = z.infer<typeof WaitReasonSchema>;
  * The one line a person sees about a run's ending (spec §7.4), by its case.
  * The app holds the words; the server says which case is true.
  *
- * - `restart_stopped`: the run ended `process_died` and nothing continues it.
- *   "DorkOS restarted during this reply, so it stopped. Send a message to continue."
+ * - `restart_stopped`: the run ended `process_died` or `shutdown` in a boot
+ *   that is gone, recovery has not decided it, nothing continues it, and the
+ *   runtime had its words. "DorkOS restarted during this reply, so it
+ *   stopped. Send a message to continue."
  *
  * The other cases of §7.4 (continued, waited on you, the chain cap) join when
- * recovery (T15) writes the facts they rest on, and never before.
+ * recovery (T15) writes the facts they rest on, and never before. A client
+ * one version behind reads a value it does not know as no line
+ * (`parseSessionEvent` in the app), never as an unreadable frame.
  */
 export const RunNoticeSchema = z.enum(['restart_stopped']).openapi('RunNotice');
 

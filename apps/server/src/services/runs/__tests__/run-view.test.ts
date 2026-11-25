@@ -11,7 +11,7 @@
  * its run still `running`, owned by a boot that is gone and whose lease ran out.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eq, sessionMessageQueue, type Db } from '@dorkos/db';
+import { eq, sessionMessageQueue, turnRuns, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { SessionOpts } from '@dorkos/shared/agent-runtime';
@@ -19,7 +19,12 @@ import type { CapabilityInvocationContext } from '../../core/capabilities/index.
 import type { ChatRun } from '@dorkos/shared/run-schemas';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
-import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
+import {
+  MessageQueueStore,
+  moveQueueRowToSession,
+  setMessageQueueStore,
+} from '../../session/message-queue-store.js';
+import { chatClientId } from '../../session/chat-messages/chat-client-id.js';
 import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
 import {
   adoptQueuedMessages,
@@ -213,7 +218,122 @@ describe('a turn whose process died, as every window reads it', () => {
   });
 });
 
+describe('which ending gets the restart line', () => {
+  /** A run a boot that is gone was running, ended as `ending`. */
+  function endedInAGoneBoot(ending: 'process_died' | 'shutdown') {
+    const gone = new RunStore(db, { epoch: DEAD_EPOCH, now: () => clock - 2 * RUN_LEASE_MS });
+    const run = gone.create({
+      chatKey: sessionId,
+      status: 'running',
+      openedBy: 'caller',
+      origin: null,
+    });
+    gone.endTurn(run, ending);
+    return run.id;
+  }
+  const lineOf = () => chatRunsPage({ id: sessionId, limit: 50 }).runs.at(-1)?.notice;
+
+  it('a reply a graceful restart ended gets it, as one a crash ended does', () => {
+    endedInAGoneBoot('shutdown');
+    expect(lineOf()).toBe('restart_stopped');
+  });
+
+  it('follows recovery once it decides the run', () => {
+    const runId = endedInAGoneBoot('process_died');
+    db.update(turnRuns)
+      .set({ recoveryDecidedAt: new Date(clock).toISOString() })
+      .where(eq(turnRuns.id, runId))
+      .run();
+    expect(lineOf()).toBeNull();
+  });
+
+  it('never claims a restart for a run this boot owned', () => {
+    const own = runs.create({
+      chatKey: sessionId,
+      status: 'running',
+      openedBy: 'caller',
+      origin: null,
+    });
+    // What retirement writes for this boot's own run whose owner is gone (a failed write).
+    runs.endTurn(own, 'process_died');
+    expect(lineOf()).toBeNull();
+  });
+
+  it('in the lease window, shows the gone boot’s run as the record holds it, and no turn as open', async () => {
+    const gone = new RunStore(db, { epoch: DEAD_EPOCH, now: () => clock });
+    gone.create({ chatKey: sessionId, status: 'running', openedBy: 'caller', origin: null });
+    const window = await openWindow(runtimeOverProjector());
+    // Not retired yet: its lease has not run out (§7.1). The stream this boot
+    // serves opened no turn, so no window reads it as working.
+    expect(window.snapshot().runs?.map((run) => run.status)).toEqual(['running']);
+    expect(window.snapshot().status.lifecycle).toBe('idle');
+    expect(window.snapshot().inProgressTurn).toBeNull();
+    window.leave();
+  });
+});
+
 describe('run_update', () => {
+  it('goes out when a run changes without a status move', async () => {
+    const window = await openWindow(runtimeOverProjector());
+    const run = runs.create({
+      chatKey: sessionId,
+      status: 'queued',
+      openedBy: 'caller',
+      origin: null,
+    });
+    const live = runs.move(runs.move(run, 'starting', runs.lease()), 'started', runs.lease());
+    runs.move(live, 'running');
+    await settle();
+
+    runs.annotate(run.id, { waitingOnPerson: true });
+
+    await vi.waitFor(() =>
+      expect(window.lastRunUpdate()).toEqual([expect.objectContaining({ waitingOnPerson: true })])
+    );
+    window.leave();
+  });
+
+  it('goes out when the queue is reordered, with each waiting run’s new place', async () => {
+    const window = await openWindow(runtimeOverProjector());
+    const origin = { kind: 'interactive' } as const;
+    const first = queue.enqueue({ sessionId, content: 'one', clientId: 'web-w', origin });
+    const second = queue.enqueue({ sessionId, content: 'two', clientId: 'web-w', origin });
+    await settle();
+    const places = () =>
+      window.lastRunUpdate()?.map((run) => [run.queueMessageId, run.queuePosition]);
+    expect(places()).toEqual([
+      [first.id, 1],
+      [second.id, 2],
+    ]);
+
+    queue.move(second.id, { before: first.id });
+
+    await vi.waitFor(() =>
+      expect(places()).toEqual([
+        [first.id, 2],
+        [second.id, 1],
+      ])
+    );
+    window.leave();
+  });
+
+  it('goes out on both chats when a waiting row moves to another chat', async () => {
+    const window = await openWindow(runtimeOverProjector());
+    const row = queue.enqueue({
+      sessionId,
+      content: 'moving',
+      clientId: 'web-w',
+      origin: { kind: 'interactive' },
+    });
+    await settle();
+    expect(window.lastRunUpdate()).toHaveLength(1);
+
+    db.transaction((tx) => moveQueueRowToSession(tx, row.id, crypto.randomUUID()));
+
+    await vi.waitFor(() => expect(window.lastRunUpdate()).toEqual([]));
+    window.leave();
+  });
+
   it('carries the chat’s live run and its waiting runs, whole, after every status change', async () => {
     const window = await openWindow(runtimeOverProjector());
     const head = runs.create({
@@ -352,6 +472,29 @@ describe('a restored draft', () => {
     expect(listQueuedMessages(sessionId)).toEqual([]);
     expect(runs.get(runId)).toEqual(before);
     expect(before).toMatchObject({ status: 'ended', ending: 'process_died' });
+  });
+
+  it('gets no restart line: the runtime may never have read its words', () => {
+    aRestoredDraft();
+    expect(chatRunsPage({ id: sessionId, limit: 50 }).runs).toEqual([
+      expect.objectContaining({ status: 'ended', ending: 'process_died', notice: null }),
+    ]);
+  });
+
+  it('tolerates a flagged row another chat sent: listed, never offered to a composer', () => {
+    const row = queue.enqueue({
+      sessionId,
+      content: 'words from another chat',
+      clientId: chatClientId(crypto.randomUUID()),
+    });
+    db.update(sessionMessageQueue)
+      .set({ state: 'restored' })
+      .where(eq(sessionMessageQueue.id, row.id))
+      .run();
+
+    const [listed] = listQueuedMessages(sessionId);
+    expect(listed).toMatchObject({ id: row.id, restored: true });
+    expect(listed?.canRestoreToComposer).toBeUndefined();
   });
 
   it('a row a turn still holds (`in_turn`) stays hidden, unlike a restored one', () => {
