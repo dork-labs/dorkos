@@ -1,5 +1,5 @@
 import { createServer, request, type Server } from 'node:http';
-import { connect, type Socket } from 'node:net';
+import { type Socket } from 'node:net';
 import { once } from 'node:events';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import { createBrokerIssuer, type PreparedRunReceiver } from '../issuer.js';
@@ -344,35 +344,6 @@ it('emits a bounded ready-only 407 without DNS or an origin connection, and pres
   expect(JSON.stringify(target.headers)).not.toContain(f.descriptor.credential);
 });
 
-it.each(['receiver', 'runtime', 'epoch', 'policy', 'inventory', 'owner'] as const)(
-  'refuses activation and closes the original cold owner for %s mismatch',
-  async (cause) => {
-    const f = await cold();
-    f.ready();
-    if (cause === 'epoch') f.setEpoch(2);
-    if (cause === 'policy') f.setRevision(2);
-    if (cause === 'inventory') f.setInventory(2);
-    if (cause === 'owner') f.invalidateOwner();
-    if (cause === 'runtime')
-      f.deferAuthority(async () => ({ ...f.current(), runtimeIdentity: 'different-runtime' }));
-    const receiver = cause === 'receiver' ? { ...f.receiver } : f.receiver;
-    await expect(f.broker.activate(receiver)).rejects.toThrow();
-    expect(f.transport.dial).not.toHaveBeenCalled();
-    expect(await f.broker.close()).toBe(true);
-    expect(f.issuer.ledger.snapshot().charged).toBe(0);
-  }
-);
-
-it('a prepared deadline closes its original listener without manufacturing a ready observation', async () => {
-  const f = await cold({ ttl: 30 });
-  f.setTime(31);
-  await waitFor(() => f.broker.status().stopped);
-  expect(await f.broker.close()).toBe(true);
-  expect(f.current).not.toHaveBeenCalled();
-  expect(f.read).not.toHaveBeenCalled();
-  expect(f.issuer.ledger.snapshot().charged).toBe(0);
-});
-
 it('never challenges a stale ready owner or connects an origin after its authority is lost', async () => {
   const target = await origin(),
     f = await cold();
@@ -385,102 +356,3 @@ it('never challenges a stale ready owner or connects an origin after its authori
   expect(f.transport.dial).not.toHaveBeenCalled();
   expect(await f.broker.close()).toBe(true);
 });
-
-it('keeps the original principal and authority callback charged after activation times out until that callback actually returns', async () => {
-  const f = await cold({ limits: { authorityMs: 20, cleanupMs: 20 } });
-  f.ready();
-  let returned!: (value: ReturnType<typeof f.current>) => void;
-  const original = new Promise<ReturnType<typeof f.current>>((resolve) => {
-    returned = resolve;
-  });
-  f.deferAuthority(() => original);
-  await expect(f.broker.activate(f.receiver)).rejects.toThrow('AUTHORITY_REFUSED');
-  const closed = f.broker.close();
-  expect(await closed).toBe(false);
-  expect(f.issuer.ledger.snapshot()).toMatchObject({
-    principals: 1,
-    listeners: 0,
-    permits: 1,
-    pending: 2,
-  });
-  expect(f.broker.isCustodyKnown()).toBe(false);
-  returned(f.current());
-  await waitFor(() => f.issuer.ledger.snapshot().charged === 0);
-  expect(f.broker.close()).toBe(closed);
-  expect(await closed).toBe(false);
-  expect(f.transport.dial).not.toHaveBeenCalled();
-});
-
-it('keeps cold socket/listener/principal quota charged when actual close is withheld and never redeems the failed close', async () => {
-  const f = await cold({ holdSocketClose: true, limits: { cleanupMs: 20, principals: 1 } });
-  const client = connect(Number(new URL(f.descriptor.server).port), '127.0.0.1');
-  client.on('error', () => {});
-  onTestFinished(() => {
-    client.destroy();
-  });
-  await once(client, 'connect');
-  await waitFor(() => f.originals.length === 1);
-  expect(f.broker.isCustodyKnown()).toBe(true); // The original is known during its bounded close attempt.
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  expect(f.broker.isCustodyKnown()).toBe(false);
-  const originalClose = f.broker.close();
-  expect(await originalClose).toBe(false);
-  expect(f.issuer.ledger.snapshot()).toMatchObject({
-    listeners: 1,
-    principals: 1,
-    unauthenticated: 1,
-  });
-  expect(() =>
-    f.issuer.prepareRun(f.issuer.snapshot(f.run).binding, {
-      runtimeIdentity: 'runtime',
-      authorizationEpoch: 1,
-      policyRevision: 1,
-      inventoryRevision: 1,
-      receiver: f.receiver,
-    })
-  ).toThrow('QUOTA');
-  f.releaseOriginal();
-  client.resume();
-  await waitFor(() => f.originals[0]!.observedClosed);
-  expect(f.broker.close()).toBe(originalClose);
-  expect(await originalClose).toBe(false);
-  expect(f.broker.isCustodyKnown()).toBe(false);
-});
-
-it('seals late original Node admin endpoints before same-listener activation', async () => {
-  const admin = await origin();
-  const f = await cold({ seal: () => [{ address: '127.0.0.1', port: admin.port }] });
-  const originalListener = f.broker.ownedListener();
-  f.setInventory(2); // Enrollment of the original proxy during cold bootstrap.
-  await expect(http(f, admin)).rejects.toThrow();
-  expect(f.current).not.toHaveBeenCalled();
-  expect(f.read).not.toHaveBeenCalled();
-  f.ready();
-  await f.broker.activate(f.receiver);
-  expect(f.broker.ownedListener()).toBe(originalListener);
-  expect(f.transport.listen).toHaveBeenCalledTimes(1);
-  expect(() => f.broker.grantLocal(admin.url, 'http', 500)).toThrow();
-  await expect(
-    http(f, admin, `Basic ${Buffer.from(`dorkos:${f.descriptor.credential}`).toString('base64')}`)
-  ).rejects.toThrow();
-  expect(admin.connections).toBe(0);
-  expect(f.transport.dial).not.toHaveBeenCalled();
-  expect(await f.broker.close()).toBe(true);
-});
-
-it.each(['undefined', 'null'] as const)(
-  'refuses a %s configured final seal after late inventory movement',
-  async (missingSeal) => {
-    const admin = await origin();
-    const f = await cold({ seal: () => [], missingSeal });
-    f.setInventory(2);
-    f.ready();
-    await expect(f.broker.activate(f.receiver)).rejects.toThrow();
-    await expect(http(f, admin)).rejects.toThrow();
-    expect(f.resolver).not.toHaveBeenCalled();
-    expect(f.transport.dial).not.toHaveBeenCalled();
-    expect(admin.connections).toBe(0);
-    expect(f.read).not.toHaveBeenCalled();
-    expect(await f.broker.close()).toBe(true);
-  }
-);

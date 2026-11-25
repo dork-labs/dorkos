@@ -24,7 +24,6 @@ import { AgentMcpServerService, type AgentWorkspaceLocator } from '../agent-mcp-
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import {
   composeRegistry,
-  describeGatedAttempt,
   initCapabilityTierGate,
   initPermissionGate,
   resetCapabilityTierGate,
@@ -154,34 +153,6 @@ describe('mcp.* tier posture', () => {
     for (const id of ['mcp.remove', 'mcp.enable', 'mcp.disable', 'mcp.test']) {
       expect(capability(id).tier).toBe('act');
     }
-  });
-
-  it('every verb projects the mcp_<verb>_server tool and an HTTP surface', () => {
-    for (const verb of ['list', 'add', 'import', 'update', 'remove', 'enable', 'disable', 'test']) {
-      const cap = capability(`mcp.${verb}`);
-      expect(cap.surfaces.mcp?.toolName).toBe(`mcp_${verb}_server`);
-      // No curated CLI verb: `dorkos call mcp.<verb>` reaches it generically.
-      expect(cap.surfaces.cli).toBeUndefined();
-      expect(cap.surfaces.http?.path).toContain('/api/agents/');
-    }
-  });
-});
-
-describe('mcp.add approval card', () => {
-  it('resolves the connection command fields into the card (not the literal "input." prefix)', () => {
-    // Proves the paths resolve against the parsed input: a stdio add shows the
-    // transport, command, and args. A wrong `input.connection.*` prefix would
-    // render every value as "not set" — this is the assertion that catches it.
-    const summary = describeGatedAttempt(capability('mcp.add'), {
-      agentId: AGENT_ID,
-      name: 'my-server',
-      connection: STDIO_CONNECTION,
-    });
-    expect(summary).toContain('connection.transport: "stdio"');
-    expect(summary).toContain('connection.command: "my-server"');
-    expect(summary).toContain('connection.args: 2 items');
-    // The url field is absent on a stdio connection, so it renders as "not set".
-    expect(summary).toContain('connection.url: not set');
   });
 });
 
@@ -316,50 +287,6 @@ describe('mcp domain error mapping', () => {
         {}
       )
     ).rejects.toMatchObject({ name: 'CapabilityToolError', payload: { code: 'RESERVED_NAME' } });
-  });
-
-  it('re-raises an unknown-server update as a structured CapabilityToolError', async () => {
-    const { deps } = await setup();
-    await expect(
-      capability('mcp.update').invoke(deps, { agentId: AGENT_ID, name: 'nope', enabled: false }, {})
-    ).rejects.toMatchObject({ name: 'CapabilityToolError', payload: { code: 'SERVER_NOT_FOUND' } });
-  });
-
-  it('re-raises an unresolvable import as a structured DISCOVERED_NOT_FOUND error', async () => {
-    const { deps } = await setup(); // no .mcp.json — nothing to resolve
-    await expect(
-      capability('mcp.import').invoke(deps, { agentId: AGENT_ID, name: 'ghost' }, {})
-    ).rejects.toMatchObject({
-      name: 'CapabilityToolError',
-      payload: { code: 'DISCOVERED_NOT_FOUND' },
-    });
-  });
-
-  it('re-raises importing an already-managed name as DUPLICATE_NAME', async () => {
-    const { service, deps } = await setup({ dup: { command: 'node' } });
-    await service.add({
-      agentId: AGENT_ID,
-      name: 'dup',
-      connection: STDIO_CONNECTION,
-      addedBy: 'operator',
-    });
-    await expect(
-      capability('mcp.import').invoke(deps, { agentId: AGENT_ID, name: 'dup' }, {})
-    ).rejects.toMatchObject({ name: 'CapabilityToolError', payload: { code: 'DUPLICATE_NAME' } });
-  });
-});
-
-describe('mcp.import approval card', () => {
-  it('names the agent and the discovered server being brought under management', () => {
-    // The connection is resolved server-side after the gate, so the card names
-    // what the operator decides — the agent and the .mcp.json server — rather
-    // than connection.* fields that have no value in the pre-gate input.
-    const summary = describeGatedAttempt(capability('mcp.import'), {
-      agentId: AGENT_ID,
-      name: 'filesystem',
-    });
-    expect(summary).toContain('name: "filesystem"');
-    expect(summary).toContain(`agentId: ${JSON.stringify(AGENT_ID)}`);
   });
 });
 

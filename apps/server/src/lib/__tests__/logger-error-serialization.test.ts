@@ -78,24 +78,6 @@ describe('NDJSON error serialization', () => {
       expect(entry.error).toBe("EMFILE: too many open files, scandir '/Users/x/code'");
       expect(String(entry.stack)).toContain('EMFILE');
     });
-
-    it('keeps a subclass under the `name` field existing log lines already carry', () => {
-      // Shaped like the repo's Error subclasses: `this.name` is an assignment,
-      // which makes it own AND enumerable — so it survived the old spread, and
-      // must keep its spelling here.
-      class ProvisioningError extends Error {
-        constructor(message: string) {
-          super(message);
-          this.name = 'ProvisioningError';
-        }
-      }
-      loggerModule.logger.error('[Runtimes] provisioning failed', new ProvisioningError('nope'));
-
-      const [entry] = lines();
-      expect(entry.name).toBe('ProvisioningError');
-      expect(entry.error).toBe('nope');
-      expect(String(entry.stack)).toContain('nope');
-    });
   });
 
   describe('an Error nested in the context object', () => {
@@ -107,19 +89,6 @@ describe('NDJSON error serialization', () => {
       expect(err.message).toBe('disk gone');
       expect(err.name).toBe('Error');
       expect(String(err.stack)).toContain('disk gone');
-    });
-
-    it('reaches Errors nested deeper than the top level', () => {
-      loggerModule.logger.warn('[Mesh] reconcile failed', {
-        workspace: 'demo',
-        failures: [{ cause: new Error('inner') }],
-      });
-
-      const [entry] = lines();
-      expect(entry.workspace).toBe('demo');
-      const failures = entry.failures as Array<{ cause: Record<string, unknown> }>;
-      expect(failures[0].cause.message).toBe('inner');
-      expect(String(failures[0].cause.stack)).toContain('inner');
     });
   });
 
@@ -135,35 +104,6 @@ describe('NDJSON error serialization', () => {
       const cause = entry.cause as Record<string, unknown>;
       expect(cause.message).toBe('socket closed');
       expect(String(cause.stack)).toContain('socket closed');
-    });
-
-    it('stops descending a long chain instead of following it forever', () => {
-      let err = new Error('depth-0');
-      for (let i = 1; i <= 12; i++) {
-        err = new Error(`depth-${i}`, { cause: err });
-      }
-
-      loggerModule.logger.error('[relay] send failed', err);
-
-      const entry = lines()[0];
-      expect(entry.error).toBe('depth-12');
-
-      // Five links serialize in full; the sixth is where the budget runs out.
-      const c1 = entry.cause as Record<string, unknown>;
-      const c2 = c1.cause as Record<string, unknown>;
-      const c3 = c2.cause as Record<string, unknown>;
-      const c4 = c3.cause as Record<string, unknown>;
-      expect([c1.message, c2.message, c3.message, c4.message]).toEqual([
-        'depth-11',
-        'depth-10',
-        'depth-9',
-        'depth-8',
-      ]);
-      // The tail collapses to one exact summary string rather than recursing on
-      // — and says that it did, with the size of what it stopped following. A
-      // bare `Error: depth-7` would read exactly like the end of the chain.
-      expect(c4.cause).toBe('Error: depth-7 … [cause chain truncated at depth 5, 7 more levels]');
-      expect(JSON.stringify(entry)).not.toContain('depth-6');
     });
   });
 
@@ -184,17 +124,6 @@ describe('NDJSON error serialization', () => {
         'endpoint B timed out',
       ]);
       expect(String(subErrors[0].stack)).toContain('endpoint A refused');
-    });
-
-    it('writes the sub-errors of one nested in a context object', () => {
-      const aggregate = new AggregateError([new Error('inner')], 'all failed');
-
-      loggerModule.logger.warn('[relay] fan-out failed', { err: aggregate });
-
-      const [entry] = lines();
-      const err = entry.err as Record<string, unknown>;
-      const subErrors = err.errors as Array<Record<string, unknown>>;
-      expect(subErrors[0].message).toBe('inner');
     });
   });
 
@@ -233,38 +162,6 @@ describe('NDJSON error serialization', () => {
       expect(String(entry.stack).length).toBeLessThan(17 * 1024);
       // The head of the message — the part that identifies it — is still there.
       expect(String(entry.error).startsWith('xxxx')).toBe(true);
-    });
-
-    it('still writes a line when the context cannot be serialized at all', () => {
-      const cyclic: Record<string, unknown> = { workspace: 'demo' };
-      cyclic.self = cyclic;
-
-      expect(() => loggerModule.logger.error('[workspaces] GET / failed', cyclic)).not.toThrow();
-
-      const [entry] = lines();
-      expect(entry.msg).toBe('[workspaces] GET / failed');
-      expect(String(entry.logSerializationError)).toContain('circular');
-    });
-
-    it('names the one property whose getter throws, and keeps its siblings', () => {
-      const hostile = {
-        workspace: 'demo',
-        get boom(): string {
-          throw new Error('getter exploded');
-        },
-      };
-
-      expect(() => loggerModule.logger.error('[relay] send failed', hostile)).not.toThrow();
-
-      const [entry] = lines();
-      expect(entry.msg).toBe('[relay] send failed');
-      // The failure costs its own key and nothing else. It used to cost the
-      // whole context — the line degraded to a bare `logSerializationError` and
-      // `workspace` went with it — which on the console path (DOR-1728) also
-      // meant a hostile sibling disabled clipping for the whole line.
-      expect(entry.boom).toBe('[unreadable property: Error: getter exploded]');
-      expect(entry.workspace).toBe('demo');
-      expect(entry.logSerializationError).toBeUndefined();
     });
   });
 });

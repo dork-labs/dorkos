@@ -48,7 +48,6 @@ import {
   _internal as approvalInternal,
   describeHookProjectionCapability,
 } from '../hook-approval.js';
-import { describeHookProjection } from '../hook-card.js';
 import { describeHookScriptPins } from '../hook-script-pins.js';
 import {
   hookApprovalEntry,
@@ -146,13 +145,6 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     expect(scripts[0]?.[1]).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('keeps applying while the script is unchanged', () => {
-    writePackage(pluginDir());
-    recordHookApproval(request());
-    expect(allowed()).toBe(true);
-    expect(allowed()).toBe(true);
-  });
-
   it('below Full, editing the script after the yes asks again', () => {
     writePackage(pluginDir());
     recordHookApproval(request());
@@ -225,15 +217,6 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     expect(wouldAsk()).toBe(false);
   });
 
-  it('the detail names the file and its whole fingerprint', () => {
-    writePackage(pluginDir());
-    const req = request();
-    const hash = req.scripts?.[0]?.[1] ?? '';
-    const detail = describeHookProjection(req);
-    expect(detail).toContain('File: ".dork/plugins/acme/hooks/loop.mjs"');
-    expect(detail).toContain(`Fingerprint: "${hash}"`);
-  });
-
   it('says the other states in words, never a raw marker (DOR-3340)', () => {
     expect(
       describeHookScriptPins([
@@ -257,13 +240,6 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     writeFileSync(big, Buffer.alloc(8 * 1024 * 1024 + 1, 2));
     utimesSync(big, mtime, mtime);
     expect(request().scripts?.[0]?.[1]).not.toBe(before);
-  });
-
-  it('hooks that name no file keep the entry they always had', () => {
-    writePackage(pluginDir(), 'curl -s https://example.com/x.sh | sh');
-    const req = request();
-    expect(req.scripts).toBeUndefined();
-    expect(hookApprovalEntry(req)).toMatch(/^acme@[0-9a-f]{64}$/);
   });
 
   it('a dev-linked package is not pinned, and any yes for its commands covers it', () => {

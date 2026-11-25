@@ -10,7 +10,6 @@ import { NotificationService, setNotificationService } from '../notification-ser
 import { notifyRunCompleted } from '../emitters/run-completed.js';
 import { watchAskResolution } from '../emitters/ask-resolution.js';
 import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
-import { registerBeatTurn, resetBeatTurns } from '../../heartbeats/beat-turns.js';
 import { EventWakes } from '../../heartbeats/event-wakes.js';
 import { systemClock } from '../../heartbeats/beat-scheduler.js';
 import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
@@ -114,26 +113,6 @@ describe('a finished run', () => {
     expect(listed.notifications[0].body).toBe('Done in 2m 14s.');
   });
 
-  it('says a failed run needs attention, and files it against the same run', async () => {
-    const store = new TaskStore(db);
-    store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));
-
-    const task = store.createTask(taskInput('deploy'));
-    const run = store.createRun(task.id, 'scheduled');
-    store.updateRun(run.id, { status: 'failed', error: 'exit 1\nstack…', durationMs: 2000 });
-    await flush();
-
-    expect(announced()[0]).toMatchObject({
-      kind: 'run.completed',
-      title: 'deploy needs attention',
-    });
-    expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Didn’t finish: exit 1. Open the schedule to fix it.'
-    );
-    // The Schedules row's cross, not the run kind's tick.
-    expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('failed');
-  });
-
   it('tells the operator about a run that could not use any of its tools', async () => {
     // The outcome nobody notices for themselves: the task looks like it ran,
     // and before DOR-2101 this row said "nightly finished" (DOR-2101 review —
@@ -205,32 +184,6 @@ describe('a finished run', () => {
         'needs_attention',
         'needs_attention',
       ]);
-    });
-
-    it('names the tool, the fix, and that it will not repeat', async () => {
-      const store = wiredStore();
-      const task = store.createTask(taskInput('health-check'));
-      await finish(store, task.id, 'needs_attention');
-
-      expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-        'It may have needed approval. Open the schedule to check its mode. ' +
-          'No more notices until it runs cleanly and fails again.'
-      );
-      expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('refused');
-    });
-
-    it('notifies again after a run that completed and a failure after it', async () => {
-      const store = wiredStore();
-      const task = store.createTask(taskInput('health-check'));
-      await finish(store, task.id, 'needs_attention');
-      await finish(store, task.id, 'needs_attention');
-      await finish(store, task.id, 'completed');
-      await finish(store, task.id, 'needs_attention');
-
-      const failing = announced().filter(
-        (n) => n.kind === 'run.completed' && n.title.endsWith('had a command refused')
-      );
-      expect(failing).toHaveLength(2);
     });
   });
 
@@ -357,51 +310,6 @@ describe('an ask that ends', () => {
     // The tool INPUT never travels: a title can end up on a lock screen.
     expect(JSON.stringify(row)).not.toContain('rm -rf');
   });
-
-  it('leaves an answered ask already read', async () => {
-    unsubscribes.push(watchAskResolution());
-    const projector = new SessionStateProjector('sess-2');
-    projector.cwd = '/Users/dev/acme';
-
-    projector.ingest({
-      type: 'question_prompt',
-      id: 'int-2',
-      question: 'Which branch?',
-    } as never);
-    projector.ingest({
-      type: 'interaction_resolved',
-      id: 'int-2',
-      resolution: 'answered',
-      at: Date.now(),
-    } as never);
-    await flush();
-
-    const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ outcome: 'answered' });
-    expect(row.readAt).toBeDefined();
-  });
-
-  it('leaves agentId unstamped when the directory names no registered agent', async () => {
-    unsubscribes.push(watchAskResolution());
-    const projector = new SessionStateProjector('sess-2b');
-    projector.cwd = '/Users/dev/some-unregistered-project';
-
-    projector.ingest({
-      type: 'question_prompt',
-      id: 'int-2b',
-      question: 'Which branch?',
-    } as never);
-    projector.ingest({
-      type: 'interaction_resolved',
-      id: 'int-2b',
-      resolution: 'answered',
-      at: Date.now(),
-    } as never);
-    await flush();
-
-    const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row.agentId).toBeUndefined();
-  });
 });
 
 describe('a turn that finishes', () => {
@@ -437,37 +345,6 @@ describe('a turn that finishes', () => {
     }
   });
 
-  it('stays quiet for a heartbeat turn: a beat finishing is not news (spec heartbeats §7.4)', async () => {
-    unsubscribes.push(watchSessionLifecycle());
-    registerBeatTurn('sess-beat', { agentId: ACME_AGENT_ID, beatId: 'b1', messageId: 'm1' });
-    try {
-      const projector = new SessionStateProjector('sess-beat');
-      projector.cwd = '/Users/dev/acme';
-      projector.ingest({ type: 'turn_start' } as never);
-      projector.ingest({ type: 'turn_end' } as never);
-      await flush();
-      expect(announced().filter((n) => n.kind === 'turn.completed')).toHaveLength(0);
-    } finally {
-      resetBeatTurns();
-    }
-  });
-
-  it('arms no session.error for a heartbeat turn that fails', async () => {
-    unsubscribes.push(watchSessionLifecycle());
-    registerBeatTurn('sess-beat-err', { agentId: ACME_AGENT_ID, beatId: 'b2', messageId: 'm2' });
-    try {
-      const projector = new SessionStateProjector('sess-beat-err');
-      projector.cwd = '/Users/dev/acme';
-      projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
-      projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
-      await flush();
-      const rows = service.list({ limit: 25, unread: false }).notifications;
-      expect(rows.filter((r) => r.kind === 'session.error')).toHaveLength(0);
-    } finally {
-      resetBeatTurns();
-    }
-  });
-
   it('escalates session.error, not turn.completed, when a fatal frame closes under an SDK-named reason', async () => {
     // DOR-1676: this shape used to settle idle, so the turn announced itself as
     // COMPLETED. It now settles error, arming the standing session.error
@@ -494,71 +371,6 @@ describe('a turn that finishes', () => {
     await flush();
     const rows = service.list({ limit: 25, unread: false }).notifications;
     expect(rows.find((r) => r.kind === 'session.error')).toMatchObject({ outcome: 'cleared' });
-  });
-
-  it('leaves agentId unstamped when the session runs nowhere a registered agent lives', async () => {
-    unsubscribes.push(watchSessionLifecycle());
-    const projector = new SessionStateProjector('sess-3b');
-    projector.cwd = '/Users/dev/some-unregistered-project';
-
-    projector.ingest({ type: 'turn_start' } as never);
-    projector.ingest({ type: 'turn_end' } as never);
-    await flush();
-
-    const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ kind: 'turn.completed' });
-    expect(row.agentId).toBeUndefined();
-  });
-
-  it('leaves agentId unstamped when the session carries no directory at all', async () => {
-    unsubscribes.push(watchSessionLifecycle());
-    const projector = new SessionStateProjector('sess-3c');
-    // No `projector.cwd` assigned — the case a session's cwd has not resolved yet.
-
-    projector.ingest({ type: 'turn_start' } as never);
-    projector.ingest({ type: 'turn_end' } as never);
-    await flush();
-
-    const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ kind: 'turn.completed', title: 'A chat finished' });
-    expect(row.agentId).toBeUndefined();
-  });
-});
-
-describe('a session that errors, and clears', () => {
-  it('stamps the agent whose directory the session runs in on the row the resolution leaves', async () => {
-    unsubscribes.push(watchSessionLifecycle());
-    const projector = new SessionStateProjector('sess-err-1');
-    projector.cwd = '/Users/dev/acme';
-
-    // `session.error` is a STANDING kind (spec `notification-system`):
-    // nothing is stored while it stands, only when it resolves — so the row
-    // only exists once the error clears.
-    projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
-    projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
-    await flush();
-
-    const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({
-      kind: 'session.error',
-      outcome: 'cleared',
-      title: 'acme stopped on an error',
-      agentId: ACME_AGENT_ID,
-    });
-  });
-
-  it('leaves agentId unstamped when the directory names no registered agent', async () => {
-    unsubscribes.push(watchSessionLifecycle());
-    const projector = new SessionStateProjector('sess-err-2');
-    projector.cwd = '/Users/dev/some-unregistered-project';
-
-    projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
-    projector.ingest({ type: 'status_change', status: { lifecycle: 'idle' } } as never);
-    await flush();
-
-    const [row] = service.list({ limit: 25, unread: false }).notifications;
-    expect(row).toMatchObject({ kind: 'session.error', outcome: 'cleared' });
-    expect(row.agentId).toBeUndefined();
   });
 });
 

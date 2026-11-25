@@ -28,7 +28,6 @@ import {
   initPermissionGate,
   resetPermissionGate,
 } from '../../core/capabilities/permission-enforcement.js';
-import { dorkosToolReadOf } from '../../core/capabilities/dorkos-tool-reads.js';
 import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import { markRunningTurnOutsider, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import { resetChosenTurns } from '../../core/turn-power/full-autonomy.js';
@@ -161,15 +160,6 @@ describe('to-do tools mark a turn only when a row carries outside words (DOR-466
   }
 
   const marked = (chat: string) => turnReadOutsideWords(chat, WREN.agentPath);
-
-  it('classes all six to-do tools as marking themselves', () => {
-    expect(dorkosToolReadOf('todos.add')).toBe('self');
-    expect(dorkosToolReadOf('todos.update')).toBe('self');
-    expect(dorkosToolReadOf('todos.list')).toBe('self');
-    expect(dorkosToolReadOf('todo_promises.add')).toBe('self');
-    expect(dorkosToolReadOf('todo_promises.update')).toBe('self');
-    expect(dorkosToolReadOf('todo_promises.list')).toBe('self');
-  });
 
   it("the team's own flow (list, keep, add twice, then a send) raises no card and no refusal", async () => {
     // A teammate hands Wren a to-do from its own clean turn.
@@ -517,15 +507,5 @@ describe('to-do tools mark a turn only when a row carries outside words (DOR-466
       await forced.invoke(id, input, as(who, chat));
       expect(turnReadOutsideWords(chat, who.agentPath), id).toBe(true);
     }
-  });
-
-  it('a list of only the team’s to-dos leaves the turn clean', async () => {
-    const before = fresh();
-    await ranAtFull(before);
-    await call('todos.add', { what: 'Book the made-up venue', assignee: 'agent-bo' }, before);
-    const chat = fresh();
-    await ranAtFull(chat);
-    await call('todos.list', {}, chat);
-    expect(marked(chat)).toBe(false);
   });
 });

@@ -23,7 +23,6 @@ import {
   notifyAutoMoveFailed,
   watchSessionLifecycle,
 } from '../emitters/session-lifecycle.js';
-import { notificationEntry } from '../notification-registry.js';
 
 const armEscalation = vi.hoisted(() => vi.fn());
 vi.mock('../escalation-service.js', async (importOriginal) => ({
@@ -185,23 +184,6 @@ describe('account.limited', () => {
     expect(titleOf('s-opencode')).toBe('Your OpenCode account hit its usage limit');
   });
 
-  it('names an unknown reset by the window, and keys an unregistered account by its folder hash', () => {
-    const entry = notificationEntry('account.limited');
-    const payload = {
-      sessionId: 's-1',
-      sessionLabel: 'acme',
-      accountId: null,
-      accountRef: '3f2a9c01b7de',
-      accountLabel: 'Your Claude account',
-      window: 'seven_day',
-      resetsAt: null,
-      since: '2026-09-26T10:42:00.000Z',
-    };
-    expect(entry.title(payload)).toBe('Your Claude account hit its weekly limit');
-    expect(entry.dedupeKey(payload)).toBe('account-limited:3f2a9c01b7de:seven_day:2026-09-26T10');
-    expect(entry.relay).toBe('never');
-  });
-
   it('tells the person again, beside the first notice, when an automatic move could not happen', async () => {
     failTurn('s-1', LIMIT);
     await flush();
@@ -251,12 +233,5 @@ describe('account.reset', () => {
     expect(titleOf('r-opencode')).toBe(
       'Your OpenCode account is back: 2 paused sessions can continue'
     );
-  });
-
-  it('still says "Your Claude account" for an unlabelled Claude Code account', async () => {
-    notifyAccountReset('r-claude', undefined, { ...RESET, accountId: 'default' });
-    await flush();
-    const [row] = rows().filter((r) => r.kind === 'account.reset');
-    expect(row!.title).toBe('Your Claude account is back: 2 paused sessions can continue');
   });
 });

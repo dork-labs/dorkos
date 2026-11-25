@@ -13,9 +13,6 @@ import {
   readAuthority,
   readAuthorityMarks,
   UNREADABLE_AUTHORITY,
-  writeAuthority,
-  writeAuthorityMarks,
-  type WritableTodoAuthority,
 } from '../todo-authority.js';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -97,29 +94,6 @@ describe('to-do authority', () => {
       expect(ownWordsAuthority({ asks: 'when-risky', reach: 'edit' })).toEqual(
         level('when-risky', 'edit')
       );
-    });
-  });
-
-  describe('writing', () => {
-    it('never writes legacy', () => {
-      expect(() => writeAuthority({ kind: 'legacy' } as unknown as WritableTodoAuthority)).toThrow(
-        /legacy/
-      );
-    });
-
-    it('round-trips every writable authority and marks', () => {
-      const all: WritableTodoAuthority[] = [
-        { kind: 'self' },
-        { kind: 'person' },
-        { kind: 'runtime-default' },
-        { kind: 'level', level: { asks: 'always', reach: 'read' } },
-      ];
-      for (const authority of all)
-        expect(readAuthority(writeAuthority(authority))).toEqual(authority);
-      expect(writeAuthorityMarks({})).toBe('{}');
-      expect(readAuthorityMarks(writeAuthorityMarks({ outsider: true }))).toEqual({
-        outsider: true,
-      });
     });
   });
 

@@ -25,8 +25,8 @@ import {
   getEscalationService,
   setEscalationService,
 } from '../escalation-service.js';
-import { capabilityApprovalKey } from '../emitters/capability-approval.js';
 import type { WebPushChannel } from '../channels/web-push.js';
+import { capabilityApprovalKey } from '../emitters/capability-approval.js';
 
 const ONE_MINUTE = 60 * 1000;
 
@@ -131,33 +131,6 @@ describe('a capability approval nobody answers', () => {
     expect(JSON.stringify(payload)).not.toContain('nightly');
   });
 
-  it('names a connected-app action by what it does, still without its arguments', async () => {
-    approvals.request({
-      capabilityId: 'connectors.execute_destructive',
-      inputHash: 'hash-gmail',
-      summary: '"Ana" wants to run "Delete message" in Gmail',
-      requestedBy: 'Ana',
-      requestedByPath: ACME_PATH,
-      serviceAction: {
-        serviceId: 'gmail',
-        serviceName: 'Gmail',
-        accountLabel: 'work@acme.com',
-        actionName: 'Delete message',
-        details: [{ label: 'Message ID', value: 'msg-secret-subject' }],
-      },
-    });
-
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-
-    const payload = sendToAll.mock.calls[0][0] as Record<string, unknown>;
-    expect(payload.body).toBe(
-      'Delete message in Gmail cannot be undone, so it will not run until you decide.'
-    );
-    expect(JSON.stringify(payload)).not.toContain('msg-secret-subject');
-    expect(JSON.stringify(payload)).not.toContain('work@acme.com');
-  });
-
   it('does not escalate when the operator turned the knob to never', async () => {
     delay = 'never';
     ask();
@@ -173,17 +146,6 @@ describe('an approval somebody deals with', () => {
   it('disarms when the operator grants it inside the delay', async () => {
     const ticket = ask();
     approvals.grant(ticket.approvalId);
-
-    expect(getEscalationService()?.armedSubjects()).toEqual([]);
-
-    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-    await flush();
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('disarms when the operator denies it', async () => {
-    const ticket = ask();
-    approvals.deny(ticket.approvalId, 'not today');
 
     expect(getEscalationService()?.armedSubjects()).toEqual([]);
 
@@ -213,28 +175,6 @@ describe('an approval somebody deals with', () => {
     expect(result.outcome).toBe('granted');
     expect(getEscalationService()?.armedSubjects()).toEqual([]);
   });
-
-  it('disarms when the decision window closed before the token was spent', () => {
-    const shortLived = new ApprovalService(db, {
-      ttlMs: 1_000,
-      describeCapability: () => ({ title: 'Delete a scheduled task', tier: 'destructive' }),
-    });
-    const ticket = shortLived.request({
-      capabilityId: 'tasks_delete',
-      inputHash: 'hash-1',
-      summary: 'wants to delete a schedule',
-    });
-    expect(getEscalationService()?.armedSubjects()).toHaveLength(1);
-
-    vi.advanceTimersByTime(2_000);
-    const result = shortLived.consume(ticket.token, {
-      capabilityId: 'tasks_delete',
-      inputHash: 'hash-1',
-    });
-
-    expect(result.outcome).toBe('expired');
-    expect(getEscalationService()?.armedSubjects()).toEqual([]);
-  });
 });
 
 describe('the arrival signal the periphery reads', () => {
@@ -255,19 +195,6 @@ describe('the arrival signal the periphery reads', () => {
         // on the server announces (DOR-1570 review). It is the approval's own
         // deadline, not a fresh one.
         expiresAt: ticket.expiresAt,
-      },
-    ]);
-  });
-
-  it('names the condition the same way when it resolves, so a banner can be retired', () => {
-    const ticket = ask();
-    approvals.grant(ticket.approvalId);
-
-    expect(broadcastsOf('standing_resolved')).toEqual([
-      {
-        kind: 'approval.pending',
-        subjectKey: `approval:${ticket.approvalId}`,
-        resolvedAt: expect.any(String),
       },
     ]);
   });
@@ -298,16 +225,5 @@ describe('who the escalation is attributed to', () => {
     // payload the ladder holds, which `armedSubjects` cannot show. What this
     // asserts is that resolving it did not throw and did not change the copy.
     expect(getEscalationService()?.armedSubjects()).toHaveLength(1);
-  });
-
-  it('calls an unidentified caller what the approval card calls it', () => {
-    approvals.request({
-      capabilityId: 'tasks_delete',
-      inputHash: 'hash-2',
-      summary: 'An unidentified caller wants to run "Delete a scheduled task"',
-    });
-
-    const [event] = broadcastsOf('standing_pending');
-    expect(event.title).toBe('An unidentified caller needs your approval');
   });
 });

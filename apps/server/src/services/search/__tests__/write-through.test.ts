@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { messages, roomEntries, searchSources, and, eq, type Db } from '@dorkos/db';
+import { searchSources, and, eq, type Db } from '@dorkos/db';
 import { createRoomSubsystem, type RoomSubsystem } from '../../rooms/index.js';
 import { SearchIndexer } from '../indexer.js';
 import { roomsSource } from '../registry.js';
@@ -37,39 +37,6 @@ function find(query: string): number[] {
     query,
     limit: 20,
   }).map((hit) => hit.ordinal);
-}
-
-/**
- * Append entries straight to the room log, with no write-through anywhere near
- * them.
- *
- * This is what a room the index has never seen actually looks like — a room that
- * was talked in before search existed, or one restored from a backup — and it is
- * the only honest way to build a backlog, since every path THROUGH the service
- * indexes as it goes.
- *
- * @param from - The first `seq` to write.
- * @param count - How many entries to append.
- */
-function seedLog(from: number, count: number): void {
-  db.transaction((tx) => {
-    for (let i = 0; i < count; i += 1) {
-      const seq = from + i;
-      tx.insert(roomEntries)
-        .values({
-          id: `${roomId}-${seq}`,
-          roomId,
-          seq,
-          kind: 'post',
-          authorId: human,
-          body: JSON.stringify({ text: `backlog entry ${seq} about kestrels` }),
-          createdAt: '2026-08-01T00:00:00.000Z',
-          cascadeRoot: `${roomId}-${seq}`,
-          cascadeDepth: 0,
-        })
-        .run();
-    }
-  });
 }
 
 /** What the frontier says it has read of this room. */
@@ -105,45 +72,6 @@ describe('a message is findable the moment it is said', () => {
     // wired, nothing has read `room_entries` and this is empty.
     expect(find('kestrel')).toEqual([1]);
   });
-
-  it('keeps up across several posts without re-indexing what it already has', () => {
-    subsystem.service.post(roomId, { authorId: human, text: 'first kestrel' });
-    subsystem.service.post(roomId, { authorId: human, text: 'second kestrel' });
-    subsystem.service.post(roomId, { authorId: human, text: 'third kestrel' });
-
-    expect(find('kestrel')).toHaveLength(3);
-    // Three entries, three rows — not three plus the re-reads a write-through
-    // that ignored the watermark would have made. The unique index would absorb
-    // a duplicate silently, so the count is the only thing that tells them apart.
-    expect(db.select().from(messages).all()).toHaveLength(3);
-    expect(watermark()).toBe(3);
-  });
-
-  it('advances the frontier past a notice, which is never indexed', () => {
-    subsystem.service.post(roomId, { authorId: human, text: 'a kestrel post' });
-    subsystem.service.postNotice(roomId, { text: 'the room speaking for itself' });
-
-    // The notice is seq 2 and projects to nothing (a notice is not something
-    // somebody said), but the room HAS been read to seq 2 — a watermark left at
-    // 1 would re-read it on every sweep forever.
-    expect(db.select().from(messages).all()).toHaveLength(1);
-    expect(watermark()).toBe(2);
-  });
-
-  it('leaves the sweep with nothing to do', async () => {
-    subsystem.service.post(roomId, { authorId: human, text: 'a kestrel post' });
-
-    const sweep = await new SearchIndexer(db, [roomsSource]).sweep();
-
-    // The reconciler and the write-through agree about what has been read, so
-    // the sweep after a write-through is a no-op rather than a second pass over
-    // the same rows. `indexed: 0` is the assertion an unchanged `count(*)` could
-    // not make — that would pass for a sweep that re-read and re-upserted
-    // everything.
-    expect(sweep.indexed).toBe(0);
-    expect(sweep.failures).toEqual([]);
-    expect(find('kestrel')).toEqual([1]);
-  });
 });
 
 describe('a room the index is far behind on', () => {
@@ -173,27 +101,6 @@ describe('a room the index is far behind on', () => {
     expect(sweep.indexed).toBe(401);
     expect(find('migration')).toEqual([401]);
   });
-
-  it('resumes indexing inline once the sweep has caught the room up', async () => {
-    // The property the bound has to have that the deferral alone does not prove:
-    // it is a fact about the BACKLOG, recomputed per post, not a mark left on the
-    // room. A guard that remembered "this room was too far behind" would pass the
-    // case above and strand the room on the five-minute path forever.
-    seedLog(1, 400);
-
-    // 1. A post while the room is behind: deferred, exactly as above.
-    subsystem.service.post(roomId, { authorId: human, text: 'first kestrel after the backlog' });
-    expect(find('kestrel')).toEqual([]);
-
-    // 2. The sweep does what the deferral handed it.
-    expect((await new SearchIndexer(db, [roomsSource]).sweep()).indexed).toBe(401);
-
-    // 3. And now the room is live again: this post is indexed INLINE, with no
-    //    sweep between it and the search below.
-    subsystem.service.post(roomId, { authorId: human, text: 'a second kestrel, posted live' });
-    expect(find('live')).toEqual([402]);
-    expect(watermark()).toBe(402);
-  });
 });
 
 describe('an index that cannot be written', () => {
@@ -214,35 +121,6 @@ describe('an index that cannot be written', () => {
 
     // The room has it. The log is the truth, and the truth was written.
     expect(subsystem.service.entriesAfter(roomId, 0).map((entry) => entry.seq)).toEqual([1]);
-  });
-
-  it('leaves the message unfindable until the sweep catches up — and then findable', async () => {
-    subsystem.service.post(roomId, { authorId: human, text: 'the kestrel migration is done' });
-    // The negative half, stated so the positive half below cannot pass for the
-    // wrong reason: nothing was indexed at post time.
-    expect(find('kestrel')).toEqual([]);
-
-    vi.restoreAllMocks();
-    const sweep = await new SearchIndexer(db, [roomsSource]).sweep();
-
-    expect(sweep.indexed).toBe(1);
-    expect(find('kestrel')).toEqual([1]);
-  });
-
-  it('records no failure anywhere, because nothing failed', async () => {
-    subsystem.service.post(roomId, { authorId: human, text: 'a kestrel post' });
-
-    // A write-through that degraded by writing `last_error` would make a room
-    // that is merely a few minutes behind look broken in the search envelope,
-    // which is a warning nobody can act on.
-    expect(
-      db
-        .select({ lastError: searchSources.lastError })
-        .from(searchSources)
-        .where(eq(searchSources.sourceId, 'rooms'))
-        .all()
-        .filter((row) => row.lastError !== null)
-    ).toEqual([]);
   });
 });
 

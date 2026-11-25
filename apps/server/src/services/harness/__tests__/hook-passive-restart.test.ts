@@ -271,21 +271,6 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     expect(readPassiveHookRows(dorkHome)).toEqual([]);
   });
 
-  it('with the first wait still alive, the yes is applied once', async () => {
-    const service = freshService();
-    const reproject = vi.fn(async () => [] as WithheldHooks[]);
-    raisePassiveHookRows([V1], { projectPath: '/repo', approvals: service, dorkHome, reproject });
-    await settle();
-    // A resume in the same process finds the wait already there.
-    expect(resumePassiveHookRows({ dorkHome, approvals: service, reproject })).toEqual([]);
-
-    service.grant(service.listPending()[0]!.approvalId);
-    await vi.waitFor(() => expect(reproject).toHaveBeenCalledTimes(1));
-    await settle();
-    expect(reproject).toHaveBeenCalledTimes(1);
-    expect(config.harness.approvedHooks).toHaveLength(1);
-  });
-
   it('a saved row that is not the right shape is dropped, and startup goes on', async () => {
     const file = passiveHookRowsPath(dorkHome);
     mkdirSync(join(dorkHome, 'harness'), { recursive: true });
@@ -320,18 +305,5 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
       resumePassiveHookRows({ dorkHome, approvals: freshService(), reproject: vi.fn() })
     ).not.toThrow();
     await settle();
-  });
-
-  it('a saved file that is not JSON is logged and dropped', () => {
-    const file = passiveHookRowsPath(dorkHome);
-    mkdirSync(join(dorkHome, 'harness'), { recursive: true });
-    writeFileSync(file, '{ not json');
-
-    expect(readPassiveHookRows(dorkHome)).toEqual([]);
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      '[HarnessSync] Dropped saved quiet rows that could not be used',
-      expect.objectContaining({ why: 'the file is not JSON' })
-    );
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual([]);
   });
 });

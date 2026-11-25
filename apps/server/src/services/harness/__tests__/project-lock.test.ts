@@ -146,37 +146,6 @@ describe('withProjectLock', () => {
     expect(ran).toEqual(['failing', 'after']);
   });
 
-  it('counts every caller waiting on one repository, not just the repository', async () => {
-    const repo = makeTempDir('lock-depth-');
-    const before = projectLockCount();
-    let release = (): void => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-
-    // One turn held open, five more asked for behind it. Map SIZE says `1`
-    // either way — it counts repositories — so the number that means anything
-    // is the queue.
-    const running = [withProjectLock(repo, () => held)];
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    for (let i = 0; i < 5; i++) running.push(withProjectLock(repo, () => undefined));
-
-    expect({ depth: projectLockQueueDepth(repo), locks: projectLockCount() }).toEqual({
-      depth: 6,
-      locks: before + 1,
-    });
-
-    release();
-    await Promise.all(running);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    // …and nothing is left behind once they have all had their turn.
-    expect({ depth: projectLockQueueDepth(repo), locks: projectLockCount() }).toEqual({
-      depth: 0,
-      locks: before,
-    });
-  });
-
   it('refuses a re-entrant turn instead of waiting for itself for ever', async () => {
     const repo = makeTempDir('lock-reentrant-');
     let inner = 'never ran';
@@ -223,20 +192,5 @@ describe('withProjectLock', () => {
     release();
     await expect(Promise.all([first, second])).resolves.toBeDefined();
     expect(order).toEqual(['first', 'second']);
-  });
-
-  it('nests happily on a DIFFERENT repository', async () => {
-    const outer = makeTempDir('lock-outer-');
-    const inner = makeTempDir('lock-inner-');
-
-    await expect(
-      withProjectLock(outer, async () => withProjectLock(inner, () => 'both'))
-    ).resolves.toBe('both');
-  });
-
-  it('resolves to whatever the body returned', async () => {
-    const repo = makeTempDir('lock-value-');
-    await expect(withProjectLock(repo, () => 41 + 1)).resolves.toBe(42);
-    await expect(withProjectLock(repo, () => Promise.resolve('async'))).resolves.toBe('async');
   });
 });

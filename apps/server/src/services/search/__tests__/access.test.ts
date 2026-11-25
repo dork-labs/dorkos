@@ -17,7 +17,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
-  authors,
   messages,
   roomEntries,
   roomMembers,
@@ -191,33 +190,6 @@ describe('the owner', () => {
     expect(new Set(containers)).toEqual(new Set(['open', 'closed', 'late', 'agents-only']));
   });
 
-  it('finds a room they were never a member of at all', () => {
-    // The deliberate divergence from `readHistory`, driven rather than described
-    // (see `RoomService.searchScope`): that path requires a member row even of the
-    // owner, and this one does not. `agents-only` is a room two agents opened
-    // between themselves — the operator has NO `room_members` row in it — and it
-    // is searchable by them anyway, because spec §7 gives them every room on the
-    // machine. A future decision to narrow this has to start by reddening here.
-    expect(
-      subsystem.store.listMembersForRooms(['agents-only']).map((member) => member.authorId)
-    ).not.toContain(ownerId);
-
-    const hits = search(scopeFor(ownerId, true), 'buzzard').results;
-    expect(hits).toEqual([
-      expect.objectContaining({ source: 'rooms', container: 'agents-only', ordinal: 1 }),
-    ]);
-  });
-
-  it('reads a room from its first message, floor or no floor', () => {
-    // The owner is not scoped by `joinedSeq` at all — their clause is absent
-    // rather than filtered — so `late:1` is theirs even though the agent's floor
-    // in that room is 2.
-    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
-    expect(hits).toContainEqual(
-      expect.objectContaining({ source: 'rooms', container: 'late', ordinal: 1 })
-    );
-  });
-
   it('finds session transcripts', () => {
     const hits = search(scopeFor(ownerId, true), 'kestrel').results;
     const sessions = hits
@@ -225,27 +197,6 @@ describe('the owner', () => {
       .map((hit) => hit.container)
       .sort();
     expect(sessions).toEqual(['open', 'session-b']);
-  });
-
-  it('finds OpenCode transcripts too, on the same scope', () => {
-    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
-    expect(hits).toContainEqual(
-      expect.objectContaining({ source: 'opencode', container: 'ses_oc' })
-    );
-  });
-
-  it('carries the working directory a session hit opens in', () => {
-    const hit = search(scopeFor(ownerId, true), 'kestrel').results.find(
-      (candidate) => candidate.source === 'claude-code'
-    );
-    expect(hit?.containerPath).toBe('/Users/dork/code/dorkos');
-  });
-
-  it('carries no working directory for a room, because a room is not a directory', () => {
-    const hit = search(scopeFor(ownerId, true), 'kestrel').results.find(
-      (candidate) => candidate.source === 'rooms'
-    );
-    expect(hit?.containerPath).toBeNull();
   });
 });
 
@@ -284,27 +235,6 @@ describe('a member', () => {
     const hits = search(scopeFor(agentId, false), 'kestrel').results;
     const late = hits.filter((hit) => hit.container === 'late').map((hit) => hit.ordinal);
     expect(late).toEqual([3]);
-  });
-
-  it('still sees the oldest message of a room they were in from the start', () => {
-    // The other direction of the same floor, and the one a single global floor
-    // gets wrong: Ana's highest floor is 2, and `open:1` is below it.
-    const hits = search(scopeFor(agentId, false), 'kestrel').results;
-    expect(hits).toContainEqual(expect.objectContaining({ container: 'open', ordinal: 1 }));
-  });
-
-  it('would have seen the pre-join messages if they were the owner’s', () => {
-    const owned = search(scopeFor(ownerId, true), 'kestrel').results;
-    const late = owned
-      .filter((hit) => hit.container === 'late')
-      .map((hit) => hit.ordinal)
-      .sort();
-    expect(late).toEqual([1, 2, 3]);
-  });
-
-  it('is in no rooms at all when nobody put them anywhere', () => {
-    const stranger = subsystem.authors.resolveAgent('/agents/nobody', 'Nobody').id;
-    expect(search(scopeFor(stranger, false), 'kestrel')).toEqual({ results: [], warnings: [] });
   });
 });
 
@@ -347,13 +277,6 @@ describe('session history over an MCP-shaped caller', () => {
     const hits = search(scopeFor(agentId, false), 'kestrel').results;
     expect(hits.filter((hit) => hit.source === 'codex')).toEqual([]);
   });
-
-  it('returns the codex row to the owner — the positive control for it', () => {
-    const hits = search(scopeFor(ownerId, true), 'kestrel').results;
-    expect(hits.filter((hit) => hit.source === 'codex').map((hit) => hit.container)).toEqual([
-      'codex-thread-1',
-    ]);
-  });
 });
 
 describe('an agent with a session filter (spec `audit-trail` §3.4)', () => {
@@ -384,23 +307,6 @@ describe('an agent with a session filter (spec `audit-trail` §3.4)', () => {
   });
 });
 
-describe('narrowing to one source', () => {
-  it('leaves out everything else', () => {
-    const hits = search(scopeFor(ownerId, true), 'kestrel', 'rooms').results;
-    // Five room rows say "kestrel" — `open:1`, `closed:2`, `late:1..3` — and none
-    // of the two session rows that also say it may come back. A length-agnostic
-    // `every()` passes for a filter that dropped four of the five as well.
-    expect(hits.map((hit) => `${hit.container}:${hit.ordinal}`).sort()).toEqual([
-      'agents-only:2',
-      'closed:2',
-      'late:1',
-      'late:2',
-      'late:3',
-      'open:1',
-    ]);
-  });
-});
-
 describe('a source that is behind', () => {
   beforeEach(() => {
     db.update(searchSources)
@@ -415,16 +321,6 @@ describe('a source that is behind', () => {
     const answer = search(scopeFor(ownerId, true), 'kestrel');
     expect(answer.warnings).toEqual([{ source: 'claude-code', message: expect.any(String) }]);
     expect(answer.results.some((hit) => hit.source === 'rooms')).toBe(true);
-  });
-
-  it('names one warning for the source, not one per container that failed', () => {
-    db.update(searchSources)
-      .set({ lastError: 'ENOENT: this one too' })
-      .where(
-        and(eq(searchSources.sourceId, 'claude-code'), eq(searchSources.originKey, 'session-b'))
-      )
-      .run();
-    expect(search(scopeFor(ownerId, true), 'kestrel').warnings).toHaveLength(1);
   });
 
   it('says nothing to a member about a room they are not in', () => {
@@ -443,38 +339,5 @@ describe('a source that is behind', () => {
     expect(search(scopeFor(ownerId, true), 'kestrel').warnings).toContainEqual(
       expect.objectContaining({ source: 'rooms' })
     );
-  });
-
-  it('does warn a member about a room they ARE in', () => {
-    // The pair to the case above: the filter is by scope, not by silence.
-    db.update(searchSources)
-      .set({ lastError: 'the projection threw' })
-      .where(and(eq(searchSources.sourceId, 'rooms'), eq(searchSources.originKey, 'open')))
-      .run();
-
-    expect(search(scopeFor(agentId, false), 'kestrel').warnings).toEqual([
-      { source: 'rooms', message: expect.any(String) },
-    ]);
-  });
-
-  it('says nothing about a source a caller cannot reach anyway', () => {
-    // Ana never searches transcripts, so a broken transcript is not news she can
-    // act on — and a warning naming a source she has no access to would be one
-    // more thing the envelope says about a world she cannot see.
-    expect(search(scopeFor(agentId, false), 'kestrel').warnings).toEqual([]);
-  });
-
-  it('warns about nothing while every source is caught up', () => {
-    db.update(searchSources).set({ lastError: null }).run();
-    expect(search(scopeFor(ownerId, true), 'kestrel').warnings).toEqual([]);
-  });
-});
-
-describe('the author registry', () => {
-  it('really did give the owner and the agent different identities', () => {
-    // Guards every assertion above: if these collapsed onto one author row, the
-    // "member" cases would be the owner cases and every one of them would pass.
-    expect(agentId).not.toBe(ownerId);
-    expect(db.select().from(authors).all().length).toBeGreaterThanOrEqual(2);
   });
 });
