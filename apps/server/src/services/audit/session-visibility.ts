@@ -77,6 +77,7 @@ const KNOWN_KINDS: Record<TurnOrigin['kind'], true> = {
   'chat-message': true,
   'account-handoff': true,
   'account-resume': true,
+  resume: true,
   'test-harness': true,
 };
 

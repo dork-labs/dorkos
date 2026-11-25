@@ -84,7 +84,7 @@ describe('notification confirmation', () => {
     expect(held.status).toBe(428);
     expect(grants.approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(grants.approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -100,8 +100,8 @@ describe('notification confirmation', () => {
     const held = await owner.call('post', `${PREFIX}/subscriptions`, 'own-tunnel').send(CREATE);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
       ok: true,
-      status: 409,
-      result: { code: 'definition_changed' },
+      status: 412,
+      result: { code: 'updates_changed' },
     });
   });
 
@@ -113,7 +113,7 @@ describe('notification confirmation', () => {
     expect(JSON.stringify(held.body)).not.toContain(SIGNING_SECRET);
     expect(settings.configure).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(settings.configure).not.toHaveBeenCalled();
     const confirmed = await owner.confirm(held.body.heldActionId, 'own-tunnel');

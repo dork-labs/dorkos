@@ -18,7 +18,7 @@
  * @module services/core/capabilities/registry
  */
 import { assertNarrowDeclarations } from './declarations/narrow-declarations.js';
-import { assertHttpInputReachable } from './input-projection.js';
+import { assertHttpSurface } from './input-projection.js';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
 import {
@@ -42,7 +42,7 @@ import {
   type ApprovalRetryChannel,
   type GrantedApproval,
 } from './tier-enforcement.js';
-import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
+import { assertCallerProofs, type PersonCaller, type TrustedCaller } from './trusted-caller.js';
 import { connectorGateFacts, resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
 import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permission.js';
@@ -120,6 +120,14 @@ export interface CapabilityInvocationContext {
    * refused; see the module TSDoc of `trusted-caller.ts`.
    */
   trusted?: TrustedCaller;
+  /**
+   * Proof that the caller is a person, minted only by `personCaller` from the
+   * request's facts. A person-only capability (`surfaces.http.audience:
+   * 'person'`) refuses any call without it or {@link trusted}, whatever surface
+   * it came through: the generic HTTP doors, MCP, a `request_permission`
+   * re-invocation. Opens no other door; the gate still runs.
+   */
+  person?: PersonCaller;
   /**
    * The approval token the caller presented on a retry, when it presented one.
    *
@@ -619,7 +627,7 @@ export function composeRegistry(
         claim(cliVerbs, key, id, 'CLI verb');
       }
       if (surfaces.http) {
-        assertHttpInputReachable(capability);
+        assertHttpSurface(capability);
         claim(
           httpRoutes,
           `${surfaces.http.method.toUpperCase()} ${surfaces.http.path}`,
@@ -766,32 +774,10 @@ export function composeRegistry(
       if (sealed) throw new CapabilityGateRefusal({ outcome: 'denied', payload: sealed });
       const supplied = context ?? {};
 
-      // A present `trusted` that is not a genuine marker is refused LOUDLY rather
-      // than quietly downgraded to untrusted. Failing closed would be safe, but
-      // silent — and the only ways to get here are a caller forging the field or
-      // a module minting it wrongly, both of which someone needs to be told about.
-      // Truthiness is NOT enough: `JSON.parse(JSON.stringify(marker))` is a
-      // truthy plain object, and reading it as trust is exactly the bypass this
-      // marker exists to prevent.
-      if (supplied.trusted !== undefined && !isTrustedCaller(supplied.trusted)) {
-        throw new Error(
-          `Capability registry: "${id}" was invoked with a \`trusted\` value that is not a ` +
-            `trusted-caller marker. Only \`trustedCaller\` can mint one; a value that merely ` +
-            `looks like it (a JSON round-trip, a hand-built object) is not trust.`
-        );
-      }
-
-      // Trusted means "no machine principal presented itself"; an identity IS a
-      // machine principal presenting itself. The pair cannot both be true, so a
-      // caller that assembled it is wrong about something — refuse rather than
-      // pick a winner, because picking trust would turn that bug into a bypass.
-      if (supplied.trusted && supplied.identity) {
-        throw new Error(
-          `Capability registry: "${id}" was invoked with both a trusted-caller marker and an agent ` +
-            `identity (${supplied.identity.agentPath}). A trusted call is one no machine principal ` +
-            `made; these cannot both hold.`
-        );
-      }
+      // The caller's proofs: a genuine trusted marker, never beside an agent
+      // identity, and a person's proof for a person-only capability
+      // (ADR 261123-170830), here inside the one gate so no door goes around it.
+      assertCallerProofs(id, capability, supplied);
 
       if (supplied.serverPrincipal !== undefined && !isServerPrincipal(supplied.serverPrincipal)) {
         throw new Error(

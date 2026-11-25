@@ -1,7 +1,7 @@
 ---
 number: 84
 title: Pending Buffer with TTL for Late Relay Subscribers
-status: draft
+status: archived
 created: 2026-03-06
 spec: fix-relay-sse-delivery-pipeline
 superseded-by: null

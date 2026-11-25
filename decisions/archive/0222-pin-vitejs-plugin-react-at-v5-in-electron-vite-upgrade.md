@@ -1,7 +1,7 @@
 ---
 number: 222
 title: Pin @vitejs/plugin-react at v5.x During electron-vite v5 Upgrade
-status: draft
+status: archived
 created: 2026-04-01
 spec: upgrade-electron-vite
 superseded-by: null

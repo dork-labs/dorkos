@@ -5,7 +5,7 @@ status: accepted
 created: 2026-10-17
 spec: conversation-model
 superseded-by: null
-amends: [261006-235240, 261009-171114]
+amends: [261006-235240, 261009-171114, 0013]
 ---
 
 # 261017-211859. A conversation is the shared log; a session is one agent's private context seated behind it
@@ -17,6 +17,8 @@ Accepted (operator decision, 2026-11-24), with one change from the proposed text
 Proposed 2026-10-17 (operator direction, relayed by the designer agent; spec `specs/conversation-model/`).
 
 **Amended by** [261122-124821](261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md): the decision bullet "One address points at one conversation. `{handle}[+{name}]@{space}` renders the canonical `dork://{space}/{handle}/{conversation}`" is retired in favour of two `dork:` shapes, a reference by id and an address by name. The display form stands, with `@{space}` optional inside your own space, and every other clause stands. That record was accepted on 2026-11-23.
+
+**Amends** [0013](0013-hybrid-maildir-sqlite-storage.md): that record kept Maildir as Relay's store. Here it carries delivery only and then retires.
 
 **Extends** [260726-170125](260726-170125-a-room-is-a-membership-scoped-durable-stream.md) (a room is a membership-scoped durable stream, not a session) from rooms to every chat. That ADR's decision is unchanged; this one says it now holds everywhere.
 

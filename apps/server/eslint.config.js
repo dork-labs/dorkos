@@ -2,6 +2,8 @@ import { defineConfig } from 'eslint/config';
 import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
 import spaces from './eslint-rules/space-boundary.js';
+import workGraph from './eslint-rules/work-graph-boundary.js';
+import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -414,6 +416,21 @@ export default defineConfig([
     ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
     plugins: { spaces },
     rules: { 'spaces/no-reach-in': 'error' },
+  },
+  // The work graph is space data: turn code reaches it only through hooks or events, so its
+  // move to the space store (DOR-5139) is a store move. Tests are checked too.
+  {
+    files: ['src/services/runtimes/**/*.{ts,tsx}', 'src/services/session/**/*.{ts,tsx}'],
+    plugins: { 'work-graph': workGraph },
+    rules: { 'work-graph/stay-out': 'error' },
+  },
+  // The runtimes build on session, never the reverse (DOR-4928): a shared piece lives in session
+  // or core, and an adapter's own fact reaches session through a port. Tests are not checked.
+  {
+    files: ['src/services/session/**/*.{ts,tsx}'],
+    ignores: ['src/services/session/**/__tests__/**', 'src/services/session/**/*.test.{ts,tsx}'],
+    plugins: { 'session-runtimes': sessionRuntimes },
+    rules: { 'session-runtimes/no-runtimes': 'error' },
   },
 
   ...testConfig,

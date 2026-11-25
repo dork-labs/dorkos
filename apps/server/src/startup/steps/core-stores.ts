@@ -30,6 +30,9 @@ import {
   setSessionLimitStore,
 } from '../../services/session/index.js';
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
+import { installWorkLinkStore } from '../../services/work-graph/index.js';
+import { installRunRecord } from '../../services/runs/index.js';
+import { ulid } from 'ulidx';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
 import { accountRuleRoots } from '../../services/core/usage/account-eligibility.js';
@@ -47,6 +50,7 @@ import {
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { chatFolderById } from '../../services/core/agent-identity/session-agent.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from '../../services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -152,6 +156,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   const messageQueueStore = new MessageQueueStore(db);
   setMessageQueueStore(messageQueueStore);
 
+  // The run record, and this boot's epoch: the owner of every run this process
+  // starts (spec `turns-survive-restarts` §6.1). Before anything can launch a turn.
+  installRunRecord(db, { epoch: ulid() });
+
   // The durable hold for staged words, on the same beat again: the server tells
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
@@ -162,6 +170,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // registers, so the first turn is recorded; text past 30 days is swept here
   // and on the hourly tick.
   installTurnContextStore(db);
+
+  // The work graph's edges (DOR-4968), on the same beat: a first turn's re-key
+  // is recorded as it happens, so the first turn must find the store in place.
+  installWorkLinkStore(db);
 
   // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
   // here, before extensions start, because a name handed out earlier could
@@ -212,6 +224,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   runtimeRegistry.setDb(db);
   // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 

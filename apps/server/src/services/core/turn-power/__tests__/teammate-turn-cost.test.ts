@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { meterTeammateTurns, setTeammateTurnCostSink } from '../teammate-turn-cost.js';
 
@@ -75,6 +76,47 @@ describe('the teammate meter', () => {
     );
 
     expect(sink).toHaveBeenCalledWith({ roomId: 'room-a', costUsd: 0.3 });
+  });
+
+  it('counts a turn whose teammate chain nothing proves the rooms of', async () => {
+    const sink = vi.fn();
+    setTeammateTurnCostSink(sink);
+    // What a relay turn is sent with when the chain it carries was not sealed by this server.
+    const unproven = {
+      permissionCeiling: [
+        'runtime-default',
+        { asks: 'never', reach: 'everything', teammate: [UNPROVEN_TEAMMATE_ORIGIN] },
+      ],
+    } as MessageOpts;
+
+    await drain(
+      meterTeammateTurns(runtime([status({ turnCostUsd: 0.2 }), done])).sendMessage(
+        's',
+        'hi',
+        unproven
+      )
+    );
+
+    expect(sink).toHaveBeenCalledWith({ roomId: UNPROVEN_TEAMMATE_ORIGIN.roomId, costUsd: 0.2 });
+  });
+
+  it('counts a chain naming the unproven origin and a room once, against the unproven origin', async () => {
+    const sink = vi.fn();
+    setTeammateTurnCostSink(sink);
+    const both = {
+      ...teammate,
+      permissionCeiling: {
+        asks: 'never',
+        reach: 'everything',
+        teammate: [UNPROVEN_TEAMMATE_ORIGIN, { roomId: 'room-b', authorId: 'bo' }],
+      },
+    } as MessageOpts;
+
+    await drain(meterTeammateTurns(runtime([done])).sendMessage('s', 'hi', both));
+
+    expect(sink.mock.calls).toEqual([
+      [{ roomId: UNPROVEN_TEAMMATE_ORIGIN.roomId, costUsd: undefined }],
+    ]);
   });
 
   it('never counts the owner’s own turns, or a turn outside a room', async () => {

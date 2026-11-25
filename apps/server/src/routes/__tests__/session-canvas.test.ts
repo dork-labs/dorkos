@@ -130,7 +130,9 @@ describe('the session canvas routes', () => {
   it('404s a document this session does not hold', async () => {
     const read = await request(testServer).get(`/api/sessions/${SESSION}/canvas/no-such-document`);
     expect(read.status).toBe(404);
-    expect(read.body.code).toBe('CANVAS_DOCUMENT_NOT_FOUND');
+    expect(read.body.code).toBe('not_found');
+    expect(read.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(read.body.detail).toBe('No such document on this canvas');
   });
 
   it('changes content, pin and order in one PATCH', async () => {
@@ -192,7 +194,7 @@ describe('the session canvas routes', () => {
         editing,
       })) {
         expect(res.status, `${name} accepted a non-session id`).toBe(400);
-        expect(res.body.code).toBe('INVALID_SESSION_ID');
+        expect(res.body.code).toBe('invalid_request');
       }
     });
 
@@ -227,7 +229,7 @@ describe('the session canvas routes', () => {
 
       for (const [name, res] of Object.entries({ listed, read, opened })) {
         expect(res.status, `${name} answered an agent`).toBe(403);
-        expect(res.body.code).toBe('PEOPLE_ONLY');
+        expect(res.body.code).toBe('person_only');
         expect(JSON.stringify(res.body), `${name} leaked the document`).not.toContain(
           'example.test/private'
         );
@@ -247,7 +249,7 @@ describe('the session canvas routes', () => {
         .set('X-DorkOS-Agent', 'not-a-real-token');
 
       expect(listed.status).toBe(401);
-      expect(listed.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      expect(listed.body.code).toBe('agent_identity_unverified');
     });
 
     it('404s a POST to an id that names no session', async () => {
@@ -256,7 +258,7 @@ describe('the session canvas routes', () => {
       // deletes what `onSessionRemoved` marked.
       const opened = await open('https://example.test/ghost', GHOST);
       expect(opened.status).toBe(404);
-      expect(opened.body.code).toBe('SESSION_NOT_FOUND');
+      expect(opened.body.code).toBe('session_not_found');
 
       const listed = await request(testServer).get(`/api/sessions/${GHOST}/canvas`);
       // The READ is not refused — an empty table is the honest answer and it
@@ -276,7 +278,7 @@ describe('the session canvas routes', () => {
 
       const listed = await request(testServer).get(`/api/sessions/${SESSION}/canvas`);
       expect(listed.status).toBe(503);
-      expect(listed.body.code).toBe('CANVAS_UNAVAILABLE');
+      expect(listed.body.code).toBe('temporarily_unavailable');
     });
   });
 });

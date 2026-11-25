@@ -24,16 +24,7 @@ import { resolveStableClientId } from '@/layers/shared/lib/transport';
 import { extensionApiUrl } from './extension-api-url';
 import { requestForwardConsent } from './forward-consent';
 import { readErrorBody } from '@dorkos/shared/problem';
-
-/** The codes the server answers with that `api.forward` throws as themselves. */
-const FORWARD_CODES: ReadonlySet<string> = new Set<ForwardErrorCode>([
-  'no_agent',
-  'not_found',
-  'person_required',
-  'extension_off',
-  'invalid_input',
-  'unavailable',
-]);
+import { sdkRefusalCode } from './sdk-refusal-code';
 
 /** What the server kept when a forward needs the person's Allow first. */
 interface PendingConsent {
@@ -48,14 +39,7 @@ interface PendingConsent {
 /** A refused response's body, as a {@link ForwardError}. */
 function refusalOf(status: number, body: unknown): ForwardError {
   const reading = readErrorBody(body, 'DorkOS could not do that. Try again.');
-  const code: ForwardErrorCode =
-    reading.code && FORWARD_CODES.has(reading.code)
-      ? (reading.code as ForwardErrorCode)
-      : status === 404
-        ? 'not_found'
-        : status === 403
-          ? 'person_required'
-          : 'unavailable';
+  const code = sdkRefusalCode(status, reading.code) as ForwardErrorCode;
   return new ForwardError(code, reading.message);
 }
 
@@ -142,8 +126,8 @@ export function createExtensionForwardApi(extId: string): ExtensionForwardApi {
         throw new ForwardError('unavailable', 'DorkOS could not be reached. Try again.');
       }
       if (!res.ok) {
+        // A problem document; `no_agent` with a kept comment asks the person first.
         const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
           code?: string;
           consent?: PendingConsent;
         };

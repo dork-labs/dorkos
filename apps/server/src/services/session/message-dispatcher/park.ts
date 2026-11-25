@@ -21,7 +21,19 @@ import { launchDispatch } from './launch.js';
 import { schedulePump } from './pump.js';
 import { projectorFor } from '../resolution/session-key-registry.js';
 import { SESSIONS } from '../../../config/constants.js';
+import { feedRun } from './run-feed.js';
 import type { DispatchPlan, PendingDispatch } from './types.js';
+
+/**
+ * Cancel a message's run: it will not run (transition 5 from `queued`, 9 from
+ * `starting`).
+ *
+ * @param plan - The message.
+ * @param why - What ended it, kept on the run.
+ */
+function cancelRun(plan: DispatchPlan, why: string): void {
+  feedRun(plan, 'cancel', (feed, runId) => feed.cancel(runId, why));
+}
 
 /**
  * Whether the session is parked on a person's answer (an approval, a question,
@@ -112,7 +124,10 @@ export function returnToQueue(plan: DispatchPlan): void {
   if (plan.whenBusy !== 'queue') {
     // No row was ever written for a refusing plan (see the module doc), so
     // giving up on one is simply declining to re-park it.
-    if (!plan.answered) return;
+    if (!plan.answered) {
+      cancelRun(plan, 'refused_busy');
+      return;
+    }
     const remainingMs = plan.budgetMs - (Date.now() - plan.startedWaitingAt);
     // Waiting on a person is not a turn gone dark (DOR-3113): the trigger
     // waits behind the approval, as long as the approval itself may wait,
@@ -133,6 +148,7 @@ export function returnToQueue(plan: DispatchPlan): void {
       // `accepted: true` at acceptance and has been waiting on the turn ever
       // since, and no turn will now start for it. The refusal names a wait on
       // a person for a caller that reads it.
+      cancelRun(plan, 'wait_spent');
       plan.turn.onSettled?.(
         'failed',
         stillWaitingOnPerson(plan.sessionKey) ? 'pending-interaction' : undefined
@@ -146,7 +162,8 @@ export function returnToQueue(plan: DispatchPlan): void {
   if (store && !store.get(plan.messageId)) {
     // No row to put back (it was removed, or never written): no turn will
     // start for this message, so its caller hears that now, or never (a
-    // launch-cap slot is released on it).
+    // launch-cap slot is released on it). Its run goes with it.
+    cancelRun(plan, 'removed');
     emitLifecycle({
       phase: 'dropped',
       messageId: plan.messageId,
@@ -177,6 +194,7 @@ export function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): voi
   const store = getMessageQueueStore();
   if (store && !store.get(plan.messageId)) {
     setQueuedWaitingOn(plan.messageId, undefined);
+    cancelRun(plan, 'removed');
     emitLifecycle({
       phase: 'dropped',
       messageId: plan.messageId,
@@ -204,11 +222,81 @@ export function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): voi
  */
 export function dropTransient(plan: DispatchPlan, why: string): void {
   pending.delete(plan.messageId);
+  // No row to delete, but its run is cancelled all the same (§4.7).
+  cancelRun(plan, 'transient');
   logger.warn('[MessageDispatcher] a refusing caller’s trigger was dropped rather than run late', {
     sessionId: plan.sessionKey,
     messageId: plan.messageId,
     clientId: plan.clientId,
     why,
+  });
+}
+
+/**
+ * Put a launch back in the pending set because another run of its chat is
+ * `started` or `running` (spec `turns-survive-restarts` §4.7, §5: one writer
+ * per chat). That run's settle hands the slot back and runs the pump, which
+ * tries this one again; its turn is bounded by the stall guard, so the wait
+ * is too.
+ *
+ * - A queued message re-parks with what is left of its bound. One whose bound
+ *   is spent (the wait-bound launch) re-parks with no timer at all: forcing it
+ *   through would make it a second writer behind a quiet turn whose lock ran
+ *   out, which is exactly what this rule removes.
+ * - A refusing caller nobody has answered yet is refused, as a busy chat
+ *   refuses it today, and its run cancelled. An answered one keeps today's
+ *   bound: re-parked with what is left, dropped once it is spent (unless the
+ *   turn ahead is waiting on a person, DOR-3113).
+ * - A transient trigger is dropped: it has no later moment worth running at.
+ *
+ * A run another boot left live is the exception to "its settle wakes it":
+ * nothing in this process will settle it, and the record retires it once its
+ * lease runs out. So the launch is parked not before `retryAt`, and the pump
+ * tries it again at that moment, whatever is left of its bound (a no-timer
+ * re-park included), rather than wait out a whole bound behind a turn that
+ * is already gone.
+ *
+ * Known edge: a re-parked message can be passed by a later one of its chat
+ * that launches first (a direct launch the slot did not stop); the record
+ * still keeps one writer, only their order can change until T15's gate holds
+ * every path.
+ *
+ * @param plan - The launch that met a live run.
+ * @param budgetExhausted - Whether the wait bound launched it.
+ * @param retryAt - Epoch ms at which the live run, another boot's, can be retired.
+ */
+export function reparkBehindLiveRun(
+  plan: DispatchPlan,
+  budgetExhausted: boolean,
+  retryAt?: number
+): void {
+  if (plan.transient) {
+    dropTransient(plan, 'another turn of its chat was running');
+    return;
+  }
+  const remainingMs = budgetExhausted ? 0 : plan.budgetMs - (Date.now() - plan.startedWaitingAt);
+  if (plan.whenBusy !== 'queue') {
+    if (!plan.answered) {
+      cancelRun(plan, 'refused_busy');
+      return;
+    }
+    if (remainingMs <= 0 && waitsOnPerson(plan)) {
+      keepWaitingOnPerson(plan);
+      parkDispatch(plan, unwatchedSettle(plan));
+      return;
+    }
+    if (remainingMs <= 0) {
+      cancelRun(plan, 'wait_spent');
+      plan.turn.onSettled?.(
+        'failed',
+        stillWaitingOnPerson(plan.sessionKey) ? 'pending-interaction' : undefined
+      );
+      return;
+    }
+  }
+  parkDispatch(plan, unwatchedSettle(plan), {
+    ...(remainingMs > 0 ? { budgetMs: remainingMs } : { noTimer: true as const }),
+    ...(retryAt !== undefined ? { notBefore: new Date(retryAt).toISOString() } : {}),
   });
 }
 
@@ -247,6 +335,8 @@ export function unwatchedSettle(plan: DispatchPlan): {
  * @param opts.budgetMs - How long THIS park may last, when that is less than the
  *   plan's whole budget. A re-park passes what is left of the original wait
  *   rather than the whole of it again; see {@link returnToQueue}.
+ * @param opts.noTimer - No wait bound at all: only the pump starts it, at the
+ *   settle of the run it waits behind ({@link reparkBehindLiveRun}).
  */
 export function parkDispatch(
   plan: DispatchPlan,
@@ -257,6 +347,7 @@ export function parkDispatch(
     notBefore?: string;
     schedulingRetry?: boolean;
     held?: QueuedWaitingOn;
+    noTimer?: true;
   }
 ): void {
   if (plan.turn.privateDispatchSignal?.aborted) {
@@ -388,12 +479,14 @@ export function parkDispatch(
     // already waited past nothing, and launching it at the bound would restart
     // the agent under the work it is waiting on. Its bound is the runtime's own
     // ceiling, `releaseAt`, where it is tried again like at any boundary.
-    timer: setTimeout(
-      () => onBudgetSpent(),
-      opts?.held !== undefined
-        ? Math.min(2_147_483_647, Math.max(1, opts.held.releaseAt - Date.now() + 1))
-        : (opts?.budgetMs ?? plan.budgetMs)
-    ),
+    timer: opts?.noTimer
+      ? undefined
+      : setTimeout(
+          () => onBudgetSpent(),
+          opts?.held !== undefined
+            ? Math.min(2_147_483_647, Math.max(1, opts.held.releaseAt - Date.now() + 1))
+            : (opts?.budgetMs ?? plan.budgetMs)
+        ),
   };
   /** What the wait bound does when it is reached; see the comment on `timer`. */
   function onBudgetSpent(): void {
@@ -418,7 +511,7 @@ export function parkDispatch(
     }
     entry.launch({ budgetExhausted: true });
   }
-  entry.timer.unref?.();
+  entry.timer?.unref?.();
   pending.set(plan.messageId, entry);
   if (notBefore !== undefined && notBefore > Date.now()) rearmDeadline();
 }

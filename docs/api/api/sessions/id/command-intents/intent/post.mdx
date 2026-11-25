@@ -20,8 +20,8 @@ _openapi:
           never reach this route. Capability-gated: a runtime that does not
           support the intent (e.g. Codex) returns `422` and the adapter is never
           called — never a silent no-op. Unlike the message trigger (which
-          queues instead), this route still answers `409` SESSION_LOCKED when a
-          turn is already running: a command intent is not a person's words
+          queues instead), this route still answers `409` `session_locked` when
+          a turn is already running: a command intent is not a person's words
           waiting to be said, so it is refused rather than queued."
 ---
 

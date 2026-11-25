@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { SeenVersions } from '../seen-versions.js';
-import type { AgentReleaseNote } from '../../../runtimes/shared/awareness/agent-release-notes.js';
+import type { AgentReleaseNote } from '../agent-release-notes.js';
 
 const notes: AgentReleaseNote[] = Array.from({ length: 10 }, (_, i) => ({
   version: '0.2.0',

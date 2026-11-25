@@ -214,7 +214,7 @@ describe('runtime connect endpoints', () => {
         .post('/api/runtimes/opencode/credential')
         .send({ secret: SECRET });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/native API key/);
+      expect(res.body.detail).toMatch(/native API key/);
       expect(res.text).not.toContain(SECRET);
     });
 
@@ -280,7 +280,7 @@ describe('runtime connect endpoints', () => {
         .send({ providerId: 'x', secret: SECRET });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/provider id/);
+      expect(res.body.detail).toMatch(/provider id/);
       expect(res.text).not.toContain(SECRET);
     });
 
@@ -380,7 +380,7 @@ describe('runtime connect endpoints', () => {
         .send({ providerId: 'Valut Cloud', secret: SECRET });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/Valut Cloud/);
+      expect(res.body.detail).toMatch(/Valut Cloud/);
       expect(res.text).not.toContain(SECRET);
     });
 
@@ -518,7 +518,8 @@ describe('runtime connect endpoints', () => {
       );
       const res = await request(server).post('/api/runtimes/codex/credential/check').send({});
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Paste the key to check it.');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe('Paste the key to check it.');
     });
   });
 
@@ -881,7 +882,7 @@ describe('runtime connect endpoints', () => {
         .send({ model: 'not a valid tag!' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/valid ollama model name/i);
+      expect(res.body.detail).toMatch(/valid ollama model name/i);
       expect(pullOllamaModel).not.toHaveBeenCalled();
     });
 
@@ -1040,7 +1041,8 @@ describe('runtime connect endpoints', () => {
       const res = await (route.body ? req.send(route.body) : req);
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/locally/i);
+      expect(res.body.code).toBe('operator_only');
+      expect(res.body.detail).toMatch(/only available on this computer/i);
       if (route.action) expect(route.action()).not.toHaveBeenCalled();
       if (route.carriesSecret) expect(JSON.stringify(res.body)).not.toContain(SECRET);
     });
@@ -1072,8 +1074,8 @@ describe('runtime connect endpoints', () => {
       // proves the request got past it. A key save now waits for the owner to
       // confirm it's them (DOR-4355), and with no browser session here the hold
       // answers `not-a-person`, which only a request past the gate can reach.
-      expect(res.body?.error).not.toBe('Runtime connect actions are only available locally');
-      if (res.status === 403) expect(res.body.code).toBe('not-a-person');
+      expect(res.body?.code).not.toBe('operator_only');
+      if (res.status === 403) expect(res.body.code).toBe('person_only');
     });
   });
 });
@@ -1168,7 +1170,7 @@ describe('DorkOS inference setup', () => {
         .set('Cookie', PERSON_SESSION)
         .send({ inference, secret: SECRET });
       expect(res.status).toBe(403);
-      expect(res.body.error).toMatch(/only available on this computer/);
+      expect(res.body.detail).toMatch(/only available on this computer/);
       expect(storeDoeCredential).not.toHaveBeenCalled();
     } finally {
       currentPeer = '127.0.0.1';

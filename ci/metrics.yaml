@@ -73,6 +73,14 @@ tracked:
   - id: tracked.escaped
     unit: count
     definition: Fix PRs citing a regression from a PR merged at most 7 days earlier (a prose match, too gameable to score).
+  - id: tracked.codex-macos-escapes
+    unit: count
+    definition: >-
+      Codex sandbox regressions that fail only on macOS and reached main, per
+      14 days: a macOS-only failure of the Codex binary suites found after
+      merge (a red codex-sandbox-macos push run on main, a report from a Mac)
+      that no pull request or queue run caught. Hand-counted from
+      after-merge-alert issues and Linear; not computed by the daily collector.
   - id: tracked.time-to-detect
     unit: minutes
     definition: >-
@@ -165,6 +173,16 @@ tracked:
       timelines (GraphQL timelineItems: added, removed, merged), with the p50
       minutes from ejection to the next queue entry reported beside it; not
       computed by the daily collector. Lower is better.
+  - id: tracked.conflict-untold
+    unit: count
+    definition: >-
+      Open pull requests into main with auto-merge on that conflict with main
+      and carry no queue-reentry merge-main note for their current head (the
+      `<!-- queue-reentry head=<sha> -->` marker), at the reading. GitHub runs
+      no checks or review on a conflicting pull request, so these wait with
+      nothing telling their author. Read by hand with
+      `scripts/queue-reentry.sh sweep --dry-run` (each `COMMENT conflicting`
+      line is one); not computed by the daily collector. Lower is better.
   - id: tracked.desktop-release-wall-clock
     unit: minutes
     definition: >-
@@ -282,6 +300,16 @@ tracked:
       scan starting within 15 minutes after its retry rung passed. Read from
       the Actions runs API by hand (ledger 261124-161126); not computed by the
       daily collector.
+  - id: tracked.release-break-to-alert
+    unit: minutes
+    definition: >-
+      Per published release with a broken install surface (npx on any of
+      Linux, macOS or Windows, an npm package, the GHCR image, the Homebrew
+      formula, a dorkos.ai download link), minutes from its npm publish to the
+      first issue or room post naming the break; the window's max. A break
+      found by a person counts at the time they reported it. Read by hand from
+      the release-watch issues and the release's own issues (ledger
+      261125-053159); not computed by the daily collector.
 
 slo_metrics:
   - headroom

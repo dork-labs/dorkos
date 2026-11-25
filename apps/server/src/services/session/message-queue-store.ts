@@ -42,6 +42,8 @@ import type { MessageDisposition, QueuedMessage, QueuedWaitingOn } from '@dorkos
 import type { SessionMessageQueueRow } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { isPersonWindowClientId } from './person-window-client-id.js';
+import { turnFacts, type DispatcherRunFeed, type QueueRowExit } from './turn-port/facts.js';
+import type { TurnOrigin } from '@dorkos/shared/turn-port';
 import {
   parseQueuedLimits,
   serializeQueuedLimits,
@@ -110,6 +112,98 @@ export interface QueuedMessageRecord extends QueuedMessage {
    * dispatcher reads them at launch, so a pause or a restart keeps them. Never exposed on the wire.
    */
   carriedLimits: QueuedCarriedLimits | null;
+  /**
+   * A turn started with these words and the runtime has not read them yet
+   * (spec `turns-survive-restarts` §4.3). Such a row is kept, so a restart in
+   * between loses nothing, but it is no longer waiting: the queue's list,
+   * clear, move and edits never see it. Never exposed on the wire.
+   */
+  inTurn: boolean;
+}
+
+/**
+ * Tell the run record about a queue change, in the transaction that makes it.
+ * A record that cannot be written must not undo a person's Remove, so a throw
+ * is logged and the queue change stands (the write rolls back to its own
+ * savepoint).
+ *
+ * @param what - The change, for the log line.
+ * @param write - The record's write.
+ */
+function reportToRuns(
+  what: string,
+  write: (feed: DispatcherRunFeed) => void,
+  ids: Record<string, string> = {}
+): void {
+  const feed = turnFacts()?.dispatcher;
+  if (!feed) return;
+  try {
+    write(feed);
+  } catch (err) {
+    logger.error('[MessageQueueStore] the run record refused a queue change', {
+      what,
+      ...ids,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Delete one queue row in `executor`'s transaction, ending the run that waits
+ * on it as `exit` says (spec `turns-survive-restarts` §4.7, transition 5). For
+ * code that writes the queue inside its own transaction without the shared
+ * store; {@link MessageQueueStore.remove} is the same delete.
+ *
+ * @param tx - The transaction to join
+ * @param messageId - The row
+ * @param exit - Why it leaves; a person's removal unless said otherwise
+ * @returns The row as it was, or `undefined` when there was none
+ */
+export function deleteQueueRow(
+  tx: DbTransaction,
+  messageId: string,
+  exit: QueueRowExit = 'removed'
+): SessionMessageQueueRow | undefined {
+  const row = tx
+    .select()
+    .from(sessionMessageQueue)
+    .where(eq(sessionMessageQueue.id, messageId))
+    .get();
+  if (!row) return undefined;
+  tx.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
+  reportToRuns('remove', (feed) => feed.queueRowsLeaving([messageId], exit), { messageId });
+  heldFor.delete(messageId);
+  return row;
+}
+
+/**
+ * Move one queue row to the end of another chat's queue, in `tx`, and the run
+ * that waits on it with it, so the run is never left under a chat its words
+ * are not in.
+ *
+ * @param tx - The transaction to join
+ * @param messageId - The row
+ * @param toSessionId - The chat it now waits on
+ */
+export function moveQueueRowToSession(
+  tx: DbTransaction,
+  messageId: string,
+  toSessionId: string
+): void {
+  const tail =
+    tx
+      .select({ value: max(sessionMessageQueue.position) })
+      .from(sessionMessageQueue)
+      .where(eq(sessionMessageQueue.sessionId, toSessionId))
+      .get()?.value ?? 0;
+  tx.update(sessionMessageQueue)
+    .set({ sessionId: toSessionId, position: Math.max(0, tail) + QUEUE_POSITION_STEP })
+    .where(eq(sessionMessageQueue.id, messageId))
+    .run();
+  reportToRuns('move', (feed) => feed.queueRowMoved(messageId, toSessionId), {
+    messageId,
+    toSessionId,
+  });
 }
 
 /**
@@ -207,6 +301,12 @@ export interface EnqueueInput {
   heldToDefault?: boolean;
   /** See {@link QueuedMessageRecord.carriedLimits}. Absent or `undefined` means none. */
   carriedLimits?: QueuedCarriedLimits | undefined;
+  /**
+   * What starts the row's turn. When given, the row's run is written in the
+   * same transaction as the row (a protected source's acceptance); absent, the
+   * caller writes it (the dispatcher) or nobody does.
+   */
+  origin?: TurnOrigin;
 }
 
 /**
@@ -246,6 +346,7 @@ function toRecord(row: SessionMessageQueueRow): QueuedMessageRecord {
     context: parseContext(row),
     heldToDefault: row.heldToDefault,
     carriedLimits: parseQueuedLimits(row.carriedLimitsJson, row.id),
+    inTurn: row.state === 'in_turn',
   };
 }
 
@@ -279,13 +380,29 @@ export class MessageQueueStore {
       contextJson: input.context ? JSON.stringify(input.context) : null,
       heldToDefault: input.heldToDefault === true,
       carriedLimitsJson: serializeQueuedLimits(input.carriedLimits),
+      state: 'waiting',
     };
-    executor.insert(sessionMessageQueue).values(row).run();
+    const origin = input.origin;
+    if (origin === undefined) {
+      executor.insert(sessionMessageQueue).values(row).run();
+      return toRecord(row);
+    }
+    // A caller that names an origin gets the row's run in the same
+    // transaction (spec `turns-survive-restarts` §4.7, transition 1).
+    const write = (own: Db | DbTransaction): void => {
+      own.insert(sessionMessageQueue).values(row).run();
+      reportToRuns('accept', (feed) => {
+        feed.accept({ chatKey: row.sessionId, origin, queueMessageId: row.id });
+      });
+    };
+    if (tx) write(tx);
+    else this.db.transaction((own) => write(own));
     return toRecord(row);
   }
 
   /**
-   * A session's queue in dispatch order — head first.
+   * A session's queue in dispatch order — head first. Only rows still waiting:
+   * a row a turn started with ({@link QueuedMessageRecord.inTurn}) is not here.
    *
    * @param sessionId - The session whose queue to read
    */
@@ -295,6 +412,7 @@ export class MessageQueueStore {
 
   /**
    * One queued message by id, or `undefined` when no such message is queued.
+   * Unlike {@link list}, this finds a row a turn started with too.
    *
    * @param messageId - The server-minted message id
    */
@@ -304,35 +422,81 @@ export class MessageQueueStore {
   }
 
   /**
+   * One message still waiting in line, or `undefined` when it is not queued or
+   * a turn already started with it.
+   *
+   * @param messageId - The server-minted message id
+   */
+  getWaiting(messageId: string): QueuedMessageRecord | undefined {
+    const record = this.get(messageId);
+    return record && !record.inTurn ? record : undefined;
+  }
+
+  /**
    * Take one message off the queue and hand it back, or `undefined` when the
    * id is not queued (already dispatched, already removed, never existed).
    * Callers distinguish those by asking, not by guessing: an unknown id is a
    * 404 at the route and a no-op everywhere else.
    *
+   * The row's run, if it still waits on the row, is ended in the same
+   * transaction, as `exit` says (spec `turns-survive-restarts` §4.7).
+   *
    * @param messageId - The server-minted message id
    * @param tx - Existing transaction when removal advances a durable receipt
+   * @param exit - Why the row leaves; a person's removal unless said otherwise
    */
-  remove(messageId: string, tx?: DbTransaction): QueuedMessageRecord | undefined {
-    const executor = tx ?? this.db;
-    const row = this.row(messageId, executor);
-    if (!row) return undefined;
-    executor.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
+  remove(
+    messageId: string,
+    tx?: DbTransaction,
+    exit: QueueRowExit = 'removed'
+  ): QueuedMessageRecord | undefined {
+    const row = tx
+      ? deleteQueueRow(tx, messageId, exit)
+      : this.db.transaction((own) => deleteQueueRow(own, messageId, exit));
+    return row ? toRecord(row) : undefined;
+  }
+
+  /**
+   * A turn started with this row's words (`turn_start`): keep the row, out of
+   * line, until the runtime reads them (spec `turns-survive-restarts` §4.3).
+   *
+   * @param messageId - The row
+   * @param tx - Existing transaction when the start advances a durable receipt
+   * @returns Whether a waiting row was marked
+   */
+  markInTurn(messageId: string, tx?: DbTransaction): boolean {
     heldFor.delete(messageId);
-    return toRecord(row);
+    return (
+      (tx ?? this.db)
+        .update(sessionMessageQueue)
+        .set({ state: 'in_turn' })
+        .where(and(eq(sessionMessageQueue.id, messageId), eq(sessionMessageQueue.state, 'waiting')))
+        .run().changes > 0
+    );
   }
 
   /**
    * Put a row {@link remove} handed back on the queue again, exactly as it was:
    * same id, words, sender, context, hold and place in line. For a message whose
    * turn started and was then stopped before the agent read it (DOR-4353).
-   * Changes nothing when the id is queued already.
+   * A row still kept for its turn ({@link markInTurn}) is put back in line
+   * where it was; one already waiting is left alone.
    *
    * @param sessionId - The session the row waited on, as it was enqueued
    * @param record - The row as {@link remove} returned it
    * @returns Whether the row is back
    */
   restore(sessionId: string, record: QueuedMessageRecord): boolean {
-    if (this.row(record.id)) return false;
+    const existing = this.row(record.id);
+    if (existing) {
+      if (existing.state !== 'in_turn') return false;
+      this.db
+        .update(sessionMessageQueue)
+        .set({ state: 'waiting' })
+        .where(eq(sessionMessageQueue.id, record.id))
+        .run();
+      return true;
+    }
     this.db
       .insert(sessionMessageQueue)
       .values({
@@ -346,6 +510,7 @@ export class MessageQueueStore {
         contextJson: record.context ? JSON.stringify(record.context) : null,
         heldToDefault: record.heldToDefault,
         carriedLimitsJson: serializeQueuedLimits(record.carriedLimits),
+        state: 'waiting',
       })
       .run();
     return true;
@@ -367,7 +532,7 @@ export class MessageQueueStore {
     opts?: { holdToDefault?: boolean }
   ): QueuedMessageRecord | undefined {
     const row = this.row(messageId);
-    if (!row) return undefined;
+    if (!row || row.state !== 'waiting') return undefined;
     const heldToDefault = row.heldToDefault || opts?.holdToDefault === true;
     this.db
       .update(sessionMessageQueue)
@@ -398,7 +563,7 @@ export class MessageQueueStore {
    */
   move(messageId: string, target: MoveTarget): QueuedMessageRecord | undefined {
     const row = this.row(messageId);
-    if (!row) return undefined;
+    if (!row || row.state !== 'waiting') return undefined;
     const anchorId = 'before' in target ? target.before : target.after;
     if (anchorId === messageId) return toRecord(row);
 
@@ -451,14 +616,11 @@ export class MessageQueueStore {
    */
   clear(sessionId: string): QueuedMessageRecord[] {
     return this.db.transaction((tx) => {
-      const rows = tx
-        .select()
-        .from(sessionMessageQueue)
-        .where(eq(sessionMessageQueue.sessionId, sessionId))
-        .orderBy(sessionMessageQueue.position)
-        .all();
+      const rows = this.rows(sessionId, tx);
       if (rows.length === 0) return [];
-      tx.delete(sessionMessageQueue).where(eq(sessionMessageQueue.sessionId, sessionId)).run();
+      const ids = rows.map((row) => row.id);
+      tx.delete(sessionMessageQueue).where(inArray(sessionMessageQueue.id, ids)).run();
+      reportToRuns('clear', (feed) => feed.queueRowsLeaving(ids, 'removed'));
       for (const row of rows) heldFor.delete(row.id);
       return rows.map(toRecord);
     });
@@ -488,6 +650,10 @@ export class MessageQueueStore {
   rekeySession(fromId: string, toId: string, transaction?: DbTransaction): void {
     if (fromId === toId) return;
     const move = (tx: DbTransaction) => {
+      // The chat's runs go with its rows, in the same transaction (§4.1).
+      // Refused only when both ids hold a live run: logged with both, and the
+      // rows still move.
+      reportToRuns('rekey', (feed) => feed.rekeyChat(fromId, toId), { fromId, toId });
       const moving = tx
         .select()
         .from(sessionMessageQueue)
@@ -546,10 +712,20 @@ export class MessageQueueStore {
     let removed = 0;
     for (let i = 0; i < sessionIds.length; i += DELETE_CHUNK_SIZE) {
       const chunk = sessionIds.slice(i, i + DELETE_CHUNK_SIZE);
-      removed += this.db
-        .delete(sessionMessageQueue)
-        .where(inArray(sessionMessageQueue.sessionId, chunk))
-        .run().changes;
+      removed += this.db.transaction((tx) => {
+        const ids = tx
+          .select({ id: sessionMessageQueue.id })
+          .from(sessionMessageQueue)
+          .where(inArray(sessionMessageQueue.sessionId, chunk))
+          .all()
+          .map((row) => row.id);
+        if (ids.length > 0)
+          reportToRuns('sweep', (feed) => feed.queueRowsLeaving(ids, 'session_gone'));
+        return tx
+          .delete(sessionMessageQueue)
+          .where(inArray(sessionMessageQueue.sessionId, chunk))
+          .run().changes;
+      });
     }
     return removed;
   }
@@ -571,12 +747,17 @@ export class MessageQueueStore {
       .map((row) => row.sessionId);
   }
 
-  /** One session's rows, ordered head-first. */
-  private rows(sessionId: string): SessionMessageQueueRow[] {
-    return this.db
+  /** One session's waiting rows, ordered head-first. */
+  private rows(
+    sessionId: string,
+    executor: Db | DbTransaction = this.db
+  ): SessionMessageQueueRow[] {
+    return executor
       .select()
       .from(sessionMessageQueue)
-      .where(eq(sessionMessageQueue.sessionId, sessionId))
+      .where(
+        and(eq(sessionMessageQueue.sessionId, sessionId), eq(sessionMessageQueue.state, 'waiting'))
+      )
       .orderBy(sessionMessageQueue.position)
       .all();
   }

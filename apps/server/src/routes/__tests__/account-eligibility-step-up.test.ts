@@ -79,7 +79,7 @@ describe('widening an account rule waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(claudeCode().projectAccounts).toMatchObject({ [project]: { allow: ['northwind'] } });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(claudeCode().projectAccounts).toMatchObject({ [project]: { allow: ['northwind'] } });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -101,7 +101,7 @@ describe('widening an account rule waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(claudeCode().defaultAccountOnlyProjects).toEqual([project]);
     expect((await owner.confirm(held.body.heldActionId, 'managed', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect((await owner.confirm(held.body.heldActionId, 'managed')).body).toMatchObject({
       ok: true,
@@ -121,7 +121,7 @@ describe('widening an account rule waits for the owner', () => {
     expect(held.status).toBe(428);
     expect(flag()).toBe(true);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(flag()).toBe(true);
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -136,6 +136,33 @@ describe('widening an account rule waits for the owner', () => {
     expect(kept.status).toBe(200);
     expect(kept.body.heldActionId).toBeUndefined();
     expect(flag()).toBe(true);
+  });
+
+  it('holds letting agents pick an account until the owner confirms it (DOR-5033)', async () => {
+    const url = '/api/runtimes/claude-code/accounts/northwind/agents-may-pick';
+    const flag = () =>
+      (claudeCode().accounts as { id: string; agentsMayPick?: boolean }[]).find(
+        (a) => a.id === 'northwind'
+      )?.agentsMayPick;
+    const held = await owner.call('put', url, 'own-tunnel').send({ agentsMayPick: true });
+    expect(held.status).toBe(428);
+    expect(flag()).toBeUndefined();
+    expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
+      'held_by_another_browser'
+    );
+    expect(flag()).toBeUndefined();
+    expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
+      ok: true,
+      status: 200,
+      result: { agentsMayPick: true },
+    });
+    expect(flag()).toBe(true);
+
+    // Taking it back is immediate.
+    const off = await owner.call('put', url, 'own-tunnel').send({ agentsMayPick: false });
+    expect(off.status).toBe(200);
+    expect(off.body.heldActionId).toBeUndefined();
+    expect(flag()).toBe(false);
   });
 
   it('keeps a widening from Wi-Fi refused, with nothing held', async () => {

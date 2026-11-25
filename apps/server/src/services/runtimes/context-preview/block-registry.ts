@@ -363,7 +363,7 @@ const TURN_BLOCK_SPECS = {
   ),
   context_warning: turn(
     'Context nearly full',
-    'session/agent-compaction/context-warning-block.ts',
+    'runtimes/shared/prose/context-warning-block.ts',
     'state',
     'When the chat’s context is nearly full.'
   ),

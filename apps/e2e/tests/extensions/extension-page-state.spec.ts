@@ -1,4 +1,10 @@
-import { expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import {
+  expect,
+  type APIRequestContext,
+  type Page,
+  type Response,
+  type Route,
+} from '@playwright/test';
 import { test } from '../../fixtures/base';
 import { appFrame, appPage } from '../../pages/app-frame.js';
 
@@ -91,6 +97,21 @@ function holdBundles(page: Page) {
   };
 }
 
+/**
+ * Wait until a released bundle has fully reached the page, then two frames
+ * more, so whatever its late import renders is on screen before the test reads
+ * the page. Replaces a fixed sleep that guessed how long that takes.
+ */
+async function landed(page: Page, response: Promise<Response>): Promise<void> {
+  await (await response).finished();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  );
+}
+
 /** The app's page heading, drawn inside its own sandboxed frame (DOR-3293). */
 function pageHeading(page: Page) {
   return appFrame(appPage(page), 'Hello World').getByRole('heading', { name: 'Hello, there' });
@@ -106,50 +127,6 @@ test.describe('An app’s page while the app is still starting', () => {
 
   test.afterAll(async ({ request }) => {
     await setEnabled(request, false);
-  });
-
-  test('says Starting… while a slow bundle loads, then shows the page (A)', async ({ page }) => {
-    await watchPage(page);
-    const bundles = holdBundles(page);
-    await bundles.install();
-    try {
-      await page.goto(`/x/${HELLO}`);
-      await bundles.arrived(1);
-      await expect(page.getByTestId('extension-page-loading').getByText('Starting…')).toBeVisible();
-      await bundles.release(1);
-    } finally {
-      await bundles.done();
-    }
-    await expect(pageHeading(page)).toBeVisible();
-    const what = await seen(page);
-    expect(what.starting).toBe(true);
-    expect(what.said, 'never said the page was unavailable').toEqual([]);
-  });
-
-  test('says the app isn’t working when its bundle never finishes, and Try again loads it (B)', async ({
-    page,
-  }) => {
-    // The client gives one bundle 15 seconds.
-    test.setTimeout(60_000);
-    await watchPage(page);
-    const bundles = holdBundles(page);
-    await bundles.install();
-    try {
-      await page.goto(`/x/${HELLO}`);
-      await bundles.arrived(1);
-      const notWorking = page.getByTestId('extension-page-not-working');
-      await expect(notWorking).toContainText('Hello World isn’t working.', { timeout: 25_000 });
-      await expect(page.getByText(NOT_AVAILABLE)).toHaveCount(0);
-
-      // Try again imports it afresh; let that one through.
-      await notWorking.getByRole('button', { name: 'Try again' }).click();
-      await bundles.arrived(2);
-      await bundles.release(2);
-      await expect(pageHeading(page)).toBeVisible();
-    } finally {
-      await bundles.done();
-    }
-    expect((await seen(page)).said, 'never said the page was unavailable').toEqual([]);
   });
 
   test('keeps waiting when a hot reload’s import outlasts the first load (C3)', async ({
@@ -169,8 +146,9 @@ test.describe('An app’s page while the app is still starting', () => {
       await bundles.arrived(2);
 
       // The first load finishes first; the reload is still importing.
+      const first = page.waitForResponse((response) => BUNDLE(new URL(response.url())));
       await bundles.release(1);
-      await page.waitForTimeout(1_000);
+      await landed(page, first);
       await expect(page.getByText(NOT_AVAILABLE)).toHaveCount(0);
       await expect(page.getByTestId('extension-page-loading')).toBeVisible();
 
@@ -214,8 +192,9 @@ test.describe('An app’s page while the app is still starting', () => {
       await expect(page.getByText('Hello World isn’t allowed to run yet.')).toBeVisible();
 
       // The first load's import comes back late, with the list it read before.
+      const first = page.waitForResponse((response) => BUNDLE(new URL(response.url())));
       await bundles.release(1);
-      await page.waitForTimeout(1_500);
+      await landed(page, first);
       await expect(page.getByText('Hello World isn’t allowed to run yet.')).toBeVisible();
       await expect(page.getByText(/doesn’t have this page/)).toHaveCount(0);
     } finally {

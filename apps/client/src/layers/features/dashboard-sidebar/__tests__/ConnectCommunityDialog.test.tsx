@@ -183,7 +183,7 @@ describe('ConnectCommunityDialog', () => {
     const user = userEvent.setup();
     const selectionRequired = Object.assign(
       new Error('That address has more than one space on it. Use the link for the one you want.'),
-      { status: 409, code: 'COMMUNITY_SELECTION_REQUIRED' }
+      { status: 409, code: 'space_choice_required' }
     );
     const transport = withSpacesExperiment(
       createMockTransport({
@@ -213,7 +213,7 @@ describe('ConnectCommunityDialog', () => {
         startCommunityConnection: vi.fn().mockRejectedValue(
           Object.assign(new Error('Choose a community.'), {
             status: 409,
-            code: 'COMMUNITY_SELECTION_REQUIRED',
+            code: 'space_choice_required',
           })
         ),
       })
@@ -278,13 +278,18 @@ describe('ConnectCommunityDialog', () => {
   }
 
   /** A refusal shaped the way the HTTP transport throws one: code, status and parsed body. */
-  const coded = (status: number, code: string, body: Record<string, unknown> = {}) =>
-    Object.assign(new Error('server words'), { status, code, body: { code, ...body } });
+  const coded = (status: number, code: string, extra: { retryAfterMs?: number } = {}) =>
+    Object.assign(new Error('server words'), {
+      status,
+      code,
+      ...extra,
+      body: { code, status, ...extra },
+    });
 
   // Purpose: a short address the host does not know points at the spelling, and says so in
-  // those words. Fails if COMMUNITY_NAME_NOT_FOUND falls back to the general message.
+  // those words. Fails if `space_name_not_found` falls back to the general message.
   it('says no community uses that short address when the host does not know the name', async () => {
-    const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
+    const alert = await refusedWith(coded(404, 'space_name_not_found'));
     expect(alert).toHaveTextContent(
       'No space uses that address. Check the spelling, or ask for its full link.'
     );
@@ -297,9 +302,7 @@ describe('ConnectCommunityDialog', () => {
   // reaches the person. Fails if the code falls back to "check the address", or if the host's
   // Retry-After is ignored.
   it('asks the person to wait, for as long as the host said, when lookups are limited', async () => {
-    const alert = await refusedWith(
-      coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 17 })
-    );
+    const alert = await refusedWith(coded(429, 'rate_limited', { retryAfterMs: 17_000 }));
     expect(alert).toHaveTextContent(
       'Too many tries. Your address may be fine. Wait 17 seconds, then try again.'
     );
@@ -308,18 +311,18 @@ describe('ConnectCommunityDialog', () => {
 
   it('rounds a long wait up to minutes, and says a minute when the host named none', async () => {
     expect(
-      await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED', { retryAfterSeconds: 90 }))
+      await refusedWith(coded(429, 'rate_limited', { retryAfterMs: 90_000 }))
     ).toHaveTextContent('Wait 2 minutes, then try again.');
     cleanup();
-    expect(await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'))).toHaveTextContent(
+    expect(await refusedWith(coded(429, 'rate_limited'))).toHaveTextContent(
       'Wait a minute, then try again.'
     );
   });
 
   // Purpose: an outdated community server is nothing the person can fix by typing, so the
-  // message names who can. Fails if COMMUNITY_UPGRADE_REQUIRED falls back to the general message.
+  // message names who can. Fails if `space_server_outdated` falls back to the general message.
   it('says the community’s server needs updating when it is too old to connect', async () => {
-    const alert = await refusedWith(coded(426, 'COMMUNITY_UPGRADE_REQUIRED'));
+    const alert = await refusedWith(coded(426, 'space_server_outdated'));
     expect(alert).toHaveTextContent(
       'This space’s server is too old for this DorkOS. Ask its owner to update it.'
     );
@@ -330,7 +333,7 @@ describe('ConnectCommunityDialog', () => {
   // the message tied to it. The field is marked invalid only when the address is in doubt.
   // Fails if focus stays lost on the disabled field, or the alert is not linked to the input.
   it('returns focus to the address and ties the message to it', async () => {
-    const alert = await refusedWith(coded(404, 'COMMUNITY_NAME_NOT_FOUND'));
+    const alert = await refusedWith(coded(404, 'space_name_not_found'));
     const address = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(address).toHaveFocus());
     expect(alert.id).not.toBe('');
@@ -339,7 +342,7 @@ describe('ConnectCommunityDialog', () => {
     expect(address).toHaveAttribute('aria-invalid', 'true');
     cleanup();
 
-    const limited = await refusedWith(coded(429, 'COMMUNITY_RATE_LIMITED'));
+    const limited = await refusedWith(coded(429, 'rate_limited'));
     const again = screen.getByLabelText('Space address or invitation link');
     await waitFor(() => expect(again).toHaveFocus());
     expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(limited.id);
@@ -539,7 +542,7 @@ describe('ConnectCommunityDialog', () => {
   it('keeps waiting, without an error, when another window is checking the same wait', async () => {
     const busy = Object.assign(new Error('This pairing is still finishing.'), {
       status: 409,
-      code: 'PAIRING_BUSY',
+      code: 'pairing_busy',
     });
     const poll = vi
       .fn()

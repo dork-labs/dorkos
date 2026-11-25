@@ -35,21 +35,3 @@ export const CancelHeldActionResponseSchema = z
 
 /** The answer when a held action was cancelled. */
 export type CancelHeldActionResponse = z.infer<typeof CancelHeldActionResponseSchema>;
-
-/**
- * Why a cancel did nothing.
- *
- * - `HOLD_NOT_FOUND` — no action is waiting under that id: it already ran, was
- *   already cancelled, or DorkOS restarted and dropped it.
- * - `HOLD_REQUESTER` — the agent that asked for the action may not cancel it;
- *   anyone else may.
- */
-export const CancelHeldActionErrorSchema = z
-  .object({
-    error: z.string(),
-    code: z.enum(['HOLD_NOT_FOUND', 'HOLD_REQUESTER']),
-  })
-  .openapi('CancelHeldActionError');
-
-/** Why a cancel did nothing. */
-export type CancelHeldActionError = z.infer<typeof CancelHeldActionErrorSchema>;

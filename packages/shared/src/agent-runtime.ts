@@ -819,6 +819,39 @@ export interface RuntimeCapabilities {
    */
   supportsContextStaging: boolean;
 
+  /**
+   * Whether, after a restart, a chat whose turn had ALREADY ENDED but whose
+   * process still held background work (a shell, a Monitor, a helper agent) is
+   * woken with a new turn that says what stopped (spec `turns-survive-restarts`
+   * §7.2). It declares behavior that already ships: today only Claude Code
+   * records such work durably (`claude-code/messaging/background-work-ledger.ts`)
+   * and is woken for it (`session/runtime-turns/wake-cut-short-work.ts`).
+   * Required, same reason as {@link supportsPersistentSession}.
+   *
+   * Not {@link continuesInterruptedTurn}: this is about work that outlived a
+   * finished turn, never a turn cut off in the middle, so the evidence for one
+   * is never proof of the other.
+   */
+  wakesForLostBackgroundWork: boolean;
+
+  /**
+   * Whether a turn killed IN THE MIDDLE (the server went away, the process with
+   * it) can be continued by a new turn in the same chat (spec
+   * `turns-survive-restarts` §7.2). Required, same reason as
+   * {@link supportsPersistentSession}.
+   *
+   * What conformance proves today is only that a fresh instance takes that next
+   * turn. That the new turn also sees what the dead one did (its tool results in
+   * the chat's history) waits for recovery's run record (T15).
+   *
+   * Not {@link supportsResume}, which only says a chat can take later messages.
+   * A real runtime declares `true` only once a measured run against the real
+   * program is recorded in that spec's §7.6; until then a turn of it that dies
+   * mid-turn ends as stopped and is not continued. The conformance suite holds
+   * a `true` to a continuation it can drive, and a `false` to a stated reason.
+   */
+  continuesInterruptedTurn: boolean;
+
   // There is deliberately NO `supportsQueue`. The SERVER owns the queue for
   // every runtime, so queueing is not a capability an adapter declares — it is
   // true by construction, and a flag saying so could only ever be wrong.
@@ -916,7 +949,7 @@ export type RuntimeMediaOutput = 'none' | 'attachments';
  * Each is a promise about every turn the runtime runs:
  *
  * - `protectedPaths` — the agent's file tools refuse the shared protected list
- *   (`runtimes/shared/policy/protected-paths.ts`): its protected reads at every
+ *   (`core/protected-paths/protected-paths.ts`): its protected reads at every
  *   level, its protected writes below Full. And below Full, a shell command that
  *   reads a protected file goes to a person first. A runtime whose shell reads
  *   them unasked below Full does not have this guard.

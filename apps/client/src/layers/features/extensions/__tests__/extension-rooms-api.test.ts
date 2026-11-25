@@ -71,7 +71,13 @@ describe('api.rooms', () => {
   it('throws the server’s refusal as a RoomAccessError with its code', async () => {
     vi.stubGlobal(
       'fetch',
-      answer(403, { error: 'This mini app may not use that room.', code: 'room_not_allowed' })
+      answer(403, {
+        type: 'urn:dorkos:problem:room_not_allowed',
+        title: 'Refused.',
+        status: 403,
+        code: 'room_not_allowed',
+        detail: 'This mini app may not use that room.',
+      })
     );
     const rooms = createExtensionRoomsApi('social', []);
 

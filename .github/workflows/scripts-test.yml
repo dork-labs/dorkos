@@ -66,14 +66,19 @@ name: scripts-test
 # Neither job calls `pnpm test:scripts` even though that script runs every
 # suite: locally it is one command (and `pnpm verify` calls it), but in CI
 # running it from either job would re-run the other job's suites for nothing.
+# Each job calls the same runner for its own lane instead:
+# `bash scripts/run-scripts-suites.sh --suites fixtures|harness`.
 #
-# THAT is why the same suite list is written out twice, here and in
-# `test:scripts`, and why the two drifted: this workflow ran eleven suites while
-# `test:scripts` ran ten, so `pnpm verify` came back green having never executed
-# `test-process-guard.sh` at all (DOR-1515). If you add a step below, add it to
-# `test:scripts` too — `scripts/__tests__/shell-suite-parity.test.ts` reads both
-# lists and fails naming whichever suite is missing from whichever side, so you
-# will hear about it either way. It rides the `harness` job's `Unit tests` step.
+# NO SUITE IS LISTED ANYWHERE. The runner finds every `scripts/test-*.sh` and
+# `.agents/skills/*/scripts/test-*.sh` by glob, so CI and `pnpm verify` cannot
+# drift apart the way they did when each kept its own list (this workflow ran
+# eleven suites while `test:scripts` ran ten, so `pnpm verify` came back green
+# having never executed `test-process-guard.sh`, DOR-1515), and two PRs adding a
+# suite no longer conflict over the same lines (ledger fixture-suites-by-glob).
+# Adding a suite is adding the file. One that needs a node_modules puts
+# `# scripts-suite-lane: harness` near its top. Do not add a step per suite:
+# `scripts/__tests__/shell-suite-parity.test.ts` fails on one, and pins the
+# globs against the tree. It rides the `harness` job's `Unit tests` step.
 
 ### The `harness` job depends on files OUTSIDE scripts/: the root package.json
 ### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts,
@@ -167,7 +172,7 @@ name: scripts-test
 ###
 ###   * `fixtures` runs on every event, UNSCOPED. It is about a minute of bash
 ###     and Node with no install, and scoping it would have cost an `if:` on
-###     each of its ~27 steps (each one a census exception) to save ~40 seconds
+###     each of its steps (each one a census exception) to save ~40 seconds
 ###     of a runner the job holds anyway — while bringing back the "a file
 ###     outside the list broke a suite that did not run" class this header is a
 ###     catalogue of. Unscoped, it also sees the queue's combined tree, where an
@@ -347,424 +352,29 @@ jobs:
       # tests, so a gate PR's own code is tested only here.
       - name: Security gate's own tests
         run: node --test .github/scripts/security-*.test.mjs
-      - name: Reviewer shell-script fixtures
-        run: bash scripts/test-review-classifier.sh
 
-      # security-verdict-check.sh reads the cloud Security lens verdict that
-      # review-gh.sh posts (DOR-5099): a bot's `pass` marker for the exact head,
-      # or red. Stubbed `gh`, bash and jq.
-      - name: Security verdict fixtures
-        run: bash scripts/test-security-verdict-check.sh
-
-      # security-findings.sh encrypts a failing Security lens's details to
-      # Security's key (and review-gh.sh saves them). The plumbing runs on a
-      # stub; the round trip needs the real age, so install the pinned build
-      # and make a missing one a failure rather than a skip.
+      # security-findings.sh's round trip needs the real age, so install the
+      # pinned build and (REQUIRE_AGE below) make a missing one a failure in
+      # that suite rather than a skip.
       - name: Install age for the Security findings fixtures
         run: |
           bash scripts/install-age.sh "$RUNNER_TEMP/age-bin"
           echo "AGE_BIN_DIR=$RUNNER_TEMP/age-bin" >>"$GITHUB_ENV"
-      - name: Security findings fixtures
+
+      # EVERY shell fixture suite that needs no node_modules, found by glob
+      # (`scripts/test-*.sh`, `.agents/skills/*/scripts/test-*.sh`), in one
+      # step. Adding a suite is adding the file: no step here, no line in
+      # run-scripts-suites.sh (they used to be one step each, and parallel PRs
+      # adding suites conflicted on them). A suite that needs node_modules says
+      # `# scripts-suite-lane: harness` near its top and runs in `harness`.
+      # Each suite's output is its own collapsible group, a failing one gets an
+      # error annotation naming it, and the step fails at the end naming every
+      # suite that failed, or if the glob found none. What each suite pins, and
+      # why, is in that suite's own header.
+      - name: Shell fixture suites (each in its own group; failures listed at the end)
         env:
           REQUIRE_AGE: '1'
-        run: bash scripts/test-security-findings.sh
-
-      - name: Git-guard hook fixtures
-        run: bash scripts/test-git-guard.sh
-
-      # process-guard is the same shape of control for `pkill`/`killall`/group
-      # kills (it exists because one broad `pkill -f` took down the operator's
-      # dev server, 2026-08-18) and shares its parser with git-guard through
-      # .claude/hooks/lib/shell-command.mjs, so a parser change is checked
-      # against both suites here.
-      - name: Process-guard hook fixtures
-        run: bash scripts/test-process-guard.sh
-
-      # merge-guard refuses admin merges (`gh pr merge --admin`, a REST PUT on
-      # pulls/<n>/merge, the mergePullRequest mutation): with merges fully
-      # autonomous, the queue's required checks are the only gate, and every
-      # agent here runs as an admin. Same parser, same reason to pin it here,
-      # and its ALLOW half matters most: `gh pr merge --auto` must keep working.
-      - name: Merge-guard hook fixtures
-        run: bash scripts/test-merge-guard.sh
-
-      # heavy-command-guard sends a raw heavy command typed into a bare Claude
-      # Code session (a whole vitest suite, playwright test, turbo build) into
-      # DorkOS's load gate through `pnpm heavy` (DOR-4209). Same parser as the
-      # guards above. Its ALLOW half matters most: a one-file vitest run and the
-      # wrappers that already join the gate must keep working. Node only.
-      - name: Heavy-command guard fixtures
-        run: bash scripts/test-heavy-command-guard.sh
-
-      # Opening a PR is code, not prose (2026-11-20: a brief said "open with
-      # hold", the arm script refused hold and never lifted it, and 19 PRs sat
-      # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
-      # provenance, hold only with a reason), pr-create-guard refuses a bare
-      # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
-      # workflow's decision. not-held-check.sh is the not-held check (DOR-5103),
-      # which fails while `hold` is on, and release-window-check.sh is the
-      # release-window check (DOR-5102): freezes and releases. Stubbed `gh`,
-      # throwaway git repos, node for the guard and the security-path classifier.
-      - name: Open-PR script, PR-create guard, hold-reason, not-held and release-window fixtures
-        run: |
-          bash scripts/test-pr-create-guard.sh
-          bash scripts/test-open-pr.sh
-          bash scripts/test-hold-reason-check.sh
-          bash scripts/test-not-held-check.sh
-          bash scripts/test-release-window-check.sh
-
-      # in-project.sh is the wrapper every working-tree hook in settings.json
-      # runs through; it decides whether a hook runs at all once a session has
-      # cd-ed into a sibling repo. Hermetic (throwaway git checkouts in a temp
-      # dir) and it also asserts the anchoring rule on the real settings.json.
-      - name: In-project hook wrapper fixtures
-        run: bash scripts/test-in-project-hook.sh
-
-      # sync-main-checkout.sh moves the main checkout's `main` at session start
-      # without being asked, so each refusal (dirty, diverged, other branch,
-      # git op in flight, warn/off) is pinned beside the fast-forward. Hermetic:
-      # a throwaway origin, clone and worktree in a temp dir.
-      - name: Main-checkout sync hook fixtures
-        run: bash scripts/test-sync-main-checkout.sh
-
-      # lint-changed.sh BLOCKS a write when eslint errors, so its scope is
-      # load-bearing: it used to lint files outside the repo (the session
-      # scratchpad), where there is no eslint config, and refuse the write with
-      # a message that read like a real lint error.
-      - name: Lint-changed hook fixtures
-        run: bash scripts/test-lint-changed-hook.sh
-
-      # run-node-hook.sh is what makes the three guards above fail CLOSED when
-      # node cannot be resolved. Without it a nvm-managed node off a stripped
-      # PATH made each guard exit 127, which Claude Code treats as a
-      # NON-blocking error: the tool call proceeded and Hard Rules 6 and 7 were
-      # enforced by nothing (DOR-2121). Hermetic — it empties PATH, points HOME
-      # at a temp dir and uses fake `node` binaries, so the verdicts do not
-      # depend on where node lives on the runner.
-      - name: Node-hook wrapper fail-closed fixtures
-        run: bash scripts/test-run-node-hook.sh
-
-      # assert-tests-executed.sh decides whether the `test` workflow's green
-      # means anything — it is what stops a 280ms turbo cache replay being
-      # reported as a passing suite. Same argument as the two suites above: the
-      # gate is one matcher away from certifying nothing, so its verdicts are
-      # pinned. Hermetic (synthetic workspaces in a temp dir), so it never reads
-      # this repo's real packages.
-      - name: Test-execution assertion fixtures
-        run: bash scripts/test-assert-tests-executed.sh
-
-      # keep-build-cache-only.sh is what keeps test.yml's saved turbo cache
-      # build-only (DOR-4190). If it let one `test` entry through, the next
-      # queue run would replay that suite instead of running it, so its
-      # verdicts are pinned the same hermetic way.
-      - name: Build-only turbo cache trim fixtures
-        run: bash scripts/test-keep-build-cache-only.sh
-
-      # prune-main-build-caches.sh deletes main's older turbo build caches after
-      # every merge (build-cache.yml, DOR-4627). It must never delete a pnpm
-      # store, another ref's cache or one of the newest entries it keeps, so
-      # its verdicts are pinned against a stub gh.
-      - name: Main build-cache prune fixtures
-        run: bash scripts/test-prune-main-build-caches.sh
-
-      # build-test-deps.sh builds what test.yml's suites import in a turbo run
-      # with no test arguments, so one cached build serves every test job
-      # (DOR-4625). Its build set and its summary hand-off are pinned here.
-      - name: Test-dependency build fixtures
-        run: bash scripts/test-build-test-deps.sh
-
-      # assert-shard-union.sh is the other half of the same gate: it restores
-      # the zero-collected-files net that --passWithNoTests removes from the
-      # sharded merge-queue sweep. A union check that stops discriminating
-      # lets a package's entire suite vanish from the queue gate silently, so
-      # its verdicts are pinned the same hermetic way.
-      - name: Shard-union assertion fixtures
-        run: bash scripts/test-assert-shard-union.sh
-
-      # The same argument one runner over: assert-browser-tests-executed.sh is
-      # what stops the `browser-test` workflow certifying a run that collected
-      # nothing. Playwright exits 0 when a testIgnore glob quietly drops a spec
-      # file, so that gate is the only thing standing between "N passed" and
-      # "N passed out of a suite that used to have more in it". Hermetic like
-      # the others — synthetic trees in a temp dir, never this repo's real
-      # apps/e2e.
-      - name: Browser-test-execution assertion fixtures
-        run: bash scripts/test-assert-browser-tests-executed.sh
-
-      # assert-migrations-current.sh replaced a one-liner that was green on a
-      # drifted schema, and both halves of that one-liner failed OPEN: drizzle-kit
-      # exits 0 when it refuses to run for want of a TTY, and `pnpm --filter
-      # <name>` exits 0 when it matches nothing. The replacement is affirmative —
-      # it only passes when the generator announced a known outcome — which means
-      # its verdicts live in a handful of greps. Pin them, or the next person to
-      # loosen one turns the gate back into a decoration silently.
-      - name: Migration-currency assertion fixtures
-        run: bash scripts/test-assert-migrations-current.sh
-
-      # The decision queue-repeat-guard.yml runs (`--repeat-failure`), and the
-      # payload builder that refuses a GraphQL error body before the gate sees it
-      # (DOR-2271). merge-tail, their first caller, retired (DOR-5124).
-      - name: Queue-gate decision fixtures
-        run: bash scripts/test-should-arm-automerge.sh
-
-      - name: Queue-gate input fixtures
-        run: bash scripts/test-should-arm-automerge-input.sh
-
-      # The same rule at the queue's door (queue-repeat-guard.yml), where it
-      # binds every arm, not only merge-tail's. Both mistakes are pinned: a
-      # broken head let back in, and a good one taken out.
-      - name: Queue repeat-guard fixtures
-        run: bash scripts/test-queue-repeat-guard.sh
-
-      # queue-reentry.yml's decision: auto-merge back on after the queue (never
-      # a person) took a PR out, once it is green and mergeable; one note per
-      # head when it conflicts with main. Both mistakes are pinned: a dequeue,
-      # hold or repeat failure undone, and a ready PR left idle.
-      - name: Queue re-entry fixtures
-        run: bash scripts/test-queue-reentry.sh
-
-      # arm-door.yml's decision (DOR-4648): an entry whose head lacks Security's
-      # label at or after it, or a verify proof, is taken out of the queue. Both
-      # mistakes are pinned: an ungated head let in, and a gated, docs-only,
-      # stamped or unreadable one taken out.
-      - name: Arm-door fixtures
-        run: bash scripts/test-arm-door.sh
-
-      # pr-gates-check.sh runs arm-door's decision on the pull request (minus
-      # the verify-proof reason), so auto-merge can wait for the sign-offs
-      # (DOR-5107). End to end through the real arm-door.sh, qa-real-data.sh and
-      # design-ok.sh, with a stubbed `gh`; Security's signed review markers are
-      # signed and verified with a throwaway ssh-keygen key made in the suite.
-      - name: PR-gates fixtures
-        run: bash scripts/test-pr-gates-check.sh
-
-      # QA's real-data gate (DOR-4904), shared by the arm script and arm-door:
-      # a config or migration change that slips past QA, and an ordinary one
-      # held for a check it doesn't need, are both pinned.
-      - name: QA real-data gate fixtures
-        run: bash scripts/test-qa-real-data.sh
-
-      # The designer's sign-off gate (DOR-4904), shared the same way: a screen
-      # change that slips past the designer, and a non-visual one held for
-      # shots, are both pinned.
-      - name: Design sign-off gate fixtures
-        run: bash scripts/test-design-ok.sh
-
-      # The other decision merge-tail makes on the same tick: whether to
-      # re-request a review that failed. Its stakes run the opposite way to the
-      # arming gate's — the expensive bug is a RETRY that fires when it should
-      # not, because every one spends a slice of the Claude subscription the
-      # agents share, and a ladder that retries a PR it can never help is a
-      # recurring cost nothing in the run list makes obvious.
-      - name: Review re-dispatch gate fixtures
-        run: bash scripts/test-should-redispatch-review.sh
-
-      # review-redispatch-wait.sh times the scan after a failed review to the
-      # ladder's next rung (ledger 261124-161126). Too short and the scan
-      # skips the retry; it reads the rungs from the ladder. jq only.
-      - name: Review redispatch wait fixtures
-        run: bash scripts/test-review-redispatch-wait.sh
-
-      # review-mode.sh decides whether a push gets a full review or the Security
-      # lens only. The expensive mistake is a push re-check on a PR that never
-      # had a full review, so every comment that must not count is pinned.
-      - name: Review mode fixtures
-        run: bash scripts/test-review-mode.sh
-
-      # should-reap-worktree.sh is the other side of the same coin: the arming
-      # gate decides what LANDS without a human, this one decides what gets
-      # DELETED without a human. A refusal that quietly stops matching does not
-      # go red, it removes a branch whose only copy was local — and the first
-      # version of the gate did exactly that to `ci-browser-suite-gate`, which is
-      # pushed, PR-less, and the only home of a CI gate not in main. Every KEEP
-      # slug has a fixture for that reason.
-      - name: Worktree reaping-gate fixtures
-        run: bash scripts/test-should-reap-worktree.sh
-
-      # The janitor's own driver, not the gate: while any registered worktree
-      # sits on an unplugged /Volumes disk, --fix must skip the prune and leave
-      # that disk's worktrees alone, or a nightly run deletes their records.
-      # Hermetic (throwaway repos, a fake gh), like the suite above.
-      - name: Worktree janitor unplugged-disk fixtures
-        run: bash scripts/test-worktree-janitor-volumes.sh
-
-      # seeded-pack-changed.sh is the only scoping the `version-outranks-base`
-      # required check has, so it can fail in two directions and both are quiet.
-      # Too broad demands a version bump nobody owes, and the cheap way out is a
-      # bump with no content behind it. Too narrow waves a real pack edit through
-      # and the correction reaches no existing agent — that is DOR-509, and the
-      # check goes green while it happens. Hermetic (throwaway git repos in a
-      # temp dir), so it never reads this repo's history.
-      - name: Seeded-pack scoping fixtures
-        run: bash scripts/test-seeded-pack-changed.sh
-
-      # check-dir-size.sh is the pre-commit dir-size guard (lefthook's
-      # `dir-size` job). Its blocking growth tier and its non-blocking,
-      # repo-wide census tier (DOR-930) both fail quietly: a matcher that
-      # stops selecting a directory does not crash, it just never mentions
-      # that directory again. Hermetic (throwaway git repos in a temp dir),
-      # so it never reads this repo's real directories or thresholds.
-      - name: Dir-size guard fixtures
-        run: bash scripts/test-check-dir-size.sh
-
-      # check-nul-bytes.sh (DOR-1561) is the guard neither round of the raw-NUL-
-      # byte mistake got: DOR-1450 fixed one file with no guard, and the same
-      # mistake reached six more files before this one landed. Hermetic
-      # (throwaway git repos in a temp dir, one per case), so it never reads
-      # this repo's real source — it asserts the guard finds the separator
-      # mistake, ignores genuine binary assets, and respects the
-      # `nul-byte-allow` escape hatch for content that is deliberately under
-      # test rather than a mistake.
-      - name: Raw-NUL-byte guard fixtures
-        run: bash scripts/test-check-nul-bytes.sh
-
-      # check-dead-doc-paths.sh (DOR-1762) is the guard for a ground-truth doc
-      # naming a path that no longer exists in the codebase —
-      # contributing/styling-theming.md once taught a dead `@/components/`
-      # import alias as the ✅ pattern. Hermetic (throwaway trees in a temp
-      # dir), so it never reads this repo's real doc content; the guard itself
-      # runs in the `typecheck` workflow the same way check-banned-words.sh
-      # does, and this step proves it still goes red on a seeded violation and
-      # stays green on the marked-worked-example escape hatch.
-      - name: Dead-path guard fixtures
-        run: bash scripts/test-check-dead-doc-paths.sh
-
-      # release-version.sh turns a pushed tag into the version the Docker jobs
-      # use (DOR-4175). The fixtures feed it tags like v1$(id), backticks, `;`
-      # and a second line, and require each refused before the command inside
-      # runs. They also check publish-docker.yml: every job takes its version
-      # from the script, and no run: block expands ${{ }} into the shell.
-      - name: Release tag check fixtures
-        run: bash scripts/test-release-version.sh
-
-      # wait-for-npm.sh is the shared npm-availability wait used by
-      # publish-docker.yml and update-homebrew.yml (DOR-1606) — a script that
-      # gives up too early does not crash, it exits 1 on a release that would
-      # have succeeded a few minutes later, which is exactly what shipped
-      # (copy-pasted into both workflows) from v0.63.0 through v0.66.0.
-      # Hermetic: a stub `npm` on PATH and the script's test-only
-      # WAIT_FOR_NPM_POLL_SECONDS / WAIT_FOR_NPM_TIMEOUT_SECONDS overrides mean
-      # it never touches the real registry and runs in well under a second.
-      - name: npm-availability wait fixtures
-        run: bash scripts/test-wait-for-npm.sh
-
-      # npm-tarball-sha256.sh is the Homebrew formula's checksum (DOR-4161):
-      # 0.135.5 shipped the sha256 of npm's cached HTML 404 page. The fixtures
-      # feed it a 404 status, a 404 page served as success, a valid gzip with
-      # the wrong contents and a missing integrity, and require each refused
-      # with nothing on stdout. Hermetic: stub `curl` and `npm` on PATH.
-      - name: npm tarball checksum fixtures
-        run: bash scripts/test-npm-tarball-sha256.sh
-
-      # heavy-run-lock.sh (DOR-2160, host-wide since DOR-3274) is the cap on how
-      # many heavy local runs go at once on one host: the commit lint and the
-      # root build, typecheck, test and verify scripts. Several agents each
-      # starting a full sweep measured a load around 500, and on 2026-10-24
-      # panicked the host. A slot is a flock held by a sidecar for the run's
-      # life, so its dangerous failures are "no build on this machine ever
-      # returns" (a nested call waiting on its own parent, a dead holder never
-      # released) and "the cap silently stops existing" (slots per clone, so
-      # two checkouts overlap). The suite SIGKILLs a holder and a bare wrapper
-      # and asserts the slot frees at once, runs two unrelated checkouts on one
-      # slot and asserts they serialise, and pins bounded waits, nested calls,
-      # the CI bypass and the no-perl fallback. Hermetic: a throwaway lock
-      # directory per case and `sleep`, no `pnpm install`, about twenty seconds,
-      # almost all of it deliberate waiting on bounds.
-      - name: Heavy-run lock fixtures
-        run: bash scripts/test-heavy-run-lock.sh
-
-      # Under pipefail, `… | grep -q` is a coin toss: grep exits at its first
-      # match, the writer dies of SIGPIPE, and the pipeline reads as a miss on
-      # input that matched (76 in 5,000 on a loaded runner, dorkos-cloud #463).
-      # Under `if !` that miss fails OPEN. This lint keeps the shape out of
-      # scripts, hooks and workflows. A grep over files, a few milliseconds.
-      - name: No pipe into grep -q
-        run: bash scripts/test-no-early-exit-grep.sh
-
-      # sweep-ephemeral-docker.sh reclaims the containers, volumes and networks a
-      # SIGKILLed run leaves behind, and it is the one gate script whose failure
-      # mode is DELETING something rather than missing something. Its fixtures
-      # therefore pin both directions: a dead owner's objects go however young,
-      # a live owner's stay however old (the case an age-only sweep gets wrong by
-      # shooting a slow suite mid-test), a recycled pid does not inherit a dead
-      # run's containers, and anything Docker will not describe is KEPT. The stub
-      # daemon models the label path per object kind on purpose — containers keep
-      # theirs under .Config.Labels, volumes and networks at the top level, and
-      # reading the wrong one makes every object look unstamped, which the age
-      # fallback then turns into "delete everything". Hermetic: a stub `docker`
-      # on PATH, no daemon, about a second.
-      - name: Ephemeral Docker sweep fixtures
-        run: bash scripts/test-sweep-ephemeral-docker.sh
-
-      # sweep-docker-orphans.sh is the machine-wide backstop for what that label
-      # never reached: anonymous volumes no container mounts, old build cache,
-      # dangling images. No gate runs it (an operator schedules it nightly), but
-      # it deletes on shared developer machines, so its keep side is pinned here:
-      # named volumes, volumes a STOPPED container still mounts, young volumes,
-      # unreadable dates and a container that starts mid-sweep are all kept, and
-      # every keep case has a positive control proving the flipped case goes.
-      # Dates are parsed with their own offset, not the caller's zone. Hermetic:
-      # a stub `docker` on PATH (the one no-docker case uses an EMPTY PATH, since
-      # this runner has a real daemon), run under /bin/bash, about fifteen
-      # seconds, four of them deliberate retry and timeout waits.
-      - name: Docker orphan sweep fixtures
-        run: bash scripts/test-sweep-docker-orphans.sh
-
-      # sweep-test-tmp.sh is the same kind of backstop for $TMPDIR: it removes
-      # the mkdtemp folders our own test suites leave behind, and nothing else.
-      # No gate runs it (the same LaunchAgent as the Docker sweep does), but it
-      # deletes on shared developer machines, so its keep side is pinned here:
-      # names off the allowlist or off mkdtemp's exact shape, young entries (at
-      # any depth), entries lsof says are open, unreadable folders and symlinks
-      # are all kept, each with a positive control, and a TMPDIR that is not the
-      # per-user temp folder is refused. Hermetic: a fake root that the sweep
-      # only accepts with an explicit fixture switch plus a marker file, and a
-      # stub lsof on PATH. A few seconds.
-      - name: Test temp sweep fixtures
-        run: bash scripts/test-sweep-test-tmp.sh
-
-      # run-credential-free.sh (DOR-2081) is the environment scrub behind the
-      # `credential-free-build` check, and it is the only thing standing behind
-      # this repo's promise that it clones, builds, tests and runs with no
-      # hosted-side credentials. It fails silently in the direction that
-      # matters: a family that stops matching leaves that variable set, the
-      # build goes green, and the check certifies a property it never tested —
-      # which is also exactly what an "unset" written as `env: FOO: ''` would
-      # do, since that leaves the NAME present in `process.env`. The fixtures
-      # pin both that distinction and the opposite failure, a scrub broad enough
-      # to take PATH, CI or the GITHUB_* plumbing with it. Hermetic: synthetic
-      # environments built with `env -i`, a bash probe for a command, no pnpm.
-      - name: Credential-free environment scrub fixtures
-        run: bash scripts/test-run-credential-free.sh
-
-      # ci-memory-watch.sh (DOR-4813) reports credential-free-build's memory
-      # peak, which the ledger's revert rule reads. The first draft picked the
-      # sample with the most swap (`swap_used_mb=` also ends in `used_mb=`).
-      # Hermetic: a made-up sample log in a temp dir, so it runs the same on
-      # macOS and Linux and never reads the runner's real memory.
-      - name: Runner memory watch fixtures
-        run: bash scripts/test-ci-memory-watch.sh
-
-      # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
-      # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
-      # collection path against a stubbed `gh`. Before DOR-1630 nothing
-      # anywhere ran this suite: it lived only as a thing you might remember
-      # to run by hand, so the bug that made FAILING() permanently
-      # unreachable shipped and stayed shipped. Needs only bash, jq and a
-      # stubbed `gh` on PATH — no pnpm — so it belongs in `fixtures`, not
-      # `harness`. Lives under `.agents/skills/creating-pull-requests/scripts/`
-      # (the skill's real files; `.claude/skills/creating-pull-requests` is a
-      # symlink to it), not `scripts/`, so it is named directly here rather
-      # than through `shell-suite-parity.test.ts`'s `scripts/test-*.sh` regex.
-      - name: Watch-PRs FAILING-state regression fixtures
-        run: bash .agents/skills/creating-pull-requests/scripts/test-watch-prs.sh
-
-      # The open-PR cap and the PR age list (DOR-3341), beside watch-prs.sh for
-      # the same reason: the skill's own scripts, bash + jq + a stubbed `gh`.
-      - name: Open-PR cap and PR age list fixtures
-        run: |
-          bash .agents/skills/creating-pull-requests/scripts/test-open-pr-cap.sh
-          bash .agents/skills/creating-pull-requests/scripts/test-pr-age-list.sh
+        run: bash scripts/run-scripts-suites.sh --suites fixtures
 
       # spec-manifest-ops.ts, id.ts, and the changelog merge-behavior experiments
       # under .claude/scripts/ had a test directory (`__tests__/*.test.ts`,
@@ -812,103 +422,6 @@ jobs:
       # install.
       - name: Docs-coverage-map drift check
         run: node .claude/scripts/docs-coverage-map.mjs --check
-
-      # scripts-test-scope.sh decides whether `harness` runs at all, so a
-      # regex that stops matching one of its entries silently turns that suite
-      # off for the PRs it was added to catch. The fixtures pin every entry and
-      # the near-misses a glob-to-regex translation gets wrong. Hermetic, no
-      # pnpm, about a second.
-      - name: Harness scope-list fixtures
-        run: bash scripts/test-scripts-test-scope.sh
-
-      # community-packaged-scope.sh decides whether a pull request runs the
-      # packaged Community proof (test.yml's required `community-packaged`), so
-      # a regex that stops matching an entry silently moves that proof's catches
-      # back to the merge queue, as ejections (DOR-2220). Hermetic, no pnpm.
-      - name: Packaged Community scope-list fixtures
-        run: bash scripts/test-community-packaged-scope.sh
-
-      # no-code-scope.sh decides whether a pull request's test shards run, so a
-      # rule that lets a code path through silently moves every catch it
-      # should make to the merge queue, as ejections. Hermetic, no pnpm.
-      - name: No-code scope fixtures
-        run: bash scripts/test-no-code-scope.sh
-
-      # browser-smoke-scope.sh decides whether a pull request's browser smoke
-      # shards run (DOR-5111), so a rule that lets a path a page loads through
-      # silently moves its catches to the merge queue, as ejections. The suite
-      # also checks the inert-workspace list against this tree. Git, jq and
-      # node, no pnpm.
-      - name: Browser-smoke scope fixtures
-        run: bash scripts/test-browser-smoke-scope.sh
-
-      # pr-related-scope.sh decides whether a pull request's unit tests are
-      # chosen by import, and pr-related-tests.sh runs that choice in a shard
-      # (DOR-5110). A fallback that stops firing lets a config, fixture or
-      # setup change run a narrow set and moves the catch to the merge queue,
-      # as an ejection. Hermetic: throwaway repos and stub runners, no pnpm.
-      - name: Tests-by-import fixtures
-        run: bash scripts/test-pr-related.sh
-
-      # after-merge-alert.sh is how a check that fails on main after merge
-      # reaches its author (DOR-5121): a PR comment and one issue per failure
-      # group. A silent break here loses those alerts. Stub gh, jq only.
-      - name: After-merge alert fixtures
-        run: bash scripts/test-after-merge-alert.sh
-
-      # auto-revert.sh decides whether a merge that turned main red is reverted
-      # (DOR-5122). A wrong rule reverts good work, or the release commit.
-      # Stub gh, jq only.
-      - name: Auto-revert fixtures
-        run: bash scripts/test-auto-revert.sh
-
-      # rolling-bisect.sh finds the merge that broke a rolling main run
-      # (DOR-5122). A wrong rule blames, and may revert, an innocent merge.
-      # Stub gh, jq only.
-      - name: Rolling bisect fixtures
-        run: bash scripts/test-rolling-bisect.sh
-
-      # daily-sweep.sh builds QA's and the designer's daily review list from
-      # the merged PRs, with design-ok.sh's and qa-real-data.sh's rules
-      # (DOR-5120). A PR it drops is a PR nobody reviews. Stub gh, jq only.
-      - name: Daily sweep fixtures
-        run: bash scripts/test-daily-sweep.sh
-
-      # attest-pr-check.sh decides whether the queue may skip lint,
-      # credential-free-build, openapi-fresh and fixtures (DOR-5130). A wrong
-      # "attested" skips a required check. Stub gh, jq only.
-      - name: Queue attest fixtures
-        run: bash scripts/test-attest-pr-check.sh
-
-      # daily-release.sh decides the daily release's next step and picks the
-      # commit it ships (DOR-5123). A wrong rule cuts from a commit whose
-      # full run or queue checks were not green, or publishes twice. Stub gh,
-      # npm and gate, a throwaway repo; git and jq only.
-      - name: Daily release fixtures
-        run: bash scripts/test-daily-release.sh
-
-      # timed-slot.sh lets the daily release and the daily sweep run once a
-      # day on their cron or the after-push backstop (ledger
-      # 261124-161126). A wrong rule runs a slot twice, or never. Stub
-      # gh, jq only; it also pins each cron to its slot.
-      - name: Timed slot fixtures
-        run: bash scripts/test-timed-slot.sh
-
-      # release-branch-contents.sh is the rule for what a pull request into a
-      # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
-      # with a matching patch-id and the release commit. A rule that quietly
-      # loosens lets a commit main never saw ship to npm. Hermetic (throwaway
-      # repos with a local origin), git and jq, no pnpm.
-      - name: Release-branch contents fixtures
-        run: bash scripts/test-release-branch-contents.sh
-
-      # release-gate.sh is the daily release's last decision before npm with no
-      # person approving (DOR-5123): P still on main and not reverted, P's own
-      # full run green, and every required check green in P's merge-queue
-      # build. A rule that quietly loosens ships an unproven commit. Stub gh, jq
-      # only.
-      - name: Release gate fixtures
-        run: bash scripts/test-release-gate.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
@@ -1002,66 +515,13 @@ jobs:
       # coverage moved strictly upward. Leaving the old step would have linted
       # `scripts/` twice on every PR and left two places to keep in step.
       #
-      # In `harness` rather than `fixtures` because it is the only job with a
-      # node_modules: the suite lints fixture text through the REAL server ESLint
-      # config, which is the only way to test the thing that actually broke — the
-      # per-directory files/ignores globs, not the presence of config text. The
-      # ban it pins spent its whole life matching nothing, and a lint rule that
-      # stops matching exits 0 rather than crashing (DOR-668).
-      - name: os.homedir() ban fixtures
-        run: bash scripts/test-homedir-guard.sh
-
-      # Uses the real server flat config to prove direct Supertest imports stay
-      # banned without weakening any owner directory's SDK confinement.
-      - name: Stable Supertest import guard fixtures
-        run: bash scripts/test-supertest-import-guard.sh
-
-      # The app's line in heavy-run-lock.sh (DOR-4209): a --job waits in the
-      # same first-come line as agents' heavy jobs, through the server's own
-      # TicketQueue, so it needs tsx and zod and lives here, beside the only
-      # node_modules. It pins both directions of the shared line against a job
-      # TicketQueue itself queued, that a run nested in an app-held job never
-      # waits on its parent, that every broken path still runs the command, and
-      # that the slot comes back on success, failure and a signal. Throwaway
-      # queue folder and DORK_HOME per case, load fixed at 0.
-      - name: Load-gate line fixtures
-        run: bash scripts/test-load-gate-turn.sh
-
-      # In `harness` for the same reason as the suite above it: it is the only
-      # job with a node_modules, and this suite needs the REAL prettier. A stub
-      # could prove the hook called something, but not that eligible files come
-      # out formatted and ignored ones do not, which is half of what it pins.
-      #
-      # .claude/hooks/format-changed.sh went from a 13-line PostToolUse
-      # one-liner to a ~126-line Stop hook with real file-collection logic, and
-      # the automated reviewer flagged that it had arrived untested. Its failure
-      # modes are all quiet: it is silent by design, so "formatted nothing this
-      # turn" and "formatted everything" look identical from the outside, and
-      # the two gates behind it (lefthook pre-commit, CI prettier --check) would
-      # absorb the drift without ever naming the hook. The one loud failure is
-      # the one that matters most — a Stop hook exiting 2 blocks the turn from
-      # ending — so every case asserts exit 0.
-      - name: Format-changed hook fixtures
-        run: bash scripts/test-format-changed.sh
-
-      # The pre-push half of the same story, and in `harness` for the same
-      # reason: scripts/pre-push-format-check.sh runs the REAL prettier, and the
-      # cases that matter most are the ones where a stub could not tell the
-      # difference — an ignored path, a file with no parser, a deleted path,
-      # a base ref that quietly resolves to somebody else's commits. Its two
-      # failure directions are both quiet: too slack and it greenlights the
-      # seven-reds-in-a-week that DOR-1839 was opened about, too eager and it
-      # refuses honest pushes until everyone answers it with `--no-verify`.
-      - name: Pre-push formatting gate fixtures
-        run: bash scripts/test-pre-push-format-check.sh
-
-      # Pins scripts/check-banned-words.sh, the DOR-1517 prose guard. The guard
-      # itself runs in the `typecheck` workflow (already a required check, and
-      # it reports on merge_group); this step proves the guard still goes red on
-      # a seeded violation and still stays green on all four things that sweep
-      # deliberately kept. A guard nobody has watched fail is not a gate.
-      - name: Banned-words prose guard fixtures
-        run: bash scripts/test-check-banned-words.sh
+      # The shell fixture suites that need a node_modules: each says
+      # `# scripts-suite-lane: harness` near its top. They lint through the
+      # REAL server ESLint config, run the REAL prettier, or need tsx and zod,
+      # because a stub cannot tell the difference that matters to them. Same
+      # runner and discovery as `fixtures`; each suite's header says what it pins.
+      - name: Shell fixture suites that need node_modules
+        run: bash scripts/run-scripts-suites.sh --suites harness
 
       # check-vocab-gate.ts (DOR-855) is pinned by this step, and ENFORCED
       # somewhere else. Its pin suite (__tests__/check-vocab-gate.test.ts) is

@@ -437,6 +437,10 @@
       "types": "./src/cloud-schemas.ts",
       "default": "./dist/cloud-schemas.js"
     },
+    "./move-sizes": {
+      "types": "./src/move-sizes.ts",
+      "default": "./dist/move-sizes.js"
+    },
     "./onboarding-schemas": {
       "types": "./src/onboarding-schemas.ts",
       "default": "./dist/onboarding-schemas.js"
@@ -480,6 +484,10 @@
     "./session-relay-agent-computer": {
       "types": "./src/session-relay-agent-computer.ts",
       "default": "./dist/session-relay-agent-computer.js"
+    },
+    "./turn-port": {
+      "types": "./src/turn-port.ts",
+      "default": "./dist/turn-port.js"
     },
     "./bounded-json": {
       "types": "./src/bounded-json.ts",
@@ -528,6 +536,10 @@
     "./entity-ref": {
       "types": "./src/entity-ref.ts",
       "default": "./dist/entity-ref.js"
+    },
+    "./dork-link-schemas": {
+      "types": "./src/dork-link-schemas.ts",
+      "default": "./dist/dork-link-schemas.js"
     },
     "./provenance": {
       "types": "./src/provenance.ts",

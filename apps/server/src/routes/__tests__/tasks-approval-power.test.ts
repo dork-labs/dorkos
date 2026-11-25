@@ -92,6 +92,11 @@ import type { TaskFileSync } from '../../services/tasks/sync/task-file-sync.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import type { MeshCore } from '@dorkos/mesh';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -233,8 +238,8 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       const response = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active', permissionMode: 'dontAsk', expectedApprovalRevision: revision });
-      expect(response.status).toBe(409);
-      expect(response.body.code).toBe('schedule_review_changed');
+      expect(response.status).toBe(412);
+      expect(response.body.code).toBe('precondition_failed');
       expect(store.getTask(task.id)).toMatchObject({
         status: 'pending_approval',
         permissionMode: 'acceptEdits',
@@ -434,7 +439,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     // 403 with both offending fields named — not dropped, not clamped, and the
     // whole call refused, so nothing about the schedule moved.
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('operator_only_task_field');
+    expect(res.body.code).toBe('person_only');
     expect(res.body.fields).toEqual(['permissionMode', 'status']);
     const untouched = store.getTask(task.id)!;
     expect(untouched.permissionMode).toBe('acceptEdits');
@@ -494,7 +499,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         permissionMode: 'acceptEdits',
       });
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toMatch(/looser/i);
+    expect(refused.body.detail).toMatch(/looser/i);
     expect(store.getTask(task.id)?.status).toBe('pending_approval');
 
     const approved = await request(fixtureServer)
@@ -542,7 +547,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         permissionMode: 'bypassPermissions',
       });
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe('looser_than_requested_confirmation_required');
+    expect(response.body.code).toBe('conflict');
     expect(store.getTask(task.id)?.status).toBe('pending_approval');
   });
 
@@ -559,8 +564,8 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       status: 'active',
       permissionMode: 'bypassPermissions',
     });
-    expect(response.status).toBe(409);
-    expect(response.body.code).toBe('schedule_review_changed');
+    expect(response.status).toBe(412);
+    expect(response.body.code).toBe('precondition_failed');
   });
 
   it('measures outsider work that asked for plan against plan, as the card does', async () => {
@@ -578,7 +583,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         permissionMode: 'dontAsk',
       });
     expect(looser.status).toBe(409);
-    expect(looser.body.code).toBe('looser_than_requested_confirmation_required');
+    expect(looser.body.code).toBe('conflict');
   });
 
   it('runs an outsider-written trial at the baseline, never at the saved mode', async () => {
@@ -605,7 +610,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
     const response = await request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).send({});
     expect(response.status).toBe(409);
-    expect(response.body.code).toBe('trial_looser_than_proposal');
+    expect(response.body.code).toBe('conflict');
     expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
   });
 
@@ -646,7 +651,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       .post(`/api/tasks/${task.id}/trigger`)
       .send({ permissionMode: 'made-up-mode' });
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('trial_mode_unknown');
+    expect(response.body.code).toBe('invalid_request');
     expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
   });
 
@@ -673,7 +678,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       .patch(`/api/tasks/${task.id}`)
       .send({ requestedAllow: ['Bash(/abs/path/script.sh --once)'] });
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('task_rules_unsupported_runtime');
+    expect(response.body.code).toBe('invalid_request');
   });
 
   it('refuses rules a Codex run could not apply, at proposal time', async () => {
@@ -690,7 +695,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         requestedAllow: ['Bash(/abs/path/script.sh --once)'],
       });
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('task_rules_unsupported_runtime');
+    expect(response.body.code).toBe('invalid_request');
     expect(store.getTasks()).toHaveLength(0);
   });
 
@@ -707,7 +712,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         requestedAllow: [`Read(${os.homedir()}/**)`],
       });
     expect(response.status).toBe(400);
-    expect(response.body.code).toBe('task_rule_too_broad');
+    expect(response.body.code).toBe('invalid_request');
   });
 
   it('leaves a plain approval exactly where the clamp put it', async () => {
@@ -905,7 +910,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
           permissionMode: 'dontAsk',
         });
       expect(response.status).toBe(400);
-      expect(response.body.code).toBe('unsupported_task_mode');
+      expect(response.body.code).toBe('invalid_request');
       expect(store.getTask(task.id)).toMatchObject({
         status: 'pending_approval',
         permissionMode: 'acceptEdits',

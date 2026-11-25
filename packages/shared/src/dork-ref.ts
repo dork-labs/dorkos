@@ -169,6 +169,24 @@ export function formatDorkReference(ref: DorkReference<string>): string {
 }
 
 /**
+ * Spell the reference of a thing this server holds, or `null` when its id does
+ * not fit {@link DORK_ID_PATTERN} (an agent's must also be a mesh ULID,
+ * {@link AGENT_ID_PATTERN}, the only agent id a link opens). For a tool result
+ * or a Copy link that carries a reference beside a thing's name (DOR-5046): a
+ * thing whose id cannot be one still comes back, without the reference, rather
+ * than failing the whole answer the way {@link formatDorkReference} would.
+ *
+ * @param kind - A kind DorkOS mints ids for.
+ * @param id - The thing's id, exactly as held.
+ * @returns `dork:<kind>:<id>`, or `null`.
+ */
+export function dorkReferenceOrNull(kind: DorkKind, id: string): string | null {
+  if (!isDorkKind(kind) || !isDorkId(id)) return null;
+  if (kind === 'agent' && !AGENT_ID_PATTERN.test(id)) return null;
+  return `${DORK_SCHEME}${kind}:${id}`;
+}
+
+/**
  * The chat reference a public repository may carry: the id cut to its first
  * {@link PUBLIC_CHAT_ID_LENGTH} characters (the id, not the whole URI).
  *

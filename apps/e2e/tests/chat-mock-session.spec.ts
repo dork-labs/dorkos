@@ -2,6 +2,7 @@ import { registerGitRefusalHeadingTests } from './chat/git-refusal-heading.js';
 import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
 import { MOCK_API_URL, useMockServer } from './chat/mock-server.js';
+import { registerRefLinkChipTests } from './chat/ref-link-chip.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
 import { registerDorkBotSeedSurvivesReloadTests } from './dashboard-sidebar/dorkbot-seed-survives-reload.js';
 
@@ -37,3 +38,7 @@ registerCompactionTests({ apiUrl: MOCK_API_URL, agentDir });
 
 // Known typed refusal copy through the real UI and durable transcript replay.
 registerGitRefusalHeadingTests({ apiUrl: MOCK_API_URL, agentDir });
+
+// A `/r/dork:chat:` link in a reply draws the chat's live chip (DOR-5202). It
+// needs two chats with real rows, which only this leg makes without a model.
+registerRefLinkChipTests({ agentDir });

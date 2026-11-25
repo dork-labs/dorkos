@@ -39,6 +39,7 @@
  */
 import { toast } from 'sonner';
 import { APP_ROUTE_PATHS } from '@dorkos/shared/app-route-paths';
+import { dorkUriFromLink } from '@dorkos/shared/dork-ref';
 import { isDesktopShell } from './platform';
 import { parseExtensionPagePath } from './extension-page-path';
 
@@ -60,14 +61,25 @@ export { APP_ROUTE_PATHS };
 const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
 
 /**
- * Whether the router serves this pathname: one of {@link APP_ROUTE_PATHS}, or
- * an extension page under `/x/<extensionId>/…` (spec `flow-multiproject`
- * §6.5). Extension pages are the one parameterised family, so they are matched
- * by shape rather than listed; whether the extension or the page exists is the
- * page route's question, and it answers with an empty state rather than a 404.
+ * The router path that serves `/r/<dork-uri>` links (DOR-5046), the second
+ * family matched by shape. The route-list drift guard names it.
+ */
+export const DORK_LINK_ROUTE_PATHS = ['/r/$'] as const;
+
+/**
+ * Whether the router serves this pathname: one of {@link APP_ROUTE_PATHS}, an
+ * extension page under `/x/<extensionId>/…` (spec `flow-multiproject` §6.5),
+ * or a `/r/<dork-uri>` link. The last two are the parameterised families, so
+ * they are matched by shape rather than listed; whether the extension, the
+ * page or the linked thing exists is the route's question, and it answers
+ * with an empty state or the not-found page.
  */
 function isAppRoutePath(pathname: string): boolean {
-  return APP_ROUTE_SET.has(pathname) || parseExtensionPagePath(pathname) !== null;
+  return (
+    APP_ROUTE_SET.has(pathname) ||
+    parseExtensionPagePath(pathname) !== null ||
+    dorkUriFromLink(pathname) !== null
+  );
 }
 
 /**
@@ -285,7 +297,9 @@ export const ADDRESS_SEARCH_PARAMS: ReadonlySet<string> = new Set([
  * of its own search params core cannot vouch for) carrying only
  * {@link ADDRESS_SEARCH_PARAMS}. One click on
  * `/session?agentId=…&prompt=…&send=1` would otherwise send words the person
- * never read, as them.
+ * never read, as them. A `/r/<dork-uri>` link (DOR-5046) passes with no search
+ * params at all: it only names a chat, room, message or agent, and its route
+ * opens it only for a caller who may see it.
  *
  * @param href - The link exactly as written.
  * @param from - Absolute URL to resolve against. Defaults to the current page.
@@ -295,6 +309,7 @@ export function plainAppAddress(href: string, from: string = currentHref()): str
   const link = classifyLink(href, from);
   if (link.kind !== 'internal') return null;
   const url = new URL(link.url);
+  if (dorkUriFromLink(url.pathname) !== null) return url.search === '' ? link.path : null;
   if (!APP_ROUTE_SET.has(normalizePathname(url.pathname))) return null;
   for (const key of url.searchParams.keys()) {
     if (!ADDRESS_SEARCH_PARAMS.has(key)) return null;

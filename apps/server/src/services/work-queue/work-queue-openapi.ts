@@ -5,6 +5,7 @@
  * @module services/work-queue/work-queue-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   AddWorkItemRequestSchema,
@@ -15,21 +16,10 @@ import {
   WorkQueueSchema,
 } from '@dorkos/shared/work-queue-schemas';
 
-/** A refusal: plain words and a stable code. */
-const WorkQueueErrorSchema = z
-  .object({ error: z.string(), code: z.string() })
-  .openapi('WorkQueueError');
-
 /** The answers every route shares. */
 const REFUSALS = {
-  403: {
-    description: 'The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)',
-    content: { 'application/json': { schema: WorkQueueErrorSchema } },
-  },
-  404: {
-    description: 'No such agent or item (`NOT_FOUND`)',
-    content: { 'application/json': { schema: WorkQueueErrorSchema } },
-  },
+  403: problemResponse('The caller is an agent (`person_only`), or not the owner (`owner_only`)'),
+  404: problemResponse('No such agent or item (`not_found`)'),
 };
 
 /** A 200 or 201 answering with `schema`. */
@@ -106,10 +96,7 @@ export function registerWorkQueueOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       201: answers('The new item', WorkItemSchema),
       ...REFUSALS,
-      409: {
-        description: 'The queue is full (`FULL`)',
-        content: { 'application/json': { schema: WorkQueueErrorSchema } },
-      },
+      409: problemResponse('The queue is full (`conflict`)'),
     },
   });
 
@@ -123,10 +110,7 @@ export function registerWorkQueueOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       204: { description: 'Removed' },
       ...REFUSALS,
-      409: {
-        description: 'It already started (`NOT_QUEUED`)',
-        content: { 'application/json': { schema: WorkQueueErrorSchema } },
-      },
+      409: problemResponse('It already started (`conflict`)'),
     },
   });
 
@@ -140,10 +124,7 @@ export function registerWorkQueueOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: answers('The item, waiting again', WorkItemSchema),
       ...REFUSALS,
-      409: {
-        description: 'It has not ended (`NOT_ENDED`)',
-        content: { 'application/json': { schema: WorkQueueErrorSchema } },
-      },
+      409: problemResponse('It has not ended (`conflict`)'),
     },
   });
 }

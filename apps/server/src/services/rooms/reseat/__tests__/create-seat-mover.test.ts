@@ -29,7 +29,6 @@ vi.mock('../../../session/resolution/resolve-session-defaults.js', () => ({
 }));
 
 vi.mock('../../../session/fleet/carry-over-summary.js', () => ({
-  claudeTranscriptPath: () => '/nowhere',
   gatherCarryOverSummary: async () => 'SUMMARY',
   runGitForSummary: async () => '',
 }));

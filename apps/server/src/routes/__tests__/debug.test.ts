@@ -322,6 +322,9 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
   it('rejects a malformed session id rather than probing with it', async () => {
     const res = await request(buildApp()).get('/api/debug/sessions/..%2F..%2Fetc%2Fpasswd');
     expect(res.status).toBe(400);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('invalid_request');
+    expect(JSON.stringify(res.body)).not.toContain('passwd');
   });
 
   it('answers for a session with no live projector', async () => {

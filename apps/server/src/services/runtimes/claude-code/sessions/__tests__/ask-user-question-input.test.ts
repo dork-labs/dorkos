@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { HistoryMessageSchema } from '@dorkos/shared/schemas';
 import type { HistoryMessage, ToolCallPart } from '@dorkos/shared/types';
-import { parseTranscript } from '../transcript-parser.js';
+import { parseTranscript } from './parse-transcript.js';
 
 /**
  * An `AskUserQuestion` whose recorded input is not the shape the SDK types

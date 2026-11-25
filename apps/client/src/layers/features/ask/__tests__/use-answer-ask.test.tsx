@@ -172,7 +172,7 @@ describe('useAnswerAsk', () => {
     const { result } = mount();
     vi.mocked(transport.approveTool).mockRejectedValue(
       Object.assign(new Error('Only a person signed in to DorkOS can answer this'), {
-        code: 'operator_cookie_required',
+        code: 'person_only',
       })
     );
 
@@ -188,7 +188,7 @@ describe('useAnswerAsk', () => {
     const { result } = mount();
     vi.mocked(transport.approveTool).mockRejectedValue(
       Object.assign(new Error('Only a person signed in to DorkOS can answer this'), {
-        code: 'operator_cookie_required',
+        code: 'person_only',
       })
     );
 

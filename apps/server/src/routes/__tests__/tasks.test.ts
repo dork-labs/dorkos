@@ -225,8 +225,8 @@ describe('Tasks routes', () => {
         const response = await request(fixtureServer)
           .patch(`/api/tasks/${task.id}`)
           .send({ status: 'active', expectedApprovalRevision: revision });
-        expect(response.status).toBe(409);
-        expect(response.body.code).toBe('schedule_review_changed');
+        expect(response.status).toBe(412);
+        expect(response.body.code).toBe('precondition_failed');
         expect(store.getTask(task.id)?.status).toBe('pending_approval');
         expect(scheduler.registerTask).not.toHaveBeenCalled();
       }
@@ -246,7 +246,7 @@ describe('Tasks routes', () => {
       const response = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active', expectedApprovalRevision: revision });
-      expect(response.status).toBe(409);
+      expect(response.status).toBe(412);
       expect(store.getTask(task.id)?.status).toBe('pending_approval');
       expect(store.getTask(task.id)?.prompt).toBe(
         'Instructions changed while approval was checked'
@@ -260,7 +260,7 @@ describe('Tasks routes', () => {
       const missing = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ status: 'active' });
-      expect(missing.status).toBe(409);
+      expect(missing.status).toBe(412);
       const listed = await request(fixtureServer).get('/api/tasks');
       const revision = listed.body.find(
         (item: { id: string }) => item.id === task.id
@@ -277,7 +277,7 @@ describe('Tasks routes', () => {
     it('returns empty array when no schedules', async () => {
       const res = await request(fixtureServer).get('/api/tasks');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toMatchObject([]);
     });
 
     it('returns schedules with nextRun', async () => {
@@ -439,7 +439,8 @@ describe('Tasks routes', () => {
     it('returns 400 for missing required fields', async () => {
       const res = await request(fixtureServer).post('/api/tasks').send({ name: 'No cron' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.issues.fieldErrors).toBeDefined();
     });
 
     it('refuses a name that slugifies to the reserved templates folder', async () => {
@@ -454,7 +455,7 @@ describe('Tasks routes', () => {
       // Allowing it would write a file the reconciler skips by name, and then
       // retire the row the watcher created for it.
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('reserved');
+      expect(res.body.detail).toContain('reserved');
       expect(store.getTasks()).toHaveLength(0);
     });
 
@@ -773,7 +774,7 @@ describe('Tasks routes', () => {
     it('returns empty array when no runs', async () => {
       const res = await request(fixtureServer).get('/api/tasks/runs');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toMatchObject([]);
     });
 
     it('returns runs with pagination', async () => {
@@ -841,12 +842,16 @@ describe('Tasks routes', () => {
     it('says so — and does not claim success — when the stop could not be confirmed', async () => {
       vi.mocked(scheduler.cancelRun).mockResolvedValue({
         state: 'unconfirmed',
+        why: 'no_answer',
         reason: 'nothing picked it up',
       });
 
       const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(502);
-      expect(res.body.error).toContain('nothing picked it up');
+      expect(res.body).toMatchObject({
+        code: 'upstream_unavailable',
+        detail: 'Nothing confirmed the stop. Check the run again in a moment.',
+      });
     });
   });
 });

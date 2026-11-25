@@ -24,10 +24,10 @@ import {
   resolveUnattendedPermissionMode,
 } from '../../session/resolution/resolve-session-defaults.js';
 import {
-  claudeTranscriptPath,
   gatherCarryOverSummary,
   runGitForSummary,
 } from '../../session/fleet/carry-over-summary.js';
+import { claudeTranscriptPath } from '../../runtimes/claude-code/sessions/project-slug.js';
 import type { RoomStore } from '../room-store.js';
 import {
   probeRoomBindingTranscript,

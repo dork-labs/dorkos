@@ -26,10 +26,10 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { errorBody } from '../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import { cursorMatchesGeneration, parseResumeCursor } from '../lib/stream-cursor.js';
 import { resolveCaller } from './room-caller.js';
-import { STATUS_BY_CODE } from './room-error-response.js';
+import { sendRoomError } from './room-error-response.js';
 
 /**
  * Hono handler for `GET /api/rooms/:id/events`.
@@ -57,7 +57,7 @@ export async function roomEventsHandler(c: Context<ApiEnv>): Promise<Response> {
     // is not in identically — subscribing to somebody else's DM by id is the
     // same leak as reading it.
     if (!service.getRoom(roomId, viewerAuthorId)) {
-      return c.json(errorBody('No such room', 'ROOM_NOT_FOUND'), 404);
+      return problem(c, 'room_not_found', { detail: 'No such room.' });
     }
   } catch (err) {
     // Statused from the shared table rather than pinned to 404, because the two
@@ -66,9 +66,8 @@ export async function roomEventsHandler(c: Context<ApiEnv>): Promise<Response> {
     // token the server could not verify is 401 (DOR-1361). Answered BEFORE
     // headers flush either way, so the client reads a status rather than a
     // socket that opens and dies. Anything else is the chain's error.
-    if (err instanceof RoomError) {
-      return c.json(errorBody(err.message, err.code), STATUS_BY_CODE[err.code] as 404);
-    }
+    // No caller was resolved, so no refusal here is worded for the owner.
+    if (err instanceof RoomError) return sendRoomError(c, err, 'GET /:id/events', () => false);
     throw err;
   }
 

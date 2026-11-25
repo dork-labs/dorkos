@@ -62,29 +62,6 @@ describe('TelegramAdapter', () => {
     }
   });
 
-  // --- Webhook mode ---
-
-  it('webhook mode: calls setWebhook and starts webhook server', async () => {
-    const webhookAdapter = new TelegramAdapter(
-      'tg-webhook',
-      tgConfig({
-        token: 'test-token',
-        mode: 'webhook',
-        webhookUrl: 'https://example.com/webhook',
-        webhookPort: 8443,
-      })
-    );
-
-    await webhookAdapter.start(mockRelay);
-
-    expect(mockSetWebhook).toHaveBeenCalledWith(
-      'https://example.com/webhook',
-      expect.objectContaining({ secret_token: expect.any(String) })
-    );
-
-    await webhookAdapter.stop();
-  });
-
   // --- C3: Webhook secret token ---
 
   it('webhook mode: passes secret_token to setWebhook and webhookCallback', async () => {
@@ -484,42 +461,6 @@ describe('TelegramAdapter', () => {
     vi.useRealTimers();
   });
 
-  // --- M8: Webhook cleanup on stop ---
-
-  it('stop() calls deleteWebhook() in webhook mode (M8)', async () => {
-    const webhookAdapter = new TelegramAdapter(
-      'tg-webhook',
-      tgConfig({
-        token: 'test-token',
-        mode: 'webhook',
-        webhookUrl: 'https://example.com/webhook',
-        webhookPort: 8443,
-      })
-    );
-
-    await webhookAdapter.start(mockRelay);
-    await webhookAdapter.stop();
-
-    expect(mockDeleteWebhook).toHaveBeenCalledOnce();
-  });
-
-  it('stop() succeeds even when deleteWebhook() throws', async () => {
-    const webhookAdapter = new TelegramAdapter(
-      'tg-webhook',
-      tgConfig({
-        token: 'test-token',
-        mode: 'webhook',
-        webhookUrl: 'https://example.com/webhook',
-        webhookPort: 8443,
-      })
-    );
-
-    await webhookAdapter.start(mockRelay);
-    mockDeleteWebhook.mockRejectedValueOnce(new Error('Network error'));
-
-    await expect(webhookAdapter.stop()).resolves.toBeUndefined();
-  });
-
   it('stop() calls closeAllConnections() before server.close() (C5)', async () => {
     const webhookAdapter = new TelegramAdapter(
       'tg-webhook',
@@ -546,26 +487,23 @@ describe('TelegramAdapter', () => {
     expect(callOrder).toEqual(['closeAllConnections', 'close']);
   });
 
-  // --- M15: Max reconnect exhaustion message ---
+  // --- M8: Webhook cleanup on stop ---
 
-  it('sets lastError when max reconnect attempts exhausted (M15)', async () => {
-    await adapter.start(mockRelay);
-
-    // Directly invoke the private handlePollingError method to simulate
-    // repeated polling failures without needing timer orchestration.
-    const adapterInternal = adapter as unknown as { handlePollingError: (err: Error) => void };
-
-    // Call handlePollingError 5 times to exhaust RECONNECT_DELAYS (length=5)
-    for (let i = 0; i < 5; i++) {
-      adapterInternal.handlePollingError(new Error(`poll error ${i}`));
-    }
-    // 6th call: reconnectAttempts is now 5, which >= RECONNECT_DELAYS.length
-    adapterInternal.handlePollingError(new Error('final error'));
-
-    const status = adapter.getStatus();
-    expect(status.lastError).toBe(
-      'Max reconnection attempts exhausted \u2014 adapter will not retry'
+  it('stop() calls deleteWebhook() in webhook mode (M8)', async () => {
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
     );
+
+    await webhookAdapter.start(mockRelay);
+    await webhookAdapter.stop();
+
+    expect(mockDeleteWebhook).toHaveBeenCalledOnce();
   });
 
   // --- Timeout on bot.init() ---

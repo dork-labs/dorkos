@@ -16,7 +16,8 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { isPersonAtTheApp } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getSessionTouchStore, laterIso } from '../services/session/origin/session-touch-store.js';
 import type { ResolveTouches } from '../services/session/origin/touched-by-you-overlay.js';
@@ -37,7 +38,7 @@ import { sessionStreamHealthHandler } from './session-stream-health-handler.js';
  */
 export async function sessionOpenedHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
   if (isPersonAtTheApp(honoRequestFacts(c))) {
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const currentId = runtime.getInternalSessionId(sessionId) ?? sessionId;

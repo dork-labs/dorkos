@@ -90,10 +90,16 @@ export function routePatternOf(path: string): string {
     .join('/');
 }
 
+/**
+ * Statuses that are ordinary refusals rather than failures: not signed in,
+ * not allowed, a clash, changed since the caller looked (412), too many.
+ */
+const REFUSAL_STATUSES = new Set([401, 403, 409, 412, 429]);
+
 /** How a response status reads as an outcome. */
 function outcomeOf(status: number): AuditOutcome {
   if (status < 400) return 'ok';
-  if (status === 401 || status === 403 || status === 409 || status === 429) return 'refused';
+  if (REFUSAL_STATUSES.has(status)) return 'refused';
   return 'failed';
 }
 

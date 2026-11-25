@@ -26,6 +26,7 @@
  * @module shared/step-up
  */
 import { z } from 'zod';
+import type { ProblemCode } from './problem.js';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 
 extendZodWithOpenApiOnce();
@@ -356,34 +357,38 @@ export const StepUpConfirmedBodySchema = z.object({
 /** What a passed step-up answers. */
 export type StepUpConfirmedBody = z.infer<typeof StepUpConfirmedBodySchema>;
 
-/** Why a step-up was refused, as `code` on its error body. */
+/**
+ * Why a step-up was refused, as `code` on its problem document: each is a
+ * code on `PROBLEM_CODE_LIST` (`./problem.ts`).
+ */
 export const STEP_UP_REFUSAL_CODES = [
-  /** No such held action, or it already ran, expired or was cancelled. */
+  /** No such held action, or it already ran, expired or was cancelled. Sent as `404`. */
   'expired',
-  'wrong-password',
+  /** A wrong password; `triesLeft` says how many this action still takes. */
+  'wrong_password',
   /** The held action took its last wrong password and was dropped. */
-  'too-many-tries',
-  /** Too many wrong passwords lately, from anywhere: wait, then try again. */
-  'too-many-attempts',
-  /** The password matched but is shorter than the minimum: change it to go on. */
-  'password-too-short',
-  /** A new password that is too short or too long. */
-  'new-password-invalid',
-  'no-password',
-  'insecure-connection',
+  'too_many_tries',
+  /** Too many wrong passwords lately, from anywhere: wait `retryAfterMs`, then try again. */
+  'rate_limited',
+  /** The password matched but is shorter than `minLength`: change it to go on. */
+  'password_too_short',
+  /** No password sent, or a new password too short or too long (`minLength`). */
+  'invalid_request',
+  'no_password',
+  'insecure_connection',
   /** A loaded extension an agent can rewrite, or that changed since it was approved. */
-  'extension-risk',
+  'extension_risk',
   /** A risky mini app cleared after this sign-in began: sign in again. */
-  'stale-sign-in',
+  'stale_sign_in',
   /** This page can't show it loaded after a risky mini app cleared: reload it. */
-  'stale-page',
+  'stale_page',
   /** Not the app's own page, or a program rather than a person. */
-  'not-a-person',
+  'person_only',
   /** Another browser held this action. */
-  'not-your-action',
+  'held_by_another_browser',
   /** The stored request changed after this confirmation was held. */
-  'different-request',
-] as const;
+  'precondition_failed',
+] as const satisfies readonly ProblemCode[];
 
 /** Why a step-up was refused. */
 export type StepUpRefusalCode = (typeof STEP_UP_REFUSAL_CODES)[number];

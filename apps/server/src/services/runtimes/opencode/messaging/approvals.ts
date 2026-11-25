@@ -40,21 +40,26 @@
  *
  * @module services/runtimes/opencode/approvals
  */
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
-import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { logger, logError } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import type { OpenCodePermissionState } from '../events/session-event-mapper.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
+import {
+  effectiveApprovalMode,
+  readOpenCodeTurnMode,
+  type OpenCodeTurnOptions,
+} from './turn-options.js';
 import { resolveGrantVerdict } from './directory-grants.js';
 import { installedPackageReadGrants } from './package-grants.js';
 import { protectedFileVerdict } from './protected-files.js';
-import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
-import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
-import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
+import { turnProtectedRoots } from '../../shared/policy/turn-protected-roots.js';
+import type { ProtectedPathRoots } from '../../../core/protected-paths/protected-path-check.js';
+import { checkShellCommand } from '../../shared/policy/package-hooks.js';
+import { checkShellProtectedWrites } from '../../shared/policy/shell-protected-writes.js';
+import type { ShellChecker } from '../../claude-code/shell-guard/guard-host.js';
 import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
 import { HeavyShellSlots, holdHeavyShell } from './load-gate-hold.js';
 import {
@@ -64,6 +69,7 @@ import {
 import { PendingApprovalRegistry } from '../../shared/timing/pending-approval-registry.js';
 
 export type { ApprovalDecision };
+export { effectiveApprovalMode };
 
 /**
  * The only OpenCode permission responses DorkOS ever sends. `always` is
@@ -250,7 +256,10 @@ export class PendingApprovalStore {
  * subagent raises its prompts in its own CHILD session and only that session
  * can take the answer (DOR-1126).
  */
-export interface ApprovalRouting {
+export interface ApprovalRouting extends Pick<
+  OpenCodeTurnOptions,
+  'sendPermissionMode' | 'permissionCeiling'
+> {
   sessionId: string;
   ocSessionId: string;
   cwd: string;
@@ -263,12 +272,6 @@ export interface ApprovalRouting {
   grants?: readonly DirectoryGrant[];
   /** Native file refusals precede grants and Full mode. */
   protectedRoots?: ProtectedPathRoots;
-  /**
-   * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`).
-   * Applied to the live mode on every ask, so the turn runs at the stricter of
-   * the two and the session's stored mode is never rewritten.
-   */
-  permissionCeiling?: TurnPermissionCeiling;
   /** The turn's own stop: it ends a heavy `bash` ask's wait for the machine's line. */
   signal?: AbortSignal;
 }
@@ -289,6 +292,8 @@ export interface ApprovalGateDeps {
   registry: OpenCodeSessionRegistry;
   /** The machine-wide load gate a heavy `bash` ask waits in (tests; the server's own otherwise). */
   loadGate?: RuntimeWaitDeps;
+  /** The shell guard's check a `bash` ask goes through (tests; the server's own otherwise). */
+  shellCheck?: ShellChecker;
 }
 
 /**
@@ -369,21 +374,25 @@ export async function rejectPermissionWithReason(
 }
 
 /**
- * Run the installed packages' shell guards for one `bash` ask (DOR-4379).
+ * Check one `bash` ask: the protected-files list first, at every level
+ * (`shell-protected-writes.ts`, DOR-4522), then the installed packages' own
+ * shell guards (DOR-4379).
  *
  * The command rides the ask's `metadata.command`. One that names none is
- * refused when a shell check applies (see `checkShellCommand`), and a check
- * that throws is refused too.
+ * refused at Full, and when a package's shell check applies (see
+ * `checkShellCommand`); a check that throws is refused too.
  *
  * @param deps - The runtime state, for the live permission mode
  * @param turn - The turn's routing: session and working directory
  * @param approval - The mapped `bash` ask
+ * @param check - The turn's protected roots, and whether the ask runs at Full
  */
 async function shellGuardVerdict(
   deps: ApprovalGateDeps,
   turn: ApprovalRouting,
-  approval: ApprovalEvent
-): Promise<ShellCommandVerdict> {
+  approval: ApprovalEvent,
+  check: { roots: ProtectedPathRoots; full: boolean }
+): Promise<{ allowed: true } | { allowed: false; reason: string; reasonType: string }> {
   let command: string | undefined;
   try {
     const parsed = (JSON.parse(approval.input) as { command?: unknown }).command;
@@ -391,20 +400,28 @@ async function shellGuardVerdict(
   } catch {
     command = undefined;
   }
+  const listed = await checkShellProtectedWrites({
+    command,
+    ...check,
+    runtime: 'opencode',
+    ...(deps.shellCheck ? { check: deps.shellCheck } : {}),
+  });
+  if (!listed.allowed) return { ...listed, reasonType: 'protected_path' };
   const permissionMode = deps.registry.get(turn.sessionId)?.permissionMode;
   try {
-    return await checkShellCommand({
+    const verdict = await checkShellCommand({
       runtime: 'opencode',
       cwd: turn.cwd,
       command,
       sessionId: turn.sessionId,
       ...(permissionMode !== undefined ? { permissionMode } : {}),
     });
+    return verdict.allowed ? verdict : { ...verdict, reasonType: 'package_hook' };
   } catch (err) {
     logger.warn('[PackageHooks] OpenCode shell check failed', logError(err));
     return {
       allowed: false,
-      packageName: 'DorkOS',
+      reasonType: 'package_hook',
       reason: "DorkOS could not run this project's safety checks, so this command was blocked.",
     };
   }
@@ -541,7 +558,7 @@ async function* decideApproval(
     // inside a `read` grant has to beat `bypassPermissions`, which would
     // otherwise approve the write below. A refusal that cannot be delivered
     // falls to the person's card, never to the mode's auto-approve.
-    const roots = turn.protectedRoots ?? protectedPathRoots(cwd);
+    const roots = turn.protectedRoots ?? turnProtectedRoots(cwd);
     const fileVerdict = protectedFileVerdict(approval, roots);
     if (fileVerdict !== undefined) {
       if (fileVerdict === 'deny')
@@ -558,11 +575,15 @@ async function* decideApproval(
       );
       return;
     }
-    // An installed package's own shell guards answer next, before folder grants
-    // and before the mode's auto-approve, so Full cannot skip them. OpenCode
-    // has no hooks of its own (DOR-4379).
+    // The shell's own checks answer next, before folder grants and before the
+    // mode's auto-approve, so Full cannot skip them: the protected-files list
+    // (DOR-4522), then an installed package's own guards. OpenCode has no
+    // hooks of its own (DOR-4379).
+    const liveMode = readOpenCodeTurnMode(deps.registry, sessionId, turn.sendPermissionMode);
+    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (approval.toolName === 'bash') {
-      const verdict = await shellGuardVerdict(deps, turn, approval);
+      const full = mode === 'bypassPermissions';
+      const verdict = await shellGuardVerdict(deps, turn, approval, { roots, full });
       if (!verdict.allowed) {
         // The model reads the guard's words as the tool's error (DOR-4447);
         // the person sees them on the event below.
@@ -577,7 +598,7 @@ async function* decideApproval(
           data: {
             toolCallId: approval.toolCallId,
             toolName: approval.toolName,
-            reasonType: 'package_hook',
+            reasonType: verdict.reasonType,
             reason: verdict.reason,
             message: verdict.reason,
           },
@@ -608,8 +629,6 @@ async function* decideApproval(
         );
       }
     }
-    const liveMode = deps.registry.get(sessionId)?.permissionMode;
-    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (
       grantVerdict !== 'deny' &&
       resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'
@@ -664,14 +683,4 @@ async function* decideApproval(
     }
   }
   yield event;
-}
-
-/** The live permission mode bounded by this turn's own ceiling, without changing stored settings. */
-export function effectiveApprovalMode(
-  mode: PermissionModeId | undefined,
-  ceiling?: TurnPermissionCeiling
-): PermissionModeId | undefined {
-  return mode !== undefined && ceiling !== undefined
-    ? clampModeToCeiling(OPENCODE_CAPABILITIES.permissionModes, mode, ceiling)
-    : mode;
 }

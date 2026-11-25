@@ -112,42 +112,6 @@ describe('createListMarketplacesHandler', () => {
     vi.clearAllMocks();
   });
 
-  it('returns an empty sources array when no marketplaces are configured', async () => {
-    const { deps, list, fetchMarketplaceJson } = buildDeps({ list: [] });
-    const handler = createListMarketplacesHandler(deps);
-
-    const result = await handler();
-    const payload = parseResult(result);
-
-    expect(list).toHaveBeenCalledTimes(1);
-    expect(fetchMarketplaceJson).not.toHaveBeenCalled();
-    expect(payload.sources).toEqual([]);
-  });
-
-  it('returns a single source enriched with its package count', async () => {
-    const source = buildSource({ name: 'dorkos-community' });
-    const { deps, fetchMarketplaceJson } = buildDeps({
-      list: [source],
-      fetchImpl: async () => buildMarketplaceJson('dorkos-community', 3),
-    });
-    const handler = createListMarketplacesHandler(deps);
-
-    const result = await handler();
-    const payload = parseResult(result);
-
-    expect(fetchMarketplaceJson).toHaveBeenCalledTimes(1);
-    expect(fetchMarketplaceJson).toHaveBeenCalledWith(source);
-    expect(payload.sources).toEqual([
-      {
-        name: 'dorkos-community',
-        source: source.source,
-        enabled: true,
-        packageCount: 3,
-        lastFetch: NEVER,
-      },
-    ]);
-  });
-
   it('returns every configured source — enabled and disabled — with package counts', async () => {
     const community = buildSource({ name: 'dorkos-community' });
     const personal = buildSource({

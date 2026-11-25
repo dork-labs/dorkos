@@ -1,7 +1,8 @@
 /**
  * A Claude Code tool call that reads outside text marks its turn before it runs (DOR-3969, spec
- * §4.7): `WebFetch`, `WebSearch`, and any MCP server's tool but DorkOS's own
- * (`shared/tools/outside-text-tools.ts` decides which).
+ * §4.7): `WebFetch`, `WebSearch`, any MCP server's tool but DorkOS's own, a `Bash` command that
+ * fetches from the network, and a `Read` or `Grep` in a folder of outside files (DOR-5236;
+ * `shared/tools/outside-text-tools.ts` decides which).
  *
  * A `PreToolUse` hook, because it fires in every mode, `bypassPermissions` included, for a helper's
  * calls as well as the turn's own, and before the tool runs. So the page is never in the model's
@@ -38,7 +39,19 @@ export function outsideTextHookMatcher(
     hooks: [
       async (hookInput) => {
         if (hookInput.hook_event_name !== 'PreToolUse') return {};
-        if (!toolReadsOutsideText('claude-code', hookInput.tool_name)) return {};
+        const place = {
+          ...(typeof hookInput.cwd === 'string' ? { cwd: hookInput.cwd } : {}),
+          ...(agentPath ? { agentHome: agentPath } : {}),
+        };
+        const input = 'tool_input' in hookInput ? hookInput.tool_input : undefined;
+        let reads: boolean;
+        try {
+          reads = toolReadsOutsideText('claude-code', hookInput.tool_name, input, place);
+        } catch {
+          // A call that could not be read counts as one that reads outside text.
+          reads = true;
+        }
+        if (!reads) return {};
         try {
           markRunningTurnOutsider(sessionId(), agentPath ?? undefined, { kind: 'tool' });
           return {};

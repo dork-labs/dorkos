@@ -1,7 +1,7 @@
 ---
 number: 241
 title: File-Backed Model Cache with TTL at ~/.dork/cache/runtimes/
-status: draft
+status: archived
 created: 2026-04-10
 spec: runtime-model-discovery
 superseded-by: null

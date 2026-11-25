@@ -416,7 +416,7 @@ describe('GET /api/team/:memberId/rooms', () => {
     const res = await request(fixtureTarget.mount(app())).get('/api/team/nobody/rooms');
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('MEMBER_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('answers an empty list for an agent that has not been in a room yet', async () => {
@@ -461,7 +461,7 @@ describe('GET /api/team/:memberId/rooms', () => {
     ).get(`/api/team/${ownerAuthorId}/rooms`);
 
     expect(res.status).toBe(500);
-    expect(res.body.code).toBe('MEMBER_ROOMS_FAILED');
+    expect(res.body.code).toBe('internal_error');
   });
 
   it('refuses an agent, which could otherwise enumerate the operator’s DMs', async () => {
@@ -473,7 +473,8 @@ describe('GET /api/team/:memberId/rooms', () => {
       .set('x-dorkos-agent', 'some-agent-token');
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.type).toBe('application/problem+json');
+    expect(res.body.code).toBe('person_only');
   });
 
   it('leaves an agent’s author id out of the id space it answers for', async () => {

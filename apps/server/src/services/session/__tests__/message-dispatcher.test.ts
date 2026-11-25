@@ -105,6 +105,7 @@ function gate(): { wait: Promise<void>; open: () => void } {
 /** Dispatch with the fields these cases do not care about filled in. */
 function send(content: string, extra: Record<string, unknown> = {}) {
   return dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId: TAB,
     content,

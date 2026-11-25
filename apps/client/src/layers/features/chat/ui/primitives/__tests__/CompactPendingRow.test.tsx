@@ -10,12 +10,12 @@ afterEach(() => {
 describe('CompactPendingRow', () => {
   it('renders "Waiting for approval…" for approval type', () => {
     render(<CompactPendingRow type="approval" />);
-    expect(screen.getByText('Waiting for approval…')).toBeDefined();
+    expect(screen.getByText('Waiting for approval…')).toBeInTheDocument();
   });
 
   it('renders "Answering questions…" for question type', () => {
     render(<CompactPendingRow type="question" />);
-    expect(screen.getByText('Answering questions…')).toBeDefined();
+    expect(screen.getByText('Answering questions…')).toBeInTheDocument();
   });
 
   it('renders a spinning loader icon', () => {
@@ -27,7 +27,7 @@ describe('CompactPendingRow', () => {
 
   it('passes data-testid through', () => {
     render(<CompactPendingRow type="approval" data-testid="pending-row" />);
-    expect(screen.getByTestId('pending-row')).toBeDefined();
+    expect(screen.getByTestId('pending-row')).toBeInTheDocument();
   });
 
   it('uses compact styling matching CompactResultRow footprint', () => {

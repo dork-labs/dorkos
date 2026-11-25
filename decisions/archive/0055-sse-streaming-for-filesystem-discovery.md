@@ -1,7 +1,7 @@
 ---
 number: 55
 title: Use SSE Streaming for Filesystem Discovery Results
-status: draft
+status: archived
 created: 2026-03-01
 spec: first-time-user-experience
 superseded-by: null

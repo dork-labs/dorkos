@@ -21,10 +21,11 @@
  * continuation's hold) has the row held to the runtime's default before it is
  * let go: stricter, never looser.
  *
- * A pause can also land after the turn started (its row already off the queue)
+ * A pause can also land after the turn started (its row already out of line)
  * but before the agent read the message (DOR-4353). That turn is stopped like
  * any running one, so the row is put back in its old place and held the same
- * way, and its sender hears `held` rather than a failure.
+ * way, and its sender hears `held` rather than a failure. Its run goes back to
+ * `queued` with it (spec `turns-survive-restarts` §4.7, transitions 14 and 15).
  *
  * Only a real queue row is held. A refusing caller's trigger and a transient one
  * have no row to keep, and a protected private message has its own receipt
@@ -44,6 +45,7 @@ import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
 import { isPersonWindowClientId } from '../person-window-client-id.js';
 import { emitLifecycle, pending } from './state.js';
+import { feedRun } from './run-feed.js';
 import type { DispatchPlan } from './types.js';
 
 /** How many held rows remember that their hold was already recorded. */
@@ -236,20 +238,28 @@ export function holdForPause(plan: DispatchPlan, agent: PausedAgentRef): void {
 
 /**
  * Hold a message whose turn started and was then stopped by a pause before the
- * agent read it (DOR-4353). Its row left the queue at `turn_start`, so the pause
+ * agent read it (DOR-4353). Its row left the line at `turn_start`, so the pause
  * used to stop it like any running turn and the words were gone. Now the row
  * goes back in its old place and is held as {@link holdForPause} holds one, and
  * its sender hears `held` in place of `settled`.
  *
+ * The row is still kept for its turn when the runtime had not read the words
+ * (transition 14), and is re-inserted from the copy taken at `turn_start` when
+ * delivery had already deleted it (15). Its run goes back with it, in the same
+ * transaction.
+ *
  * @param plan - The message whose turn was cut
- * @param row - Its row, as the turn's start took it off the queue
+ * @param row - Its row, as the turn's start took it out of line
  * @returns Whether it was held; when not, the turn settles as usual
  */
 export function holdStartedForPause(plan: DispatchPlan, row: QueuedMessageRecord): boolean {
   const agent = holdable(plan) ? pausedAgentOf(plan) : undefined;
   const store = getMessageQueueStore();
   if (!agent || !store) return false;
-  store.restore(queueKeyOf(plan.sessionKey), row);
+  store.atomically(() => {
+    feedRun(plan, 'pause cut', (feed, runId) => feed.pauseCut(runId));
+    store.restore(queueKeyOf(plan.sessionKey), row);
+  });
   rerunIds.set(row.id, randomUUID());
   emitQueueUpdate(plan.sessionKey);
   holdForPause(plan, agent);

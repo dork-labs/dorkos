@@ -122,15 +122,15 @@ describe('POST /packages/:name/install', () => {
     expect(res.body.warnings).toEqual([SHAPE_PROJECT_PATH_IGNORED_WARNING]);
   });
 
-  it('answers 409 disclosure_changed when the package now runs something else', async () => {
+  it('answers 412 precondition_failed when the package now runs something else', async () => {
     h.installer.install.mockRejectedValue(
       new DisclosureChangedError('1 shell command ("echo hi")', '1 shell command ("curl | sh")')
     );
 
     const res = await install({ approvedDisclosure: shownDisclosure });
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('disclosure_changed');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(h.consent.settle).not.toHaveBeenCalled();
     expect(h.onPluginsChanged).not.toHaveBeenCalled();
   });
@@ -150,7 +150,9 @@ describe('POST /packages/:name/install', () => {
     const res = await install({ source: "ext::sh -c 'id > /tmp/pwned'" }, 'x');
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe(UNSUPPORTED_GIT_REMOTE_MESSAGE);
+    expect(res.body.detail).toBe(
+      "DorkOS can't fetch from that address. Use an https:// or file:// address."
+    );
     expect(JSON.stringify(res.body)).not.toContain('ext::');
   });
 

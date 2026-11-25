@@ -17,9 +17,10 @@
 import type { Context } from 'hono';
 import { StreamHealthReportSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { logger } from '../lib/logger.js';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId } from './session-route-replies.js';
 import { openSessionStreamCount } from '../services/core/streams/session-stream-watch.js';
 import { peekProjector } from '../services/session/index.js';
 
@@ -31,10 +32,10 @@ import { peekProjector } from '../services/session/index.js';
  */
 export function sessionStreamHealthHandler(c: Context<ApiEnv>): Response {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
   const parsed = StreamHealthReportSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+    return validationProblem(c, parsed.error);
   }
   const projector = peekProjector(sessionId);
   logger.warn('[session stream] a window missed a turn and is reconnecting', {

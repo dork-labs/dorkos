@@ -233,9 +233,12 @@ describe('runMarketplaceLink', () => {
     // refused; the person is told what happened and what to do, not a code.
     confirmMock.mockResolvedValueOnce(true);
     fetchMock.mockResolvedValueOnce(mockResponse(200, preview())).mockResolvedValueOnce(
-      mockResponse(409, {
-        error: 'The folder changed after you approved it. Ask again.',
-        code: 'dev_link_changed',
+      mockResponse(412, {
+        type: 'urn:dorkos:problem:precondition_failed',
+        title: 'Something changed since you last looked.',
+        status: 412,
+        code: 'precondition_failed',
+        detail: 'The folder changed after you approved it. Ask again.',
       })
     );
 

@@ -267,7 +267,13 @@ describe('enforceApprovals under a turn ceiling', () => {
       },
       {
         type: 'approval_required',
-        data: { toolCallId: 'per_1', timeoutMs: 1000, startedAt: 0, toolName: 'bash', input: {} },
+        data: {
+          toolCallId: 'per_1',
+          timeoutMs: 1000,
+          startedAt: 0,
+          toolName: 'bash',
+          input: JSON.stringify({ command: 'ls' }),
+        },
       } as StreamEvent
     )) {
       out.push(event);

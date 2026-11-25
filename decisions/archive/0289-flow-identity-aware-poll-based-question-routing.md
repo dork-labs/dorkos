@@ -1,7 +1,7 @@
 ---
 number: 289
 title: Identity-Mode-Aware, Poll-Based Question Routing
-status: proposed
+status: archived
 created: 2026-06-25
 spec: flow-triage-feeds-loop
 superseded-by: null

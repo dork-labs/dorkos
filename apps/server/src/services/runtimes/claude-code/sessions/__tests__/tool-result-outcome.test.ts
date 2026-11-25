@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { HistoryMessage, ToolCallPart } from '@dorkos/shared/types';
-import { parseTranscript } from '../transcript-parser.js';
+import { parseTranscript } from './parse-transcript.js';
 import {
   approvalTimeoutDenial,
   classifyToolResult,

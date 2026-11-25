@@ -30,8 +30,9 @@ import { ZodError } from 'zod';
 import { ForkShapeRequestSchema } from '@dorkos/shared/schemas';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { gateResponse } from './capability-refusals.js';
 import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
 import {
   enforceCapabilityTier,
@@ -77,10 +78,14 @@ const SHAPE_NAME_RE = /^[a-z][a-z0-9-]*$/;
  */
 function refuseNonSlug(c: Context<ApiEnv>, name: string): Response | null {
   if (SHAPE_NAME_RE.test(name)) return null;
-  return c.json(
-    { error: `Invalid Shape name '${name}' — must be a kebab-case slug (a-z, 0-9, -)` },
-    400
-  );
+  return problem(c, 'invalid_request', {
+    detail: `'${name}' isn’t a Shape name. Use lowercase letters, digits and dashes.`,
+  });
+}
+
+/** The answer for a Shape that is not installed. */
+function notInstalled(c: Context<ApiEnv>, name: string): Response {
+  return problem(c, 'not_found', { detail: `No Shape called '${name}' is installed.` });
 }
 
 /**
@@ -196,20 +201,6 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
     });
   };
 
-  /**
-   * Turn a non-`allowed` gate decision into this router's HTTP answer: `202` when
-   * a person has been asked and the caller should retry with the token, `403`
-   * when no retry can change the answer.
-   *
-   * @param c - The request being answered.
-   * @param decision - The refusing decision to render.
-   * @returns The response.
-   */
-  const gateResponse = (
-    c: Context<ApiEnv>,
-    decision: Exclude<TierEnforcementDecision, { outcome: 'allowed' }>
-  ): Response => c.json(decision.payload, decision.outcome === 'approval_required' ? 202 : 403);
-
   // GET /api/shapes — installed Shapes, active flag resolved from config.
   router.get('/', async (c) => {
     const active = deps.applyDeps.configStore.getShapePrefs().active;
@@ -231,9 +222,7 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
         const result = await applyShape(name, deps.applyDeps);
         return c.json(result);
       } catch (err) {
-        if (err instanceof ShapeNotInstalledError) {
-          return c.json({ error: err.message }, 404);
-        }
+        if (err instanceof ShapeNotInstalledError) return notInstalled(c, name);
         throw err;
       }
     };
@@ -242,7 +231,7 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
     if (!person) return apply();
     // A Shape that is not installed is answered before anyone is asked.
     if (!(await deps.applyDeps.manifestResolver.resolve(name))) {
-      return c.json({ error: new ShapeNotInstalledError(name).message }, 404);
+      return notInstalled(c, name);
     }
     // Applying one turns on its extensions and schedules, so the owner
     // confirms it's them first (DOR-4355).
@@ -274,17 +263,19 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
       const result = await forkShape(name, body, deps.forkDeps);
       return c.json(result, 201);
     } catch (err) {
-      if (err instanceof ShapeNotInstalledError) {
-        return c.json({ error: err.message }, 404);
-      }
+      if (err instanceof ShapeNotInstalledError) return notInstalled(c, name);
       if (err instanceof ShapeForkConflictError) {
-        return c.json({ error: err.message }, 409);
+        return problem(c, 'conflict', {
+          detail: 'That name is taken or matches the source Shape. Pick another name.',
+        });
       }
       // Belt: the fork re-validates the forked manifest through the marketplace
       // union. A refused manifest is a client-visible input problem, not a
       // server fault — surface it as a 400.
       if (err instanceof ZodError) {
-        return c.json({ error: `Forked manifest failed validation: ${err.message}` }, 400);
+        return problem(c, 'invalid_request', {
+          detail: 'The forked Shape’s manifest isn’t valid.',
+        });
       }
       throw err;
     }

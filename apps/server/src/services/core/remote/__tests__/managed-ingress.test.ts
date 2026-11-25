@@ -9,10 +9,13 @@
 import net from 'node:net';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import express from 'express';
+import { Hono } from 'hono';
+import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REMOTE_EDGE_PROOF_OVERLAP_SECONDS } from '@dork-labs/cloud-api';
 import { isAtThisComputer } from '../../auth/gate-policy.js';
+import type { ApiEnv } from '../../../../http/api-chain.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
 import { createManagedIngress, type ManagedIngress } from '../managed-ingress.js';
 import { ingressOf, isManagedIngress } from '../ingress-mark.js';
 import { APP_OWN_ROUTES, RETIRED_ENCODED_PATHS } from './app-own-routes.js';
@@ -62,14 +65,17 @@ let seenHeaders: { raw: string[]; parsed: Record<string, unknown> } | null;
 beforeEach(async () => {
   routeSpy = vi.fn();
   seenHeaders = null;
-  const app = express();
-  app.use((req, res, next) => {
-    routeSpy(req.path);
+  // A probe app behind the production front door: what reaches it, and what it saw.
+  const app = new Hono<ApiEnv>({ strict: false });
+  app.use(async (c, next) => {
+    const req = c.env.incoming;
+    routeSpy(c.req.path);
     seenHeaders = { raw: [...req.rawHeaders], parsed: { ...req.headers } };
-    next();
+    await next();
   });
-  app.get('/whoami', (req, res) => {
-    res.json({
+  app.get('/whoami', (c) => {
+    const req = c.env.incoming;
+    return c.json({
       local: isAtThisComputer({
         headers: req.headers,
         peerAddress: req.socket.remoteAddress,
@@ -78,20 +84,27 @@ beforeEach(async () => {
       marked: isManagedIngress(req),
     });
   });
-  app.get('/stream', (_req, res) => {
+  app.get('/stream', (c) => {
     // A long-lived event stream: it never ends on its own.
+    const res = c.env.outgoing;
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.write(': open\n\n');
+    return new Response(null, { headers: RESPONSE_ALREADY_SENT.headers });
   });
-  app.get('/slow', (_req, res) => {
-    setTimeout(() => res.json({ done: true }), 150);
+  app.get('/slow', async (c) => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return c.json({ done: true });
   });
-  app.use((_req, res) => res.status(200).json({ reached: true }));
+  app.all('*', (c) => c.json({ reached: true }, 200));
 
   forwardUpgrade = vi.fn((_req: IncomingMessage, socket: Duplex, _head: Buffer) => {
     socket.destroy();
   });
-  ingress = createManagedIngress({ handler: app, forwardUpgrade, now: () => now });
+  ingress = createManagedIngress({
+    handler: frontDoorListener(app),
+    forwardUpgrade,
+    now: () => now,
+  });
   const url = await ingress.open();
   port = Number(new URL(url).port);
   ingress.setHosts([HOST]);
@@ -114,13 +127,17 @@ describe('edge proof on HTTP requests', () => {
 
   it('leaves no trace of the proof in headersDistinct either', async () => {
     let distinct: Record<string, unknown> | null = null;
-    const app = express();
-    app.use((req, res) => {
-      distinct = { ...req.headersDistinct };
-      res.end();
+    const app = new Hono<ApiEnv>();
+    app.all('*', (c) => {
+      distinct = { ...c.env.incoming.headersDistinct };
+      return c.body(null, 200);
     });
     await ingress.close({ immediate: true });
-    ingress = createManagedIngress({ handler: app, forwardUpgrade, now: () => now });
+    ingress = createManagedIngress({
+      handler: frontDoorListener(app),
+      forwardUpgrade,
+      now: () => now,
+    });
     port = Number(new URL(await ingress.open()).port);
     ingress.setHosts([HOST]);
     ingress.setEdgeProof(PROOF);
@@ -301,7 +318,7 @@ describe('host and path checks', () => {
     expect(routeSpy).not.toHaveBeenCalled();
   });
 
-  // Express routes by `parseurl`, which reads all of these as an agent path.
+  // A lenient router (Express's `parseurl` was one) reads all of these as an agent path.
   it.each([
     '/a2a#x',
     '/a2a/#',

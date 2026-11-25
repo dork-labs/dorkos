@@ -130,12 +130,12 @@ describe('POST /updates', () => {
     ]) {
       const res = await apply(body);
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('client_outdated');
-      expect(res.body.error).toContain('Update the CLI');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('npm install -g dorkos');
     }
     const perPackage = await h.post('/packages/sample-plugin/update', { apply: true });
     expect(perPackage.status).toBe(400);
-    expect(perPackage.body.code).toBe('client_outdated');
+    expect(perPackage.body.code).toBe('invalid_request');
     expect(h.updateFlow.run).not.toHaveBeenCalled();
     expect(h.updateFlow.planInstallations).not.toHaveBeenCalled();
     expect(installGateInputs()).toEqual([]);
@@ -187,8 +187,8 @@ describe('POST /updates', () => {
 
     const res = await applyShown(globalRoot(), agentRoot());
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('disclosure_changed');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(res.body.changed.map((u: { installPath: string }) => u.installPath)).toEqual([
       globalRoot(),
     ]);
@@ -204,7 +204,7 @@ describe('POST /updates', () => {
 
     const res = await applyShown(globalRoot());
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(412);
     expect(h.updateFlow.applyPlan).not.toHaveBeenCalled();
     expect(h.consent.settle).not.toHaveBeenCalled();
   });
@@ -271,12 +271,21 @@ describe('POST /updates and the tier gate', () => {
       .mockImplementationOnce(vi.mocked(authorizeCapability).getMockImplementation()!)
       .mockReturnValueOnce({
         outcome: 'denied',
-        payload: { error: 'no' },
+        payload: {
+          status: 'denied',
+          capabilityId: 'marketplace.install',
+          capabilityTitle: 'Install a package',
+          tier: 'act',
+          reason: 'permission_blocked',
+          approvable: false,
+          message: 'no',
+        },
       } as unknown as ReturnType<typeof authorizeCapability>);
 
     const res = await applyShown(globalRoot(), agentRoot());
 
     expect(res.status).toBe(403);
+    expect(res.body.code).toBe('forbidden');
     expect(installGateInputs()).toHaveLength(2);
     expect(h.updateFlow.planInstallations).not.toHaveBeenCalled();
   });
@@ -289,7 +298,7 @@ describe('POST /updates and the tier gate', () => {
     const res = await applyShown(globalRoot());
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('batch_update_needs_approval');
+    expect(res.body.code).toBe('needs_approval');
     expect(h.updateFlow.planInstallations).not.toHaveBeenCalled();
     expect(installGateInputs()).toEqual([]);
     expect(h.approvals.listPending()).toEqual([]);
@@ -349,7 +358,12 @@ describe("an agent's apply", () => {
     const res = await apply({ ...body(), confirmationToken: first.body.confirmationToken });
 
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ status: 'declined', reason: 'not now' });
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      status: 403,
+      code: 'declined',
+      detail: 'A person said no, or the approval ended. Nothing was updated.',
+    });
     expect(h.updateFlow.applyPlan).not.toHaveBeenCalled();
   });
 
@@ -360,7 +374,7 @@ describe("an agent's apply", () => {
 
     const res = await apply({ ...body(), confirmationToken: first.body.confirmationToken });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(412);
     expect(h.updateFlow.applyPlan).not.toHaveBeenCalled();
   });
 });

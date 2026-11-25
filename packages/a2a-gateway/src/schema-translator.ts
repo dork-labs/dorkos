@@ -12,7 +12,7 @@
  * @module a2a-gateway/schema-translator
  */
 import type { Message } from '@a2a-js/sdk';
-import type { StandardPayload } from '@dorkos/shared/relay-schemas';
+import { A2A_CLIENT_NAME, type StandardPayload } from '@dorkos/shared/relay-schemas';
 import { emptyToUndefined, partText } from './a2a-model.js';
 
 /**
@@ -26,7 +26,7 @@ import { emptyToUndefined, partText } from './a2a-model.js';
  * - `message.parts[*].text` (text parts only) → `payload.content` (joined with `\n`)
  * - `message.contextId` → `payload.conversationId`
  * - `message.taskId` → `payload.correlationId`
- * - Hardcoded `senderName: 'a2a-client'`, `channelType: 'dm'`, `performative: 'request'`
+ * - Hardcoded `senderName: A2A_CLIENT_NAME`, `channelType: 'dm'`, `performative: 'request'`
  *
  * @param message - The inbound A2A Message to translate.
  * @returns A StandardPayload suitable for publishing via Relay.
@@ -38,7 +38,7 @@ export function a2aMessageToRelayPayload(message: Message): StandardPayload {
 
   return {
     content: textParts.join('\n'),
-    senderName: 'a2a-client',
+    senderName: A2A_CLIENT_NAME,
     channelType: 'dm',
     conversationId: emptyToUndefined(message.contextId),
     correlationId: emptyToUndefined(message.taskId),

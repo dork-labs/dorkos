@@ -19,8 +19,11 @@ export async function writeFileOverHttp(
       body: JSON.stringify({ cwd, path: filePath, content, ...options }),
     });
   } catch (error) {
-    const refusal = error as { status?: number; body?: unknown };
-    if (refusal.status !== 409) throw error;
+    // `412 precondition_failed` with the file as it is now: the file changed
+    // since it was read. Any other 412 (the file was replaced mid-save, a
+    // reused save id) carries no current bytes and stays a thrown refusal.
+    const refusal = error as { status?: number; code?: unknown; body?: unknown };
+    if (refusal.status !== 412 || refusal.code !== 'precondition_failed') throw error;
     const data = refusal.body;
     if (
       !data ||
@@ -30,7 +33,7 @@ export async function writeFileOverHttp(
       !('currentContent' in data) ||
       typeof data.currentContent !== 'string'
     )
-      throw new Error('Invalid file conflict response', { cause: error });
+      throw error;
     return {
       ok: false,
       conflict: { currentHash: data.currentHash, currentContent: data.currentContent },

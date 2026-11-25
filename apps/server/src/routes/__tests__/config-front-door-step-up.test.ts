@@ -18,7 +18,7 @@ describe('front-door settings confirmation', () => {
       expect(held.status).toBe(428);
       expect(configManager.get('server').lanAccess).toBe(false);
       expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
       expect(configManager.get('server').lanAccess).toBe(false);
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -57,7 +57,7 @@ describe('front-door settings confirmation', () => {
       const refused = await owner.call('patch', '/api/config').send(patch);
       expect(refused.status).toBe(400);
       expect(refused.body.heldActionId).toBeUndefined();
-      expect(refused.body.status).toBeUndefined();
+      expect(refused.body.code).toBe('invalid_request');
     }
   });
 

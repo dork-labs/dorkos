@@ -140,6 +140,22 @@ export function projectSlug(cwd: string): string {
 }
 
 /**
+ * Where a Claude Code session's transcript lives: `<account>/projects/<slug>/<id>.jsonl`.
+ *
+ * @param accountPath - The account folder the session ran in, or `null`.
+ * @param cwd - The session's folder.
+ * @param sessionId - The session's id.
+ */
+export function claudeTranscriptPath(
+  accountPath: string | null,
+  cwd: string,
+  sessionId: string
+): string | null {
+  if (!accountPath) return null;
+  return path.join(accountPath, 'projects', projectSlug(cwd), `${sessionId}.jsonl`);
+}
+
+/**
  * Which transcript-directory names could hold a session running at `cwd` **or
  * anywhere inside it** — a READ SCOPE, never a membership rule.
  *

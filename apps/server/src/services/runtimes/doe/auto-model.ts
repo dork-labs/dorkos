@@ -42,6 +42,7 @@ import {
   creditsFormatOf,
   creditsProtocolServed,
 } from '../../core/cloud/credits-protocols.js';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { isCloudLinked } from '../../core/cloud/v1-client.js';
 import { DOE_CREDITS_SUPPORT } from './credentials.js';
 
@@ -168,7 +169,7 @@ function frozenFor(
   model: InferenceModel
 ): DoeInferenceConfig {
   return DoeInferenceConfigSchema.parse({
-    source: 'dorkos-credits',
+    source: CREDITS_PROVIDER_ID,
     provider: 'dorkos',
     protocol,
     endpoint: creditsEndpointFor(token.endpoints, protocol),

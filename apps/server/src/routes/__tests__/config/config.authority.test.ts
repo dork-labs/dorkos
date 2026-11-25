@@ -43,7 +43,7 @@ const send = (body: object) => request(server).patch('/api/config').send(body);
 async function expectAgentRefused(body: object, leaf: string): Promise<void> {
   asAgent();
   const refused = await send(body).expect(403);
-  expect(refused.body.code).toBe('operator_only_config');
+  expect(refused.body.code).toBe('person_only');
   expect(refused.body.paths).toContain(leaf);
 }
 
@@ -211,7 +211,7 @@ describe('PATCH /api/config, who may write what', () => {
       for (const leaf of carried) {
         const refused = await send(leaf.patch);
         expect(refused.status, leaf.path).toBe(403);
-        expect(refused.body.code, leaf.path).toBe('operator_only_config');
+        expect(refused.body.code, leaf.path).toBe('person_only');
         expect(refused.body.paths, leaf.path).toContain(leaf.path);
         expect(configManager.getDot(leaf.path), leaf.path).toEqual(leaf.protective);
       }
@@ -288,6 +288,28 @@ describe('PATCH /api/config, who may write what', () => {
     });
   });
 
+  describe('an account agents may pick by name (DOR-5033)', () => {
+    const row = { id: 'claude-ab1', path: '/Users/me/.claude-ab1', label: 'AB1', color: null };
+    const storedFlag = async () =>
+      (
+        (await store()).getDot('runtimes.claudeCode.accounts') as Array<{
+          id: string;
+          agentsMayPick?: unknown;
+        }>
+      ).find((a) => a.id === 'claude-ab1')?.agentsMayPick;
+    const flagPatch = (agentsMayPick: boolean) => ({
+      runtimes: { claudeCode: { accounts: [{ ...row, agentsMayPick }] } },
+    });
+
+    it('refuses an agent letting itself pick the account, and keeps it off', async () => {
+      expect((await asPerson(send(flagPatch(false)))).status).toBe(200);
+      expect(await storedFlag()).toBe(false);
+
+      await expectAgentRefused(flagPatch(true), 'runtimes.claudeCode.accounts[].agentsMayPick');
+      expect(await storedFlag()).toBe(false);
+    });
+  });
+
   describe('every operator-only setting, with login on (DOR-505)', () => {
     it('refuses a caller holding a per-user API key the login gate and every other operator-only path', async () => {
       // A program with one of the person's keys satisfies `sessionGate` as a
@@ -297,7 +319,7 @@ describe('PATCH /api/config, who may write what', () => {
       caller.signedInUser = { userId: 'user_program', credential: 'api-key' };
 
       const refused = await send({ auth: { enabled: false } }).expect(403);
-      expect(refused.body.code).toBe('operator_cookie_required');
+      expect(refused.body.code).toBe('person_only');
       expect(refused.body.paths).toEqual(['auth.enabled']);
       for (const patch of [
         { tunnel: { authtoken: 'attacker-ngrok-token' } },
@@ -305,7 +327,7 @@ describe('PATCH /api/config, who may write what', () => {
         { server: { boundary: '/' } },
         { runtimes: { codex: { binaryPath: '/tmp/evil' } } },
       ]) {
-        expect((await send(patch).expect(403)).body.code).toBe('operator_cookie_required');
+        expect((await send(patch).expect(403)).body.code).toBe('person_only');
       }
 
       const configManager = await store();
@@ -367,7 +389,7 @@ describe('PATCH /api/config, who may write what', () => {
       await enableLogin();
       caller.agentHeader = 'agent-token';
       const refused = await send({ auth: { enabled: false } }).expect(403);
-      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.code).toBe('person_only');
     });
   });
 

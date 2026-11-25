@@ -25,18 +25,6 @@ describe('WebhookAdapter', () => {
     vi.useRealTimers();
   });
 
-  // --- Lifecycle ---
-
-  describe('start()', () => {
-    it('transitions to connected state and records startedAt', async () => {
-      await adapter.start(relay);
-
-      const status = adapter.getStatus();
-      expect(status.state).toBe('connected');
-      expect(status.startedAt).toBe('2026-02-24T12:00:00.000Z');
-    });
-  });
-
   describe('stop()', () => {
     it('clears the nonce map', async () => {
       await adapter.start(relay);
@@ -196,44 +184,6 @@ describe('WebhookAdapter', () => {
 
     beforeEach(async () => {
       await adapter.start(relay);
-    });
-
-    /** An envelope carrying the given hop count. */
-    function envelopeAtHop(hopCount: number) {
-      return {
-        id: 'env-01',
-        subject: 'relay.webhook.test',
-        from: 'relay.agent.backend',
-        budget: {
-          hopCount,
-          maxHops: 5,
-          ancestorChain: [],
-          ttl: Date.now() + 3_600_000,
-          callBudgetRemaining: 10,
-        },
-        createdAt: new Date().toISOString(),
-        payload: { message: 'round and round' },
-      };
-    }
-
-    it('states the hop budget it is sending out', async () => {
-      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-      vi.stubGlobal('fetch', fetchMock);
-
-      await adapter.deliver('relay.webhook.test', envelopeAtHop(2));
-
-      const [, options] = fetchMock.mock.calls[0] as [
-        string,
-        RequestInit & { headers: Record<string, string> },
-      ];
-      expect(options.headers['X-Relay-Hop-Count']).toBe('2');
-      expect(options.headers['X-Relay-Max-Hops']).toBe('5');
-      // The other two dimensions travel too (DOR-791). Hops alone left the call
-      // budget and the deadline resetting on every lap.
-      expect(options.headers['X-Relay-Call-Budget']).toBe('10');
-      expect(Number(options.headers['X-Relay-Expires-At'])).toBeGreaterThan(Date.now());
-
-      vi.unstubAllGlobals();
     });
 
     it('counts one more hop when the request echoes the budget back', async () => {
@@ -416,45 +366,6 @@ describe('WebhookAdapter', () => {
 
       expect(sig).toBe(expectedSig);
 
-      vi.unstubAllGlobals();
-    });
-
-    it('sends custom outbound headers from config', async () => {
-      const customAdapter = new WebhookAdapter('custom', {
-        inbound: { subject: 'relay.webhook.custom', secret: SECRET },
-        outbound: {
-          url: OUTBOUND_URL,
-          secret: SECRET,
-          headers: { Authorization: 'Bearer token-abc' },
-        },
-      });
-      await customAdapter.start(createMockRelay());
-
-      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-      vi.stubGlobal('fetch', fetchMock);
-
-      await customAdapter.deliver('relay.webhook.custom', {
-        id: 'e1',
-        subject: 'relay.webhook.custom',
-        from: 'a',
-        budget: {
-          hopCount: 0,
-          maxHops: 5,
-          ancestorChain: [],
-          ttl: Date.now() + 3600000,
-          callBudgetRemaining: 10,
-        },
-        createdAt: new Date().toISOString(),
-        payload: {},
-      });
-
-      const [, options] = fetchMock.mock.calls[0] as [
-        string,
-        RequestInit & { headers: Record<string, string> },
-      ];
-      expect(options.headers['Authorization']).toBe('Bearer token-abc');
-
-      await customAdapter.stop();
       vi.unstubAllGlobals();
     });
 

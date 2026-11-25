@@ -61,7 +61,11 @@ describe('Binding routes', () => {
   ] as const)('%s %s answers 503 when the binding store is not available', async (verb, path) => {
     const res = await request(server)[verb](path).send({ label: 'Updated' });
     expect(res.status).toBe(503);
-    expect(res.body.error).toBe('Binding subsystem not available');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'temporarily_unavailable',
+      detail: 'Chat routes aren’t ready yet. Try again soon.',
+    });
   });
 
   it('reads one binding', async () => {
@@ -157,7 +161,7 @@ describe('Observed chats route', () => {
     const res = await request(server).get('/api/relay/adapters/telegram-1/chats');
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Tracing not available');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'Delivery tracing is off here.' });
   });
 });
 

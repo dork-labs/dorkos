@@ -20,7 +20,7 @@ import { validateBoundary } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
+import type { LaunchAccountResolution } from '../usage/account-eligibility.js';
 import { creditsAllowedForAgent, creditsIsDefaultFor } from './credits-defaults.js';
 import { creditsCapabilitiesFor } from './credits-protocols.js';
 import { judgeCreditsModel } from './credits-models.js';

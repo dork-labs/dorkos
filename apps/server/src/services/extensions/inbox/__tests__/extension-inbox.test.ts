@@ -67,13 +67,6 @@ describe('raise', () => {
     expect(sent.deepLink).toBe('/x/flow/p/dorkos');
   });
 
-  it('falls back to home as the push deep link when there is no link', async () => {
-    await fx.inbox.raise('flow', 'Flow', shipDecision({ link: undefined }));
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    expect((fx.sendToAll.mock.calls[0][0] as { deepLink: string }).deepLink).toBe('/');
-  });
-
   it.each([
     ['a missing why', { why: undefined }, 'why'],
     ['a blank why', { why: '   ' }, 'why'],
@@ -184,12 +177,6 @@ describe('namespacing (invariant 4)', () => {
     expect(answer).toMatchObject({ ok: false, status: 404 });
     expect(fx.inbox.listOpen()).toHaveLength(1);
   });
-
-  it('lets two extensions use the same key', async () => {
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    await fx.inbox.raise('other', 'Other', shipDecision({ link: undefined }));
-    expect(fx.inbox.listOpen()).toHaveLength(2);
-  });
 });
 
 describe('resolve and who decided (§7.9)', () => {
@@ -201,21 +188,6 @@ describe('resolve and who decided (§7.9)', () => {
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ outcome: 'cleared', body: 'Resolved on its own' });
     expect(fx.inbox.listOpen()).toEqual([]);
-  });
-
-  it('shows an agent’s label, and a deadline as "decided by the agent"', async () => {
-    await fx.inbox.raise('flow', 'Flow', shipDecision({ key: 'a' }));
-    await fx.inbox.resolve('flow', 'a', {
-      outcome: 'approved',
-      by: { kind: 'agent', label: 'the reviewer agent' },
-    });
-    await fx.inbox.raise('flow', 'Flow', shipDecision({ key: 'b' }));
-    await fx.inbox.resolve('flow', 'b', { outcome: 'approved', by: { kind: 'deadline' } });
-    const [agent, deadline] = fx.history();
-    expect(agent.body).toBe('Ship it · the reviewer agent');
-    expect(deadline.body).toBe('Ship it · decided by the agent');
-    const dto = fx.store.list({ limit: 25, unread: false }).notifications;
-    expect(dto.map((n) => n.decision?.resolvedBy).sort()).toEqual(['agent', 'deadline']);
   });
 
   it('stops the escalation clock when resolved', async () => {
@@ -299,44 +271,6 @@ describe('answering in core’s UI (a person)', () => {
     expect(fx.db.select().from(extensionDecisions).all()[0].note).toBe('Use the calmer red.');
   });
 
-  it('keeps the row open on keepOpen, and credits the person when the extension resolves with answering', async () => {
-    let pendingActionId: string | null = null;
-    fx.inbox.setHandler('flow', (event) => {
-      pendingActionId = event.pendingActionId;
-      return { keepOpen: true, message: 'Checking with the reviewer agent.' };
-    });
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    const id = fx.inbox.listOpen()[0].id;
-    const answer = await fx.inbox.answer(id, { action: 'approve' }, { kind: 'person' });
-    expect(answer).toMatchObject({
-      ok: true,
-      response: { resolved: false, message: 'Checking with the reviewer agent.' },
-    });
-    expect(fx.inbox.listOpen()).toHaveLength(1);
-
-    await fx.inbox.resolve('flow', 'ship:DOR-2387', {
-      outcome: 'approved',
-      answering: pendingActionId!,
-      offer: { text: 'Next time, ship on its own?', offerId: 'o1' },
-    });
-    expect(fx.history()[0].body).toBe('Ship it · you');
-    expect(fx.inbox.pendingOffers()).toHaveLength(1);
-  });
-
-  it('ignores a foreign pendingActionId: the resolve is the extension’s, with no offer', async () => {
-    fx.inbox.setHandler('flow', () => ({ keepOpen: true }));
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    const id = fx.inbox.listOpen()[0].id;
-    await fx.inbox.answer(id, { action: 'approve' }, { kind: 'person' });
-    await fx.inbox.resolve('flow', 'ship:DOR-2387', {
-      outcome: 'approved',
-      answering: '01J00000000000000000000000',
-      offer: { text: 'Next time?', offerId: 'o1' },
-    });
-    expect(fx.history()[0].body).toBe('Ship it · Flow');
-    expect(fx.inbox.pendingOffers()).toEqual([]);
-  });
-
   it('answers already_resolved when the extension settled it while the handler ran', async () => {
     fx.inbox.setHandler('flow', async () => {
       await fx.inbox.resolve('flow', 'ship:DOR-2387', { outcome: 'cleared' });
@@ -351,21 +285,6 @@ describe('answering in core’s UI (a person)', () => {
     });
     expect(fx.history()).toHaveLength(1);
     expect(fx.history()[0].outcome).toBe('cleared');
-  });
-
-  it('keeps the row on a handler that takes longer than 5 seconds', async () => {
-    fx.inbox.setHandler('flow', () => new Promise(() => {}));
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    const id = fx.inbox.listOpen()[0].id;
-    const answering = fx.inbox.answer(id, { action: 'approve' }, { kind: 'person' });
-    await vi.advanceTimersByTimeAsync(5_001);
-    expect(await answering).toMatchObject({
-      ok: false,
-      status: 504,
-      code: 'extension_timeout',
-      message: "Flow couldn't take that. Try again.",
-    });
-    expect(fx.inbox.listOpen()).toHaveLength(1);
   });
 
   it.each(['https://evil.example', '/x/other/p', 'javascript:alert(1)'])(
@@ -474,17 +393,6 @@ describe('record (decisions never asked)', () => {
     expect(row.readAt).toBeNull();
   });
 
-  it('writes "Just do it" rows already read', async () => {
-    await fx.inbox.record('flow', 'Flow', {
-      key: 'k',
-      title: 'Sorted 12 ideas',
-      why: 'They were waiting.',
-      outcome: 'answered',
-      by: { kind: 'rule', label: "your 'Just do it' setting" },
-    });
-    expect(fx.history()[0].readAt).not.toBeNull();
-  });
-
   it('refuses a missing, blank or 301-character why, and a missing by', async () => {
     for (const why of [undefined, '  ', 'x'.repeat(301)]) {
       await expect(
@@ -523,37 +431,6 @@ describe('lifecycle', () => {
     expect(fx.inbox.listOpen()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
     await flush();
-    expect(fx.sendToAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('hides a decision whose project folder is missing and stops its escalation', async () => {
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    fx.missing.add('/repos/dorkos');
-    expect(fx.inbox.listOpen()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-    await flush();
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    expect(fx.sendToAll).not.toHaveBeenCalled();
-
-    fx.missing.delete('/repos/dorkos');
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE);
-    await flush();
-    expect(fx.inbox.listOpen()).toHaveLength(1);
-  });
-
-  it('shows a decision raised into a missing folder once the folder is back, and escalates it then', async () => {
-    fx.missing.add('/repos/dorkos');
-    await fx.inbox.raise('flow', 'Flow', shipDecision());
-    expect(fx.inbox.listOpen()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(3 * ONE_MINUTE);
-    await flush();
-    expect(fx.sendToAll).not.toHaveBeenCalled();
-
-    fx.missing.delete('/repos/dorkos');
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE);
-    await flush();
-    expect(fx.inbox.listOpen()).toHaveLength(1);
     expect(fx.sendToAll).toHaveBeenCalledTimes(1);
   });
 

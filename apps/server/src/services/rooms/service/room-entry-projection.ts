@@ -10,7 +10,7 @@
  */
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { defuseFileText, defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
+import { defuseFileText, defuseUntrustedText } from '../../core/untrusted-text/untrusted-fence.js';
 import type { RoomService } from '../room-service.js';
 
 /**

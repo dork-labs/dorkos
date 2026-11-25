@@ -15,7 +15,7 @@ import { OwnerSignInScreen } from './OwnerSignInScreen';
 
 /**
  * App-shell host for the owner-setup flow raised outside `features/auth` — today
- * the tunnel exposure gate (`AUTH_REQUIRED_FOR_EXPOSURE`, task 1.3). Reads the
+ * the tunnel exposure gate (`auth_required_for_exposure`, task 1.3). Reads the
  * shared owner-setup request signal, walks the user through owner creation (or,
  * when an owner already exists, a sign-in as that owner), then retries the
  * original action via `request.onComplete`. It never turns on "Ask for a

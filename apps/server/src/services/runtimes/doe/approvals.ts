@@ -4,9 +4,14 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { ToolDecisionOptions } from '@dorkos/shared/agent-runtime';
 
 import { resolveApprovalDecision } from '../shared/policy/approvals.js';
-import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
-import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import {
+  isProtectedPath,
+  type ProtectedPathRoots,
+} from '../../core/protected-paths/protected-path-check.js';
+import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { checkShellCommand, type ShellCommandVerdict } from '../shared/policy/package-hooks.js';
+import { checkShellProtectedWrites } from '../shared/policy/shell-protected-writes.js';
+import type { ShellChecker } from '../claude-code/shell-guard/guard-host.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { PendingApprovalRegistry } from '../shared/timing/pending-approval-registry.js';
 import { PENDING_APPROVAL_TIMING } from '../shared/timing/pending-approval-timing.js';
@@ -21,6 +26,13 @@ interface PendingApproval {
 /** Approval channel for local engine tools; capability MCP retains its own policy gates. */
 export class DoeApprovals {
   private readonly pending = new PendingApprovalRegistry<PendingApproval>();
+
+  /**
+   * Make a channel.
+   *
+   * @param shellCheck - The shell guard's check (tests); the server's own otherwise.
+   */
+  constructor(private readonly shellCheck?: ShellChecker) {}
 
   /** Return a callback scoped to this turn's clamped mode and cancellation signal. */
   callback(
@@ -42,7 +54,7 @@ export class DoeApprovals {
       ) {
         // A browser sign-in store opens at Full only, read from this turn's clamped mode (DOR-4136).
         const roots = {
-          ...(protectedRoots ?? protectedPathRoots(context.workingDirectory)),
+          ...(protectedRoots ?? turnProtectedRoots(context.workingDirectory)),
           full: mode === 'bypassPermissions',
         };
         const denied =
@@ -56,10 +68,11 @@ export class DoeApprovals {
           return 'deny';
         }
       }
-      // An installed package's own shell guards run before any mode allows the
-      // call, Full included: Doe has no hooks of its own (DOR-4379). A call
-      // whose command cannot be read is still checked, and refused if a guard
-      // applies; a check that throws refuses.
+      // The protected-files list (DOR-4522), then an installed package's own
+      // shell guards, run before any mode allows the call, Full included: Doe
+      // has no hooks of its own (DOR-4379). A call whose command cannot be read
+      // is still checked, and refused at Full or if a guard applies; a check
+      // that throws refuses.
       if (tool.name === 'shell') {
         const command =
           args &&
@@ -68,6 +81,18 @@ export class DoeApprovals {
           typeof args.command === 'string'
             ? args.command
             : undefined;
+        const listed = await checkShellProtectedWrites({
+          command,
+          roots: {
+            ...(protectedRoots ?? turnProtectedRoots(context.workingDirectory)),
+            cwd: context.workingDirectory,
+          },
+          full: mode === 'bypassPermissions',
+          runtime: 'doe',
+          ...(this.shellCheck ? { check: this.shellCheck } : {}),
+        });
+        if (signal.aborted || context.signal.aborted) return 'deny';
+        if (!listed.allowed) return { decision: 'deny', reason: listed.reason };
         let verdict: ShellCommandVerdict;
         try {
           verdict = await checkShellCommand({

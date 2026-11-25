@@ -72,9 +72,18 @@ it('keeps plain/no-op saves receipt-free and preserves complete conflict metadat
     effect: 'no_op',
   });
   vi.mocked(fetch).mockResolvedValueOnce(
-    new Response(JSON.stringify({ currentHash: 'other', currentContent: 'external' }), {
-      status: 409,
-    })
+    new Response(
+      JSON.stringify({
+        type: 'urn:dorkos:problem:precondition_failed',
+        title: 'Something changed since you last looked.',
+        status: 412,
+        code: 'precondition_failed',
+        detail: 'This file changed since you opened it.',
+        currentHash: 'other',
+        currentContent: 'external',
+      }),
+      { status: 412, headers: { 'Content-Type': 'application/problem+json' } }
+    )
   );
   expect(await transport.writeFile('/work', 'doc.md', 'draft')).toEqual({
     ok: false,

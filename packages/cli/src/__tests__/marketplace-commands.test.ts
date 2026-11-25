@@ -91,9 +91,11 @@ describe('runMarketplaceAdd', () => {
     // the one-line "no".
     const fetchMock = vi.fn().mockResolvedValueOnce(
       mockResponse(403, {
-        error: 'Only the person running DorkOS can add a package source',
-        code: 'operator_only_marketplace_source',
-        message: 'DorkOS added nothing. Ask them to run `dorkos marketplace add <url> --name <n>`.',
+        type: 'urn:dorkos:problem:operator_only',
+        title: 'Only the person at this computer can do that.',
+        status: 403,
+        code: 'operator_only',
+        detail: 'DorkOS added nothing. Ask them to run `dorkos marketplace add <url> --name <n>`.',
       })
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -102,20 +104,23 @@ describe('runMarketplaceAdd', () => {
 
     expect(code).toBe(1);
     const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErr).toContain('Only the person running DorkOS can add a package source');
+    expect(allErr).toContain('DorkOS added nothing.');
     expect(allErr).toContain('Ask them to run');
   });
 
   it('says exactly where in the app to add it when it needs you signed in (DOR-3330)', async () => {
-    const message =
-      'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.';
+    const message = "Adding a source needs you signed in. Add it in the app's Marketplace sources.";
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          mockResponse(403, { error: message, code: 'marketplace_source_needs_app' })
-        )
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(403, {
+          type: 'urn:dorkos:problem:person_only',
+          title: 'Only a person can do that, not an agent.',
+          status: 403,
+          code: 'person_only',
+          detail: message,
+        })
+      )
     );
 
     const code = await runMarketplaceAdd({ url: 'https://example.com/marketplace' });

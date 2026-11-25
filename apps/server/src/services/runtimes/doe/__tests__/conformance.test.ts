@@ -44,6 +44,9 @@ runtimeGuardConformance(() => makeRuntime());
 
 runtimeConformance(() => makeRuntime(), {
   name: 'DoeRuntime — AgentRuntime conformance',
+  // Spec `turns-survive-restarts` §7.2: declared `false` until T19c.
+  restartContinueUnprovenReason:
+    'a tool call cut before its result is restored with no result; T19c repairs that and flips this with a measured run',
   hangingInterrupt: async (runtime, id) => {
     let entered = false;
     let release!: () => void;

@@ -1,14 +1,41 @@
 name: Codex binary (macOS)
 
 # The real Codex binary suites from test.yml's `codex-sandbox` job, on a hosted
-# macOS runner. That job runs them on Linux only, and the macOS answer used to
-# mean running the binary on a team member's Mac. This gives a release gate a
-# macOS result without that.
+# macOS runner. Codex sandboxes commands with Seatbelt on macOS and bubblewrap
+# on Linux, and `codex-sandbox` covers Linux only: a secret-protection test
+# failed on a Mac with no CI signal at all (DOR-4402). This gives every change
+# that can reach those suites, and every release, a macOS result.
 #
-# NOT a required check, and it never runs on merge_group: it holds a macOS
-# runner, the scarcest GitHub-hosted resource. It runs on a pull request only
-# when the Codex runtime, its pinned packages, this file or VERSION change
-# (VERSION is the file every release PR edits), and when a person dispatches it.
+# THE CHECK IS `codex-sandbox-macos`, the fan-in at the bottom, and it reports
+# on every pull request and every merge-queue build, so it can be required (a
+# required check must always report; a `paths:` filter on the trigger would
+# leave it waiting). What it costs is decided inside the run:
+#
+#   scope               ubuntu, about a minute. Diffs the change and asks
+#                       scripts/codex-macos-scope.sh, read from the BASE
+#                       commit, whether it can reach the Codex suites.
+#   attest              ubuntu, merge_group only, and only for a Codex change.
+#                       When `codex-sandbox-macos` already succeeded on the
+#                       entry PR's current head (scripts/attest-pr-check.sh,
+#                       DOR-5130), the queue does not pay for macOS again.
+#   codex-binary-macos  macOS, about five minutes. Runs only for a Codex change
+#                       that is not attested, and on every dispatch.
+#   codex-sandbox-macos the fan-in. Green when the change cannot reach the
+#                       suites, when the macOS job passed, or when the queue
+#                       proved the pass on the PR head. Red on anything else,
+#                       including a scope it cannot read (fail closed).
+#
+# AFTER MERGE TOO: a push to main runs the same graph against the merge, and
+# after-merge-alert.yml tells the author when it is red. That is the backstop
+# for the queue's attested skip and for two Codex changes that only clash once
+# combined. One run per merged commit (the concurrency group is the SHA), so a
+# red names one merge.
+#
+# NO SECRETS, NO KEYCHAIN. No job reads a secret, every checkout drops its
+# credentials, and the token is read-only. The suites run the vendored binary
+# against a throwaway HOME and CODEX_HOME with no API key and a local fake
+# provider on 127.0.0.1; the protected-file probes use fake secrets. Nothing
+# here touches the runner's login Keychain.
 #
 # Same four files and the same protected probes as `codex-sandbox`, minus the
 # Linux bubblewrap setup. One difference: many app-server rows are Linux-only by
@@ -17,29 +44,152 @@ name: Codex binary (macOS)
 # binary-missing placeholder must not appear.
 on:
   pull_request:
-    paths:
-      - apps/server/src/services/runtimes/codex/**
-      - apps/server/package.json
-      - pnpm-lock.yaml
-      - VERSION
-      - .github/workflows/codex-binary-macos.yml
+  merge_group:
+  # After merge too: the backstop for the attested skip (after-merge-alert.yml).
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Superseded pushes to a pull request cancel their run. Queue refs are unique
+# per build, and a push to main is grouped by its SHA so every merge keeps its
+# own run (after-merge-alert.yml names the merge from it).
 concurrency:
-  group: codex-binary-macos-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: codex-binary-macos-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # Decides whether this change can reach the macOS Codex suites. It writes
+  # `codex=true|false` and never fails on doubt: every way it cannot decide
+  # answers true and runs the suites. Pinned by
+  # scripts/__tests__/codex-macos-workflow.test.ts.
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      codex: ${{ steps.scope.outputs.codex }}
+    steps:
+      # Depth 2: a pull request's test-merge commit and a queue entry's commit
+      # both need their first parent, the base this change lands on.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      # pull_request diffs the test-merge commit against its first parent and
+      # requires a second parent, so a plain commit cannot score only its last
+      # change. merge_group diffs the entry's commit against its first parent:
+      # main plus every entry ahead of it, so it sees only this entry. A push to
+      # main diffs against `before`, every commit the push brought. The list
+      # comes from the BASE commit, never this checkout, so a change cannot edit
+      # the rule that grades it. `core.quotePath=false` so a non-ASCII path is
+      # itself; `--no-renames` so moving a file out of scope still shows its
+      # source. A dispatch always runs.
+      - name: Decide whether this change can reach the macOS Codex suites
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -uo pipefail
+          answer() {
+            echo "$2"
+            echo "codex=$1" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          base=
+          case $EVENT in
+            pull_request)
+              if git rev-parse --verify --quiet 'HEAD^2' >/dev/null; then
+                base=$(git rev-parse --verify --quiet 'HEAD^1') || base=
+              fi
+              [ -n "$base" ] || answer true 'no test-merge commit to diff; the macOS suites run'
+              ;;
+            merge_group)
+              base=$(git rev-parse --verify --quiet 'HEAD^1') || answer true 'the queue commit has no parent here; the macOS suites run'
+              ;;
+            push)
+              if [[ "$BEFORE" =~ ^[0-9a-f]{40}$ ]] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+                if git cat-file -e "$BEFORE^{commit}" 2>/dev/null || git fetch --quiet --no-tags --depth=1 origin "$BEFORE"; then
+                  base=$BEFORE
+                fi
+              fi
+              [ -n "$base" ] || base=$(git rev-parse --verify --quiet 'HEAD^1') || answer true 'no commit before this push to diff; the macOS suites run'
+              ;;
+            *) answer true "a $EVENT run always runs the macOS suites" ;;
+          esac
+          lane=${RUNNER_TEMP:-/tmp}/codex-macos-scope
+          mkdir -p "$lane"
+          git cat-file blob "$base:scripts/codex-macos-scope.sh" > "$lane/scope.sh" 2>/dev/null ||
+            answer true 'the base commit has no codex-macos-scope.sh; the macOS suites run'
+          changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD) ||
+            answer true 'git could not diff this change; the macOS suites run'
+          verdict=$(printf '%s\n' "$changed" | bash "$lane/scope.sh") ||
+            answer true 'the scope list failed; the macOS suites run'
+          [ "$verdict" = false ] || answer true 'this change can reach the macOS Codex suites; they run'
+          answer false 'Nothing in this change can reach the macOS Codex suites, so they do not run here. test.yml runs the same suites on Linux on every change.'
+
+  # DOR-5130's attested exit, for a Codex change in the merge queue: the macOS
+  # job is skipped when `codex-sandbox-macos` already succeeded on the entry
+  # PR's current head (scripts/attest-pr-check.sh, read from main). Any doubt,
+  # error or missing run runs the real suites.
+  attest:
+    needs: scope
+    if: ${{ github.event_name == 'merge_group' && needs.scope.outputs.codex == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+    outputs:
+      attested: ${{ steps.attest.outputs.attested }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/attest-pr-check.sh
+            scripts/queue-repeat-guard.sh
+          sparse-checkout-cone-mode: false
+      - name: Did codex-sandbox-macos already pass on this PR's head?
+        id: attest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        # The checkout above is main's. A missing script runs the real suites:
+        # never toward skipping. Pinned by
+        # packages/ci-steward/src/__tests__/workflow-script-checkout.test.ts.
+        run: |
+          if [ ! -f scripts/attest-pr-check.sh ]; then
+            echo "attested=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::scripts/attest-pr-check.sh is not on main yet, so the macOS suites run."
+            exit 0
+          fi
+          bash scripts/attest-pr-check.sh codex-sandbox-macos "$HEAD_REF" >> "$GITHUB_OUTPUT"
+
   codex-binary-macos:
+    needs: [scope, attest]
+    # Only for a change scope says can reach the suites (every dispatch does),
+    # and not when the queue proved the pass on the PR head. A failed attest
+    # skips it too: the fan-in fails closed on that, so a macOS run would be
+    # thrown away.
+    if: >-
+      ${{ !cancelled() && needs.scope.result == 'success' && needs.scope.outputs.codex == 'true' &&
+      (needs.attest.result == 'skipped' || needs.attest.result == 'success') &&
+      needs.attest.outputs.attested != 'true' }}
     runs-on: macos-latest
-    # codex-sandbox's ceiling, with room for a cold macOS install and build.
-    # Lower it once there are runs to measure.
+    # 98 green runs, Nov 15-25: p50 5.1 minutes, slowest 7.5. Lower it once
+    # there are queue and main runs to measure too.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -105,3 +255,53 @@ jobs:
           path: vitest-report.json
           if-no-files-found: warn
           retention-days: 14
+
+  # THE ONE PRODUCER of the `codex-sandbox-macos` context, on every event. Do
+  # not rename it: it is the check the ruleset will require and the name
+  # attest-pr-check.sh looks up. `always()` so a red, cancelled or skipped
+  # dependency reports here as a failure, never as a skipped (passing) check.
+  # Pinned by scripts/__tests__/codex-macos-workflow.test.ts.
+  codex-sandbox-macos:
+    needs: [scope, attest, codex-binary-macos]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Require the macOS suites green, no Codex change, or a proven pass
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE: ${{ needs.scope.result }}
+          CODEX: ${{ needs.scope.outputs.codex }}
+          ATTEST: ${{ needs.attest.result }}
+          ATTESTED: ${{ needs.attest.outputs.attested }}
+          MACOS: ${{ needs.codex-binary-macos.result }}
+        run: |
+          fail() {
+            echo "::error title=codex-sandbox-macos::$1"
+            exit 1
+          }
+          [ "$SCOPE" = success ] || fail "the scope job ended '$SCOPE', so this check cannot tell whether the macOS suites had to run. Re-run the workflow."
+          case $ATTEST in
+            success | skipped) ;;
+            *) fail "the attest job ended '$ATTEST', so this check cannot tell whether the macOS run was skipped on purpose. Re-run the workflow." ;;
+          esac
+          case $CODEX in
+            false)
+              [ "$MACOS" = skipped ] || fail "scope found no Codex change, but the macOS job ended '$MACOS'."
+              echo "Nothing in this change can reach the macOS Codex suites; nothing to run."
+              exit 0
+              ;;
+            true) ;;
+            *) fail "the scope job gave no answer ('$CODEX'), so this check fails closed." ;;
+          esac
+          if [ "$MACOS" = success ]; then
+            echo "The macOS Codex suites passed."
+            exit 0
+          fi
+          if [ "$EVENT" = merge_group ] && [ "$ATTEST" = success ] && [ "$ATTESTED" = true ] && [ "$MACOS" = skipped ]; then
+            echo "codex-sandbox-macos already passed on this entry's pull request head; the queue did not run macOS again (DOR-5130)."
+            exit 0
+          fi
+          fail "this change can reach the macOS Codex suites and the macOS job ended '$MACOS'."

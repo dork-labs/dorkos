@@ -352,6 +352,8 @@ describe('AdapterManager config and lifecycle', () => {
         await expect(attempt).rejects.toThrow(
           'A webhook must use its own address under relay.webhook.'
         );
+        // The field's key, for the form to mark; never its value (DOR-4979).
+        await expect(attempt).rejects.toMatchObject({ fields: ['inbound.subject'] });
         expect(writeFile).not.toHaveBeenCalled();
         expect(registry.register).not.toHaveBeenCalled();
       }
@@ -418,7 +420,9 @@ describe('AdapterManager config and lifecycle', () => {
       expect(built[0]).not.toHaveProperty('label');
     });
 
-    it('records adapter.error and rethrows when the start fails', async () => {
+    // A start that fails after the save is not "nothing happened": the config is
+    // on disk, so a retry would only meet DUPLICATE_ID (review on DOR-4979).
+    it('records adapter.error and says it was saved but did not start', async () => {
       withConfig(EMPTY_CONFIG);
       const eventRecorder = { insertAdapterEvent: vi.fn() };
       const failing = createMockRegistry();
@@ -426,7 +430,11 @@ describe('AdapterManager config and lifecycle', () => {
       const m = new AdapterManager(failing, CONFIG_PATH, { ...mockDeps, eventRecorder });
       await m.initialize();
 
-      await expect(m.addAdapter('webhook', 'wh-fail', NEW_HOOK)).rejects.toThrow('start failed');
+      await expect(m.addAdapter('webhook', 'wh-fail', NEW_HOOK)).rejects.toMatchObject({
+        code: 'START_FAILED',
+        adapterId: 'wh-fail',
+      });
+      expect(m.listAdapters().map((a) => a.config.id)).toContain('wh-fail');
       expect(eventRecorder.insertAdapterEvent).toHaveBeenCalledWith(
         'wh-fail',
         'adapter.error',

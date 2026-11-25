@@ -132,7 +132,7 @@ describe('POST /api/tasks — the account rule', () => {
       .send({ ...BODY, reason: PROPOSAL_REASON, account: 'client' });
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: SENTENCE, code: 'account_not_allowed_here' });
+    expect(res.body).toMatchObject({ detail: SENTENCE, code: 'account_not_allowed_here' });
     expect(store.getTasks()).toHaveLength(0);
     expect(emit).not.toHaveBeenCalled();
   });
@@ -154,7 +154,7 @@ describe('POST /api/tasks — the account rule', () => {
       .send({ ...BODY, account: 'client' });
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: SENTENCE, code: 'account_not_allowed_here' });
+    expect(res.body).toMatchObject({ detail: SENTENCE, code: 'account_not_allowed_here' });
     expect(store.getTasks()).toHaveLength(0);
   });
 
@@ -186,11 +186,12 @@ describe('PATCH /api/tasks/:id — the account rule', () => {
 
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
-      error: SENTENCE,
+      detail: SENTENCE,
       code: 'account_not_allowed_here',
       accountId: 'client',
-      project: { root: '/work/project', name: 'project' },
     });
+    // The project's root is a path: a problem never carries one.
+    expect(JSON.stringify(res.body)).not.toContain('/work/project');
     expect(store.getTask(task.id)?.account).toBe('work');
   });
 
@@ -202,7 +203,7 @@ describe('PATCH /api/tasks/:id — the account rule', () => {
       .send({ account: 'client' });
 
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ error: SENTENCE, code: 'account_not_allowed_here' });
+    expect(res.body).toMatchObject({ detail: SENTENCE, code: 'account_not_allowed_here' });
     expect(store.getTask(task.id)?.account).toBe('work');
   });
 });
@@ -215,7 +216,7 @@ describe('the model of a schedule on DorkOS credits (DOR-2636)', () => {
       .post('/api/tasks')
       .send({ ...BODY, account: 'dorkos-credits', model: 'md_not_covered' });
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: REFUSAL, code: 'UNSUPPORTED_MODEL' });
+    expect(res.body).toMatchObject({ detail: REFUSAL, code: 'invalid_request' });
     expect(store.getTasks()).toHaveLength(0);
   });
 
@@ -228,7 +229,7 @@ describe('the model of a schedule on DorkOS credits (DOR-2636)', () => {
       .patch(`/api/tasks/${created.body.id}`)
       .send({ model: 'md_not_covered' });
     expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ error: REFUSAL, code: 'UNSUPPORTED_MODEL' });
+    expect(res.body).toMatchObject({ detail: REFUSAL, code: 'invalid_request' });
     expect(store.getTask(created.body.id)?.model).toBe('md_covered');
   });
 });

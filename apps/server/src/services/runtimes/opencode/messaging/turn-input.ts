@@ -1,6 +1,6 @@
 import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
-import { formatContextWarning } from '../../../session/agent-compaction/context-warning-block.js';
+import { formatContextWarning } from '../../shared/prose/context-warning-block.js';
 /**
  * Per-turn input shaping for the OpenCode runtime: the `session.promptAsync`
  * body assembly that delivers the neutral additional-context bag (ADR-0273)
@@ -44,7 +44,7 @@ import {
   fitItemOf,
   joinFitted,
   type ContextPart,
-} from '../../shared/window/context-fit.js';
+} from '../../../session/context-window/context-fit.js';
 import { openCodeProjectInstructions } from './project-instructions.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */

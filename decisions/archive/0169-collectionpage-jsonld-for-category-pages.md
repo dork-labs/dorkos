@@ -1,7 +1,7 @@
 ---
 number: 169
 title: Use CollectionPage JSON-LD for Feature Category Pages
-status: draft
+status: archived
 created: 2026-03-21
 spec: site-feature-category-pages
 superseded-by: null

@@ -58,7 +58,7 @@ describe('held-back global packages', () => {
       expect.objectContaining({ capabilityId: 'marketplace.activate_global_plugin' }),
     ]);
     expect(missing.status).toBe(409);
-    expect(missing.body.error).toBe('nope is not held back.');
+    expect(missing.body.detail).toBe('This package has nothing to review right now.');
   });
 
   it('takes a decision only from the person, bound to what they were shown', async () => {
@@ -73,7 +73,7 @@ describe('held-back global packages', () => {
     expect(byAgent.body.code).toBe('operator_only');
 
     h.agentHeader = undefined;
-    expect((await decide('sha256:other')).status).toBe(409);
+    expect((await decide('sha256:other')).status).toBe(412);
     expect(await heldBackNames()).toEqual(['held']);
 
     expect((await decide(shown.bindsTo)).status).toBe(204);
@@ -105,8 +105,8 @@ describe('POST /packages/:name/keep-files (DOR-2341)', () => {
 
     const res = await keep({ keepKey });
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('kept_files_changed');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(await unprovenOnDisk(root)).toBeDefined();
   });
 

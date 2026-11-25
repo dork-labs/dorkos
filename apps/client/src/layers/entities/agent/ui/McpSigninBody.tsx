@@ -128,8 +128,8 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
  * like a second, nested disclosure, which is the very thing this surface exists
  * to avoid.
  *
- * A failure leads with the plain reason and keeps the raw OAuth text behind
- * Details (DOR-982). One family gets an extra offer: when the provider will not
+ * A failure leads with the plain reason (DOR-982); the raw OAuth text never
+ * leaves the server. One family gets an extra offer: when the provider will not
  * let DorkOS register itself, the person can paste app credentials they already
  * have and the sign-in restarts with them. The copy stays scoped to what that
  * actually does — it supplies an app identity. It does not promise to fix a
@@ -215,12 +215,6 @@ export function McpSigninBody({
           <p role="alert" className="text-destructive text-xs leading-relaxed">
             {state.error ?? 'Sign-in didn’t finish. Try again.'}
           </p>
-          {state.errorDetail && (
-            <details className="text-muted-foreground text-xs">
-              <summary className="cursor-pointer focus-visible:ring-2">Details</summary>
-              <code className="text-2xs mt-1 block font-mono break-all">{state.errorDetail}</code>
-            </details>
-          )}
           {showCredentialsForm ? (
             <McpClientCredentialsForm
               onSave={(credentials) => flow.useOwnCredentials(credentials)}

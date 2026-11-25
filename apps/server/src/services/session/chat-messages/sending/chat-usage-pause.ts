@@ -2,9 +2,9 @@
 import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
-import { isCreditsClaudeRoot } from '../../../runtimes/claude-code/credits-root.js';
 import { billingAccountFor, peekBillingUsage } from '../../fleet/session-account.js';
 import { getSessionLimitStore } from '../../fleet/session-limit-store.js';
+import { claudeCodeFacts } from '../../resolution/claude-code-facts.js';
 import { queueKeyOf } from '../../resolution/session-key-registry.js';
 import { peekProjector } from '../../session-state-projector.js';
 import type { ChatUsagePause } from './chat-usage-recovery.js';
@@ -39,7 +39,7 @@ export async function chatUsagePauseOf(
     runtime.type === 'claude-code' &&
     billing?.perToken === false &&
     billing.root !== undefined &&
-    !isCreditsClaudeRoot(billing.root);
+    !claudeCodeFacts().isCreditsRoot(billing.root);
   const usage =
     store && billing && (runtime.type !== 'claude-code' || subscription)
       ? peekBillingUsage(store, billing)

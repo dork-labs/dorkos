@@ -23,7 +23,7 @@ describe('tunnel confirmation', () => {
     expect(tunnelManager.start).not.toHaveBeenCalled();
     expect(configManager.get('tunnel').enabled).toBe(false);
     expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(tunnelManager.start).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -39,8 +39,8 @@ describe('tunnel confirmation', () => {
     configManager.set('tunnel', { ...configManager.get('tunnel'), authtoken: 'made-up-new-token' });
     const confirmed = await owner.confirm(held.body.heldActionId);
     expect(confirmed.body).toMatchObject({
-      status: 409,
-      result: { code: 'TUNNEL_SETTINGS_CHANGED' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(tunnelManager.start).not.toHaveBeenCalled();
     expect(configManager.get('tunnel').enabled).toBe(false);

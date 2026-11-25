@@ -28,9 +28,9 @@ import {
   peekProjector,
   setSessionEventStore,
   SessionEventStore,
-  TranscriptReader,
   type SessionStateProjector,
 } from '../../../session/index.js';
+import { TranscriptReader } from '../sessions/transcript-reader.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 
 const HISTORY: HistoryMessage[] = [

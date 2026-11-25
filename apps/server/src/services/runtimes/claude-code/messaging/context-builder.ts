@@ -1,6 +1,6 @@
 import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
-import { formatContextWarning } from '../../../session/agent-compaction/context-warning-block.js';
+import { formatContextWarning } from '../../shared/prose/context-warning-block.js';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
@@ -10,7 +10,7 @@ import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
-import * as uiContract from '../../shared/ui-tool-contract.js';
+import * as uiContract from '../../../session/browser-seat/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import {
   renderProseContextBlock,
@@ -391,7 +391,7 @@ everything else keeps working.
  * Build the static `<ui_tools>` context block.
  *
  * Its two lists are GENERATED from `UiCanvasContentSchema` and `UiCommandSchema`
- * by the catalogs in `runtimes/shared/ui-tool-contract.ts`, which is also what
+ * by the catalogs in `session/browser-seat/ui-tool-contract.ts`, which is also what
  * the tool's own description is composed from — so the block and the tool can no
  * longer name different sets. Hand-written, they had drifted to 10 content types
  * here against 6 on the tool and 14 in the schema. The block names each action

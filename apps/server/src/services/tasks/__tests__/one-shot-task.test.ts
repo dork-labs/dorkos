@@ -22,6 +22,11 @@ import { TaskSchedulerService, type SchedulerAgentManager } from '../task-schedu
 import { TaskStore } from '../task-store.js';
 import { mergePins, pinPrograms } from '../allow-list/allow-list-pins.js';
 import { LEVEL_DROPPED_MESSAGE, PROGRAM_CHANGED_MESSAGE } from '../allow-list/run-allow-list.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const CONFIG = { maxConcurrentRuns: 2, retentionCount: 100, mayFire: true, firingReason: 'test' };
 

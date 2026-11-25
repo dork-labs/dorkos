@@ -105,7 +105,7 @@ it('keeps a generic 404 uncertain because server currentness checks may follow t
   vi.mocked(transport.writeFile).mockRejectedValue(
     Object.assign(new Error('closed after rename'), {
       status: 404,
-      code: 'CANVAS_DOCUMENT_NOT_FOUND',
+      code: 'not_found',
     })
   );
   await expect(
@@ -117,7 +117,7 @@ it('keeps a generic 404 uncertain because server currentness checks may follow t
 it('clears an explicit durable pre-effect failure and never claims its receipt', async () => {
   const lane = new FileReceiptOperation();
   vi.mocked(transport.writeFile).mockRejectedValue(
-    Object.assign(new Error('failed before effect'), { status: 412, code: 'DOC_SAVE_FAILED' })
+    Object.assign(new Error('failed before effect'), { status: 412, code: 'save_not_applied' })
   );
   await expect(
     lane.write(transport, '/work', 'a.md', 'draft', { expectedContent: 'base' }, binding)

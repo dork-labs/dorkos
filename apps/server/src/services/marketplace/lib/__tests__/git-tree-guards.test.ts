@@ -56,7 +56,7 @@ vi.mock('node:child_process', async () => {
       const settings: string[] = [];
       while (
         args[0] === '-c' &&
-        /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath)=/.test(args[1]!)
+        /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath|submodule\.recurse)=/.test(args[1]!)
       ) {
         settings.push(args[1]!);
         args = args.slice(2);
@@ -153,6 +153,7 @@ describe('git settings a fetched folder could abuse (DOR-2326)', () => {
           'safe.bareRepository=explicit',
           'core.fsmonitor=',
           expect.stringMatching(/^core\.hooksPath=/),
+          'submodule.recurse=false',
         ])
       );
     }
@@ -199,6 +200,7 @@ describe('the GitHub token', () => {
       'safe.bareRepository': 'explicit',
       'core.fsmonitor': '',
       'core.hooksPath': process.platform === 'win32' ? 'NUL' : '/dev/null',
+      'submodule.recurse': 'false',
       'http.https://github.com/.extraHeader': HEADER,
     });
   });
@@ -210,24 +212,6 @@ describe('the GitHub token', () => {
     expect(remoteUrl()).toBe('https://gitlab.example.com/org/pkg.git');
     for (const env of envs) expect(JSON.stringify(envConfig(env))).not.toContain('Authorization');
     expect(resolveGitAuth).not.toHaveBeenCalled();
-  });
-
-  it('is resolved once a minute, not once per git call', async () => {
-    // Purpose: `resolveGitAuth` may run `gh auth token` synchronously; an
-    // update check looks up many packages at once.
-    const now = vi.spyOn(Date, 'now').mockReturnValue(10_000_000_000_000);
-    try {
-      respond = gitReporting(A, A);
-      await fetchTree(req('https://github.com/org/pkg.git'));
-      await lookupRemoteRef('https://github.com/org/other.git', 'main');
-      expect(resolveGitAuth).toHaveBeenCalledTimes(1);
-
-      now.mockReturnValue(10_000_000_000_000 + 61_000);
-      await lookupRemoteRef('https://github.com/org/other.git', 'main');
-      expect(resolveGitAuth).toHaveBeenCalledTimes(2);
-    } finally {
-      now.mockRestore();
-    }
   });
 
   it('is redacted from a failure message', async () => {

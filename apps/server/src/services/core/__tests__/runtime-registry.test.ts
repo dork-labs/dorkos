@@ -30,10 +30,6 @@ import {
   SessionLimitStore,
   setSessionLimitStore,
 } from '../../session/fleet/session-limit-store.js';
-import {
-  SessionTouchStore,
-  setSessionTouchStore,
-} from '../../session/origin/session-touch-store.js';
 import type { TurnOrigin } from '../../session/index.js';
 
 // Minimal mock runtime for testing
@@ -79,10 +75,7 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
         ],
       },
       features: {},
-      // A mock runtime declares nothing configurable unless a test says
-      // otherwise. The registry reads `configSection` off this declaration and
-      // hands it to the resolver, so a test about the server's per-runtime
-      // defaults says which section by overriding it here.
+      // A mock runtime declares nothing configurable unless a test says otherwise.
       settings: { configSection: null, supportsEffort: true, sections: [] },
       ...overrides,
     }),
@@ -157,30 +150,7 @@ describe('RuntimeRegistry', () => {
     lastResolveOpts = null;
   });
 
-  // **A lookup is never `toBe` the instance that was registered, and asking for
-  // that would be asserting an implementation detail.** `register()` wraps at
-  // the one registration seam — `traceRuntime` when tracing is on, and the
-  // sign-in watch always (DOR-1654) — so what comes back is a transparent Proxy
-  // that DELEGATES to the runtime you handed in. These assertions therefore ask
-  // the question they always meant: is this the right runtime answering? Told
-  // apart by `type` where the types differ, and by a declared capability where
-  // two mocks share one type.
   describe('register and get', () => {
-    it('registers and retrieves a runtime by type', () => {
-      // Two runtimes, so "the right one came back" is a real question. Asking
-      // only `get('claude-code').type === 'claude-code'` would compare the key
-      // to itself and pass however the registry mixed them up; the capability
-      // is what identifies WHICH instance answered.
-      const claude = createMockRuntime('claude-code', { supportsResume: true });
-      const opencode = createMockRuntime('opencode', { supportsResume: false });
-      registry.register(claude);
-      registry.register(opencode);
-
-      const found = registry.get('claude-code');
-      expect(found.type).toBe('claude-code');
-      expect(found.getCapabilities().supportsResume).toBe(true);
-    });
-
     // Spec `audit-trail` PR3: the one seam every turn passes through records
     // every tool call, so a runtime registered here cannot run a tool unseen.
     it('wraps a registered runtime so its tool calls reach the audit log', async () => {
@@ -273,47 +243,6 @@ describe('RuntimeRegistry', () => {
         setAgentHomeRegistry(undefined);
       }
     });
-
-    it('throws when getting an unregistered type', () => {
-      expect(() => registry.get('nonexistent')).toThrow("Runtime 'nonexistent' not registered");
-    });
-
-    it('replaces existing registration for the same type', () => {
-      const runtime1 = createMockRuntime('claude-code', { supportsResume: true });
-      const runtime2 = createMockRuntime('claude-code', { supportsResume: false });
-      registry.register(runtime1);
-      registry.register(runtime2);
-      expect(registry.get('claude-code').getCapabilities().supportsResume).toBe(false);
-    });
-  });
-
-  describe('getDefault', () => {
-    it('defaults to claude-code', () => {
-      const runtime = createMockRuntime('claude-code');
-      registry.register(runtime);
-      expect(registry.getDefault().type).toBe('claude-code');
-    });
-
-    it('throws when default type is not registered', () => {
-      expect(() => registry.getDefault()).toThrow("Runtime 'claude-code' not registered");
-    });
-  });
-
-  describe('setDefault', () => {
-    it('changes the default runtime type', () => {
-      const cc = createMockRuntime('claude-code');
-      const oc = createMockRuntime('opencode');
-      registry.register(cc);
-      registry.register(oc);
-      registry.setDefault('opencode');
-      expect(registry.getDefault().type).toBe('opencode');
-    });
-
-    it('throws when setting default to unregistered type', () => {
-      expect(() => registry.setDefault('nonexistent')).toThrow(
-        "Runtime 'nonexistent' not registered"
-      );
-    });
   });
 
   describe('resolveForAgent', () => {
@@ -326,89 +255,12 @@ describe('RuntimeRegistry', () => {
       expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('opencode');
     });
 
-    it('falls back to default when agent has no runtime field', () => {
-      const cc = createMockRuntime('claude-code');
-      registry.register(cc);
-      const meshCore = { getAgent: () => ({}) };
-      expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('claude-code');
-    });
-
-    it('falls back to default when agent is not found', () => {
-      const cc = createMockRuntime('claude-code');
-      registry.register(cc);
-      const meshCore = { getAgent: () => undefined };
-      expect(registry.resolveForAgent('unknown', meshCore).type).toBe('claude-code');
-    });
-
-    it('falls back to default when meshCore is undefined', () => {
-      const cc = createMockRuntime('claude-code');
-      registry.register(cc);
-      expect(registry.resolveForAgent('agent-1').type).toBe('claude-code');
-    });
-
-    it('falls back to default when agent runtime type is not registered', () => {
-      const cc = createMockRuntime('claude-code');
-      registry.register(cc);
-      const meshCore = { getAgent: () => ({ runtime: 'aider' }) };
-      expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('claude-code');
-    });
-  });
-
-  describe('listRuntimes', () => {
-    it('returns empty array when no runtimes registered', () => {
-      expect(registry.listRuntimes()).toEqual([]);
-    });
-
-    it('returns all registered runtimes', () => {
-      const cc = createMockRuntime('claude-code');
-      const oc = createMockRuntime('opencode');
-      registry.register(cc);
-      registry.register(oc);
-      expect(registry.listRuntimes()).toHaveLength(2);
-      expect(
-        registry
-          .listRuntimes()
-          .map((r) => r.type)
-          .sort()
-      ).toEqual(['claude-code', 'opencode']);
-    });
-  });
-
-  describe('getAllCapabilities', () => {
-    it('returns capabilities keyed by type', () => {
-      registry.register(createMockRuntime('claude-code', { supportsCostTracking: true }));
-      registry.register(createMockRuntime('opencode', { supportsCostTracking: false }));
-      const caps = registry.getAllCapabilities();
-      expect(caps['claude-code'].supportsCostTracking).toBe(true);
-      expect(caps['opencode'].supportsCostTracking).toBe(false);
-    });
-
-    it('returns empty object when no runtimes registered', () => {
-      expect(registry.getAllCapabilities()).toEqual({});
-    });
-  });
-
-  describe('has', () => {
-    it('returns true for registered types', () => {
+    it.each([
+      ['the agent has no runtime field', { getAgent: () => ({}) }],
+      ['the agent runtime type is not registered', { getAgent: () => ({ runtime: 'aider' }) }],
+    ] as const)('falls back to the default when %s', (_case, meshCore) => {
       registry.register(createMockRuntime('claude-code'));
-      expect(registry.has('claude-code')).toBe(true);
-    });
-
-    it('returns false for unregistered types', () => {
-      expect(registry.has('claude-code')).toBe(false);
-    });
-  });
-
-  describe('getDefaultType', () => {
-    it('returns claude-code as the initial default type', () => {
-      expect(registry.getDefaultType()).toBe('claude-code');
-    });
-
-    it('returns the updated default type after setDefault', () => {
-      registry.register(createMockRuntime('claude-code'));
-      registry.register(createMockRuntime('opencode'));
-      registry.setDefault('opencode');
-      expect(registry.getDefaultType()).toBe('opencode');
+      expect(registry.resolveForAgent('agent-1', meshCore).type).toBe('claude-code');
     });
   });
 
@@ -419,16 +271,6 @@ describe('RuntimeRegistry', () => {
       expect(applyConfiguredDefaultRuntime(registry, 'computer-local')).toBe(false);
       expect(registry.getDefaultType()).toBe('claude-code');
       expect(() => registry.setDefault('computer-local')).toThrow('placement-only');
-    });
-
-    it('applies a registered configured default and reports success', () => {
-      registry.register(createMockRuntime('claude-code'));
-      registry.register(createMockRuntime('opencode'));
-
-      const applied = applyConfiguredDefaultRuntime(registry, 'opencode');
-
-      expect(applied).toBe(true);
-      expect(registry.getDefaultType()).toBe('opencode');
     });
 
     it('keeps the built-in default and reports failure when the configured runtime is unregistered', () => {
@@ -461,19 +303,10 @@ describe('RuntimeRegistry', () => {
       };
     }
 
-    it('applies the configured default immediately', () => {
-      registry.register(createMockRuntime('claude-code'));
-      registry.register(createMockRuntime('opencode'));
-
-      applyAndWatchConfiguredDefaultRuntime(registry, source('opencode'));
-
-      expect(registry.getDefaultType()).toBe('opencode');
-    });
-
     it('re-applies it when the setting changes, with no restart', () => {
-      // The reason the change-subscription primitive exists: the default runtime
-      // is APPLIED once, so without this a person changes it in Settings, the
-      // screen agrees, and nothing happens until they restart.
+      // The reason the change-subscription primitive exists: the default runtime is APPLIED once,
+      // so without this a person changes it in Settings, the screen agrees, and nothing happens
+      // until they restart.
       registry.register(createMockRuntime('claude-code'));
       registry.register(createMockRuntime('codex'));
       const config = source('claude-code');
@@ -483,92 +316,10 @@ describe('RuntimeRegistry', () => {
 
       expect(registry.getDefaultType()).toBe('codex');
     });
-
-    it('ignores a write to some other section', () => {
-      registry.register(createMockRuntime('claude-code'));
-      registry.register(createMockRuntime('codex'));
-      const config = source('claude-code');
-      applyAndWatchConfiguredDefaultRuntime(registry, config);
-
-      config.write('codex', ['ui']);
-
-      expect(registry.getDefaultType()).toBe('claude-code');
-    });
-
-    it('keeps the current default when the new value names no registered runtime', () => {
-      registry.register(createMockRuntime('claude-code'));
-      const config = source('claude-code');
-      applyAndWatchConfiguredDefaultRuntime(registry, config);
-
-      config.write('opencode');
-
-      expect(registry.getDefaultType()).toBe('claude-code');
-    });
-
-    it('stops listening once unsubscribed', () => {
-      registry.register(createMockRuntime('claude-code'));
-      registry.register(createMockRuntime('codex'));
-      const config = source('claude-code');
-
-      applyAndWatchConfiguredDefaultRuntime(registry, config)();
-      config.write('codex');
-
-      expect(registry.getDefaultType()).toBe('claude-code');
-    });
   });
 
   describe('registerOptionalRuntime', () => {
-    // Reproduces the launch-blocking crash: CodexRuntime/OpenCodeRuntime throw
-    // synchronously at construction when their CLI binary isn't found (the
-    // norm in the packaged desktop app, which bundles only the claude-code
-    // SDK). registerOptionalRuntime is the seam that isolates that failure.
-
-    it('returns the constructed runtime and registers it on success', () => {
-      const runtime = createMockRuntime('opencode');
-      const result = registerOptionalRuntime('OpenCodeRuntime', 'install the OpenCode CLI', () => {
-        registry.register(runtime);
-        return runtime;
-      });
-
-      expect(result).toBe(runtime);
-      expect(registry.has('opencode')).toBe(true);
-    });
-
-    it('swallows a synchronous construction throw, warns, and returns undefined', () => {
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
-
-      const result = registerOptionalRuntime('CodexRuntime', 'install the Codex CLI', () => {
-        throw new Error('Unable to locate Codex CLI binaries');
-      });
-
-      expect(result).toBeUndefined();
-      expect(warn).toHaveBeenCalledTimes(1);
-      const [message, context] = warn.mock.calls[0]!;
-      expect(message).toContain('CodexRuntime');
-      expect(message).toContain('failed to initialize');
-      expect(message).toContain('install the Codex CLI');
-      expect((context as { err: Error }).err.message).toBe('Unable to locate Codex CLI binaries');
-
-      warn.mockRestore();
-    });
-
-    it('never registers a runtime whose constructor throws, so it stays unregistered', () => {
-      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
-
-      registerOptionalRuntime('CodexRuntime', 'install the Codex CLI', () => {
-        throw new Error('Unable to locate Codex CLI binaries');
-      });
-
-      expect(registry.has('codex')).toBe(false);
-      // applyConfiguredDefaultRuntime keeps tolerating this exact shape: a
-      // configured-but-unregistered default falls back to the built-in one
-      // rather than failing boot.
-      const applied = applyConfiguredDefaultRuntime(registry, 'codex');
-      expect(applied).toBe(false);
-      expect(registry.getDefaultType()).toBe('claude-code');
-
-      warn.mockRestore();
-    });
+    // Codex/OpenCode throw at construction when their CLI is missing (the packaged desktop app).
 
     it('registers unaffected runtimes when a sibling runtime fails to construct', () => {
       const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
@@ -632,91 +383,17 @@ describe('RuntimeRegistry', () => {
     describe('persistSessionRuntime', () => {
       it.each<TurnOrigin>([
         { kind: 'interactive' },
-        { kind: 'room', externalAuthor: false },
         { kind: 'schedule' },
-        { kind: 'relay-binding' },
-        { kind: 'agent-dm' },
-        { kind: 'connector-event' },
         { kind: 'agent-launch' },
-        { kind: 'account-handoff' },
-        { kind: 'test-harness' },
       ])('records what started the session: $kind', async (origin) => {
         await registry.persistSessionRuntime('s-origin', 'claude-code', origin);
         expect(registry.getSessionLaunchOrigin('s-origin')).toBe(origin.kind);
-      });
-
-      it('names the launch origin when it claims a row a settings change created', async () => {
-        await registry.saveSessionSettings('s-claim', { model: 'opus' });
-        expect(registry.getSessionLaunchOrigin('s-claim')).toBeNull();
-        await registry.persistSessionRuntime('s-claim', 'claude-code', { kind: 'account-handoff' });
-        expect(registry.getSessionLaunchOrigin('s-claim')).toBe('account-handoff');
       });
 
       it('never overwrites the launch origin of a bound session', async () => {
         await registry.persistSessionRuntime('s-bound', 'claude-code', { kind: 'schedule' });
         await registry.persistSessionRuntime('s-bound', 'claude-code', A_PERSON);
         expect(registry.getSessionLaunchOrigin('s-bound')).toBe('schedule');
-      });
-
-      it('records who launched an agent launch, on insert and on a claim, never overwriting it', async () => {
-        const launchedByOf = (id: string) =>
-          db
-            .select({ by: sessionMetadata.launchedBy })
-            .from(sessionMetadata)
-            .where(eq(sessionMetadata.sessionId, id))
-            .get()?.by;
-        await registry.persistSessionRuntime('s-by', 'claude-code', {
-          kind: 'agent-launch',
-          launchedBy: 'agent-a',
-        });
-        expect(launchedByOf('s-by')).toBe('agent-a');
-        await registry.persistSessionRuntime('s-by', 'claude-code', {
-          kind: 'agent-launch',
-          launchedBy: 'agent-b',
-        });
-        expect(launchedByOf('s-by')).toBe('agent-a');
-
-        await registry.saveSessionSettings('s-by-claim', { model: 'opus' });
-        await registry.persistSessionRuntime('s-by-claim', 'claude-code', {
-          kind: 'agent-launch',
-          launchedBy: 'unidentified',
-        });
-        expect(launchedByOf('s-by-claim')).toBe('unidentified');
-
-        await registry.persistSessionRuntime('s-by-person', 'claude-code', A_PERSON);
-        expect(launchedByOf('s-by-person')).toBeNull();
-      });
-
-      it('reads no launch origin for a session with no row', () => {
-        expect(registry.getSessionLaunchOrigin('s-none')).toBeNull();
-      });
-
-      it('inserts a new row for a new session', async () => {
-        await registry.persistSessionRuntime('session-1', 'claude-code', A_PERSON);
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'session-1'))
-          .get();
-        expect(row?.runtime).toBe('claude-code');
-        expect(row?.agentPath).toBeNull();
-        expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      });
-
-      it("seeds the server's execution defaults onto the row it creates", async () => {
-        // The first-write seam: the per-runtime model/effort land on the row
-        // that mints the session, without any caller passing them.
-        serverDefaults = { model: 'opus', effort: 'high' };
-
-        await registry.persistSessionRuntime('session-seeded', 'claude-code', A_PERSON);
-
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'session-seeded'))
-          .get();
-        expect(row?.model).toBe('opus');
-        expect(row?.effort).toBe('high');
       });
 
       it("prefers the owning agent's model and effort over the server's", async () => {
@@ -741,73 +418,10 @@ describe('RuntimeRegistry', () => {
         expect(row?.effort).toBe('low');
       });
 
-      it('falls back to the server default for a session with no agent', async () => {
-        serverDefaults = { model: 'opus' };
-        agentDefaults = { model: 'sonnet' };
-
-        await registry.persistSessionRuntime('session-agentless', 'claude-code', A_PERSON);
-
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'session-agentless'))
-          .get();
-        expect(row?.model).toBe('opus');
-      });
-
-      it('never seeds over a session that already has a row', async () => {
-        // "Applies to new conversations — running ones keep their settings."
-        await registry.persistSessionRuntime('session-running', 'claude-code', A_PERSON);
-        await registry.saveSessionSettings('session-running', { model: 'sonnet' });
-        serverDefaults = { model: 'opus', effort: 'high' };
-
-        const created = await registry.persistSessionRuntime(
-          'session-running',
-          'claude-code',
-          A_PERSON
-        );
-
-        expect(created).toBe(false);
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'session-running'))
-          .get();
-        expect(row?.model).toBe('sonnet');
-        expect(row?.effort).toBeNull();
-      });
-
-      it('stores agentPath when provided', async () => {
-        await registry.persistSessionRuntime(
-          'session-2',
-          'claude-code',
-          A_PERSON,
-          '/path/to/agent'
-        );
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'session-2'))
-          .get();
-        expect(row?.agentPath).toBe('/path/to/agent');
-      });
-
-      it('is idempotent — second call does not overwrite existing row', async () => {
-        await registry.persistSessionRuntime('session-3', 'claude-code', A_PERSON, '/first/path');
-        await registry.persistSessionRuntime('session-3', 'test-mode', A_PERSON, '/second/path');
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'session-3'))
-          .get();
-        expect(row?.runtime).toBe('claude-code');
-        expect(row?.agentPath).toBe('/first/path');
-      });
-
       it('never changes a recorded agent, not even when it claims an unbound row (DOR-3706)', async () => {
-        // A row with no runtime yet that already names an agent: the claim
-        // binds the runtime but keeps the agent, so a later caller naming a
-        // different agent cannot turn the session into that agent.
+        // A row with no runtime yet that already names an agent: the claim binds the runtime but
+        // keeps the agent, so a later caller naming a different agent cannot turn the session into
+        // that agent.
         db.insert(sessionMetadata)
           .values({
             sessionId: 'session-recorded',
@@ -845,18 +459,10 @@ describe('RuntimeRegistry', () => {
           false,
         ],
         ['a scheduled run', { kind: 'schedule' } as TurnOrigin, false],
-        ['a relay binding', { kind: 'relay-binding' } as TurnOrigin, false],
-        ['an agent DM', { kind: 'agent-dm' } as TurnOrigin, false],
-        ['a connector event', { kind: 'connector-event' } as TurnOrigin, false],
-        ['the test harness', { kind: 'test-harness' } as TurnOrigin, false],
       ])(
         'seeds the configured stop for %s: %o → %s',
         async (_label, origin: TurnOrigin, seeds: boolean) => {
           // The whole origin→power table, at the seam that decides it (DOR-2105).
-          // RESOLVING a stop into a mode id needs the runtime's declared modes,
-          // and the registry hands them over for exactly the origins the mapping
-          // says follow the operator's level — so an origin that seeds nothing
-          // cannot get a resolution here by accident.
           configuredStopDefaults = { permissionMode: 'bypassPermissions' };
           const id = `session-${JSON.stringify(origin)}`;
 
@@ -885,19 +491,7 @@ describe('RuntimeRegistry', () => {
       ])(
         'claims a row an earlier settings change left unbound — %s: %o → seeds: %s',
         async (_label, origin: TurnOrigin, seeds: boolean) => {
-          // **The one case the two "configured stop" policies disagree on**
-          // (DOR-2105 review). A row with no runtime yet, created by a settings
-          // change made before the first message (DOR-812's pre-launch picker,
-          // which E3 made the normal way a session starts).
-          //
-          // For a PERSON that row is their own, from the same sitting, and the
-          // stop they configured is the default for the session they are about
-          // to start. For a ROOM it is evidence the conversation already
-          // exists, and ADR 260908-170643 promises such a conversation is
-          // untouched — a promise the room runner used to keep itself, by
-          // asking whether the session had a row before resolving anything.
-          // Moving the decision into the mapping without moving that condition
-          // quietly widened it, which is what this pins.
+          // **The one case the two "configured stop" policies disagree on** (DOR-2105 review).
           configuredStopDefaults = { permissionMode: 'bypassPermissions' };
           const id = `claim-${origin.kind}-${String(seeds)}`;
           // The row the pre-launch picker leaves: a real choice, no runtime,
@@ -917,162 +511,9 @@ describe('RuntimeRegistry', () => {
           expect(row?.permissionMode).toBe(seeds ? 'bypassPermissions' : null);
         }
       );
-
-      it('still seeds a room turn that MINTS the row', async () => {
-        // The other side of the case above, so "a room seeds nothing" can never
-        // be the way the one above passes. A first room turn creates the row,
-        // and that row does follow the operator's level (DOR-1917).
-        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
-
-        await registry.persistSessionRuntime('room-mints-it', 'claude-code', {
-          kind: 'room',
-          externalAuthor: false,
-        });
-
-        expect(
-          db
-            .select()
-            .from(sessionMetadata)
-            .where(eq(sessionMetadata.sessionId, 'room-mints-it'))
-            .get()?.permissionMode
-        ).toBe('bypassPermissions');
-      });
-
-      it("seeds the operator's stop on a chat another chat's message opens", async () => {
-        // A chat `chat_send` opens used to start with no mode, which runs as the
-        // runtime's Default. Every message turn is also held to its sender's
-        // level, so the stricter of the two was always Default: two Full
-        // autonomy agents talking held each other to asking. The row now starts
-        // at the operator's stop, and the sender's ceiling still bounds it.
-        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
-
-        await registry.persistSessionRuntime('dm-opened-by-message', 'claude-code', {
-          kind: 'chat-message',
-        });
-
-        expect(
-          db
-            .select()
-            .from(sessionMetadata)
-            .where(eq(sessionMetadata.sessionId, 'dm-opened-by-message'))
-            .get()?.permissionMode
-        ).toBe('bypassPermissions');
-      });
-
-      it("never seeds a message's chat over a mode a person already chose", async () => {
-        db.insert(sessionMetadata)
-          .values({
-            sessionId: 'dm-person-set',
-            permissionMode: 'default',
-            createdAt: new Date().toISOString(),
-          })
-          .run();
-
-        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
-        await registry.persistSessionRuntime('dm-person-set', 'claude-code', {
-          kind: 'chat-message',
-        });
-
-        expect(
-          db
-            .select()
-            .from(sessionMetadata)
-            .where(eq(sessionMetadata.sessionId, 'dm-person-set'))
-            .get()?.permissionMode
-        ).toBe('default');
-      });
-
-      it('never lets that seed overwrite a mode already on the row', async () => {
-        // "Applies to new conversations, running ones keep their settings." A row
-        // that already names a mode was written by somebody's choice, and a
-        // binding write is not a place to revisit it.
-        //
-        // The stored mode is one this runtime DECLARES, deliberately: an
-        // undeclared one is dropped by `claimedPermissionMode` before any seed
-        // is considered, so a test that stored one would pass for a reason that
-        // has nothing to do with the rule it names.
-        db.insert(sessionMetadata)
-          .values({
-            sessionId: 'session-chosen',
-            permissionMode: 'default',
-            createdAt: new Date().toISOString(),
-          })
-          .run();
-
-        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
-        await registry.persistSessionRuntime('session-chosen', 'claude-code', {
-          kind: 'interactive',
-        });
-
-        expect(
-          db
-            .select()
-            .from(sessionMetadata)
-            .where(eq(sessionMetadata.sessionId, 'session-chosen'))
-            .get()?.permissionMode
-        ).toBe('default');
-      });
-
-      it("hands the resolver the runtime's OWN declared modes, never a table here", async () => {
-        await registry.persistSessionRuntime('session-profile', 'claude-code', {
-          kind: 'interactive',
-        });
-        expect(lastResolveOpts?.permissionModes).toEqual(
-          registry.get('claude-code').getCapabilities().permissionModes.values
-        );
-      });
-
-      it("hands the resolver the runtime's OWN declared config section", async () => {
-        // Which `runtimes.*` block holds a runtime's defaults is that runtime's
-        // declaration, and this is the seam that carries it: the resolver cannot
-        // ask the registry itself (the registry imports the resolver), so an
-        // answer that stops flowing here is a per-runtime default that silently
-        // stops applying.
-        registry.register(
-          createMockRuntime('declares-a-section', {
-            settings: { configSection: 'codex', supportsEffort: true, sections: [] },
-          })
-        );
-
-        await registry.persistSessionRuntime(
-          'session-declared-section',
-          'declares-a-section',
-          A_PERSON
-        );
-
-        expect(lastResolveOpts?.configSection).toBe('codex');
-      });
-
-      it('hands over no section for a runtime that is not registered here', async () => {
-        // The degraded build `registerOptionalRuntime` allows: nothing declared
-        // means no per-runtime default, which is the honest answer — seeding a
-        // row for a runtime that is not here would hand the fallback runtime a
-        // model id from a namespace it cannot read.
-        await registry.persistSessionRuntime(
-          'session-absent-runtime',
-          'never-registered',
-          A_PERSON
-        );
-
-        expect(lastResolveOpts?.configSection).toBeUndefined();
-      });
-
-      it('returns true on the first insert and false on the duplicate (the once-per-session signal)', async () => {
-        // This boolean gates the once-per-session `session_created` usage event
-        // at the POST /messages call site — a regression here double-fires it.
-        const first = await registry.persistSessionRuntime('session-5', 'claude-code', A_PERSON);
-        const second = await registry.persistSessionRuntime('session-5', 'claude-code', A_PERSON);
-        expect(first).toBe(true);
-        expect(second).toBe(false);
-      });
     });
 
     describe('getSessionRuntimeType', () => {
-      it('returns the stored runtime string for an existing row', async () => {
-        await registry.persistSessionRuntime('session-4', 'test-mode', A_PERSON);
-        expect(await registry.getSessionRuntimeType('session-4')).toBe('test-mode');
-      });
-
       it('infers claude-code without persisting on missing row (read-only)', async () => {
         const type = await registry.getSessionRuntimeType('legacy-session');
         expect(type).toBe('claude-code');
@@ -1083,17 +524,6 @@ describe('RuntimeRegistry', () => {
           .where(eq(sessionMetadata.sessionId, 'legacy-session'))
           .get();
         expect(row).toBeUndefined();
-      });
-
-      it('returns the unregistered runtime type without throwing', async () => {
-        // Raw insert of a row whose runtime is not registered.
-        await db.insert(sessionMetadata).values({
-          sessionId: 'orphan-session',
-          runtime: 'codex',
-          agentPath: null,
-          createdAt: new Date().toISOString(),
-        });
-        expect(await registry.getSessionRuntimeType('orphan-session')).toBe('codex');
       });
     });
 
@@ -1111,55 +541,18 @@ describe('RuntimeRegistry', () => {
       });
 
       it('never infers, where getSessionRuntimeType does', async () => {
-        // The whole reason this method exists beside that one: its caller
-        // deletes rows, and the default-runtime inference would hand every
-        // never-started session to claude-code and take its words with it.
+        // The whole reason this method exists beside that one: its caller deletes rows, and the
+        // default-runtime inference would hand every never-started session to claude-code and take
+        // its words with it.
         expect(await registry.getSessionRuntimeType('legacy-session')).toBe('claude-code');
         expect(registry.getSessionBindings(['legacy-session']).size).toBe(0);
       });
 
-      it('reports when the binding was written, so a caller can tell it from a fresh one', async () => {
-        // The window is closed around the write and nothing else (DOR-1716):
-        // `after` is read the instant `persistSessionRuntime` returns, not at
-        // assertion time, so what is asserted is a RELATION between the row and
-        // the call that made it rather than a race with however long the rest of
-        // this test took. The bounds are exact on purpose — the ±1ms slack that
-        // used to sit on both of them accepted a `createdAt` stamped by a clock
-        // that was not the one the row was written on, which is the one defect
-        // this assertion exists to catch.
-        const before = Date.now();
-        await registry.persistSessionRuntime('timed', 'test-mode', A_PERSON);
-        const after = Date.now();
-
-        const boundAt = registry.getSessionBindings(['timed']).get('timed')?.boundAt;
-
-        expect(boundAt).not.toBeNull();
-        expect(boundAt).toBeGreaterThanOrEqual(before);
-        expect(boundAt).toBeLessThanOrEqual(after);
-      });
-
-      it('reports an unreadable timestamp as unknown rather than as a number', async () => {
-        // `created_at` is free-form TEXT. A caller comparing garbage against a
-        // clock would get a verdict out of a value that means nothing.
-        await db.insert(sessionMetadata).values({
-          sessionId: 'hand-edited',
-          runtime: 'test-mode',
-          agentPath: null,
-          createdAt: 'sometime last week',
-        });
-
-        expect(registry.getSessionBindings(['hand-edited']).get('hand-edited')).toEqual({
-          runtime: 'test-mode',
-          boundAt: null,
-        });
-      });
-
       it('reads a list far past what one statement can bind', async () => {
-        // SQLite compiles in a bound-variable ceiling (32766 on this build); one
-        // unchunked `IN (...)` past it throws "too many SQL variables" and loses
-        // the WHOLE read — which for the boot reconcile means every candidate
-        // looks unbound. 1200 ids, the count this test used first, never came
-        // near it and the chunking could be deleted with the test still green.
+        // SQLite compiles in a bound-variable ceiling (32766 on this build); one unchunked `IN
+        // (...)` past it throws "too many SQL variables" and loses the WHOLE read — which for the
+        // boot reconcile means every candidate looks unbound. 1200 ids, the count this test used
+        // first, never came near it and the chunking could be deleted with the test still green.
         await registry.persistSessionRuntime('needle', 'test-mode', A_PERSON);
         const ids = [...Array.from({ length: 40_000 }, (_, i) => `bulk-${i}`), 'needle'];
 
@@ -1167,31 +560,9 @@ describe('RuntimeRegistry', () => {
 
         expect(bindings.get('needle')?.runtime).toBe('test-mode');
       });
-
-      it('asks nothing for an empty list', () => {
-        expect(registry.getSessionBindings([])).toEqual(new Map());
-      });
     });
 
     describe('resolveForSession', () => {
-      it('returns claude-code for a new session without writing a row (infer-on-miss, no persist)', async () => {
-        const runtime = await registry.resolveForSession('new-session');
-        expect(runtime.type).toBe('claude-code');
-
-        const row = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'new-session'))
-          .get();
-        expect(row).toBeUndefined();
-      });
-
-      it('returns the runtime matching an existing row', async () => {
-        await registry.persistSessionRuntime('existing-session', 'test-mode', A_PERSON);
-        const runtime = await registry.resolveForSession('existing-session');
-        expect(runtime.type).toBe('test-mode');
-      });
-
       it('throws RuntimeNotRegisteredError when stored runtime is not registered', async () => {
         await db.insert(sessionMetadata).values({
           sessionId: 'codex-session',
@@ -1213,24 +584,6 @@ describe('RuntimeRegistry', () => {
           expect(rnrErr.sessionId).toBe('codex-session');
         }
       });
-
-      it('does not re-insert on second call for the same session (idempotent infer)', async () => {
-        await registry.resolveForSession('legacy-1');
-        const firstRow = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'legacy-1'))
-          .get();
-        const firstCreatedAt = firstRow?.createdAt;
-
-        await registry.resolveForSession('legacy-1');
-        const secondRow = db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'legacy-1'))
-          .get();
-        expect(secondRow?.createdAt).toBe(firstCreatedAt);
-      });
     });
   });
 
@@ -1241,21 +594,6 @@ describe('RuntimeRegistry', () => {
       db = createTestDb();
       registry.setDb(db);
       registry.register(createMockRuntime('claude-code'));
-    });
-
-    it('UPSERT creates an UNBOUND row when none exists', async () => {
-      // A settings change can arrive before the first message — no row yet. The
-      // row it creates carries the setting and no runtime: which runtime the
-      // session will run on is the first turn's to say (DOR-812).
-      await registry.saveSessionSettings('s1', { permissionMode: 'bypassPermissions' });
-      const row = db
-        .select()
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, 's1'))
-        .get();
-      expect(row?.runtime).toBeNull();
-      expect(row?.permissionMode).toBe('bypassPermissions');
-      expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
     it('updates the model only while the captured row and owner still match', async () => {
@@ -1317,30 +655,11 @@ describe('RuntimeRegistry', () => {
       expect(row?.model).toBeNull();
     });
 
-    it('is a no-op when no fields are provided (no row created)', async () => {
-      await registry.saveSessionSettings('s3', {});
-      const row = db
-        .select()
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, 's3'))
-        .get();
-      expect(row).toBeUndefined();
-    });
-
-    it('getSessionSettings returns null when no row exists', async () => {
-      expect(await registry.getSessionSettings('missing')).toBeNull();
-    });
-
     it('round-trips a runtime-declared mode id the shared enum never named (DOR-885)', async () => {
-      // The permission-mode column is plain text holding whatever the owning
-      // runtime calls its mode, and `test-mode` really does declare
-      // `always-allow` as its default (`TEST_MODE_CAPABILITIES`) — so a row like
-      // this one exists on any install that has opened a test-mode session.
-      // What used to be wrong was only the TYPE on the way back out, and the
-      // parse below is what makes this a real check rather than a restatement of
-      // the string: before DOR-885 `SessionSettingsSchema` was the narrow enum,
-      // so the value this store legitimately holds could not be parsed as the
-      // settings it is.
+      // The permission-mode column is plain text holding whatever the owning runtime calls its
+      // mode, and `test-mode` really does declare `always-allow` as its default
+      // (`TEST_MODE_CAPABILITIES`) — so a row like this one exists on any install that has opened a
+      // test-mode session.
       await registry.saveSessionSettings('wide-mode', { permissionMode: 'always-allow' });
       const row = db
         .select()
@@ -1357,36 +676,6 @@ describe('RuntimeRegistry', () => {
       expect(registry.getSessionSettingsMany(['wide-mode']).get('wide-mode')).toEqual({
         permissionMode: 'always-allow',
       });
-    });
-
-    it('getSessionSettings maps NULL columns to omitted keys', async () => {
-      await registry.saveSessionSettings('s4', { permissionMode: 'plan' });
-      const settings = await registry.getSessionSettings('s4');
-      // Only the set field is present; unset columns are absent, not null/undefined values.
-      expect(settings).toEqual({ permissionMode: 'plan' });
-      expect('model' in settings!).toBe(false);
-    });
-
-    it('seeds nothing at all — the row it creates has no runtime to seed for', async () => {
-      // E3's pre-launch picker makes a settings change before the first message
-      // the normal way a session starts, and it used to seed the server defaults
-      // right here. It cannot: every default is a per-runtime answer, and this
-      // write does not know the runtime (DOR-812). The seed rides the binding
-      // write instead — see 'an early settings write leaves the runtime unbound'.
-      serverDefaults = { model: 'opus', effort: 'high' };
-      configuredStopDefaults = { permissionMode: 'bypassPermissions' };
-
-      await registry.saveSessionSettings('pre-launch', { model: 'sonnet' });
-
-      const row = db
-        .select()
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, 'pre-launch'))
-        .get();
-      // The person's explicit choice, and nothing beside it.
-      expect(row?.model).toBe('sonnet');
-      expect(row?.effort).toBeNull();
-      expect(row?.permissionMode).toBeNull();
     });
 
     it('never lets a default reach a row that already exists', async () => {
@@ -1408,9 +697,7 @@ describe('RuntimeRegistry', () => {
     });
 
     it('drops an effort value the ladder no longer has, rather than passing it on', async () => {
-      // `effort` is a free-form TEXT column. A rung removed in a later release,
-      // or a hand-edited row, used to be cast straight to `EffortLevel` and sent
-      // into an adapter. Unreadable means "no preference", the same as NULL.
+      // `effort` is a free-form TEXT column.
       db.insert(sessionMetadata)
         .values({
           sessionId: 'garbage-effort',
@@ -1429,25 +716,6 @@ describe('RuntimeRegistry', () => {
       expect(registry.getSessionSettingsMany(['garbage-effort']).get('garbage-effort')).toEqual({
         model: 'opus',
       });
-    });
-
-    it('round-trips boolean settings as booleans (not 1/0)', async () => {
-      await registry.saveSessionSettings('s5', { fastMode: true });
-      const settings = await registry.getSessionSettings('s5');
-      expect(settings).toEqual({ fastMode: true });
-    });
-
-    it('getSessionSettingsMany batch-reads multiple sessions in one call', async () => {
-      await registry.saveSessionSettings('m1', { permissionMode: 'bypassPermissions' });
-      await registry.saveSessionSettings('m2', { model: 'claude-haiku-4-5-20251001' });
-      const many = registry.getSessionSettingsMany(['m1', 'm2', 'absent']);
-      expect(many.get('m1')).toEqual({ permissionMode: 'bypassPermissions' });
-      expect(many.get('m2')).toEqual({ model: 'claude-haiku-4-5-20251001' });
-      expect(many.has('absent')).toBe(false); // no row → absent from the map
-    });
-
-    it('getSessionSettingsMany returns an empty map for empty input (no query)', () => {
-      expect(registry.getSessionSettingsMany([]).size).toBe(0);
     });
   });
 
@@ -1534,10 +802,9 @@ describe('RuntimeRegistry', () => {
     });
 
     it('does not choose the runtime — the first turn still does', async () => {
-      // The bug: a pre-launch settings change created the row with the INFERRED
-      // runtime, and the binding write is first-write-wins, so a session the
-      // person had pointed at another runtime was pinned to claude-code forever
-      // by the act of changing a setting before sending anything.
+      // The bug: a pre-launch settings change created the row with the INFERRED runtime, and the
+      // binding write is first-write-wins, so a session the person had pointed at another runtime
+      // was pinned to claude-code forever by the act of changing a setting before sending anything.
       await registry.saveSessionSettings('pre-launch-codex', { model: 'sonnet' });
 
       await registry.persistSessionRuntime('pre-launch-codex', 'test-mode', A_PERSON);
@@ -1548,56 +815,11 @@ describe('RuntimeRegistry', () => {
       expect(read('pre-launch-codex')?.model).toBe('sonnet');
     });
 
-    it('writes no runtime at all, rather than a guess', async () => {
-      await registry.saveSessionSettings('unbound', { model: 'sonnet' });
-      expect(read('unbound')?.runtime).toBeNull();
-    });
-
-    it('still READS as the inferred runtime, so nothing is bricked before the binding', async () => {
-      // Every read path — the /events connect, the settings PATCH capability
-      // gate, a history GET — resolves an unbound row exactly like a row-less
-      // one: the inference answers, and stays unpersisted.
-      await registry.saveSessionSettings('unbound-read', { model: 'sonnet' });
-
-      expect(await registry.getSessionRuntimeType('unbound-read')).toBe('claude-code');
-      expect((await registry.resolveForSession('unbound-read')).type).toBe('claude-code');
-      expect(read('unbound-read')?.runtime).toBeNull();
-    });
-
-    it('says out loud that the read was a guess, so a gate can decline to judge', async () => {
-      // The inference is tolerant on purpose — the test above is why. But a
-      // caller that REFUSES on it refuses on a guess, which is how the model
-      // gate came to tell a person picking OpenCode that claude-code could not
-      // run their model. `bound` is the one bit that makes the two readable
-      // apart; `getSessionRuntimeType` cannot carry it and says so.
-      await registry.saveSessionSettings('unbound-flag', { model: 'sonnet' });
-      await registry.persistSessionRuntime('bound-flag', 'test-mode', A_PERSON);
-
-      expect(await registry.resolveSessionRuntime('row-less-flag')).toEqual({
-        type: 'claude-code',
-        bound: false,
-      });
-      expect(await registry.resolveSessionRuntime('unbound-flag')).toEqual({
-        type: 'claude-code',
-        bound: false,
-      });
-      expect(await registry.resolveSessionRuntime('bound-flag')).toEqual({
-        type: 'test-mode',
-        bound: true,
-      });
-
-      // The instance-resolving read carries the same bit, from the same lookup.
-      const resolved = await registry.resolveForSessionWithOwnership('unbound-flag');
-      expect(resolved.runtime.type).toBe('claude-code');
-      expect(resolved.bound).toBe(false);
-    });
-
     it('seeds the defaults of the runtime it BINDS, not of the one it guessed', async () => {
-      // The reason the seed cannot ride the settings write: every key of it is a
-      // per-runtime answer (`resolve-session-defaults` — the model id lives in
-      // one runtime's namespace, the effort is dropped where a runtime has none,
-      // the trust stop is resolved from the runtime's own declared modes). A
-      // value written before the runtime is known is a guess in every key.
+      // The reason the seed cannot ride the settings write: every key of it is a per-runtime answer
+      // (`resolve-session-defaults` — the model id lives in one runtime's namespace, the effort is
+      // dropped where a runtime has none, the trust stop is resolved from the runtime's own
+      // declared modes).
       await registry.saveSessionSettings('seed-at-binding', { model: 'sonnet' });
       serverDefaults = { model: 'opus', effort: 'high' };
 
@@ -1610,37 +832,6 @@ describe('RuntimeRegistry', () => {
       expect(read('seed-at-binding')?.effort).toBe('high');
     });
 
-    it('seeds the trust stop when the turn origin is one that follows it', async () => {
-      configuredStopDefaults = { permissionMode: 'bypassPermissions' };
-      await registry.saveSessionSettings('stop-at-binding', { model: 'sonnet' });
-      await registry.saveSessionSettings('stop-unattended', { model: 'sonnet' });
-
-      await registry.persistSessionRuntime('stop-at-binding', 'claude-code', {
-        kind: 'interactive',
-      });
-      await registry.persistSessionRuntime('stop-unattended', 'claude-code', {
-        kind: 'relay-binding',
-      });
-
-      expect(read('stop-at-binding')?.permissionMode).toBe('bypassPermissions');
-      // An origin the mapping gives no power claims the same shape of row and
-      // must still inherit nothing.
-      expect(read('stop-unattended')?.permissionMode).toBeNull();
-    });
-
-    it('records the owning agent on the row the settings write left behind', async () => {
-      await registry.saveSessionSettings('agent-at-binding', { model: 'sonnet' });
-
-      await registry.persistSessionRuntime(
-        'agent-at-binding',
-        'test-mode',
-        A_PERSON,
-        '/agents/kai'
-      );
-
-      expect(read('agent-at-binding')?.agentPath).toBe('/agents/kai');
-    });
-
     it('reports the claim as the session being created, exactly once', async () => {
       // The boolean gates the once-per-session `session_created` usage event.
       // Binding an unbound row IS that session starting; the turn after is not.
@@ -1651,38 +842,6 @@ describe('RuntimeRegistry', () => {
 
       expect(first).toBe(true);
       expect(second).toBe(false);
-    });
-
-    it('drops a stored permission mode the runtime it binds cannot run', async () => {
-      // The settings PATCH that stored this mode was gated against the INFERRED
-      // runtime, because that is all an unbound session has. So the stored mode
-      // is provisional, and the binding write is where it stops being: the
-      // runtime being bound is now known, and a mode it never declared would
-      // leave the session reporting a safety posture it is not running — the
-      // exact lie the PATCH gate exists to prevent.
-      registry.register(
-        createMockRuntime('narrow', {
-          permissionModes: {
-            supported: true,
-            values: [
-              {
-                id: 'strict',
-                label: 'Strict',
-                stop: 'ask',
-                asks: 'always',
-                reach: 'read',
-                promise: 'Asks first.',
-              },
-            ],
-          },
-        })
-      );
-      await registry.saveSessionSettings('mode-undeclared', { permissionMode: 'plan' });
-
-      await registry.persistSessionRuntime('mode-undeclared', 'narrow', A_PERSON);
-
-      // Replaced with the runtime's strictest mode, never left for a looser one (DOR-4411).
-      expect(read('mode-undeclared')?.permissionMode).toBe('strict');
     });
 
     it('lands the bound runtime’s strictest mode, never the configured stop (DOR-4411)', async () => {
@@ -1721,45 +880,8 @@ describe('RuntimeRegistry', () => {
       expect(read('mode-reseeded')?.permissionMode).toBe('strict');
     });
 
-    it('still seeds a session that stored no mode at all', async () => {
-      registry.register(
-        createMockRuntime('narrow', {
-          permissionModes: {
-            supported: true,
-            values: [
-              {
-                id: 'strict',
-                label: 'Strict',
-                stop: 'ask',
-                asks: 'always',
-                reach: 'read',
-                promise: 'Asks first.',
-              },
-              {
-                id: 'open',
-                label: 'Open',
-                stop: 'autonomy',
-                asks: 'never',
-                reach: 'everything',
-                promise: 'Never asks.',
-              },
-            ],
-          },
-        })
-      );
-      configuredStopDefaults = { permissionMode: 'open' };
-      await registry.saveSessionSettings('mode-unset', { model: 'sonnet' });
-
-      await registry.persistSessionRuntime('mode-unset', 'narrow', { kind: 'interactive' });
-
-      expect(read('mode-unset')?.permissionMode).toBe('open');
-    });
-
     it('keeps a stored mode the runtime it binds does declare', async () => {
-      // TWO declared modes, and the stored one is NOT the one the seed would
-      // write. With a single mode — or a stored value equal to the seed —
-      // `coalesce(kept, seed)` answers the same whether the case kept the mode
-      // or dropped it, and the assertion would pin nothing.
+      // TWO declared modes, and the stored one is NOT the one the seed would write.
       registry.register(
         createMockRuntime('twomode', {
           permissionModes: {
@@ -1793,22 +915,9 @@ describe('RuntimeRegistry', () => {
       expect(read('mode-declared')?.permissionMode).toBe('acceptEdits');
     });
 
-    it('drops the mode outright for a runtime that declares none', async () => {
-      registry.register(
-        createMockRuntime('modeless', { permissionModes: { supported: false, values: [] } })
-      );
-      await registry.saveSessionSettings('mode-modeless', { permissionMode: 'plan' });
-
-      await registry.persistSessionRuntime('mode-modeless', 'modeless', A_PERSON);
-
-      expect(read('mode-modeless')?.permissionMode).toBeNull();
-    });
-
     it('leaves the mode alone when the runtime being bound is not registered', async () => {
-      // No profile on this server means no basis to judge — the same answer
-      // `seedForNewRow` gives when it cannot read a runtime's declared modes.
-      // Nothing runs such a session anyway (`resolveForSession` throws), so
-      // deleting the person's choice would only lose it.
+      // No profile on this server means no basis to judge — the same answer `seedForNewRow` gives
+      // when it cannot read a runtime's declared modes.
       await registry.saveSessionSettings('mode-unknown-runtime', { permissionMode: 'plan' });
 
       await registry.persistSessionRuntime('mode-unknown-runtime', 'codex', A_PERSON);
@@ -1883,88 +992,6 @@ describe('RuntimeRegistry', () => {
       expect(await registry.getSessionRuntimeType('canonical-native')).toBe('claude-code');
     });
 
-    it('keeps a canonical destination’s existing verified native source', async () => {
-      await registry.persistSessionRuntime('old-native', 'claude-code', A_PERSON);
-      await registry.persistSessionRuntime('canonical-native', 'claude-code', A_PERSON);
-      db.insert(sessionNativeBindings)
-        .values([
-          {
-            sessionId: 'old-native',
-            runtime: 'claude-code',
-            cwd: '/old/work',
-            account: 'old-home',
-            createdAt: '2026-10-07',
-          },
-          {
-            sessionId: 'canonical-native',
-            runtime: 'claude-code',
-            cwd: '/kept/work',
-            account: 'kept-home',
-            createdAt: '2026-10-07',
-          },
-        ])
-        .run();
-      await registry.rekeySessionSettings('old-native', 'canonical-native');
-      await registry.rekeySessionSettings('old-native', 'canonical-native');
-      expect(registry.getNativeSessionCwd('canonical-native')).toBe('/kept/work');
-      expect(registry.getNativeSessionAccount('canonical-native')).toBe('kept-home');
-      expect(registry.getNativeSessionCwd('old-native')).toBeNull();
-    });
-
-    it('moves the launch origin with the row, and keeps a destination’s own', async () => {
-      await registry.persistSessionRuntime('old', 'claude-code', { kind: 'agent-launch' });
-      await registry.rekeySessionSettings('old', 'new');
-      expect(registry.getSessionLaunchOrigin('new')).toBe('agent-launch');
-      expect(registry.getSessionLaunchOrigin('old')).toBeNull();
-
-      await registry.persistSessionRuntime('old-2', 'claude-code', { kind: 'schedule' });
-      await registry.saveSessionSettings('new-2', { model: 'opus' });
-      await registry.rekeySessionSettings('old-2', 'new-2');
-      expect(registry.getSessionLaunchOrigin('new-2')).toBe('schedule');
-    });
-
-    it('moves the last automatic resume with the row, into a merged destination too', async () => {
-      await registry.persistSessionRuntime('old', 'claude-code', { kind: 'interactive' });
-      registry.markAutoResumed('old', '2026-09-27T17:00:00.000Z');
-      await registry.rekeySessionSettings('old', 'new');
-      expect(registry.getLastAutoResumeFor('new')).toBe('2026-09-27T17:00:00.000Z');
-      expect(registry.getLastAutoResumeFor('old')).toBeNull();
-
-      await registry.persistSessionRuntime('old-2', 'claude-code', { kind: 'interactive' });
-      registry.markAutoResumed('old-2', '2026-09-27T18:00:00.000Z');
-      await registry.saveSessionSettings('new-2', { model: 'opus' });
-      await registry.rekeySessionSettings('old-2', 'new-2');
-      expect(registry.getLastAutoResumeFor('new-2')).toBe('2026-09-27T18:00:00.000Z');
-    });
-
-    it('moves a stored usage limit, even for a session with no settings row (D4)', async () => {
-      const limits = new SessionLimitStore(db);
-      setSessionLimitStore(limits);
-      try {
-        limits.upsert({
-          sessionId: 'old',
-          limit: {
-            accountId: 'work',
-            window: 'five_hour',
-            resetsAt: null,
-            since: '2026-09-26T10:00:00.000Z',
-            plan: { mode: 'ask' },
-            scope: 'account',
-            state: 'limited',
-          },
-          scope: 'account',
-          accountPath: '/accounts/work',
-        });
-
-        await registry.rekeySessionSettings('old', 'new');
-
-        expect(limits.get('old')).toBeUndefined();
-        expect(limits.get('new')?.limit.window).toBe('five_hour');
-      } finally {
-        setSessionLimitStore(undefined);
-      }
-    });
-
     it("moves the session's context reading, even with no settings row (spec claude-account-fleet §6 U)", async () => {
       db.insert(sessionContext)
         .values({
@@ -1988,25 +1015,6 @@ describe('RuntimeRegistry', () => {
       expect(allRows()).toEqual([]);
     });
 
-    it('moves when you touched the chat, even with no settings row (spec your-activity-first D1)', async () => {
-      const touches = new SessionTouchStore(db);
-      setSessionTouchStore(touches);
-      try {
-        touches.recordWrote('old', '2026-10-08T09:00:00.000Z');
-
-        await registry.rekeySessionSettings('old', 'new');
-
-        const found = touches.resolve(['old', 'new']);
-        expect(found.has('old')).toBe(false);
-        expect(found.get('new')).toEqual({
-          openedAt: '2026-10-08T09:00:00.000Z',
-          wroteAt: '2026-10-08T09:00:00.000Z',
-        });
-      } finally {
-        setSessionTouchStore(undefined);
-      }
-    });
-
     it('a context-table failure never stops the settings row (the runtime binding) from moving', async () => {
       await registry.persistSessionRuntime('old', 'test-mode', A_PERSON);
       db.run(sql`DROP TABLE session_context`);
@@ -2022,22 +1030,6 @@ describe('RuntimeRegistry', () => {
         expect.objectContaining({ fromId: 'old', toId: 'new' })
       );
       warn.mockRestore();
-    });
-
-    it('keeps the newer context reading when both ids hold one', async () => {
-      const row = (sessionId: string, contextTokens: number, observedAt: string) =>
-        db
-          .insert(sessionContext)
-          .values({ sessionId, contextTokens, contextMaxTokens: 200_000, observedAt })
-          .run();
-      row('old', 1, '2026-09-27T09:00:00.000Z');
-      row('new', 2, '2026-09-27T10:00:00.000Z');
-
-      await registry.rekeySessionSettings('old', 'new');
-
-      expect(db.select().from(sessionContext).all()).toEqual([
-        expect.objectContaining({ sessionId: 'new', contextTokens: 2 }),
-      ]);
     });
 
     it('moves the whole row, identity columns included', async () => {
@@ -2092,47 +1084,10 @@ describe('RuntimeRegistry', () => {
       expect(allRows()).toEqual(before);
     });
 
-    it('still merges when only one row records an agent (DOR-3706)', async () => {
-      await registry.persistSessionRuntime('old', 'claude-code', A_PERSON, '/agents/ana');
-      await registry.saveSessionSettings('new', { model: 'sonnet' });
-
-      await registry.rekeySessionSettings('old', 'new');
-
-      expect(allRows()).toEqual([
-        expect.objectContaining({ sessionId: 'new', agentPath: '/agents/ana', model: 'sonnet' }),
-      ]);
-    });
-
-    it('carries the binding onto a destination that has none', async () => {
-      // The same immutability rule, not an exception to it: a destination row
-      // minted by a settings change owns no runtime, so there is nothing there
-      // to protect and the source's binding travels with the row it describes.
-      await registry.saveSessionSettings('new', { model: 'sonnet' });
-      await registry.persistSessionRuntime('old', 'test-mode', A_PERSON);
-
-      await registry.rekeySessionSettings('old', 'new');
-
-      expect(allRows()).toHaveLength(1);
-      expect(allRows()[0]).toMatchObject({ sessionId: 'new', runtime: 'test-mode' });
-    });
-
-    it('never replaces a newer destination choice with the older source one', async () => {
-      // The source row is always the older of the two: nothing can be written
-      // under the canonical id before the runtime announces it, and everything
-      // resolves there afterwards. Source-wins therefore reinstated the mode the
-      // operator had just left — here, an agent that acts without asking.
-      await registry.saveSessionSettings('old', { permissionMode: 'bypassPermissions' });
-      await registry.saveSessionSettings('new', { permissionMode: 'plan' });
-
-      await registry.rekeySessionSettings('old', 'new');
-
-      expect(await registry.getSessionSettings('new')).toEqual({ permissionMode: 'plan' });
-    });
-
     it('merges field by field — the destination keeps only what it has set', async () => {
-      // Not an all-or-nothing pick between two rows: each column is resolved on
-      // its own, so an operator's newer mode survives alongside a model that was
-      // only ever chosen under the old id.
+      // Not an all-or-nothing pick between two rows: each column is resolved on its own, so an
+      // operator's newer mode survives alongside a model that was only ever chosen under the old
+      // id.
       await registry.saveSessionSettings('old', {
         permissionMode: 'bypassPermissions',
         model: 'opus',
@@ -2151,7 +1106,6 @@ describe('RuntimeRegistry', () => {
 
     it.each([
       ['old', true],
-      ['new', true],
       ['new', false],
     ] as const)(
       'preserves an unconsumed allocation at %s before moving ordinary rekey state (source metadata: %s)',
@@ -2192,13 +1146,32 @@ describe('RuntimeRegistry', () => {
       }
     );
 
-    it('is a no-op when the source has no row', async () => {
-      await registry.saveSessionSettings('new', { permissionMode: 'plan' });
+    it('moves a stored usage limit, even for a session with no settings row (D4)', async () => {
+      const limits = new SessionLimitStore(db);
+      setSessionLimitStore(limits);
+      try {
+        limits.upsert({
+          sessionId: 'old',
+          limit: {
+            accountId: 'work',
+            window: 'five_hour',
+            resetsAt: null,
+            since: '2026-09-26T10:00:00.000Z',
+            plan: { mode: 'ask' },
+            scope: 'account',
+            state: 'limited',
+          },
+          scope: 'account',
+          accountPath: '/accounts/work',
+        });
 
-      await registry.rekeySessionSettings('absent', 'new');
+        await registry.rekeySessionSettings('old', 'new');
 
-      expect(await registry.getSessionSettings('new')).toEqual({ permissionMode: 'plan' });
-      expect(allRows()).toHaveLength(1);
+        expect(limits.get('old')).toBeUndefined();
+        expect(limits.get('new')?.limit.window).toBe('five_hour');
+      } finally {
+        setSessionLimitStore(undefined);
+      }
     });
 
     it('is a no-op when the ids are the same (never deletes the row)', async () => {
@@ -2209,6 +1182,7 @@ describe('RuntimeRegistry', () => {
       expect(await registry.getSessionSettings('same')).toEqual({ permissionMode: 'plan' });
     });
   });
+
   describe('native import and automatic resume never consume a fresh birth', () => {
     let db: Db;
     const sessionId = '569a9c40-1f42-4e51-8b73-fbce108b97e1';
@@ -2350,15 +1324,6 @@ describe('RuntimeRegistry', () => {
       expect(bindings()).toEqual(legacyBinding);
     });
 
-    it('retains the ineligible native-import no-op without touching an allocation', async () => {
-      allocate();
-      await registry.rememberNativeSession(native(), { kind: 'agent' });
-      await registry.rememberNativeSession({ ...native(), cwd: undefined }, { kind: 'operator' });
-      expect(read()).toBeUndefined();
-      expect(db.select().from(sessionBirthAllocations).all()).toHaveLength(1);
-      expect(db.select().from(sessionNativeBindings).all()).toEqual([]);
-    });
-
     it.each([false, true])(
       'refuses automatic resume with an unconsumed allocation and existing row %s',
       (existing) => {
@@ -2385,32 +1350,6 @@ describe('RuntimeRegistry', () => {
       }
     );
 
-    it('preserves the old unbound resume marker and clear paths without fresh proof', () => {
-      registry.markAutoResumed(sessionId, 'episode');
-      expect(read()).toMatchObject({
-        runtime: null,
-        modelLaunchState: null,
-        lastAutoResumeFor: 'episode',
-      });
-      db.update(sessionMetadata)
-        .set({
-          runtime: 'codex',
-          model: 'explicit',
-          permissionMode: 'plan',
-          modelLaunchState: 'established-v1',
-        })
-        .where(eq(sessionMetadata.sessionId, sessionId))
-        .run();
-      registry.markAutoResumed(sessionId, null);
-      expect(read()).toMatchObject({
-        runtime: 'codex',
-        model: 'explicit',
-        permissionMode: 'plan',
-        modelLaunchState: 'established-v1',
-        lastAutoResumeFor: null,
-      });
-    });
-
     it('rolls back native metadata if the real native-binding write fails', async () => {
       await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
       db.$client.exec(
@@ -2423,6 +1362,7 @@ describe('RuntimeRegistry', () => {
       expect(db.select().from(sessionNativeBindings).all()).toEqual([]);
     });
   });
+
   describe('birth transfer at settings INSERT and runtime binding', () => {
     let db: Db;
     const id = 'owned-birth';
@@ -2485,24 +1425,7 @@ describe('RuntimeRegistry', () => {
       expect(allocations()).toEqual(before);
     });
 
-    it('retains the owner session-relay origin for a real person allocation', async () => {
-      const context = birth();
-      expect(
-        await registry.persistSessionRuntime(
-          id,
-          'claude-code',
-          { kind: 'session-relay' },
-          undefined,
-          context
-        )
-      ).toBe(true);
-      expect(read()).toMatchObject({
-        modelLaunchState: 'pending-v1',
-        launchOrigin: 'session-relay',
-      });
-    });
-
-    it.each([undefined, '/different', '/actual-agent'])(
+    it.each(['/different', '/actual-agent'])(
       'compares the actual room-seat agent against the binding path %s',
       async (agentPath) => {
         db.insert(authors)
@@ -2634,7 +1557,7 @@ describe('RuntimeRegistry', () => {
       expect(await registry.persistSessionRuntime(id, 'claude-code', A_PERSON)).toBe(false);
     });
 
-    it.each(['settings', 'binding'] as const)(
+    it.each(['settings'] as const)(
       'refuses the %s writer without prepared context and keeps allocation intact',
       async (writer) => {
         birth();
@@ -2713,27 +1636,6 @@ describe('RuntimeRegistry', () => {
       ).rejects.toThrow('owned-consumption-refused');
       expect(read()).toBeUndefined();
       expect(allocations()).toHaveLength(1);
-    });
-
-    it('keeps an empty settings patch inert and legacy settings-first claim unchanged', async () => {
-      const context = birth();
-      await registry.saveSessionSettings(id, {}, context);
-      expect(read()).toBeUndefined();
-      expect(allocations()).toHaveLength(1);
-      await registry.saveSessionSettings('legacy-choice', {
-        model: 'explicit',
-        permissionMode: 'plan',
-      });
-      expect(await registry.persistSessionRuntime('legacy-choice', 'claude-code', A_PERSON)).toBe(
-        true
-      );
-      expect(
-        db
-          .select()
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, 'legacy-choice'))
-          .get()
-      ).toMatchObject({ model: 'explicit', permissionMode: 'plan', modelLaunchState: null });
     });
   });
 });

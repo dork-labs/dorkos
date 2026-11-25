@@ -9,9 +9,10 @@ import { spawnSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
-import { fieldsFromEnv, run } from '../provenance-line.ts';
+import { fieldsFromEnv, run, surfaceFromEnv } from '../provenance-line.ts';
 
 const CHAT = '7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6';
+const CODEX_CHAT = '0190c0de-1234-7123-a456-000000000001';
 const AGENT_ID = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
 const SPACE_ID = '01JD3F1W2KQ8Z0YV9N6B5T4RMA';
 
@@ -77,6 +78,43 @@ describe('provenance-line build', () => {
     );
   });
 
+  it('uses the Codex thread for a bare chat, even with an inherited Claude marker', () => {
+    const bare = { CODEX_THREAD_ID: CODEX_CHAT, CLAUDECODE: '1', CLAUDE_CONFIG_DIR: '/x/.claude3' };
+    expect(fieldsFromEnv(bare)).toEqual({
+      harness: 'codex',
+      surface: 'bare-cli',
+      chat: CODEX_CHAT,
+    });
+    expect(fieldsFromEnv({ ...bare, CI: 'true' }).surface).toBe('ci');
+  });
+
+  it('keeps the chat of a Claude Code session when it also has a Codex thread id', () => {
+    expect(
+      fieldsFromEnv({ CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: CHAT, CODEX_THREAD_ID: CODEX_CHAT })
+    ).toEqual({ harness: 'claude-code', surface: 'bare-cli', account: 'claude', chat: CHAT });
+    expect(
+      fieldsFromEnv({ CLAUDECODE: '1', DORKOS_SESSION_ID: CHAT, CODEX_THREAD_ID: CODEX_CHAT })
+    ).toEqual({ harness: 'claude-code', surface: 'dorkos', account: 'claude', chat: CHAT });
+  });
+
+  it('keeps an explicit harness and uses its native chat only when DorkOS supplied none', () => {
+    const mixed = { CODEX_THREAD_ID: CODEX_CHAT, CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: CHAT };
+    expect(fieldsFromEnv({ ...mixed, DORKOS_HARNESS: 'codex' })).toEqual({
+      harness: 'codex',
+      surface: 'bare-cli',
+      chat: CODEX_CHAT,
+    });
+    expect(fieldsFromEnv({ ...mixed, DORKOS_HARNESS: 'codex', DORKOS_SESSION_ID: CHAT })).toEqual({
+      harness: 'codex',
+      surface: 'dorkos',
+      chat: CHAT,
+    });
+    expect(fieldsFromEnv({ ...mixed, DORKOS_HARNESS: 'opencode' })).toEqual({
+      harness: 'opencode',
+      surface: 'bare-cli',
+    });
+  });
+
   it('derives the account as open-pr.sh does, for Claude Code only', () => {
     expect(fieldsFromEnv({ CLAUDECODE: '1' }).account).toBe('claude');
     expect(fieldsFromEnv({ CLAUDECODE: '1', CLAUDE_CONFIG_DIR: '/h/.claude5/' }).account).toBe(
@@ -96,7 +134,47 @@ describe('provenance-line build', () => {
       { DORKOS_HARNESS: 'claude', DORKOS_AGENT_ID: 'not an id', DORKOS_SESSION_ID: 'x:y' },
       noStdin
     );
-    expect(stdout).toBe('<!-- agent:provenance {"v":2} -->\n');
+    expect(stdout).toBe('<!-- agent:provenance {"v":2,"surface":"dorkos"} -->\n');
+  });
+
+  it('derives the surface: dorkos in a DorkOS turn, then ci, then bare-cli', () => {
+    expect(surfaceFromEnv({ DORKOS_SESSION_ID: CHAT, CI: 'true' })).toBe('dorkos');
+    expect(surfaceFromEnv({ CI: 'true' })).toBe('ci');
+    expect(surfaceFromEnv({ CI: '1' })).toBe('bare-cli');
+    expect(surfaceFromEnv({ DORKOS_SESSION_ID: '' })).toBe('bare-cli');
+    expect(surfaceFromEnv({})).toBe('bare-cli');
+    expect(run([], { CI: 'true' }, noStdin).stdout).toBe(
+      '<!-- agent:provenance {"v":2,"surface":"ci"} -->\n'
+    );
+  });
+
+  it('prints exactly the one line open-pr.sh accepts as a signature', () => {
+    // open-pr.sh appends the CLI's output only when it is ONE line matching
+    // `grep -qxE '<!-- agent:provenance \{.*\} -->'`; anything else gets its
+    // minimal line instead. Keep the two shapes in step.
+    const envs: NodeJS.ProcessEnv[] = [
+      {},
+      { CI: 'true' },
+      {
+        CLAUDECODE: '1',
+        DORKOS_SESSION_ID: CHAT,
+        DORKOS_AGENT_ID: AGENT_ID,
+        DORKOS_SPACE_ID: SPACE_ID,
+      },
+    ];
+    for (const vars of envs) {
+      const { code, stdout } = run(['--visibility', 'public'], vars, noStdin);
+      expect(code).toBe(0);
+      expect(stdout.endsWith('\n')).toBe(true);
+      expect(stdout.slice(0, -1)).toMatch(/^<!-- agent:provenance \{.*\} -->$/);
+    }
+  });
+
+  it('lets --surface override the derived surface', () => {
+    expect(fieldsFromEnv({ DORKOS_SESSION_ID: CHAT }, 'github').surface).toBe('github');
+    expect(run(['--surface', 'github'], { CI: 'true' }, noStdin).stdout).toBe(
+      '<!-- agent:provenance {"v":2,"surface":"github"} -->\n'
+    );
   });
 
   it.each([[['--visibility', 'secret']], [['--nope']], [['read', 'extra']]])(

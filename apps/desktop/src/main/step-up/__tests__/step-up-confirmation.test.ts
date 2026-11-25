@@ -20,7 +20,7 @@ function server(answers: Record<string, [number, unknown]>, pageStamp: string | 
     const key = `${init.method} ${url.slice(`${ORIGIN}/api/step-up/${ID}`.length) || '/'}`;
     const [status, body] = answers[key] ?? [
       404,
-      { code: 'expired', error: 'That took too long. Nothing changed.' },
+      { title: 'x', status: 404, code: 'expired', detail: 'That took too long. Nothing changed.' },
     ];
     return new Response(status === 204 ? null : JSON.stringify(body), { status });
   });
@@ -161,13 +161,57 @@ describe('StepUpConfirmation', () => {
     const { confirmation } = server({
       'POST /password': [
         403,
-        { code: 'wrong-password', error: 'That’s not your DorkOS password. Try again.' },
+        {
+          title: 'x',
+          status: 403,
+          code: 'wrong_password',
+          detail: 'That’s not your DorkOS password. Try again.',
+        },
       ],
     });
     expect(await confirmation.submit({ kind: 'password', password: 'no' })).toEqual({
       kind: 'retry',
       message: 'That’s not your DorkOS password. Try again.',
     });
+  });
+
+  it('counts down from the problem’s retryAfterMs after too many wrong passwords', async () => {
+    const { confirmation } = server({
+      'POST /password': [
+        429,
+        {
+          title: 'x',
+          status: 429,
+          code: 'rate_limited',
+          detail: 'Too many wrong passwords. Try again in a few minutes.',
+          retryAfterMs: 31_500,
+        },
+      ],
+    });
+    expect(await confirmation.submit({ kind: 'password', password: 'no' })).toEqual({
+      kind: 'retry',
+      message: 'Too many wrong passwords. Try again in a few minutes.',
+      retryAfterSeconds: 32,
+    });
+  });
+
+  it('asks again when the request changed after it was held', async () => {
+    const { confirmation } = server({
+      'POST /password': [
+        412,
+        {
+          title: 'x',
+          status: 412,
+          code: 'precondition_failed',
+          detail: 'That confirmation was for a different request. Confirm this one.',
+        },
+      ],
+    });
+    expect(await confirmation.submit({ kind: 'password', password: 'yes' })).toEqual({
+      kind: 'ended',
+      message: 'That confirmation was for a different request. Confirm this one.',
+    });
+    expect(await confirmation.finish()).toEqual({ kind: 'ask-again', reason: 'different-request' });
   });
 
   it('reads a refusal sent as a problem document', async () => {
@@ -190,7 +234,10 @@ describe('StepUpConfirmation', () => {
 
   it('turns a too-short password into a change, and posts the change', async () => {
     const { confirmation, calls } = server({
-      'POST /password': [409, { code: 'password-too-short', error: 'x', minLength: 8 }],
+      'POST /password': [
+        409,
+        { title: 'x', status: 409, code: 'password_too_short', detail: 'x', minLength: 8 },
+      ],
       'POST /change-password': [200, { ok: true, status: 200, result: {} }],
     });
     expect(await confirmation.submit({ kind: 'password', password: 'short' })).toEqual({

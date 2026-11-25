@@ -344,7 +344,18 @@ describe('thread key lifecycle', () => {
     const { loader, fake, input, keys, process } = await setup();
     const tools = { ...TOOLS, connectorBindingId: 'open-turn' };
     fake.overloadNext = 10;
-    await expect(loader.ensureLoaded(input({ tools }))).rejects.toThrow();
+    // The client backs off 250/500/1000 ms between overload retries; a fake
+    // clock walks the backoff of the load's overloaded requests at once.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const failed = expect(loader.ensureLoaded(input({ tools }))).rejects.toMatchObject({
+        kind: 'overloaded',
+      });
+      await vi.advanceTimersByTimeAsync(3_500);
+      await failed;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(keys.size).toBe(0);
     fake.overloadNext = 0;
     const loaded = await loader.ensureLoaded(input({ tools }));

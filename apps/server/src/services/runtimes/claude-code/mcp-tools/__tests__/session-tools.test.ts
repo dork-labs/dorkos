@@ -164,10 +164,7 @@ import {
   __resetAccountAdvisorForTests,
   registerAccountAdvisor,
 } from '../../../../core/usage/account-advisor.js';
-import {
-  ADVISOR_FAILED_REASON,
-  NO_ADVISOR_REASON,
-} from '../../../../core/usage/account-ranking.js';
+import { ADVISOR_FAILED_REASON } from '../../../../core/usage/account-ranking.js';
 import {
   agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
@@ -179,6 +176,7 @@ import {
   isProtectedLaunchFolder,
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
+  PROTECTED_CHAT_MESSAGE,
   PROTECTED_DEFAULT_FOLDER_MESSAGE,
   PROTECTED_FOLDER_MESSAGE,
 } from '../../../../session/launch/launch-caller.js';
@@ -212,6 +210,11 @@ import {
   UNKNOWN_CALLER_MESSAGE,
   createSessionStartHandler,
 } from '../session-tools.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /**
  * The ladder's folder for a launch in no project (where no account rule
@@ -539,9 +542,33 @@ describe('session_start', () => {
       expect(dispatchMessage).not.toHaveBeenCalled();
     });
 
-    it('an account, when no advisor is registered', async () => {
-      expect(await expectRefused({ ...BASE, account: 'work' })).toMatchObject({
-        error: NO_ADVISOR_REASON,
+    it('the main sign-in, when no advisor is registered (DOR-5033)', async () => {
+      installStore([account('work'), { ...account('main-row'), isDefault: true }]);
+      expect(await expectRefused({ ...BASE, account: 'main-row' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'Agents can’t pick the main sign-in. Name another account.',
+      });
+      // `default` names the same row, and is refused the same way.
+      expect(await expectRefused({ ...BASE, account: 'default' })).toMatchObject({
+        error: 'Agents can’t pick the main sign-in. Name another account.',
+      });
+    });
+
+    it('an account no person let agents pick, when no advisor is registered', async () => {
+      expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'A person hasn’t let agents pick this account. Ask them in Settings.',
+      });
+    });
+
+    it('an account a person kept agents off, when no advisor is registered', async () => {
+      installStore([
+        account('work'),
+        { ...account('client'), agentsMayPick: true, noAutoMove: true },
+      ]);
+      expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'A person kept agents off this account.',
       });
     });
   });
@@ -712,6 +739,25 @@ describe('session_start', () => {
     expect(result.isError).toBeUndefined();
   });
 
+  it('starts on a named account with no advisor registered, by core’s own rule (DOR-5033)', async () => {
+    installStore([account('work'), { ...account('client'), agentsMayPick: true }]);
+    const result = await asScout()({ ...BASE, account: 'client' });
+    expect(payloadOf(result)).toMatchObject({ account: { id: 'client', label: 'CLIENT' } });
+    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBe('client');
+  });
+
+  it('still starts a session with no account when no advisor is registered', async () => {
+    const result = await asScout()(BASE);
+    expect(result.isError).toBeUndefined();
+    expect(dispatchMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts `default` on a runtime with no accounts, and sends no hint', async () => {
+    const result = await asScout()({ ...BASE, runtime: 'codex', account: 'default' });
+    expect(payloadOf(result)).toMatchObject({ runtime: 'codex', account: null });
+    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBeUndefined();
+  });
+
   it('writes the granted mode on the settings row with the model and effort, before the send', async () => {
     await asScout()({ ...BASE, permissionMode: 'plan', model: 'claude-opus', effort: 'high' });
     const save = vi.mocked(runtimeRegistry.saveSessionSettings);
@@ -821,7 +867,9 @@ describe('session_start', () => {
 
       const body = payloadOf(result);
       expect(body.title).toBe('Rooms: always answer people');
-      expect(body.link).toBe(`[Rooms: always answer people](/session?session=${body.sessionId})`);
+      expect(body.link).toBe(`[Rooms: always answer people](/r/dork:chat:${body.sessionId})`);
+      // Its reference too, the target of a `/r/` link (DOR-5046).
+      expect(body.ref).toBe(`dork:chat:${body.sessionId}`);
       expect(claude.renameSession).toHaveBeenCalledWith(
         body.sessionId,
         'Rooms: always answer people',
@@ -2083,9 +2131,26 @@ describe('session_start refuses a protected folder (DOR-4060, QA row A)', () => 
     );
   });
 
-  it('a message into a chat that already stands there still reaches it', () => {
-    const place = { cwd: DORK, chatAgent: null };
+  it("a message into the agent's own chat that already stands there still reaches it", () => {
+    const place = { cwd: DORK, chatAgent: AGENT_HOME };
     expect(launchPlaceRefusal(mesh, { kind: 'agent', agentPath: AGENT_HOME }, place)).toBeNull();
+  });
+
+  it('a message into a chat there that no agent runs is refused for every caller but the person', () => {
+    const place = { cwd: DORK, chatAgent: null };
+    const refused = { code: 'PROTECTED_FOLDER', message: PROTECTED_CHAT_MESSAGE };
+    expect(launchPlaceRefusal(mesh, { kind: 'agent', agentPath: AGENT_HOME }, place)).toEqual(
+      refused
+    );
+    expect(launchPlaceRefusal(mesh, { kind: 'unidentified' }, place)).toEqual(refused);
+    expect(
+      launchPlaceRefusal(
+        mesh,
+        { kind: 'agent', agentPath: AGENT_HOME },
+        { ...place, defaulted: true }
+      )
+    ).toEqual(refused);
+    expect(launchPlaceRefusal(mesh, { kind: 'person' }, place)).toBeNull();
   });
 
   describe('controls', () => {
@@ -2307,8 +2372,9 @@ describe('session_start hands back the chat already on the work (DOR-3690)', () 
       sessionId: 'other-chat',
       claim: 'DOR-10',
     });
-    expect(payload.link).toContain('other-chat');
-    expect(payload.note).toMatch(/^Already running: \[/);
+    expect(payload.link).toMatch(/\]\(\/r\/dork:chat:other-chat\)$/);
+    expect(payload.ref).toBe('dork:chat:other-chat');
+    expect(payload.note).toContain(`Already running: ${payload.link},`);
     expect(payload.note).toMatch(/startAnyway: true/);
     expect(dispatchMessage).not.toHaveBeenCalled();
     expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();

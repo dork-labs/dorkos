@@ -17,17 +17,13 @@ import {
   ProjectSettingsQuerySchema,
   ProjectSettingsResponseSchema,
   PutProjectSettingsRequestSchema,
-  StartWorkErrorResponseSchema,
   StartWorkRequestSchema,
   StartWorkResponseSchema,
 } from '@dorkos/shared/extension-decision-schemas';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
+import { problemResponse as error } from '../../core/openapi/problem-openapi.js';
 
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+const VALIDATION = { $ref: '#/components/responses/ValidationProblem' } as const;
 
 const remoteConfirmation = {
   description: 'A remote yes or accepted offer needs fresh confirmation for this request',
@@ -68,7 +64,8 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
         description: 'Open decisions and waiting offers',
         content: json(ListExtensionDecisionsResponseSchema),
       },
-      400: error('The query is malformed'),
+      400: VALIDATION,
+      503: error('`temporarily_unavailable`: the inbox is not ready yet'),
     },
   });
 
@@ -87,13 +84,20 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
     responses: {
       428: remoteConfirmation,
       200: { description: 'What the answer came to', content: json(DecisionActionResponseSchema) },
-      400: error('The answer does not fit the decision, or a note is over 2000 characters'),
-      403: error('Not a person'),
-      404: error('No such decision'),
-      409: error('`not_running` (the extension is not running) or `already_resolved`'),
-      502: error('The extension could not take the answer; the decision stays open'),
+      400: error(
+        '`invalid_request`: the answer does not fit the decision, or a note is over 2000 characters'
+      ),
+      403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
+      404: error('`not_found`: no such decision'),
+      409: error(
+        '`not_running` (the extension is off), `already_resolved` (settled already), or ' +
+          '`conflict` (the extension is still working on it)'
+      ),
+      412: error('`precondition_failed`: the question changed since the person saw it'),
+      502: error('`temporarily_unavailable`: the extension refused it; the decision stays open'),
+      503: error('`temporarily_unavailable`: the inbox is not ready yet'),
       504: error(
-        '`extension_timeout`: the extension did not answer in time; the decision stays open'
+        '`temporarily_unavailable`: the extension did not answer in time; the decision stays open'
       ),
     },
   });
@@ -114,10 +118,15 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
         description: 'What the extension said back',
         content: json(DecisionOfferResponseSchema),
       },
-      403: error('Not a person'),
-      404: error('No such decision'),
-      409: error('`offer_gone`: used, dismissed, or older than 15 minutes; or `not_running`'),
-      422: error('The settings change could not be made; nothing changed'),
+      400: error('`invalid_request`: not `{ accept: true | false }`'),
+      403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
+      404: error('`not_found`: no such decision'),
+      409: error(
+        '`already_resolved` (the offer was used, dismissed or is over 15 minutes old), ' +
+          '`not_running`, or `conflict` (the project is gone or out of scope)'
+      ),
+      500: error('`internal_error`: the settings store could not be written'),
+      503: error('`temporarily_unavailable`: the inbox is not ready yet'),
     },
   });
 
@@ -135,6 +144,8 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
         description: 'The extension’s open decisions',
         content: json(ListExtensionDecisionsResponseSchema),
       },
+      400: error('`invalid_request`: not a valid extension id'),
+      503: error('`temporarily_unavailable`: the inbox is not ready yet'),
     },
   });
 
@@ -154,12 +165,14 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
     responses: {
       428: remoteConfirmation,
       200: { description: 'What the answer came to', content: json(DecisionActionResponseSchema) },
-      400: error('The answer does not fit the decision'),
-      403: error('Not a person'),
-      404: error('No such decision for this extension'),
+      400: error('`invalid_request`: the answer does not fit the decision'),
+      403: error('`person_only`: not a person; `not_from_wifi`: a yes sent over Wi-Fi'),
+      404: error('`not_found`: no such decision for this extension'),
       409: error('`not_running` or `already_resolved`'),
-      502: error('The extension could not take the answer'),
-      504: error('`extension_timeout`'),
+      412: error('`precondition_failed`: the question changed since it was shown'),
+      502: error('`temporarily_unavailable`: the extension refused it'),
+      503: error('`temporarily_unavailable`: the inbox is not ready yet'),
+      504: error('`temporarily_unavailable`: the extension did not answer in time'),
     },
   });
 
@@ -177,7 +190,8 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
         description: 'The stored value, or null',
         content: json(ProjectSettingsResponseSchema),
       },
-      403: error('The folder is outside the server’s directory boundary'),
+      400: error('`invalid_request`: no `project` query, or not a valid extension id'),
+      403: error('`outside_boundary`: the folder is outside the server’s directory boundary'),
     },
   });
 
@@ -194,16 +208,11 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
     request: { params: extensionIdParam, body: { content: json(PutProjectSettingsRequestSchema) } },
     responses: {
       204: { description: 'Saved' },
-      400: error('Not `{ project, value }`, or the value is not JSON'),
-      403: error('Not a person'),
-      404: error('No such extension, or it is not set up in that project'),
-      413: error('The value is larger than 16 KiB'),
+      400: error('`invalid_request`: not `{ project, value }`, or the value is not JSON'),
+      403: error('`person_only`: not a person'),
+      404: error('`not_found`: no such extension, or it is not set up in that project'),
+      413: error('`request_too_large`: the value is larger than 16 KiB'),
     },
-  });
-
-  const refused = (description: string) => ({
-    description,
-    content: json(StartWorkErrorResponseSchema),
   });
 
   registry.registerPath({
@@ -223,11 +232,14 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
     request: { params: extensionIdParam, body: { content: json(StartWorkRequestSchema) } },
     responses: {
       200: { description: 'Started', content: json(StartWorkResponseSchema) },
-      400: error('The body breaks a length rule'),
-      403: error('Not a person'),
-      404: refused('No such extension (plain error), or `not_a_project`'),
-      409: refused('The extension is turned off (plain error), or `account_not_allowed_here`'),
-      429: refused('`start_limit`: too many starts this hour, or too many chats working'),
+      400: error('`invalid_request`: the body breaks a length rule'),
+      403: error('`person_only`: not a person'),
+      404: error('`not_found`: the folder is not inside a project'),
+      409: error(
+        '`not_running`: no such extension, or it is off; `account_not_allowed_here`: that account can’t work there'
+      ),
+      429: error('`rate_limited`: too many starts or working chats'),
+      503: error('`temporarily_unavailable`: chats cannot be started yet'),
     },
   });
 }

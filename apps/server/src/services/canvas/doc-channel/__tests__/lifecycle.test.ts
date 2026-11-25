@@ -22,6 +22,8 @@ import { CanvasService, MAX_CANVAS_DOCUMENTS } from '../../canvas-service.js';
 import { DocChannelLifecycle } from '../lifecycle.js';
 import { DocChannelStore } from '../store.js';
 import { FROM, TO, NOW, accept, harness, originDigest, pending } from './lifecycle-fixtures.js';
+import { installRunRecord, uninstallRunRecord } from '../../../runs/index.js';
+import { turnFacts } from '../../../session/turn-port/index.js';
 
 const connections: Db[] = [];
 const directories: string[] = [];
@@ -83,6 +85,38 @@ describe('atomic document authority closure', () => {
     expect(() => h.documents.lifecycle.resolveScope(FROM)).toThrow(/recovery/);
   });
 
+  it('a protected message gets its run at acceptance, and removal cancels it with its row (DOR-5230)', () => {
+    const h = setup();
+    const runs = installRunRecord(h.db, {
+      epoch: '01DOCBOOT00000000000000000',
+      ownerHolds: () => true,
+    });
+    try {
+      const doc = h.canvas.open(FROM, 'agent', file);
+      const accepted = accept(h);
+      pending(h, doc.id, accepted.receipt.id);
+      // Written with the queue row, with the origin its source kind knows.
+      const run = runs.findByQueueMessage(accepted.receipt.queueMessageId)!;
+      expect(run).toMatchObject({ status: 'queued', origin: { kind: 'resume' } });
+      // Adoption reuses it.
+      expect(
+        turnFacts()!.dispatcher.runOfQueueRow({
+          chatKey: run.sessionId,
+          queueMessageId: accepted.receipt.queueMessageId,
+        })
+      ).toBe(run.id);
+
+      h.canvas.close(FROM, doc.id);
+
+      expect(h.queue.get(accepted.receipt.queueMessageId)).toBeUndefined();
+      expect(runs.get(run.id)).toMatchObject({
+        status: 'cancelled',
+        endingDetail: { cancelledBecause: 'cancelled' },
+      });
+    } finally {
+      uninstallRunRecord();
+    }
+  });
   it.each(['person', 'agent', 'sweep'] as const)(
     '%s removal closes, revokes and cancels before physical deletion',
     (kind) => {

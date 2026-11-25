@@ -133,11 +133,11 @@ describe('PATCH /api/sessions/:id', () => {
         .send({ permissionMode: asked });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+      expect(res.body.code).toBe('invalid_request');
       // The message must name the runtime and the modes it CAN run.
-      expect(res.body.error).toContain('fake');
-      expect(res.body.error).toContain(asked);
-      for (const mode of runtimeModes) expect(res.body.error).toContain(mode);
+      expect(res.body.detail).toContain('fake');
+      expect(res.body.detail).toContain(asked);
+      for (const mode of runtimeModes) expect(res.body.detail).toContain(mode);
       expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
     }
   );
@@ -189,7 +189,7 @@ describe('PATCH /api/sessions/:id', () => {
         .send({ permissionMode: asked });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+      expect(res.body.code).toBe('invalid_request');
       expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
     });
   });
@@ -244,9 +244,9 @@ describe('PATCH /api/sessions/:id', () => {
         .send({ model: 'openrouter/anthropic/claude-opus-5-fast' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('UNSUPPORTED_MODEL');
-      expect(res.body.error).toContain('fake');
-      expect(res.body.error).toContain('openrouter/anthropic/claude-opus-5-fast');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('fake');
+      expect(res.body.detail).toContain('openrouter/anthropic/claude-opus-5-fast');
       expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
     });
 
@@ -320,7 +320,7 @@ describe('PATCH /api/sessions/:id', () => {
     const res = await request(server).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).toBe('session_not_found');
   });
 
   it('returns 400 for invalid session ID', async () => {
@@ -329,7 +329,7 @@ describe('PATCH /api/sessions/:id', () => {
       .send({ permissionMode: 'plan' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_SESSION_ID');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it.each([
@@ -344,7 +344,7 @@ describe('PATCH /api/sessions/:id', () => {
     const res = await request(server).patch(`/api/sessions/${S1}`).send(body);
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
     expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
   });
 

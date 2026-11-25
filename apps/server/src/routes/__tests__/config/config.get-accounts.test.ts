@@ -128,6 +128,9 @@ describe('GET /api/config, agents and accounts', () => {
             color: '#12ab9f',
             colorIsDefault: false,
             isAccountRoot: true,
+            // `default` names this row's folder, so it is Main's own row, which
+            // agents never pick (DOR-5033).
+            isDefault: true,
             onlyProjects: null,
           },
           {

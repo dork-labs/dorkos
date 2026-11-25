@@ -1,7 +1,7 @@
 ---
 number: 205
 title: MCP-Only Interface for Agent Extension Management
-status: draft
+status: archived
 created: 2026-03-26
 spec: ext-platform-04-agent-extensions
 superseded-by: null

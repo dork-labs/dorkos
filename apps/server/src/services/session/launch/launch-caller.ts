@@ -20,8 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import { resolveAgentHome } from '../../core/agent-identity/index.js';
-import { isProtectedPath } from '../../runtimes/shared/policy/protected-path-check.js';
-import { protectedPathRoots } from '../../runtimes/shared/policy/protected-path-roots.js';
+import { isProtectedPath } from '../../core/protected-paths/protected-path-check.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 
 /**
  * Who chose where a chat runs. `person`: the person, at the app. `agent`: an
@@ -68,9 +68,13 @@ export const OTHER_AGENTS_CHAT_MESSAGE =
 export const UNIDENTIFIED_LAUNCHER_MESSAGE =
   "DorkOS can't tell which agent is asking, so it can't start work in an agent's folder or chat.";
 
-/** The refusal for a new chat in DorkOS's data folder, the home folder, or above either. */
+/** The refusal for starting a new chat in DorkOS's data folder, the home folder, or above either. */
 export const PROTECTED_FOLDER_MESSAGE =
   "That folder holds DorkOS's private files, so no agent can start a chat there. Use your own folder.";
+
+/** The refusal for a message into a chat no agent runs, standing in one of those folders. */
+export const PROTECTED_CHAT_MESSAGE =
+  'That chat stands where DorkOS keeps private files, so only the person can post there.';
 
 /** The same refusal when the caller named no folder and the default is one of them. */
 export const PROTECTED_DEFAULT_FOLDER_MESSAGE =
@@ -100,8 +104,10 @@ function isWithin(root: string, dir: string): boolean {
  * this, because the boundary check hands back `cwd` real-pathed while Mesh keeps
  * each home as registered: a home under a symlink (macOS's `/tmp`) would
  * otherwise never contain a `cwd` that is inside it.
+ *
+ * @param dir - The folder.
  */
-function realOr(dir: string): string {
+export function realOr(dir: string): string {
   const resolved = path.resolve(dir);
   try {
     return fs.realpathSync.native(resolved);
@@ -157,8 +163,9 @@ export function isAnyAgentsFolder(
 }
 
 /**
- * Whether a caller other than the person may not start a NEW chat in `cwd`
- * (DOR-4060), since every file tool trusts a chat's own folder:
+ * Whether a caller other than the person may not start a new chat in `cwd`, or
+ * post into a chat there that no agent runs (DOR-4060, DOR-5235), since every
+ * file tool trusts a chat's own folder:
  *
  * - a folder on the protected-files list, always;
  * - DorkOS's data folder, or anything inside it but an agent's home or a
@@ -168,7 +175,7 @@ export function isAnyAgentsFolder(
  *
  * Every spelling is real-pathed, so a symlink to one of them is that folder.
  *
- * @param cwd - The folder the new chat would stand in.
+ * @param cwd - The folder the chat stands in, or a new one would.
  * @param ownFolder - The calling agent's own home, when DorkOS knows it.
  */
 export function isProtectedLaunchFolder(cwd: string, ownFolder?: string): boolean {
@@ -192,9 +199,9 @@ export function isProtectedLaunchFolder(cwd: string, ownFolder?: string): boolea
 
 /**
  * Why this caller may not run a chat at this place, or `null` when it may.
- * A person is never refused here. The protected-folder rule asks only of a new
- * chat (no `chatAgent`), so a message into a chat that already stands in such a
- * folder, like a schedule's, still reaches it.
+ * A person is never refused here. The protected-folder rule asks of a new chat
+ * (no `chatAgent`) and of a chat no agent runs (`chatAgent: null`), so in such a
+ * folder only an agent's own chat, like its schedule's, takes its messages.
  *
  * @param meshCore - Mesh, which lists the registered homes.
  * @param launcher - Who chose the place.
@@ -209,13 +216,18 @@ export function launchPlaceRefusal(
   const ownFolder = launcher.kind === 'agent' ? launcher.agentPath : undefined;
   if (
     place.cwd !== undefined &&
-    place.chatAgent === undefined &&
+    place.chatAgent == null &&
     isProtectedLaunchFolder(place.cwd, ownFolder)
   ) {
-    return {
-      code: 'PROTECTED_FOLDER',
-      message: place.defaulted ? PROTECTED_DEFAULT_FOLDER_MESSAGE : PROTECTED_FOLDER_MESSAGE,
-    };
+    // Joining an existing chat names no folder of its own, so it never gets the
+    // "name a folder" sentence.
+    const message =
+      place.chatAgent === null
+        ? PROTECTED_CHAT_MESSAGE
+        : place.defaulted
+          ? PROTECTED_DEFAULT_FOLDER_MESSAGE
+          : PROTECTED_FOLDER_MESSAGE;
+    return { code: 'PROTECTED_FOLDER', message };
   }
   if (launcher.kind === 'unidentified') {
     const agents =

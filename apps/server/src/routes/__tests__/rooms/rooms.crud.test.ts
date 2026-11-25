@@ -95,7 +95,7 @@ describe('/api/rooms', () => {
         .send({ kind: 'channel', slug: 'general', title: 'G' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('SLUG_TAKEN');
+      expect(res.body.code).toBe('slug_taken');
     });
   });
 
@@ -193,7 +193,7 @@ describe('/api/rooms', () => {
     it('404s an unknown room', async () => {
       const res = await request(testServer).get('/api/rooms/nope');
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
     });
 
     it('answers an agent with its own author id and tells it it is not the owner', async () => {
@@ -250,7 +250,7 @@ describe('/api/rooms', () => {
         .patch(`/api/rooms/${room.id}`)
         .send({ deliverNotices: true });
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('NOT_A_BRIDGED_ROOM');
+      expect(res.body.code).toBe('conflict');
 
       const topic = await request(testServer)
         .patch(`/api/rooms/${room.id}`)
@@ -319,7 +319,7 @@ describe('/api/rooms', () => {
           .set('X-DorkOS-Agent', token)
           .send({ maxAgentDepth });
         expect(res.status).toBe(403);
-        expect(res.body.code).toBe('OPERATOR_ONLY');
+        expect(res.body.code).toBe('operator_only');
       }
       expect((await request(testServer).get(`/api/rooms/${room.id}`)).body.maxAgentDepth).toBe(4);
     });
@@ -341,10 +341,10 @@ describe('/api/rooms', () => {
           .send({ topic: 'what we are working on' }),
       ]);
 
-      expect(limit.body.error).toBe(
+      expect(limit.body.detail).toBe(
         'Only you can change how much a room may spend on automatic replies'
       );
-      expect(topic.body.error).toBe(
+      expect(topic.body.detail).toBe(
         'Only you can change what a room is called, what it is about, or whether it is put away'
       );
     });

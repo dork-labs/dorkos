@@ -214,6 +214,8 @@ export async function deliverApprovalVerdict(
 
     await dispatchMessage({
       turnStarter: 'agent',
+      // DorkOS carries the bound chat on with the verdict: it adds no power to it.
+      origin: { kind: 'resume' },
       sessionId,
       clientId: `approval-verdict-${approvalId}`,
       content: TRIGGER_CONTENT[verdict.outcome],

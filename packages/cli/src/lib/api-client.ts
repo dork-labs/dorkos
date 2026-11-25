@@ -44,10 +44,10 @@ const API_KEY_ENV_VAR = 'DORKOS_API_KEY';
 const API_KEY_FILE_NAME = 'api-key';
 
 /**
- * The HTTP error envelope returned by the marketplace routes. The router
- * uses `mapErrorToStatus` in `apps/server/src/routes/marketplace/shared.ts` to map
- * service errors into this shape, so the CLI can detect conflict reports
- * and validation errors without parsing free-form messages.
+ * The HTTP error body the API answers with: a problem document (the
+ * marketplace routes map service errors through `mapErrorToProblem` in
+ * `apps/server/src/routes/marketplace/shared.ts`), so the CLI can detect
+ * conflict reports and validation errors without parsing free-form messages.
  */
 export interface ApiErrorBody {
   /** The older body's message; a problem document says `detail` instead. */

@@ -12,9 +12,10 @@
 import type { ChatState, ChatMessageKind, ChatMessageSender } from '@dorkos/shared/chat-messages';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
-import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
+import { defuseUntrustedText } from '../../core/untrusted-text/untrusted-fence.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
@@ -81,6 +82,8 @@ export interface ChatReadResult {
     title: string | null;
     /** A markdown link that opens the chat, to use instead of its id. */
     link: string;
+    /** Its `dork:chat:` reference, for a `/r/` link, or null when the id cannot be one. */
+    ref: string | null;
     agent: string | null;
     state: ChatState;
     /** Why the spin-off never opened its first turn, when its deadline passed. */
@@ -122,6 +125,12 @@ export interface ChatReadDeps {
   describe: (sessionId: string) => Promise<{ title: string | null; agent: string | null }>;
   /** Message ids in the chat matching the words, best first. */
   search: (sessionId: string, query: string, limit: number) => Promise<string[]>;
+  /**
+   * The id the chat answers under now, following a re-key from an older one,
+   * so the link handed back names the chat as it is called today. Absent, the
+   * link uses the id as asked.
+   */
+  currentId?: (sessionId: string) => string;
 }
 
 /**
@@ -239,10 +248,12 @@ export async function readChat(
   }
   const described = await deps.describe(input.chat);
   const startupFailure = deps.startupFailure?.(input.chat);
+  const linkId = deps.currentId?.(input.chat) ?? input.chat;
   const chat: ChatReadResult['chat'] = {
     id: input.chat,
     title: described.title,
-    link: chatMarkdownLink(input.chat, described.title),
+    link: chatRefMarkdownLink(linkId, described.title),
+    ref: dorkReferenceOrNull('chat', linkId),
     agent: described.agent,
     state: startupFailure ? 'never-started' : chatStateOf(deps.status(input.chat)),
     ...(startupFailure ? { startupFailure } : {}),

@@ -113,8 +113,8 @@ function toExplorerEntry(entry: RoomFileEntry): ExplorerEntry {
  * into a "preview" of a function.
  */
 const NOT_READABLE_COPY = new Map<string, string>([
-  ['ROOM_FILE_NOT_READABLE', 'This isn’t a file that can be shown here.'],
-  ['ROOM_FILE_NOT_FOUND', 'This file is no longer in the room.'],
+  ['room_file_not_readable', 'This isn’t a file that can be shown here.'],
+  ['room_file_not_found', 'This file is no longer in the room.'],
 ]);
 
 /**
@@ -262,7 +262,7 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
         // The room's copy has changed since the warning above the files was
         // last drawn — this refusal is the proof. Re-ask now, so the sentence
         // the person is about to read has something to point at.
-        if (code === 'MAIN_CHECKOUT_DIRTY') {
+        if (code === 'main_checkout_dirty') {
           void queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) });
         }
         // The server's sentence first where it names the file — a name taken
@@ -316,7 +316,7 @@ export function changeRefusal(
         'Somebody changed these files after you opened them. Nothing changed. Check, then try again.',
     };
   }
-  if (code === 'ROOM_FILE_EXISTS') {
+  if (code === 'room_file_exists') {
     const said = error instanceof Error ? error.message.replace(/`([^`]*)`/g, '“$1”') : '';
     return {
       status: 'exists',
@@ -326,7 +326,7 @@ export function changeRefusal(
   // The room's copy has changed since the warning above the files was last
   // drawn — this refusal is the proof. Re-ask now, so the sentence the person is
   // about to read has something to point at.
-  if (code === 'MAIN_CHECKOUT_DIRTY') {
+  if (code === 'main_checkout_dirty') {
     void queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) });
   }
   const reason = roomChangeRefusalMessage(error);

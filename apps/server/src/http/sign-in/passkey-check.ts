@@ -13,16 +13,12 @@ import type { Context } from 'hono';
 import { PASSKEY_CHECK_CODE, PASSKEY_NEEDED_CODE } from '@dorkos/shared/signed-in-devices';
 
 import type { ApiEnv } from '../api-chain.js';
-import { NOT_FROM_OWN_PAGE } from '../../lib/http/own-origin-write.js';
-import { errorBody } from '../../lib/route-utils.js';
+import { problem } from '@dorkos/http-kit';
 import {
   finishPasskeyCheck,
   startPasskeyCheck,
   thisComputerPasskeyHosts,
 } from '../../services/core/auth/factors/owner-passkeys.js';
-
-/** Refusal code when the passkey is for another of this computer's addresses. */
-export const PASSKEY_ELSEWHERE_CODE = 'PASSKEY_ON_OTHER_ADDRESS';
 
 /**
  * Run the passkey check for one action.
@@ -49,19 +45,16 @@ export async function passkeyChecked(
       // the check is asked for there, never skipped.
       const hosts = thisComputerPasskeyHosts(owner.userId);
       if (hosts.length > 0) {
-        return c.json(
-          errorBody(
-            `Open DorkOS at ${hosts[0]} on this computer to check your passkey.`,
-            PASSKEY_ELSEWHERE_CODE
-          ),
-          409
-        );
+        // The address is this computer's own, shown to its owner: never a path or secret.
+        return problem(c, 'passkey_on_other_address', {
+          detail: `Open DorkOS at ${hosts[0]} on this computer to check your passkey.`,
+        });
       }
       if (options.ifAny) return true;
-      return c.json(errorBody('Add a passkey on this computer first.', PASSKEY_NEEDED_CODE), 409);
+      return problem(c, PASSKEY_NEEDED_CODE, { detail: 'Add a passkey on this computer first.' });
     }
     if (typeof check === 'string') {
-      return c.json(errorBody('Do this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
+      return problem(c, 'origin_not_allowed', { detail: 'Do this in the DorkOS app.' });
     }
     c.header('Cache-Control', 'no-store');
     return c.json({ code: PASSKEY_CHECK_CODE, options: check }, 428);
@@ -71,7 +64,7 @@ export async function passkeyChecked(
     passkey as Parameters<typeof finishPasskeyCheck>[1]
   );
   if (typeof checked === 'string') {
-    return c.json(errorBody('That passkey check didn’t work. Try again.', 'PASSKEY_REFUSED'), 401);
+    return problem(c, 'passkey_refused', { detail: 'That passkey check didn’t work. Try again.' });
   }
   return true;
 }

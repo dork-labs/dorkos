@@ -90,6 +90,7 @@ Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape:
 - **Two sides, one contract** (ADR `261124-150516`). One program, one release. The space side holds space data; the computer side runs turns. One contract joins them: start, stream and stop a turn, answer an ask, call a DorkOS tool, sync an agent, report status. A Mac runs both; an agent computer runs only the computer side.
 - **Turns survive restarts** (ADR `261124-150517`): a run record, follow-up work saved with the turn, capped recovery.
 - **Every agent can be messaged directly** (ADR `261124-150518`): one send-to-agent capability for the API, CLI, MCP and A2A.
+- **Your Mac is home** (ADR `261124-194115`): a person's own computer holds their private space when they have one; the cloud holds it only for people with no computer.
 - **Playbooks** (ADR `261124-152801`): how agents work together is a setting of a space. DorkOS holds its rules at its own gate and the turn port, never in one runtime's hooks.
 
 Rules today:
@@ -160,9 +161,9 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 
 Anything you post to a tracker or forge (a Linear comment or description, a GitHub PR body or comment) ends with one hidden line, so a later session can route a follow-up back to yours:
 
-`<!-- agent:provenance {"v":1,"harness":"claude-code","sessionId":"…","account":"…","host":"…","surface":"…"} -->`
+`<!-- agent:provenance {"v":2,"harness":"claude-code","surface":"dorkos","account":"claude3","agent":"dork:agent:…","chat":"dork:chat:1a2b3c4d","space":"dork:space:…"} -->`
 
-Emit only fields you actually know, as valid JSON. In a public repo, truncate `sessionId` to 8 characters. `account` is a short handle (for Claude Code, the `CLAUDE_CONFIG_DIR` basename, default `claude`), never an email. Full spec: `docs/provenance.md` in `dork-labs/marketplace`. Commits keep their `Claude-Session:` trailer.
+Build it, never by hand: `pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public|private` (in code, `@dorkos/shared/provenance`); its `read` reads one. A public line cuts `chat` to 8 characters and carries no machine details. `account` is a short handle (for Claude Code, the `CLAUDE_CONFIG_DIR` basename), never an email. Readers accept v1, v2 and the legacy `flow:provenance` name forever. Full spec: `docs/provenance.md` in `dork-labs/marketplace`. Commits keep their `Claude-Session:` trailer.
 
 ## Artifacts
 

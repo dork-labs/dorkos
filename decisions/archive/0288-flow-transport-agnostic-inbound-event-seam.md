@@ -1,7 +1,7 @@
 ---
 number: 288
 title: Transport-Agnostic Inbound Event Seam (Poll-First)
-status: proposed
+status: archived
 created: 2026-06-25
 spec: flow-triage-feeds-loop
 superseded-by: null

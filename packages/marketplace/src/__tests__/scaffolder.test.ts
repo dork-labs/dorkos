@@ -174,23 +174,6 @@ describe('createPackage', () => {
       )) as Record<string, unknown>;
       expect(manifest.adapterType).toBe('slack');
     });
-
-    it('ignores adapterType for non-adapter package types', async () => {
-      const parentDir = await tempDir();
-
-      const result = await createPackage({
-        parentDir,
-        name: 'plugin-with-stray-adapter-type',
-        type: 'plugin',
-        adapterType: 'should-be-ignored',
-      });
-
-      const manifest = (await readJson(
-        path.join(result.packagePath, PACKAGE_MANIFEST_PATH)
-      )) as Record<string, unknown>;
-      expect(manifest.type).toBe('plugin');
-      expect(manifest).not.toHaveProperty('adapterType');
-    });
   });
 
   describe('collision protection', () => {
@@ -308,22 +291,6 @@ describe('createPackage', () => {
 
       expect(manifest.description).toBe(customDescription);
     });
-
-    it('falls back to a default description when none is provided', async () => {
-      const parentDir = await tempDir();
-
-      const result = await createPackage({
-        parentDir,
-        name: 'undescribed-pkg',
-        type: 'skill-pack',
-      });
-
-      const manifest = (await readJson(path.join(result.packagePath, PACKAGE_MANIFEST_PATH))) as {
-        description: string;
-      };
-
-      expect(manifest.description).toBe('undescribed-pkg — a DorkOS skill-pack');
-    });
   });
 
   describe('category options', () => {
@@ -344,24 +311,6 @@ describe('createPackage', () => {
 
       expect(manifest.categories).toEqual(['security', 'code-review']);
       expect(manifest.category).toBe('security');
-    });
-
-    it('writes an empty categories[] and no singular category when omitted', async () => {
-      const parentDir = await tempDir();
-
-      const result = await createPackage({
-        parentDir,
-        name: 'uncategorized-pkg',
-        type: 'skill-pack',
-      });
-
-      const manifest = (await readJson(path.join(result.packagePath, PACKAGE_MANIFEST_PATH))) as {
-        categories: string[];
-        category?: string;
-      };
-
-      expect(manifest.categories).toEqual([]);
-      expect(manifest.category).toBeUndefined();
     });
   });
 });

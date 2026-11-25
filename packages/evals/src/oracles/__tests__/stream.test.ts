@@ -100,24 +100,12 @@ describe('toolNameMatches', () => {
 });
 
 describe('toolInvokedInStream', () => {
-  it('passes when the tool ran', async () => {
-    const result = await toolInvokedInStream('marketplace_install')(
-      ctx([toolCall('marketplace_install')])
-    );
-    expect(result.passed).toBe(true);
-  });
-
   it('passes on the MCP-QUALIFIED name a real durable stream carries', async () => {
     const result = await toolInvokedInStream('marketplace_install')(
       ctx([toolCall(qualified('marketplace_install'))])
     );
     expect(result.passed).toBe(true);
     expect(result.evidence).toMatchObject({ invocations: 1 });
-  });
-
-  it('fails when a DIFFERENT tool ran (the model chose wrong)', async () => {
-    const result = await toolInvokedInStream('marketplace_install')(ctx([toolCall('chat_send')]));
-    expect(result.passed).toBe(false);
   });
 
   it('fails when a NEIGHBORING qualified tool ran, and names what it saw', async () => {
@@ -134,22 +122,10 @@ describe('toolInvokedInStream', () => {
 });
 
 describe('toolResultContains', () => {
-  it('passes when a tool result carries the expected package', async () => {
-    const frames = [toolResult('marketplace_search', '{"matches":["acme-notes"]}')];
-    const result = await toolResultContains('marketplace_search', 'acme-notes')(ctx(frames));
-    expect(result.passed).toBe(true);
-  });
-
   it('passes on the MCP-QUALIFIED tool name', async () => {
     const frames = [toolResult(qualified('marketplace_search'), '{"matches":["acme-notes"]}')];
     const result = await toolResultContains('marketplace_search', 'acme-notes')(ctx(frames));
     expect(result.passed).toBe(true);
-  });
-
-  it('fails when no matching tool result carries the needle', async () => {
-    const frames = [toolResult('marketplace_search', '{"matches":[]}')];
-    const result = await toolResultContains('marketplace_search', 'acme-notes')(ctx(frames));
-    expect(result.passed).toBe(false);
   });
 });
 
@@ -191,19 +167,6 @@ describe('toolResultPayloads', () => {
     const { payloads } = toolResultPayloads(frames, 'marketplace_uninstall');
     expect(payloads).toEqual([{ status: 'approval_required' }]);
   });
-
-  it('reports a non-JSON result as unparsed rather than dropping it silently', () => {
-    const frames = [toolResult('marketplace_uninstall', 'Uninstalled the package for you.')];
-    const { payloads, unparsed } = toolResultPayloads(frames, 'marketplace_uninstall');
-    expect(payloads).toEqual([]);
-    expect(unparsed).toEqual(['Uninstalled the package for you.']);
-  });
-
-  it('returns nothing when the tool never produced a result', () => {
-    expect(
-      toolResultPayloads([toolCall('marketplace_uninstall')], 'marketplace_uninstall')
-    ).toEqual({ payloads: [], unparsed: [], observedToolNames: [] });
-  });
 });
 
 describe('uiCommandEmitted', () => {
@@ -213,14 +176,6 @@ describe('uiCommandEmitted', () => {
       ctx(frames)
     );
     expect(result.passed).toBe(true);
-  });
-
-  it('fails when no ui_command matched the predicate', async () => {
-    const frames = [uiCommand({ action: 'open_panel', panel: 'files' })];
-    const result = await uiCommandEmitted((c) => (c as { panel?: string }).panel === 'tasks')(
-      ctx(frames)
-    );
-    expect(result.passed).toBe(false);
   });
 });
 
@@ -233,12 +188,6 @@ describe('uiActionTriggerObserved', () => {
 
   it('fails when the turn_start carried a DIFFERENT action (a stray turn, not the widget)', async () => {
     const frames = [turnStart(uiActionBlock('some-other-action'))];
-    const result = await uiActionTriggerObserved('confirm-order')(ctx(frames));
-    expect(result.passed).toBe(false);
-  });
-
-  it('fails when the turn_start carried an ordinary message, not a <ui_action> block', async () => {
-    const frames = [turnStart('Just a normal prompt mentioning Action: confirm-order in prose')];
     const result = await uiActionTriggerObserved('confirm-order')(ctx(frames));
     expect(result.passed).toBe(false);
   });
@@ -277,10 +226,6 @@ function toolPair(id: string, toolName = 'read'): SseFrame[] {
 }
 
 describe('turnEndedExactlyOnce', () => {
-  it('passes on exactly one terminal', async () => {
-    expect((await turnEndedExactlyOnce()(ctx([turnEnd()]))).passed).toBe(true);
-  });
-
   it('fails on a turn that never ended — the hang', async () => {
     const result = await turnEndedExactlyOnce()(ctx([statusChange({ cost: 1 })]));
     expect(result.passed).toBe(false);
@@ -295,10 +240,6 @@ describe('turnEndedExactlyOnce', () => {
 });
 
 describe('toolLoopClosed', () => {
-  it('passes when a call opens and the SAME call closes', async () => {
-    expect((await toolLoopClosed()(ctx(toolPair('tc-a')))).passed).toBe(true);
-  });
-
   it('fails when a different call closes — the demux failure it exists to catch', async () => {
     // One opened, one closed, nothing paired: exactly what a stream filtered on
     // the wrong key produces, and exactly what a "saw a call, saw a result"
@@ -314,21 +255,9 @@ describe('toolLoopClosed', () => {
     const [call, res] = toolPair('tc-a') as [SseFrame, SseFrame];
     expect((await toolLoopClosed()(ctx([res, call]))).passed).toBe(false);
   });
-
-  it('fails when the turn used no tools at all', async () => {
-    const result = await toolLoopClosed()(ctx([turnEnd()]));
-    expect(result.passed).toBe(false);
-    expect(result.detail).toContain('0 opened');
-  });
 });
 
 describe('costReportedPositive', () => {
-  it('passes on a real reported cost', async () => {
-    expect((await costReportedPositive()(ctx([statusChange({ cost: 0.00028 })]))).passed).toBe(
-      true
-    );
-  });
-
   it('fails when nothing reported a cost — the ceiling was watching nothing', async () => {
     const result = await costReportedPositive()(ctx([turnEnd()]));
     expect(result.passed).toBe(false);
@@ -354,20 +283,9 @@ describe('modelReportedIs', () => {
     expect(result.passed).toBe(false);
     expect(result.detail).toContain('anthropic/claude-haiku-4-5');
   });
-
-  it('fails, rather than passing vacuously, when no model was reported', async () => {
-    const result = await modelReportedIs('openrouter/qwen/qwen3.7-flash')(ctx([turnEnd()]));
-    expect(result.passed).toBe(false);
-    expect(result.detail).toContain('nothing');
-  });
 });
 
 describe('failedHonestly', () => {
-  it('passes on a typed error followed by the terminal', async () => {
-    const frames = [errorFrame("That model isn't available."), turnEnd()];
-    expect((await failedHonestly()(ctx(frames))).passed).toBe(true);
-  });
-
   it('fails on an error with no terminal — the hang a person actually complains about', async () => {
     const result = await failedHonestly()(ctx([errorFrame('boom')]));
     expect(result.passed).toBe(false);

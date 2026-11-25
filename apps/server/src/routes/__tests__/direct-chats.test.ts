@@ -128,7 +128,7 @@ describe('POST /api/direct-chats', () => {
     const res = await request(server).post('/api/direct-chats').send({ roomId });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NOT_A_DIRECT_CHAT');
+    expect(res.body.code).toBe('conflict');
   });
 
   it('refuses an agent: a Direct chat is the owner’s own conversation', async () => {

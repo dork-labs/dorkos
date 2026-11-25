@@ -144,7 +144,11 @@ test('Inbox schedule carries the real server revision at 390 @smoke', async ({
     // outgoing request; successful approval and its receipt have card/route tests.
     const answer = await approved;
     expect(answer.status()).toBe(400);
-    expect(await answer.json()).toMatchObject({ code: 'unsupported_task_mode' });
+    expect(answer.headers()['content-type']).toContain('application/problem+json');
+    expect(await answer.json()).toMatchObject({
+      code: 'invalid_request',
+      detail: 'Choose a permission mode this task can run.',
+    });
   } finally {
     await request.delete(`/api/tasks/${task.id}`);
   }
@@ -216,11 +220,15 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
           approvalRevision: 'b'.repeat(64),
         };
         return route.fulfill({
-          status: 409,
-          json: {
-            error: 'This schedule changed. Review it again.',
-            code: 'schedule_review_changed',
-          },
+          status: 412,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'This schedule changed. Review it again.',
+          }),
         });
       }
       return route.fulfill({ json: { ...task, status: 'active' } });

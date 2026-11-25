@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { AGENT_NOT_TAKING_DMS } from '@dorkos/shared/community-dm-views';
 import { communityKeys, useCommunityContentAuthority } from '@/layers/entities/community';
 import { appRoutes } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
@@ -40,7 +39,7 @@ export function RemoteDmButton({
       void navigate({ ...appRoutes.channels(), search: { community, id: dm.roomId } });
     } catch (cause) {
       setNotice(
-        (cause as { code?: string }).code === AGENT_NOT_TAKING_DMS
+        (cause as { code?: string }).code === 'agent_not_taking_dms'
           ? `${agent.displayName} isn’t taking direct messages.`
           : 'Couldn’t open the direct message. Try again.'
       );

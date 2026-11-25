@@ -16,7 +16,7 @@ import {
   HOME_PERSON_ONLY_PATHS,
   PERSON_ONLY_DATA_PATHS,
   type ProtectedPath,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 
 /** The data folder's person-only entries that hold a browser sign-in. */
 const DATA_COOKIE_STORES: readonly ProtectedPath[] = PERSON_ONLY_DATA_PATHS.filter((entry) =>

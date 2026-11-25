@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { parseTranscript } from '../sessions/transcript-parser.js';
+import { parseTranscript } from '../sessions/__tests__/parse-transcript.js';
 it('fills tools from their own JSONL message timestamps, leaving missing or invalid times absent', () => {
   const lines = [
     {

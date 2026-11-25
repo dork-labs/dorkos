@@ -1,7 +1,7 @@
 ---
 number: 74
 title: Persist Agent Session Mapping in JSON File for Cross-Restart Continuity
-status: draft
+status: archived
 created: 2026-03-04
 spec: fix-relay-agent-routing-cwd
 superseded-by: null

@@ -17,7 +17,7 @@ import { createDb, runMigrations, type Db } from '@dorkos/db';
 
 const { createAuth } = await import('../index.js');
 const { initConfigManager } = await import('../../config-manager.js');
-const { mountBetterAuth, SIGN_IN_NEEDS_HTTPS } = await import('../../../../http/better-auth.js');
+const { mountBetterAuth } = await import('../../../../http/better-auth.js');
 const { env } = await import('../../../../env.js');
 const { markIngress } = await import('../../remote/ingress-mark.js');
 type ApiEnv = import('../../../../http/api-chain.js').ApiEnv;
@@ -72,8 +72,9 @@ describe('a sign-in the browser would drop', () => {
   it('explains, instead of looping, over plain http at a network address', async () => {
     const res = await signIn(LAN);
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe(SIGN_IN_NEEDS_HTTPS);
-    expect(res.body.message).toMatch(/plain http/);
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body.code).toBe('sign_in_needs_https');
+    expect(res.body.detail).toMatch(/plain http/);
   });
 
   it('signs in normally on this computer, where browsers keep Secure cookies over http', async () => {
@@ -91,7 +92,7 @@ describe('a sign-in the browser would drop', () => {
     try {
       const res = await signIn(LAN);
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('WIFI_SIGN_IN_NEEDS_CODE');
+      expect(res.body.code).toBe('not_from_wifi');
     } finally {
       viaIngress = null;
     }

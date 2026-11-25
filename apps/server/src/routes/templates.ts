@@ -20,7 +20,7 @@ import {
 import type { TemplateCatalog, TemplateEntry } from '@dorkos/shared/template-catalog';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 
 /** Filename for user-defined templates within the dorkHome directory. */
 const USER_CATALOG_FILENAME = 'agent-templates.json';
@@ -95,7 +95,7 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       return c.json({ version: 1, templates });
     } catch (err) {
       logger.error('[templates] GET / failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t read the templates. Try again.' });
     }
   });
 
@@ -115,10 +115,9 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       // Check for ID conflict with built-in templates
       const builtinConflict = DEFAULT_TEMPLATES.find((t) => t.id === entry.id);
       if (builtinConflict) {
-        return c.json(
-          { error: `Template ID '${entry.id}' conflicts with a built-in template` },
-          409
-        );
+        return problem(c, 'conflict', {
+          detail: `A built-in template is called '${entry.id}'. Pick another id.`,
+        });
       }
 
       // Read-modify-write: the conflict check reads the same file the write
@@ -136,13 +135,15 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       });
 
       if (!added) {
-        return c.json({ error: `Template ID '${entry.id}' already exists` }, 409);
+        return problem(c, 'conflict', {
+          detail: `A template called '${entry.id}' already exists. Pick another id.`,
+        });
       }
 
       return c.json(entry, 201);
     } catch (err) {
       logger.error('[templates] POST / failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t save the template. Try again.' });
     }
   });
 
@@ -154,7 +155,7 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       // Cannot delete built-in templates
       const isBuiltin = DEFAULT_TEMPLATES.some((t) => t.id === id);
       if (isBuiltin) {
-        return c.json({ error: `Cannot delete built-in template '${id}'` }, 403);
+        return problem(c, 'forbidden', { detail: 'Built-in templates can’t be deleted.' });
       }
 
       // Same read-modify-write shape as POST: lookup and removal must be one
@@ -171,13 +172,13 @@ export function createTemplateRoutes(dorkHome: string): Hono<ApiEnv> {
       });
 
       if (!removed) {
-        return c.json({ error: `Template '${id}' not found` }, 404);
+        return problem(c, 'not_found', { detail: `No template is called '${id}'.` });
       }
 
       return c.json({ deleted: id });
     } catch (err) {
       logger.error('[templates] DELETE /:id failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t delete the template. Try again.' });
     }
   });
 

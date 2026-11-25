@@ -238,7 +238,7 @@ describe('a window that opened the session without the folder', () => {
       .query({ cwd: '/etc/shadow' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
     // Refused before the runtime was ever consulted for this session.
     expect(fakeRuntime.getSessionSnapshot).not.toHaveBeenCalled();
   });
@@ -272,7 +272,7 @@ describe('a session whose live binding is outside the boundary', () => {
     const res = await request(server).get(path(SESSION_ID));
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(res.body.code).toBe('outside_boundary');
   });
 
   it('never reads the transcript it refused', async () => {

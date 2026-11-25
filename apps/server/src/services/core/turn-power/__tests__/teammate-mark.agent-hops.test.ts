@@ -50,6 +50,11 @@ import {
   createUpdateScheduleHandler,
 } from '../../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /** A real, empty data directory: `tasks_create` writes a SKILL.md before the row. */
 const tasksHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-teammate-mark-tasks-'));

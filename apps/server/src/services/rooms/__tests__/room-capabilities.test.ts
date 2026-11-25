@@ -893,6 +893,7 @@ describe('the rooms capability domain', () => {
     /** One room's detail, as the tool projects it. */
     interface RoomDetailPayload {
       roomId: string;
+      ref: string | null;
       kind: string;
       name: string | null;
       topic: string | null;
@@ -917,6 +918,14 @@ describe('the rooms capability domain', () => {
       };
       const listed = found.rooms[0]!.members.find((member) => member.authorId === human);
       expect(listed?.name).toBe('the operator');
+    });
+
+    it('carries the room’s dork: reference beside its name, on get_room and find_room (DOR-5046)', async () => {
+      expect((await describeAs(channel.id)).ref).toBe(`dork:room:${channel.id}`);
+      const found = (await call('rooms.find_room', { name: 'Backend' })) as {
+        rooms: RoomDetailPayload[];
+      };
+      expect(found.rooms.map((room) => room.ref)).toEqual([`dork:room:${channel.id}`]);
     });
 
     /** Ask for one room as somebody else — the positive control on a refusal. */

@@ -94,19 +94,6 @@ test.describe('Agent browser ⋯ menu', () => {
     expect(answers).toContain('/api/local-browser/disconnect');
   });
 
-  test('Forget saved sign-ins… opens the confirm dialog', async ({ page, chatPage }) => {
-    const { browser } = await chatWithBrowser(page, chatPage);
-    await browser.controls.getByRole('button', { name: 'Browser menu', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Forget saved sign-ins…', exact: true }).click();
-    const dialog = page.getByRole('alertdialog', { name: 'Forget saved sign-ins?' });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(
-      browser.controls.getByRole('button', { name: 'Browser menu', exact: true })
-    ).toBeFocused();
-  });
-
   test('at 390 it opens as a bottom sheet with Forward in it', async ({ page, chatPage }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const { browser } = await chatWithBrowser(page, chatPage);

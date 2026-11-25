@@ -20,22 +20,21 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
-import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import request, { type Response } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-
-vi.mock('../../../../env.js', () => ({
-  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
-}));
-vi.mock('../../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
-vi.mock('../../../../lib/logger.js', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
-}));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
 import { createExternalMcpServer } from '../../mcp-server.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { createMcpRoutes } from '../../../../routes/mcp.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
+import { initConfigManager } from '../../config-manager.js';
+import { rotateMcpLocalToken } from '../../auth/mcp-local-token.js';
 import { handRegisteredInSessionTools } from '../../../runtimes/claude-code/mcp-tools/index.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
@@ -98,24 +97,32 @@ function parseResponse(res: Response): JsonRpcMessage {
   return res.body as JsonRpcMessage;
 }
 
+let dorkHome: string;
+let localToken: string;
+
+// The production `/mcp` mount: the `/api` chain, then the endpoint's own gates
+// (origin, on/off switch, credential, rate limit) in front of the server.
+beforeAll(() => {
+  dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-surface-parity-'));
+  initConfigManager(dorkHome);
+  localToken = rotateMcpLocalToken(dorkHome);
+  const app = createApiApp({ admission: new MainRequestAdmission() });
+  app.route(
+    '/mcp',
+    createMcpRoutes(() => createExternalMcpServer(createFullDeps(), createMarketplaceDeps()))
+  );
+  requestTarget.mount(frontDoorListener(app));
+});
+
+afterAll(() => {
+  fs.rmSync(dorkHome, { recursive: true, force: true });
+});
+
 /** Every tool the live external `/mcp` server advertises. */
 async function fetchExternalTools(): Promise<ToolListEntry[]> {
-  const app = express();
-  app.use(express.json());
-  app.post('/mcp', async (req, res) => {
-    const server = createExternalMcpServer(createFullDeps(), createMarketplaceDeps());
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-    res.on('close', () => {
-      transport.close().catch(() => {});
-      server.close().catch(() => {});
-    });
-  });
-
-  requestTarget.mount(app);
   const res = await request(requestTarget.server)
     .post('/mcp')
+    .set('Authorization', `Bearer ${localToken}`)
     .set('Content-Type', 'application/json')
     .set('Accept', 'application/json, text/event-stream')
     .send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });

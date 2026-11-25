@@ -15,15 +15,27 @@
 # THE RULE. push-recheck when BOTH hold, full otherwise:
 #   1. the run was triggered by a push (`synchronize`); and
 #   2. at least one top-level comment on the PR, written by `claude[bot]` (user
-#      type Bot), carries a full review's severity tally: one of the shapes the
-#      verdict probe in claude-code-review.yml accepts ("1 important, 3 nits",
-#      "No blocking issues found", "No factual issues found").
-# A push re-check's own summary ("Push re-check: the Security lens only. ...
-# 0 important, 0 nits here.") also carries a tally, because the verdict probe
-# needs one, and it is NOT counted: a push re-check is only ever owed to a PR
-# that had a full review, so a chain of them always leads back to a real one,
-# and a PR whose only summaries are push re-checks gets a full review. The
-# Security verdict comment is not counted either.
+#      type Bot), is a full review's summary: its last line is the marker
+#      scripts/review-gh.sh appends to every summary it posts,
+#        <!-- dorkos-review-summary v1 head=<40-hex sha> mode=full -->
+#      The helper writes that line itself, with the mode this workflow decided
+#      (REVIEW_MODE), after whatever the reviewer wrote, so it records what the
+#      workflow did rather than what any text says. A push re-check's summary is
+#      marked mode=push-recheck and is NOT counted: a push re-check is only ever
+#      owed to a PR that had a full review, so a chain of them always leads back
+#      to a real one, and a PR whose only summaries are push re-checks gets a
+#      full review. A summary marked mode=unknown (a run of an older workflow) is
+#      not counted either.
+#
+# TRANSITION (delete after 2026-12-08, with LEGACY_CUTOFF and its fixtures).
+# Summaries posted before the helper wrote markers carry none. For those, and
+# only for comments created before LEGACY_CUTOFF, the earlier rule still
+# applies: an unmarked `claude[bot]` comment carrying a full review's severity
+# tally (the shapes the verdict probe in claude-code-review.yml accepts: "1
+# important, 3 nits", "No blocking issues found", "No factual issues found"),
+# that is not a push re-check's summary ("Push re-check: ...") and not the
+# Security verdict. An unmarked comment created at or after the cutoff never
+# counts, whatever it says.
 #
 # Every doubt resolves to `full`, which costs a little more and never skips the
 # general review: a trigger other than a push, no qualifying comment, or (in the
@@ -65,12 +77,18 @@ else
   input=$(cat "$src")
 fi
 
-# The tally shapes are the verdict probe's, kept identical on purpose (the
-# fixture suite checks the two regexes still agree).
+# The marker that makes a comment a full review's summary, matched against the
+# comment's last non-blank line.
+MARKER_RE='^<!-- dorkos-review-summary v1 head=[0-9a-f]{40} mode=full -->$'
+
+# TRANSITION only (see above): the tally shapes are the verdict probe's, kept
+# identical on purpose (the fixture suite checks the two regexes still agree),
+# and they count only on unmarked comments created before LEGACY_CUTOFF.
 TALLY_RE='[0-9]+ important|[0-9]+ nits?|No blocking issues|No factual issues'
+LEGACY_CUTOFF='2026-11-25T00:00:00Z'
 
 # shellcheck disable=SC2016 # jq variables, not shell ones
-decision=$(jq -rs --arg tally "$TALLY_RE" '
+decision=$(jq -rs --arg tally "$TALLY_RE" --arg marker "$MARKER_RE" --arg cutoff "$LEGACY_CUTOFF" '
   [ .[] | if type == "array" then .[] else . end ]
   | if all(.[]; type == "object") | not then error("not a list of comments") else . end
   | any(.[];
@@ -78,10 +96,17 @@ decision=$(jq -rs --arg tally "$TALLY_RE" '
         and .user.login == "claude[bot]"
         and .user.type == "Bot"
         and (.body | type) == "string")
-      and ((.body | gsub("\r"; "")) as $b
-        | ($b | test("^\\s*Push re-check:") | not)
-          and ($b | test("^\\s*<!-- dorkos-security-verdict") | not)
-          and ($b | test($tally))))
+      and ((.body | gsub("\r"; "") | sub("\\s+$"; "")) as $b
+        | ($b | split("\n") | last // "") as $last
+        | if ($last | startswith("<!-- dorkos-review-summary")) then
+            ($last | test($marker))
+          else
+            ((.created_at | type) == "string"
+              and .created_at < $cutoff
+              and ($b | test("^\\s*Push re-check:") | not)
+              and ($b | test("^\\s*<!-- dorkos-security-verdict") | not)
+              and ($b | test($tally)))
+          end))
   | if . then "push-recheck" else "full" end' <<<"$input" 2>/dev/null) || {
   echo "review-mode: could not read the comments" >&2
   exit 2

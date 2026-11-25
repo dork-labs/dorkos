@@ -126,7 +126,7 @@ export function registerSessionApprovalStepUpCases(): void {
       const held = await approve(true, { alwaysAllow: true });
       expect(held.status).toBe(428);
       pending('tool-one', '{"command":"whoami"}');
-      expect((await confirm(held.body.heldActionId)).body.code).toBe('different-request');
+      expect((await confirm(held.body.heldActionId)).body.code).toBe('precondition_failed');
       expect(runtime.approveTool).not.toHaveBeenCalled();
     });
     it('holds remote Always allow and a batch before either runs', async () => {
@@ -138,7 +138,10 @@ export function registerSessionApprovalStepUpCases(): void {
         .set('Origin', origin)
         .send({ toolCallIds: ['tool-one', 'tool-two'] });
       expect(batch.status).toBe(403);
-      expect(batch.body.code).toBe('APPROVALS_REQUIRE_SEPARATE_CONFIRMATION');
+      expect(batch.body).toMatchObject({
+        code: 'forbidden',
+        detail: 'Confirm each request separately.',
+      });
       const single = await request(app())
         .post(`/api/sessions/${sessionId}/batch-approve`)
         .set('Origin', origin)
@@ -257,7 +260,7 @@ export function registerSessionApprovalStepUpCases(): void {
         expect(held.status).toBe(428);
         const scripted = await confirm(held.body.heldActionId);
         expect(scripted.status).toBe(409);
-        expect(scripted.body.code).toBe('extension-risk');
+        expect(scripted.body.code).toBe('extension_risk');
         expect(runtime.approveTool).not.toHaveBeenCalled();
       } finally {
         setStepUpExtensionRiskInputs(() => ({

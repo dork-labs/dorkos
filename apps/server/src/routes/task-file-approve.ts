@@ -25,6 +25,7 @@ import {
   approveFileAsItIs,
 } from '../services/tasks/agent-mode/file-cap/file-cap-person.js';
 import { readJsonBody } from '@dorkos/http-kit';
+import { taskProblem } from './task-problem.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { operatorOnlyTaskRefusal } from './task-route-answers.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';
@@ -48,16 +49,16 @@ export function mountTaskFileApprove(router: Hono<ApiEnv>, deps: TaskModeUndoDep
   router.post('/:id/approve-file', async (c) => {
     const caller = honoRequestFacts(c);
     const refusal = operatorOnlyTaskRefusal({ status: true }, clearsTheAgentBar(caller));
-    if (refusal) return c.json(refusal, 403);
+    if (refusal) return taskProblem(c, refusal, 403);
     const existing = deps.store.getTask(c.req.param('id'));
     const wifiRefusal = existing
       ? wifiScheduleRefusal(caller, { status: 'active' }, existing)
       : undefined;
-    if (wifiRefusal) return c.json(wifiRefusal, 403);
+    if (wifiRefusal) return taskProblem(c, wifiRefusal, 403);
     const body = readJsonBody(c) as { capAt?: unknown; hash?: unknown } | null;
     const named = body?.capAt ?? null;
     if (typeof body?.hash !== 'string' || (named !== null && typeof named !== 'string')) {
-      return c.json(APPROVE_NEEDS_ITS_CAP, 400);
+      return taskProblem(c, APPROVE_NEEDS_ITS_CAP, 400);
     }
     // No cap named: the file as it is now, while no cap stands (DOR-5060).
     const capAt = typeof named === 'string' ? named : null;
@@ -76,7 +77,7 @@ export function mountTaskFileApprove(router: Hono<ApiEnv>, deps: TaskModeUndoDep
           capAt === null
             ? await approveFileAsItIs(deps.store, id, hash)
             : await approveCappedFile(deps.store, id, capAt, hash);
-        if (!outcome.ok) return c.json(outcome.body, outcome.status);
+        if (!outcome.ok) return taskProblem(c, outcome.body, outcome.status);
         const { task } = outcome;
         broadcastTasksChanged();
         deps.activity?.emit({

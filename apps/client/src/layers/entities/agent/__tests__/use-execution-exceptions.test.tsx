@@ -32,6 +32,8 @@ function runtimeEntry(type: string, supportsEffort: boolean): RuntimeCapabilitie
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     permissionModes: { supported: false, values: [] },
     settings: { configSection: type, supportsEffort, sections: [] },

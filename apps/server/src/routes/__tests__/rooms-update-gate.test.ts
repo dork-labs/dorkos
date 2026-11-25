@@ -166,7 +166,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
       .send({ title: 'Ana speaks for this room now' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OPERATOR_ONLY');
+    expect(res.body.code).toBe('operator_only');
     const room = await readBack(roomId);
     expect(room.title).toBe('Backend');
     expect(room.slug).toBe('backend');
@@ -182,7 +182,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
       .send({ archived: true });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OPERATOR_ONLY');
+    expect(res.body.code).toBe('operator_only');
     expect((await readBack(roomId)).archived).toBe(false);
   });
 
@@ -198,7 +198,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
       .send({ topic: 'whatever I decide it is about' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OPERATOR_ONLY');
+    expect(res.body.code).toBe('operator_only');
     expect((await readBack(roomId)).topic).toBeNull();
   });
 
@@ -223,7 +223,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
 
     for (const res of answers) {
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
     }
   });
 

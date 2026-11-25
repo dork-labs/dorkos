@@ -13,7 +13,7 @@
  * level, where every agent runs at Full autonomy, confirming a paused
  * connection's settings, which succeeds, and undoing an agent's task mode,
  * where there is nothing to undo, and sending another chat's queued message
- * now, which joins the running turn.
+ * now, which joins the running turn, and `dork:` links, which open nothing.
  * Heartbeats, a hub's computers, the spend limit and a connected app's
  * writes-back switch come from their own mocks.
  *
@@ -51,6 +51,7 @@ type SliceMethods =
   | 'listBackups'
   | 'removeBackup'
   | 'moveBackup'
+  | 'resolveDorkLink'
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getCanvasDocRoutes'
@@ -77,6 +78,7 @@ type SliceMethods =
   | 'confirmAuthenticator'
   | 'removeOwnerFactor'
   | 'setAccountNoAutoMove'
+  | 'setAccountAgentsMayPick'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
   | 'getAgentInstructionsTemplate'
@@ -179,6 +181,12 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     undoAccessChange: vi
       .fn()
       .mockImplementation(async (changeId: string) => ({ changeId, undoId: 'undo-1' })),
+    // No link opens anything: the 404 every unknown or private link answers.
+    resolveDorkLink: vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('That link opens nothing you can see here.'), { status: 404 })
+      ),
     getSignInLanding: vi.fn().mockRejectedValue(new Error('No such sign-in')),
     retrySignIn: vi.fn().mockResolvedValue({ kind: 'connected' }),
     // No document declares a route, so the header draws no route control.
@@ -198,6 +206,11 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     setAccountNoAutoMove: vi
       .fn()
       .mockImplementation(async (_accountId: string, noAutoMove: boolean) => ({ noAutoMove })),
+    setAccountAgentsMayPick: vi
+      .fn()
+      .mockImplementation(async (_accountId: string, agentsMayPick: boolean) => ({
+        agentsMayPick,
+      })),
     // DorkOS has served no page into a frame, so the canvas says nothing.
     getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
     confirmRelayAdapterReferences: vi.fn().mockResolvedValue({ ok: true }),

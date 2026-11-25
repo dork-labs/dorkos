@@ -62,10 +62,10 @@ export function captureDocumentSaveOperator(
     (typeof caller.headers.authorization === 'string' &&
       /^Bearer\s+dct_/iu.test(caller.headers.authorization))
   )
-    throw new DocChannelNotFoundError({ reason: 'NOT_OPERATOR' });
+    throw new DocChannelNotFoundError({ reason: 'not_operator' });
   const owner = docInstallationOwner(deps.installationId);
   if (caller.user && (owner.kind !== 'user' || owner.userId !== caller.user.userId))
-    throw new DocChannelNotFoundError({ reason: 'NOT_OPERATOR' });
+    throw new DocChannelNotFoundError({ reason: 'not_operator' });
   const actor: DocChannelActor = {
     surface: 'http',
     principal: createServerPrincipal({ kind: 'operator', owner }),
@@ -84,7 +84,7 @@ async function realRoot(folder: string): Promise<string> {
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT' || code === 'ENOTDIR')
-      throw new DocChannelNotFoundError({ cause: error, reason: 'FOLDER_GONE' });
+      throw new DocChannelNotFoundError({ cause: error, reason: 'folder_gone' });
     throw error;
   }
 }
@@ -105,7 +105,7 @@ export async function resolveCurrentDocumentSaveSource(
   const { owner, actor } = captureDocumentSaveOperator(deps, caller);
   const authorized = await deps.authorization.require(documentId, actor, true);
   if (parseScope(authorized.scope).kind !== 'session')
-    throw new DocChannelNotFoundError({ reason: 'NOT_SESSION' });
+    throw new DocChannelNotFoundError({ reason: 'not_session' });
   // Refuses a source that isn't a chat's, or has no folder, with its own reason.
   const source = readSessionDocSourceDescriptor(deps, documentId);
   if (
@@ -115,16 +115,16 @@ export async function resolveCurrentDocumentSaveSource(
     !source.rootCandidate ||
     !source.matchRoot
   )
-    throw new DocChannelNotFoundError({ reason: 'NO_RECORDED_FOLDER' });
+    throw new DocChannelNotFoundError({ reason: 'no_recorded_folder' });
   const root = await realRoot(source.rootCandidate);
   if ((await realRoot(source.resolvedCwd)) !== root || (await realRoot(source.matchRoot)) !== root)
-    throw new DocChannelNotFoundError({ reason: 'ROOT_MISMATCH' });
+    throw new DocChannelNotFoundError({ reason: 'root_mismatch' });
   // The document's own file must stay inside its root and the boundary. A file
   // that does not is a document this lane will not save, not a server fault.
   const actual = await resolveWithinCwd(source.resolvedCwd, source.sourcePath).catch(
     (error: unknown) => {
       if (error instanceof BoundaryError)
-        throw new DocChannelNotFoundError({ cause: error, reason: 'OUTSIDE_BOUNDARY' });
+        throw new DocChannelNotFoundError({ cause: error, reason: 'outside_boundary' });
       throw error;
     }
   );

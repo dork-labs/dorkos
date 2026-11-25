@@ -4,11 +4,13 @@
  * run that waited in line for a free agent slot: its limit counts from when its
  * turn starts (DOR-4576).
  *
- * The deadline cases run on real timers at a small scale, under a clock that
+ * The deadline cases run through the real scheduler under an awake clock that
  * reports how long the computer slept: awake time is elapsed time minus sleep,
- * and that sum is the contract. The settle cases run on a hand-driven clock.
+ * and that sum is the contract. The slept-through case runs on real timers at a
+ * small scale; the queued cases on vitest's fake clock. The settle cases run on
+ * a hand-driven clock.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
 import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
@@ -24,6 +26,11 @@ import {
   WakeSettle,
   runDeadline,
 } from '../timing/wake-settle.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => false),
@@ -36,7 +43,25 @@ vi.mock('../../runtimes/claude-code/claude-config-dir.js', async (importOriginal
 
 const CONFIG = { maxConcurrentRuns: 2, retentionCount: 100, mayFire: true, firingReason: 'test' };
 
-/** Real timers, and a sleep total the test sets. */
+/** Fake timers and Date for the queued cases, so seconds of a run pass in no real time. */
+function onFakeClock(): void {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+  });
+}
+
+/** Walk the fake clock until the run ends, or fail after `budgetMs` of fake time. */
+async function ranToEnd(runId: string, budgetMs = 10_000): Promise<void> {
+  for (let elapsed = 0; elapsed <= budgetMs; elapsed += 50) {
+    if (isTerminalRunStatus(store.getRun(runId)!.status)) return;
+    await vi.advanceTimersByTimeAsync(50);
+    // The run's own steps between timers include real I/O; let them land.
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error(`the run did not end within ${budgetMs} ms of fake time`);
+}
+
+/** The scheduler's timers, and a sleep total the test sets. */
 function reportedSleep(): { clock: AwakeClock; slept: (ms: number) => void } {
   const real = createAwakeClock();
   real.dispose();
@@ -70,6 +95,10 @@ let store: TaskStore;
 beforeEach(async () => {
   store = new TaskStore(createTestDb());
   await initBoundary('/');
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function newTask(maxRuntime: number) {
@@ -296,6 +325,7 @@ function agentQueuedFor(waitMs: number, workMs: number, onWaiting: () => void = 
 
 describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
   it('still runs when it waited longer than its limit, and gets its full limit once started', async () => {
+    onFakeClock();
     let summaryWhileWaiting: string | null | undefined;
     // 1.8s in line under a 1.5s limit, then 300ms of work: inside the limit.
     const agent = agentQueuedFor(1_800, 300, () => {
@@ -308,9 +338,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
     });
     const run = await service.triggerManualRun(newTask(1_500).id);
 
-    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
-      timeout: 5_000,
-    });
+    await ranToEnd(run!.id);
     expect(store.getRun(run!.id)).toMatchObject({ status: 'completed', outputSummary: 'working' });
     expect(store.getRun(run!.id)!.error ?? null).toBeNull();
     // While it waited, the row said so rather than looking stuck.
@@ -319,6 +347,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
   });
 
   it('still stops a run that runs past its limit once started', async () => {
+    onFakeClock();
     const service = new TaskSchedulerService({
       store,
       runtimes: singleRuntimeSource(agentQueuedFor(400, 2_000) as never),
@@ -326,9 +355,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
     });
     const run = await service.triggerManualRun(newTask(300).id);
 
-    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
-      timeout: 5_000,
-    });
+    await ranToEnd(run!.id);
     expect(store.getRun(run!.id)).toMatchObject({
       status: 'cancelled',
       error: expect.stringContaining('time limit'),

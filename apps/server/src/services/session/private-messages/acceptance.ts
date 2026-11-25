@@ -47,7 +47,7 @@ import type {
 } from './source-types.js';
 export { PrivateSessionMessageRefusalError } from './refusal.js';
 import { PrivateSessionMessageRefusalError } from './refusal.js';
-import { privateSourceIdOf } from './source-types.js';
+import { privateQueueRowOf, privateSourceIdOf } from './source-types.js';
 
 /** Durable private-source acceptance and exactly-once dispatch coordinator. */
 export class PrivateSessionMessageAcceptanceService {
@@ -90,7 +90,7 @@ export class PrivateSessionMessageAcceptanceService {
         )
         .get();
       if (existing) {
-        const queueRecord = this.queue.get(existing.queueMessageId);
+        const queueRecord = this.queue.getWaiting(existing.queueMessageId);
         return { receipt: existing, ...(queueRecord ? { queueRecord } : {}), created: false };
       }
 
@@ -112,7 +112,7 @@ export class PrivateSessionMessageAcceptanceService {
           id: queueMessageId,
           sessionId: draft.sessionId,
           content: draft.queuePlaceholder,
-          clientId: `system:${draft.sourceKind}`,
+          ...privateQueueRowOf(draft.sourceKind),
           disposition: 'queue',
         },
         tx
@@ -341,7 +341,7 @@ export class PrivateSessionMessageAcceptanceService {
     return Date.parse(next) > this.now().getTime() ? next : undefined;
   }
 
-  /** Advance a claimed receipt and delete its queue row in one transaction. */
+  /** Advance a claimed receipt and keep its queue row for its turn, in one transaction. */
   markTurnStarted(receiptId: string, seq: number): void {
     const now = this.now().toISOString();
     documentTransaction(this.db, (tx) => {
@@ -351,7 +351,7 @@ export class PrivateSessionMessageAcceptanceService {
         .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
         .get();
       if (!receipt || receipt.state !== 'dispatching') return;
-      this.queue.remove(receipt.queueMessageId, tx);
+      this.queue.markInTurn(receipt.queueMessageId, tx);
       requireSynchronous(
         this.adapterFor(receipt.sourceKind).onTurnStarted?.(tx, receipt, seq, now)
       );
@@ -405,7 +405,7 @@ export class PrivateSessionMessageAcceptanceService {
         .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
         .get();
       if (!receipt || receipt.state !== 'dispatching') return;
-      this.queue.remove(receipt.queueMessageId, tx);
+      this.queue.remove(receipt.queueMessageId, tx, 'outcome_unknown');
       requireSynchronous(
         this.adapterFor(receipt.sourceKind).onOutcomeUnknown?.(
           tx,
@@ -439,7 +439,7 @@ export class PrivateSessionMessageAcceptanceService {
         .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
         .get();
       if (!receipt || receipt.state !== 'accepted') return;
-      this.queue.remove(receipt.queueMessageId, tx);
+      this.queue.remove(receipt.queueMessageId, tx, 'cancelled');
       requireSynchronous(
         this.adapterFor(receipt.sourceKind).onCancelled?.(
           tx,
@@ -471,7 +471,7 @@ export class PrivateSessionMessageAcceptanceService {
     return documentTransaction(this.db, (tx) => {
       let changed = 0;
       for (const row of rows) {
-        this.queue.remove(row.queueMessageId, tx);
+        this.queue.remove(row.queueMessageId, tx, 'outcome_unknown');
         requireSynchronous(
           // A degraded boot may omit a fixed source. Quarantine its durable
           // dispatch evidence without fabricating source authority or blocking boot.

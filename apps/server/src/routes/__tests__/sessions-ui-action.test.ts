@@ -174,7 +174,7 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .send({ actionId: 'refresh' });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('SESSION_LOCKED');
+    expect(res.body.code).toBe('session_locked');
     // The body names whoever actually holds it, not a placeholder.
     expect(res.body.lockedBy).toBe('other');
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
@@ -272,7 +272,7 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .send({ actionId: 'refresh' });
 
     expect(clicked.status).toBe(409);
-    expect(clicked.body.code).toBe('SESSION_LOCKED');
+    expect(clicked.body.code).toBe('session_locked');
     // Truthful: the window whose turn is running, not a placeholder. The lock
     // this route used to ask reports null here (see `beforeEach`), so `unknown`
     // is what an answer built from it would say.
@@ -323,7 +323,7 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .send({ actionId: 'refresh' });
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).toBe('session_not_found');
     // Storage was consulted before rejecting.
     expect(fakeRuntime.getSession).toHaveBeenCalledWith(expect.any(String), SESSION_ID);
     expect(fakeRuntime.acquireLock).not.toHaveBeenCalled();
@@ -336,7 +336,7 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .send({ payload: { a: 1 } });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
     expect(fakeRuntime.acquireLock).not.toHaveBeenCalled();
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
@@ -346,7 +346,7 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .post(`/api/sessions/${SESSION_ID}/ui-action`)
       .send({ actionId: '' });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('rejects an over-long actionId (400) — prompt-bound fields are capped', async () => {
@@ -354,7 +354,7 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .post(`/api/sessions/${SESSION_ID}/ui-action`)
       .send({ actionId: 'a'.repeat(201) });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -363,9 +363,9 @@ describe('POST /api/sessions/:id/ui-action', () => {
       .post(`/api/sessions/${SESSION_ID}/ui-action`)
       .send({ actionId: 'go', payload: { blob: 'x'.repeat(8_192) } });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
     // The 400 names the cap so the caller knows exactly what to fix.
-    expect(res.body.error).toContain('8192');
+    expect(res.body.detail).toContain('8192');
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
 

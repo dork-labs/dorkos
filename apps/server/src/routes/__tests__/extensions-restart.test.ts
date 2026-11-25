@@ -92,7 +92,8 @@ describe('POST /api/extensions/:id/restart', () => {
   ])('refuses %s without reloading or resetting the stop budget', async (_caller, headers) => {
     const res = await restart('people', headers);
     expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ code: 'restart_person_required' });
+    expect(res.headers.get('content-type')).toBe('application/problem+json');
+    expect(await res.json()).toMatchObject({ code: 'person_only' });
     expect(reloaded).toEqual([]);
     expect(broadcast).toEqual([]);
   });
@@ -135,14 +136,16 @@ describe('POST /api/extensions/:id/restart', () => {
     };
     const res = await restart('people');
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'restart_refused' });
+    const body = await res.json();
+    expect(body).toMatchObject({ code: 'conflict' });
+    expect(JSON.stringify(body)).not.toContain('did not reload it');
     expect(broadcast).toEqual([]);
   });
 
   it('refuses a copy nobody approved to run, and reloads nothing (Security, DOR-4785)', async () => {
     approved = { before: false, after: false };
     const res = await restart('people');
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: 'needs_approval' });
     expect(reloaded).toEqual([]);
   });
@@ -150,7 +153,7 @@ describe('POST /api/extensions/:id/restart', () => {
   it('refuses when the reload finds the files changed since the yes, never a success', async () => {
     approved = { before: true, after: false };
     const res = await restart('people');
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: 'needs_approval' });
     // Its card changed (it now waits for a person), so open windows hear of it.
     expect(broadcast).toEqual([['people']]);
@@ -165,18 +168,23 @@ describe('POST /api/extensions/:id/restart', () => {
     });
     const res = await restart('people');
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      error: 'server.ts: Unexpected token',
-      code: 'compile_error',
+    const body = await res.json();
+    expect(body).toMatchObject({
+      code: 'conflict',
+      detail: 'It no longer builds. Open Settings to see why.',
     });
+    // The build error names files: it stays in the log, never in the answer.
+    expect(JSON.stringify(body)).not.toContain('Unexpected token');
     expect(broadcast).toEqual([]);
   });
 
   it('never reports a restart when compilation worked but the server did not start', async () => {
     serverError = { code: 'server_start_failed', message: 'Couldn’t start the app.' };
     const res = await restart('people');
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'server_start_failed' });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      code: 'upstream_unavailable',
+    });
     expect(broadcast).toEqual([['people']]);
   });
 });

@@ -44,13 +44,13 @@ describe('SessionOriginMark', () => {
     ['external', 'External'],
   ] as const)('renders an icon + tooltip for origin=%s with fallback label', (origin, label) => {
     const { container } = render(<SessionOriginMark origin={origin} />, { wrapper: Wrapper });
-    expect(screen.getByLabelText(`Origin: ${label}`)).toBeDefined();
+    expect(screen.getByLabelText(`Origin: ${label}`)).toBeInTheDocument();
     expect(container.querySelector('svg')).not.toBeNull();
   });
 
   it('prefers a passed label over the descriptor fallback', () => {
     render(<SessionOriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
-    expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
+    expect(screen.getByLabelText('Origin: Telegram')).toBeInTheDocument();
     expect(screen.queryByLabelText('Origin: Integration')).toBeNull();
   });
 
@@ -85,6 +85,6 @@ describe('SessionOriginMark', () => {
 
   it('still renders the accessible label and tooltip when not decorative (default)', () => {
     render(<SessionOriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
-    expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
+    expect(screen.getByLabelText('Origin: Telegram')).toBeInTheDocument();
   });
 });

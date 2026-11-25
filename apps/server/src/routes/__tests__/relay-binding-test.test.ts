@@ -186,7 +186,8 @@ describe('POST /api/relay/bindings/:id/test', () => {
 
     const res = await request(app).post('/api/relay/bindings/nonexistent/test').expect(404);
 
-    expect(res.body.error).toBe('Binding not found');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'That chat route doesn’t exist.' });
     expect(mockBindingRouter.testBinding).not.toHaveBeenCalled();
   });
 
@@ -202,7 +203,10 @@ describe('POST /api/relay/bindings/:id/test', () => {
 
     const res = await request(app).post('/api/relay/bindings/b-test-1/test').expect(409);
 
-    expect(res.body.error).toBe('Binding is paused. Resume to run a test.');
+    expect(res.body).toMatchObject({
+      code: 'chat_route_paused',
+      detail: 'This chat route is paused. Resume it to run a test.',
+    });
     expect(mockBindingRouter.testBinding).not.toHaveBeenCalled();
   });
 
@@ -214,7 +218,7 @@ describe('POST /api/relay/bindings/:id/test', () => {
 
     const res = await request(app).post('/api/relay/bindings/b-test-1/test').expect(503);
 
-    expect(res.body.error).toBe('Binding subsystem not available');
+    expect(res.body.code).toBe('temporarily_unavailable');
   });
 
   it('returns 503 when binding router is not available', async () => {
@@ -229,7 +233,7 @@ describe('POST /api/relay/bindings/:id/test', () => {
 
     const res = await request(app).post('/api/relay/bindings/b-test-1/test').expect(503);
 
-    expect(res.body.error).toBe('Binding router not available');
+    expect(res.body.code).toBe('temporarily_unavailable');
   });
 
   it('returns 500 when router throws an unexpected error', async () => {
@@ -247,7 +251,8 @@ describe('POST /api/relay/bindings/:id/test', () => {
 
     const res = await request(app).post('/api/relay/bindings/b-test-1/test').expect(500);
 
-    expect(res.body.error).toBe('Unexpected adapter failure');
+    expect(res.body.code).toBe('internal_error');
+    expect(JSON.stringify(res.body)).not.toContain('Unexpected adapter failure');
   });
 
   it('never invokes the agent runtime during a test', async () => {
@@ -314,6 +319,10 @@ describe('POST /api/relay/bindings/:id/test — rate limiting', () => {
     // 11th request should be rate-limited
     const res = await request(app).post('/api/relay/bindings/b-test-1/test').expect(429);
 
-    expect(res.body.error).toBe('Too many test requests, try again in a minute');
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'rate_limited',
+      detail: 'Too many tests. Wait a minute, then try again.',
+    });
   });
 });

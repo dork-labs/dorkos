@@ -52,7 +52,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { RequestFactsEnv } from '../../http/request-facts.js';
 import { createExtensionsRoutes } from '../extensions.js';
-import { EXTENSION_WRITE_REFUSED, refusedExtensionWrite } from '../extension-write-binding.js';
+import { refusedExtensionWrite } from '../extension-write-binding.js';
 
 const target = swappableServer();
 
@@ -129,7 +129,9 @@ describe('the extension write routes, bound to the caller', () => {
           : request(target.server).delete(url).set({ 'X-DorkOS-Extension': 'alpha' });
       const res = await call;
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(EXTENSION_WRITE_REFUSED);
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toContain('beta');
       expect(secretStore.get('api_key')).toBe('original');
       expect(writeFile).not.toHaveBeenCalled();
     }

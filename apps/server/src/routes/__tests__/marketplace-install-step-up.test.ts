@@ -141,7 +141,7 @@ describe('marketplace install and update confirmation', () => {
     expect(held.status).toBe(428);
     expect(installer.install).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(installer.install).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -176,7 +176,7 @@ describe('marketplace install and update confirmation', () => {
     const moved = await owner
       .call('post', '/api/marketplace/updates', 'own-tunnel')
       .send({ apply: true, targets: [{ ...target, contentHash: 'sha256:other' }] });
-    expect(moved.status).toBe(409);
+    expect(moved.status).toBe(412);
     expect(moved.body.heldActionId).toBeUndefined();
 
     const held = await owner
@@ -185,7 +185,7 @@ describe('marketplace install and update confirmation', () => {
     expect(held.status).toBe(428);
     expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(updateFlow.applyPlan).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({

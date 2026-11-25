@@ -208,7 +208,7 @@ describe('owner notification HTTP boundary', () => {
       (await request(target.server).delete(`${prefix}/subscriptions/${created.body.id}`)).status
     ).toBe(204);
     expect((await request(target.server).post(`${prefix}/subscriptions`).send(body)).status).toBe(
-      409
+      412
     );
     expect(
       (await request(target.server).get(`${prefix}/subscriptions`)).body.subscriptions
@@ -265,14 +265,16 @@ describe('owner notification HTTP boundary', () => {
       .mockRejectedValueOnce(new ManagedConnectorCloudError('unauthorized'))
       .mockRejectedValueOnce(new Error('provider outage'));
     const upgrade = await request(target.server).get(`${prefix}/definitions`);
-    expect(upgrade.status).toBe(409);
-    expect(upgrade.body.code).toBe('cloud_link_needs_update');
+    expect(upgrade.status).toBe(401);
+    expect(upgrade.headers['content-type']).toContain('application/problem+json');
+    expect(upgrade.body.code).toBe('cloud_link_required');
     const unlinked = await request(target.server).get(`${prefix}/definitions`);
     expect(unlinked.status).toBe(401);
     expect(unlinked.body.code).toBe('cloud_link_required');
     const outage = await request(target.server).get(`${prefix}/definitions`);
     expect(outage.status).toBe(503);
-    expect(outage.body.code).toBe('events_unavailable');
+    expect(outage.body.code).toBe('temporarily_unavailable');
+    expect(JSON.stringify(outage.body)).not.toContain('provider outage');
   });
 
   it('requires the operator cookie while login is enabled', async () => {
@@ -293,7 +295,7 @@ describe('owner notification HTTP boundary', () => {
       ).status
     ).toBe(400);
     expect((await request(target.server).post(`${prefix}/subscriptions`).send(body)).status).toBe(
-      409
+      412
     );
     expect(f.reconcile).not.toHaveBeenCalled();
   });
@@ -314,7 +316,7 @@ describe('owner notification HTTP boundary', () => {
           .post(`${prefix}/subscriptions`)
           .send({ ...body, destination: { kind: 'room', id: 'other-room' } })
       ).status
-    ).toBe(409);
+    ).toBe(412);
     expect(f.store.active(created.body.id)).toBeDefined();
   });
   it('keeps signing input write-only and does not return service exceptions', async () => {

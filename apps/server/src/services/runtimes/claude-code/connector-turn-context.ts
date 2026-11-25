@@ -1,4 +1,8 @@
 /** Turn-scoped structural connector authority for Claude Code MCP tools. */
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentSession } from './agent-types.js';
+import { readClaudeToolTurn, type ClaudeToolLaunchSettings } from './tool-turn/live-tool-turn.js';
+import { queryModeChange } from './tool-turn/query-mode.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import type {
   OpenConnectorTurnResult,
@@ -25,6 +29,7 @@ export interface ClaudeConnectorTurnContextOptions {
   readonly agentPath: string;
   /** Working directory bound to the turn. */
   readonly cwd: string;
+  readonly ownsCurrentTurn?: () => boolean;
 }
 
 /**
@@ -36,6 +41,8 @@ export interface ClaudeConnectorTurnContextOptions {
  */
 export class ClaudeConnectorTurnContext {
   private readonly controller = new AbortController();
+  private toolTurn:
+    { query: Query; retire(): void; read(): ReturnType<typeof readClaudeToolTurn> } | undefined;
   private opening: Promise<void> | undefined;
   private binding: OpenConnectorTurnResult | undefined;
   private revocation: Promise<void> | undefined;
@@ -43,6 +50,44 @@ export class ClaudeConnectorTurnContext {
   private active = true;
 
   constructor(private readonly options: ClaudeConnectorTurnContextOptions) {}
+
+  /** Bind this message to the query that has started serving it. */
+  prepareToolTurn(session: AgentSession, query: Query, settings: ClaudeToolLaunchSettings) {
+    const ownsQuery = () =>
+      this.active && session.connectorTurn === this && session.activeQuery === query;
+    if (!ownsQuery()) return;
+    if (this.toolTurn?.query !== query) {
+      this.toolTurn?.retire();
+      const lifetime = new AbortController();
+      const queue = session.eventQueue;
+      const current = () => ownsQuery() && session.eventQueue === queue && !lifetime.signal.aborted;
+      this.toolTurn = {
+        query,
+        retire: () => lifetime.abort(),
+        read: () => {
+          const change = queryModeChange(query);
+          if (change && change.kind !== 'applied') return undefined;
+          const applied =
+            change?.kind === 'applied'
+              ? {
+                  ...settings,
+                  permissionMode: change.permissionMode,
+                  sdkPermissionMode: change.sdkPermissionMode,
+                  turnLevelMode: undefined,
+                }
+              : settings;
+          return readClaudeToolTurn(session, applied, lifetime.signal, current);
+        },
+      };
+    }
+    const publication = this.toolTurn;
+    return (reason: RevokeConnectorTurnReason = 'turn_terminal') => {
+      if (this.toolTurn !== publication) return;
+      void this.revoke(this.cancelled ? 'turn_cancelled' : reason).catch((error: unknown) => {
+        logger.warn('[ClaudeConnectorTurnContext] Producer retirement failed', { error });
+      });
+    };
+  }
 
   /** Whether the broker's exact allowlist marks this as connector execution. */
   isConnectorCapabilityId(id: string): boolean {
@@ -74,7 +119,8 @@ export class ClaudeConnectorTurnContext {
   }
 
   private assertCurrent(): void {
-    if (!this.active) throw new Error('Claude runtime turn is retired.');
+    if (!this.active || this.options.ownsCurrentTurn?.() === false)
+      throw new Error('Claude runtime turn is retired.');
     this.controller.signal.throwIfAborted();
   }
 
@@ -95,6 +141,8 @@ export class ClaudeConnectorTurnContext {
    */
   async revoke(reason: RevokeConnectorTurnReason): Promise<void> {
     this.active = false;
+    this.toolTurn?.retire();
+    this.toolTurn = undefined;
     this.supervisor?.stop();
     if (reason === 'turn_cancelled') this.controller.abort();
     await this.opening?.catch(() => undefined);
@@ -119,7 +167,10 @@ export class ClaudeConnectorTurnContext {
         canonicalCwd: this.options.cwd,
         signal: this.controller.signal,
       },
-      { isCurrent: () => this.active }
+      {
+        isCurrent: () => this.active && this.options.ownsCurrentTurn?.() !== false,
+        readToolTurn: () => this.toolTurn?.read(),
+      }
     );
     if (!binding) return;
     this.binding = binding;
@@ -166,17 +217,29 @@ export function claudeConnectorTurn(
   tools: ConnectorRuntimeTools | undefined,
   agent: { readonly agentPath: string } | undefined,
   turn: {
-    readonly session: { readonly sdkSessionId?: string | null };
+    readonly session: Pick<AgentSession, 'connectorTurn'> & {
+      readonly sdkSessionId?: string | null;
+    };
     readonly sessionId: string;
     readonly cwd: string;
   }
 ): ClaudeConnectorTurnContext | undefined {
-  if (!tools || !agent) return undefined;
-  return new ClaudeConnectorTurnContext({
+  const { session } = turn;
+  void session.connectorTurn?.revoke('turn_terminal').catch((error: unknown) => {
+    logger.warn('[ClaudeConnectorTurnContext] Previous turn retirement failed', { error });
+  });
+  if (!tools || !agent) {
+    session.connectorTurn = undefined;
+    return undefined;
+  }
+  const context: ClaudeConnectorTurnContext = new ClaudeConnectorTurnContext({
     tools,
     canonicalSessionId: () => turn.session.sdkSessionId || turn.sessionId,
     sentSessionId: turn.sessionId,
     agentPath: agent.agentPath,
     cwd: turn.cwd,
+    ownsCurrentTurn: () => session.connectorTurn === context,
   });
+  session.connectorTurn = context;
+  return context;
 }

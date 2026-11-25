@@ -103,10 +103,30 @@ describe('the follow-up offer', () => {
     const { id, calls } = await answeredWithOffer();
     expect(await fx.inbox.answerOffer(id, true)).toMatchObject({
       ok: false,
-      message: "Couldn't change that. Try again.",
+      status: 409,
+      code: 'offer_project_unavailable',
     });
     expect(calls).toEqual(['approve']);
     expect(await projectSettingsStore(dorkHome).read('flow', '/repos/dorkos')).toBeNull();
+  });
+
+  it('answers a settings store that cannot be written as its own fault, and stays open', async () => {
+    // The data directory is a file, so the settings write throws.
+    const blocked = path.join(dorkHome, 'not-a-folder');
+    fs.writeFileSync(blocked, '');
+    fx.inbox.stop();
+    fx.close();
+    fx = createInboxFixture({ dorkHome: blocked });
+    fx.inbox.markRunning('flow', 'Flow');
+    const { id, calls } = await answeredWithOffer();
+    expect(await fx.inbox.answerOffer(id, true)).toMatchObject({
+      ok: false,
+      status: 500,
+      code: 'offer_failed',
+    });
+    expect(calls).toEqual(['approve']);
+    // Nothing was used up: a second try meets the same fault, not `offer_gone`.
+    expect(await fx.inbox.answerOffer(id, true)).toMatchObject({ code: 'offer_failed' });
   });
 
   it('is never made for a deadline resolution', async () => {

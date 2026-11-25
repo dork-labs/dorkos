@@ -94,6 +94,7 @@ describe('sessionVisibilityForOrigin', () => {
       'chat-message': 'space',
       'account-handoff': 'participants',
       'account-resume': 'participants',
+      resume: 'participants',
       'test-harness': 'participants',
     };
     for (const [kind, expected] of Object.entries(table)) {

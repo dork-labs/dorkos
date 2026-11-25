@@ -10,11 +10,13 @@
 #
 #   <!-- dorkos-security-verdict v1 head=<sha> verdict=pass|fail musts=<n> cats=<list|-> -->
 #
-# This reads the PR's comments, keeps those written by a bot (the reviewer posts
-# as the action's App), takes the newest marker naming <head-sha>, and passes
-# only when it says `pass`. No marker for this head is a fail: an unreviewed head
-# is not a reviewed one. Only the marker is read; the rest of the comment is
-# ignored, so prose in a comment cannot pass the check.
+# This reads the PR's comments, keeps only those with login `claude[bot]` and
+# user type Bot (the reviewer posts as the action's App, under that login),
+# takes the newest marker naming <head-sha>, and passes only when it says
+# `pass`. A marker from any other author, bots included, is not read. No marker
+# for this head is a fail: an unreviewed head is not a reviewed one. Only the
+# marker is read; the rest of the comment is ignored, so prose in a comment
+# cannot pass the check.
 #
 # Advisory for now: the cloud and local Security reviews are compared before it
 # becomes required.
@@ -35,9 +37,9 @@ head=${2:-}
   exit 2
 }
 
-# One JSON record per bot comment: created_at and body.
+# One JSON record per comment by claude[bot]: created_at and body.
 records=$("$GH" api --paginate "repos/$REPO/issues/$pr/comments?per_page=100" \
-  --jq '.[] | select(.user.type == "Bot") | {created_at, body} | tojson') || {
+  --jq '.[] | select(.user.type == "Bot" and .user.login == "claude[bot]") | {created_at, body} | tojson') || {
   echo "security-verdict-check: could not read the comments of #$pr" >&2
   exit 2
 }

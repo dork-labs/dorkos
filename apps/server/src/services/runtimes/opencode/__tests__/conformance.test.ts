@@ -21,7 +21,7 @@ import {
  * one can never turn into the paid one by accident:
  *
  *   FREE — a local open-source model, nothing billed:
- *     DORKOS_OPENCODE_LIVE=1 pnpm vitest run \
+ *     DORKOS_OPENCODE_LIVE=1 DORKOS_OPENCODE_LOCAL_MODEL=qwen2.5-coder:7b pnpm vitest run \
  *       src/services/runtimes/opencode/__tests__/conformance.test.ts
  *
  *   PAID — a cheap model on OpenRouter, billed to that account:
@@ -36,25 +36,12 @@ import {
  * A key with no flag arms nothing: plenty of people leave `OPENROUTER_API_KEY`
  * exported, and having one is not the same as deciding to spend.
  *
- * FREE mode honors an `OPENCODE_CONFIG` file too (the sidecar merges it), which is the tidiest way to
- * pin a local model for one run without touching your own OpenCode config:
- *
- *     DORKOS_OPENCODE_LIVE=1 OPENCODE_CONFIG=/tmp/local.json pnpm vitest run …
- *
- * where `local.json` declares an `ollama` provider over `http://127.0.0.1:11434/v1` and names one of
- * its models as `model`. Otherwise FREE mode's model comes from OpenCode's own config — e.g. `ollama pull
- * qwen2.5-coder:32b` and an `ollama` provider in `opencode.json` with that model
- * as the default — so the identical conformance assertions stream a real turn
- * from a genuinely local model with no proprietary API in the loop.
- *
- * **"Free" there is a property of YOUR OpenCode config, not of this flag.** The
- * free arm writes `provider: null` / `defaultModel: null`, so the sidecar falls
- * back to whatever `~/.config/opencode` names as its default — and
- * `server-manager.ts` includes supported model keys in the projected turn
- * environment, so an exported `OPENROUTER_API_KEY` is reachable from it. If your OpenCode default is a hosted
- * model, `DORKOS_OPENCODE_LIVE=1` bills it. Point that default at a local model
- * before using this arm, or use the paid arm, which at least pins what it spends
- * on.
+ * FREE mode reaches a local model and nothing else (DOR-4754,
+ * `free-local/free-local-run.ts`). It writes its own OpenCode config that
+ * enables one local provider (Ollama's address unless `DORKOS_OPENCODE_LOCAL_URL`
+ * names another loopback one), points OpenCode's config and login folders at a
+ * temp folder, and removes the hosted keys DorkOS would pass through. No model,
+ * a non-local address, or both flags at once stops the run before a prompt.
  *
  * PAID mode pins its model instead of inheriting one, because an unpinned run
  * cannot say what it spent on. The pin rides `OPENCODE_CONFIG`, a temp config
@@ -86,32 +73,16 @@ import os from 'node:os';
 import path from 'node:path';
 import type { OpencodeClient, GlobalEvent, Message, Part } from '@opencode-ai/sdk';
 import { runtimeConformance, runtimeGuardConformance, type HandedGrants } from '@dorkos/test-utils';
+import { prepareFreeLocalRun } from './free-local/free-local-run.js';
 
 /**
- * The live-mode decision, hoisted so the (also hoisted) vi.mock factory can
- * branch on it — and computed in ONE callback so the paid arm's fail-closed
- * check cannot be evaluated before the flags it reads.
- *
- * `paid` requires the key as well as the flag, and a flag without a key THROWS
- * here. Collection fails with the reason on screen, which is the only honest
- * outcome: falling back to the mocked run would report a green about a provider
- * nothing reached, and skipping would report nothing at all to somebody who
- * explicitly asked for a paid run.
+ * The live-mode decision (`readLiveMode`), hoisted so the (also hoisted)
+ * vi.mock factory can branch on it. A paid flag with no key, or both flags at
+ * once, fails collection with the reason on screen.
  */
-const LIVE_MODE = vi.hoisted(() => {
-  const free = process.env.DORKOS_OPENCODE_LIVE === '1';
-  const paid = process.env.DORKOS_OPENCODE_LIVE_PAID === '1';
-  const key = (process.env.OPENROUTER_API_KEY ?? '').trim();
-  if (paid && key === '') {
-    throw new Error(
-      'DORKOS_OPENCODE_LIVE_PAID=1 was set with no OPENROUTER_API_KEY, so this suite has no way ' +
-        'to reach a model. Set the key, or unset the flag to run fully mocked. Refusing rather ' +
-        'than falling back to the mocked run, which would report a green about a provider ' +
-        'nothing reached.'
-    );
-  }
-  return { free, paid, live: free || paid };
-});
+const LIVE_MODE = await vi.hoisted(async () =>
+  (await import('./free-local/free-local-run.js')).readLiveMode(process.env)
+);
 
 /**
  * True in either live mode — the real sidecar, the real dependency probe.
@@ -340,6 +311,7 @@ function resolveLiveBinary(): string {
  * at it, so the sidecar has a `runtimes.opencode` section to boot from without
  * this suite ever reading or writing the operator's real config.
  *
+ * In FREE mode it confines OpenCode to a local model (`prepareFreeLocalRun`).
  * In PAID mode it also writes an `OPENCODE_CONFIG` file pinning the model and
  * exports the variable, which the sidecar merges with the ask-ruleset DorkOS
  * injects as `OPENCODE_CONFIG_CONTENT`.
@@ -373,6 +345,7 @@ async function prepareLiveConfig(): Promise<string> {
   );
   (await import('../../../core/config-manager.js')).initConfigManager(dorkHome);
 
+  if (LIVE_MODE.free) prepareFreeLocalRun(process.env, home);
   if (LIVE_MODE.paid) {
     const configFile = path.join(home, 'opencode.json');
     fs.writeFileSync(configFile, JSON.stringify({ model: PAID_MODEL }), 'utf8');
@@ -604,6 +577,9 @@ runtimeConformance(
         ? 'OpenCodeRuntime (LIVE sidecar + local model) — AgentRuntime conformance'
         : 'OpenCodeRuntime (mocked sidecar) — AgentRuntime conformance',
     projectDir: PROJECT_DIR,
+    // Spec `turns-survive-restarts` §7.2: declared `false` until T19b's measured run.
+    restartContinueUnprovenReason:
+      'the sidecar is killed at shutdown, and an assistant message cut mid-turn is unmeasured; T19b flips this with a measured run',
     messageContent: CONFORMANCE_PROMPT,
     // OpenCode owns a durable native store (unlike stateless Codex), so a
     // completed turn MUST surface real history: scripted session.messages in

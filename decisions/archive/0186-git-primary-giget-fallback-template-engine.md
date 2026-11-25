@@ -1,7 +1,7 @@
 ---
 number: 186
 title: Git Primary + giget Fallback Template Download Engine
-status: draft
+status: archived
 created: 2026-03-23
 spec: agent-creation-and-templates
 superseded-by: null

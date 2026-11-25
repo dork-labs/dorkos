@@ -1,7 +1,7 @@
 ---
 number: 114
 title: Client-Only _partId Field for Stable React Keys in Streaming Text Parts
-status: proposed
+status: archived
 created: 2026-03-11
 spec: fix-chat-ui-reliability-bugs
 superseded-by: null

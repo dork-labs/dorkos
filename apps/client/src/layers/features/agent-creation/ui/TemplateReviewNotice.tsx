@@ -3,7 +3,7 @@
  * is created from it (DOR-2325).
  *
  * The server answers a template that brings settings or programs with
- * `template_needs_review` instead of creating the agent. A person's own
+ * `needs_review` instead of creating the agent. A person's own
  * template is theirs to use, so this shows them everything it brings and lets
  * them create the agent knowingly: the retry carries the content hash they
  * were shown, and a template that changed since is shown again.
@@ -43,7 +43,7 @@ export interface TemplateBrings {
  */
 export function templateReviewOf(error: unknown): TemplateBrings | undefined {
   const body = (error as { body?: { code?: string; template?: TemplateBrings } } | null)?.body;
-  return body?.code === 'template_needs_review' ? body.template : undefined;
+  return body?.code === 'needs_review' ? body.template : undefined;
 }
 
 /** One settings file a template carries, as the server wrote it out. */

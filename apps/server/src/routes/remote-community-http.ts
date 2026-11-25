@@ -6,7 +6,7 @@
  * @module routes/remote-community-http
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { problem, type ProblemStatus } from '@dorkos/http-kit';
 import {
   CommunityRefSchema,
   type CommunityEntry,
@@ -15,7 +15,12 @@ import {
 } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import type { ApiEnv } from '../http/api-chain.js';
-import { resolveCommunityOwner } from './community-connections.js';
+import { logger, logError } from '../lib/logger.js';
+import {
+  connectionNotFound,
+  reconnectRequired,
+  resolveCommunityOwner,
+} from './community-problems.js';
 import {
   getRemoteCommunityOriginIdempotencyKey,
   getRemotePairingService,
@@ -56,7 +61,7 @@ export function communityTarget(c: Context<ApiEnv>): CommunityTarget | Response 
   const owner = resolveCommunityOwner(c);
   if (typeof owner !== 'string') return owner;
   const ref = CommunityRefSchema.safeParse(c.req.param('ref'));
-  if (!ref.success) return c.json({ error: 'Space connection not found.' }, 404);
+  if (!ref.success) return connectionNotFound(c);
   return { owner, ref: ref.data };
 }
 
@@ -75,14 +80,14 @@ class RemoteConnectionCapabilityError extends Error {
  */
 class RemoteCommunityGoneError extends Error {
   constructor(readonly refusal: CommunityRefusal) {
-    super(refusal.error);
+    super(refusal.detail);
     this.name = 'RemoteCommunityGoneError';
   }
 }
 
 /**
- * Answer a failure with the space's refusal in plain words, without exposing adapter or
- * credential state.
+ * Answer a failure with the space's refusal as a problem document, in plain words of our own,
+ * without exposing adapter or credential state or anything the space wrote.
  *
  * @param c - The request's context.
  * @param error - What was thrown.
@@ -93,33 +98,27 @@ export function communityFailure(
   error: unknown,
   action?: CommunityRefusalAction
 ): Response {
-  if (error instanceof RemoteCommunityGoneError) {
-    return c.json(
-      { code: error.refusal.code, error: error.refusal.error },
-      error.refusal.status as ContentfulStatusCode
-    );
-  }
+  if (error instanceof RemoteCommunityGoneError) return refusalProblem(c, error.refusal);
   if (error instanceof RemoteConnectionCapabilityError) {
-    return c.json({ code: 'COMMUNITY_ACCESS_DENIED', error: error.message }, 403);
+    return problem(c, 'forbidden', { detail: 'Your access to this space doesn’t allow that.' });
   }
-  if (error instanceof RemoteConnectionAuthorizationError) {
-    return c.json(
-      { code: 'COMMUNITY_RECONNECT_REQUIRED', error: 'Reconnect this space to continue.' },
-      409
-    );
-  }
-  if (error instanceof RemoteConnectionNotFoundError) {
-    return c.json({ error: 'Space connection not found.' }, 404);
-  }
+  if (error instanceof RemoteConnectionAuthorizationError) return reconnectRequired(c);
+  if (error instanceof RemoteConnectionNotFoundError) return connectionNotFound(c);
   const refusal = communityRefusal(error, action);
-  if (refusal) {
-    if (refusal.retryAfterSeconds) c.header('Retry-After', String(refusal.retryAfterSeconds));
-    return c.json(
-      { code: refusal.code, error: refusal.error },
-      refusal.status as ContentfulStatusCode
-    );
-  }
-  return c.json({ error: 'Space unavailable.' }, 502);
+  if (refusal) return refusalProblem(c, refusal);
+  logger.warn('[Communities] A space request failed', logError(error));
+  return problem(c, 'upstream_unavailable', {
+    detail: 'The space can’t be reached right now. Try again.',
+  });
+}
+
+/** One mapped space refusal, as a problem document at the status the mapping chose. */
+function refusalProblem(c: Context, refusal: CommunityRefusal): Response {
+  return problem(c, refusal.code, {
+    detail: refusal.detail,
+    status: refusal.status as ProblemStatus,
+    ...(refusal.retryAfterSeconds ? { retryAfterMs: refusal.retryAfterSeconds * 1000 } : {}),
+  });
 }
 
 /**

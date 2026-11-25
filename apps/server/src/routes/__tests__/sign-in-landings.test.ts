@@ -57,7 +57,7 @@ describe('/api/sign-in-landings', () => {
   it('answers 404 for a record it does not hold', async () => {
     const res = await request(serve(new SignInLandingStore())).get('/api/sign-in-landings/nope');
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SIGNIN_LANDING_GONE');
+    expect(res.body).toMatchObject({ code: 'expired', detail: 'This sign-in page expired.' });
   });
 
   it('restarts a failed sign-in through its retry', async () => {
@@ -78,7 +78,7 @@ describe('/api/sign-in-landings', () => {
     const id = store.record({ service: 'mcp', serviceName: 'Linear', connected: false });
     const res = await request(serve(store)).post(`/api/sign-in-landings/${id}/retry`).send({});
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('SIGNIN_NO_RETRY');
+    expect(res.body.code).toBe('signin_no_retry');
   });
 
   it('answers a failed restart with a fixed sentence, never the cause', async () => {
@@ -93,10 +93,12 @@ describe('/api/sign-in-landings', () => {
     });
     const res = await request(serve(store)).post(`/api/sign-in-landings/${id}/retry`).send({});
     expect(res.status).toBe(502);
-    expect(res.body).toEqual({
-      error: 'Couldn’t start the sign-in again.',
-      code: 'SIGNIN_RETRY_FAILED',
+    expect(res.headers['content-type']).toContain('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'upstream_unavailable',
+      detail: 'Couldn’t start the sign-in again.',
     });
+    expect(JSON.stringify(res.body)).not.toContain('raw upstream detail');
   });
 
   it('refuses managed remote access even with a session, on the routes themselves', async () => {

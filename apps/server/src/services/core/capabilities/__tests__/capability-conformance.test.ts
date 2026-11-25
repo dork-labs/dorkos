@@ -109,6 +109,8 @@ const { createCapabilityMcpClient } =
 const { registerCapabilitiesAsMcpTools } =
   await import('../../external-mcp/capability-mcp-tools.js');
 const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-security.js');
+const { createDorkLinkLookups } = await import('../../links/link-lookups.js');
+const { callerAuthor } = await import('../../../rooms/service/room-caller-author.js');
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
@@ -356,6 +358,16 @@ const registry = composeDorkOsCapabilityRegistry({
       resume: () => ({ agentId: 'a', paused: false, changed: true }),
       list: () => [],
     },
+  },
+  // The link domain serves `GET /api/links/target` (DOR-5046), over the
+  // harness's real rooms; it holds no chats and no agents.
+  linkDeps: {
+    lookups: createDorkLinkLookups({
+      db: roomHarness.db,
+      rooms: roomHarness.service,
+      roomCaller: (context) => callerAuthor(roomHarness.service, context),
+      chatExists: async () => false,
+    }),
   },
 });
 
@@ -641,6 +653,8 @@ capabilityConformance(registry, {
     // The pause verbs reach the (stub) pause service with a parseable id.
     'agent.pause': { agentId: 'conformance-agent' },
     'agent.resume': { agentId: 'conformance-agent' },
+    // A room the operator is in, so the link reaches the real rooms service and opens it.
+    'link.resolve': { uri: `dork:room:${CONFORMANCE_ROOM_ID}` },
     // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
     'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // Anonymous here, so the handler refuses with its own structured error

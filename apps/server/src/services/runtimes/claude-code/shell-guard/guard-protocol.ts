@@ -15,6 +15,7 @@ export interface WireRoots {
   agentHomes: readonly string[];
   openHome?: string;
   full?: boolean;
+  protectedWrites?: boolean;
 }
 
 /** The server asks the child about one command. */

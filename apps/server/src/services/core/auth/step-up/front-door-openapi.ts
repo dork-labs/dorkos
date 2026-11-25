@@ -10,6 +10,8 @@ import {
 import { z } from 'zod';
 import { CommunityShortNameSchema } from '@dork-labs/cloud-api';
 
+import { problemResponse } from '../../openapi/problem-openapi.js';
+
 const AUTH_WRITES = [
   'api-key/create',
   'api-key/update',
@@ -101,6 +103,7 @@ export const HELD_WRITES = new Set([
   'put /api/runtimes/claude-code/project-accounts',
   'put /api/runtimes/claude-code/accounts/{id}/only-projects',
   'put /api/runtimes/claude-code/accounts/{id}/no-auto-move',
+  'put /api/runtimes/claude-code/accounts/{id}/agents-may-pick',
   'post /api/community-connections',
   'put /api/community-connections/{ref}/wake-agents-from',
   'put /api/community-connections/{ref}/answer-in',
@@ -190,7 +193,9 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
           description: 'The action completed',
           content: { 'application/json': { schema: z.unknown() } },
         },
-        403: { description: 'This caller cannot change access here' },
+        403: answersProblems(path)
+          ? problemResponse('This caller cannot change access here')
+          : { description: 'This caller cannot change access here' },
       },
     });
   }
@@ -199,9 +204,10 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
     const route = definition.route;
     if (!HELD_WRITES.has(`${route.method} ${route.path.replace(/\/$/, '')}`)) continue;
     // What `holdForStepUp` (`routes/step-up-guard.ts`) actually sends: the
-    // step-up body as plain JSON with `Cache-Control: no-store`. It is not a
-    // problem document yet, though `step_up_required` is on the problem code
-    // list; it moves with the step-up routes under DOR-4979.
+    // step-up body as plain JSON with `Cache-Control: no-store`. It stays the
+    // named `StepUpRequired` component, not a problem document, though
+    // `step_up_required` is on the problem code list: every held write and
+    // its readers share that one shape (DOR-4979).
     route.responses[428] = {
       description:
         'Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.',
@@ -215,6 +221,46 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
     };
   }
 }
+
+/** The refusal a page from before 0.141.0 reads (`olderPageRefusal` in `routes/step-up.ts`). */
+const OlderPageRefusalSchema = z.object({
+  error: z.string(),
+  code: z.literal('extension-risk'),
+  blockedBy: z.array(z.unknown()).max(0).optional(),
+  stale: z.enum(['stale-sign-in', 'stale-page']),
+});
+
+/**
+ * The gap-filled routes whose refusals are problem documents (DOR-4979). The
+ * rest still answer their own shape until their route group moves. Better
+ * Auth's own `/api/auth/*` endpoints answer `{ message, code }`, so none is
+ * declared there.
+ */
+const PROBLEM_PREFIXES = [
+  '/api/cloud/',
+  '/api/tunnel/',
+  '/api/community-connections',
+  '/api/remote-access/',
+  '/api/lan-access',
+  '/api/devices/',
+  '/api/owner-factors/',
+];
+
+/** Whether a gap-filled route answers its refusals as problem documents. */
+function answersProblems(path: string): boolean {
+  return PROBLEM_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+/** A held action this caller may not see or answer. */
+const NOT_THIS_BROWSER = problemResponse(
+  'Not the app’s own page or a program (`person_only`), or another browser held it ' +
+    '(`held_by_another_browser`)'
+);
+
+/** A held action that is gone. */
+const EXPIRED = problemResponse(
+  'The action expired, was cancelled or already ran (`expired`, answered as `404`)'
+);
 
 /** Describe the existing ceremony, including the action kinds the sheet can show. */
 function documentCeremonyRoutes(registry: OpenAPIRegistry, registered: ReadonlySet<string>): void {
@@ -232,8 +278,15 @@ function documentCeremonyRoutes(registry: OpenAPIRegistry, registered: ReadonlyS
           description: 'The action held by this browser',
           content: { 'application/json': { schema: HeldStepUpViewSchema } },
         },
-        403: { description: 'This browser cannot confirm the action' },
-        404: { description: 'The action expired or was already completed' },
+        403: NOT_THIS_BROWSER,
+        404: EXPIRED,
+        // Not a problem document on purpose: the one body a page from before
+        // 0.141.0 reads. Since 0.141, remove in 0.143 (DOR-5089).
+        409: {
+          description:
+            'A page from before 0.141.0 (no page stamp) that is too old to confirm from. The one body that page reads.',
+          content: { 'application/json': { schema: OlderPageRefusalSchema } },
+        },
       },
     });
   for (const [method, schema] of [
@@ -255,9 +308,32 @@ function documentCeremonyRoutes(registry: OpenAPIRegistry, registered: ReadonlyS
             description: 'The action ran once',
             content: { 'application/json': { schema: StepUpConfirmedBodySchema } },
           },
-          403: { description: 'Confirmation was refused' },
-          404: { description: 'The action expired or was already completed' },
-          429: { description: 'Too many failed confirmation attempts' },
+          400: problemResponse(
+            'No password sent, or a new password too short or too long, with `minLength` ' +
+              '(`invalid_request`)'
+          ),
+          403: problemResponse(
+            'Refused: a wrong password with `triesLeft` (`wrong_password`), the last one ' +
+              '(`too_many_tries`), a connection a password may not cross ' +
+              '(`insecure_connection`), or not this browser (`person_only`, ' +
+              '`held_by_another_browser`)'
+          ),
+          404: EXPIRED,
+          409: problemResponse(
+            'Can’t confirm now: a matched password too short, with `minLength` ' +
+              '(`password_too_short`), no owner password (`no_password`), a mini app an agent ' +
+              'can edit, with `blockedBy` (`extension_risk`), or a sign-in or page from before ' +
+              'a change, with `stale` (`stale_sign_in`, `stale_page`). A page from before ' +
+              '0.141.0 gets `{ error, code: "extension-risk", blockedBy, stale }` instead'
+          ),
+          412: problemResponse(
+            'The stored request changed after it was held (`precondition_failed`)'
+          ),
+          429: problemResponse(
+            'Too many wrong passwords lately; `retryAfterMs` and `Retry-After` say when ' +
+              '(`rate_limited`)'
+          ),
+          500: problemResponse('The confirmed action failed to run (`internal_error`)'),
         },
       });
   }
@@ -270,8 +346,8 @@ function documentCeremonyRoutes(registry: OpenAPIRegistry, registered: ReadonlyS
       request: { params },
       responses: {
         204: { description: 'The action was cancelled without running' },
-        403: { description: 'This browser cannot cancel the action' },
-        404: { description: 'The action expired or was already completed' },
+        403: NOT_THIS_BROWSER,
+        404: EXPIRED,
       },
     });
 }

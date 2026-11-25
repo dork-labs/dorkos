@@ -53,6 +53,8 @@
  */
 import http from 'node:http';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
+import { problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE, type Problem } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../../../http/request-facts.js';
 import { personVerdict } from '../inbox/extension-inbox-context.js';
 import {
@@ -131,16 +133,30 @@ function hasBody(req: http.IncomingMessage): boolean {
 }
 
 /**
- * Answer with JSON on the raw response, the bytes Express's `res.json` wrote.
+ * JSON safe to send as a header value: every character past ASCII written as a
+ * `\uXXXX` escape, which `JSON.parse` reads back unchanged. A verdict's
+ * `detail` is a sentence for a person and may hold one (`isn’t`); a raw one
+ * makes the request itself unsendable.
+ *
+ * @param value - What to encode.
+ */
+function headerJson(value: unknown): string {
+  return JSON.stringify(value).replace(
+    /[\u007f-\uffff]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
+  );
+}
+
+/**
+ * Answer with a problem document on the raw response, at its own status.
  *
  * @param res - The raw response.
- * @param status - The status.
- * @param body - The JSON body.
+ * @param body - The problem document.
  */
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+function sendProblemTo(res: http.ServerResponse, body: Problem): void {
   const text = JSON.stringify(body);
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.statusCode = body.status;
+  res.setHeader('Content-Type', PROBLEM_CONTENT_TYPE);
   res.setHeader('Content-Length', Buffer.byteLength(text));
   res.end(text);
 }
@@ -178,7 +194,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
 
       const declared = Number(req.headers['content-length']);
       if (Number.isFinite(declared) && declared > MAX_FORWARDED_BODY_BYTES) {
-        sendJson(res, 413, { error: TOO_LARGE });
+        sendProblemTo(res, problemBody('request_too_large', { detail: TOO_LARGE }));
         return;
       }
 
@@ -194,7 +210,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
       // Everything that reads the request is decided before a connection is
       // opened, so nothing that throws here can leave one counted and open.
       const headers = inboundHeaders(req.headers);
-      headers[PERSON_VERDICT_HEADER] = JSON.stringify(personVerdict(honoRequestFacts(c), name));
+      headers[PERSON_VERDICT_HEADER] = headerJson(personVerdict(honoRequestFacts(c), name));
       // One request per virtual connection.
       headers.connection = 'close';
 
@@ -213,12 +229,15 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
 
       const opened = host.openConnection(touch);
       if (!opened.ok) {
-        sendJson(res, 503, {
-          error:
-            opened.reason === 'busy'
-              ? `${name} is busy. Try again in a moment.`
-              : `${name} isn't running right now.`,
-        });
+        sendProblemTo(
+          res,
+          problemBody('temporarily_unavailable', {
+            detail:
+              opened.reason === 'busy'
+                ? `${name} is busy. Try again in a moment.`
+                : `${name} isn't running right now.`,
+          })
+        );
         return;
       }
       const socket = opened.socket;
@@ -229,7 +248,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
        * quietly when the person already left. The virtual connection goes in
        * every case.
        */
-      const finish = (answer: { status: number; error: string } | 'cut' | 'quiet'): void => {
+      const finish = (answer: Problem | 'cut' | 'quiet'): void => {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
@@ -237,12 +256,17 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
           res.destroy();
         } else if (answer !== 'quiet') {
           if (res.headersSent) res.destroy();
-          else sendJson(res, answer.status, { error: answer.error });
+          else sendProblemTo(res, answer);
         }
         socket.destroy();
       };
       function onIdle(): void {
-        finish({ status: 504, error: `${name} didn't answer in time.` });
+        finish(
+          problemBody('temporarily_unavailable', {
+            status: 504,
+            detail: `${name} didn't answer in time.`,
+          })
+        );
       }
 
       let upstream: http.ClientRequest;
@@ -254,7 +278,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
           createConnection: () => socket,
         });
       } catch {
-        finish({ status: 400, error: `${name} couldn't take that request.` });
+        finish(problemBody('invalid_request', { detail: `${name} couldn't take that request.` }));
         return;
       }
 
@@ -273,7 +297,9 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
         reply.pipe(res);
       });
       upstream.on('error', () =>
-        finish({ status: 503, error: `${name} stopped while answering.` })
+        finish(
+          problemBody('temporarily_unavailable', { detail: `${name} stopped while answering.` })
+        )
       );
 
       // The whole reply went out: the exchange is over.
@@ -293,7 +319,7 @@ export function createIsolatedHandler(options: IsolatedHandlerOptions): Extensio
           seen += chunk.byteLength;
           if (seen > MAX_FORWARDED_BODY_BYTES) {
             req.unpipe(upstream);
-            finish({ status: 413, error: TOO_LARGE });
+            finish(problemBody('request_too_large', { detail: TOO_LARGE }));
           }
         });
         req.pipe(upstream);

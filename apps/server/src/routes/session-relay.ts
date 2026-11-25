@@ -58,15 +58,15 @@ import {
   type SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem, type ProblemStatus } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { errorBody } from '../lib/route-utils.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
-import { AUTH_REQUIRED_FOR_EXPOSURE, canExpose } from '../services/core/auth/exposure-guard.js';
+import { canExpose } from '../services/core/auth/exposure-guard.js';
 import {
   checkOwnerPassword,
   type OwnerPasswordCheck,
@@ -96,9 +96,6 @@ import {
   type SessionRelayPasskeyDeps,
 } from './session-relay-passkeys.js';
 import { apiNotFound } from '../http/unclaimed.js';
-
-/** Refusal code for a write from anywhere but the owner at this computer. */
-export const SESSION_RELAY_NEEDS_THIS_COMPUTER = 'SESSION_RELAY_NEEDS_THIS_COMPUTER';
 
 /** What the routes read and change, injectable for tests. */
 export interface SessionRelayRouteDeps {
@@ -149,47 +146,91 @@ const liveDeps: SessionRelayRouteDeps = {
   passkeys: livePasskeyDeps,
 };
 
-/** Code for every refusal of the password step-up. */
-export const SESSION_RELAY_PASSWORD_CODE = 'SESSION_RELAY_PASSWORD';
+/** One way a relay write can refuse: its code, status and sentence. */
+interface RelayRefusal {
+  code: ProblemCode;
+  status: ProblemStatus;
+  detail: string;
+}
 
-/** The status and sentence for each way the password step-up can refuse. */
-const PASSWORD_REFUSALS: Record<
-  Exclude<OwnerPasswordCheck, 'ok'>,
-  { status: 403 | 409 | 429; error: string }
-> = {
-  required: { status: 403, error: 'Enter your password for this computer.' },
-  wrong: { status: 403, error: 'That password didn’t match. Try again.' },
+/** Each way the password step-up can refuse, with the sentence that says what to do. */
+const PASSWORD_REFUSALS: Record<Exclude<OwnerPasswordCheck, 'ok'>, RelayRefusal> = {
+  required: { code: 'forbidden', status: 403, detail: 'Enter your password for this computer.' },
+  wrong: { code: 'forbidden', status: 403, detail: 'That password didn’t match. Try again.' },
   'too-many-attempts': {
+    code: 'rate_limited',
     status: 429,
-    error: 'Too many wrong passwords. Try again in a few minutes.',
+    detail: 'Too many wrong passwords. Try again in a few minutes.',
   },
-  'no-owner': { status: 409, error: 'Create an owner account first, then link.' },
-  'no-password': { status: 409, error: 'Set a password for this computer’s owner first.' },
+  'no-owner': {
+    code: 'conflict',
+    status: 409,
+    detail: 'Create an owner account first, then link.',
+  },
+  'no-password': {
+    code: 'conflict',
+    status: 409,
+    detail: 'Set a password for this computer’s owner first.',
+  },
 };
 
-/** The sentence and status for each way linking can fail. */
-const LINK_REFUSALS: Record<SessionRelayLinkRefusal, { status: 400 | 409 | 502; error: string }> = {
-  'bad-code': { status: 400, error: 'That isn’t a link code. Copy it again from your hub.' },
-  'hub-unreachable': { status: 502, error: 'Couldn’t reach your hub. Try again.' },
-  'hub-refused': { status: 409, error: 'Your hub didn’t accept that code. Make a new one.' },
-  'signature-failed': { status: 502, error: 'Your hub couldn’t be verified. Nothing was linked.' },
-  'different-account': {
+/** Each way linking can fail, with the sentence that says what to do. */
+const LINK_REFUSALS: Record<SessionRelayLinkRefusal, RelayRefusal> = {
+  'bad-code': {
+    code: 'invalid_request',
+    status: 400,
+    detail: 'That isn’t a link code. Copy it again from your hub.',
+  },
+  'hub-unreachable': {
+    code: 'temporarily_unavailable',
+    status: 502,
+    detail: 'Couldn’t reach your hub. Try again.',
+  },
+  'hub-refused': {
+    code: 'conflict',
     status: 409,
-    error: 'That hub isn’t owned by your DorkOS account.',
+    detail: 'Your hub didn’t accept that code. Make a new one.',
+  },
+  'signature-failed': {
+    code: 'temporarily_unavailable',
+    status: 502,
+    detail: 'Your hub couldn’t be verified. Nothing was linked.',
+  },
+  'different-account': {
+    code: 'conflict',
+    status: 409,
+    detail: 'That hub isn’t owned by your DorkOS account.',
   },
   'not-public': {
+    code: 'invalid_request',
     status: 400,
-    error: 'That code points to a private address. Use your hub’s code.',
+    detail: 'That code points to a private address. Use your hub’s code.',
   },
   'already-linked': {
+    code: 'conflict',
     status: 409,
-    error: 'This computer is already linked. Remove it on your hub first.',
+    detail: 'This computer is already linked. Remove it on your hub first.',
   },
   'account-unreadable': {
+    code: 'temporarily_unavailable',
     status: 502,
-    error: 'Couldn’t check your DorkOS account. Try again.',
+    detail: 'Couldn’t check your DorkOS account. Try again.',
   },
 };
+
+/** Answer one relay refusal. */
+function refuseWith(c: Context<ApiEnv>, refusal: RelayRefusal): Response {
+  const { code, status, detail } = refusal;
+  return problem(c, code, { status, detail });
+}
+
+/** The 409 for a link that is not there, or that changed under the request. */
+const notLinked = (c: Context<ApiEnv>) =>
+  problem(c, 'conflict', { detail: 'This computer isn’t linked.' });
+const linkChanged = (c: Context<ApiEnv>) =>
+  problem(c, 'conflict', { detail: 'The link changed. Try again.' });
+const noOwner = (c: Context<ApiEnv>, then = '') =>
+  problem(c, 'conflict', { detail: `Create an owner account first${then}.` });
 
 /** Record one write, actor taken from the request's own scope. */
 function audit(
@@ -246,15 +287,12 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
   function refusePerson(c: Context<ApiEnv>): Response | undefined {
     const refusal = requirePersonAtThisComputer(honoRequestFacts(c));
     if (!refusal) return undefined;
-    return c.json(
-      errorBody(
+    return problem(c, 'operator_only', {
+      detail:
         refusal === 'not-at-this-computer'
           ? 'Change this on the computer DorkOS runs on.'
           : 'Only you can change this, in the app on this computer.',
-        SESSION_RELAY_NEEDS_THIS_COMPUTER
-      ),
-      403
-    );
+    });
   }
 
   /** The password step-up's refusal, or `undefined` once it matched. */
@@ -264,9 +302,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
   ): Promise<Response | undefined> {
     const check = await deps.checkPassword(password);
     if (check === 'ok') return undefined;
-    const { status: code, error } = PASSWORD_REFUSALS[check];
-    const body = errorBody(error, SESSION_RELAY_PASSWORD_CODE);
-    return c.json({ ...body, reason: check }, code);
+    return refuseWith(c, PASSWORD_REFUSALS[check]);
   }
 
   // The whole group is off on a hub and while the experiment is off.
@@ -284,16 +320,9 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     const refusal = refusePerson(c);
     if (refusal) return refusal;
     const parsed = SessionRelayLinkBodySchema.safeParse(readJsonBody(c));
-    if (!parsed.success) {
-      return c.json(errorBody(LINK_REFUSALS['bad-code'].error, 'bad-code'), 400);
-    }
-    if (!deps.ownerExists()) {
-      // The relay serves only an owner, so there must be one to serve.
-      return c.json(
-        errorBody('Create an owner account first, then link.', AUTH_REQUIRED_FOR_EXPOSURE),
-        409
-      );
-    }
+    if (!parsed.success) return refuseWith(c, LINK_REFUSALS['bad-code']);
+    // The relay serves only an owner, so there must be one to serve.
+    if (!deps.ownerExists()) return noOwner(c, ', then link');
     const input = {
       linkCode: parsed.data.linkCode,
       computerName: parsed.data.computerName ?? deps.suggestedName(),
@@ -306,7 +335,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
       subject: 'chatting from the web',
       run: async () => {
         if (!deps.enabled() || deps.isHub() || !deps.ownerExists()) {
-          return c.json(errorBody('Chat from the web is unavailable.', 'NOT_AVAILABLE'), 409);
+          return problem(c, 'conflict', { detail: 'Chat from the web is unavailable.' });
         }
         const result = await withRelayPinLock(() => deps.link(input));
         if (!result.ok) {
@@ -317,8 +346,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
             'refused',
             result.reason
           );
-          const { status: code, error } = LINK_REFUSALS[result.reason];
-          return c.json(errorBody(error, result.reason), code);
+          return refuseWith(c, LINK_REFUSALS[result.reason]);
         }
         audit('link', 'create', `Linked this computer to ${result.pin.hubOrigin}`, 'ok');
         return c.json(status());
@@ -331,25 +359,24 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     if (refusal) return refusal;
     const parsed = SessionRelayLevelBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(errorBody('Choose chat or full.', 'INVALID_LEVEL'), 400);
+      return validationProblem(c, parsed.error, { detail: 'Choose chat or full.' });
     }
     const { level } = parsed.data;
     const requestedLink = relayLinkHash(deps.readPin());
     if (level === 'full' && !deps.ownerExists()) {
-      return c.json(errorBody('Create an owner account first.', AUTH_REQUIRED_FOR_EXPOSURE), 409);
+      return noOwner(c);
     }
     const run = async () => {
-      let linkChanged = false;
+      let changed = false;
       const pin = await withRelayPinLock(() => {
         if (level === 'full' && relayLinkHash(deps.readPin()) !== requestedLink) {
-          linkChanged = true;
+          changed = true;
           return null;
         }
         return deps.updatePin({ level });
       });
-      if (linkChanged)
-        return c.json(errorBody('The link changed. Try again.', 'LINK_CHANGED'), 409);
-      if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
+      if (changed) return linkChanged(c);
+      if (!pin) return notLinked(c);
       audit('level', 'modify', `Set what the web may do here to ${pin.level}`, 'ok');
       return c.json(status());
     };
@@ -369,7 +396,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     const refusal = refusePerson(c);
     if (refusal) return refusal;
     if (!paused && !deps.ownerExists()) {
-      return c.json(errorBody('Create an owner account first.', AUTH_REQUIRED_FOR_EXPOSURE), 409);
+      return noOwner(c);
     }
     const requestedLink = relayLinkHash(deps.readPin());
     const run = async () => {
@@ -380,9 +407,8 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
         if (next && paused) deps.closeRelay();
         return next;
       });
-      if (pin === 'changed')
-        return c.json(errorBody('The link changed. Try again.', 'LINK_CHANGED'), 409);
-      if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
+      if (pin === 'changed') return linkChanged(c);
+      if (!pin) return notLinked(c);
       audit(
         paused ? 'pause' : 'resume',
         'modify',
@@ -405,7 +431,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
   /** The browsers using this computer are the owner's to see, never an agent's. */
   function refuseAgent(c: Context<ApiEnv>): Response | undefined {
     if (!presentsAgentIdentity(honoRequestFacts(c))) return undefined;
-    return c.json(errorBody('Only you can see this.', 'FORBIDDEN'), 403);
+    return problem(c, 'forbidden', { detail: 'Only you can see this.' });
   }
 
   router.get('/presence', (c) => refuseAgent(c) ?? c.json(deps.presence()));
@@ -422,7 +448,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
       if (next) deps.closeRelay();
       return next;
     });
-    if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
+    if (!pin) return notLinked(c);
     audit('presence.end', 'modify', 'Ended use from the web and paused chat from the web', 'ok');
     return c.json(deps.presence());
   });
@@ -434,10 +460,9 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
    */
   function refusePersonHere(c: Context<ApiEnv>): Response | undefined {
     if (isAtThisComputer(honoRequestFacts(c))) return refusePerson(c);
-    return c.json(
-      errorBody('Change this on the computer DorkOS runs on.', SESSION_RELAY_NEEDS_THIS_COMPUTER),
-      403
-    );
+    return problem(c, 'operator_only', {
+      detail: 'Change this on the computer DorkOS runs on.',
+    });
   }
 
   // The approvals passkeys, behind the same two bars at this computer (B4c).

@@ -6,12 +6,7 @@
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
-
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+import { problemResponse as error } from '../../core/openapi/problem-openapi.js';
 
 const MediaTicketBodySchema = z
   .object({
@@ -66,10 +61,13 @@ export function registerExtensionMediaOpenApi(registry: OpenAPIRegistry): void {
         description: 'The video link',
         content: { 'application/json': { schema: MediaTicketSchema } },
       },
-      400: error('Invalid extension id, or a path that is not plainly inside the app'),
-      401: error('Login is enabled and the caller is not signed in'),
-      403: error('Not a person’s DorkOS window, or a write stamped by another app'),
-      404: error('The app is not running, does not use the frame, or cannot stream video'),
+      400: error('`invalid_request`: an invalid extension id, or a path outside the app'),
+      401: error('`unauthenticated`: login is enabled and the caller is not signed in'),
+      403: error(
+        '`origin_not_allowed`, `person_only` or `forbidden`: not a person’s DorkOS window, or ' +
+          'a write stamped by another app'
+      ),
+      404: error('`not_found`: the app is not running, does not use the frame, or cannot stream'),
     },
   });
 
@@ -99,8 +97,8 @@ export function registerExtensionMediaOpenApi(registry: OpenAPIRegistry): void {
         },
       },
       206: { description: 'The range asked for' },
-      404: error('The link is unknown or has expired (the same answer for both)'),
-      405: error('Only GET and HEAD'),
+      404: error('`not_found`: the link is unknown or has expired (the same answer for both)'),
+      405: error('`method_not_allowed`: only GET and HEAD'),
       415: { description: 'The app answered with something that is not MP4 or WebM' },
       416: { description: 'The range asked for is not in the video' },
       502: { description: 'The app did not answer, or answered with another status' },

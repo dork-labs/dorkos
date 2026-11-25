@@ -28,7 +28,7 @@ import {
 } from '@dorkos/db';
 import { assertIdentityMoveTarget } from './identity/identity-target.js';
 import { DocChannelStore } from './store.js';
-import { QUEUE_POSITION_STEP } from '../../session/message-queue-store.js';
+import { deleteQueueRow, moveQueueRowToSession } from '../../session/message-queue-store.js';
 
 /** Source-owned canonical receipt rebinding, inside the document move's transaction. */
 export interface DocChannelReceiptRebinder {
@@ -149,9 +149,8 @@ export class DocChannelLifecycle {
       if (receipt && receipt.state !== 'accepted') continue;
       if (!['pending', 'waiting', 'accepted'].includes(batch.status)) continue;
       if (receipt) {
-        tx.delete(sessionMessageQueue)
-          .where(eq(sessionMessageQueue.id, receipt.queueMessageId))
-          .run();
+        // Through the queue's own delete, so the batch's run is cancelled with its row.
+        deleteQueueRow(tx, receipt.queueMessageId, 'cancelled');
         tx.update(sessionMessageAcceptanceReceipts)
           .set({ state: 'cancelled', cancellationCode: 'document_closed', settledAt: now })
           .where(
@@ -490,15 +489,7 @@ export class DocChannelLifecycle {
       .get();
     if (!row || row.sessionId !== fromId || row.clientId !== `system:${receipt.sourceKind}`)
       throw new DocChannelIdentityBlockedError();
-    const rows = tx
-      .select({ position: sessionMessageQueue.position })
-      .from(sessionMessageQueue)
-      .where(eq(sessionMessageQueue.sessionId, toId))
-      .all();
-    const position = Math.max(0, ...rows.map((entry) => entry.position)) + QUEUE_POSITION_STEP;
-    tx.update(sessionMessageQueue)
-      .set({ sessionId: toId, position })
-      .where(eq(sessionMessageQueue.id, receipt.queueMessageId))
-      .run();
+    // To the end of the new chat's queue, with the run that waits on it.
+    moveQueueRowToSession(tx, receipt.queueMessageId, toId);
   }
 }

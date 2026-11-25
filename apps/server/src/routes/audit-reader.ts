@@ -13,32 +13,29 @@
  *
  * @module routes/audit-reader
  */
-import type { AccountIds } from '../services/audit/account-ids.js';
 import { auditTrail } from '../services/audit/audit-trail.js';
 import { OWNER_READER, type AuditReader } from '../services/audit/visibility.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { errorBody } from '../lib/route-utils.js';
+import type { Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { RequestFacts } from '../http/request-facts.js';
 
 /** What {@link readerOfRequest} reads: the raw agent header and the resolved identity. */
 type ReaderFacts = Pick<RequestFacts, 'headers' | 'agentIdentity'>;
 
 /**
- * Who is reading, from the request.
+ * Who is reading, from the request. The same answer `readerFor`
+ * (`services/audit/audit-capabilities.ts`) gives a capability call.
  *
  * @param facts - The request's facts (`http/request-facts.ts`), for the raw
  *   agent header and the resolved identity. A WebSocket upgrade passes
  *   `upgradeCaller(headers, locals)`.
- * @param accounts - Names an agent as a stable account id; defaults to the
- *   process-wide audit trail's.
  */
-export function readerOfRequest(
-  facts: ReaderFacts,
-  accounts: Pick<AccountIds, 'forAgentIdentity'> | undefined = auditTrail()?.accounts
-): AuditReader {
+export function readerOfRequest(facts: ReaderFacts): AuditReader {
   if (!presentsAgentIdentity(facts)) return OWNER_READER;
   const identity = facts.agentIdentity;
+  const accounts = auditTrail()?.accounts;
   const accountId =
     identity && accounts ? accounts.forAgentIdentity(identity).accountId : 'unidentified';
   return { kind: 'agent', accountId };
@@ -46,7 +43,7 @@ export function readerOfRequest(
 
 /**
  * Whether this caller may read the session. A route that may not answers
- * `c.json(SESSION_NOT_FOUND_BODY, 404)`.
+ * {@link sessionNotFoundProblem}.
  *
  * @param request - The request's facts (`http/request-facts.ts`).
  * @param sessionId - The session asked for.
@@ -55,8 +52,16 @@ export function canReadSession(request: ReaderFacts, sessionId: string): boolean
   return readableSessionIds(readerOfRequest(request), [sessionId]).has(sessionId);
 }
 
-/** The 404 a caller gets for a session it may not read. */
-export const SESSION_NOT_FOUND_BODY = errorBody('Session not found', 'SESSION_NOT_FOUND');
+/**
+ * The 404 a caller gets for a session it may not read: the same answer as an
+ * unknown session, so a private one's existence is not confirmed.
+ *
+ * @param c - The Hono context.
+ * @returns The response.
+ */
+export function sessionNotFoundProblem(c: Context): Response {
+  return problem(c, 'session_not_found', { detail: 'No chat with that id.' });
+}
 
 /**
  * The sessions in a list this caller may read, in order.

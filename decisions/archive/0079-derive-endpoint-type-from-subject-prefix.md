@@ -1,7 +1,7 @@
 ---
 number: 79
 title: Derive Endpoint Type from Subject Prefix at List Time
-status: draft
+status: archived
 created: 2026-03-05
 spec: relay-inbox-lifecycle
 superseded-by: null

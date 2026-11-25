@@ -6,15 +6,14 @@
  * in `.claude/settings.json`. A bare `mcp__{server}` rule covers every tool the
  * server has, including ones it adds later; `mcp__{server}__{tool}` covers one.
  * This reads those rules back for one server, across every registered agent, so
- * the server's sheet can list them. It is not a new store, and it reads only
- * what the launch would pass (`judgeAllowRule`), plus `mcp__{server}__*`.
+ * the server's sheet can list them. It is not a new store. It lists every
+ * rule that names the server, a wildcard that reaches it included, as the
+ * agent holds it (DOR-5237), whether or not a person approved it yet.
  *
  * @module services/mesh/global-mcp/global-mcp-standing-allows
  */
-import {
-  judgeAllowRule,
-  readFolderAllowEntries,
-} from '../../runtimes/claude-code/folder-settings/agent-folder-allows.js';
+import { readFolderAllowEntries } from '../../runtimes/claude-code/folder-settings/agent-folder-allows.js';
+import { ruleMayAllow } from '../../runtimes/claude-code/tool-gate/folder-rule-match.js';
 
 /** The settings files a standing yes can live in. Undo reaches only the local one. */
 export type StandingAllowFile = 'settings.json' | 'settings.local.json';
@@ -52,7 +51,8 @@ const FILES: readonly StandingAllowFile[] = ['settings.json', 'settings.local.js
  * What one rule allows on `server`, or `null` when it is not about that server.
  *
  * `mcp__{server}__*` is the whole server too, the same as the bare rule
- * (DOR-4240). A server's name may hold `__`, so `mcp__a__b` can be server
+ * (DOR-4240), and so is any other wildcard that reaches it (`mcp__{server}*`,
+ * `mcp__*`, `mcp__{server}__get*`). A server's name may hold `__`, so `mcp__a__b` can be server
  * `a__b`'s whole-server rule rather than tool `b` on `a`: when another known
  * server's name starts `{server}__`, a rule that names it is left to it.
  *
@@ -67,29 +67,38 @@ export function standingAllowBreadth(
 ): { breadth: 'server' } | { breadth: 'tool'; tool: string } | null {
   const bare = `mcp__${server}`;
   if (rule === bare || rule === `${bare}__*`) return { breadth: 'server' };
-  if (!rule.startsWith(`${bare}__`)) return null;
+  const wildcard = !rule.includes('(') && rule.includes('*');
+  const prefix = wildcard ? rule.slice(0, rule.indexOf('*')) : rule;
   const longer = servers.some(
     (other) =>
       other.startsWith(`${server}__`) &&
-      (rule === `mcp__${other}` || rule.startsWith(`mcp__${other}__`))
+      (prefix === `mcp__${other}` || prefix.startsWith(`mcp__${other}__`))
   );
   if (longer) return null;
+  if (wildcard) {
+    // Every tool it reaches on this server, the ones added later included.
+    const reaches = ruleMayAllow(rule, `${bare}__`) || prefix.startsWith(`${bare}__`);
+    return reaches ? { breadth: 'server' } : null;
+  }
+  if (!rule.startsWith(`${bare}__`)) return null;
   const tool = rule.slice(bare.length + 2);
   // A tool name never holds `__` or a pattern; anything else names another server's tool.
   if (!tool || tool.includes('__') || tool.includes('(') || tool.includes('*')) return null;
   return { breadth: 'tool', tool };
 }
 
+/** Characters that change how text displays without showing themselves. */
+const INVISIBLE_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
 /**
- * The rule an entry holds, if the launch keeps it, or if it is exactly
- * `mcp__{server}__*`: the launch's own list drops a wildcard, but Claude Code
- * reads the settings file itself and honours that one (DOR-4240).
+ * The rule an entry holds: a string, trimmed. One
+ * holding an invisible character names no real tool and is left out, so the
+ * sheet never shows a rule that reads as another.
  */
-function ruleOf(entry: unknown, server: string): string | undefined {
-  const verdict = judgeAllowRule(entry);
-  if (verdict.ok) return verdict.rule;
-  const wildcard = `mcp__${server}__*`;
-  return typeof entry === 'string' && entry.trim() === wildcard ? wildcard : undefined;
+function ruleOf(entry: unknown): string | undefined {
+  if (typeof entry !== 'string') return undefined;
+  const rule = entry.trim();
+  return rule && !INVISIBLE_CHARACTERS.test(rule) ? rule : undefined;
 }
 
 /**
@@ -111,7 +120,7 @@ export async function readStandingAllows(
     for (const file of FILES) {
       const entries = (await readFolderAllowEntries(agent.home, file)) ?? [];
       for (const entry of entries) {
-        const rule = ruleOf(entry, server);
+        const rule = ruleOf(entry);
         if (rule === undefined || seen.has(rule)) continue;
         const reach = standingAllowBreadth(rule, server, servers);
         if (reach === null) continue;

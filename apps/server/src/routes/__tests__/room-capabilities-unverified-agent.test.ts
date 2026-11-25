@@ -145,6 +145,9 @@ const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated', 'revoked', 'expired']
 /** The code every room seam now answers a token it cannot verify with. */
 const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
 
+/** The problem code the HTTP doors answer that refusal with. */
+const PROBLEM_CODE = 'agent_identity_unverified';
+
 const ANA_PATH = '/agents/ana';
 
 const agents = agentLookupFor({
@@ -301,14 +304,14 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
 
       // Refused, and by WHICHEVER gate got there first: a revoked identity is
       // capped at `observe`, so the tier gate turns an `act` verb away (403,
-      // `tier_ceiling`) before `callerAuthor` runs; the other two states reach
-      // `callerAuthor` and get its 400. Asserting one code would pin the order
+      // `forbidden`) before `callerAuthor` runs; the other two states reach
+      // `callerAuthor` and get its 401. Asserting one code would pin the order
       // the gates happen to run in rather than the property (DOR-486).
       expect(refused.status).not.toBe(200);
-      // Either this seam's own code, or none because the tier gate answered
-      // first with its `denied` payload. Asserting the value itself rather than
+      // Either this seam's own code, or the tier gate's `forbidden` because it
+      // answered first. Asserting the value itself rather than
       // a ternary over it — the ternary was a tautology that could not fail.
-      expect([REFUSAL_CODE, undefined]).toContain(refused.body.code);
+      expect(['agent_identity_unverified', 'forbidden']).toContain(refused.body.code);
       expect(refused.body.posted).toBeUndefined();
       // The half that matters: nothing was written under anybody's name.
       expect(entryCount()).toBe(1);
@@ -337,8 +340,8 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
           .set('X-DorkOS-Agent', await deadToken(state))
           .send({ roomId, limit: 5 });
 
-        expect(refused.status).toBe(400);
-        expect(refused.body.code).toBe(REFUSAL_CODE);
+        expect(refused.status).toBe(401);
+        expect(refused.body.code).toBe(PROBLEM_CODE);
         expect(refused.body).not.toHaveProperty('entries');
         expect(JSON.stringify(refused.body)).not.toContain('a private note');
       }
@@ -777,7 +780,7 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
       // 403, not 202: a direct call raises no card, so there is nothing to come
       // back for. The agent may ask on purpose, with the request tool.
       expect(res.status).toBe(403);
-      expect(res.body.reason).toBe('permission_blocked');
+      expect(res.body.code).toBe('forbidden');
       expect(res.body.approvable).toBe(true);
       expect(probeRan).toBe(false);
     });

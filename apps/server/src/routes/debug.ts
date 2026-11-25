@@ -63,8 +63,9 @@ import {
 } from '../services/observability/doc-channel-metrics.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
-import { canReadSession, readerOfRequest, SESSION_NOT_FOUND_BODY } from './audit-reader.js';
+import { problem } from '@dorkos/http-kit';
+import { parseSessionId } from '../lib/route-utils.js';
+import { canReadSession, readerOfRequest, sessionNotFoundProblem } from './audit-reader.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import {
   recentDispatches,
@@ -227,9 +228,11 @@ export function createDebugRoutes(source: () => DebugDeps | undefined): Hono<Api
   // GET /api/debug/sessions/:id — one session's live spine.
   router.get('/sessions/:id', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) {
+      return problem(c, 'invalid_request', { detail: 'That isn’t a chat id.' });
+    }
     // The same read check as the session routes (spec `audit-trail` §3.4).
-    if (!canReadSession(honoRequestFacts(c), sessionId)) return c.json(SESSION_NOT_FOUND_BODY, 404);
+    if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
 
     const projector = peekProjector(sessionId);
     // `resolveSessionRuntime`, not `getSessionRuntimeType`, for the second half it

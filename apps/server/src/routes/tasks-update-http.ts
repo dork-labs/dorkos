@@ -43,7 +43,8 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { TASK_NOT_FOUND, taskProblem } from './task-problem.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
@@ -96,11 +97,11 @@ export async function updateTaskHttp(
   const { store, registrar, dorkHome, meshCore, activity: activityService } = deps;
   const caller = confirming ?? honoRequestFacts(c);
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'Scheduled task not found' }, 404);
+  if (!id) return problem(c, 'not_found', { detail: TASK_NOT_FOUND });
   const body = readJsonBody(c);
   const trusted = clearsTheAgentBar(caller);
   const operatorOnly = operatorOnlyTaskRefusal(body, trusted);
-  if (operatorOnly) return c.json(operatorOnly, 403);
+  if (operatorOnly) return taskProblem(c, operatorOnly, 403);
 
   // Before the schema parse, which is a non-strict `z.object` and therefore drops
   // anything it does not recognise WITHOUT saying so. A caller that sent
@@ -109,27 +110,27 @@ export async function updateTaskHttp(
   // in a field name should be loud on the app's own edits too, and the
   // client only ever sends `UpdateTaskRequest` fields.
   const unknownFields = refuseUnknownTaskUpdateFields(body);
-  if (unknownFields) return c.json(unknownFields, 400);
+  if (unknownFields) return taskProblem(c, unknownFields, 400);
 
   const parsed = UpdateTaskRequestSchema.safeParse(body);
   if (!parsed.success) return validationProblem(c, parsed.error);
   const existing = store.getTask(id);
-  if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
+  if (!existing) return problem(c, 'not_found', { detail: TASK_NOT_FOUND });
   // Rules, then a stale review, then a looser-than-proposed approval (#3794).
   const prepared = await prepareTaskApprovalRequest(store, existing, parsed.data, meshCore);
   const { refusal, review, approvedPromptHash, approvalSurface, data } = prepared;
-  if (refusal) return c.json(refusal.body, refusal.status);
+  if (refusal) return taskProblem(c, refusal.body, refusal.status);
   const approval = taskApprovalActor.personTaskApprovalForTask(caller, existing, approvalSurface);
   // From Wi-Fi a schedule runs at Default at most (DOR-3037).
   const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
-  if (wifiRefusal) return c.json(wifiRefusal, 403);
+  if (wifiRefusal) return taskProblem(c, wifiRefusal, 403);
   // An agent changes only its own schedule, or a global one no other agent
   // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
   const editor = scheduleEditorOf(caller, trusted);
   const edit = scheduleEdit(existing, editor, meshCore, data);
-  if (edit.refusal) return c.json(edit.refusal, 403);
+  if (edit.refusal) return taskProblem(c, edit.refusal, 403);
   const modeRefusal = await taskModeRefusal(existing, data, meshCore);
-  if (modeRefusal) return c.json(modeRefusal, 400);
+  if (modeRefusal) return taskProblem(c, modeRefusal, 400);
 
   // Naming DorkOS credits, or approving a schedule that runs on them, spends
   // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -143,7 +144,7 @@ export async function updateTaskHttp(
     (runsOnCredits && data.enabled === true && !existing.enabled)
       ? errorRefusalUnlessOwner(caller, TASK_ON_CREDITS)
       : undefined;
-  if (creditsRefusal) return c.json(creditsRefusal, 403);
+  if (creditsRefusal) return taskProblem(c, creditsRefusal, 403);
   // Hold live credits work changes; pausing, lower caps and display-only edits stay free.
   const grantsCredits =
     runsOnCredits &&
@@ -168,10 +169,9 @@ export async function updateTaskHttp(
       run: async (verified) => {
         const current = store.getTask(id);
         if (!current || personReview.taskReviewRevision(current) !== revision)
-          return c.json(
-            { error: 'The scheduled task changed. Try again.', code: 'TASK_CHANGED' },
-            409
-          );
+          return problem(c, 'precondition_failed', {
+            detail: 'The scheduled task changed. Try again.',
+          });
         return updateTaskHttp(c, deps, present, verified);
       },
     });
@@ -187,12 +187,12 @@ export async function updateTaskHttp(
   // A new timing and the package's own timing are two different answers to
   // one question; the request has to pick (DOR-2302).
   const timingConflict = conflictingTimingRequest(data);
-  if (timingConflict) return c.json({ error: timingConflict }, 400);
+  if (timingConflict) return problem(c, 'invalid_request', { detail: timingConflict });
 
   // A sticky schedule's conversation cannot move to another account once it
   // has started (DOR-2384). Refused before the file is touched.
   const accountLocked = refuseStickyAccountChange(store, existing, data);
-  if (accountLocked) return c.json(accountLocked, 400);
+  if (accountLocked) return taskProblem(c, accountLocked, 400);
 
   // The account rule (spec `flow-multiproject` §8.4, D7): nobody, a person
   // included, points a schedule at an account that may not work where its
@@ -208,7 +208,8 @@ export async function updateTaskHttp(
         })
       : null;
   if (accountRefusal) {
-    return c.json(accountRefusal.toBody(), 409);
+    const { error, code, project, accountId } = accountRefusal.toBody();
+    return taskProblem(c, { error, code, project, accountId }, 409);
   }
   // A schedule whose runs go on DorkOS credits names a model credits serve
   // (DOR-2636). Asked when the request moves the model, the account or the
@@ -223,7 +224,7 @@ export async function updateTaskHttp(
       ),
     });
     if (modelRefusal) {
-      return c.json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, 400);
+      return problem(c, 'invalid_request', { detail: modelRefusal });
     }
   }
 
@@ -234,13 +235,11 @@ export async function updateTaskHttp(
   // unrelated field can never be refused by a schedule it did not write — and
   // asked before the file rewrite below, for the reason the create path gives.
   if (data.cron !== undefined || data.timezone !== undefined) {
-    const problem = describeScheduleProblem(
+    const scheduleProblem = describeScheduleProblem(
       data.cron !== undefined ? data.cron : existing.cron,
       data.timezone !== undefined ? data.timezone : existing.timezone
     );
-    if (problem) {
-      return c.json({ error: problem }, 400);
-    }
+    if (scheduleProblem) return problem(c, 'invalid_request', { detail: scheduleProblem });
   }
 
   // A person's raise of what the unattended run may do waits for the owner (DOR-4355).
@@ -305,25 +304,19 @@ export async function updateTaskHttp(
     { existing, data, clampTo, reviewStillMatches: review.beforeWrite }
   );
   if (!fileOutcome.ok) {
-    return c.json(
-      {
-        error: fileOutcome.error,
-        ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
-        ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
-      },
-      fileOutcome.status
-    );
+    const { error, code, ownedBy } = fileOutcome;
+    return taskProblem(c, { error, code, ownedBy }, fileOutcome.status);
   }
   const { changesFile, timingLandsOn, reviewedFileHash } = fileOutcome;
   // No await between this compare and activation.
   if (!review.beforeActivation(reviewedFileHash))
-    return c.json(personReview.STALE_SCHEDULE_REVIEW, 409);
+    return taskProblem(c, personReview.STALE_SCHEDULE_REVIEW, 412);
   // What would run before this write, as it RUNS, and the status it had: what
   // `settleApprovedWorkChange` below compares against.
   const before = { ...taskWorkOf(existing), status: existing.status };
 
   let updated = writeTaskRow(store, id, data, { ...fileOutcome, clampTo, approval, trusted });
-  if (!updated) return c.json({ error: 'Scheduled task not found' }, 404);
+  if (!updated) return problem(c, 'not_found', { detail: TASK_NOT_FOUND });
 
   // **Re-assert the status the caller asked for.** The file is written before
   // the row, and a watcher event landing in that gap syncs the NEW file

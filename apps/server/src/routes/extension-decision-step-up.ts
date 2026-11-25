@@ -5,7 +5,12 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import type { ExtensionInboxService } from '../services/extensions/inbox/extension-inbox.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
+import { problem, sendProblem } from '@dorkos/http-kit';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { wifiRefusal } from './extension-decision-problems.js';
+
+/** What a caller away from this computer without a signed-in session is told. */
+const SIGN_IN_TO_DECIDE = 'Sign in to DorkOS to decide an approval.';
 import { deskGoesOnWithoutSheet, holdForStepUp } from './step-up-guard.js';
 import { extensionSettingsHash } from '../services/extensions/inbox/extension-step-up-view.js';
 import { hashApprovalInput } from '../services/core/approvals/approval-input-hash.js';
@@ -32,23 +37,17 @@ export function holdRemoteExtensionAnswer(
 ): Response | undefined {
   const facts = honoRequestFacts(c);
   const wifi = refuseApprovalYesFromWifi(facts);
-  if (wifi) return c.json(wifi, 403);
+  if (wifi) return sendProblem(c, wifiRefusal(wifi));
   const atDesk = isAtThisComputer(facts);
   if (atDesk && (action.kind !== 'offer' || deskGoesOnWithoutSheet(facts))) return undefined;
   if (!atDesk && (facts.user?.credential !== 'cookie' || !facts.user.sessionId)) {
-    return c.json({ error: 'Sign in to DorkOS to decide an approval.', code: 'not-a-person' }, 403);
+    return problem(c, 'person_only', { detail: SIGN_IN_TO_DECIDE });
   }
   const view = action.inbox.stepUpView(action.id, action.kind, action.extensionId);
   if (!view && action.extensionId)
-    return c.json({ error: 'There is no such decision.', code: 'not_found' }, 404);
+    return problem(c, 'not_found', { detail: 'There is no such decision.' });
   if (!view)
-    return c.json(
-      {
-        error: 'This request is no longer waiting.',
-        code: action.kind === 'offer' ? 'offer_gone' : 'already_resolved',
-      },
-      409
-    );
+    return problem(c, 'already_resolved', { detail: 'This request is no longer waiting.' });
   return holdForStepUp(c, {
     kind: action.kind === 'offer' ? 'approval.grant-always' : 'approval.grant',
     target: action.id,
@@ -65,7 +64,7 @@ export function holdRemoteExtensionAnswer(
       const refused = assessPerson(confirming, action.copy);
       if (refused) return refused;
       const wifi = refuseApprovalYesFromWifi(confirming);
-      if (wifi) return { status: 403, body: wifi };
+      if (wifi) return { status: 403, body: wifiRefusal(wifi) };
       if (
         action.inbox.stepUpView(action.id, action.kind, action.extensionId)?.identityHash !==
         view.identityHash
@@ -98,9 +97,9 @@ export async function holdRemoteExtensionSettings(
   const facts = honoRequestFacts(c);
   if (!grantsPower({ kind: 'extension-settings' }) || isAtThisComputer(facts)) return undefined;
   const wifi = refuseApprovalYesFromWifi(facts);
-  if (wifi) return c.json(wifi, 403);
+  if (wifi) return sendProblem(c, wifiRefusal(wifi));
   if (facts.user?.credential !== 'cookie' || !facts.user.sessionId)
-    return c.json({ error: 'Sign in to DorkOS to decide an approval.', code: 'not-a-person' }, 403);
+    return problem(c, 'person_only', { detail: SIGN_IN_TO_DECIDE });
   const snapshot = action.read();
   const identityHash = hashApprovalInput(snapshot);
   const hash = extensionSettingsHash(action.id, action.project, action.value);
@@ -118,7 +117,7 @@ export async function holdRemoteExtensionSettings(
       const refused = assessPerson(confirming, action.copy);
       if (refused) return refused;
       const wifi = refuseApprovalYesFromWifi(confirming);
-      if (wifi) return { status: 403, body: wifi };
+      if (wifi) return { status: 403, body: wifiRefusal(wifi) };
       const response = await action.run(confirming);
       return {
         status: response.status,
@@ -143,10 +142,10 @@ export function holdExtensionPowerChange(
   if (!grantsPower({ kind: action.effect })) return undefined;
   const facts = honoRequestFacts(c);
   const wifi = refuseApprovalYesFromWifi(facts);
-  if (wifi) return c.json(wifi, 403);
+  if (wifi) return sendProblem(c, wifiRefusal(wifi));
   if (deskGoesOnWithoutSheet(facts)) return undefined;
   if (!isAtThisComputer(facts) && (facts.user?.credential !== 'cookie' || !facts.user.sessionId))
-    return c.json({ error: 'Sign in to DorkOS to decide an approval.', code: 'not-a-person' }, 403);
+    return problem(c, 'person_only', { detail: SIGN_IN_TO_DECIDE });
   const readHash = () => hashApprovalInput({ effect: action.effect, snapshot: action.read() });
   const input = { effect: action.effect, snapshot: action.read() };
   const hash = hashApprovalInput(input);
@@ -160,7 +159,7 @@ export function holdExtensionPowerChange(
       const refused = assessPerson(facts, action.copy);
       if (refused) return refused;
       const wifi = refuseApprovalYesFromWifi(facts);
-      if (wifi) return { status: 403, body: wifi };
+      if (wifi) return { status: 403, body: wifiRefusal(wifi) };
       const response = await action.run(facts);
       return {
         status: response.status,

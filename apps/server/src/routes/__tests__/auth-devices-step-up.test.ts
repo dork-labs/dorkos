@@ -27,7 +27,7 @@ describe('device confirmation through the auth endpoints', () => {
           })
         ).not.toBeNull();
         expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-          'not-your-action'
+          'held_by_another_browser'
         );
         expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
           ok: true,
@@ -58,7 +58,7 @@ describe('device confirmation through the auth endpoints', () => {
         .send({ token: 'made-up-other-session' });
       expect(refused.status).toBe(401);
       expect(refused.body.heldActionId).toBeUndefined();
-      expect(refused.body.error).toBe('Sign in to change access.');
+      expect(refused.body.detail).toBe('Sign in to change access.');
     }
   );
   it('keeps ending your own session free', async () => {

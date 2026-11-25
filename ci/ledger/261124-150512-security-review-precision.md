@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.claude-code-review.review
   - wf.scripts-test.fixtures
-prs: []
+prs: [4274, 4290]
 ratchet-release: []
 field-changes: []
 ---
@@ -25,6 +25,12 @@ plumbing.
    summary and the Security verdict do not count, so a PR whose only summaries are push re-checks
    gets a full review. Every doubt (not a push, the script not yet on main, unreadable comments,
    any other answer) is `full`.
+   Follow-up, agreed with Security: the review's summary now carries a hidden last-line marker,
+   `<!-- dorkos-review-summary v1 head=<sha> mode=<full|push-recheck|unknown> -->`, which
+   `scripts/review-gh.sh summary` appends itself from the workflow's `REVIEW_HEAD_SHA` and
+   `REVIEW_MODE`. `review-mode.sh` counts only `claude[bot]` comments whose last line is that marker
+   with `mode=full`. Unmarked summaries from before the change keep the tally rule only when created
+   before 2026-11-25T00:00:00Z; the transition can be deleted after Dec 8.
 2. `scripts/security-findings.sh decrypt <pr> <identity>` shows every block posted for the current
    head, oldest first, each after a header on stderr (posted-at, short head, "block i of n"),
    because each review of a head posts its own block. With none for the current head it falls back
@@ -36,7 +42,8 @@ Target: push mode decided by `review-mode.sh` on 100% of push runs (the job summ
 "review mode" line); no push re-check on a PR without a full `claude[bot]` summary; `decrypt`
 shows every current-head block.
 Evaluate: Dec 8. Sample ten push runs after merge: each has a "review mode" line, and each
-`push-recheck` PR has an earlier full summary by `claude[bot]`.
+`push-recheck` PR has an earlier full summary by `claude[bot]` (marked `mode=full` after the
+marker change). Then delete the transition rule in `review-mode.sh`.
 
 Revert (1) if push re-checks stop happening on PRs that had a full review (the step always says
 `full`), which would put review spend back above the review-spend ledger's level. Revert (2) if

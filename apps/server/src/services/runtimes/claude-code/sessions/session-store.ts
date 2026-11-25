@@ -1,8 +1,10 @@
 import { hasPreparedSettingsMutation } from '../../../core/runtime-seam/prepared-settings-write.js';
+import { observeSuggestedMode } from '../tool-turn/query-mode.js';
 import { prepareClaudeSettingsUpdate } from './settings/prepared-update.js';
 import {
   startLivePermissionModeUpdate,
   finishLivePermissionModeUpdate,
+  isAdoptableMode,
 } from './settings/live-permission-update.js';
 import { RequiredSessionIdentityError } from '../../../../lib/replay/required-session-identity-error.js';
 import { rebindOwnedSdkSession } from './identity/sdk-session-rebind.js';
@@ -34,14 +36,12 @@ import type {
   SessionUpdateResult,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
-import { actsWithoutAsking } from '@dorkos/shared/permission-semantics';
 import type { AgentSession } from '../agent-types.js';
-import { CLAUDE_CODE_CAPABILITIES } from '../runtime-constants.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { withClaudeConfigDir } from '../claude-config-env-lock.js';
-import { isPersonOnlyMode, sessionScopedMode, setChosenMode } from '../turn-permission.js';
+import { setChosenMode } from '../turn-permission.js';
 import { narrowToTool } from '../tool-gate/always-allow-breadth.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from '../../../session/session-lock.js';
@@ -109,28 +109,6 @@ export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
     if (waited < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
   }
   return false;
-}
-
-/**
- * Whether a suggested mode is one DorkOS may make DURABLE off a single click on
- * an approval card.
- *
- * Two questions, both asked of the runtime's own declaration rather than of the
- * id's name. Does claude-code declare this mode at all — persisting an
- * undeclared id would make the settings overlay display a posture the runtime
- * never adopted (`PATCH /api/sessions/:id`, same check). And does it act
- * without asking (`actsWithoutAsking`): a card that says "Always Allow" over one
- * Write is not a person choosing a session that never asks again; that is a
- * choice made on the dial.
- *
- * @param mode - The mode an accepted suggestion asks for.
- */
-function isAdoptableMode(mode: PermissionMode): boolean {
-  // Nor "Never ask": a click that allowed one call is not a person choosing a
-  // chat that refuses everything it would ask about (DOR-2838).
-  if (isPersonOnlyMode(mode)) return false;
-  const descriptor = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((d) => d.id === mode);
-  return descriptor !== undefined && !actsWithoutAsking(descriptor);
 }
 
 /**
@@ -650,7 +628,13 @@ export class SessionStore {
       // A person's choice replaces the agent's level a running turn started from (DOR-3175).
       if (!prepared) setChosenMode(session, opts.permissionMode);
       if (session.activeQuery) {
-        const ack = await startLivePermissionModeUpdate(session, session.activeQuery);
+        const control = startLivePermissionModeUpdate(
+          session,
+          session.activeQuery,
+          opts.permissionMode
+        );
+        const ack = await control.ack;
+        control.settle(ack);
         permissionModePendingUntilNextTurn = finishLivePermissionModeUpdate(
           sessionId,
           prevMode,
@@ -771,7 +755,7 @@ export class SessionStore {
    * @param suggestions - The SDK permission updates being forwarded verbatim.
    */
   private adoptSuggestedMode(session: AgentSession, suggestions: PermissionUpdate[]): void {
-    const mode = sessionScopedMode(suggestions);
+    const mode = observeSuggestedMode(session.activeQuery, suggestions);
     if (!mode || mode === session.permissionMode) return;
     if (!isAdoptableMode(mode)) {
       // info, not debug: a person clicked one button and a mode change went

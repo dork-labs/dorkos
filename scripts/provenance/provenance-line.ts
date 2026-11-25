@@ -6,7 +6,7 @@
  * ```bash
  * # Print a version 2 line from the environment. Visibility defaults to
  * # unknown, which is treated as public.
- * pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public --surface github
+ * pnpm exec tsx scripts/provenance/provenance-line.ts --visibility public
  *
  * # Print the normalized JSON of a body's signature, or `null` when it has none.
  * gh pr view 123 --json body -q .body | pnpm exec tsx scripts/provenance/provenance-line.ts read | jq -r '.chat // empty'
@@ -14,17 +14,20 @@
  *
  * The environment it reads:
  *
- * - `DORKOS_HARNESS`, or `CLAUDECODE` for `claude-code`: the harness.
- * - `DORKOS_SESSION_ID`, under any harness: the chat. Under Claude Code only,
- *   `CLAUDE_CODE_SESSION_ID` and then `CLAUDE_SESSION_ID` stand in when it is
- *   unset, so a Claude variable left in a Codex or OpenCode shell never
- *   names another harness's chat.
+ * - `DORKOS_HARNESS` names the harness when set. Otherwise a Claude Code
+ *   session uses `CLAUDECODE`, and a native Codex chat uses `CODEX_THREAD_ID`.
+ * - `DORKOS_SESSION_ID` names the chat under any harness. Without it, Claude
+ *   Code uses `CLAUDE_CODE_SESSION_ID` and then `CLAUDE_SESSION_ID`; Codex
+ *   uses `CODEX_THREAD_ID`.
  * - `CLAUDE_CONFIG_DIR`, under Claude Code only: the account, as
  *   `open-pr.sh` derives it.
  * - `DORKOS_AGENT_ID` and `DORKOS_SPACE_ID`: the agent and its space, a bare
  *   id or a whole `dork:` reference. DorkOS sets both in every runtime's turn
  *   environment (DOR-5138); outside a DorkOS turn they are absent and so are
  *   the fields.
+ * - `DORKOS_SESSION_ID` and `CI`, for the surface when `--surface` is not
+ *   given: `dorkos` inside a DorkOS turn, `ci` when `CI` is `true`, else
+ *   `bare-cli`.
  *
  * A value that would not read back is left out of the line, never repaired.
  *
@@ -62,33 +65,54 @@ function asReference(kind: 'agent' | 'space', value: string | undefined): string
 }
 
 /**
+ * Where the work was driven from, when `--surface` does not say: `dorkos`
+ * inside a DorkOS turn (it sets `DORKOS_SESSION_ID`), `ci` when `CI` is
+ * `true`, and otherwise `bare-cli`.
+ *
+ * @param vars - The environment to read.
+ * @returns The surface word.
+ */
+export function surfaceFromEnv(vars: NodeJS.ProcessEnv): string {
+  if (env(vars, 'DORKOS_SESSION_ID') !== undefined) return 'dorkos';
+  if (vars.CI === 'true') return 'ci';
+  return 'bare-cli';
+}
+
+/**
  * The fields the environment names, before any is checked: the builder drops
  * whatever would not read back.
  *
  * @param vars - The environment to read.
- * @param surface - The `--surface` value, when given.
+ * @param surface - The `--surface` value, when given; otherwise {@link surfaceFromEnv}.
  * @returns The writer's fields.
  */
 export function fieldsFromEnv(vars: NodeJS.ProcessEnv, surface?: string): ProvenanceFields {
+  const dorkosChat = env(vars, 'DORKOS_SESSION_ID');
+  const claudeChat = env(vars, 'CLAUDE_CODE_SESSION_ID') ?? env(vars, 'CLAUDE_SESSION_ID');
+  const codexChat = env(vars, 'CODEX_THREAD_ID');
   let harness = env(vars, 'DORKOS_HARNESS');
-  if (harness === undefined && env(vars, 'CLAUDECODE') !== undefined) harness = 'claude-code';
-  const isClaudeCode = harness === 'claude-code';
+  if (harness === undefined) {
+    // A bare Codex shell can inherit CLAUDECODE without a Claude session.
+    if (env(vars, 'CLAUDECODE') && (claudeChat || dorkosChat || !codexChat))
+      harness = 'claude-code';
+    else if (codexChat) harness = 'codex';
+  }
+  let chat = dorkosChat;
   let account: string | undefined;
-  if (isClaudeCode) {
+  if (harness === 'claude-code') {
+    chat ??= claudeChat;
     // The config dir's basename, one leading dot dropped: `~/.claude3` is `claude3`.
     account = basename(env(vars, 'CLAUDE_CONFIG_DIR') ?? 'claude').replace(/^\./, '');
     if (account.includes('@')) account = undefined;
+  } else if (harness === 'codex') {
+    chat ??= codexChat;
   }
   const fields: Partial<Record<keyof ProvenanceFields, string | undefined>> = {
     harness,
-    surface,
+    surface: surface ?? surfaceFromEnv(vars),
     account,
     agent: asReference('agent', env(vars, 'DORKOS_AGENT_ID')),
-    chat:
-      env(vars, 'DORKOS_SESSION_ID') ??
-      (isClaudeCode
-        ? (env(vars, 'CLAUDE_CODE_SESSION_ID') ?? env(vars, 'CLAUDE_SESSION_ID'))
-        : undefined),
+    chat,
     space: asReference('space', env(vars, 'DORKOS_SPACE_ID')),
   };
   return Object.fromEntries(

@@ -57,6 +57,7 @@
  *
  * @module services/session/runtime-turns/runtime-turn
  */
+import { ulid } from 'ulidx';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { isNonFatalErrorCode } from '@dorkos/shared/run-outcome';
@@ -76,6 +77,9 @@ import { withStallGuard } from '../stall-guard.js';
 import { DetachedTurnLifecycle, guardTurnErrors } from '../trigger-turn.js';
 import { tapEachEvent, warnOnRuntimeError } from '../turn-stream/tap-each-event.js';
 import { noteDispatchedTurn, noteRuntimeTurnSettled } from './late-turns.js';
+import { reportRun } from '../message-dispatcher/run-feed.js';
+import { holdRun, releaseRun } from '../turn-port/facts.js';
+import { queueKeyOf } from '../resolution/session-key-registry.js';
 
 /**
  * How long a runtime turn waits for the session's write-lock before giving up
@@ -186,6 +190,10 @@ async function projectRuntimeTurn(
   let holder = runtimeLockHolder(sessionId);
   let lifecycle: DetachedTurnLifecycle | undefined;
   const lockToken = Symbol('runtime-turn-lock');
+  // Nobody asked for this turn, so the computer side names its run (spec
+  // `turns-survive-restarts` §4.3, transition 2).
+  const runId = ulid();
+  let opened = false;
 
   let released = false;
   const releaseOnce = (): void => {
@@ -266,6 +274,20 @@ async function projectRuntimeTurn(
       ...(runtime.liveHelperIds !== undefined
         ? { stillLive: () => runtime.liveHelperIds!(sessionId) }
         : {}),
+      // Holding the write-lock now, so no caller's run of the chat is
+      // `started` or `running` (§4.7); one still `starting` goes back in line.
+      onTurnStart: (seq) => {
+        opened = true;
+        holdRun(runId);
+        reportRun({
+          kind: 'started',
+          runId,
+          sessionId: queueKeyOf(sessionId),
+          openedBy: 'runtime',
+          runtime: runtime.type,
+          runtimeTurnRef: seq,
+        });
+      },
     });
   } catch (err) {
     said.error ??= err instanceof Error ? err.message : String(err);
@@ -274,6 +296,10 @@ async function projectRuntimeTurn(
       ...logError(err),
     });
   } finally {
+    // Its run ends before it lets go of the lock, so a launch the release
+    // wakes never meets it live.
+    if (opened) reportRun({ kind: 'ended', runId, ending: said.error ? 'failed' : 'completed' });
+    releaseRun(runId);
     releaseOnce();
     // After the session is handed back, so a follower that dispatches more
     // work in answer finds it free.

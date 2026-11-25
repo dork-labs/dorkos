@@ -10,14 +10,11 @@ import {
   ProjectResolveQuerySchema,
   ProjectResolveResponseSchema,
 } from '@dorkos/shared/project-schemas';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 import { MAX_LOOKUP_ROOTS } from './project-registry.js';
 
-const error = (description: string) => ({
-  description,
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-});
+const error = problemResponse;
 
 /**
  * Register `GET /api/projects` and `GET /api/projects/resolve` on the OpenAPI registry.
@@ -43,7 +40,7 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The known projects',
         content: { 'application/json': { schema: ProjectListResponseSchema } },
       },
-      500: error('The projects could not be read'),
+      500: error('`internal_error`: the projects could not be read'),
     },
   });
 
@@ -70,12 +67,12 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The project, or null',
         content: { 'application/json': { schema: ProjectResolveResponseSchema } },
       },
-      400: error('`cwd` is missing or empty'),
+      400: error('`invalid_request`: `cwd` is missing or empty, or has a NUL byte'),
       403: error(
-        "`cwd`, or the repository it belongs to, is outside the server's directory boundary; " +
-          'or the caller is not a person'
+        "`outside_boundary`: `cwd`, or the repository it belongs to, is outside the server's " +
+          'directory boundary; `person_only`: the caller is not a person'
       ),
-      500: error('The project could not be resolved'),
+      500: error('`internal_error`: the project could not be resolved'),
     },
   });
 }

@@ -73,10 +73,10 @@ describe('adding a source (DOR-3330)', () => {
     });
 
     expect(refused.status).toBe(403);
-    expect(refused.body).toEqual({
-      error:
-        'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.',
-      code: 'marketplace_source_needs_app',
+    expect(refused.body).toMatchObject({
+      status: 403,
+      code: 'person_only',
+      detail: "Adding a source needs you signed in. Add it in the app's Marketplace sources.",
     });
     expect(await listSourceNames(h)).not.toContain('from-cli');
   });
@@ -90,7 +90,7 @@ describe('adding a source (DOR-3330)', () => {
       source: 'https://example.com/from-app',
     });
     expect(added.status).toBe(403);
-    expect(added.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(added.body.code).toBe('operator_only');
     expect(await listSourceNames(h)).not.toContain('from-app');
 
     await h.sourceManager.add({ name: 'from-app', source: 'https://example.com/from-app' });
@@ -113,8 +113,8 @@ describe('deciding a held-back package (I-4)', () => {
     h.signedInUser = API_KEY;
     const byKey = await decide();
     expect(byKey.status).toBe(403);
-    expect(byKey.body.code).toBe('operator_cookie_required');
-    expect(byKey.body.error).toContain('press Review on the package');
+    expect(byKey.body.code).toBe('person_only');
+    expect(byKey.body.detail).toContain('press Review');
     expect(
       (configManager.get('harness') as { approvedHooks?: string[] } | undefined)?.approvedHooks ??
         []
@@ -123,7 +123,7 @@ describe('deciding a held-back package (I-4)', () => {
     h.signedInUser = COOKIE;
     const bySession = await decide();
     expect(bySession.status).toBe(403);
-    expect(bySession.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(bySession.body.code).toBe('operator_only');
     expect((await h.get('/held-back')).body.packages).toEqual([
       expect.objectContaining({ name: 'held' }),
     ]);
@@ -139,14 +139,14 @@ describe('keeping files (DOR-2341)', () => {
     h.signedInUser = API_KEY;
     const byKey = await keep();
     expect(byKey.status).toBe(403);
-    expect(byKey.body.code).toBe('operator_cookie_required');
-    expect(byKey.body.error).toContain('Keep these as mine');
+    expect(byKey.body.code).toBe('person_only');
+    expect(byKey.body.detail).toContain('Keep these as mine');
     expect(await unprovenOnDisk(root)).toBeDefined();
 
     h.signedInUser = COOKIE;
     const bySession = await keep();
     expect(bySession.status).toBe(403);
-    expect(bySession.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(bySession.body.code).toBe('operator_only');
     expect(await unprovenOnDisk(root)).toBeDefined();
   });
 });

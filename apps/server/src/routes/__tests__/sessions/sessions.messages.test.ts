@@ -61,7 +61,7 @@ describe('POST /api/sessions/:id/messages', () => {
     const res = await request(server).post(`/api/sessions/${S1}/messages`).send({});
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Invalid request');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('returns 202 with the canonical session id and no in-band turn frames', async () => {
@@ -218,9 +218,9 @@ describe('session runtime ownership', () => {
     });
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({
-      error: 'Choose a registered agent before starting this chat',
-      code: 'INVALID_AGENT_PATH',
+    expect(res.body).toMatchObject({
+      detail: 'Choose a registered agent before starting this chat',
+      code: 'invalid_request',
     });
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
@@ -285,7 +285,7 @@ describe('session runtime ownership', () => {
       .send({ content: 'hi', seedContext: '' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('returns 400 when the hinted runtime is not registered', async () => {
@@ -296,7 +296,7 @@ describe('session runtime ownership', () => {
       .send({ content: 'hi', runtime: 'codex', create: true });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNKNOWN_RUNTIME');
+    expect(res.body.code).toBe('invalid_request');
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
   });
 
@@ -349,7 +349,7 @@ describe('POST /api/sessions/:id/approve and /deny', () => {
         .post(`/api/sessions/${S1}/${verb}`)
         .send({ toolCallId: 'tc1' });
       expect(none.status).toBe(404);
-      expect(none.body.error).toBe('No pending approval');
+      expect(none.body.code).toBe('not_found');
     }
   );
 });

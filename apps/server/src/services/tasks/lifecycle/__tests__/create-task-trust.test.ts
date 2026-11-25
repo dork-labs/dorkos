@@ -17,6 +17,11 @@ import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
 import { createScheduledTask } from '../create-task.js';
 import { notificationEntry } from '../../../notifications/notification-registry.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /** The stored preset, and what the notification seams were handed. */
 const state = vi.hoisted(() => ({

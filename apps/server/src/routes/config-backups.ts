@@ -26,7 +26,8 @@ import {
   type BackupMoveRefusal,
 } from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problemBody, readJsonBody, sendProblem, type ProblemStatus } from '@dorkos/http-kit';
+import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { expandTilde, getBoundary, isContained } from '../lib/boundary.js';
@@ -58,36 +59,67 @@ type RouteRefusal =
 type DestinationRefusal =
   'destination_invalid' | 'destination_outside' | 'destination_in_data_folder';
 
-/** What each refusal says, and the status it answers with. */
-const REFUSALS: Record<
+/** What each refusal says, and the problem code it answers with. */
+const REFUSAL_WORDS: Record<
   BackupMoveRefusal | RouteRefusal,
-  { status: 400 | 403 | 404 | 409 | 507; error: string }
+  { code: ProblemCode; detail: string; status?: ProblemStatus }
 > = {
-  person_only: { status: 403, error: 'Only you can do this, from DorkOS.' },
-  not_at_this_computer: { status: 403, error: 'Do this on the computer DorkOS runs on.' },
+  person_only: { code: 'person_only', detail: 'Only you can do this, from DorkOS.' },
+  not_at_this_computer: {
+    code: 'operator_only',
+    detail: 'Do this on the computer DorkOS runs on.',
+  },
   destination_outside: {
-    status: 400,
-    error: 'Pick a folder DorkOS can reach, or one on an external drive.',
+    code: 'invalid_request',
+    detail: 'Pick a folder DorkOS can reach, or one on an external drive.',
   },
-  destination_in_data_folder: { status: 400, error: 'Pick a folder outside DorkOS’s data folder.' },
-  not_found: { status: 404, error: 'That backup is no longer there.' },
-  managed: { status: 409, error: 'DorkOS removes this backup on its own.' },
-  busy: { status: 409, error: 'This backup is in use, so it can’t be changed now.' },
-  changed: { status: 409, error: 'This backup changed. Reload the list and try again.' },
-  destination_invalid: { status: 400, error: 'Pick a folder that exists.' },
-  destination_is_backups: { status: 400, error: 'Pick a folder outside the backups folder.' },
-  destination_exists: { status: 409, error: 'That folder already has a file with this name.' },
-  destination_full: { status: 507, error: 'That disk is full. The original stays.' },
+  destination_in_data_folder: {
+    code: 'invalid_request',
+    detail: 'Pick a folder outside DorkOS’s data folder.',
+  },
+  not_found: { code: 'not_found', detail: 'That backup is no longer there.' },
+  managed: { code: 'conflict', detail: 'DorkOS removes this backup on its own.' },
+  busy: { code: 'conflict', detail: 'This backup is in use, so it can’t be changed now.' },
+  changed: {
+    code: 'precondition_failed',
+    detail: 'This backup changed. Reload the list and try again.',
+  },
+  destination_invalid: { code: 'invalid_request', detail: 'Pick a folder that exists.' },
+  destination_is_backups: {
+    code: 'invalid_request',
+    detail: 'Pick a folder outside the backups folder.',
+  },
+  destination_exists: {
+    code: 'conflict',
+    detail: 'That folder already has a file with this name.',
+  },
+  // A full disk is the server's to report, at the status HTTP names for it.
+  destination_full: {
+    code: 'internal_error',
+    status: 507,
+    detail: 'That disk is full. The original stays.',
+  },
   destination_not_writable: {
-    status: 403,
-    error: 'DorkOS can’t write to that folder. The original stays.',
+    code: 'forbidden',
+    detail: 'DorkOS can’t write to that folder. The original stays.',
   },
-  copy_failed: { status: 409, error: 'The copy couldn’t be written there. The original stays.' },
+  copy_failed: {
+    code: 'conflict',
+    detail: 'The copy couldn’t be written there. The original stays.',
+  },
   verify_failed: {
-    status: 409,
-    error: 'The copy didn’t check out, so the original stays. You can still remove it.',
+    code: 'conflict',
+    detail: 'The copy didn’t check out, so the original stays. You can still remove it.',
   },
 };
+
+/** Each refusal's problem document, answered as it is. */
+const REFUSALS = Object.fromEntries(
+  Object.entries(REFUSAL_WORDS).map(([refusal, { code, ...options }]) => [
+    refusal,
+    problemBody(code, options),
+  ])
+) as Record<keyof typeof REFUSAL_WORDS, Problem>;
 
 /** Whether `child` is strictly below `parent` (both already real paths). */
 function strictlyInside(child: string, parent: string): boolean {
@@ -149,12 +181,6 @@ function decideDestination(asked: string, volumesRoot: string): string {
   return volumes !== undefined && strictlyInside(real, volumes) ? real : 'destination_outside';
 }
 
-/** Answer a refusal with its sentence and code. */
-function refuse(c: Context<ApiEnv>, code: keyof typeof REFUSALS) {
-  const { status, error } = REFUSALS[code];
-  return c.json({ error, code }, status);
-}
-
 /**
  * Why this caller may not act, or `undefined` for a person at this computer
  * (or the owner over an encrypted connection). The owner on plain-http Wi-Fi is
@@ -198,7 +224,7 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
   /** GET / — every backup copy, newest first, and their total size. */
   router.get('/', (c) => {
     const refused = personRefusal(c);
-    if (refused) return refuse(c, refused);
+    if (refused) return sendProblem(c, REFUSALS[refused]);
     const folder = backupsDir();
     return c.json({ folder, ...listBackupCopies(folder) });
   });
@@ -206,11 +232,11 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
   /** DELETE /:name — remove one older copy. */
   router.delete('/:name', (c) => {
     const refused = personRefusal(c);
-    if (refused) return refuse(c, refused);
+    if (refused) return sendProblem(c, REFUSALS[refused]);
     const name = BackupNameSchema.safeParse(c.req.param('name'));
-    if (!name.success) return refuse(c, 'not_found');
+    if (!name.success) return sendProblem(c, REFUSALS.not_found);
     const result = removeOlderBackupCopy(backupsDir(), name.data);
-    if (result !== 'removed') return refuse(c, result);
+    if (result !== 'removed') return sendProblem(c, REFUSALS[result]);
     audit(name.data);
     return c.json({ success: true });
   });
@@ -218,15 +244,15 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
   /** POST /:name/move — copy one older backup to a folder the person chose, check it, then remove the original. */
   router.post('/:name/move', async (c) => {
     const refused = personRefusal(c);
-    if (refused) return refuse(c, refused);
+    if (refused) return sendProblem(c, REFUSALS[refused]);
     const name = BackupNameSchema.safeParse(c.req.param('name'));
-    if (!name.success) return refuse(c, 'not_found');
+    if (!name.success) return sendProblem(c, REFUSALS.not_found);
     const body = MoveBackupRequestSchema.safeParse(readJsonBody(c));
-    if (!body.success) return refuse(c, 'destination_invalid');
+    if (!body.success) return sendProblem(c, REFUSALS.destination_invalid);
     const destination = resolveDestination(expandTilde(body.data.destination), volumesRoot);
-    if ('refused' in destination) return refuse(c, destination.refused);
+    if ('refused' in destination) return sendProblem(c, REFUSALS[destination.refused]);
     const result = await moveOlderBackupCopy(backupsDir(), name.data, destination.folder);
-    if (result.status !== 'moved') return refuse(c, result.status);
+    if (result.status !== 'moved') return sendProblem(c, REFUSALS[result.status]);
     audit(name.data, result.destinationPath);
     return c.json({ destinationPath: result.destinationPath });
   });

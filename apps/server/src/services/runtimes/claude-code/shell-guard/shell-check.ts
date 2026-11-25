@@ -17,9 +17,10 @@ import {
   DESKTOP_APP_DATA_FOLDERS,
   PROTECTED_PATHS,
   type ProtectedPath,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 import { realLocation } from '../tool-gate/held-turn-reads.js';
 import { cookieStoreRules, namesCookieStore, writesCookieStore } from './cookie-store-writes.js';
+import { protectedWrites } from './protected-writes.js';
 import {
   commandOf,
   INTERPRETERS,
@@ -151,6 +152,11 @@ export interface ShellGuardRoots {
    * sign-in store and save a sign-in (DOR-4136, left to DOR-4102). Absent counts as below Full.
    */
   full?: boolean;
+  /**
+   * Whether every write on the protected-files list is refused too (`protected-writes.ts`), for a
+   * runtime with no other stop on its shell: OpenCode and Doe (DOR-4522).
+   */
+  protectedWrites?: boolean;
 }
 
 /** A shared path's name as a regex body: `*` stays inside one name. */
@@ -492,6 +498,7 @@ export function shellWriteVerdict(
   const open = roots.openHome ? spellings(roots.openHome) : [];
   const homes = roots.agentHomes().flatMap(spellings);
   const agentsFolders = spellings(path.join(roots.dorkHome, 'agents'));
+  const listed = protectedWrites(roots, spellings);
   /** Whether a home's own setup is touched by a write to `target`. */
   const inHome = (home: string, target: string, whole: boolean): boolean => {
     if (whole && within(target, home)) return true;
@@ -503,6 +510,7 @@ export function shellWriteVerdict(
     if (homes.some((home) => inHome(home, target, whole))) return true;
     // A browser sign-in store: a planted cookie starts every later agent browser signed in.
     if (writesCookieStore(target, whole, cookieStores)) return true;
+    if (listed?.reaches(target, whole)) return true;
     // A home the registry hasn't noticed yet is still a home.
     return agentsFolders.some((agents) => {
       if (!within(agents, target) || target === agents) return whole && within(target, agents);
@@ -523,7 +531,8 @@ export function shellWriteVerdict(
     if (!full && savesBrowserSession(segment)) return 'writes';
     for (const { word, whole, pieces, sources } of written) {
       // Removing a whole folder can reach a home by any name, so nothing narrows that one.
-      const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep: guarded }) };
+      const keep = (name: string) => guarded(name) || listed?.mayName(name, cwd) === true;
+      const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep }) };
       const targets = resolve(word, options);
       if (targets === null) return 'unreadable';
       for (const target of targets) {

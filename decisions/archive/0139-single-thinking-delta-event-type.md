@@ -1,7 +1,7 @@
 ---
 number: 139
 title: Single thinking_delta StreamEvent Type Without Separate Start/End Events
-status: draft
+status: archived
 created: 2026-03-16
 spec: extended-thinking-visibility
 superseded-by: null

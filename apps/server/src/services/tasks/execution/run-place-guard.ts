@@ -18,8 +18,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { isProtectedLaunchFolder } from '../../session/launch/launch-caller.js';
-import { isProtectedPath } from '../../runtimes/shared/policy/protected-path-check.js';
-import { protectedPathRoots } from '../../runtimes/shared/policy/protected-path-roots.js';
+import { isProtectedPath } from '../../core/protected-paths/protected-path-check.js';
+import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 
 /** Where agent-less runs get their own folders, inside the data folder. */
 export const SCHEDULED_RUNS_DIR = 'scheduled-runs';

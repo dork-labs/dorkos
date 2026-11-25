@@ -243,7 +243,7 @@ describe('GET /api/sessions/:id/messages?before= reads the page before a message
     const res = await request(testServer).get(`/api/sessions/${S1}/messages?before=gone`);
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('HISTORY_CURSOR_UNKNOWN');
+    expect(res.body.code).toBe('not_found');
   });
 
   it.each(['before=m200', 'newest=1'])(

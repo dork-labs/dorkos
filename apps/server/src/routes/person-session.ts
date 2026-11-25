@@ -26,11 +26,10 @@ import {
 } from '@dorkos/shared/person-session';
 
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import { classifyRequest, type RequestClass } from '../lib/request-classifier.js';
-import { errorBody } from '../lib/route-utils.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -69,26 +68,22 @@ const liveDeps: PersonSessionDeps = {
 /** The answer for each way the password check can fail. */
 const PASSWORD_REFUSALS: Record<
   Exclude<OwnerPasswordCheck, 'ok'>,
-  { status: 400 | 403 | 409 | 429; code: PersonSessionRefusalCode; error: string }
+  { code: PersonSessionRefusalCode; detail: string }
 > = {
-  required: { status: 400, code: 'wrong-password', error: 'Enter your password.' },
-  wrong: {
-    status: 403,
-    code: 'wrong-password',
-    error: 'That’s not your DorkOS password. Try again.',
-  },
+  required: { code: 'invalid_request', detail: 'Enter your password.' },
+  wrong: { code: 'wrong_password', detail: 'That’s not your DorkOS password. Try again.' },
   'too-many-attempts': {
-    status: 429,
-    code: 'too-many-attempts',
-    error: 'Too many wrong passwords. Try again in a few minutes.',
+    code: 'rate_limited',
+    detail: 'Too many wrong passwords. Try again in a few minutes.',
   },
-  'no-owner': { status: 409, code: 'no-owner', error: 'Create an owner account first.' },
-  'no-password': {
-    status: 409,
-    code: 'no-password',
-    error: 'Set a password for this computer’s owner first.',
-  },
+  'no-owner': { code: 'no_owner', detail: 'Create an owner account first.' },
+  'no-password': { code: 'no_password', detail: 'Set a password for this computer’s owner first.' },
 };
+
+/** The answer when there is no owner to sign in as. */
+function noOwner(c: Context<ApiEnv>): Response {
+  return problem(c, 'no_owner', { detail: PASSWORD_REFUSALS['no-owner'].detail });
+}
 
 /**
  * The caller's class, when it may ask for a step-up at all, or the refusal.
@@ -103,8 +98,7 @@ function callerOrRefusal(
   const facts = honoRequestFacts(c);
   const requestClass = classifyRequest(facts, currentServerRole());
   if (requestClass.kind !== 'this-computer') {
-    const code: PersonSessionRefusalCode = 'not-at-this-computer';
-    return c.json(errorBody('Do this on the computer DorkOS runs on.', code), 403);
+    return problem(c, 'operator_only', { detail: 'Do this on the computer DorkOS runs on.' });
   }
   const origin = facts.headers.origin;
   const site = facts.headers['sec-fetch-site'];
@@ -116,8 +110,7 @@ function callerOrRefusal(
     (origin !== undefined && !deps.trustedOrigins().includes(origin)) ||
     (site !== undefined && !OWN_PAGE_OR_NONE.has(String(site)));
   if (program || otherPage) {
-    const code: PersonSessionRefusalCode = 'not-a-person';
-    return c.json(errorBody('Only you can do this, in the DorkOS app.', code), 403);
+    return problem(c, 'person_only', { detail: 'Only you can do this, in the DorkOS app.' });
   }
   return { requestClass };
 }
@@ -141,31 +134,22 @@ export function createPersonSessionRoutes(deps: PersonSessionDeps = liveDeps): H
     const parsed = PersonSessionRequestSchema.safeParse(readJsonBody(c));
     const check = await deps.checkPassword(parsed.success ? parsed.data.password : undefined);
     if (check !== 'ok') {
-      const { status, code, error } = PASSWORD_REFUSALS[check];
-      if (check === 'too-many-attempts') {
-        // When it is checked again, so the app can count down rather than guess.
-        const retryAfterSeconds = Math.ceil(ownerPasswordRetryAfterMs() / 1000);
-        c.header('Retry-After', String(retryAfterSeconds));
-        return c.json({ ...errorBody(error, code), retryAfterSeconds }, status);
-      }
-      return c.json(errorBody(error, code), status);
+      const { code, detail } = PASSWORD_REFUSALS[check];
+      // When it is checked again, so the app can count down rather than guess.
+      // `retryAfterMs` also sets the `Retry-After` header.
+      const retryAfterMs = check === 'too-many-attempts' ? ownerPasswordRetryAfterMs() : undefined;
+      return problem(c, code, { detail, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) });
     }
     const ownerId = deps.ownerId();
     const auth = deps.auth();
-    if (!ownerId || !auth) {
-      const { status, code, error } = PASSWORD_REFUSALS['no-owner'];
-      return c.json(errorBody(error, code), status);
-    }
+    if (!ownerId || !auth) return noOwner(c);
     // Inside the request's class, so the session is stamped `local` and
     // works only at this computer (`session-route.ts`).
     const { headers, response } = await withRegistrationCaller(caller.requestClass, () =>
       auth.api.signInOwnerAfterStepUp({ body: { userId: ownerId }, returnHeaders: true })
     );
     const proof = await personProofFor(response.sessionId);
-    if (!proof) {
-      const { status, code, error } = PASSWORD_REFUSALS['no-owner'];
-      return c.json(errorBody(error, code), status);
-    }
+    if (!proof) return noOwner(c);
     for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
     logger.info('[Auth] The owner confirmed it was them at this computer');
     const answer: PersonSessionResponse = { ok: true, proof };

@@ -8,29 +8,25 @@ import { errorCodeOf } from './error-code';
 
 /** The coded file-service failures the explorer distinguishes. */
 export type CrudErrorCode =
-  | 'CONFLICT'
-  | 'COPY_INTO_SELF'
-  | 'DIR_NOT_EMPTY'
-  | 'NOT_FOUND'
-  | 'REFUSE_ROOT'
-  | 'OUTSIDE_BOUNDARY';
+  | 'already_exists'
+  | 'copy_into_self'
+  | 'folder_not_empty'
+  | 'not_found'
+  | 'working_folder_root'
+  | 'outside_boundary';
 
 const KNOWN_CODES: readonly CrudErrorCode[] = [
-  'CONFLICT',
-  'COPY_INTO_SELF',
-  'DIR_NOT_EMPTY',
-  'NOT_FOUND',
-  'REFUSE_ROOT',
-  'OUTSIDE_BOUNDARY',
+  'already_exists',
+  'copy_into_self',
+  'folder_not_empty',
+  'not_found',
+  'working_folder_root',
+  'outside_boundary',
 ];
 
 /** Read the stable `code` off a thrown file-service error, if present. */
 export function getErrorCode(err: unknown): CrudErrorCode | undefined {
-  const sent = errorCodeOf(err);
-  // A path outside the boundary that reaches the server's error handler is
-  // answered `outside_boundary` (DOR-4979); the file routes' own refusal still
-  // says `OUTSIDE_BOUNDARY` until they move over. Both are the same refusal.
-  const code = sent === 'outside_boundary' ? 'OUTSIDE_BOUNDARY' : sent;
+  const code = errorCodeOf(err);
   return code !== undefined && (KNOWN_CODES as readonly string[]).includes(code)
     ? (code as CrudErrorCode)
     : undefined;
@@ -53,7 +49,7 @@ export const COPY_INTO_SELF_MESSAGE = 'Can’t copy a folder into itself';
  * names each setting and the command that removes it, so it is the one a person
  * sees wherever the refusal surfaces: the listing, a save, or any other change.
  */
-export const ROOM_REPO_CONFIG_UNSAFE_CODE = 'ROOM_REPO_CONFIG_UNSAFE';
+export const ROOM_REPO_CONFIG_UNSAFE_CODE = 'room_repo_config_unsafe';
 
 /**
  * What a person reads for {@link ROOM_REPO_CONFIG_UNSAFE_CODE} when the server
@@ -64,12 +60,12 @@ export const ROOM_REPO_CONFIG_UNSAFE_FALLBACK =
 
 /** User-facing, boundary-safe message for each coded failure. */
 const MESSAGES: Record<CrudErrorCode, string> = {
-  CONFLICT: 'That name already exists',
-  COPY_INTO_SELF: COPY_INTO_SELF_MESSAGE,
-  DIR_NOT_EMPTY: 'This folder isn’t empty',
-  NOT_FOUND: 'That item no longer exists',
-  REFUSE_ROOT: 'Can’t change the top folder',
-  OUTSIDE_BOUNDARY: 'That’s outside the folders DorkOS can use',
+  already_exists: 'That name already exists',
+  copy_into_self: COPY_INTO_SELF_MESSAGE,
+  folder_not_empty: 'This folder isn’t empty',
+  not_found: 'That item no longer exists',
+  working_folder_root: 'Can’t change the top folder',
+  outside_boundary: 'That’s outside the folders DorkOS can use',
 };
 
 /**
@@ -91,7 +87,7 @@ export function toastCrudError(err: unknown, fallback: string): void {
  *
  * Written for the person who pressed the button: what happened, and what they
  * can do. `FILE_CHANGED` is not here, because a person answers it with a choice
- * rather than reading a sentence; `ROOM_FILE_EXISTS` is not either, because each
+ * rather than reading a sentence; `room_file_exists` is not either, because each
  * operation asks its own question about it.
  *
  * A `Map`, for the reason `save-errors`' table is one: the key is a string off a
@@ -99,32 +95,32 @@ export function toastCrudError(err: unknown, fallback: string): void {
  */
 const ROOM_CHANGE_REFUSAL_COPY = new Map<string, string>([
   [
-    'ROOM_UPLOAD_TOO_MANY_FILES',
+    'room_upload_too_many_files',
     `Nothing was uploaded. One upload takes up to ${ROOM_UPLOAD_MAX_FILES} files.`,
   ],
-  ['FILE_TOO_LARGE', 'A file is bigger than this room allows, so nothing changed.'],
-  ['REPO_CAP_EXCEEDED', 'This room’s files are full, so nothing changed. Delete something first.'],
+  ['file_too_large', 'A file is bigger than this room allows, so nothing changed.'],
+  ['repo_cap_exceeded', 'This room’s files are full, so nothing changed. Delete something first.'],
   [
-    'MAIN_CHECKOUT_DIRTY',
+    'main_checkout_dirty',
     'Changes are paused. Somebody changed these files outside DorkOS. See the warning above.',
   ],
   [
-    'MERGE_IN_FLIGHT',
+    'merge_in_flight',
     'Somebody else is changing these files. Nothing changed. Try again in a moment.',
   ],
-  ['PEOPLE_ONLY', 'Only a person can change files here. Agents bring work in by merging.'],
-  ['ROOM_FILE_PATH_INVALID', 'That name can’t be used in room files, so nothing changed.'],
-  ['ROOM_FILE_NOT_READABLE', 'That can’t be changed here.'],
+  ['person_only', 'Only a person can change files here. Agents bring work in by merging.'],
+  ['room_file_path_invalid', 'That name can’t be used in room files, so nothing changed.'],
+  ['room_file_not_readable', 'That can’t be changed here.'],
   [
-    'ROOM_FILE_NOT_FOUND',
+    'room_file_not_found',
     'That’s gone from the room’s files, so nothing changed. The list is refreshed.',
   ],
-  ['ATTACHMENT_NOT_FOUND', 'That file is no longer in this room’s chat.'],
-  ['ROOM_HAS_NO_REPO', 'This room no longer has its own files.'],
-  ['ROOM_REPOS_DISABLED', 'Room files are turned off on this install, so nothing changed.'],
-  ['ROOM_REPO_GIT_UNAVAILABLE', 'Room files need git, and git isn’t installed on this computer.'],
-  ['ROOM_NOT_FOUND', 'This room no longer exists.'],
-  ['ROOM_ARCHIVED', 'This room is archived, so its files can’t be changed.'],
+  ['attachment_not_found', 'That file is no longer in this room’s chat.'],
+  ['room_has_no_repo', 'This room no longer has its own files.'],
+  ['room_repos_disabled', 'Room files are turned off on this install, so nothing changed.'],
+  ['room_repo_git_unavailable', 'Room files need git, and git isn’t installed on this computer.'],
+  ['room_not_found', 'This room no longer exists.'],
+  ['room_archived', 'This room is archived, so its files can’t be changed.'],
   [ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK],
 ]);
 
@@ -135,9 +131,9 @@ const ROOM_CHANGE_REFUSAL_COPY = new Map<string, string>([
  * for one file, 2 MB". Ours is the fallback when the server said nothing.
  */
 const SERVER_SENTENCE_FIRST = new Set([
-  'FILE_TOO_LARGE',
-  'ROOM_FILE_PATH_INVALID',
-  'ROOM_FILE_NOT_READABLE',
+  'file_too_large',
+  'room_file_path_invalid',
+  'room_file_not_readable',
   ROOM_REPO_CONFIG_UNSAFE_CODE,
 ]);
 

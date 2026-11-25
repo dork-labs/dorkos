@@ -1,0 +1,246 @@
+name: release-watch
+
+# Watches the newest release where people install it from, hourly for the 24
+# hours after npm has it (DOR-5123, design §6 "Watch"; Dorian, Nov 23: release
+# fast, fix forward). The release smoke checks the tarballs before npm; this
+# checks what shipped: `npx dorkos@X.Y.Z --version` on Linux, macOS and
+# Windows, `npm view` for the three packages, the GHCR image's health, the
+# Homebrew formula, both dorkos.ai/download links, and new issues naming the
+# version (a signal only). scripts/release-watch.sh has the rules.
+#
+# A failing group (npx, npm-view, docker, homebrew, download) opens or updates
+# ONE issue per version, labelled release-watch, and the run goes red; the
+# issue closes when the group passes again. The red-main alarm that pings the
+# room is a local task, so there is no cloud path to the room: the issue is
+# the alert. Rollback: `gh workflow run daily-release.yml -f action=rollback
+# -f bad_version=X.Y.Z`.
+#
+# Docker, Homebrew and the desktop downloads ship by hand until the daily
+# release dispatches them (design §7), so a surface that is only BEHIND is a
+# skip with a notice until RELEASE_WATCH_SURFACES below says `daily`, and for
+# the first 180 minutes after the publish either way.
+#
+# WHEN IT RUNS. GitHub's crons are unreliable here (ledger 261124-161126), so
+# the events do the work: once when Release Publish succeeds (the first watch,
+# --gap 0), and on every CLI Smoke Test run on main (about every 16 minutes),
+# where `due` goes on only while the newest release is under 24 hours old and
+# its last watch is 55 minutes old or more (each watch uploads the marker
+# artifact release-watch-<X.Y.Z> as it starts). The hourly cron is a backstop.
+# A dispatch with a `version` watches it at once; with none, it watches the
+# newest if that is under 24 hours old.
+#
+# Main's copy only (workflow_run and schedule run the default branch's file,
+# and `due` refuses a dispatch on another ref). No secret beyond GITHUB_TOKEN,
+# no environment. Public text: versions, check names and run links only.
+
+on:
+  workflow_run:
+    workflows: [Release Publish, CLI Smoke Test]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # Backstop, off minute 0.
+    - cron: '37 * * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'X.Y.Z to watch now (empty: the newest on npm)'
+        required: false
+        type: string
+
+permissions: {}
+
+# Every automatic run watches the newest version, so they share one group; a
+# dispatch shares it when it names no version. `report` also holds a group per
+# version, so two runs never write one version's issues at once.
+concurrency:
+  group: release-watch-${{ inputs.version || 'newest' }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # `daily` once Docker, Homebrew and the desktop release ship every day
+  # (design §7). Until then a surface that is only behind is a skip.
+  RELEASE_WATCH_SURFACES: pending
+
+jobs:
+  due:
+    # A failed Release Publish starts nothing.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.name != 'Release Publish' ||
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+      version: ${{ steps.due.outputs.version }}
+      published_at: ${{ steps.due.outputs.published_at }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-watch.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Is a release under 24 hours old due a watch?
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SOURCE: ${{ github.event.workflow_run.name }}
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$EVENT" = workflow_dispatch ] && [ -n "$VERSION_INPUT" ]; then
+            [[ "$VERSION_INPUT" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+              { echo "::error::version must be exactly X.Y.Z."; exit 1; }
+            args=("$VERSION_INPUT")
+          elif [ "$EVENT" = workflow_dispatch ] || [ "$SOURCE" = 'Release Publish' ]; then
+            args=(--gap 0)
+          fi
+          answer=$(bash scripts/release-watch.sh due "${args[@]}")
+          echo "$answer"
+          read -r verdict version published marker _ <<<"$answer"
+          if [ "$verdict" = DUE ]; then
+            [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            [[ "$published" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+            [ "$marker" = "release-watch-$version" ]
+            echo "$published" >"$RUNNER_TEMP/release-watch-marker.txt"
+            {
+              echo "due=true"
+              echo "version=$version"
+              echo "published_at=$published"
+            } >>"$GITHUB_OUTPUT"
+          else
+            echo "due=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      # Marks this version watched now, so the ticks in the next 55 minutes
+      # stand down even if a later job fails.
+      - name: Mark the watch
+        if: steps.due.outputs.due == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-watch-${{ steps.due.outputs.version }}
+          path: ${{ runner.temp }}/release-watch-marker.txt
+          retention-days: 3
+
+  npx:
+    needs: due
+    if: needs.due.outputs.due == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-watch.sh
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: npx dorkos@X.Y.Z --version from a clean cache
+        shell: bash
+        env:
+          VERSION: ${{ needs.due.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/results"
+          bash scripts/release-watch.sh check npx "$VERSION" | tee "$RUNNER_TEMP/results/npx-$RUNNER_OS.jsonl"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-watch-result-npx-${{ matrix.os }}
+          path: ${{ runner.temp }}/results
+          if-no-files-found: ignore
+          retention-days: 3
+
+  surfaces:
+    needs: due
+    if: needs.due.outputs.due == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      VERSION: ${{ needs.due.outputs.version }}
+      PUBLISHED_AT: ${{ needs.due.outputs.published_at }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-watch.sh
+          sparse-checkout-cone-mode: false
+      - name: npm, Docker, Homebrew, the download links and new issues
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/results"
+          # One check that cannot run leaves its ids without a result, which
+          # `report` fails; the others still run.
+          for c in npm-view docker homebrew download issues; do
+            bash scripts/release-watch.sh check "$c" "$VERSION" | tee "$RUNNER_TEMP/results/$c.jsonl" ||
+              echo "::warning::The $c check could not run."
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-watch-result-surfaces
+          path: ${{ runner.temp }}/results
+          if-no-files-found: ignore
+          retention-days: 3
+
+  report:
+    needs: [due, npx, surfaces]
+    # Also after a failed or timed-out check job: its missing result fails.
+    if: ${{ !cancelled() && needs.due.outputs.due == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    concurrency:
+      group: release-watch-report-${{ needs.due.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-watch.sh
+          sparse-checkout-cone-mode: false
+      # No result at all (both check jobs died) still reaches `report`.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: release-watch-result-*
+          path: ${{ runner.temp }}/results
+          merge-multiple: true
+      - name: Open, update or close the version's issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.due.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/results"
+          bash scripts/release-watch.sh report "$RUNNER_TEMP/results" "$VERSION" "$RUN_URL" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"

@@ -50,6 +50,7 @@ const OFFICIAL_SPACE = {
 const BASE_ENV = { ...NO_TUNNEL, ...OFFICIAL_SPACE };
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
 const NO_STORE = { 'cache-control': 'no-store' };
 const NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',
@@ -70,8 +71,33 @@ const OPERATOR_ONLY = z
 const EXPOSURE_NEEDS_LOGIN = z
   .object({ code: z.literal('AUTH_REQUIRED_FOR_EXPOSURE'), error: z.string() })
   .strict();
-const PERSON_ONLY_ERROR = (error: string) => ({ error, code: 'person_only' });
-const PERSON_ONLY_ENVELOPE = (message: string) => ({ ok: false, code: 'person_only', message });
+/** The account owner bar's refusal of an agent: a problem document on every account write. */
+const PERSON_ONLY_ERROR = (detail: string) => problemBody('person_only', { detail });
+const PERSON_ONLY_ENVELOPE = PERSON_ONLY_ERROR;
+/** A validation refusal with a fixed sentence; `issues` is the parser's. */
+const INVALID = (detail: string) =>
+  z.object({ code: z.literal('invalid_request'), detail: z.literal(detail) }).loose();
+/** The tunnel's refusals, as problem documents. */
+const TUNNEL_PERSON_ONLY = z
+  .object({ status: z.literal(403), code: z.literal('person_only'), detail: z.string() })
+  .loose();
+const TUNNEL_NEEDS_LOGIN = z
+  .object({ status: z.literal(409), code: z.literal('auth_required_for_exposure') })
+  .loose();
+/** Remote access's refusals, as problem documents. */
+const PERSON_ONLY_PROBLEM = z
+  .object({ status: z.literal(403), code: z.literal('person_only'), detail: z.string() })
+  .loose();
+const EXPOSURE_NEEDS_LOGIN_PROBLEM = z
+  .object({
+    status: z.literal(409),
+    code: z.literal('auth_required_for_exposure'),
+    detail: z.string(),
+  })
+  .loose();
+const CHOOSE_A_MODE = z
+  .object({ code: z.literal('invalid_request'), detail: z.literal('Choose off, byo or managed.') })
+  .loose();
 const UNLINKED_SUMMARY = z.object({ linked: z.literal(false) }).loose();
 const LINK_IDLE = z.object({ state: z.literal('idle') }).loose();
 const CREDITS = z
@@ -124,7 +150,7 @@ contractSuite(
       headers: AGENT,
       expect: {
         status: 403,
-        headers: JSON_TYPE,
+        headers: PROBLEM_TYPE,
         body: PERSON_ONLY_ERROR(
           'Only you can link this computer to a DorkOS account, from the DorkOS app.'
         ),
@@ -198,12 +224,12 @@ contractSuite(
     {
       name: 'GET /api/cloud/usage refuses an unknown grouping',
       path: '/api/cloud/usage?groupBy=planet',
-      expect: { status: 400, body: { error: 'Unknown grouping' } },
+      expect: { status: 400, schema: INVALID('Group usage by seat, model or day.') },
     },
     {
       name: 'GET /api/cloud/usage refuses a repeated grouping',
       path: '/api/cloud/usage?groupBy=seat&groupBy=day',
-      expect: { status: 400, body: { error: 'Unknown grouping' } },
+      expect: { status: 400, schema: INVALID('Group usage by seat, model or day.') },
     },
     {
       name: 'GET /api/cloud/credits answers the credits status',
@@ -262,7 +288,7 @@ contractSuite(
       expect: {
         status: 404,
         headers: { 'cache-control': null },
-        body: { ok: false, message: 'Unknown billing page' },
+        body: problemBody('not_found', { detail: 'That billing page doesn’t exist.' }),
       },
     },
     {
@@ -270,7 +296,7 @@ contractSuite(
       method: 'POST',
       path: '/api/cloud/billing/checkout',
       body: {},
-      expect: { status: 400, body: { ok: false, message: 'Choose an offer' } },
+      expect: { status: 400, schema: INVALID('Choose an offer.') },
     },
     ...(['portal', 'topup'] as const).map((page): ContractCase => ({
       name: `POST /api/cloud/billing/${page} answers not linked, never cached`,
@@ -340,14 +366,19 @@ contractSuite(
       name: 'PUT /api/cloud/credits/default refuses an empty body',
       method: 'PUT',
       path: '/api/cloud/credits/default',
-      expect: { status: 400, body: { error: 'Name a runtime and whether to use credits.' } },
+      expect: { status: 400, schema: INVALID('Name a runtime and whether to use credits.') },
     },
     {
       name: 'PUT /api/cloud/credits/default refuses credits a runtime cannot run on',
       method: 'PUT',
       path: '/api/cloud/credits/default',
       body: { runtime: 'test-mode', useCredits: true },
-      expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+      expect: {
+        status: 400,
+        body: problemBody('invalid_request', {
+          detail: 'That runtime can’t run on DorkOS credits yet.',
+        }),
+      },
     },
     {
       name: 'PUT /api/cloud/credits/default answers the status for a change that changes nothing',
@@ -380,7 +411,7 @@ contractSuite(
       method: 'POST',
       path: '/api/cloud/credits/notices/dismiss',
       body: { kind: 'weather' },
-      expect: { status: 400, body: { error: 'Name the notice to dismiss.' } },
+      expect: { status: 400, schema: INVALID('Name the notice to dismiss.') },
     },
     {
       name: 'POST /api/cloud/credits/notices/dismiss settles a notice',
@@ -482,13 +513,13 @@ contractSuite(
       method: 'POST',
       path: '/api/tunnel/start',
       headers: AGENT,
-      expect: { status: 403, schema: OPERATOR_ONLY },
+      expect: { status: 403, headers: PROBLEM_TYPE, schema: TUNNEL_PERSON_ONLY },
     },
     {
       name: 'POST /api/tunnel/start refuses while login is off',
       method: 'POST',
       path: '/api/tunnel/start',
-      expect: { status: 409, schema: EXPOSURE_NEEDS_LOGIN },
+      expect: { status: 409, headers: PROBLEM_TYPE, schema: TUNNEL_NEEDS_LOGIN },
     },
     {
       name: 'POST /api/tunnel/stop runs no bar, even for an agent',
@@ -536,33 +567,33 @@ contractSuite(
       path: `/api/remote-access/${action}`,
       headers: AGENT,
       body: { mode: 'off' },
-      expect: { status: 403, schema: OPERATOR_ONLY },
+      expect: { status: 403, headers: PROBLEM_TYPE, schema: PERSON_ONLY_PROBLEM },
     })),
     {
       name: 'POST /api/remote-access/enrolment refuses while login is off',
       method: 'POST',
       path: '/api/remote-access/enrolment',
-      expect: { status: 409, schema: EXPOSURE_NEEDS_LOGIN },
+      expect: { status: 409, headers: PROBLEM_TYPE, schema: EXPOSURE_NEEDS_LOGIN_PROBLEM },
     },
     {
       name: 'POST /api/remote-access/mode refuses an unknown mode',
       method: 'POST',
       path: '/api/remote-access/mode',
       body: { mode: 'both' },
-      expect: { status: 400, body: { error: 'Choose off, byo or managed.', code: 'INVALID_MODE' } },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: CHOOSE_A_MODE },
     },
     {
       name: 'POST /api/remote-access/mode refuses no body',
       method: 'POST',
       path: '/api/remote-access/mode',
-      expect: { status: 400, body: { error: 'Choose off, byo or managed.', code: 'INVALID_MODE' } },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: CHOOSE_A_MODE },
     },
     {
       name: 'POST /api/remote-access/mode refuses managed while login is off',
       method: 'POST',
       path: '/api/remote-access/mode',
       body: { mode: 'managed' },
-      expect: { status: 409, schema: EXPOSURE_NEEDS_LOGIN },
+      expect: { status: 409, headers: PROBLEM_TYPE, schema: EXPOSURE_NEEDS_LOGIN_PROBLEM },
     },
     {
       name: 'POST /api/remote-access/mode turns remote access off',
@@ -750,8 +781,10 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
       path: '/api/cloud/orgs/org-1/seats',
       expect: {
         status: 502,
-        headers: JSON_TYPE,
-        body: { error: 'Could not reach the DorkOS cloud. Try again shortly.' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('upstream_unavailable', {
+          detail: 'Couldn’t reach your DorkOS account. Try again shortly.',
+        }),
       },
     });
     // Nor any billing page: a write answers 200 with one plain sentence.
@@ -768,7 +801,7 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
       method: 'POST',
       path: '/api/cloud/seats/seat-1/assign',
       body: { subject: { kind: 'robot' } },
-      expect: { status: 400, body: { ok: false, message: 'Unknown subject' } },
+      expect: { status: 400, schema: INVALID('Choose a person or an agent.') },
     });
     await check(server, {
       method: 'POST',
@@ -782,7 +815,9 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
       expect: {
         status: 502,
         headers: NO_STORE,
-        body: { error: 'Couldn’t reach your DorkOS account. Try again.' },
+        body: problemBody('upstream_unavailable', {
+          detail: 'Couldn’t reach your DorkOS account. Try again.',
+        }),
       },
     });
     await check(server, {
@@ -804,7 +839,7 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
     });
     await check(server, {
       path: '/api/cloud/communities/name-check?name=Not%20An%20Address',
-      expect: { status: 400, headers: NO_STORE, body: { error: 'That isn’t a web address.' } },
+      expect: { status: 400, headers: NO_STORE, schema: INVALID('That isn’t a web address.') },
     });
     await check(server, {
       path: '/api/cloud/communities/name-check?name=good-name',
@@ -923,10 +958,9 @@ describe('contract: remote access, reached by a name that is not this computer',
   const remote = { host: PROXIED_HOST };
   const signedInRemote = () => ({ ...cookie, ...remote, origin: `http://${PROXIED_HOST}` });
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-  const NEEDS_THIS_COMPUTER = {
-    error: 'Remote access can only be changed on the computer DorkOS runs on.',
-    code: 'REMOTE_SETUP_NEEDS_THIS_COMPUTER',
-  };
+  const NEEDS_THIS_COMPUTER = problemBody('operator_only', {
+    detail: 'Remote access can only be changed on the computer DorkOS runs on.',
+  });
 
   it('asks another device with no session to sign in, with the this-computer password off', async () => {
     // ADR 261015-125850 rule 3: other devices always need a person session.
@@ -958,7 +992,7 @@ describe('contract: remote access, reached by a name that is not this computer',
         path: `/api/remote-access/${action}`,
         headers: signedInRemote(),
         body: { mode: 'off' },
-        expect: { status: 403, headers: JSON_TYPE, body: NEEDS_THIS_COMPUTER },
+        expect: { status: 403, headers: PROBLEM_TYPE, body: NEEDS_THIS_COMPUTER },
       });
     }
     await check(server, {
@@ -1069,14 +1103,24 @@ describe('contract: the same groups with login on', () => {
       method: 'POST',
       path: '/api/tunnel/start',
       headers: apiKey,
-      expect: { status: 403, body: COOKIE_REQUIRED('Remote Access') },
+      expect: {
+        status: 403,
+        body: problemBody('person_only', {
+          detail: 'Only a person signed in to DorkOS can change Remote Access.',
+        }),
+      },
     });
     // The cookie bar runs before the agent bar.
     await check(server, {
       method: 'POST',
       path: '/api/tunnel/start',
       headers: { ...apiKey, ...AGENT },
-      expect: { status: 403, body: COOKIE_REQUIRED('Remote Access') },
+      expect: {
+        status: 403,
+        body: problemBody('person_only', {
+          detail: 'Only a person signed in to DorkOS can change Remote Access.',
+        }),
+      },
     });
     await check(server, {
       method: 'POST',
@@ -1090,7 +1134,13 @@ describe('contract: the same groups with login on', () => {
         path: `/api/remote-access/${action}`,
         headers: apiKey,
         body: { mode: 'off' },
-        expect: { status: 403, body: COOKIE_REQUIRED('remote access') },
+        expect: {
+          status: 403,
+          headers: PROBLEM_TYPE,
+          body: problemBody('person_only', {
+            detail: 'Only a person signed in to DorkOS can change remote access.',
+          }),
+        },
       });
     }
     await check(server, {
@@ -1106,13 +1156,16 @@ describe('contract: the same groups with login on', () => {
       method: 'POST',
       path: '/api/tunnel/start',
       headers: { ...cookie, origin: server!.baseUrl },
-      expect: { status: 400, body: { error: 'No ngrok auth token configured' } },
+      expect: {
+        status: 400,
+        body: problemBody('tunnel_token_missing', { detail: 'Add an ngrok auth token first.' }),
+      },
     });
     await check(server, {
       method: 'POST',
       path: '/api/tunnel/start',
       headers: { ...cookie, ...AGENT, origin: server!.baseUrl },
-      expect: { status: 403, schema: OPERATOR_ONLY },
+      expect: { status: 403, schema: TUNNEL_PERSON_ONLY },
     });
     await check(server, {
       method: 'POST',
@@ -1131,8 +1184,8 @@ describe('contract: the same groups with login on', () => {
       expect: {
         status: 403,
         schema: z
-          .object({ code: z.enum(['person_only', 'owner_only']), error: z.string() })
-          .strict(),
+          .object({ code: z.enum(['person_only', 'owner_only']), detail: z.string() })
+          .loose(),
       },
     });
     await check(server, {
@@ -1142,12 +1195,8 @@ describe('contract: the same groups with login on', () => {
       expect: {
         status: 403,
         schema: z
-          .object({
-            ok: z.literal(false),
-            code: z.enum(['person_only', 'owner_only']),
-            message: z.string(),
-          })
-          .strict(),
+          .object({ code: z.enum(['person_only', 'owner_only']), detail: z.string() })
+          .loose(),
       },
     });
     await check(server, {

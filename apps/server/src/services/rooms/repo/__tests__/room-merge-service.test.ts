@@ -504,10 +504,18 @@ describe('RoomMergeService', () => {
         stdio: 'pipe',
         env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_COUNT: '0' },
       });
-      await git(['add', 'vendor'], dir);
-      await git(
+      // Staged and committed by plain git too: the server's own room git never
+      // stages files beside a submodule.
+      const agentShell = {
+        cwd: dir,
+        stdio: 'pipe' as const,
+        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_COUNT: '0' },
+      };
+      execFileSync('git', ['add', 'vendor'], agentShell);
+      execFileSync(
+        'git',
         ['-c', 'user.name=A', '-c', 'user.email=a@dorkos.local', 'commit', '-q', '-m', 'submodule'],
-        dir
+        agentShell
       );
 
       const refusal = await refusalOf(merges.merge(ROOM_ID, ANA, { summary: 'vendor it' }));

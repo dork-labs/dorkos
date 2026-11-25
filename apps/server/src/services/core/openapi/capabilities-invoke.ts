@@ -5,14 +5,14 @@
  * and on `POST /api/capabilities/{id}/invoke`, the generic door onto all of
  * them (ADR 261123-170830), which this module also registers.
  *
- * Error bodies use the existing `ErrorResponse` shape; the problem shape (ADR
- * 261123-170831) replaces it in a change of its own.
+ * Every error is a problem document (ADR 261123-170831); a call that waits on
+ * a person is a `202` with the approval, not an error.
  *
  * @module services/core/openapi/capabilities-invoke
  */
 import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { ErrorResponseSchema } from '@dorkos/shared/schemas';
+import { problemResponse } from './problem-openapi.js';
 
 /** What a call that waits on a person answers with. */
 const ApprovalRequiredSchema = z
@@ -32,12 +32,9 @@ const ApprovalRequiredSchema = z
 /** A JSON body of the given schema. */
 const json = (schema: z.ZodType) => ({ 'application/json': { schema } });
 
-/** One error response in the `ErrorResponse` shape. */
-const error = (description: string) => ({ description, content: json(ErrorResponseSchema) });
-
 /**
  * The responses the capability dispatcher answers on every door besides the
- * capability's own success: 202 approval, 400, 403, 404, 500 and 503.
+ * capability's own success: the 202 approval and every problem it can send.
  *
  * @returns A fresh `responses` map to spread beside the success entry.
  */
@@ -47,14 +44,29 @@ export function capabilityStandardResponses(): RouteConfig['responses'] {
       description: 'A person must allow the call first; nothing ran',
       content: json(ApprovalRequiredSchema),
     },
-    400: error('The input failed the capability’s schema, or the capability refused it'),
-    403: error(
-      'Refused: the caller may not run it, a network sign-in asked for an action, or the ' +
-        'capability refused this caller'
+    400: problemResponse(
+      '`invalid_request`: the input failed the capability’s schema (`issues` lists each field), ' +
+        'or the capability refused it'
     ),
-    404: error('Not available on this computer, or the thing it names was not found'),
-    500: error('Something went wrong running it'),
-    503: error('The server is still starting, or the extension that owns the tool is stopped'),
+    401: problemResponse(
+      '`agent_identity_unverified`: the agent token could not be confirmed; ' +
+        '`person_session_required`: a person must confirm it’s them'
+    ),
+    403: problemResponse(
+      'Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with ' +
+        '`capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an ' +
+        'action from a network sign-in, or the capability’s own refusal'
+    ),
+    404: problemResponse(
+      '`unknown_capability`: not available on this computer; `not_found`: the thing it names'
+    ),
+    409: problemResponse('The capability refused because of the state it met, such as `conflict`'),
+    412: problemResponse('`precondition_failed`: something changed since the caller looked'),
+    500: problemResponse('`internal_error`: something went wrong running it'),
+    502: problemResponse('`signin_unreachable`: the remote server did not answer'),
+    503: problemResponse(
+      '`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped'
+    ),
   };
 }
 

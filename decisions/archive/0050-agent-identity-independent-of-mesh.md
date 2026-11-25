@@ -1,7 +1,7 @@
 ---
 number: 50
 title: Agent Identity Independent of Mesh Feature Flag
-status: proposed
+status: archived
 created: 2026-02-26
 spec: agents-first-class-entity
 superseded-by: null

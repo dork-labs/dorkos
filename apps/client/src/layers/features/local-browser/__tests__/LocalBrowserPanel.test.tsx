@@ -838,47 +838,21 @@ describe('LocalBrowserPanel', () => {
     expect(screen.getByRole('button', { name: 'Open browser' })).not.toHaveFocus();
   });
   it.each([
-    [
-      'browser_download',
-      'raw installer output',
-      'Couldn’t download the browser. Check your connection and try again.',
-    ],
-    [
-      'browser_storage',
-      'Free some space, then open the browser again.',
-      'Free some space, then open the browser again.',
-    ],
-    [
-      'browser_storage',
-      'Check folder permissions, then open the browser again.',
-      'Check folder permissions, then open the browser again.',
-    ],
-    [
-      'browser_storage',
-      '/private/install/path: secret process output',
-      'Couldn’t save the browser. Check free space and folder permissions.',
-    ],
-    ['cancelled', 'raw cancellation error', 'Browser setup stopped. Open it again to continue.'],
-    [
-      'busy',
-      'The browser is still closing. Wait before opening it again.',
-      'The browser is still closing. Wait, then try again.',
-    ],
-    ['busy', 'private busy details', 'Browser is busy. Wait a moment.'],
-    [
-      'busy',
-      'Restart DorkOS to finish closing this browser.',
-      'Restart DorkOS to finish closing this browser.',
-    ],
-  ])('shows safe recovery guidance for %s (%s)', async (code, message, guidance) => {
-    transport.openLocalBrowser.mockRejectedValue(Object.assign(new Error(message), { code }));
+    'Couldn’t download the browser. Check your connection and try again.',
+    'Free some space, then open the browser again.',
+    'Browser setup stopped. Open it again to continue.',
+    'The browser is still closing. Wait, then try again.',
+  ])('shows the server’s recovery guidance: %s', async (guidance) => {
+    // The server words every browser refusal for a person (`routes/local-browser.ts`).
+    transport.openLocalBrowser.mockRejectedValue(
+      Object.assign(new Error(guidance), { code: 'conflict' })
+    );
     mount();
     const open = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
     expect(await screen.findByRole('alert')).toHaveTextContent(guidance);
     expect(screen.getByRole('button', { name: 'Open browser' })).toBeEnabled();
-    if (message !== guidance) expect(screen.queryByText(message)).not.toBeInTheDocument();
     expect(transport.openLocalBrowser).toHaveBeenCalledTimes(1);
   });
   it.each(['resolve', 'reject'])(
@@ -1111,7 +1085,9 @@ describe('LocalBrowserPanel', () => {
   it('keeps a typed address when navigation becomes stale and never replays it', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
     transport.navigateLocalBrowser.mockRejectedValue(
-      Object.assign(new Error('changed'), { code: 'stale_page' })
+      Object.assign(new Error('Page changed. Read it again before continuing.'), {
+        code: 'precondition_failed',
+      })
     );
     mount();
     await typeAddress('https://new.example.com');

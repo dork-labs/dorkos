@@ -178,6 +178,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'rooms.reseat': 'local',
   'rooms.handoff_status': 'local',
   'session.compact': 'local',
+  // A link's kind and ids only, never the thing's text (DOR-5046).
+  'link.resolve': 'local',
   'chat.send': 'local',
   'chat.stop': 'local',
   'work-queue.add': 'local',

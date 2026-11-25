@@ -88,7 +88,7 @@ import {
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
-import { defuseUntrustedText, fenceUntrustedBlock, mintFenceNonce } from './untrusted-fence.js';
+import * as nonceFence from '../../core/untrusted-text/untrusted-fence.js';
 import { movedQuoted, refreshLines } from './room-files-refresh-lines.js';
 import { clockFace, clockSentence } from './room/room-context-clock.js';
 
@@ -455,7 +455,7 @@ function addressNote(author: RoomContextAuthor): string {
  * @param text - What somebody wrote, exactly as they wrote it.
  */
 function body(text: string): string {
-  return defuseUntrustedText(text);
+  return nonceFence.defuseUntrustedText(text);
 }
 
 /**
@@ -1415,7 +1415,7 @@ function fenced(data: RoomContextData, nonce: string): string | null {
   // what this block is to the turn ("you have not read these yet"), which is a
   // claim about the messages and not one of them. Everything the fence renders
   // is either its own markers or text it is fencing.
-  const fence = fenceUntrustedBlock(quoted, {
+  const fence = nonceFence.fenceUntrustedBlock(quoted, {
     label: FENCE_LABEL,
     preamble: FENCE_PREAMBLE,
     notes: [
@@ -1455,7 +1455,7 @@ export function formatRoomContext(
   // the two sub-block headings and — since DOR-1263 — every id label, in the
   // preamble as well as inside the fence. One value for all of them is what
   // lets the preamble tell the model which marker to check for.
-  const nonce = opts.nonce ?? mintFenceNonce();
+  const nonce = opts.nonce ?? nonceFence.mintFenceNonce();
   const where = label(data.room.name);
   const blocks: string[] = [preamble(data, where, nonce).join('\n')];
 

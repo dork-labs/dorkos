@@ -62,6 +62,12 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  // Nothing delivers work that finishes after an OpenCode turn (RT-LIFE-03),
+  // so there is no background work for a restart to cut short.
+  wakesForLostBackgroundWork: false,
+  // The sidecar is killed at shutdown and an assistant message cut mid-turn is
+  // unmeasured (T19b flips it).
+  continuesInterruptedTurn: false,
   nativeContext: [],
   // The EventLog is the fallback history source when the native sidecar read
   // fails/unbinds, so the platform persists it durably (DOR-189).

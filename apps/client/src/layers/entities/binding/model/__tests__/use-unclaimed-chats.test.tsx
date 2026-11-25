@@ -170,7 +170,7 @@ describe('unclaimed-chat decisions', () => {
 
   it('surfaces a CHAT_ALREADY_BOUND refusal instead of swallowing it', async () => {
     const conflict = Object.assign(new Error('already bound'), {
-      code: 'CHAT_ALREADY_BOUND',
+      code: 'chat_already_bound',
       status: 409,
     });
     const transport = createMockTransport({
@@ -184,7 +184,7 @@ describe('unclaimed-chat decisions', () => {
     result.current.mutate({ id: 'uc-1', input: { agentId: 'dorkbot' } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect((result.current.error as { code?: string })?.code).toBe('CHAT_ALREADY_BOUND');
+    expect((result.current.error as { code?: string })?.code).toBe('chat_already_bound');
   });
 
   it('ignore, block, and leave each take a bare row id', async () => {

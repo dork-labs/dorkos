@@ -107,7 +107,7 @@ describe('POST /api/sessions/:id/messages — unknown ids (DOR-2712)', () => {
       .send({ content: 'are you there?' });
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    expect(res.body.code).toBe('session_not_found');
     expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });

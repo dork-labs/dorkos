@@ -3,11 +3,12 @@
  * agent's own home, what a repo's files would run waits for a person when
  * nobody reviewed it.
  *
- * - **`.claude/settings.local.json`** (gitignored, so never reviewed): when it
- *   adds hooks, helpers, MCP choices, env or allow rules a person has not
- *   approved (by content, `repo-local-settings.ts`), the launch drops the
- *   `local` settings source. The repo's committed settings and `CLAUDE.md`
- *   still load. Fails closed whatever git says.
+ * - **`.claude/settings.local.json`** (gitignored, so never reviewed), in every
+ *   folder the launch may load one from (`localSettingsFolders`): when one adds
+ *   hooks, helpers, MCP choices, env or allow rules a person has not approved
+ *   (by content, `repo-local-settings.ts`), the launch drops the `local`
+ *   settings source. The repo's committed settings and `CLAUDE.md` still load.
+ *   Fails closed whatever git says.
  * - **Committed hooks** (`.claude/settings.json` code keys, `.claude/hooks/**`
  *   and the repo files hook commands name): when they differ from the default
  *   branch (`repo-baseline.ts`) and that content is not approved, the launch
@@ -33,16 +34,21 @@
  * paused below Full, one Activity line says so (`agent.full_action`), once per
  * folder and content per server run.
  *
- * Skipped for a turn that stands in its agent's registered home itself (not a
- * folder below it, which can hold settings of its own), which the agent-home
- * pin covers (`launch-folder-config.ts`). All proven on the real CLI
+ * A turn that stands in its agent's registered home itself (not a folder below
+ * it, which can hold settings of its own) has only the local files outside the
+ * home checked: the agent-home pin covers the home's own files
+ * (`launch-folder-config.ts`), and the folder allow list its allow rules
+ * (`tool-gate/folder-file-allows.ts`). All proven on the real CLI
  * (`repo-config-switches.binary.test.ts`).
+
  *
  * @module services/runtimes/claude-code/repo-settings/launch-repo-config
  */
+import { realpathSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
+import { expandTilde } from '../../../../lib/boundary.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
 import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
@@ -65,7 +71,7 @@ import {
 import { describeCandidate } from './repo-baseline-move.js';
 import { readRepoConfig } from './repo-config-parts.js';
 import { resolveRepoBaseline, type RepoBaseline } from './repo-baseline.js';
-import { readLocalSettings } from './repo-local-settings.js';
+import { localSettingsFolders, readLocalSettings } from './repo-local-settings.js';
 
 /** Who the turn is for and where it stands. */
 export interface RepoConfigTurn {
@@ -79,6 +85,8 @@ export interface RepoConfigTurn {
   dorkHome: string;
   /** The launch runs at Full autonomy, which has no limits: nothing is paused. */
   full?: boolean;
+  /** The person's home folder as the launch's Claude Code sees it; this process's when left out. */
+  userHome?: string;
 }
 
 /** What a launch pauses. */
@@ -93,6 +101,12 @@ export interface RepoConfigLaunch {
   askRules: string[];
   /** The repo's top, for the instructions a paused launch still passes; `null` outside one. */
   repoRoot: string | null;
+  /**
+   * The working folder's committed settings when this check compared them and the launch loads
+   * them: the folder by real path, and the allow rules and folder entries from the read compared.
+   * Absent at Full, in the agent's home and whenever anything paused them.
+   */
+  compared?: { folder: string; rules: string[]; dirs: string[] };
 }
 
 /** Nothing paused. */
@@ -113,6 +127,15 @@ const ALL_PAUSED: RepoConfigLaunch = {
   repoRoot: null,
 };
 
+/** A folder by its real path, or as given when it can't be resolved. */
+function realFolder(folder: string): string {
+  try {
+    return realpathSync.native(folder);
+  } catch {
+    return path.resolve(folder);
+  }
+}
+
 /** Whether `cwd` is the home folder itself, by real path. */
 async function isHomeItself(cwd: string, home: string): Promise<boolean> {
   const resolve = (p: string) => realpath(path.resolve(p)).catch(() => path.resolve(p));
@@ -127,7 +150,6 @@ async function isHomeItself(cwd: string, home: string): Promise<boolean> {
  * @param turn - Who the turn is for and where it stands.
  */
 export async function resolveRepoConfigForLaunch(turn: RepoConfigTurn): Promise<RepoConfigLaunch> {
-  if (turn.home && (await isHomeItself(turn.cwd, turn.home))) return NOTHING_PAUSED;
   if (turn.full) return loadAtFull(turn);
   try {
     return await checkRepoConfig(turn);
@@ -143,6 +165,8 @@ export async function resolveRepoConfigForLaunch(turn: RepoConfigTurn): Promise<
 /** What one kind needs: a pause, and maybe a card. */
 interface Pause {
   kind: RepoConfigKind;
+  /** The folder the paused file is in, when it is not the turn's own (a local settings file). */
+  folder?: string;
   digest: string;
   names: string[];
   detail: string;
@@ -209,21 +233,13 @@ async function checkRepoConfig(
   const { cwd, dorkHome } = turn;
   const wt = worktreeName(cwd);
   const decision: RepoConfigLaunch = { ...NOTHING_PAUSED, askRules: [] };
-  const pauses: Pause[] = [];
+  const pauses = localPauses(turn, quiet);
+  decision.dropLocal = pauses.length > 0;
 
-  const local = readLocalSettings(cwd, dorkHome);
-  if (local && !(local.approvable && isRepoConfigApproved('local', local.digest))) {
-    decision.dropLocal = true;
-    pauses.push({
-      kind: 'local',
-      digest: local.digest,
-      names: local.keys,
-      detail: local.detail,
-      approvable: local.approvable,
-      what: `settings.local.json sets ${local.keys.join(', ')}`,
-    });
-  } else {
-    if (!quiet) noteRunning('local', cwd, wt);
+  // In the home itself the committed settings are the home's own, which the pin covers.
+  if (turn.home && (await isHomeItself(cwd, turn.home))) {
+    if (!quiet) for (const pause of pauses) raise(turn, pause, { ask: true });
+    return decision;
   }
 
   const baseline = await resolveRepoBaseline(cwd, turn.dorkHome);
@@ -251,6 +267,10 @@ async function checkRepoConfig(
       });
     } else {
       if (!quiet) noteRunning('hooks', cwd, wt);
+    }
+    if (!decision.pauseHooks) {
+      // By real path, as the read compared; synchronous so the launch waits on no extra I/O.
+      decision.compared = { folder: realFolder(cwd), ...reading.working };
     }
     const mcp = reading.mcpJson;
     if (mcp && !(mcp.approvable && isRepoConfigApproved('mcpJson', mcp.digest))) {
@@ -283,9 +303,35 @@ async function checkRepoConfig(
   return decision;
 }
 
+/**
+ * A pause for each local settings file the launch may load that nobody approved, read once each.
+ * When there is none, each folder's local settings are said to run again.
+ */
+function localPauses(turn: RepoConfigTurn, quiet = false): Pause[] {
+  const folders = localSettingsFolders(turn.cwd, turn.userHome ?? expandTilde('~'), turn.home);
+  const pauses: Pause[] = [];
+  for (const folder of folders) {
+    const local = readLocalSettings(folder, turn.dorkHome, turn.cwd);
+    if (!local || (local.approvable && isRepoConfigApproved('local', local.digest))) continue;
+    pauses.push({
+      kind: 'local',
+      folder,
+      digest: local.digest,
+      names: local.keys,
+      detail: local.detail,
+      approvable: local.approvable,
+      what: `settings.local.json sets ${local.keys.join(', ')}`,
+    });
+  }
+  if (pauses.length === 0 && !quiet) {
+    for (const folder of folders) noteRunning('local', folder, worktreeName(folder));
+  }
+  return pauses;
+}
+
 /** Log, write the Activity line, and ask a person when there is something they can approve. */
 function raise(turn: RepoConfigTurn, pause: Pause, { ask }: { ask: boolean }): void {
-  const { cwd } = turn;
+  const cwd = pause.folder ?? turn.cwd;
   logger.warn('[RepoConfig] Paused repo settings nobody approved', {
     kind: pause.kind,
     cwd,
@@ -305,7 +351,7 @@ function raise(turn: RepoConfigTurn, pause: Pause, { ask }: { ask: boolean }): v
     cwd,
     agentName: turn.agentName,
   };
-  void askForRepoConfig(gateway, request, rereadFor(turn, pause.kind), () => {
+  void askForRepoConfig(gateway, request, rereadFor(turn, pause.kind, cwd), () => {
     void resolveRepoConfigForLaunch(turn);
   }).catch((err: unknown) => {
     logger.warn("[RepoConfig] Couldn't ask about repo settings", {
@@ -382,12 +428,12 @@ async function raiseTrust(turn: RepoConfigTurn, baseline: TrustableBaseline): Pr
   });
 }
 
-/** Read one kind again, for a card that is open. */
-function rereadFor(turn: RepoConfigTurn, kind: RepoConfigKind): RepoConfigReread {
+/** Read one kind again, for a card that is open; a local file in the folder it is in. */
+function rereadFor(turn: RepoConfigTurn, kind: RepoConfigKind, folder: string): RepoConfigReread {
   return async () => {
     try {
       if (kind === 'local') {
-        const local = readLocalSettings(turn.cwd, turn.dorkHome);
+        const local = readLocalSettings(folder, turn.dorkHome, turn.cwd);
         return local ? { digest: local.digest } : 'clean';
       }
       const baseline = await resolveRepoBaseline(turn.cwd, turn.dorkHome);
@@ -419,6 +465,7 @@ export async function applyRepoConfigStep(
     ...turn,
     dorkHome: resolveDorkHome(),
     full: sdkOptions.permissionMode === 'bypassPermissions',
+    userHome: sdkOptions.env?.HOME ?? expandTilde('~'),
   });
   applyRepoConfigToLaunch(sdkOptions, decision);
   return decision;

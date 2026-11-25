@@ -1,7 +1,7 @@
 ---
 number: 311
 title: Prevent shared-registry merge conflicts structurally, not with merge drivers
-status: draft
+status: archived
 created: 2026-07-03
 spec: merge-conflict-prevention
 superseded-by: null

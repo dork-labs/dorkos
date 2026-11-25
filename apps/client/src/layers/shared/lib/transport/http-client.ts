@@ -51,7 +51,7 @@ async function request(
   // JSON is the default only for a JSON string or no body. FormData, Blob,
   // URLSearchParams and binary bodies need `fetch` to write their own type:
   // a multipart body under a JSON header has no boundary, so the server
-  // finds no file (the avatar upload answered AVATAR_MISSING).
+  // finds no file (the avatar upload answered `avatar_missing`).
   const body = requestInit.body;
   const jsonBody = body === undefined || body === null || typeof body === 'string';
   if (jsonBody && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
@@ -95,7 +95,7 @@ async function request(
       if (Number.isFinite(milliseconds)) err.retryAfterMs = milliseconds;
     }
     // Some refusals carry data the caller must act on, not just describe: a
-    // `CHAT_ALREADY_BOUND` 409 names the binding that already owns the chat,
+    // `chat_already_bound` 409 names the binding that already owns the chat,
     // which is the id the "move it instead?" dialog calls `moveBinding` with.
     // `message`/`code`/`status` cannot carry it, so the parsed body rides along
     // as `err.body`.
@@ -107,7 +107,7 @@ async function request(
       setSignInWith(named === 'dorkos' || named === 'wifi-code' ? named : 'password');
       setAuthRequired(true);
     }
-    if (res.status === 409 && reading.code === 'COMMUNITY_OWNER_CHANGED') {
+    if (res.status === 412 && reading.code === 'owner_changed') {
       invalidateCommunityAuthority();
     }
     throw err;

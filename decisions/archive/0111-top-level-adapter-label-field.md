@@ -1,7 +1,7 @@
 ---
 number: 111
 title: Top-Level Adapter Label Field
-status: draft
+status: archived
 created: 2026-03-11
 spec: adapter-binding-ux-overhaul
 superseded-by: null

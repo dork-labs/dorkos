@@ -1,28 +1,13 @@
 /**
- * Session services — transcript reading/parsing, locking, projection, and
- * task state management.
+ * Session services — locking, projection, and task state management.
+ *
+ * Runtime-neutral: nothing under `services/session/` imports `services/runtimes/`
+ * (DOR-4928, `eslint-rules/session-runtimes-boundary.js`). Claude Code's transcript
+ * reader and parser are in `runtimes/claude-code/sessions/`.
  *
  * @module services/session
  */
-export { TASK_TOOL_NAMES, buildTaskEvent } from '../runtimes/claude-code/sdk/build-task-event.js';
 export { SessionLockManager } from './session-lock.js';
-export { parseTasks } from '../runtimes/claude-code/sessions/task-reader.js';
-export {
-  extractToolResultContent,
-  extractTextContent,
-  extractCommandMeta,
-  stripSystemTags,
-  parseTranscript,
-} from '../runtimes/claude-code/sessions/transcript-parser.js';
-export type {
-  TranscriptLine,
-  ContentBlock,
-} from '../runtimes/claude-code/sessions/transcript-parser.js';
-export { TranscriptReader } from '../runtimes/claude-code/sessions/transcript-reader.js';
-export type {
-  HistoryMessage,
-  HistoryToolCall,
-} from '../runtimes/claude-code/sessions/transcript-reader.js';
 
 // --- Runtime-neutral session-state projection (ADR-0264) ---
 export {

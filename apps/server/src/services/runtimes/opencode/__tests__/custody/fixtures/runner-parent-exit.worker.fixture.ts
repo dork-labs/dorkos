@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { setTimeout as wait } from 'node:timers/promises';
 import type { RunnerExitFixture } from './runner-parent-exit.setup.js';
 import { mkdir, mkdtemp, realpath, rm, writeFile, rename } from 'node:fs/promises';
@@ -49,17 +49,18 @@ it.skipIf(!armed)(
       throw new Error('Pinned serve refuses ambient OpenCode credentials or configuration');
     const control = inject('runnerExitFixture');
     expect(process.ppid).toBe(control.mainPid);
-    process.once('exit', (code) =>
+    process.once('exit', (code) => {
+      const path = join(control.root, 'worker-exit');
+      // The outer fixture can read this before the runner's output pipes close.
       writeFileSync(
-        join(control.root, 'worker-exit.json'),
+        path + '.part',
         JSON.stringify({ version: 1, code, workerPid: process.pid, mainPid: control.mainPid }) +
           '\n',
-        {
-          flag: 'wx',
-          mode: 0o600,
-        }
-      )
-    );
+        { flag: 'wx', mode: 0o600 }
+      );
+      linkSync(path + '.part', path + '.json');
+      unlinkSync(path + '.part');
+    });
     const binary = pinnedOpenCode();
     if (binary === null) throw new Error('Pinned serve subject unavailable');
     const provided = inject('openCodeCustody');

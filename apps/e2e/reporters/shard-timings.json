@@ -196,10 +196,6 @@
       "seconds": 44.6,
       "tests": 5
     },
-    "chromium-streams|streams/sse-contract.spec.ts": {
-      "seconds": 0,
-      "tests": 2
-    },
     "chromium-team-room|home-surface/team-room.spec.ts": {
       "seconds": 60.6,
       "tests": 9

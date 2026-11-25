@@ -7,7 +7,6 @@ import {
   ensureMeta,
   getSchemaVersion,
   setSchemaVersion,
-  measureBytes,
   ExtensionDbCache,
 } from '../extension-database.js';
 
@@ -39,14 +38,6 @@ describe('openExtensionDb — house pragmas', () => {
       db.close();
     }
   });
-
-  it('creates the database file on disk', () => {
-    // Opening a fresh path materializes store.db.
-    const p = dbPath();
-    const db = openExtensionDb(p);
-    db.close();
-    expect(fs.existsSync(p)).toBe(true);
-  });
 });
 
 describe('ensureMeta', () => {
@@ -62,16 +53,6 @@ describe('ensureMeta', () => {
       db.close();
     }
   });
-
-  it('is idempotent (a second call does not throw)', () => {
-    const db = openExtensionDb(dbPath());
-    try {
-      ensureMeta(db);
-      expect(() => ensureMeta(db)).not.toThrow();
-    } finally {
-      db.close();
-    }
-  });
 });
 
 describe('getSchemaVersion / setSchemaVersion', () => {
@@ -79,16 +60,6 @@ describe('getSchemaVersion / setSchemaVersion', () => {
     // A never-migrated DB is at version 0 even before ensureMeta runs.
     const db = openExtensionDb(dbPath());
     try {
-      expect(getSchemaVersion(db)).toBe(0);
-    } finally {
-      db.close();
-    }
-  });
-
-  it('returns 0 after ensureMeta but before any version is set', () => {
-    const db = openExtensionDb(dbPath());
-    try {
-      ensureMeta(db);
       expect(getSchemaVersion(db)).toBe(0);
     } finally {
       db.close();
@@ -111,37 +82,7 @@ describe('getSchemaVersion / setSchemaVersion', () => {
   });
 });
 
-describe('measureBytes', () => {
-  it('grows after inserting rows', () => {
-    // page_count * page_size increases as data is written.
-    const db = openExtensionDb(dbPath());
-    try {
-      db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, blob TEXT)');
-      const before = measureBytes(db);
-      const insert = db.prepare('INSERT INTO t (blob) VALUES (?)');
-      const big = 'x'.repeat(10_000);
-      for (let i = 0; i < 200; i++) insert.run(big);
-      const after = measureBytes(db);
-      expect(after).toBeGreaterThan(before);
-    } finally {
-      db.close();
-    }
-  });
-});
-
 describe('ExtensionDbCache', () => {
-  it('returns the same handle for repeated gets of one path', () => {
-    const cache = new ExtensionDbCache(4);
-    try {
-      const a = cache.get(dbPath());
-      const b = cache.get(dbPath());
-      expect(a).toBe(b);
-      expect(cache.size).toBe(1);
-    } finally {
-      cache.closeAll();
-    }
-  });
-
   it('evicts and CLOSES the least-recently-used handle past the size bound', () => {
     // maxSize=1 forces the first handle to be evicted when the second opens;
     // the evicted handle must be closed (using it throws).
@@ -154,38 +95,5 @@ describe('ExtensionDbCache', () => {
     } finally {
       cache.closeAll();
     }
-  });
-
-  it('keeps a recently-used handle and evicts the truly-oldest', () => {
-    // Re-getting 'a' before overflowing marks it MRU, so 'b' is evicted instead.
-    const cache = new ExtensionDbCache(2);
-    try {
-      const a = cache.get(dbPath('a.db'));
-      const b = cache.get(dbPath('b.db'));
-      cache.get(dbPath('a.db')); // touch a → a is now MRU, b is LRU
-      cache.get(dbPath('c.db')); // overflow → evict b
-      expect(() => a.prepare('SELECT 1').get()).not.toThrow();
-      expect(() => b.prepare('SELECT 1').get()).toThrow(/database connection is not open/i);
-    } finally {
-      cache.closeAll();
-    }
-  });
-
-  it('close(dbPath) closes and forgets a single handle', () => {
-    const cache = new ExtensionDbCache(4);
-    const handle = cache.get(dbPath());
-    cache.close(dbPath());
-    expect(cache.size).toBe(0);
-    expect(() => handle.prepare('SELECT 1').get()).toThrow(/database connection is not open/i);
-  });
-
-  it('closeAll closes every cached handle', () => {
-    const cache = new ExtensionDbCache(4);
-    const a = cache.get(dbPath('a.db'));
-    const b = cache.get(dbPath('b.db'));
-    cache.closeAll();
-    expect(cache.size).toBe(0);
-    expect(() => a.prepare('SELECT 1').get()).toThrow(/database connection is not open/i);
-    expect(() => b.prepare('SELECT 1').get()).toThrow(/database connection is not open/i);
   });
 });

@@ -46,7 +46,7 @@ export interface CompactionChipVisibilityInput {
   compactSupported: boolean;
   /**
    * Whether a turn is currently streaming. Dispatching `/compact` mid-turn
-   * would 409 (`SESSION_LOCKED`) — the chip hides rather than show and rely
+   * would 409 (`session_locked`) — the chip hides rather than show and rely
    * on the 409 toast, the cleaner of the two options (DOR-112 requirement 1).
    */
   isStreaming: boolean;

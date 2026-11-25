@@ -265,7 +265,7 @@ describe('a person renaming an agent (DOR-3156)', () => {
       .patch(`/api/rooms/authors/${bo}/handle`)
       .send({ handle: 'ana' });
     expect(taken.status).toBe(409);
-    expect(taken.body.code).toBe('HANDLE_RESERVED');
+    expect(taken.body.code).toBe('handle_reserved');
   });
 
   it('changes nothing about the agent but its handle: no level, mark, grant, membership or setting', async () => {
@@ -304,9 +304,9 @@ describe('a person renaming an agent (DOR-3156)', () => {
       .send({ handle: 'D0rian' });
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error: '@d0rian looks too much like @dorian. Pick a different one.',
-      code: 'HANDLE_LOOKALIKE',
+    expect(res.body).toMatchObject({
+      detail: '@d0rian looks too much like @dorian. Pick a different one.',
+      code: 'handle_lookalike',
     });
   });
 
@@ -318,9 +318,9 @@ describe('a person renaming an agent (DOR-3156)', () => {
       .patch(`/api/rooms/authors/${ana}/handle`)
       .send({ handle: 'ana-pm' });
     expect(agent.status).toBe(403);
-    expect(agent.body).toEqual({
-      error: 'Renaming an agent needs a secure connection.',
-      code: 'NOT_FROM_WIFI',
+    expect(agent.body).toMatchObject({
+      detail: 'Renaming an agent needs a secure connection.',
+      code: 'not_from_wifi',
     });
     expect(getRoomService().authorRegistry.getById(ana)?.handle).toBe('ana');
     expect((await entries(roomId)).filter((e) => e.body.notice === 'handle_changed')).toEqual([]);
@@ -353,7 +353,7 @@ describe('a person renaming an agent (DOR-3156)', () => {
       .send({ handle: 'voice' });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('HANDLE_RESERVED');
+    expect(res.body.code).toBe('handle_reserved');
     expect(getRoomService().authorRegistry.getById(system.id)?.handle).toBe(system.handle);
   });
 
@@ -368,7 +368,7 @@ describe('a person renaming an agent (DOR-3156)', () => {
       .send({ handle: 'bo-2' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OPERATOR_ONLY');
+    expect(res.body.code).toBe('operator_only');
     expect(getRoomService().authorRegistry.getById(ana)?.handle).toBe('ana');
     expect(getRoomService().authorRegistry.getById(bo)?.handle).toBe('bo');
   });

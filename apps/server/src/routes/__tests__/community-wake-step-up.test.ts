@@ -89,7 +89,7 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
       expect(held.status).toBe(428);
       expect(pairing.start).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
       expect(pairing.start).not.toHaveBeenCalled();
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -116,7 +116,7 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
     expect(held.status).toBe(428);
     expect(wake.from).toBe('me');
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(wake.from).toBe('me');
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -139,7 +139,7 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
     expect(held.status).toBe(428);
     expect(wake.answerIn).toEqual([]);
     expect((await owner.confirm(held.body.heldActionId, 'managed', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(policy.setAnswerIn).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'managed')).body).toMatchObject({
@@ -157,13 +157,13 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
   });
 
   // Security S5 on DOR-4355 M3: a save read as adding nothing must still add nothing when it lands.
-  it('answers 409 for a free save judged before the person took a channel away', async () => {
+  it('answers 412 for a free save judged before the person took a channel away', async () => {
     const url = '/api/community-connections/northwind/answer-in';
     // Read before the person's removal landed: #help was still listed.
     policy.getAnswerIn.mockResolvedValueOnce(['help']);
     const res = await owner.call('put', url, 'own-tunnel').send({ answerIn: ['#Help'] });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ANSWER_IN_CHANGED');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(wake.answerIn).toEqual([]);
   });
 });

@@ -6,7 +6,9 @@
  * halves are required. Before this module each surface spelled the string out
  * itself, and one of them dropped the path and shipped `?session=<id>` on its
  * own (DOR-2077). The server, the desktop shell and the client all build it
- * here now, so there is one place where the address can be wrong.
+ * here now, so there is one place where the address can be wrong. The
+ * markdown link an agent pastes is the `/r/dork:chat:<id>` form instead
+ * ({@link chatRefMarkdownLink}), which the `/r/` route turns into this one.
  *
  * Pure, with no router dependency: the server and the desktop main process
  * build these strings without the client's router, so the encoding the router
@@ -14,6 +16,7 @@
  *
  * @module shared/session-link
  */
+import { DORK_LINK_PREFIX, dorkReferenceOrNull } from './dork-ref.js';
 
 /** The client route a conversation is read at. */
 export const SESSION_ROUTE = '/session';
@@ -74,21 +77,37 @@ export function sessionPath(params: SessionLinkParams): string {
 export const UNTITLED_CHAT_TITLE = 'New chat';
 
 /**
+ * A chat's title as markdown link text: a blank title reads as
+ * {@link UNTITLED_CHAT_TITLE}, line breaks become spaces, and square brackets
+ * and backslashes are escaped, so a title can never end the link text early or
+ * start a new block.
+ */
+function chatLinkText(title: string | null | undefined): string {
+  const words = (title ?? '').replace(/\s+/g, ' ').trim() || UNTITLED_CHAT_TITLE;
+  return words.replace(/[\\[\]]/g, (char) => `\\${char}`);
+}
+
+/**
  * A markdown link that opens a chat in the DorkOS app, ready for an agent to
- * paste into what it writes: `[Chat title](/session?session=<id>)` (DOR-2824).
+ * paste into what it writes: `[Chat title](/r/dork:chat:<id>)` (DOR-2824,
+ * DOR-5202).
  *
  * Agents are told to name a chat by its title and link it, never to show its
  * id, so the tools that hand an agent a chat hand it this too and nobody has to
- * build one. A blank title reads as {@link UNTITLED_CHAT_TITLE}. Square
- * brackets and backslashes in the title are escaped, and line breaks become
- * spaces, so a title can never end the link text early or start a new block.
+ * build one. The `/r/` form opens on any DorkOS origin, and its route follows
+ * the chat to the id it answers under now, so a link written before a re-key
+ * still opens it. The app draws it as the same live chip as a
+ * `/session?session=` link.
+ *
+ * An id that cannot be a `dork:` reference (see `dorkReferenceOrNull`) gets
+ * the `/session?session=<id>` link instead, so every chat still links.
  *
  * @param sessionId - The chat's full id.
  * @param title - Its title, or null when it has none.
  * @returns The markdown link.
  */
-export function chatMarkdownLink(sessionId: string, title: string | null | undefined): string {
-  const words = (title ?? '').replace(/\s+/g, ' ').trim() || UNTITLED_CHAT_TITLE;
-  const text = words.replace(/[\\[\]]/g, (char) => `\\${char}`);
-  return `[${text}](${sessionPath({ session: sessionId })})`;
+export function chatRefMarkdownLink(sessionId: string, title: string | null | undefined): string {
+  const ref = dorkReferenceOrNull('chat', sessionId);
+  const path = ref === null ? sessionPath({ session: sessionId }) : `${DORK_LINK_PREFIX}${ref}`;
+  return `[${chatLinkText(title)}](${path})`;
 }

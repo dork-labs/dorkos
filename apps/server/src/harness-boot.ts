@@ -30,11 +30,13 @@ import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
 import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
+import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { setContinuationHoldDb } from './services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from './services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -84,6 +86,10 @@ export interface InProcessTestServer {
  * @returns The server's routing and a teardown that closes the DB.
  */
 export async function bootInProcessTestServer(dorkHome: string): Promise<InProcessTestServer> {
+  // First, as in `start()` (DOR-4928): until Claude Code's folder facts are registered the
+  // protected-path policy refuses every path and turn code honours no agent file's runtime.
+  registerClaudeCodeFacts();
+
   // Config store first — the session gate reads it on every request; without
   // it every request 500s (spec eval-harness Errata, in-process boot recipe).
   initConfigManager(dorkHome);
@@ -106,6 +112,8 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 

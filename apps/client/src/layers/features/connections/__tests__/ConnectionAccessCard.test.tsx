@@ -744,7 +744,6 @@ describe('ConnectionAccessCard — a DorkOS account problem', () => {
 
   it.each([
     ['cloud_link_required', 'This computer isn’t linked to DorkOS', true],
-    ['cloud_link_needs_update', 'This computer’s link needs updating', true],
     ['cloud_unavailable', 'DorkOS’s servers aren’t answering', false],
     ['cloud_refused', 'DorkOS’s servers couldn’t finish this', false],
   ])(

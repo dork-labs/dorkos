@@ -132,7 +132,7 @@ interface UseSessionSubmitParams {
 
 /**
  * The server's refusal code, and the agent it names, when a send was refused
- * for a reason the app can act on (`AGENT_PAUSED` offers Resume, spec
+ * for a reason the app can act on (`agent_paused` offers Resume, spec
  * `audit-trail` PR5). Empty for any other failure.
  */
 function refusalOf(err: unknown): Pick<TransportErrorInfo, 'code' | 'agentId'> {

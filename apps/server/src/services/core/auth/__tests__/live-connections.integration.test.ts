@@ -365,7 +365,7 @@ describe('signing out ends what that sign-in had open', () => {
 
     const refused = await devices('delete', `/sessions/${tabletId}`, 'wifi', phone);
     expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+    expect(refused.body.code).toBe('operator_only');
     expect((await devices('post', '/sign-out-all', 'wifi', phone)).status).toBe(403);
     expect(tabletStream.closed()).toBe(false);
 

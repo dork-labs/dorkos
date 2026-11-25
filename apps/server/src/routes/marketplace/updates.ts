@@ -16,13 +16,12 @@ import {
 } from '../../services/marketplace/flows/update-installed.js';
 import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../../lib/caller-authority.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
 import { runFrontDoorWrite } from '../front-door-step-up.js';
 import {
-  BATCH_UPDATE_NEEDS_APPROVAL_CODE,
   errorResponse,
   fromOutdatedClient,
   outdatedClientResponse,
@@ -120,15 +119,9 @@ export function mountUpdateRoutes(
       const confined = await confineProjectPath(c, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
       if (batchNeedsApproval(c)) {
-        return c.json(
-          {
-            error:
-              'Updating several packages at once cannot wait for a person to approve each ' +
-              'install. Ask a person to update them in DorkOS.',
-            code: BATCH_UPDATE_NEEDS_APPROVAL_CODE,
-          },
-          403
-        );
+        return problem(c, 'needs_approval', {
+          detail: 'Each update needs approval. Ask a person to update them in DorkOS.',
+        });
       }
       const requested = {
         projectPath: confined.projectPath,

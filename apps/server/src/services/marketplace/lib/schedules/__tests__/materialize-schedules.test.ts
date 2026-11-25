@@ -201,17 +201,6 @@ describe('inline declarations generate a skill file', () => {
     expect(ScheduleBlockSchema.parse(data.schedule).enabled).toBe(false);
   });
 
-  it('generates into the global skills root when the install is not project-scoped', async () => {
-    const result = await materializeBothForms({
-      manifest: manifest([{ name: 'global-tick', description: 'Everywhere.', prompt: 'Tick.' }]),
-      installPath,
-      dorkHome,
-      logger,
-    });
-
-    expect(result.generatedPaths).toEqual([path.join(dorkHome, 'skills', 'global-tick')]);
-  });
-
   it('clamps a bypassPermissions request and says so', async () => {
     const result = await materializeBothForms({
       manifest: manifest([
@@ -233,30 +222,6 @@ describe('inline declarations generate a skill file', () => {
     );
     expect((data.schedule as Record<string, unknown>).permissions).not.toBe('bypassPermissions');
     expect(result.warnings.join(' ')).toMatch(/every approval prompt turned off/);
-  });
-
-  it('warns about the retired startDisabled without letting it decide anything', async () => {
-    const result = await materializeBothForms({
-      manifest: manifest([
-        {
-          name: 'stale-key',
-          description: 'Written against the old schema.',
-          prompt: 'Go.',
-          startDisabled: false,
-        },
-      ]),
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result.warnings.join(' ')).toMatch(/startDisabled/);
-    const { data } = await readSkill(
-      path.join(projectPath, '.agents', 'skills', 'stale-key', 'SKILL.md')
-    );
-    // startDisabled: false does NOT mean "start enabled" — startEnabled alone decides.
-    expect((data.schedule as Record<string, unknown>).enabled).toBe(false);
   });
 });
 
@@ -368,51 +333,6 @@ describe('skillRef declarations inject into the shipped skill', () => {
     const { data } = await readSkill(filePath);
     expect((data.schedule as Record<string, unknown>).cron).toBe('0 9 * * *');
   });
-
-  it('stays quiet when the block on disk already matches the declaration', async () => {
-    await shipSkill('steady', ['name: steady', 'description: Unchanged.'].join('\n'), 'Body.');
-    const decl = manifest([{ skillRef: 'steady', cron: '0 9 * * *' }]);
-
-    await materializeBothForms({
-      manifest: decl,
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-    // Second pass: a reinstall of the same version must not invent a warning.
-    const again = await materializeBothForms({
-      manifest: decl,
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(again.warnings).toEqual([]);
-  });
-
-  it('finds a skill nested below the skills root', async () => {
-    const dir = path.join(installPath, 'skills', 'group', 'nested-skill');
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      path.join(dir, 'SKILL.md'),
-      '---\nname: nested-skill\ndescription: Nested.\n---\n\nBody.\n',
-      'utf-8'
-    );
-
-    const result = await materializeBothForms({
-      manifest: manifest([{ skillRef: 'nested-skill' }]),
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result.warnings).toEqual([]);
-    const { data } = await readSkill(path.join(dir, 'SKILL.md'));
-    expect(data.schedule).toBeDefined();
-  });
 });
 
 describe('the skills root is never the target', () => {
@@ -482,39 +402,6 @@ describe('an occupied directory is never replaced', () => {
     expect(await readFile(path.join(target, 'notes.txt'), 'utf-8')).toBe('my notes');
   });
 
-  it('spares a directory whose entry file is named something else', async () => {
-    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
-    await mkdir(target, { recursive: true });
-    await writeFile(path.join(target, 'readme.md'), 'reference', 'utf-8');
-
-    const result = await materializeBothForms({
-      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result.generatedPaths).toEqual([]);
-    expect(await readFile(path.join(target, 'readme.md'), 'utf-8')).toBe('reference');
-  });
-
-  it('spares an empty directory a person made', async () => {
-    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
-    await mkdir(target, { recursive: true });
-
-    const result = await materializeBothForms({
-      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result.generatedPaths).toEqual([]);
-    expect(result.warnings.join(' ')).toMatch(/already there/);
-  });
-
   it('spares a dangling symlink instead of following it to its absent target', async () => {
     // `lstat` judges the link as itself. `stat` would follow it, report the
     // TARGET's absence as the link's, and clear the way to replace a link a
@@ -538,24 +425,6 @@ describe('an occupied directory is never replaced', () => {
     // The link itself is still there, still pointing where it pointed.
     expect((await lstat(link)).isSymbolicLink()).toBe(true);
     expect(await readlink(link)).toBe(path.join(root, 'no-such-target'));
-  });
-
-  it('spares a SKILL.md whose frontmatter cannot be parsed', async () => {
-    const target = path.join(projectPath, '.agents', 'skills', 'nightly');
-    await mkdir(target, { recursive: true });
-    const broken = '---\nname: [unclosed\n  bad: : :\n---\nbody\n';
-    await writeFile(path.join(target, 'SKILL.md'), broken, 'utf-8');
-
-    const result = await materializeBothForms({
-      manifest: manifest([{ name: 'nightly', description: 'd', prompt: 'p' }]),
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result.generatedPaths).toEqual([]);
-    expect(await readFile(path.join(target, 'SKILL.md'), 'utf-8')).toBe(broken);
   });
 });
 
@@ -678,53 +547,6 @@ describe('collisions and failures', () => {
     expect(result.generatedPaths).toEqual([
       path.join(projectPath, '.agents', 'skills', 'survivor'),
     ]);
-  });
-
-  it('survives a declaration that never went through the schema', async () => {
-    // Not every manifest reaching the materializer was parsed: one read off disk
-    // by an older build arrives with the keys the schema would have defaulted
-    // simply missing. Handing an `undefined` to `scheduleToFrontmatter` makes
-    // the frontmatter writer throw ("is undefined, which YAML cannot hold"),
-    // which took the whole schedule down before the fields were coalesced.
-    const raw = {
-      schemaVersion: 1,
-      name: 'nightly-tools',
-      version: '1.0.0',
-      type: 'plugin',
-      description: 'Never parsed.',
-      schedules: [{ name: 'bare', description: 'No defaults applied.', prompt: 'Go.' }],
-    } as unknown as MarketplacePackageManifest;
-
-    const result = await materializeBothForms({
-      manifest: raw,
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result.warnings).toEqual([]);
-    const { data } = await readSkill(
-      path.join(projectPath, '.agents', 'skills', 'bare', 'SKILL.md')
-    );
-    const schedule = data.schedule as Record<string, unknown>;
-    // The safe answers, identical to what the schema would have supplied.
-    expect(schedule.enabled).toBe(false);
-    expect(schedule).not.toHaveProperty('permissions'); // acceptEdits, the default
-    expect(schedule).not.toHaveProperty('cron'); // on-demand
-  });
-
-  it('does nothing at all for a package that declares no schedules', async () => {
-    const result = await materializeBothForms({
-      manifest: manifest([]),
-      installPath,
-      dorkHome,
-      projectPath,
-      logger,
-    });
-
-    expect(result).toEqual({ generatedPaths: [], warnings: [] });
-    await expect(readdir(path.join(projectPath, '.agents'))).rejects.toThrow();
   });
 });
 

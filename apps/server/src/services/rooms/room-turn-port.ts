@@ -75,16 +75,22 @@ export class RoomTurnRuntimeGoneError extends Error {
 }
 
 /**
- * A moved seat's one-shot launch, as the dispatch takes it: each field only
- * when set, so an absent one is never sent as `undefined`.
+ * What a room turn's dispatch says about itself: its origin, which the run
+ * record keeps (spec `turns-survive-restarts` §4.1), and a moved seat's
+ * one-shot launch, each field of that only when set, so an absent one is never
+ * sent as `undefined`.
  *
  * @param request - The turn.
  */
-export function seatLaunchOf(request: Pick<RoomTurnRequest, 'accountHint' | 'seedContext'>): {
+export function roomDispatchOf(
+  request: Pick<RoomTurnRequest, 'accountHint' | 'seedContext' | 'externalAuthor'>
+): {
+  origin: { kind: 'room'; externalAuthor: boolean };
   accountHint?: string;
   seedContext?: string;
 } {
   return {
+    origin: { kind: 'room', externalAuthor: request.externalAuthor },
     ...(request.accountHint !== undefined ? { accountHint: request.accountHint } : {}),
     ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
   };

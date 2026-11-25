@@ -1,17 +1,17 @@
 /**
  * An agent computer registers OpenCode and nothing else (DOR-2940), whatever
  * the config turns on: Claude Code and Codex sign in with a person's own
- * account, which an agent computer never holds. Every runtime class is a
- * stub that records its type, so the case reads what actually registered.
+ * account, which an agent computer never holds. The registry is the real
+ * one; every runtime class is a stub of its type, so the case reads what a
+ * person would see in the runtime list.
  *
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-type Role = 'computer' | 'hub' | 'agent-computer';
-const role = vi.hoisted(() => ({ value: 'agent-computer' as Role }));
-vi.mock('../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
-vi.mock('../../env.js', () => ({ env: {} }));
+// `currentServerRole()` reads this, so the real role module decides.
+const env = vi.hoisted(() => ({ DORKOS_SERVER_ROLE: 'agent-computer' }));
+vi.mock('../../env.js', () => ({ env }));
 vi.mock('../../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
   logError: (err: unknown) => ({ err }),
@@ -27,15 +27,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
     }),
     onChange: () => () => {},
   },
-}));
-const registered = vi.hoisted(() => ({ types: [] as string[], defaultType: '' }));
-vi.mock('../../services/core/runtime-registry.js', () => ({
-  runtimeRegistry: {
-    register: (runtime: { type: string }) => registered.types.push(runtime.type),
-    setDefault: (type: string) => (registered.defaultType = type),
-  },
-  applyAndWatchConfiguredDefaultRuntime: vi.fn(),
-  registerOptionalRuntime: (_name: string, _remedy: string, init: () => unknown) => init(),
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({ initCloudLinkManager: vi.fn() }));
 vi.mock('../../services/core/cloud/credits-relay.js', () => ({
@@ -77,19 +68,17 @@ vi.mock('../../services/runtimes/opencode/index.js', () => ({
 }));
 
 const { registerRuntimes } = await import('../runtimes.js');
+const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
 
 const DEPS = { db: {} as never, dorkHome: '/tmp/dork', currentCreditsRelay: () => null };
 
-beforeEach(() => {
-  registered.types = [];
-  registered.defaultType = '';
-});
+const registeredTypes = (): string[] => runtimeRegistry.listRuntimes().map((r) => r.type);
 
 describe('registering runtimes on an agent computer', () => {
   it('registers OpenCode alone, as the default', async () => {
     const result = await registerRuntimes(DEPS);
-    expect(registered.types).toEqual(['opencode']);
-    expect(registered.defaultType).toBe('opencode');
+    expect(registeredTypes()).toEqual(['opencode']);
+    expect(runtimeRegistry.getDefaultType()).toBe('opencode');
     expect(result).toEqual({
       claudeRuntime: null,
       doeRuntime: null,
@@ -98,10 +87,12 @@ describe('registering runtimes on an agent computer', () => {
     });
   });
 
+  // Runs second, on the same registry: the control that shows the role, not
+  // the config, left the others out above.
   it('registers Claude Code and Codex on a person`s own computer', async () => {
-    role.value = 'computer';
+    env.DORKOS_SERVER_ROLE = 'computer';
     await registerRuntimes(DEPS);
-    expect(registered.types).toEqual(expect.arrayContaining(['claude-code', 'codex', 'opencode']));
-    role.value = 'agent-computer';
+    expect(registeredTypes()).toEqual(expect.arrayContaining(['claude-code', 'codex', 'opencode']));
+    env.DORKOS_SERVER_ROLE = 'agent-computer';
   });
 });

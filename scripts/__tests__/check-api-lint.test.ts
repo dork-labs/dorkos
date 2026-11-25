@@ -28,6 +28,7 @@ import {
   errorMissingItems,
   errorShapeItems,
   isHandRegistryFile,
+  isKeptRoute,
   listPagingItems,
   operationIdItems,
   paramNameItems,
@@ -198,6 +199,23 @@ describe('error-shape', () => {
     expect(errorShapeItems(viaResponse)).toEqual({});
   });
 
+  it('passes a problem document, plain or with extension members (DOR-4979)', () => {
+    const problem = { $ref: '#/components/schemas/Problem' };
+    const plain = { content: { 'application/problem+json': { schema: problem } } };
+    const extended = {
+      content: {
+        'application/problem+json': {
+          schema: { allOf: [problem, { type: 'object', properties: { conflicts: {} } }] },
+        },
+      },
+    };
+    const inline = { content: { 'application/problem+json': { schema: { type: 'object' } } } };
+    const d = doc({
+      '/api/x': { get: op({ responses: { '409': plain, '412': extended, '500': inline } }) },
+    });
+    expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 500'] });
+  });
+
   it('passes a $ref to the step-up 428 component but still counts an inline copy of it', () => {
     const stepUp = {
       type: 'object',
@@ -337,6 +355,26 @@ describe('hand-registered-path', () => {
     const call = 'registry.' + 'registerPath(';
     const text = [`${call}{});`, `// ${call}`, ` * ${call}`, `${call}a); ${call}b);`].join('\n');
     expect(registerPathLines(text)).toEqual([1, 4, 4]);
+  });
+
+  it('skips a call that documents a route on the hand-route allowlist', () => {
+    const call = 'registry.' + 'registerPath(';
+    const text = [
+      `${call}{`,
+      "  method: 'get',",
+      "  path: '/api/sessions/{id}/events',",
+      '});',
+      `${call}{ method: 'post', path: '/api/sessions/{id}/events' });`,
+      `${call}{ method: 'get', path: '/api/auth/session' });`,
+      `${call}{ method: 'get', path: \`/api/x\${y}\` });`,
+    ].join('\n');
+    const kept = [
+      { method: 'GET', path: '/api/sessions/:sessionId/events' },
+      { method: 'ALL', path: '/api/auth/*' },
+    ];
+    expect(registerPathLines(text, kept)).toEqual([5, 7]);
+    expect(isKeptRoute(kept, 'delete', '/api/auth')).toBe(true);
+    expect(isKeptRoute(kept, 'get', '/api/authors')).toBe(false);
   });
 });
 

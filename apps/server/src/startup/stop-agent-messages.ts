@@ -4,6 +4,7 @@ import type { RoomService } from '../services/rooms/room-service.js';
 import { stopChatReports } from '../services/session/chat-messages/chat-message-current.js';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-current.js';
 import { getAgentSendService } from '../services/extensions/agent-send/agent-send.js';
+import { markRunsShutdown } from '../services/runs/index.js';
 
 /** Stop both messaging owners while SQLite is still open; a late turn cannot revive a receipt. */
 export function stopAgentMessageServices(): void {
@@ -22,6 +23,9 @@ export function stopAgentMessageServices(): void {
         /* Rooms have not been registered yet. */
       }
       rooms?.dispose();
+      // Every turn still running ends `shutdown` on its run while SQLite is
+      // open (spec `turns-survive-restarts` §4.4): DorkOS ended it, and says so.
+      markRunsShutdown();
     }
   }
 }

@@ -14,6 +14,8 @@
  *
  * @vitest-environment node
  */
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
@@ -432,11 +434,16 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
   });
   describe('a read through a tool marks the turn too (PR 2)', () => {
     /** Claude Code's hook firing for one call in this chat, as the CLI fires it before the tool. */
-    async function toolCall(sessionId: string, toolName: string) {
+    async function toolCall(sessionId: string, toolName: string, toolInput: object = {}) {
       const matcher = outsideTextHookMatcher(() => sessionId, AGENT.agentPath);
       if (!new RegExp(matcher.matcher!).test(toolName)) return;
       await matcher.hooks[0]!(
-        { hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: {} } as never,
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: toolName,
+          tool_input: toolInput,
+          cwd: AGENT.agentPath,
+        } as never,
         'call-1',
         { signal: new AbortController().signal }
       );
@@ -460,15 +467,33 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     it('lets a send from a turn that only read local files through', async () => {
       const chat = fresh();
       await ranAtFull(chat);
-      for (const name of ['Read', 'Grep', 'Glob']) await toolCall(chat, name);
+      await toolCall(chat, 'Read', { file_path: `${AGENT.agentPath}/notes.md` });
+      await toolCall(chat, 'Grep', { pattern: 'garden', path: AGENT.agentPath });
+      await toolCall(chat, 'Glob', { pattern: '**/*.md' });
+      await toolCall(chat, 'Bash', { command: 'git status && git diff && pnpm test && ls' });
       expect(await send(chat)).toEqual({ outcome: 'ran', cards: 0 });
+    });
+
+    it('cards a send after a Bash command that fetches from the network', async () => {
+      const chat = fresh();
+      await ranAtFull(chat);
+      await toolCall(chat, 'Bash', { command: 'curl -s https://example.com/notes' });
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it('cards a send after reading a file in the temp folder', async () => {
+      const chat = fresh();
+      await ranAtFull(chat);
+      await toolCall(chat, 'Read', { file_path: path.join(os.tmpdir(), 'made-up-page.html') });
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
     });
 
     /**
      * A runtime with no hook that runs first (Codex, OpenCode): its read starts in the stream, its
      * result comes back, and the model's next step is a send, made after the stream moved on.
      */
-    async function streamTurn(runtimeType: string, toolName: string) {
+    async function streamTurn(runtimeType: string, toolName: string, input: object = {}) {
       const chat = fresh();
       let outcome: Awaited<ReturnType<typeof send>> | undefined;
       const runtime = recordToolUse(
@@ -478,7 +503,10 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
             getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
             async *sendMessage(): AsyncGenerator<StreamEvent> {
               const data = { toolCallId: 'read-1', toolName };
-              yield { type: 'tool_call_start', data: { ...data, input: '{}', status: 'running' } };
+              yield {
+                type: 'tool_call_start',
+                data: { ...data, input: JSON.stringify(input), status: 'running' },
+              };
               yield {
                 type: 'tool_result',
                 data: { ...data, result: 'made up', status: 'complete' },
@@ -537,8 +565,65 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
       expect(outcome).toEqual({ outcome: 'approval_required', cards: 1 });
     });
 
-    it('lets the send through after a Codex turn that only ran a shell command', async () => {
-      expect(await streamTurn('codex', 'Shell')).toEqual({ outcome: 'ran', cards: 0 });
+    it('lets the send through after a Codex turn that only ran local commands', async () => {
+      const local = { command: 'git status && git diff && pnpm test', cwd: AGENT.agentPath };
+      expect(await streamTurn('codex', 'Shell', local)).toEqual({ outcome: 'ran', cards: 0 });
+    });
+
+    it("holds the next step's send after a Codex command that fetches from the network", async () => {
+      const fetches = { command: "bash -lc 'git pull --rebase'", cwd: AGENT.agentPath };
+      expect(await streamTurn('codex', 'Shell', fetches)).toEqual({
+        outcome: 'approval_required',
+        cards: 1,
+      });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it("holds the next step's send after an OpenCode command that fetches from the network", async () => {
+      expect(await streamTurn('opencode', 'bash', { command: 'gh issue view 12' })).toEqual({
+        outcome: 'approval_required',
+        cards: 1,
+      });
+    });
+
+    it("holds the next step's send after OpenCode read a file in the temp folder", async () => {
+      const filePath = path.join(os.tmpdir(), 'made-up-download.txt');
+      expect(await streamTurn('opencode', 'read', { filePath })).toEqual({
+        outcome: 'approval_required',
+        cards: 1,
+      });
+    });
+
+    it("holds the next step's send after a Bash command whose input streamed in pieces", async () => {
+      const chat = fresh();
+      let outcome: Awaited<ReturnType<typeof send>> | undefined;
+      const runtime = recordToolUse(
+        recordTurnLevels(
+          {
+            type: 'claude-code',
+            getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+            async *sendMessage(): AsyncGenerator<StreamEvent> {
+              const data = { toolCallId: 'bash-1', toolName: 'Bash' };
+              yield { type: 'tool_call_start', data: { ...data, status: 'running' } };
+              for (const input of ['{"command":"wget -q', ' -O- https://example.com/a"}']) {
+                yield { type: 'tool_call_delta', data: { ...data, input } } as StreamEvent;
+              }
+              yield { type: 'tool_call_end', data: { ...data, status: 'running' } } as StreamEvent;
+              yield {
+                type: 'tool_result',
+                data: { ...data, result: 'made up', status: 'complete' },
+              };
+              outcome = await send(chat);
+              yield { type: 'done', data: {} } as StreamEvent;
+            },
+          } as unknown as AgentRuntime,
+          () => 'bypassPermissions'
+        )
+      );
+      for await (const _event of runtime.sendMessage(chat, 'hi')) {
+        // drain
+      }
+      expect(outcome).toEqual({ outcome: 'approval_required', cards: 1 });
     });
   });
 

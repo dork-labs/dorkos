@@ -16,18 +16,21 @@ vi.mock('../../../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-/** A config store holding just the `permissions` section. */
+/** A config store holding just the `permissions` and `harness` sections. */
 const store = vi.hoisted(() => ({
   permissions: {
     approvedFolderAllows: [] as string[],
     refusedFolderAllows: [] as string[],
   } as Record<string, unknown>,
+  harness: {} as Record<string, unknown>,
 }));
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'permissions' ? store.permissions : undefined),
+    get: (key: string) =>
+      key === 'permissions' ? store.permissions : key === 'harness' ? store.harness : undefined,
     set: (key: string, value: typeof store.permissions) => {
       if (key === 'permissions') store.permissions = value;
+      if (key === 'harness') store.harness = value;
     },
   },
 }));
@@ -56,9 +59,15 @@ import {
 } from '../apply-folder-allows.js';
 import {
   isFolderAllowListApproved,
+  lastApprovedRules,
   recordFolderAllowApproval,
   recordFolderAllowRefusal,
 } from '../folder-allow-consent.js';
+import { rememberPersonAlwaysAllow } from '../person-always-allow.js';
+import { watchFolderAllows } from '../../tool-gate/folder-file-allows.js';
+import { recordRepoConfigApproval } from '../../repo-settings/repo-config-consent.js';
+import { isRepoConfigApproved } from '../../repo-settings/repo-config-consent.js';
+import { readLocalSettings } from '../../repo-settings/repo-local-settings.js';
 import {
   _internal,
   askForFolderAllows,
@@ -86,6 +95,7 @@ function ownTurn(overrides: Partial<Parameters<typeof resolveFolderAllows>[0]> =
 beforeEach(async () => {
   home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'folder-allows-')));
   store.permissions = { approvedFolderAllows: [], refusedFolderAllows: [] };
+  store.harness = {};
   _internal.forgetOpenCards();
 });
 
@@ -279,6 +289,97 @@ describe('mergeFolderAllows', () => {
     });
     expect(options.allowedTools).toBeUndefined();
     expect(folderAllowsFromSettings(options.settings)).toEqual(['Bash(scripts/claim-check:*)']);
+  });
+});
+
+describe('a person’s Always allow (DOR-5237)', () => {
+  /** The batch Claude Code's own Always allow on a shell card forwards. */
+  const always = (command: string, destination: 'localSettings' | 'session' = 'localSettings') => [
+    {
+      type: 'addRules' as const,
+      behavior: 'allow' as const,
+      destination,
+      rules: [{ toolName: 'Bash', ruleContent: `${command} *` }],
+    },
+    { type: 'setMode' as const, mode: 'acceptEdits' as const, destination: 'session' as const },
+  ];
+  const turn = () => ({ agentId: AGENT.id, home, cwd: home, dorkHome: home });
+
+  it('joins the rules behind the agent’s yes in its home, so the next launch applies it', async () => {
+    recordFolderAllowApproval({ agentId: AGENT.id, home, rules: ['Bash(ls:*)'] });
+    rememberPersonAlwaysAllow(turn(), true, always('npm test'));
+    expect(lastApprovedRules(AGENT.id, home)).toEqual(['Bash(ls:*)', 'Bash(npm test *)']);
+    // Claude Code writes it to the local file; the next launch applies the list with no card.
+    await fs.mkdir(path.join(home, '.claude'), { recursive: true });
+    await fs.writeFile(
+      path.join(home, '.claude', 'settings.local.json'),
+      JSON.stringify({ permissions: { allow: ['Bash(ls:*)', 'Bash(npm test *)'] } })
+    );
+    expect((await ownTurn()).kind).toBe('applied');
+  });
+
+  it('never approves a rule the file already held that nobody approved', async () => {
+    await writeSettings({ permissions: { allow: ['Bash(curl:*)'] } });
+    rememberPersonAlwaysAllow(turn(), true, always('npm test'));
+    expect(lastApprovedRules(AGENT.id, home)).toEqual(['Bash(npm test *)']);
+    const next = await ownTurn();
+    expect(next.kind).toBe('waiting');
+  });
+
+  it('records nothing for a rule kept to the session, or one the list never passes', () => {
+    rememberPersonAlwaysAllow(turn(), true, always('npm test', 'session'));
+    rememberPersonAlwaysAllow(turn(), true, [
+      {
+        type: 'addRules',
+        behavior: 'allow',
+        destination: 'localSettings',
+        rules: [{ toolName: 'Bash' }],
+      },
+    ]);
+    expect(lastApprovedRules(AGENT.id, home)).toBeUndefined();
+  });
+
+  it('approves a worktree’s local file as it will read, when it was approved before', async () => {
+    const local = path.join(home, '.claude', 'settings.local.json');
+    await fs.mkdir(path.dirname(local), { recursive: true });
+    await fs.writeFile(local, JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] } }));
+    // Nobody approved the file as it stands: a yes to one rule is not a yes to the rest.
+    rememberPersonAlwaysAllow(turn(), false, always('npm test'));
+    await fs.writeFile(
+      local,
+      JSON.stringify({ permissions: { allow: ['Bash(ls:*)', 'Bash(npm test *)'] } })
+    );
+    expect(isRepoConfigApproved('local', readLocalSettings(home, home)!.digest)).toBe(false);
+    // From a file with nothing to approve, the person's rule is approved as it will be written.
+    await fs.writeFile(local, JSON.stringify({ spinnerTipsEnabled: false }));
+    rememberPersonAlwaysAllow(turn(), false, always('npm test'));
+    await fs.writeFile(
+      local,
+      JSON.stringify({ spinnerTipsEnabled: false, permissions: { allow: ['Bash(npm test *)'] } })
+    );
+    expect(isRepoConfigApproved('local', readLocalSettings(home, home)!.digest)).toBe(true);
+  });
+});
+
+describe('a workspace’s approved local settings (DOR-5237)', () => {
+  it('counts only the content a person approved, from the same read', async () => {
+    const local = path.join(home, '.claude', 'settings.local.json');
+    await fs.mkdir(path.dirname(local), { recursive: true });
+    await fs.writeFile(local, JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] } }));
+    recordRepoConfigApproval('local', readLocalSettings(home, home)!.digest);
+    const turn = {
+      agentId: undefined,
+      home: undefined,
+      cwd: home,
+      dorkHome: home,
+      launchAllows: [],
+      launchDirs: [],
+      userHome: path.join(home, 'person'),
+    };
+    const watch = watchFolderAllows(turn);
+    await fs.writeFile(local, JSON.stringify({ permissions: { allow: ['Bash(ls:*)', 'Bash'] } }));
+    expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(false);
+    expect(await watch.mustAsk('Bash', { command: 'touch probe-file' })).toBe(true);
   });
 });
 

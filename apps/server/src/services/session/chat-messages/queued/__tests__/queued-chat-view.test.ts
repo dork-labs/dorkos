@@ -148,6 +148,7 @@ describe('the queue a person reads', () => {
     const stored: QueuedMessageRecord = {
       ...chatRow(fenced('Please hold PR #12.')),
       position: 1,
+      inTurn: false,
       context: null,
       heldToDefault: false,
       carriedLimits: null,

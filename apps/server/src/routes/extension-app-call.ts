@@ -21,22 +21,15 @@ import {
   type AppRouteMethod,
   type ExtensionManifest,
 } from '@dorkos/extension-api';
+import { problem } from '@dorkos/http-kit';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import {
-  CALLER_TOKEN_HEADER,
-  CALLER_TOKEN_INVALID,
-  isNotAWindow,
-  resolveCallerToken,
-} from './extension-caller-token.js';
+import { CALLER_TOKEN_HEADER, isNotAWindow, resolveCallerToken } from './extension-caller-token.js';
 import { EXTENSION_ID_HEADER } from './extension-write-binding.js';
 
 /** The header naming the app a call came from. Only the host sets it. */
 export const CALLER_APP_HEADER = 'x-dorkos-caller-app';
-
-/** The code a refused call answers with. */
-export const APP_CALL_REFUSED = 'app_call_refused';
 
 /** What this check reads about each app, from the extension manager. */
 export interface AppCallRecords {
@@ -98,10 +91,7 @@ export function refusedAppCall(
   if (token === undefined) return refuse(c, targetId, claimed!, 'no-token');
   const callerId = resolveCallerToken(token, facts);
   if (callerId === null) {
-    return c.json(
-      { error: 'Ask for a new caller token.', code: CALLER_TOKEN_INVALID, reason: 'token' },
-      403
-    );
+    return problem(c, 'caller_token_invalid', { detail: 'Ask for a new caller token.' });
   }
   if ((named !== undefined && named !== callerId) || (stamp !== undefined && stamp !== callerId)) {
     return refuse(c, targetId, callerId, 'mismatch');
@@ -158,7 +148,8 @@ function refuse(
       reason: reason as AppCallRefusal,
     });
   }
-  return c.json({ error: REFUSAL_TEXT[reason], code: APP_CALL_REFUSED, reason }, 403);
+  // The sentence names the rule, for the calling app's maker; the audit line keeps its word.
+  return problem(c, 'forbidden', { detail: REFUSAL_TEXT[reason] });
 }
 
 /** Record one call between apps, allowed or refused, with both ids. */

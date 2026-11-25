@@ -97,8 +97,11 @@ const SAVED = z.object({ success: z.literal(true), config: z.object({}).loose() 
 const OPERATOR_ONLY = (paths: string[]) =>
   z
     .object({
-      error: z.literal('Only a person can change those settings'),
-      code: z.literal('operator_only_config'),
+      type: z.literal('urn:dorkos:problem:person_only'),
+      title: z.string(),
+      status: z.literal(403),
+      detail: z.literal('Only a person can change those settings'),
+      code: z.literal('person_only'),
       paths: z.array(z.string()).refine((have) => have.join() === paths.join()),
       message: z.string(),
     })
@@ -115,14 +118,14 @@ const DOC_METRICS_FORBIDDEN = {
   code: 'DOC_METRICS_FORBIDDEN',
   error: 'Only the owner can read document metrics.',
 };
-const DOC_NOT_FOUND = {
-  error: 'The document is not available.',
-  code: 'CANVAS_DOCUMENT_NOT_FOUND',
-};
-const DOC_EVENT_TOO_LARGE = {
-  error: 'The document event is too large.',
-  code: 'DOC_EVENT_TOO_LARGE',
-};
+const DOC_NOT_FOUND = problemBody('not_found', { detail: 'The document is not available.' });
+const DOC_EVENT_TOO_LARGE = problemBody('request_too_large', {
+  detail: 'The document event is too large. Send a smaller one.',
+});
+/** A document query or event id the routes refuse: one code, the sentence says it. */
+const DOC_QUERY_REFUSED = problemBody('invalid_request', {
+  detail: 'The document event or query is not valid.',
+});
 const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
 const RESET_TOKEN_REQUIRED = {
   error:
@@ -233,14 +236,22 @@ contractSuite(
       name: 'PATCH /api/config with no body fails as it always has',
       method: 'PATCH',
       path: '/api/config',
-      expect: { status: 500, headers: JSON_TYPE, body: { error: 'Internal server error' } },
+      expect: {
+        status: 500,
+        headers: PROBLEM_TYPE,
+        body: problemBody('internal_error', { detail: 'The settings weren’t saved. Try again.' }),
+      },
     },
     {
       name: 'PATCH /api/config refuses a body that is not an object',
       method: 'PATCH',
       path: '/api/config',
       body: [1],
-      expect: { status: 400, body: { error: 'Request body must be a JSON object' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'Request body must be a JSON object' }),
+      },
     },
     {
       name: 'PATCH /api/config refuses malformed JSON in the chain',
@@ -264,7 +275,7 @@ contractSuite(
       path: '/api/config',
       headers: AGENT,
       body: { auth: { enabled: false } },
-      expect: { status: 403, headers: JSON_TYPE, schema: OPERATOR_ONLY(['auth.enabled']) },
+      expect: { status: 403, headers: PROBLEM_TYPE, schema: OPERATOR_ONLY(['auth.enabled']) },
     },
     {
       name: 'PATCH /api/config refuses an approval token the same way',
@@ -295,7 +306,9 @@ contractSuite(
       body: {},
       expect: {
         status: 400,
-        body: { error: 'Body must include a non-empty "value" string' },
+        body: problemBody('invalid_request', {
+          detail: 'Send the agent’s name as a non-empty `value`.',
+        }),
       },
     },
     {
@@ -304,7 +317,9 @@ contractSuite(
       path: '/api/config/agents/defaultAgent',
       expect: {
         status: 400,
-        body: { error: 'Body must include a non-empty "value" string' },
+        body: problemBody('invalid_request', {
+          detail: 'Send the agent’s name as a non-empty `value`.',
+        }),
       },
     },
     {
@@ -382,26 +397,44 @@ contractSuite(
       path: '/api/mcp-config',
       expect: {
         status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'Missing required query param: path' },
+        headers: PROBLEM_TYPE,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.literal('Send the folder as `path`.'),
+          })
+          .loose(),
       },
     },
     {
       name: 'GET /api/mcp-config refuses a repeated path',
       path: '/api/mcp-config?path=a&path=b',
-      expect: { status: 400, body: { error: 'Missing required query param: path' } },
+      expect: {
+        status: 400,
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.literal('Send the folder as `path`.'),
+          })
+          .loose(),
+      },
     },
     {
       name: 'GET /api/mcp-config refuses a runtime this server does not run',
       path: '/api/mcp-config?path=.&runtime=nope',
-      expect: { status: 400, body: { error: 'Unknown runtime: nope' } },
+      expect: {
+        status: 400,
+        body: problemBody('invalid_request', { detail: 'There is no runtime by that name.' }),
+      },
     },
     {
       name: 'GET /api/mcp-config refuses a path outside the boundary',
       path: '/api/mcp-config?path=/etc',
       expect: {
         status: 403,
-        body: { error: 'Access denied: path outside directory boundary', code: 'OUTSIDE_BOUNDARY' },
+        body: problemBody('outside_boundary', {
+          detail: 'Pick a folder inside the ones DorkOS may use.',
+        }),
       },
     },
     // feedback
@@ -469,7 +502,7 @@ contractSuite(
       method: 'POST',
       path: '/api/canvas/docs/doc-1/events',
       body: {},
-      expect: { status: 404, headers: JSON_TYPE, body: DOC_NOT_FOUND },
+      expect: { status: 404, headers: PROBLEM_TYPE, body: DOC_NOT_FOUND },
     },
     {
       name: 'POST /api/canvas/docs/:id/events refuses malformed JSON with its own words',
@@ -479,8 +512,10 @@ contractSuite(
       body: '{bad',
       expect: {
         status: 400,
-        headers: JSON_TYPE,
-        body: { error: 'The document event is not valid.', code: 'INVALID_DOC_EVENT' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('malformed_request', {
+          detail: 'The document event is not valid JSON.',
+        }),
       },
     },
     {
@@ -489,7 +524,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events',
       headers: { 'content-type': 'application/json' },
       body: ABOVE_DOC_EVENT_LIMIT,
-      expect: { status: 413, headers: JSON_TYPE, body: DOC_EVENT_TOO_LARGE },
+      expect: { status: 413, headers: PROBLEM_TYPE, body: DOC_EVENT_TOO_LARGE },
     },
     {
       name: 'POST /api/canvas/docs/:id/events takes a body just inside the limit',
@@ -507,7 +542,9 @@ contractSuite(
       body: {},
       expect: {
         status: 401,
-        body: { error: 'Sign in or use a valid agent token.', code: 'AGENT_IDENTITY_UNVERIFIED' },
+        body: problemBody('agent_identity_unverified', {
+          detail: 'Sign in or use a valid agent token.',
+        }),
       },
     },
     {
@@ -535,7 +572,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?since=abc',
       expect: {
         status: 400,
-        body: { error: 'The document event or query is not valid.', code: 'INVALID_DOC_QUERY' },
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -543,7 +580,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/channel?other=1',
       expect: {
         status: 400,
-        body: { error: 'The document event or query is not valid.', code: 'INVALID_DOC_QUERY' },
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -551,10 +588,7 @@ contractSuite(
       path: '/api/canvas/docs/doc-1/events/not-an-id',
       expect: {
         status: 400,
-        body: {
-          error: 'The document event or query is not valid.',
-          code: 'INVALID_DOC_EVENT_ID',
-        },
+        body: DOC_QUERY_REFUSED,
       },
     },
     {
@@ -599,7 +633,11 @@ contractSuite(
     {
       name: 'GET /api/debug/sessions/:id refuses an id that is not one',
       path: '/api/debug/sessions/not-a-uuid',
-      expect: { status: 400, body: { error: 'Invalid session ID', code: 'INVALID_SESSION_ID' } },
+      expect: {
+        status: 400,
+        headers: PROBLEM_TYPE,
+        body: problemBody('invalid_request', { detail: 'That isn’t a chat id.' }),
+      },
     },
     {
       name: 'GET /api/debug/sessions/:id answers a session nothing has bound',
@@ -620,7 +658,11 @@ contractSuite(
       name: 'GET /api/debug/sessions/:id hides a session from an agent that may not read it',
       path: `/api/debug/sessions/${UUID}`,
       headers: AGENT,
-      expect: { status: 404, body: { error: 'Session not found', code: 'SESSION_NOT_FOUND' } },
+      expect: {
+        status: 404,
+        headers: PROBLEM_TYPE,
+        body: problemBody('session_not_found', { detail: 'No chat with that id.' }),
+      },
     },
     {
       name: 'GET /api/debug/rooms/:id/bindings answers a room with none',
@@ -1567,13 +1609,14 @@ describe('contract: the same groups with login on', () => {
       body: { auth: { enabled: false } },
       expect: {
         status: 403,
-        body: {
-          error: 'Only a person can change those settings',
-          code: 'operator_cookie_required',
-          paths: ['auth.enabled'],
-          message:
-            'Only a person signed in to DorkOS can change the settings that protect this instance',
-        },
+        body: problemBody('person_only', {
+          detail: 'Only a person can change those settings',
+          extensions: {
+            paths: ['auth.enabled'],
+            message:
+              'Only a person signed in to DorkOS can change the settings that protect this instance',
+          },
+        }),
       },
     });
     await check(server, {
@@ -1593,10 +1636,10 @@ describe('contract: the same groups with login on', () => {
         headers: cookie,
         expect: {
           status: 409,
-          body: {
-            error:
-              'The local MCP token works only on this computer when it asks for no password. Clients elsewhere use their personal API keys.',
-          },
+          body: problemBody('conflict', {
+            detail:
+              'The local token works only on this computer without a password. Use an API key.',
+          }),
         },
       });
     }

@@ -33,6 +33,90 @@ github_repo: dork-labs/dorkos
 data_tag_prefix: ci-steward-data/
 data_tag_ruleset_id: 23705388
 
+# Publishing only from a gated ref, in structure (DOR-4030). In these
+# workflows:
+#   - a job that names one of `environments` (or names its environment with an
+#     expression, which counts as naming one) must open its job-level `if:`
+#     with `dispatch_condition`, and its first step must refuse any run that is
+#     not this file's copy on main (GITHUB_WORKFLOW_REF). On a tag push or a
+#     branch run GitHub runs that ref's copy of the file, which could drop any
+#     check in it, so only main's copy may ask to enter those environments;
+#   - any other job whose GITHUB_TOKEN may write contents or packages must
+#     open its `if:` with `condition` (a `v*` tag push: publish-community.yml,
+#     until its release identity moves to main in its own PR) or with
+#     `dispatch_condition`, and on the dispatch refuse any copy but main's too.
+# Never a top-level `||` after either. The census refuses a job that breaks
+# one. This is not the lock (the environments' reviewer and deployment refs
+# are); it keeps a later edit from quietly dropping the gate.
+tag_gate:
+  workflows:
+    - desktop-release.yml
+    - publish-docker.yml
+    - publish-community.yml
+    - update-homebrew.yml
+  environments:
+    - release
+    - release-mirrors
+  condition: startsWith(github.ref, 'refs/tags/v')
+  dispatch_condition: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+
+# Secrets that live only in a deployment environment (DOR-4030), so a workflow
+# on any other ref cannot read them. The collector checks each environment
+# daily and goes red when it is gone, lets admins bypass its rules (it must be
+# off on every one), deploys any ref other than exactly `refs`, needs any
+# reviewer list other than exactly `reviewers` (empty means no reviewer rule
+# at all), or has "Prevent self-review" set other than `prevent_self_review`.
+# A token that may not read an environment is red too: nobody checked.
+#
+# It also goes red when one of `secrets` is back at repository level. That
+# read needs Secrets: read, which the collector is deliberately NOT given (PM,
+# 2026-11-19): without it the check is reported as not checked, never as red
+# and never as a pass, and Security owns it. The census refuses a job that
+# reads one of these secrets without naming its environment. Names and
+# settings only, never values.
+#
+# `prevent_self_review` is false on all three for the pilot: Dorian is both
+# the one who dispatches a release and its only reviewer, and with it on he
+# could not approve his own run. It becomes true on `release` and
+# `release-mirrors` once DOR-4036's approver account is the reviewer, so whoever
+# starts a run can never approve it.
+secret_environments:
+  # Signing: main's own copy of desktop-release.yml, dispatched on main. Never
+  # a tag or another branch: those run their own copy of the workflow.
+  - name: release
+    reviewers: [doriancollier]
+    prevent_self_review: false # true once DOR-4036's approver account is the reviewer
+    refs:
+      - { name: main, type: branch }
+    secrets:
+      - CSC_LINK
+      - CSC_KEY_PASSWORD
+      - APPLE_ID
+      - APPLE_APP_SPECIFIC_PASSWORD
+  # Publishing to Docker Hub and the Homebrew tap: main's own copy of
+  # publish-docker.yml and update-homebrew.yml, dispatched on main.
+  - name: release-mirrors
+    reviewers: [doriancollier]
+    prevent_self_review: false # true once DOR-4036's approver account is the reviewer
+    refs:
+      - { name: main, type: branch }
+    secrets:
+      - HOMEBREW_TAP_TOKEN
+      - DOCKERHUB_TOKEN
+      - DOCKERHUB_USERNAME
+  # The merge-tail App key and the Neon key: main's own workflow copy only,
+  # never a merge-queue ref (that holds the pull request's copy). No reviewer:
+  # these run unattended.
+  - name: automation
+    reviewers: []
+    prevent_self_review: false
+    refs:
+      - { name: main, type: branch }
+    secrets:
+      - MERGE_TAIL_APP_CLIENT_ID
+      - MERGE_TAIL_APP_PRIVATE_KEY
+      - NEON_API_KEY
+
 # The "main: merge queue" ruleset: the only source of required checks since
 # classic branch protection was deleted on 2026-09-19. `rules` names the rule
 # and setting gates recorded as `ruleset.<rule>` in ci/gates.yaml; the
@@ -249,6 +333,7 @@ canary:
     operating-skills-version-check.yml: Compares the seeded skill pack's version against the base branch's; on main there is no base branch to outrank.
     db-check.yml: Fails when a Drizzle schema change ships without its migration, which is a property of a diff and not of a tree.
     docs-openapi-check.yml: Regenerates docs/api from the committed schemas and diffs the result, a pure function of the tree; the queue runs it against the exact tree main receives, so a scheduled rerun could only repeat that verdict.
+    codex-binary-macos.yml: Its push-to-main leg runs the macOS Codex suites against every merge that can reach them, and after-merge-alert.yml tells the author when it is red; a scheduled rerun of an unchanged tree on a macOS runner would add cost and nothing else.
     scripts-test.yml: Its push-to-main leg already runs fixtures against every commit that lands on main (and harness whenever the commit is in scope), which is what a canary would add.
 
 # The verdict engine (ci-steward verdicts, plan §4.4).

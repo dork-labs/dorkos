@@ -36,13 +36,13 @@ function refusal(code: string, message: string) {
  * cannot drift into sentences DorkOS no longer says.
  */
 const HANDLE_REFUSALS: { code: string; server: string }[] = [
-  { code: 'HANDLE_TAKEN', server: '@scout is taken. Pick a different one.' },
-  { code: 'HANDLE_RESERVED', server: '@scout is reserved for DorkOS. Pick a different one.' },
+  { code: 'handle_taken', server: '@scout is taken. Pick a different one.' },
+  { code: 'handle_reserved', server: '@scout is reserved for DorkOS. Pick a different one.' },
   {
-    code: 'HANDLE_LOOKALIKE',
+    code: 'handle_lookalike',
     server: '@sc0ut looks too much like @scout. Pick a different one.',
   },
-  { code: 'INVALID_HANDLE', server: 'A handle is all lowercase.' },
+  { code: 'invalid_handle', server: 'A handle is all lowercase.' },
 ];
 
 /** Everything Settings › Profile needs: a transport for its saves, and a cache. */

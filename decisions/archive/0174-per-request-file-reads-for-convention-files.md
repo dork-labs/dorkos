@@ -1,7 +1,7 @@
 ---
 number: 174
 title: Per-Request File Reads for Convention Files
-status: draft
+status: archived
 created: 2026-03-22
 spec: agent-personality-convention-files
 superseded-by: null

@@ -1,49 +1,73 @@
 /**
- * `GET /api/sessions/running` (DOR-3460): who the route reads as. The read
- * itself is under test in `services/session/running-chats/__tests__/running-chats.test.ts`.
+ * `GET /api/sessions/running` (DOR-3460), served by the capability mount from
+ * `audit.running_chats`: who the route reads as. The read itself is under test
+ * in `services/session/running-chats/__tests__/running-chats.test.ts`.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-
-const listRunningChats = vi.fn();
-vi.mock('../../services/session/running-chats/running-chats.js', () => ({
-  listRunningChats: (...args: unknown[]) => listRunningChats(...args),
-}));
+import { createTestDb } from '@dorkos/test-utils/db';
+import { noopLogger } from '@dorkos/shared/logger';
+import type { SessionStatus } from '@dorkos/shared/session-stream';
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => null), set: vi.fn() },
 }));
 
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { createRunningChatsRoutes } from '../running-chats.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { auditDomain } from '../../services/audit/audit-capabilities.js';
+import { AuditLog } from '../../services/audit/audit-log.js';
+import type { RunningChatSources } from '../../services/session/running-chats/running-chats.js';
+import { createCapabilityHttpRoutes } from '../capability-http.js';
 
-const EMPTY = { total: 0, agents: [], unassigned: { count: 0, privateCount: 0, chats: [] } };
-const roster = { listWithPaths: () => [] } as never;
+/** One live chat nobody's agent is bound to. */
+const runningChatSources: RunningChatSources = {
+  statuses: () => [
+    {
+      sessionId: 'chat-1',
+      cwd: '/projects/scratch',
+      status: { lifecycle: 'streaming' } as unknown as SessionStatus,
+    },
+  ],
+  needsYou: () => false,
+  agentPathOf: async () => null,
+  titleOf: async () => 'Plan the launch',
+  starterOf: () => null,
+};
 
 const target = swappableServer();
 
 function listener() {
+  const registry = composeRegistry([auditDomain], {
+    logger: noopLogger,
+    auditDeps: { log: new AuditLog(createTestDb()), runningChatSources },
+  });
   return target.mount(
     honoGroupListener({
-      path: '/api/sessions/running',
-      routes: createRunningChatsRoutes({ meshCore: roster }),
+      path: '/',
+      routes: createCapabilityHttpRoutes({
+        registry: () => registry,
+        capabilities: auditDomain.capabilities,
+      }),
     })
   );
 }
 
 describe('GET /api/sessions/running', () => {
-  beforeEach(() => {
-    listRunningChats.mockReset();
-    listRunningChats.mockResolvedValue(EMPTY);
-  });
-
-  it('reads as the owner for a person, and answers the read', async () => {
+  it('reads as the owner for a person, who sees the chat by name', async () => {
     const response = await request(listener()).get('/api/sessions/running');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(EMPTY);
-    expect(listRunningChats).toHaveBeenCalledWith(roster, { kind: 'owner' });
+    expect(response.body).toMatchObject({
+      total: 1,
+      agents: [],
+      unassigned: {
+        count: 1,
+        privateCount: 0,
+        chats: [expect.objectContaining({ id: 'chat-1', title: 'Plan the launch' })],
+      },
+    });
   });
 
   it('reads as an agent for a caller presenting an agent header it cannot name', async () => {
@@ -51,10 +75,12 @@ describe('GET /api/sessions/running', () => {
       .get('/api/sessions/running')
       .set('X-DorkOS-Agent', 'nobody');
 
+    // An agent never reads a chat nobody said it may: counted, never named.
     expect(response.status).toBe(200);
-    expect(listRunningChats).toHaveBeenCalledWith(roster, {
-      kind: 'agent',
-      accountId: 'unidentified',
+    expect(response.body).toMatchObject({
+      total: 1,
+      unassigned: { count: 1, privateCount: 1, chats: [] },
     });
+    expect(JSON.stringify(response.body)).not.toContain('Plan the launch');
   });
 });

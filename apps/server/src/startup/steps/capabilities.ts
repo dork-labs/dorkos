@@ -13,6 +13,9 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
 import { logger } from '../../lib/logger.js';
 import { auditCapabilityDeps } from '../../services/audit/index.js';
+import { createDorkLinkLookups } from '../../services/core/links/link-lookups.js';
+import { callerAuthor } from '../../services/rooms/service/room-caller-author.js';
+import { sessionExists } from '../../services/session/launch/session-exists.js';
 import { AgentCompactionService } from '../../services/session/agent-compaction/agent-compaction-service.js';
 import * as heartbeats from '../../services/heartbeats/index.js';
 import {
@@ -202,6 +205,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // An agent's approved `change_permission` writes through the same owner
       // Settings does (spec `agent-permissions` D9).
       permissionService,
+      // The Activity feed is on every server, whatever runtimes started.
+      activityDeps: { activityService },
       ...(refs.mcpToolDeps && { operatorDeps: refs.mcpToolDeps }),
       ...(refs.marketplaceMcpDeps && { marketplaceDeps: refs.marketplaceMcpDeps }),
       // Ordinary MCP surfaces expose only provider-neutral discovery. Private
@@ -250,11 +255,26 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // Built here, once: its once-an-hour budget must outlive the per-session
       // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
-      auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
+      auditDeps: {
+        ...auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
+        // `running_chats` lists every agent, zero included, whatever runtimes started.
+        roster: () => refs.meshCore,
+      },
       // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
       agentPauseDeps: { pauses: agentPauses },
       // `approvals.withdraw`: an agent takes back its own waiting request (DOR-4586).
       approvalWithdrawDeps: { db },
+      // `link.resolve`: what a `/r/<dork-uri>` link opens, for the caller (DOR-5046).
+      linkDeps: {
+        lookups: createDorkLinkLookups({
+          db,
+          rooms: roomService,
+          roomCaller: (context) => callerAuthor(roomService, context),
+          accounts: auditAccounts,
+          chatExists: (sessionId) => sessionExists(sessionId),
+          agents: { get: (agentId) => refs.meshCore?.get(agentId) },
+        }),
+      },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its

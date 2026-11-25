@@ -50,11 +50,15 @@ import {
   resolveRepoConfigForLaunch,
 } from '../../repo-settings/launch-repo-config.js';
 import { recordRepoConfigApproval } from '../../repo-settings/repo-config-consent.js';
-import { pinRepoBaseline } from '../../repo-settings/repo-baseline.js';
+import { pinRepoBaseline, resolveRepoBaseline } from '../../repo-settings/repo-baseline.js';
+import { readRepoConfig } from '../../repo-settings/repo-config-parts.js';
 import { readLocalSettings } from '../../repo-settings/repo-local-settings.js';
+import { settingsFolders } from '../../tool-gate/folder-settings-files.js';
 import {
+  git,
   isolateGitEnv,
   makeRepo,
+  makeSubmodule,
   writeFile,
   type RepoFixture,
 } from '../../repo-settings/__tests__/git-fixture.js';
@@ -229,18 +233,19 @@ async function runTurn(options: Options): Promise<void> {
   }
 }
 
-/** The options DorkOS would launch this worktree with now. */
-async function dorkosOptions(): Promise<{
+/** The options DorkOS would launch a folder (this worktree unless named) with now. */
+async function dorkosOptions(cwd = worktree): Promise<{
   options: Options;
   decision: Awaited<ReturnType<typeof resolveRepoConfigForLaunch>>;
 }> {
   const decision = await resolveRepoConfigForLaunch({
     agentName: 'Ops',
     home: undefined,
-    cwd: worktree,
+    cwd,
     dorkHome: DORK_HOME,
+    userHome: repo.root,
   });
-  const options = baseOptions();
+  const options = { ...baseOptions(), cwd };
   applyRepoConfigToLaunch(options, decision);
   return { options, decision };
 }
@@ -297,6 +302,273 @@ describe.skipIf(BINARY === null)('repo settings switches on the real CLI', () =>
       await runTurn(options);
       expect(ran('local-ran')).toBe(true);
     }, 60_000);
+  });
+
+  // DOR-5238: every local settings file the launch loads, wherever the turn stands.
+  describe('local settings in every folder the launch reads', () => {
+    const mark = (name: string) => path.join(repo.root, name);
+    const marked = (name: string) => fs.existsSync(mark(name));
+    /** A local settings file whose hook leaves `name` behind when it runs. */
+    const hookAt = (
+      folder: string,
+      name: string,
+      command = `touch ${JSON.stringify(mark(name))}`
+    ) =>
+      writeFile(path.join(folder, '.claude/settings.local.json'), {
+        hooks: { PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command }] }] },
+      });
+    const at = (where: string) => path.join(repo.root, where);
+
+    beforeEach(() => {
+      fs.mkdirSync(path.join(repo.main, 'sub'), { recursive: true });
+      fs.mkdirSync(path.join(worktree, 'sub'), { recursive: true });
+    });
+    afterEach(() => {
+      for (const name of ['local-hook-ran', 'local-env-ran', 'wt-hook-ran', 'script-ran']) {
+        fs.rmSync(mark(name), { force: true });
+      }
+    });
+
+    it.each(['repo/sub', 'wt', 'wt/sub'])(
+      'a hook runs at %s with every source loaded (the control), and not on the next turn',
+      async (where) => {
+        hookAt(repo.main, 'local-hook-ran');
+        await runTurn({ ...baseOptions(), cwd: at(where) });
+        expect(marked('local-hook-ran')).toBe(true);
+        fs.rmSync(mark('local-hook-ran'));
+        const { options, decision } = await dorkosOptions(at(where));
+        expect(decision.dropLocal).toBe(true);
+        await runTurn(options);
+        expect(marked('local-hook-ran')).toBe(false);
+        expect(fs.existsSync(path.join(at(where), 'probe'))).toBe(true);
+      },
+      120_000
+    );
+
+    it.each(['repo/sub', 'wt/sub'])(
+      'runs at %s once a person approved exactly that content',
+      async (where) => {
+        hookAt(repo.main, 'local-hook-ran');
+        recordRepoConfigApproval(
+          'local',
+          readLocalSettings(repo.main, DORK_HOME, at(where))!.digest
+        );
+        const { options, decision } = await dorkosOptions(at(where));
+        expect(decision.dropLocal).toBe(false);
+        await runTurn(options);
+        expect(marked('local-hook-ran')).toBe(true);
+      },
+      60_000
+    );
+
+    it('applies its env with every source loaded (the control), and not on the next turn', async () => {
+      const bin = path.join(repo.root, 'made-up-bin');
+      fs.mkdirSync(bin, { recursive: true });
+      fs.writeFileSync(
+        path.join(bin, 'touch'),
+        `#!/bin/sh\n: > ${JSON.stringify(mark('local-env-ran'))}\n`
+      );
+      fs.chmodSync(path.join(bin, 'touch'), 0o755);
+      writeFile(path.join(repo.main, '.claude/settings.local.json'), {
+        env: { PATH: `${bin}:${process.env.PATH ?? ''}` },
+      });
+      await runTurn({ ...baseOptions(), cwd: worktree });
+      expect(marked('local-env-ran')).toBe(true);
+      fs.rmSync(mark('local-env-ran'));
+      const { options, decision } = await dorkosOptions(worktree);
+      expect(decision.dropLocal).toBe(true);
+      await runTurn(options);
+      expect(marked('local-env-ran')).toBe(false);
+    }, 120_000);
+
+    it('pins a folder whose local settings do not load', async () => {
+      hookAt(worktree, 'wt-hook-ran');
+      const sub = path.join(worktree, 'sub');
+      await runTurn({ ...baseOptions(), cwd: sub });
+      expect(marked('wt-hook-ran')).toBe(false);
+      expect(fs.existsSync(path.join(sub, 'probe'))).toBe(true);
+      expect((await dorkosOptions(sub)).decision.dropLocal).toBe(false);
+    }, 60_000);
+
+    it('pins where a script it names runs', async () => {
+      hookAt(repo.main, 'script-ran', 'sh tools/mark.sh');
+      writeFile(
+        path.join(worktree, 'tools/mark.sh'),
+        `touch ${JSON.stringify(mark('script-ran'))}\n`
+      );
+      await runTurn({ ...baseOptions(), cwd: worktree });
+      expect(marked('script-ran')).toBe(true);
+    }, 60_000);
+
+    it.each([
+      ['names a git folder that is missing', 'gitdir: nowhere\n'],
+      ['has no gitdir line', 'not a pointer\n'],
+      ['is empty', ''],
+      ['leads to a shared folder not named .git', 'gitdir: store/worktrees/w\n'],
+    ])(
+      'a hook in the top’s file runs below a .git file that %s (the control), and not from an agent home there',
+      async (_label, pointer) => {
+        const top = path.join(repo.root, 'broken');
+        const home = path.join(top, 'agent');
+        fs.mkdirSync(path.join(top, 'store', 'worktrees', 'w'), { recursive: true });
+        fs.writeFileSync(path.join(top, 'store', 'worktrees', 'w', 'commondir'), '../..\n');
+        fs.mkdirSync(home, { recursive: true });
+        fs.writeFileSync(path.join(top, '.git'), pointer);
+        hookAt(top, 'local-hook-ran');
+        await runTurn({ ...baseOptions(), cwd: home });
+        expect(marked('local-hook-ran')).toBe(true);
+        fs.rmSync(mark('local-hook-ran'));
+        const decision = await resolveRepoConfigForLaunch({
+          agentName: 'Ops',
+          home,
+          cwd: home,
+          dorkHome: DORK_HOME,
+          userHome: repo.root,
+        });
+        expect(decision.dropLocal).toBe(true);
+        const options = { ...baseOptions(), cwd: home };
+        applyRepoConfigToLaunch(options, decision);
+        await runTurn(options);
+        expect(marked('local-hook-ran')).toBe(false);
+        expect(fs.existsSync(path.join(home, 'probe'))).toBe(true);
+      },
+      120_000
+    );
+
+    /** A repo whose git folder is kept outside it: a submodule, or one made with a separate git dir. */
+    function gitElsewhere(kind: 'submodule' | 'separate'): string {
+      if (kind === 'separate') {
+        const top = path.join(repo.root, 'kept');
+        fs.mkdirSync(top, { recursive: true });
+        git(top, [
+          'init',
+          '-q',
+          '-b',
+          'main',
+          '--separate-git-dir',
+          path.join(repo.root, 'store.git'),
+        ]);
+        return top;
+      }
+      const lib = path.join(repo.root, 'lib');
+      fs.mkdirSync(lib, { recursive: true });
+      git(lib, ['init', '-q', '-b', 'main']);
+      writeFile(path.join(lib, 'a.txt'), 'x');
+      git(lib, ['add', '-A']);
+      git(lib, ['commit', '-q', '-m', 'lib']);
+      const sup = path.join(repo.root, 'super');
+      fs.mkdirSync(sup, { recursive: true });
+      git(sup, ['init', '-q', '-b', 'main']);
+      git(sup, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'sm']);
+      git(sup, ['commit', '-q', '-m', 'sm']);
+      return path.join(sup, 'sm');
+    }
+
+    /** The folders holding a local settings file under `dir`, git folders left out. */
+    function localFilesUnder(dir: string): string[] {
+      const found: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory() && entry.name !== '.git') found.push(...localFilesUnder(full));
+        else if (entry.name === 'settings.local.json') found.push(path.dirname(dir));
+      }
+      return found;
+    }
+
+    it.each(['submodule', 'separate'] as const)(
+      'a hook runs in a %s repo with every source loaded (the control), and not on the next turn',
+      async (kind) => {
+        const top = gitElsewhere(kind);
+        const cwd = path.join(top, 'x');
+        fs.mkdirSync(cwd, { recursive: true });
+        hookAt(top, 'local-hook-ran');
+        await runTurn({ ...baseOptions(), cwd });
+        expect(marked('local-hook-ran')).toBe(true);
+        fs.rmSync(mark('local-hook-ran'));
+        const { options, decision } = await dorkosOptions(cwd);
+        expect(decision.dropLocal).toBe(true);
+        await runTurn(options);
+        expect(marked('local-hook-ran')).toBe(false);
+        expect(fs.existsSync(path.join(cwd, 'probe'))).toBe(true);
+      },
+      120_000
+    );
+
+    it.each(['submodule', 'separate', 'submodule worktree'] as const)(
+      'pins where a person’s Always allow lands, in a %s',
+      async (kind) => {
+        let top = gitElsewhere(kind === 'separate' ? 'separate' : 'submodule');
+        if (kind === 'submodule worktree') {
+          git(top, ['worktree', 'add', '-q', '-b', 'smw', path.join(repo.root, 'smwt'), 'HEAD']);
+          top = path.join(repo.root, 'smwt');
+        }
+        const cwd = path.join(top, 'x');
+        fs.mkdirSync(cwd, { recursive: true });
+        await runTurn({
+          ...baseOptions(),
+          cwd,
+          permissionMode: 'default',
+          allowDangerouslySkipPermissions: false,
+          canUseTool: async (_tool, input, context) => ({
+            behavior: 'allow',
+            updatedInput: input,
+            updatedPermissions: context.suggestions,
+          }),
+        });
+        const landed = localFilesUnder(path.dirname(top));
+        expect(landed).toEqual([settingsFolders(cwd, repo.root).alwaysAllowFolder]);
+        expect(landed).toEqual([kind === 'submodule worktree' ? cwd : top]);
+      },
+      120_000
+    );
+  });
+
+  // DOR-5244: a submodule's own default branch is what its committed hooks are compared against.
+  describe('committed hooks in a submodule', () => {
+    const SCRIPT = (name: string) => `touch "$CLAUDE_PROJECT_DIR/${name}"\n`;
+
+    /** `x` in a submodule (or a worktree of one), committing a hook that runs a script. */
+    function hooksIn(where: 'sm/x' | 'smwt/x'): string {
+      const sm = makeSubmodule(repo.root, {
+        'x/.claude/settings.json': GUARD_SETTINGS,
+        'x/.claude/hooks/guard.sh': SCRIPT('guard-ran'),
+        '.gitignore': '*-ran\nprobe\n',
+      });
+      return path.join(where === 'sm/x' ? sm.top : sm.addWorktree('smwt'), 'x');
+    }
+
+    it.each(['sm/x', 'smwt/x'] as const)(
+      'runs at %s when it matches the trusted commit, waits when edited, and runs once approved',
+      async (where) => {
+        const cwd = hooksIn(where);
+        const ranHere = (name: string) => fs.existsSync(path.join(cwd, name));
+        await runTurn({ ...baseOptions(), cwd });
+        expect(ranHere('guard-ran')).toBe(true);
+        fs.rmSync(path.join(cwd, 'guard-ran'));
+
+        expect(await pinRepoBaseline(cwd)).toBe(true);
+        const clean = await dorkosOptions(cwd);
+        expect(clean.decision).toMatchObject({ dropLocal: false, pauseHooks: false });
+        await runTurn(clean.options);
+        expect(ranHere('guard-ran')).toBe(true);
+
+        writeFile(path.join(cwd, '.claude/hooks/guard.sh'), SCRIPT('edited-ran'));
+        const paused = await dorkosOptions(cwd);
+        expect(paused.decision.pauseHooks).toBe(true);
+        await runTurn(paused.options);
+        expect(ranHere('edited-ran')).toBe(false);
+        expect(ranHere('probe')).toBe(true);
+
+        const baseline = await resolveRepoBaseline(cwd, DORK_HOME);
+        const { hooks } = await readRepoConfig(cwd, baseline, DORK_HOME);
+        recordRepoConfigApproval('hooks', hooks!.digest);
+        const approved = await dorkosOptions(cwd);
+        expect(approved.decision.pauseHooks).toBe(false);
+        await runTurn(approved.options);
+        expect(ranHere('edited-ran')).toBe(true);
+      },
+      180_000
+    );
   });
 
   describe('an edited committed hook script', () => {

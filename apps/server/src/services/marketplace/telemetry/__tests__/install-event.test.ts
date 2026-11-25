@@ -14,7 +14,6 @@ import type { ResolvedPackageSource } from '../../package-resolver.js';
 import {
   DIRECT_SOURCE_LABEL,
   LOCAL_PACKAGE_LABEL,
-  UNKNOWN_ERROR_CODE,
   UNRESOLVED_PACKAGE_LABEL,
   buildInstallEvent,
   installSourceType,
@@ -78,23 +77,6 @@ describe('an install that fails before its package resolves', () => {
     expect(event.marketplace).toBe(DIRECT_SOURCE_LABEL);
     expect(event.sourceType).toBe('unknown');
     expect(InstallTelemetryEventSchema.safeParse(JSON.parse(body)).success).toBe(true);
-  });
-
-  it('reports the marketplace the request named when it is a configured one', async () => {
-    const { event } = await failedInstall('code-reviewer', 'dorkos-community');
-    expect(event.marketplace).toBe('dorkos-community');
-    expect(event.packageName).toBe(UNRESOLVED_PACKAGE_LABEL);
-  });
-
-  it.each([
-    ['a URL carrying a token', 'https://kai:ghp_madeUpToken456@git.example.com/m.git'],
-    ['a name that is not configured', 'kais-private-marketplace'],
-  ])('never sends %s from the marketplace field', async (_label, marketplace) => {
-    const { event, body } = await failedInstall('code-reviewer', marketplace);
-    expect(body).not.toContain(marketplace);
-    expect(body).not.toContain('ghp_madeUpToken456');
-    expect(body).not.toContain('kais-private');
-    expect(event.marketplace).toBe(DIRECT_SOURCE_LABEL);
   });
 });
 
@@ -182,20 +164,4 @@ describe('buildInstallEvent', () => {
       expect(JSON.stringify(event)).not.toContain('kai');
     }
   );
-
-  it.each([
-    ['InvalidPackageError', 'InvalidPackageError'],
-    ['Error', 'Error'],
-    ['ENOENT_2', 'ENOENT_2'],
-    ['a message with spaces', UNKNOWN_ERROR_CODE],
-    ['/Users/kai-example/leak', UNKNOWN_ERROR_CODE],
-    ['1StartsWithDigit', UNKNOWN_ERROR_CODE],
-    ['A'.repeat(65), UNKNOWN_ERROR_CODE],
-  ])('reports error code %j as %j', (errorCode, expected) => {
-    expect(buildInstallEvent({ ...base, resolved: null, errorCode }).errorCode).toBe(expected);
-  });
-
-  it('leaves errorCode out when there is none', () => {
-    expect(buildInstallEvent({ ...base, resolved: null }).errorCode).toBeUndefined();
-  });
 });

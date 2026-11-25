@@ -231,7 +231,7 @@ describe('File explorer clipboard (DOR-1032)', () => {
     // A case-insensitive filesystem can call `SRC` and `src` the same folder,
     // which the client's own path check cannot see. The server catches it, and
     // its coded answer must not degrade into the generic "Couldn't copy".
-    const { transport } = transportOverTree({ copyError: codedError('COPY_INTO_SELF') });
+    const { transport } = transportOverTree({ copyError: codedError('copy_into_self') });
     await openMenuOn('src', transport);
 
     fireEvent.click(await screen.findByText('Duplicate'));

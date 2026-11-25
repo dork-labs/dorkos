@@ -19,6 +19,7 @@ import {
   repointQueuedChatJoin,
   steering,
 } from './state.js';
+import { toRuns } from './run-feed.js';
 
 /** The largest combined prompt a drain join may build. */
 export const CHAT_DRAIN_JOIN_MAX = 5 * CHAT_MESSAGE_MAX;
@@ -67,9 +68,13 @@ export function joinWaitingChatRows(sessionId: string, headRowId: string): void 
     // One transaction: a process that dies mid-fold must never leave the
     // head holding these words while their own row still waits to run them.
     if (!store.get(headRowId) || !store.get(next.id)) break;
+    // Its run is `superseded` in the same transaction (transition 6): a join
+    // starts only from the head and stops at a launching row, so the folded
+    // run is always one still waiting (spec `turns-survive-restarts` §4.7).
     store.atomically(() => {
       store.updateContent(headRowId, combined);
       repointQueuedChatJoin(next.id, headRowId);
+      toRuns('join', (feed) => feed.supersedeRow(next.id), undefined);
       store.remove(next.id);
     });
     const waiting = pending.get(next.id);

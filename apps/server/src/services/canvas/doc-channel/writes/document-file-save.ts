@@ -281,15 +281,7 @@ export class DocumentFileSave {
       const before = await readOriginalDocumentFile(identity!);
       const beforeHash = sha256(before);
       if (beforeHash !== expected)
-        return {
-          status: 409 as const,
-          body: {
-            error: 'File changed on disk since it was opened',
-            code: 'CONFLICT',
-            currentHash: beforeHash,
-            currentContent: before,
-          },
-        };
+        return { stale: { currentHash: beforeHash, currentContent: before } };
       const now = new Date().toISOString();
       const row: FileSaveIntentRow = {
         intentId: randomUUID(),

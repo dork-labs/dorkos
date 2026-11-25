@@ -5,7 +5,7 @@ import { findGitPlaces } from '@dorkos/shared/safe-git';
 import {
   isProtectedPath,
   type ProtectedPathRoots,
-} from '../../shared/policy/protected-path-check.js';
+} from '../../../core/protected-paths/protected-path-check.js';
 
 /** An unsupported metadata policy needs a different folder, not another retry. */
 export class CodexGitMetadataPolicyError extends Error {

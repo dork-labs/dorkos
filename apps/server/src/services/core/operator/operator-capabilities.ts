@@ -11,7 +11,8 @@
  * MCP adapters re-wrap it). Redaction stays inside the handlers, on every
  * surface, per ADR 260723-013236 (superseded by 260725-152018).
  *
- * The five read-only observability capabilities carry `readOnlyCarveOut: true`;
+ * The read-only observability capabilities carry `readOnlyCarveOut: true`
+ * (`operator.activity_list` is declared in `services/activity/activity-capability.ts`);
  * the five mutations (`operator.update_agent`,
  * `operator.update_agent_boundaries`, `operator.config_patch`,
  * `operator.sidebar_add_to_group`, `operator.sidebar_remove_from_group`) do not
@@ -20,7 +21,6 @@
  * @module services/core/operator/operator-capabilities
  */
 import { z } from 'zod';
-import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
 import { AgentRuntimeSchema, TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
@@ -37,13 +37,13 @@ import { CONFIG_PATCH_CARD, configPatchFitsStoredCard } from './config-patch-car
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
 import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
+import { activityListCapability } from '../../activity/activity-capability.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import {
   createUpdateAgentHandler,
   createUpdateAgentBoundariesHandler,
   createUpdateAgentExecutionHandler,
   describeAgentExecutionApproval,
-  createActivityListHandler,
   createConfigGetHandler,
   createConfigPatchHandler,
   createCheckUpdateHandler,
@@ -193,35 +193,7 @@ export const operatorDomain: CapabilityDomain = {
   assertDeps: requireOperatorDeps,
   capabilities: [
     // ── Read-only observability ─────────────────────────────────────────────
-    defineCapability({
-      id: 'operator.activity_list',
-      title: 'List activity',
-      description:
-        'List DorkOS activity-feed events (agent, tasks, relay, config, system). ' +
-        'Filter by categories (comma-separated), actorType, actorId, and a time window ' +
-        '(before/since ISO timestamps); paginate with limit and the returned nextCursor.',
-      tier: 'observe',
-      area: null,
-      areaNote: 'reading',
-      input: z.object(ListActivityQuerySchema.shape),
-      output: z.unknown(),
-      surfaces: {
-        mcp: {
-          toolName: 'activity_list',
-          servers: ['in-session', 'external'],
-          readOnlyCarveOut: true,
-          annotations: { idempotentHint: true },
-        },
-        // The capability's input IS `ListActivityQuerySchema`, which the real
-        // `GET /api/activity` route parses verbatim from its query string — so
-        // this http surface projects into OpenAPI honestly (task 2.5). The other
-        // operator routes do not line up so cleanly and stay hand-registerable
-        // for the domain-by-domain migration follow-up (see `openapi-registry.ts`).
-        http: { method: 'get', path: '/api/activity' },
-      },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createActivityListHandler(requireOperatorDeps(deps))(input)),
-    }),
+    activityListCapability,
     defineCapability({
       id: 'operator.config_get',
       title: 'Get configuration',

@@ -1191,7 +1191,7 @@ export type CreateAgentOptions = z.infer<typeof CreateAgentOptionsSchema>;
  *   marketplace installer, held to the disclosure and content hash the person
  *   was shown (the preview's `disclosed` and `contentHash`). A person only.
  * - `approvedTemplateHash`: the template content hash a person was shown on a
- *   `template_needs_review` answer, to create from that template knowingly.
+ *   `needs_review` answer, to create from that template knowingly.
  * - `confirmationToken`: an agent's retry after a person approved the card a
  *   template raised.
  *

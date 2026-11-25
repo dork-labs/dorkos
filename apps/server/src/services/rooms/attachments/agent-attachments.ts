@@ -42,7 +42,7 @@ import { sniffImageContentType } from '../../identity/image-sniff.js';
 import {
   linkedFileRefusal,
   protectedPathRefusal,
-} from '../../runtimes/shared/policy/protected-file-guard.js';
+} from '../../core/protected-paths/protected-file-guard.js';
 import { RoomError } from '../room-errors.js';
 import { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { SAFE_ROOM_ID } from '../repo/room-repo-store.js';

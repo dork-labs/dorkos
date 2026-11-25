@@ -6,7 +6,6 @@
  * @module routes/community-connections
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { CommunityRefSchema, type CommunityRef } from '@dorkos/shared/community-adapter';
 import {
   CommunityConnectionStartRequestSchema,
@@ -18,7 +17,6 @@ import {
   CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
   type CommunityConnectionDescriptor,
-  describeCommunityRetryWait,
 } from '@dorkos/shared/community-connections';
 import {
   CommunityNavigationMoveRequestSchema,
@@ -28,29 +26,15 @@ import {
   CommunityNavigationStateSchema,
 } from '@dorkos/shared/community-navigation';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { honoRequestFacts } from '../http/request-facts.js';
-import { readOwnerAccount } from '../services/core/auth/index.js';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { configManager } from '../services/core/config-manager.js';
-import { getRoomService } from '../services/rooms/index.js';
-import { resolveCaller } from './room-caller.js';
-import { requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { RemoteCommunityPairingService } from '../services/communities/remote/pairing-service.js';
+import { PinnedHttpError } from '../services/communities/remote/pinned-origin.js';
 import {
-  RemoteConnectionAuthorizationError,
-  RemoteConnectionNotFoundError,
-} from '../services/communities/remote/connection-store.js';
-import {
-  RemoteCommunityPairingService,
-  RemotePairingBusyError,
-  RemoteCommunityRateLimitedError,
-  RemoteCommunityNameNotFoundError,
-  RemoteCommunitySelectionRequiredError,
-  RemoteCommunityUpgradeRequiredError,
-} from '../services/communities/remote/pairing-service.js';
-import {
-  PinnedHttpError,
-  PinnedOriginError,
-} from '../services/communities/remote/pinned-origin.js';
+  connectionFailure as failure,
+  connectionNotFound as notFound,
+  resolveCommunityOwner,
+} from './community-problems.js';
 import {
   getRemoteCommunityAdapter,
   getRemotePairingService,
@@ -78,117 +62,6 @@ import {
   type SpaceSettingsReader,
 } from '../services/communities/remote/settings/index.js';
 import { addAdministerRoutes, type AdministerState } from './community-administer.js';
-import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
-
-/**
- * Resolve the only local human allowed to use a stored community connection.
- *
- * @param c - The request's context.
- * @returns The owner's author id, or the refusal to answer with.
- */
-export function resolveCommunityOwner(c: Context<ApiEnv>): string | Response {
-  const facts = honoRequestFacts(c);
-  const cookieRefusal = requireOperatorCookieUnderLogin(facts, 'community connections');
-  if (cookieRefusal) {
-    return c.json(
-      { error: cookieRefusal.error, code: cookieRefusal.code },
-      cookieRefusal.status as ContentfulStatusCode
-    );
-  }
-  if (!facts.user && !isAtThisComputer(facts)) {
-    return c.json({ error: 'Manage space connections from this machine.' }, 403);
-  }
-  let caller;
-  try {
-    caller = resolveCaller(facts);
-  } catch {
-    return c.json({ error: 'An agent cannot manage space connections.' }, 403);
-  }
-  if (!getRoomService().authorRegistry.isOwner(caller.id, readOwnerAccount()?.id ?? null)) {
-    return c.json({ error: 'Only this install’s owner can manage space connections.' }, 403);
-  }
-  const expectedOwner = c.req.header('x-dorkos-community-owner');
-  if (expectedOwner && expectedOwner !== caller.id) {
-    return c.json(
-      {
-        error: 'The local owner changed. Reload to see spaces for the current account.',
-        code: 'COMMUNITY_OWNER_CHANGED',
-      },
-      409
-    );
-  }
-  return caller.id;
-}
-
-/** A connection route's answer when its ref is not path-safe or names no connection. */
-function notFound(c: Context): Response {
-  return c.json({ error: 'Space connection not found.' }, 404);
-}
-
-function failure(c: Context, error: unknown): Response {
-  if (error instanceof RemotePairingBusyError) {
-    // Coded so a client can tell "another check of this connection is in
-    // flight" (keep waiting) from a real refusal: every open window polls.
-    return c.json(
-      { code: 'PAIRING_BUSY', error: 'This pairing is still finishing. Try again in a moment.' },
-      409
-    );
-  }
-  if (error instanceof RemoteCommunitySelectionRequiredError) {
-    return c.json(
-      {
-        code: 'COMMUNITY_SELECTION_REQUIRED',
-        error: 'That address has more than one space on it. Use the link for the one you want.',
-      },
-      409
-    );
-  }
-  if (error instanceof RemoteCommunityNameNotFoundError) {
-    return c.json(
-      {
-        code: 'COMMUNITY_NAME_NOT_FOUND',
-        error: 'No space uses that short address there. Check the spelling.',
-      },
-      404
-    );
-  }
-  if (error instanceof RemoteCommunityRateLimitedError) {
-    // The host's own wait, passed on so the person is told how long, not left to guess.
-    const { retryAfterSeconds } = error;
-    if (retryAfterSeconds !== undefined) c.header('Retry-After', String(retryAfterSeconds));
-    return c.json(
-      {
-        code: 'COMMUNITY_RATE_LIMITED',
-        error: `This DorkOS has tried that space too many times in a short while. Wait ${describeCommunityRetryWait(retryAfterSeconds)}, then try again.`,
-        ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
-      },
-      429
-    );
-  }
-  if (error instanceof RemoteCommunityUpgradeRequiredError) {
-    return c.json(
-      {
-        code: 'COMMUNITY_UPGRADE_REQUIRED',
-        error: 'This space’s server is too old to connect. Ask whoever runs it to update it.',
-      },
-      426
-    );
-  }
-  if (error instanceof RemoteConnectionAuthorizationError) {
-    return c.json(
-      { error: 'Reconnect this space to continue.', code: 'COMMUNITY_RECONNECT_REQUIRED' },
-      409
-    );
-  }
-  if (error instanceof RemoteConnectionNotFoundError) return notFound(c);
-  if (error instanceof PinnedOriginError) {
-    const address = error.code === 'INVALID_ORIGIN' || error.code === 'UNSAFE_ADDRESS';
-    return address
-      ? c.json({ error: 'Enter an accessible HTTPS space address.' }, 400)
-      : c.json({ error: 'The space could not complete this connection request.' }, 502);
-  }
-  return c.json({ error: 'The space connection is unavailable.' }, 502);
-}
 
 /**
  * What this connection's access allows for counts: `read` fetches them now,
@@ -333,7 +206,9 @@ export function createCommunityConnectionsRoutes(
     if (typeof owner !== 'string') return owner;
     const parsed = CommunityConnectionStartRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Enter a valid space address and install name.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'Enter a valid space address and install name.',
+      });
     }
     const { url, installName } = parsed.data;
     // A connection lets the space reach this install, so it waits for the owner (DOR-4355).
@@ -385,7 +260,9 @@ export function createCommunityConnectionsRoutes(
     if (typeof owner !== 'string') return owner;
     const parsed = CommunityNavigationMoveRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Choose a connected space and move direction.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'Choose a connected space and move direction.',
+      });
     }
     try {
       return c.json(
@@ -402,7 +279,9 @@ export function createCommunityConnectionsRoutes(
     if (typeof owner !== 'string') return owner;
     const parsed = CommunityNavigationRememberInstallationRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Choose a valid local installation destination.' }, 400);
+      return validationProblem(c, parsed.error, {
+        detail: 'Choose a valid local installation destination.',
+      });
     }
     try {
       return c.json(
@@ -418,7 +297,8 @@ export function createCommunityConnectionsRoutes(
     const owner = resolveCommunityOwner(c);
     if (typeof owner !== 'string') return owner;
     const parsed = CommunityNavigationRememberRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json({ error: 'Choose a valid space to open.' }, 400);
+    if (!parsed.success)
+      return validationProblem(c, parsed.error, { detail: 'Choose a valid space to open.' });
     try {
       return c.json(
         CommunityNavigationStateSchema.parse(await navigationService.remember(owner, parsed.data))

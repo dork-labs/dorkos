@@ -72,9 +72,9 @@ describe('POST /api/sessions/:id/messages for a paused agent', () => {
       .set('X-Client-Id', 'window-1')
       .send({ content: 'hi', cwd: '/p1' });
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({
-      error: 'Scout is paused.',
-      code: 'AGENT_PAUSED',
+    expect(res.body).toMatchObject({
+      detail: 'Scout is paused.',
+      code: 'agent_paused',
       agentId: 'agent-1',
     });
   });

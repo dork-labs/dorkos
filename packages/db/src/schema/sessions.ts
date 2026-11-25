@@ -145,6 +145,13 @@ export const sessionMessageQueue = sqliteTable(
     // ceiling, and whether nobody is watching it (DOR-4350). Kept so a pause or a restart hands
     // them back unchanged. NULL = the row carried none.
     carriedLimitsJson: text('carried_limits_json'),
+    // Where the words are (spec `turns-survive-restarts` §4.3, DOR-5159). `waiting`: in line, seen,
+    // edited and reordered by every window. `in_turn`: a turn started with them and the runtime has
+    // not read them yet, so the row is kept (a restart between the two must not lose them) but is
+    // hidden from the queue's list, clear, move and edits; it is deleted once the runtime reads it.
+    state: text('state', { enum: ['waiting', 'in_turn'] })
+      .notNull()
+      .default('waiting'),
   },
   (t) => ({
     // (session_id, position) rather than session_id alone: every read of this

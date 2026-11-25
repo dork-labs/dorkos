@@ -47,8 +47,8 @@
  *
  * ## Reads of outside text
  *
- * The same seam marks the turn when a call that reads outside text starts (a
- * web search, a page, another MCP server's tool; DOR-3969), for the runtimes
+ * The same seam marks the turn when a call that reads outside text shows in
+ * its stream (`outside-text-stream.ts`; DOR-3969, DOR-5236), for the runtimes
  * with no hook that runs before a tool. That one is not best-effort: a mark
  * that cannot be placed ends the turn.
  *
@@ -65,10 +65,9 @@ import {
 } from '../runtimes/shared/dorkos-tool-names.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../core/agent-identity/agent-home.js';
 import { MCP_TOOL_TIERS } from '../core/mcp-tool-tiers.js';
-import { markRunningTurnOutsider } from '../core/turn-power/turn-levels.js';
-import { toolReadsOutsideText } from '../runtimes/shared/tools/outside-text-tools.js';
 import { auditTrail, recordAudit } from './audit-trail.js';
 import { redactAuditText } from './audit-redaction.js';
+import { outsideTextMarker } from './outside-text-stream.js';
 
 /** The most of a tool's input kept while it streams in, to read its target. */
 const MAX_INPUT = 8_000;
@@ -400,38 +399,6 @@ function toolFields(event: StreamEvent): {
   };
 }
 
-/**
- * Mark the turn when a call that reads outside text starts in its stream (DOR-3969): a web search,
- * a page fetch, another MCP server's tool. Codex, OpenCode and Doe have no hook that runs before a
- * tool, so this is where they are seen, as the call starts, and a send the model makes once the
- * result is back is held. Claude Code is marked earlier, by its `PreToolUse` hook, and again here,
- * which changes nothing.
- *
- * A helper those runtimes start runs where this stream may not show its tools (Codex runs one in a
- * thread of its own), so starting one marks the turn too. Claude Code's hook sees a helper's calls.
- *
- * Not guarded like the recording: a mark that cannot be placed ends the turn rather than letting it
- * go on unmarked.
- */
-/** Whether this event starts a call, or a helper, that may hand the turn outside text. */
-function readsOutsideText(runtime: string, event: StreamEvent): boolean {
-  if (event.type === 'tool_call_start')
-    return toolReadsOutsideText(runtime, toolFields(event).name);
-  if (event.type !== 'background_task_started' || runtime === 'claude-code') return false;
-  return (event.data as { taskType?: unknown } | undefined)?.taskType === 'agent';
-}
-
-function markOutsideTextStart(
-  runtime: string,
-  sessionId: string,
-  opts: MessageOpts | undefined,
-  event: StreamEvent
-): void {
-  if (!readsOutsideText(runtime, event)) return;
-  const agentPath = homeOf(resolveAgentHome(opts?.cwd, turnAgentOf(opts)));
-  markRunningTurnOutsider(sessionId, agentPath, { kind: 'tool' });
-}
-
 async function* recordDuring(
   runtime: AgentRuntime,
   sessionId: string,
@@ -539,9 +506,10 @@ async function* recordDuring(
       }
     }
   };
+  const markOutsideText = outsideTextMarker(runtime.type, sessionId, opts);
   try {
     for await (const event of source) {
-      markOutsideTextStart(runtime.type, sessionId, opts, event);
+      markOutsideText(event);
       try {
         watch(event);
       } catch {

@@ -9,6 +9,12 @@ name: queue-reentry
 # head is green and merges cleanly, which queues it again; a PR that conflicts
 # with `main` gets one comment per head asking the author to merge `main`.
 #
+# It also tells the author of any PR that waits on auto-merge but conflicts
+# with `main`, once per head: GitHub has no merge commit to test for it, so no
+# `pull_request` run starts (no checks, no review, no Security verdict) and
+# nothing else says why (#4296, 2026-11-24). That path only comments, and is
+# read from the same one list query.
+#
 # The decision and every GitHub call are scripts/queue-reentry.sh (fixtures:
 # scripts/test-queue-reentry.sh). It never undoes a person's dequeue or a hold,
 # puts one head back at most twice, and leaves a head alone when
@@ -20,7 +26,9 @@ name: queue-reentry
 # 15 hours after it landed), so the schedule is only the backstop. The sweep
 # also runs when `test` or `pr-gates` finishes: on a merge group, which is when
 # the queue ejects, and on a pull request that went green, which is when an
-# ejected PR whose author merged `main` becomes ready. `workflow_run` runs the
+# ejected PR whose author merged `main` becomes ready. A conflicting PR starts
+# no runs of its own, so any other PR's run finishing is what notices it.
+# `workflow_run` runs the
 # default branch's copy of this file, like `schedule`; nothing from a pull
 # request is checked out or run, so a pull request cannot change what judges
 # it. The checkout pins the default branch so a dispatch from a branch does too.
@@ -42,7 +50,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Print the verdict for every ejected PR without changing anything'
+        description: 'Print the verdict for every ejected or conflicting PR without changing anything'
         type: boolean
         default: false
 
@@ -67,10 +75,13 @@ jobs:
       group: queue-reentry
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    # One list read, then a few reads per ejected PR.
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). A schedule or workflow_run run is main's copy on main, so it enters.
+    environment: automation
+    # One list read, then a few reads per ejected or conflicting PR.
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         continue-on-error: true
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -85,7 +96,7 @@ jobs:
       - name: Mint the merge-tail app token
         id: app-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
@@ -96,7 +107,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Put queue-ejected pull requests back
+      - name: Put queue-ejected pull requests back; tell conflicting ones
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}

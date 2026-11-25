@@ -10,7 +10,7 @@ import { z } from 'zod';
 import type { AgentDeliveryFailureReason, AgentSendReceipt } from '@dorkos/extension-api/server';
 import type { AgentSendRecord } from './agent-send-store.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { fenceUntrustedBlock, mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock, mintFenceNonce } from '../../core/untrusted-text/untrusted-fence.js';
 
 /** The longest message, and the longest context, an extension may send. */
 export const AGENT_SEND_TEXT_MAX = 20_000;

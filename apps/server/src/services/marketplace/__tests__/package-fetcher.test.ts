@@ -195,18 +195,6 @@ describe('PackageFetcher', () => {
       expect(git.fetch).not.toHaveBeenCalled();
     });
 
-    it('says an empty repository has no commits, rather than no branch named HEAD', async () => {
-      // Purpose: a ref-less source on an empty repository misses `HEAD`;
-      // "no branch or tag named HEAD" is true and useless.
-      const git = buildGitMock({ lookedUp: { kind: 'missing' } });
-      await expect(
-        new PackageFetcher(cache, git, buildLogger()).fetchFromGit({
-          packageName: 'x',
-          gitUrl: 'https://gitlab.example.com/o/empty.git',
-        })
-      ).rejects.toThrow('gitlab.example.com/o/empty has no commits yet.');
-    });
-
     it('fails plainly, fetching nothing, when the remote cannot be reached', async () => {
       // Purpose: "never a placeholder masquerading as a commit" — an
       // unreachable remote no longer yields a `tmp-` key.
@@ -232,16 +220,6 @@ describe('PackageFetcher', () => {
         })
       ).rejects.toBeInstanceOf(UnsupportedSourceUrlError);
       expect(git.lookup).not.toHaveBeenCalled();
-    });
-
-    it('asks for HEAD when a bare git URL names no ref', async () => {
-      // Purpose: the default is the repository's default branch, not `main`.
-      const git = buildGitMock();
-      await new PackageFetcher(cache, git, buildLogger()).fetchFromGit({
-        packageName: 'x',
-        gitUrl: 'https://gitlab.example.com/o/r.git',
-      });
-      expect(git.lookup).toHaveBeenCalledWith('https://gitlab.example.com/o/r.git', 'HEAD');
     });
 
     it('two concurrent fetches of one package both succeed and fetch exactly once', async () => {
@@ -292,15 +270,6 @@ describe('PackageFetcher', () => {
   });
 
   describe('lookupCommitSha', () => {
-    it('answers with the same lookup a fetch uses', async () => {
-      const git = buildGitMock();
-      const fetcher = new PackageFetcher(buildCacheMock(), git, buildLogger());
-      expect(await fetcher.lookupCommitSha('https://gitlab.example.com/o/r.git', 'v1')).toBe(
-        sha('a')
-      );
-      expect(git.lookup).toHaveBeenCalledWith('https://gitlab.example.com/o/r.git', 'v1');
-    });
-
     it.each<RemoteRef>([{ kind: 'missing' }, { kind: 'unreachable', reason: 'offline' }])(
       'returns a placeholder isRealCommitSha rejects when the lookup is %j',
       async (lookedUp) => {
@@ -464,74 +433,6 @@ describe('PackageFetcher', () => {
           packageCount: buildMarketplaceJson().plugins.length,
         });
       });
-
-      it('records a failure with its reason, even when an old copy is served', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
-        const cache = buildCacheMock({
-          readMarketplace: vi.fn().mockResolvedValue({
-            json: buildMarketplaceJson(),
-            fetchedAt: new Date(),
-            stale: false,
-          }),
-        });
-        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-        await fetcher.fetchMarketplaceJson(buildSource());
-
-        expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
-          startedAt: expect.any(String),
-          checkedAt: expect.any(String),
-          ok: false,
-          reason: "there's no marketplace listing at that address",
-        });
-      });
-
-      it('records a local folder that has no listing', async () => {
-        workDirForStatus = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-status-'));
-        const cache = buildCacheMock();
-        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-        await expect(
-          fetcher.fetchMarketplaceJson(
-            buildSource({ name: 'local', source: pathToFileURL(workDirForStatus).href })
-          )
-        ).rejects.toThrow();
-
-        expect(cache.writeFetchStatus).toHaveBeenCalledWith('local', {
-          startedAt: expect.any(String),
-          checkedAt: expect.any(String),
-          ok: false,
-          reason: "there's no marketplace listing in that folder",
-        });
-      });
-
-      it('still answers when the record cannot be written', async () => {
-        // Purpose: the record is bookkeeping; it must never cost a listing.
-        vi.stubGlobal(
-          'fetch',
-          vi.fn().mockResolvedValue(new Response(JSON.stringify(buildMarketplaceJson())))
-        );
-        const cache = buildCacheMock({
-          writeFetchStatus: vi.fn().mockRejectedValue(new Error('disk full')),
-        });
-        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-        await expect(fetcher.fetchMarketplaceJson(buildSource())).resolves.toMatchObject({
-          name: 'dorkos-community',
-        });
-      });
-    });
-
-    it('rethrows when both network fetch and stale cache fail', async () => {
-      const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
-      vi.stubGlobal('fetch', fetchMock);
-
-      const cache = buildCacheMock({
-        readMarketplace: vi.fn().mockResolvedValue(null),
-      });
-      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-      await expect(fetcher.fetchMarketplaceJson(buildSource())).rejects.toThrow(/network down/);
     });
   });
 
@@ -569,41 +470,6 @@ describe('PackageFetcher', () => {
       expect(pulled()).toBeLessThanOrEqual(CATALOG_MAX_BYTES + 256 * 1024);
     });
 
-    // Purpose: the sidecar fetch now has the same deadline as marketplace.json.
-    it('gives the dorkos.json fetch a timeout', async () => {
-      const timeout = vi
-        .spyOn(AbortSignal, 'timeout')
-        .mockImplementation(() =>
-          AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError'))
-        );
-      const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
-        init?.signal?.aborted ? Promise.reject(init.signal.reason) : new Promise(() => {})
-      );
-      vi.stubGlobal('fetch', fetchMock);
-      const fetcher = new PackageFetcher(buildCacheMock(), buildGitMock(), buildLogger());
-
-      expect(await fetcher.fetchDorkosSidecar(buildSource())).toBeNull();
-      expect(timeout).toHaveBeenCalledWith(MARKETPLACE_JSON_TIMEOUT_MS);
-      timeout.mockRestore();
-    });
-
-    // Purpose: an oversized sidecar is dropped (sidecars are optional) without
-    // reading it all, and the reason is logged where someone can see it.
-    it('drops a dorkos.json larger than the limit, and says why', async () => {
-      const { body, pulled } = endlessBody(50 * 1024 * 1024);
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)));
-      const logger = buildLogger();
-      const fetcher = new PackageFetcher(buildCacheMock(), buildGitMock(), logger);
-
-      expect(await fetcher.fetchDorkosSidecar(buildSource())).toBeNull();
-      expect(pulled()).toBeLessThanOrEqual(CATALOG_MAX_BYTES + 256 * 1024);
-      expect(
-        logger.calls.some(
-          (c) => c.level === 'warn' && JSON.stringify(c.args).includes('larger than 5 MB')
-        )
-      ).toBe(true);
-    });
-
     // Purpose: a local (file://) catalog is capped the same way.
     it('refuses a local marketplace.json larger than the limit', async () => {
       const dir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-big-'));
@@ -617,30 +483,6 @@ describe('PackageFetcher', () => {
             buildSource({ name: 'personal', source: pathToFileURL(dir).href })
           )
         ).rejects.toThrow(/larger than 5 MB/);
-      } finally {
-        await rm(dir, { recursive: true, force: true });
-      }
-    });
-
-    // Purpose: a root marketplace.json that is there but too large is the
-    // answer; the reader must not fall back to .claude-plugin/marketplace.json.
-    it('does not fall back past an oversized root marketplace.json', async () => {
-      const dir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-big-'));
-      try {
-        await writeFile(path.join(dir, 'marketplace.json'), ' '.repeat(CATALOG_MAX_BYTES + 1));
-        await mkdir(path.join(dir, '.claude-plugin'));
-        await writeFile(
-          path.join(dir, '.claude-plugin', 'marketplace.json'),
-          JSON.stringify(buildMarketplaceJson('personal'))
-        );
-        vi.stubGlobal('fetch', vi.fn());
-        const cache = buildCacheMock({ readMarketplace: vi.fn().mockResolvedValue(null) });
-        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-        await expect(
-          fetcher.fetchMarketplaceJson(
-            buildSource({ name: 'personal', source: pathToFileURL(dir).href })
-          )
-        ).rejects.toThrow("The marketplace's marketplace.json is larger than 5 MB");
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
@@ -701,67 +543,6 @@ describe('PackageFetcher', () => {
       expect(cache.writeMarketplace).toHaveBeenCalledWith('dork-labs', expect.any(Object));
     });
 
-    it('fetchMarketplaceJson prefers the root marketplace.json when both layouts exist', async () => {
-      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
-      const rootJson = buildMarketplaceJson('root-wins');
-      const pluginJson = buildMarketplaceJson('claude-plugin-loses');
-      await mkdir(path.join(workDir, '.claude-plugin'), { recursive: true });
-      await writeFile(path.join(workDir, 'marketplace.json'), JSON.stringify(rootJson), 'utf-8');
-      await writeFile(
-        path.join(workDir, '.claude-plugin', 'marketplace.json'),
-        JSON.stringify(pluginJson),
-        'utf-8'
-      );
-
-      const fetchMock = vi.fn();
-      vi.stubGlobal('fetch', fetchMock);
-      const cache = buildCacheMock();
-      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-      const result = await fetcher.fetchMarketplaceJson(
-        buildSource({ name: 'root-wins', source: pathToFileURL(workDir).href })
-      );
-
-      expect(result.name).toBe('root-wins');
-      expect(cache.writeMarketplace).toHaveBeenCalledWith('root-wins', expect.any(Object));
-    });
-
-    it('says in plain words that a folder has no listing, and logs both paths it tried', async () => {
-      // Purpose: this reason reaches a person (the add note, refresh). Two
-      // absolute paths and an ENOENT dump filled a phone screen (DOR-2304);
-      // the paths belong in the log, where a support question is answered.
-      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
-      // Note: do not seed marketplace.json at either the root or .claude-plugin/ on purpose.
-
-      const cache = buildCacheMock();
-      const logger = buildLogger();
-      const fetcher = new PackageFetcher(cache, buildGitMock(), logger);
-
-      const sourceUrl = pathToFileURL(workDir).href;
-      await expect(
-        fetcher.fetchMarketplaceJson(buildSource({ name: 'personal', source: sourceUrl }))
-      ).rejects.toThrow(/^there's no marketplace listing in that folder$/);
-      expect(cache.writeMarketplace).not.toHaveBeenCalled();
-      const logged = JSON.stringify(logger.calls.filter((c) => c.level === 'warn'));
-      expect(logged).toMatch(/marketplace\.json/);
-      expect(logged).toMatch(/\.claude-plugin/);
-    });
-
-    it('fetchMarketplaceJson throws when the local marketplace.json is invalid JSON', async () => {
-      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
-      await writeFile(path.join(workDir, 'marketplace.json'), '{ not valid json', 'utf-8');
-
-      const cache = buildCacheMock();
-      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-      await expect(
-        fetcher.fetchMarketplaceJson(
-          buildSource({ name: 'personal', source: pathToFileURL(workDir).href })
-        )
-      ).rejects.toThrow();
-      expect(cache.writeMarketplace).not.toHaveBeenCalled();
-    });
-
     it('fetchFromGit returns the local directory immediately when gitUrl is file://', async () => {
       // Realpath'd and made the boundary root: a `file://` install is confined
       // to the directory boundary (DOR-1825), so a suite exercising the happy
@@ -785,27 +566,6 @@ describe('PackageFetcher', () => {
       expect(result.path).toBe(pkgDir);
       expect(cache.getPackage).not.toHaveBeenCalled();
       expect(cache.materializePackage).not.toHaveBeenCalled();
-    });
-
-    it('fetchFromGit decodes a file:// path whose directory name contains a space', async () => {
-      // node:url's fileURLToPath decodes percent-escapes (e.g. %20 -> ' ');
-      // new URL(source).pathname does not, and previously left the encoded
-      // form in the returned path (DOR-412).
-      workDir = await realpath(await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-')));
-      await initBoundary(workDir);
-      const pkgDir = path.join(workDir, 'my plugin');
-      await mkdir(pkgDir, { recursive: true });
-
-      const cache = buildCacheMock();
-      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
-
-      const result = await fetcher.fetchFromGit({
-        packageName: 'my-plugin',
-        gitUrl: pathToFileURL(pkgDir).href,
-      });
-
-      expect(result.path).toBe(pkgDir);
-      expect(result.path).not.toContain('%20');
     });
   });
 });

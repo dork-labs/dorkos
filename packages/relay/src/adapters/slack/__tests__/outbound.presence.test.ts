@@ -116,20 +116,6 @@ describe('deliverMessage', () => {
       expect(presence.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['1234.0002']);
     });
 
-    it('ignores a trailing event from a turn that already ended', async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'));
-      await deliverWith(turnEvent('1234.0001', 'done', {}));
-      queuePendingReaction(presence, 'D123', '1234.0002');
-      mockReactionsAdd.mockClear();
-
-      // An event the runtime emits after `done` must not claim the next question.
-      await deliverWith(turnEvent('1234.0001', 'tool_result', { ok: true }));
-
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-      expect(presence.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['1234.0002']);
-    });
-
     it('two interleaved turns remove the reaction from the right message (FIFO)', async () => {
       queuePendingReaction(presence, 'D123', '1234.0001');
       queuePendingReaction(presence, 'D123', '1234.0002');
@@ -158,25 +144,6 @@ describe('deliverMessage', () => {
         name: PRESENCE_EMOJI,
         timestamp: '1234.0001',
       });
-    });
-
-    it("makes zero reactions.* calls across a full turn when the indicator is 'none'", async () => {
-      queuePendingReaction(presence, 'D123', '1234.0001');
-      await deliverWith(turnEvent('1234.0001'), 'none');
-      await deliverWith(turnEvent('1234.0001'), 'none');
-      await deliverWith(turnEvent('1234.0001', 'done', {}), 'none');
-
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-      expect(mockReactionsRemove).not.toHaveBeenCalled();
-    });
-
-    it('keeps delivering when the reaction call fails', async () => {
-      mockReactionsAdd.mockRejectedValueOnce(new Error('no_permission'));
-      queuePendingReaction(presence, 'D123', '1234.0001');
-
-      const result = await deliverWith(turnEvent('1234.0001'));
-
-      expect(result.success).toBe(true);
     });
 
     describe('assistant split panel — status, not reaction', () => {

@@ -227,7 +227,7 @@ describe('the calling contract', () => {
       .query({ q: 'x'.repeat(SEARCH_MIN_QUERY_LENGTH - 1) });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_SEARCH_QUERY');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('refuses a request with no query at all', async () => {
@@ -243,7 +243,7 @@ describe('the calling contract', () => {
     for (const q of ['a,', ' a', 'a.', '! a !', '  ']) {
       const res = await request(fixtureTarget.mount(buildApp())).get('/api/search').query({ q });
       expect(res.status, `q=${JSON.stringify(q)} must be refused`).toBe(400);
-      expect(res.body.code).toBe('INVALID_SEARCH_QUERY');
+      expect(res.body.code).toBe('invalid_request');
     }
   });
 
@@ -267,12 +267,12 @@ describe('the calling contract', () => {
       .get('/api/search')
       .query({ q: 'scheduler', limit: 0 });
 
-    expect(short.body.error).toMatch(/word of at least/);
+    expect(short.body.detail).toMatch(/word of at least/);
     expect(badLimit.status).toBe(400);
-    expect(badLimit.body.error).toMatch(/whole number/);
+    expect(badLimit.body.detail).toMatch(/whole number/);
     // The two answers differ, which is the whole point: one message for both
     // tells the second caller something untrue about their request.
-    expect(short.body.error).not.toBe(badLimit.body.error);
+    expect(short.body.detail).not.toBe(badLimit.body.detail);
   });
 
   it('accepts a query exactly at the minimum', async () => {
@@ -314,7 +314,7 @@ describe('the calling contract', () => {
       .query({ q: 'scheduler', source: 'not-a-source' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNKNOWN_SEARCH_SOURCE');
+    expect(res.body.code).toBe('invalid_request');
   });
 });
 
@@ -366,12 +366,12 @@ describe('who is asking', () => {
       .query({ q: 'a' });
 
     expect(stranger.status).toBe(401);
-    expect(stranger.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    expect(stranger.body.code).toBe('agent_identity_unverified');
     // And nothing about the query is echoed back to them.
-    expect(stranger.body.error).not.toMatch(/word of at least/);
+    expect(stranger.body.detail).not.toMatch(/word of at least/);
 
     expect(owner.status).toBe(400);
-    expect(owner.body.code).toBe('INVALID_SEARCH_QUERY');
+    expect(owner.body.code).toBe('invalid_request');
   });
 
   it('refuses a caller whose agent token this machine could not verify', async () => {
@@ -383,7 +383,7 @@ describe('who is asking', () => {
       .query({ q: 'scheduler' });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    expect(res.body.code).toBe('agent_identity_unverified');
   });
 
   it('is answered identically for a hidden room and for words nobody said', async () => {

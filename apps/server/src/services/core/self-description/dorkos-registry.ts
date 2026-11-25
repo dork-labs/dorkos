@@ -13,7 +13,7 @@
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
  * domain, `roomDeps` the rooms domain, `sessionCompactionDeps` the session
- * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, `agentPauseDeps` the agent pause domain, `localBrowserDeps` the local browser domain, and the memory, `ui` and self-description
+ * domain, `chatMessageDeps` the chat domain, `auditDeps` the audit domain, `agentPauseDeps` the agent pause domain, `linkDeps` the link domain, `localBrowserDeps` the local browser domain, and the memory, `ui` and self-description
  * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
@@ -30,6 +30,7 @@ import {
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
+import { operatorActivityDomain } from '../../activity/activity-capability.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { connectorExecutionDomain } from '../../connectors/execution/execution-capabilities.js';
@@ -52,6 +53,7 @@ import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
+import { linkDomain } from '../links/link-capabilities.js';
 import { createLocalBrowserDomain } from '../../session/local-browser/capabilities.js';
 
 /**
@@ -73,7 +75,9 @@ export function composeDorkOsCapabilityRegistry(
   onInvocation?: CapabilityInvocationObserver
 ): CapabilityRegistry {
   const domains: CapabilityDomain[] = [];
+  // The feed is on every server; `operatorDomain` carries it when it starts.
   if (deps.operatorDeps) domains.push(operatorDomain);
+  else if (deps.activityDeps) domains.push(operatorActivityDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain, connectorHoldDomain);
@@ -89,6 +93,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.approvalWithdrawDeps) domains.push(approvalsDomain);
+  if (deps.linkDeps) domains.push(linkDomain);
   if (deps.localBrowserDeps) domains.push(createLocalBrowserDomain(deps.localBrowserDeps));
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
@@ -169,6 +174,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     auditDomain,
     agentPauseDomain,
     approvalsDomain,
+    linkDomain,
     createLocalBrowserDomain({} as NonNullable<CapabilityDeps['localBrowserDeps']>),
     memoryDomain,
     uiDomain,
@@ -194,6 +200,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
     approvalWithdrawDeps: {} as CapabilityDeps['approvalWithdrawDeps'],
+    linkDeps: {} as CapabilityDeps['linkDeps'],
   };
   return composeRegistry(domains, deps);
 }

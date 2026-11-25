@@ -63,6 +63,7 @@ type ServerModules = {
     };
   };
   'http/front-door': { frontDoorListener: (app: unknown) => RequestListener };
+  'startup/register-claude-code-facts': { registerClaudeCodeFacts: () => void };
 };
 
 /**
@@ -127,6 +128,10 @@ test.beforeAll(async () => {
     serverModule('http/hono-api'),
     serverModule('http/front-door'),
   ]);
+  // What `start()` registers before anything serves (DOR-4928): without it the
+  // protected-path policy refuses every file, and a served document answers 403.
+  const { registerClaudeCodeFacts } = await serverModule('startup/register-claude-code-facts');
+  registerClaudeCodeFacts();
   const app = composeFrontDoor(new MainRequestAdmission());
   app.get('/isolation-host', (c) =>
     c.html('<body data-operator="private"><h1>App control</h1></body>')

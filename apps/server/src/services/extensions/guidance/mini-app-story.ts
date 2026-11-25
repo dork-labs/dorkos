@@ -3,8 +3,7 @@
  * build, the route for a marked turn, no shell commands, what "held" looks like, and whose app
  * settings are. `create_extension`'s description and `get_extension_api` carry it word for word;
  * the DorkOS block's Tools line, the building-dorkos-apps skill and the docs say the same in their
- * own space. `mini-app-story.test.ts` pins one phrase per point on each surface but the Tools line,
- * which has room only to name the work.
+ * own space.
  *
  * @module services/extensions/guidance/mini-app-story
  */

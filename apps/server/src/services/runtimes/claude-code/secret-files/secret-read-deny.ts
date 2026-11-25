@@ -22,7 +22,7 @@
  * in `/**`.
  *
  * The paths themselves are the runtime-neutral list in
- * `runtimes/shared/policy/protected-paths.ts`; this module only spells them as Claude
+ * `core/protected-paths/protected-paths.ts`; this module only spells them as Claude
  * Code deny rules (DOR-3594).
  *
  * @module services/runtimes/claude-code/secret-files/secret-read-deny
@@ -40,7 +40,7 @@ import {
   HOME_SECRET_PATHS,
   protectedPathGlob,
   type ProtectedPath,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 
 /** The file-reading tools a secret-read rule names. */
 const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const;

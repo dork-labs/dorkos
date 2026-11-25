@@ -19,6 +19,8 @@ status: specified
 
 > **Changed 2026-11-22 by ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** P4 is the launch answer, not the end state: after launch the private space becomes a tenant on the space store (PGlite once it passes its gates), domain by domain, agents last, and a hub is a one-tenant space server. A space holds its members' data; only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. P1's "no runtimes" on a hub is a hosting policy read from the role setting; the wall that stays is that a shared host never holds a member's credentials or a key to a member's computer. B8's "older rooms stay on the Mac" holds until the rooms domain moves.
 
+> **Changed 2026-11-24 by ADR [`261124-194115`](../../decisions/261124-194115-your-mac-is-the-home-of-your-private-space.md) (your Mac is home).** P4 holds only for a person with no computer of their own. For a person with a Mac, the Mac is the home of their private space and the cloud hub is a way in. Steps B7 and B10 (the sidebar and search) and every step that has the cloud hub own "Private" must be re-read against that record before they are built.
+
 ## Overview
 
 _Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._

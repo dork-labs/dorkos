@@ -36,7 +36,6 @@ import {
   resolveAgentHome,
 } from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
-import { runtimeUnlessHeld } from '../../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { fullChatOf, getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
@@ -46,9 +45,12 @@ import { runInDispatch } from '../../../lib/dispatch-context.js';
 import { dispatchMessage, type MessageDispatchResult } from '../message-dispatcher.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
+import { claudeCodeFacts } from '../resolution/claude-code-facts.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
-import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
-import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
+import type {
+  AccountNotAllowedError,
+  LaunchAccountResolution,
+} from '../../core/usage/account-eligibility.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import {
@@ -296,7 +298,7 @@ export async function resolveRuntimeTypeForNewSession(opts: {
       // 'claude-code' (the AgentRuntime enum has no test-mode member), so
       // without this guard no agent-seeded session can ever start there.
       // A runtime the agent itself changed waits for a person (DOR-3068 M3).
-      const runtime = runtimeUnlessHeld(manifest, manifestDir);
+      const runtime = claudeCodeFacts().runtimeUnlessHeld(manifest, manifestDir);
       if (manifest?.runtime && !runtime) {
         logger.warn('[POST /messages] manifest runtime is held; using default', {
           manifestDir,
@@ -758,6 +760,7 @@ async function launchSessionMessage(
         : origin.kind === 'chat-message'
           ? 'agent-message'
           : 'agent',
+      origin,
       sessionId,
       clientId,
       content,

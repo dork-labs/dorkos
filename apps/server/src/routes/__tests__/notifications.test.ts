@@ -419,7 +419,8 @@ describe('marking notifications read', () => {
     const all = await request(fixtureServer).post('/api/notifications/read-all');
 
     expect(one.status).toBe(403);
-    expect(one.body.code).toBe('NOTIFICATIONS_OPERATOR_ONLY');
+    expect(one.type).toBe('application/problem+json');
+    expect(one.body.code).toBe('operator_only');
     expect(all.status).toBe(403);
     expect(service.list({ limit: 25, unread: false }).unreadCount).toBe(1);
   });

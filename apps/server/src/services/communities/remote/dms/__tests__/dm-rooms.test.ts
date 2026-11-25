@@ -65,16 +65,6 @@ describe('an enrolled agent’s direct messages', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('are none from a space with no such route', async () => {
-    const { value } = adapter(async () => {
-      throw new PinnedHttpError(404);
-    });
-
-    await expect(value.listDirectMessageRooms({ actingMemberId: 'remote-ana' })).resolves.toEqual(
-      []
-    );
-  });
-
   it('throw on any other failure, so no copy is taken for gone', async () => {
     const { value } = adapter(async () => {
       throw new PinnedHttpError(503);

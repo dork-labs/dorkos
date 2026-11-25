@@ -74,7 +74,7 @@
     },
     "stray-focus-ring": {
       "apps/client/src/layers/entities/agent/ui/McpClientCredentialsForm.tsx": 2,
-      "apps/client/src/layers/entities/agent/ui/McpSigninBody.tsx": 4,
+      "apps/client/src/layers/entities/agent/ui/McpSigninBody.tsx": 3,
       "apps/client/src/layers/entities/config/ui/TelemetryPayloadToggle.tsx": 2,
       "apps/client/src/layers/entities/discovery/ui/CandidateCard.tsx": 9,
       "apps/client/src/layers/entities/harness/ui/SkillHarnessRow.tsx": 2,

@@ -14,7 +14,7 @@ _openapi:
           as the person, and one quiet room entry (`kind: 'delete'`).
           `baseCommit` is required, and every file under `path` must be
           unchanged since it — nobody deletes a file they have not seen — or 409
-          `FILE_CHANGED`. The room's history keeps what was deleted: it is a
+          `file_changed`. The room's history keeps what was deleted: it is a
           commit, so an agent or git can bring it back. POST rather than DELETE
           because the request carries a body."
 ---

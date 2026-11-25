@@ -1,7 +1,7 @@
 /** One renderer owns both admission-size proof and eventual runtime document context. */
 import type { CanvasChannelDocEventsContext } from '@dorkos/shared/canvas-channel-schemas';
 import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
-import { fenceUntrustedBlock, mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock, mintFenceNonce } from '../../core/untrusted-text/untrusted-fence.js';
 
 /** Rendered document context ceiling, distinct from the wire-envelope ceiling. */
 export const DOC_EVENTS_PROMPT_BYTES = 80 * 1024;

@@ -46,7 +46,7 @@ import {
   PERSON_ONLY_DATA_PATHS,
   PROJECT_PLUGIN_PATHS,
   protectedPathGlob,
-} from '../../shared/policy/protected-paths.js';
+} from '../../../core/protected-paths/protected-paths.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a

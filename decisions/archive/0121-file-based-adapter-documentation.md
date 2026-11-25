@@ -1,7 +1,7 @@
 ---
 number: 121
 title: File-Based Adapter Documentation Over Inline Template Literals
-status: proposed
+status: archived
 created: 2026-03-14
 spec: adapter-setup-experience
 superseded-by: null

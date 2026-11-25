@@ -214,7 +214,17 @@ export async function mockCommunities(
     if (destination) {
       const ref = decodeURIComponent(destination[1]!);
       if (mock.failDestination.has(ref)) {
-        await route.fulfill({ status: 503, json: { error: 'Space unavailable' } });
+        await route.fulfill({
+          status: 502,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({
+            type: 'urn:dorkos:problem:upstream_unavailable',
+            title: 'A remote source didn’t answer. Try again.',
+            status: 502,
+            code: 'upstream_unavailable',
+            detail: 'The space can’t be reached right now. Try again.',
+          }),
+        });
         return;
       }
       if (mock.holdDestination.has(ref)) await hold(ref, 'destination');

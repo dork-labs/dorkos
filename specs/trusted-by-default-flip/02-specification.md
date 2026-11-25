@@ -395,7 +395,7 @@ Migration and config tests read the outcome off `config.json` on disk, never `ge
 - Arming schedules that are already parked, and approving extensions already waiting: both are open questions to a person.
 - An injection-taint rule for connector actions (ask only when the turn read outside content). The cancel window is the chosen mitigation; taint is a possible follow-up.
 - A real undo for services that offer one (Gmail trash restore): Composio exposes none today; the copy promises only Cancel.
-- The local-trust residual: with login off, an agent with a shell can still call the person's HTTP routes, and `POST /api/relay` lets a `relay.human.*` sender shape a turn's mode. Login remains the boundary.
+- The local-trust residual: with login off, an agent with a shell can still call the person's HTTP routes. Login remains the boundary. `POST /api/relay/messages` follows the chat route's rule since DOR-5151: the server sets a message's sender, a `relay.human.*` sender only for the person's own turn (`isPersonTurn`), and any other caller's message goes from its own address, shapes nothing and carries its agent's marks.
 
 ## 9. Corrections to the trust audit (`08`)
 

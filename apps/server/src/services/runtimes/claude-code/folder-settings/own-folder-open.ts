@@ -27,8 +27,11 @@
  * closed. Those are guarded against file tools only.
  *
  * Every change to the open files is logged (`own-folder-watch.ts`), and a later
- * drop below Full puts what the agent wrote back behind the folder-settings card
- * once (`launch-folder-config.ts`: nothing loaded at Full is recorded as approved).
+ * drop below Full puts what the agent wrote back behind a person: its hooks and
+ * other code settings behind the folder-settings card once
+ * (`launch-folder-config.ts`: nothing loaded at Full is recorded as approved),
+ * and its allow rules behind the folder allow card
+ * (`tool-gate/folder-file-allows.ts`, DOR-5237).
  *
  * @module services/runtimes/claude-code/folder-settings/own-folder-open
  */

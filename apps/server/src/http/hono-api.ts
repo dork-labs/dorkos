@@ -38,7 +38,6 @@ import {
   type ConnectorSignedIngress,
 } from '../services/connectors/events/signed-ingress.js';
 import { createA2aRoutes, type A2aRouteDeps } from '../routes/a2a.js';
-import { createActivityRoutes } from '../routes/activity.js';
 import { createAdminRoutes, type AdminDeps } from '../routes/admin.js';
 import {
   createAgentInstructionsRoutes,
@@ -48,7 +47,6 @@ import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
 import { createConnectorRoutes, type ConnectorRoutesDeps } from '../routes/connectors.js';
-import { createAuditRoutes, type AuditRouterDeps } from '../routes/audit.js';
 import {
   canvasDocBodyRule,
   createCanvasDocEventRoutes,
@@ -142,7 +140,6 @@ import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
-import { createRunningChatsRoutes } from '../routes/running-chats.js';
 import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
@@ -180,10 +177,8 @@ export interface ComposedGroupDeps {
   team?: TeamRouterDeps;
   /** The message index (`/api/search`). */
   search?: SearchRouterDeps;
-  /** The activity feed (`/api/activity`). */
+  /** The activity feed, for the routes that record to it; the capability mount serves `/api/activity`. */
   activity?: ActivityService;
-  /** The audit log and its account names (`/api/audit`). */
-  audit?: AuditRouterDeps;
   /**
    * The composed capability registry, behind the catalog
    * (`GET /api/capabilities/catalog`) and the invoke endpoint
@@ -387,12 +382,22 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       }
     },
   });
+  // Every capability's own REST path, before any hand group so none can shadow
+  // one (`assertNoCapabilityRouteCollisions` below proves it); each request
+  // reads the registry boot handed over (ADR 261123-170830).
+  const capabilityRoutes = mountedCapabilities();
+  app.route(
+    '/',
+    createCapabilityHttpRoutes({
+      registry: () => deps.capabilities,
+      capabilities: capabilityRoutes,
+    })
+  );
   app.route('/api/health', createHealthRoutes(deps));
   app.route('/api/your-browser', createYourBrowserRoutes());
   // Sessions, their messages and the per-session stream. Its WebSocket twin on
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).
-  app.route('/api/sessions/running', createRunningChatsRoutes(deps.sessions ?? {}));
   app.route('/api/sessions', createSessionRoutes(deps.sessions, deps.sessionLocations));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
@@ -491,8 +496,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.team) app.route('/api/team', createTeamRoutes(deps.team));
   if (deps.profile) app.route('/api/profile', createProfileRouter(deps.profile));
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
-  if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
-  if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
   if (deps.tasks) {
     // The person at this computer is asked to step up before a task change (DOR-3330).
     app.use('/api/tasks', askForPersonBeforeTaskWrite());
@@ -546,24 +549,13 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // several prefixes. Each registers only its own concrete paths, so the mount
   // claims nothing else: every other path still reaches its group or the `/api` 404.
   if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
-  // Every capability's own REST path (`/api/agents/pauses`,
-  // `/api/agents/:agentId/mcp-servers`, …), built from the declarations; each
-  // request reads the registry boot handed over (ADR 261123-170830).
-  const capabilityRoutes = mountedCapabilities();
-  app.route(
-    '/',
-    createCapabilityHttpRoutes({
-      registry: () => deps.capabilities,
-      capabilities: capabilityRoutes,
-    })
-  );
   if (deps.agentInstructions) {
     app.route('/api', createAgentInstructionsRoutes(deps.agentInstructions));
   }
   if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
-  // Six groups answer under `/api/agents`: the two above, and these four.
-  // Each registers only its own concrete paths, and no two share one: the
+  // Seven groups answer under `/api/agents`: the capability mount, agent instructions
+  // and these five. Each registers only its own concrete paths, and no two share one: the
   // agents group's paths are all fixed words (`/current`, `/resolve`,
   // `/create`), never an `:id`, so no order between them changes an answer.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));

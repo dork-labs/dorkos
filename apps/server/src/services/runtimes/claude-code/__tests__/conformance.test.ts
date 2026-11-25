@@ -615,6 +615,9 @@ runtimeConformance(
     ),
   {
     name: 'ClaudeCodeRuntime (mocked SDK) — AgentRuntime conformance',
+    // Spec `turns-survive-restarts` §7.2: declared `false` until T18's measured run.
+    restartContinueUnprovenReason:
+      'DorkOS relaunches with --resume after a restart, but what a turn cut in the middle of a tool call leaves in the transcript is unmeasured; T18 flips this with a measured run',
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
     approvalTurn: (runtime, id, content, probes) =>

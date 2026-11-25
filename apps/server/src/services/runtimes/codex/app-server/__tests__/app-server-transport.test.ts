@@ -652,9 +652,7 @@ describe('credits', () => {
       { threadId: expect.any(String), processId: bg.processId },
     ]);
     expect(fake.hasExited).toBe(true);
-    for (let i = 0; i < 100 && seen.length === 0; i += 1) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await vi.waitFor(() => expect(seen).toHaveLength(1), { interval: 1 });
     // Stopped, as Codex confirmed, never "lost track"; and no model turn.
     expect(seen[0]).toMatchObject({ startTurn: false, notices: [] });
     expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped', wakes: false });
@@ -709,12 +707,14 @@ describe('review fixes: every early exit ends with one done, and no turn is join
       h.request({ sessionId: 's1', boundThreadId: h.bindings[0]!.threadId })
     );
     const reading = rest(gen);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // The second turn/start is parked at the gate: that is "in flight".
+    await vi.waitFor(() => expect(fake.requestsOf('turn/start')).toHaveLength(2), { interval: 1 });
     await expect(h.transport.interrupt('s1')).resolves.toMatchObject({ outcome: 'unconfirmed' });
     open();
     expect(dones(await reading)).toHaveLength(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(fake.requestsOf('turn/interrupt')).toHaveLength(1);
+    await vi.waitFor(() => expect(fake.requestsOf('turn/interrupt')).toHaveLength(1), {
+      interval: 1,
+    });
   });
 
   it('never joins a turn Codex is still running after an unconfirmed stop', async () => {
@@ -912,8 +912,7 @@ describe('re-review fixes', () => {
     expect(watching).toBe(1);
     const fake = h.host.home(PERSON_HOME).processes[0]!;
     fake.send({ method: 'thread/closed', params: { threadId: h.bindings[0]!.threadId } });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(watching).toBe(0);
+    await vi.waitFor(() => expect(watching).toBe(0), { interval: 1 });
     expect(h.transport.getSessionWarmth('s1')).toBe('cold');
   });
 });
@@ -982,8 +981,7 @@ describe('background work (spec §12)', () => {
     return seen;
   }
   async function waitFor(check: () => boolean): Promise<void> {
-    for (let i = 0; i < 200 && !check(); i += 1) await new Promise((r) => setTimeout(r, 5));
-    expect(check()).toBe(true);
+    await vi.waitFor(() => expect(check()).toBe(true), { interval: 1 });
   }
 
   it('RT-LIFE-03: wakes the chat once when a command finishes after a completed turn', async () => {
@@ -1008,6 +1006,8 @@ describe('background work (spec §12)', () => {
     ]);
     expect(h.transport.isSegmentPending('s1')).toBe(false);
     expect(h.transport.holdsBackgroundWork('s1')).toBe(false);
+    // An absence check ("once"): no signal marks a second wake that never
+    // comes, so give it a short real window to show up in.
     await new Promise((r) => setTimeout(r, 60));
     expect(seen).toHaveLength(1);
   });
@@ -1111,6 +1111,8 @@ describe('background work (spec §12)', () => {
     expect(seen[0]).toMatchObject({ startTurn: false });
     expect(seen[0]!.completions[0]).toMatchObject({ status: 'stopped' });
     const fake = h.host.home(PERSON_HOME).processes[0]!;
+    // An absence check ("once"): four ceilings' worth of real time in which a
+    // re-armed ceiling would send a second terminate.
     await new Promise((r) => setTimeout(r, 120));
     expect(fake.requestsOf('thread/backgroundTerminals/terminate')).toHaveLength(1);
     expect(seen).toHaveLength(1);

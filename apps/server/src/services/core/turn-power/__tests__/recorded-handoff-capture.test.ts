@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setTeammateSpaceGate } from '../teammate-mark.js';
 afterEach(() => setTeammateSpaceGate(null));
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   recordTurnLevels,
@@ -69,6 +70,20 @@ describe('recorded current transferable handoff capture', () => {
     expect(captureCurrentTransfer(session, serial)).toMatchObject({
       state: 'recorded-transfer',
       carry: { permissionCeiling: null, outsider: true, externalAuthor: true, outsideWords: true },
+    });
+  });
+  it('reads a teammate chain nothing proves the rooms of as a teammate’s', async () => {
+    const session = fresh();
+    // What a relay turn is sent with when the chain it carries was not sealed by this server.
+    const serial = await record(recorder(), session, {
+      permissionCeiling: [
+        'runtime-default',
+        { asks: 'never', reach: 'everything', teammate: [UNPROVEN_TEAMMATE_ORIGIN] },
+      ],
+    });
+    expect(captureCurrentTransfer(session, serial)).toMatchObject({
+      state: 'recorded-transfer',
+      carry: { teammate: true, outsider: true },
     });
   });
   it('genuine existing alias path shares monotonic teammate scope; old capture remains immutable', async () => {

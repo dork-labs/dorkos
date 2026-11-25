@@ -4,15 +4,14 @@
  * unchanged.
  *
  * The stream is the public integration contract (`docs/integrations/sse-protocol.mdx`)
- * and what the Electron main process reads for its tray count; the browser
- * pins the same two facts in `apps/e2e/tests/streams/sse-contract.spec.ts`.
- * So this file pins the wire bytes, not a parser's reading of them: the exact
- * headers, the `connected` frame first, a live broadcast, the heartbeat, which
- * caller a frame addressed to a person reaches (a read cursor reaches only its
- * own person, never an agent), and that a client leaving frees its place. The
- * global stream has no `Last-Event-ID` replay (only the per-session and
- * per-room streams do) and reads no query, so a query string is checked to
- * change nothing.
+ * and what the Electron main process reads for its tray count, and no browser
+ * spec reads it, so this file is its only guard. It pins the wire bytes, not a
+ * parser's reading of them: the exact headers, the `connected` frame first, a
+ * live broadcast, the heartbeat, which caller a frame addressed to a person
+ * reaches (a read cursor reaches only its own person, never an agent), and
+ * that a client leaving frees its place. The global stream has no
+ * `Last-Event-ID` replay (only the per-session and per-room streams do) and
+ * reads no query, so a query string is checked to change nothing.
  *
  * The WebSocket the cockpit opens on the same path is an upgrade, not a
  * route, and is not in this file.
@@ -441,8 +440,10 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
       path: '/api/events',
       expect: {
         status: 503,
-        headers: JSON_TYPE,
-        body: { error: 'Too many SSE clients' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('temporarily_unavailable', {
+          detail: 'Too many live connections are open. Try again soon.',
+        }),
       },
     });
 

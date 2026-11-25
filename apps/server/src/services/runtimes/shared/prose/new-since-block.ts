@@ -1,6 +1,6 @@
 /** One fenced upgrade note, rendered identically on every runtime. */
 import type { NewSinceData } from '@dorkos/shared/additional-context';
-import { fenceUntrustedBlock } from '../untrusted-fence.js';
+import { fenceUntrustedBlock } from '../../../core/untrusted-text/untrusted-fence.js';
 
 /** Render compiled release facts as data; they confer no authority. */
 export function formatNewSince(data: NewSinceData): string {

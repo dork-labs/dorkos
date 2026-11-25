@@ -1,14 +1,18 @@
 /**
  * `/api/audit` (spec `audit-trail`): the chain check and the reads over HTTP,
- * under the same visibility rule as the capabilities.
+ * served by the capability mount from the `audit.*` capabilities, so the
+ * visibility rule is the capabilities' own.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { auditEvents, eq, type Db } from '@dorkos/db';
-import { createAuditRoutes } from '../audit.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { createCapabilityHttpRoutes } from '../capability-http.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { auditDomain } from '../../services/audit/audit-capabilities.js';
 import { AuditLog } from '../../services/audit/audit-log.js';
 import { AccountIds } from '../../services/audit/account-ids.js';
 
@@ -38,12 +42,19 @@ describe('Audit routes', () => {
         summary: 'DorkOS started',
       });
     }
+    const registry = composeRegistry([auditDomain], {
+      logger: noopLogger,
+      auditDeps: {
+        log,
+        accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+      },
+    });
     fixtureTarget.mount(
       honoGroupListener({
-        path: '/api/audit',
-        routes: createAuditRoutes({
-          log,
-          accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
+        path: '/',
+        routes: createCapabilityHttpRoutes({
+          registry: () => registry,
+          capabilities: auditDomain.capabilities,
         }),
       })
     );
@@ -67,6 +78,7 @@ describe('Audit routes', () => {
     expect(stretch.body).toMatchObject({ ok: true, checked: 1, lastSeq: 2 });
     const bad = await request(fixtureServer).get('/api/audit/verify?fromSeq=0');
     expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('invalid_request');
   });
 
   describe('reads', () => {
@@ -101,9 +113,12 @@ describe('Audit routes', () => {
       );
       expect(list.body.events).toHaveLength(3);
       const admins = log.query({ action: 'auth.', limit: 1 }, { kind: 'owner' }).events[0]!;
-      expect((await request(fixtureServer).get(`/api/audit/${admins.id}`).set(AGENT)).status).toBe(
-        404
-      );
+      const hidden = await request(fixtureServer).get(`/api/audit/${admins.id}`).set(AGENT);
+      expect(hidden.status).toBe(404);
+      expect(hidden.body).toMatchObject({
+        code: 'not_found',
+        detail: 'No audit event with that id.',
+      });
       const asOwner = await request(fixtureServer).get(`/api/audit/${admins.id}`);
       expect(asOwner.status).toBe(200);
       expect(asOwner.body.event).toMatchObject({ action: 'auth.signed_in' });

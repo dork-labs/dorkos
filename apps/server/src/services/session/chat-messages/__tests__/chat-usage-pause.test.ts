@@ -6,7 +6,11 @@ import { toAccountUsage, type AccountUsage } from '@dorkos/shared/account-usage'
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { setAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { AccountUsageStore } from '../../../core/usage/account-usage-store.js';
-import { creditsClaudeRoot } from '../../../runtimes/claude-code/credits-root.js';
+import {
+  creditsClaudeRoot,
+  isCreditsClaudeRoot,
+} from '../../../runtimes/claude-code/credits-root.js';
+import { claudeCodeFacts, setClaudeCodeFacts } from '../../resolution/claude-code-facts.js';
 import { SessionLimitStore, setSessionLimitStore } from '../../fleet/session-limit-store.js';
 import { chatUsagePauseOf } from '../sending/chat-usage-pause.js';
 import {
@@ -42,6 +46,8 @@ function recordLimit(resetsAt: string | null = RESET) {
 }
 
 beforeEach(() => {
+  // What the startup hands turn code (DOR-4928): which folder is the credits one.
+  setClaudeCodeFacts({ ...claudeCodeFacts(), isCreditsRoot: isCreditsClaudeRoot });
   vi.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
   perToken = false;
   root = '/accounts/full';

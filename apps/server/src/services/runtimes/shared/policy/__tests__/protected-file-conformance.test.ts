@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROTECTED_PATHS } from '../protected-paths.js';
+import { PROTECTED_PATHS } from '../../../../core/protected-paths/protected-paths.js';
 import {
   isProtectedPath,
   searchTouchesProtectedPath,
   type ProtectedPathRoots,
-} from '../protected-path-check.js';
+} from '../../../../core/protected-paths/protected-path-check.js';
 import { protectedFileVerdict } from '../../../opencode/messaging/protected-files.js';
 import { DoeApprovals } from '../../../doe/approvals.js';
 
@@ -97,6 +97,23 @@ describe.each(adapters)('%s native file protection', (adapter) => {
       entry.path.replaceAll('*', 'sample')
     );
     expect(await refused(adapter, file, entry.deny)).toBe(true);
+  });
+
+  // DOR-5241: DorkOS's key and secret files in the data folder, named as their
+  // writers name them, temp files included. Refused at every level, Full too.
+  it.each([
+    'hub-signing-key.pem',
+    'hub-signing-key.pem.4242.tmp',
+    'session-relay/pin.json',
+    'session-relay/computer-key.pem',
+    'session-relay/.computer-key.pem.4242.made-up-uuid.tmp',
+    'setup-code',
+    'step-up/page-stamp.key',
+    'step-up/page-stamp.key.4242.tmp',
+  ])('refuses a read of %s below Full and at Full', async (file) => {
+    const target = path.join(roots.data, file);
+    expect(await refused(adapter, target, 'read')).toBe(true);
+    expect(await refused(adapter, target, 'read', true)).toBe(true);
   });
 
   // DOR-3613: an agent that reads the person's DorkOS sign-in, or the agent

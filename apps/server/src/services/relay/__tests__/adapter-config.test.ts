@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFile, writeFile, chmod, stat } from 'node:fs/promises';
+import { WEBHOOK_MANIFEST } from '@dorkos/relay';
 import {
   AdapterConfigWrites,
+  parseAdapterConfigForPersist,
   loadAdapterConfig,
   saveAdapterConfig,
   watchAdapterConfig,
@@ -316,5 +318,30 @@ describe('AdapterConfigWrites — a hung save', () => {
     expect(later).toHaveBeenCalledOnce();
     expect(apply).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('has not finished'));
+  });
+});
+
+// `fields` carries manifest field keys only: a record key a person typed (a
+// header's name) is never sent back (review on DOR-4979).
+describe('parseAdapterConfigForPersist fields', () => {
+  it('names the owning field for a bad entry in a free-form map', () => {
+    const attempt = () =>
+      parseAdapterConfigForPersist(
+        {
+          id: 'wh-x',
+          type: 'webhook',
+          enabled: false,
+          config: {
+            inbound: { subject: 'relay.webhook.x', secret: 'secret-16-chars!!' },
+            outbound: {
+              url: 'https://example.com',
+              secret: 'secret-16-chars!!',
+              headers: { 'X-Private-Name': 5 },
+            },
+          },
+        },
+        WEBHOOK_MANIFEST
+      );
+    expect(attempt).toThrow(expect.objectContaining({ fields: ['outbound.headers'] }));
   });
 });

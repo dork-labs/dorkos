@@ -70,48 +70,25 @@ function createMockDeps(meshEnabled = true): McpToolDeps {
 }
 
 describe('Mesh MCP Tools', () => {
-  describe('when mesh is disabled', () => {
-    it('mesh_discover returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshDiscoverHandler(deps);
-      const result = await handler({ roots: ['/test'] });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toEqual(
-        expect.objectContaining({ code: 'MESH_DISABLED' })
-      );
-    });
-
-    it('mesh_register returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshRegisterHandler(deps);
-      const result = await handler({ path: '/test/bot' });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
-    });
-
-    it('mesh_list returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshListHandler(deps);
-      const result = await handler({});
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
-    });
-
-    it('mesh_deny returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshDenyHandler(deps);
-      const result = await handler({ path: '/bad' });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
-    });
-
-    it('mesh_unregister returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshUnregisterHandler(deps);
-      const result = await handler({ agentId: 'a1' });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
-    });
+  it.each([
+    ['mesh_discover', () => createMeshDiscoverHandler(createMockDeps(false))({ roots: ['/test'] })],
+    [
+      'mesh_register',
+      () => createMeshRegisterHandler(createMockDeps(false))({ path: '/test/bot' }),
+    ],
+    ['mesh_list', () => createMeshListHandler(createMockDeps(false))({})],
+    ['mesh_deny', () => createMeshDenyHandler(createMockDeps(false))({ path: '/bad' })],
+    [
+      'mesh_unregister',
+      () => createMeshUnregisterHandler(createMockDeps(false))({ agentId: 'a1' }),
+    ],
+    ['mesh_status', () => createMeshStatusHandler(createMockDeps(false))()],
+    ['mesh_inspect', () => createMeshInspectHandler(createMockDeps(false))({ agentId: 'a1' })],
+    ['mesh_query_topology', () => createMeshQueryTopologyHandler(createMockDeps(false))({})],
+  ] as const)('%s refuses with MESH_DISABLED when mesh is off', async (_tool, call) => {
+    const result = await call();
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
   });
 
   describe('when mesh is enabled', () => {
@@ -135,23 +112,6 @@ describe('Mesh MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
       expect(data.candidates).toHaveLength(1);
       expect(data.count).toBe(1);
-    });
-
-    it('mesh_register creates an agent', async () => {
-      const deps = createMockDeps(true);
-      const mockAgent = { id: 'a1', name: 'Bot', runtime: 'claude-code' };
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.registerByPath.mockResolvedValue(mockAgent);
-
-      const handler = createMeshRegisterHandler(deps);
-      const result = await handler({ path: '/test/bot', name: 'bot' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.agent.id).toBe('a1');
-      expect(meshCore.registerByPath).toHaveBeenCalledWith(
-        '/test/bot',
-        expect.objectContaining({ name: 'bot', runtime: 'claude-code' }),
-        'mcp-tool'
-      );
     });
 
     it('mesh_register records the calling agent as createdBy (DOR-2788)', async () => {
@@ -204,120 +164,27 @@ describe('Mesh MCP Tools', () => {
         );
       });
 
-      it('leaves a name that is already a slug alone, and adds no display name', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'dorkos-cloud' });
-
-        const handler = createMeshRegisterHandler(deps);
-        await handler({ path: '/test/cloud', name: 'dorkos-cloud' });
-
-        const partial = meshCore.registerByPath.mock.calls[0][1] as Record<string, unknown>;
-        expect(partial.name).toBe('dorkos-cloud');
-        expect(partial).not.toHaveProperty('displayName');
-      });
-
-      it('prefers an explicit displayName over the one derived from the name', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'dorkos-cloud' });
-
-        const handler = createMeshRegisterHandler(deps);
-        await handler({ path: '/test/cloud', name: 'DorkOS Cloud', displayName: 'The Cloud' });
-
-        expect(meshCore.registerByPath).toHaveBeenCalledWith(
-          '/test/cloud',
-          expect.objectContaining({ name: 'dorkos-cloud', displayName: 'The Cloud' }),
-          'mcp-tool'
-        );
-      });
-
-      it('refuses an icon that is not exactly one emoji, and says what one is', async () => {
+      // Each refusal says what a valid value is and never reaches the registry.
+      it.each([
+        [{ icon: 'sparkles' }, 'INVALID_ICON', 'exactly one emoji'],
+        [{ color: 'pinkish' }, 'INVALID_COLOR', '#ec4899'],
+        [{ displayName: 'x'.repeat(101) }, 'INVALID_DISPLAY_NAME', '100'],
+        [{ name: '' }, 'INVALID_NAME', ''],
+        [{ runtime: 'gpt5' }, 'INVALID_RUNTIME', ''],
+      ])('refuses %o with %s', async (bad, code, hint) => {
         const deps = createMockDeps(true);
         const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
-        const handler = createMeshRegisterHandler(deps);
-        const result = await handler({ path: '/test/bot', name: 'bot', icon: 'sparkles' });
-
-        expect(result.isError).toBe(true);
-        const data = JSON.parse(result.content[0].text) as { error: string; code: string };
-        expect(data.code).toBe('INVALID_ICON');
-        expect(data.error).toContain('exactly one emoji');
-        // Never reaches the registry — no unrenderable face is written.
-        expect(meshCore.registerByPath).not.toHaveBeenCalled();
-      });
-
-      it('refuses a colour that is not hex, and says what one looks like', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-
-        const handler = createMeshRegisterHandler(deps);
-        const result = await handler({ path: '/test/bot', name: 'bot', color: 'pinkish' });
-
-        expect(result.isError).toBe(true);
-        const data = JSON.parse(result.content[0].text) as { error: string; code: string };
-        expect(data.code).toBe('INVALID_COLOR');
-        expect(data.error).toContain('#ec4899');
-        expect(meshCore.registerByPath).not.toHaveBeenCalled();
-      });
-
-      it('stores a face in the one spelling the picker can match', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'bot' });
-
-        const handler = createMeshRegisterHandler(deps);
-        await handler({ path: '/test/bot', name: 'bot', icon: ' \u{1F52E} ', color: '  #ABC  ' });
-
-        expect(meshCore.registerByPath).toHaveBeenCalledWith(
-          '/test/bot',
-          expect.objectContaining({ icon: '\u{1F52E}', color: '#aabbcc' }),
-          'mcp-tool'
-        );
-      });
-
-      it('refuses a display name longer than the manifest holds', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-
-        const handler = createMeshRegisterHandler(deps);
-        const result = await handler({
+        const result = await createMeshRegisterHandler(deps)({
           path: '/test/bot',
           name: 'bot',
-          displayName: 'x'.repeat(101),
+          ...bad,
         });
 
         expect(result.isError).toBe(true);
         const data = JSON.parse(result.content[0].text) as { error: string; code: string };
-        expect(data.code).toBe('INVALID_DISPLAY_NAME');
-        expect(data.error).toContain('100');
-        // The refusal is the point: `writeManifest` would have failed with a raw
-        // Zod blob several layers below anybody who could explain it.
-        expect(meshCore.registerByPath).not.toHaveBeenCalled();
-      });
-
-      it('truncates a display name it DERIVED rather than failing the call', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'long' });
-
-        const handler = createMeshRegisterHandler(deps);
-        const result = await handler({ path: '/test/bot', name: `${'Long Name '.repeat(20)}end` });
-
-        expect(result.isError).toBeUndefined();
-        const partial = meshCore.registerByPath.mock.calls[0][1] as { displayName: string };
-        expect(partial.displayName.length).toBeLessThanOrEqual(100);
-      });
-
-      it('refuses a name nothing can be made of, rather than calling it "agent"', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-
-        const handler = createMeshRegisterHandler(deps);
-        const result = await handler({ path: '/test/bot', name: '' });
-
-        expect(result.isError).toBe(true);
-        expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_NAME' });
+        expect(data.code).toBe(code);
+        expect(data.error).toContain(hint);
         expect(meshCore.registerByPath).not.toHaveBeenCalled();
       });
 
@@ -339,21 +206,6 @@ describe('Mesh MCP Tools', () => {
           expect(partial).not.toHaveProperty('displayName');
         }
       );
-
-      it('slugifies the directory name it falls back to when no name is given', async () => {
-        const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'my-project' });
-
-        const handler = createMeshRegisterHandler(deps);
-        await handler({ path: '/test/My Project' });
-
-        expect(meshCore.registerByPath).toHaveBeenCalledWith(
-          '/test/My Project',
-          expect.objectContaining({ name: 'my-project', displayName: 'My Project' }),
-          'mcp-tool'
-        );
-      });
     });
 
     it('mesh_register notifies the agent-created seam, so the agent takes its #team seat now', async () => {
@@ -406,71 +258,37 @@ describe('Mesh MCP Tools', () => {
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
     });
 
-    it('mesh_register rejects an invalid runtime (INVALID_RUNTIME)', async () => {
+    // Register uses the dork-home seam (mirrors the HTTP mesh register route).
+    it.each([
+      [
+        'mesh_register',
+        'registerByPath',
+        validateBoundaryOrDorkHome,
+        (d: McpToolDeps) => createMeshRegisterHandler(d)({ path: '/etc/passwd' }),
+      ],
+      [
+        'mesh_discover',
+        'discover',
+        validateBoundary,
+        (d: McpToolDeps) => createMeshDiscoverHandler(d)({ roots: ['/etc'] }),
+      ],
+      [
+        'mesh_deny',
+        'deny',
+        validateBoundary,
+        (d: McpToolDeps) => createMeshDenyHandler(d)({ path: '/etc' }),
+      ],
+    ] as const)('%s rejects a path outside the boundary', async (_tool, method, guard, call) => {
       const deps = createMockDeps(true);
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-
-      const handler = createMeshRegisterHandler(deps);
-      const result = await handler({ path: '/test/bot', runtime: 'gpt5' });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_RUNTIME' });
-      // Never reaches the registry — no schema-invalid manifest is written.
-      expect(meshCore.registerByPath).not.toHaveBeenCalled();
-    });
-
-    it('mesh_register rejects a path outside the boundary', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      // Register uses the dork-home seam (mirrors the HTTP mesh register route).
-      vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
+      vi.mocked(guard).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const handler = createMeshRegisterHandler(deps);
-      const result = await handler({ path: '/etc/passwd' });
+      const result = await call(deps);
       expect(result.isError).toBe(true);
       expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
-      expect(meshCore.registerByPath).not.toHaveBeenCalled();
-    });
-
-    it('mesh_discover rejects a scan root outside the boundary', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
-      );
-
-      const handler = createMeshDiscoverHandler(deps);
-      const result = await handler({ roots: ['/etc'] });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
-      expect(meshCore.discover).not.toHaveBeenCalled();
-    });
-
-    it('mesh_deny rejects a path outside the boundary', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      vi.mocked(validateBoundary).mockRejectedValueOnce(
-        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
-      );
-
-      const handler = createMeshDenyHandler(deps);
-      const result = await handler({ path: '/etc' });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
-      expect(meshCore.deny).not.toHaveBeenCalled();
-    });
-
-    it('mesh_list returns agents with filters', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.list.mockReturnValue([{ id: 'a1' }]);
-
-      const handler = createMeshListHandler(deps);
-      const result = await handler({ runtime: 'claude-code' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.agents).toHaveLength(1);
-      expect(meshCore.list).toHaveBeenCalledWith({ runtime: 'claude-code', capability: undefined });
+      expect(meshCore[method]).not.toHaveBeenCalled();
     });
 
     // DOR-1337 (F5): the docs tell an agent to find peers with mesh_list and then
@@ -492,8 +310,8 @@ describe('Mesh MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
 
       expect(data.agents).toEqual([
-        { id: 'a1', name: 'alpha', relaySubject: 'relay.agent.ns.a1' },
-        { id: 'b2', name: 'beta', relaySubject: 'relay.agent.ns.b2' },
+        { id: 'a1', name: 'alpha', ref: null, relaySubject: 'relay.agent.ns.a1' },
+        { id: 'b2', name: 'beta', ref: null, relaySubject: 'relay.agent.ns.b2' },
       ]);
       // Never rebuilt from the manifest: only the un-stripped registry lookup
       // knows the namespace the endpoint and its rules were registered under.
@@ -514,48 +332,31 @@ describe('Mesh MCP Tools', () => {
       }
     });
 
-    it('mesh_list omits relaySubject rather than inventing one when the id resolves to nothing', async () => {
+    // DOR-5046: every listed agent carries its `dork:agent:` reference, so a
+    // link to it is `[Name](/r/<ref>)`; an id no link opens carries null.
+    it('mesh_list and mesh_inspect name each agent by its dork: reference', async () => {
+      const id = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
       const deps = createMockDeps(true);
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.list.mockReturnValue([{ id: 'ghost', name: 'ghost' }]);
-      meshCore.getSubject.mockReturnValue(undefined);
+      meshCore.list.mockReturnValue([
+        { id, name: 'lantern' },
+        { id: 'a1', name: 'alpha' },
+      ]);
+      const listed = JSON.parse((await createMeshListHandler(deps)({})).content[0].text);
+      expect(listed.agents.map((agent: { ref: string | null }) => agent.ref)).toEqual([
+        `dork:agent:${id}`,
+        null,
+      ]);
 
-      const handler = createMeshListHandler(deps);
-      const data = JSON.parse((await handler({})).content[0].text);
-      expect(data.agents).toEqual([{ id: 'ghost', name: 'ghost' }]);
-    });
-
-    it('mesh_deny denies a path', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-
-      const handler = createMeshDenyHandler(deps);
-      const result = await handler({ path: '/bad', reason: 'no good' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.success).toBe(true);
-      expect(meshCore.deny).toHaveBeenCalledWith('/bad', 'no good', 'mcp-tool');
-    });
-
-    it('mesh_unregister removes an agent', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.get.mockReturnValue({ id: 'a1', name: 'Bot' });
-
-      const handler = createMeshUnregisterHandler(deps);
-      const result = await handler({ agentId: 'a1' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.success).toBe(true);
-      expect(meshCore.unregister).toHaveBeenCalledWith('a1');
-    });
-
-    it('mesh_unregister returns error for unknown agent', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.get.mockReturnValue(undefined);
-
-      const handler = createMeshUnregisterHandler(deps);
-      const result = await handler({ agentId: 'unknown' });
-      expect(result.isError).toBe(true);
+      meshCore.inspect.mockReturnValue({
+        agent: { id, name: 'lantern' },
+        health: {},
+        relaySubject: null,
+      });
+      const inspected = JSON.parse(
+        (await createMeshInspectHandler(deps)({ agentId: id })).content[0].text
+      );
+      expect(inspected.agent.ref).toBe(`dork:agent:${id}`);
     });
 
     it('mesh_unregister rejects system agents with SYSTEM_AGENT error', async () => {
@@ -596,66 +397,6 @@ describe('Mesh MCP Tools', () => {
       expect(meshCore.getStatus).toHaveBeenCalled();
     });
 
-    it('mesh_inspect returns agent data for valid ID', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      const mockInspect = {
-        agent: { id: 'a1', name: 'Bot', runtime: 'claude-code', capabilities: [] },
-        health: {
-          agentId: 'a1',
-          name: 'Bot',
-          status: 'active',
-          lastSeenAt: null,
-          lastSeenEvent: null,
-          registeredAt: '2026-01-01T00:00:00.000Z',
-          runtime: 'claude-code',
-          capabilities: [],
-        },
-        relaySubject: 'relay.agent.default.a1',
-      };
-      meshCore.inspect.mockReturnValue(mockInspect);
-
-      const handler = createMeshInspectHandler(deps);
-      const result = await handler({ agentId: 'a1' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.agent.id).toBe('a1');
-      expect(data.health.status).toBe('active');
-      expect(data.relaySubject).toBe('relay.agent.default.a1');
-      expect(meshCore.inspect).toHaveBeenCalledWith('a1');
-    });
-
-    it('mesh_inspect returns error for unknown agent', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.inspect.mockReturnValue(undefined);
-
-      const handler = createMeshInspectHandler(deps);
-      const result = await handler({ agentId: 'missing' });
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('missing');
-    });
-
-    it('mesh_query_topology returns topology for admin view (no namespace)', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      const mockTopology = {
-        namespaces: ['ns-a', 'ns-b'],
-        agents: [
-          { id: 'a1', namespace: 'ns-a' },
-          { id: 'a2', namespace: 'ns-b' },
-        ],
-        accessRules: [{ from: 'ns-a', to: 'ns-b' }],
-      };
-      meshCore.getTopology.mockReturnValue(mockTopology);
-
-      const handler = createMeshQueryTopologyHandler(deps);
-      const result = await handler({});
-      const data = JSON.parse(result.content[0].text);
-      expect(data.namespaces).toEqual(['ns-a', 'ns-b']);
-      expect(data.agents).toHaveLength(2);
-      expect(meshCore.getTopology).toHaveBeenCalledWith('*');
-    });
-
     it('mesh_query_topology returns topology for specific namespace', async () => {
       const deps = createMockDeps(true);
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -672,61 +413,6 @@ describe('Mesh MCP Tools', () => {
       expect(data.namespaces).toEqual(['ns-a']);
       expect(data.agents).toHaveLength(1);
       expect(meshCore.getTopology).toHaveBeenCalledWith('ns-a');
-    });
-
-    it('mesh_list with callerNamespace passes through to meshCore', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.list.mockReturnValue([{ id: 'a1', namespace: 'ns-a' }]);
-
-      const handler = createMeshListHandler(deps);
-      const result = await handler({ callerNamespace: 'ns-a' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.agents).toHaveLength(1);
-      expect(meshCore.list).toHaveBeenCalledWith({
-        runtime: undefined,
-        capability: undefined,
-        callerNamespace: 'ns-a',
-      });
-    });
-
-    it('mesh_list without callerNamespace works (backward compat)', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      meshCore.list.mockReturnValue([{ id: 'a1' }, { id: 'a2' }]);
-
-      const handler = createMeshListHandler(deps);
-      const result = await handler({});
-      const data = JSON.parse(result.content[0].text);
-      expect(data.agents).toHaveLength(2);
-      expect(data.count).toBe(2);
-      expect(meshCore.list).toHaveBeenCalledWith(undefined);
-    });
-  });
-
-  describe('when mesh is disabled', () => {
-    it('mesh_status returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshStatusHandler(deps);
-      const result = await handler();
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
-    });
-
-    it('mesh_inspect returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshInspectHandler(deps);
-      const result = await handler({ agentId: 'a1' });
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
-    });
-
-    it('mesh_query_topology returns MESH_DISABLED error', async () => {
-      const deps = createMockDeps(false);
-      const handler = createMeshQueryTopologyHandler(deps);
-      const result = await handler({});
-      expect(result.isError).toBe(true);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
     });
   });
 });

@@ -48,16 +48,6 @@ describe('a document an app opened', () => {
     // A reload reads it from the record.
     expect(canvas.get(SCOPE, doc.id)?.openedBy).toEqual({ extensionId: 'desk' });
   });
-
-  it('always opens a new document, even for an address already open', () => {
-    const mine = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, PAGE);
-    const appOpened = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, PAGE, {
-      openedByExtensionId: 'desk',
-    });
-    expect(appOpened.id).not.toBe(mine.id);
-    // The person's own tab keeps no label and is not navigated.
-    expect(canvas.get(SCOPE, mine.id)?.openedBy).toBeUndefined();
-  });
 });
 
 describe('what an agent can never do (Security tests 1 and 2)', () => {

@@ -97,6 +97,47 @@ export function makeRepo(files: Record<string, unknown>): RepoFixture {
   };
 }
 
+/** A repo checked out as a submodule of another, as `git submodule add` lays it out. */
+export interface SubmoduleFixture {
+  /** The containing repo's checkout. */
+  superproject: string;
+  /** The submodule's checkout, `<superproject>/sm`, whose git folder is the superproject's `.git/modules/sm`. */
+  top: string;
+  /** Add a linked worktree of the submodule on a new branch, beside the superproject. */
+  addWorktree: (name: string) => string;
+}
+
+/**
+ * Make, under `root`, a repo whose `main` holds `files`, and a superproject that
+ * holds it as the submodule `sm`.
+ *
+ * @param root - The folder to make them in.
+ * @param files - The submodule's repo-relative path to content.
+ */
+export function makeSubmodule(root: string, files: Record<string, unknown>): SubmoduleFixture {
+  const origin = path.join(root, 'sm-origin');
+  fs.mkdirSync(origin, { recursive: true });
+  git(origin, ['init', '-q', '-b', 'main']);
+  for (const [rel, content] of Object.entries(files)) writeFile(path.join(origin, rel), content);
+  git(origin, ['add', '-A']);
+  git(origin, ['commit', '-q', '--allow-empty', '-m', 'initial']);
+  const superproject = path.join(root, 'super');
+  fs.mkdirSync(superproject, { recursive: true });
+  git(superproject, ['init', '-q', '-b', 'main']);
+  git(superproject, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', origin, 'sm']);
+  git(superproject, ['commit', '-q', '-m', 'sm']);
+  const top = path.join(superproject, 'sm');
+  return {
+    superproject,
+    top,
+    addWorktree: (name) => {
+      const dir = path.join(root, name);
+      git(top, ['worktree', 'add', '-q', '-b', name, dir, 'HEAD']);
+      return dir;
+    },
+  };
+}
+
 /**
  * Take every `GIT_*` variable out of this process's env, so the code under
  * test reads the fixture repo and nothing a session pointed git at. Returns

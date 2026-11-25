@@ -647,7 +647,12 @@ describe('CreateAgentDialog', () => {
   it('reports "Can’t open this folder" on a permission error and blocks create', async () => {
     const user = userEvent.setup();
     const { transport } = renderDialog();
-    vi.mocked(transport.browseDirectory).mockRejectedValue(new Error('EACCES: permission denied'));
+    vi.mocked(transport.browseDirectory).mockRejectedValue(
+      Object.assign(new Error('DorkOS isn’t allowed to read that folder.'), {
+        status: 403,
+        code: 'forbidden',
+      })
+    );
 
     const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'restricted-agent');
@@ -751,7 +756,7 @@ describe('CreateAgentDialog', () => {
       .mockRejectedValueOnce(
         Object.assign(new Error('review'), {
           status: 409,
-          body: { code: 'template_needs_review', template: brings },
+          body: { code: 'needs_review', template: brings },
         })
       )
       .mockResolvedValueOnce({

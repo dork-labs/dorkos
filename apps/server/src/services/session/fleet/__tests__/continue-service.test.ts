@@ -69,6 +69,8 @@ import {
   type ContinueLaunchDeps,
 } from '../continue-service.js';
 import { CARRY_OVER_PROMPT } from '../carry-over.js';
+import { claudeTranscriptPath } from '../../../runtimes/claude-code/sessions/project-slug.js';
+import { claudeCodeFacts, setClaudeCodeFacts } from '../../resolution/claude-code-facts.js';
 import { setSessionAgentSources } from '../../../core/agent-identity/session-agent.js';
 import {
   clearTestHomes,
@@ -273,6 +275,8 @@ function advise(advisor: Partial<AccountAdvisor>, owner = 'flow'): () => void {
 }
 
 beforeEach(() => {
+  // What the startup hands turn code (DOR-4928): where a Claude transcript lives.
+  setClaudeCodeFacts({ ...claudeCodeFacts(), transcriptPath: claudeTranscriptPath });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   vi.setSystemTime(NOW);
   db = createTestDb();
@@ -413,6 +417,19 @@ describe('without an advisor', () => {
     await continueSession(
       'src-1',
       { account: 'spare' },
+      { ...deps, permissionCeiling: 'runtime-default' }
+    );
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
+      'runtime-default'
+    );
+  });
+
+  it('carries a Wi-Fi continue’s ceiling on the same-session model switch too (DOR-3037)', async () => {
+    installUsageStore([{ id: 'main', weekly: 60 }]);
+    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model', origin: 'room' });
+    await continueSession(
+      'src-1',
+      { model: 'sonnet' },
       { ...deps, permissionCeiling: 'runtime-default' }
     );
     expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(

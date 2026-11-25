@@ -79,7 +79,7 @@ describe('chat from the web confirmation', () => {
         expect(effect).not.toHaveBeenCalled();
         expect(checkPassword).not.toHaveBeenCalled();
         expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-          'not-your-action'
+          'held_by_another_browser'
         );
         expect(effect).not.toHaveBeenCalled();
         expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({
@@ -104,7 +104,7 @@ describe('chat from the web confirmation', () => {
     expect(held.status).toBe(428);
     expect(checkPassword).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'direct', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     const confirmed = await owner.confirm(held.body.heldActionId);
     expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
@@ -133,7 +133,7 @@ describe('chat from the web confirmation', () => {
     expect(confirmed.body).toMatchObject({
       ok: true,
       status: 409,
-      result: { code: 'LINK_CHANGED' },
+      result: { code: 'conflict', detail: 'The link changed. Try again.' },
     });
     expect(updatePin).not.toHaveBeenCalled();
   });

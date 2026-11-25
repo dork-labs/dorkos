@@ -11,7 +11,7 @@
  */
 import { canvasSourcePath } from '../../canvas/index.js';
 import { registerPreGateRefusal } from '../../core/capabilities/pre-gate-refusals.js';
-import { protectedSourceRefusal } from '../../runtimes/shared/policy/protected-file-guard.js';
+import { protectedSourceRefusal } from '../../core/protected-paths/protected-file-guard.js';
 import { getRoomService } from '../index.js';
 
 /** A string field off an unknown input, or `undefined`. */

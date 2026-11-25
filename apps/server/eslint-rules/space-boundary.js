@@ -33,21 +33,32 @@ const packageOf = (specifier) =>
     .slice(0, specifier.startsWith('@') ? 2 : 1)
     .join('/');
 
-/** Each import, export-from and literal `import()` in a file, with whether it is type-only. */
-function importsOf(visit) {
-  const each = (node) => {
-    if (node.source?.type === 'Literal' && typeof node.source.value === 'string')
-      visit(
-        node.source,
-        node.source.value,
-        node.importKind === 'type' || node.exportKind === 'type'
-      );
+/** `literal` when it is a string literal, so a visitor can name what it imports. */
+const stringLiteral = (literal) =>
+  literal?.type === 'Literal' && typeof literal.value === 'string' ? literal : null;
+
+/**
+ * Each import, export-from and literal `import()` in a file, a type written as
+ * `import('…')` and an `import x = require('…')`, with whether it is type-only.
+ * Shared by every boundary rule here (`work-graph-boundary.js`,
+ * `session-runtimes-boundary.js`), so all of them see the same import forms.
+ */
+export function importsOf(visit) {
+  const report = (literal, typeOnly) => {
+    const source = stringLiteral(literal);
+    if (source) visit(source, source.value, typeOnly);
   };
+  const each = (node) =>
+    report(node.source, node.importKind === 'type' || node.exportKind === 'type');
   return {
     ImportDeclaration: each,
     ExportNamedDeclaration: each,
     ExportAllDeclaration: each,
     ImportExpression: each,
+    // `source` in typescript-eslint 8; `argument.literal` before it.
+    TSImportType: (node) => report(node.source ?? node.argument?.literal, true),
+    TSExternalModuleReference: (node) =>
+      report(node.expression, node.parent?.importKind === 'type'),
   };
 }
 

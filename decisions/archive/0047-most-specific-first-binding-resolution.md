@@ -1,7 +1,7 @@
 ---
 number: 47
 title: Use Most-Specific-First Binding Resolution Order
-status: proposed
+status: archived
 created: 2026-02-28
 spec: adapter-agent-routing
 superseded-by: null

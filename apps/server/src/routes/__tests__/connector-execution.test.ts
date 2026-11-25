@@ -152,28 +152,39 @@ describe('connector execution routes', () => {
     await request(fixtureTarget.mount(buildApp()))
       .post('/api/connectors/executions')
       .send(EXECUTION)
-      .expect(401, {
-        error: 'Use a verified API key to call this service.',
-        code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
+      .expect(401)
+      .expect((res) => {
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body).toMatchObject({
+          code: 'unauthenticated',
+          detail: 'Use a verified API key to call this service.',
+        });
+        expect(res.body).not.toHaveProperty('error');
       });
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/accessible?agentId=agent-a')
       .set('Authorization', 'Bearer invalid')
-      .expect(401, {
-        error: 'Use a verified API key to call this service.',
-        code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
+      .expect(401)
+      .expect((res) => {
+        expect(res.headers['content-type']).toContain('application/problem+json');
+        expect(res.body).toMatchObject({
+          code: 'unauthenticated',
+          detail: 'Use a verified API key to call this service.',
+        });
+        expect(res.body).not.toHaveProperty('error');
       });
     await request(fixtureTarget.mount(buildApp({ user: PROGRAM_USER })))
       .post('/api/connectors/executions')
       .set('Authorization', 'Bearer verified')
       .set('X-DorkOS-Agent', 'runtime-agent-token')
       .send(EXECUTION)
-      .expect(403, {
-        error:
-          'This service call cannot run from an active agent session. Use an API key outside the session.',
-        code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
-        message: 'Run this service call with an API key outside an active agent session.',
-      });
+      .expect(403)
+      .expect((res) =>
+        expect(res.body).toMatchObject({
+          code: 'forbidden',
+          detail: 'Run this with an API key, outside an agent’s chat.',
+        })
+      );
     expect(capabilityIdForTarget).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     expect(listConnections).not.toHaveBeenCalled();
@@ -230,8 +241,8 @@ describe('connector execution routes', () => {
     const response = await request(fixtureTarget.mount(buildApp({ user: PROGRAM_USER })))
       .get('/api/connectors/usage/agent?agentId=agent-a&limit=10')
       .set('Authorization', 'Bearer verified')
-      .expect(409);
-    expect(response.body.code).toBe('cloud_link_needs_update');
+      .expect(401);
+    expect(response.body.code).toBe('cloud_link_required');
   });
 
   it('fails closed for every public connector route when migration recovery is incomplete', async () => {

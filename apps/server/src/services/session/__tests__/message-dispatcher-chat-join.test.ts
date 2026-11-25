@@ -68,6 +68,7 @@ async function startBusy(...after: Array<ReturnType<typeof quickTurn>>): Promise
   });
   runtime.withScenarios([heldTurn(gate), ...after]);
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: TARGET,
     clientId: PERSON,
     content: 'the running turn',
@@ -79,6 +80,7 @@ async function startBusy(...after: Array<ReturnType<typeof quickTurn>>): Promise
 /** Send a person's message through the same real dispatcher. */
 function sendPerson(content: string) {
   return dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: TARGET,
     clientId: PERSON,
     content,
@@ -120,6 +122,7 @@ beforeEach(() => {
     isBusy: async () => true,
     dispatch: async (opts) =>
       dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
         clientId: opts.clientId,
         content: opts.request.content,
@@ -211,6 +214,7 @@ describe('chat rows at a turn boundary', () => {
     await startBusy(quickTurn(), quickTurn());
     await service.send(ANA, { to: TARGET, message: 'plain request' });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: TARGET,
       clientId: 'chat:made-up-poster',
       content: 'marked request',

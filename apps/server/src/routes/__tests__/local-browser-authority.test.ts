@@ -224,8 +224,9 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
         expect(spies[effect]).toHaveBeenCalledOnce();
       } else {
         expect(response.status).toBe(403);
+        expect(response.headers['content-type']).toContain('application/problem+json');
         expect(response.body.code).toBe(
-          caller === 'managed' || caller === 'wifi' ? 'local_only' : 'owner_only'
+          caller === 'managed' || caller === 'wifi' ? 'operator_only' : 'owner_only'
         );
         for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
       }

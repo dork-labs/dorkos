@@ -36,7 +36,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - id: node-x64
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.19.0'
           architecture: x64
@@ -72,6 +73,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: node --test packages/test-utils/native/windows-run-custody/tests/*.test.mjs
 
+      - name: Build and run the private inbox fixture on x64
+        if: ${{ !cancelled() && steps.node-x64.outcome == 'success' }}
+        run: node .github/scripts/windows-custody-witness.mjs x64 inbox
+
       # Collect the two x64-host scopes independently, including after a witness failure.
       - name: Select the eligible ia32 Node process
         if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
@@ -87,6 +92,10 @@ jobs:
         env:
           GUARDIAN_MANIFEST_SHA256: ${{ steps.prepare.outputs.ia32_manifest }}
         run: node .github/scripts/windows-custody-witness.mjs ia32
+
+      - name: Build and run the private inbox fixture in the ia32 process
+        if: ${{ !cancelled() && steps.node-ia32.outcome == 'success' }}
+        run: node .github/scripts/windows-custody-witness.mjs ia32 inbox
 
       - name: Retain x64 and ia32 evidence
         if: ${{ always() }}
@@ -111,7 +120,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - id: node-arm64
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.19.0'
           architecture: arm64
@@ -128,6 +138,10 @@ jobs:
           GUARDIAN_MANIFEST_SHA256: ${{ needs.x64-producer.outputs.arm64-manifest }}
           COMPANION_MANIFEST_SHA256: ${{ needs.x64-producer.outputs.arm64-companion }}
         run: node .github/scripts/windows-custody-witness.mjs arm64
+
+      - name: Build and run the private inbox fixture on native ARM64
+        if: ${{ !cancelled() && steps.node-arm64.outcome == 'success' }}
+        run: node .github/scripts/windows-custody-witness.mjs arm64 inbox
 
       - name: Retain ARM64 evidence
         if: ${{ always() }}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# scripts-suite-lane: harness (needs node_modules; see scripts/run-scripts-suites.sh)
 # Fixture suite for the app's line in scripts/heavy-run-lock.sh (DOR-4209 PR5a):
 # a --job waits its turn in the same first-come line as agents' heavy shell
 # jobs, through scripts/load-gate/turn.ts and the server's own TicketQueue.

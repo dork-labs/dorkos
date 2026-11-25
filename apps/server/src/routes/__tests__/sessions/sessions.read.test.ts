@@ -26,6 +26,12 @@ import { disposeProjector } from '../../../services/session/session-state-projec
 import { setAccountUsageStore } from '../../../services/core/usage/current-usage-store.js';
 import type { AccountUsageStore } from '../../../services/core/usage/account-usage-store.js';
 import { S1, runtimeHolder, useSessionsApp } from './sessions.fixtures.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  getWorkLinkStore,
+  installWorkLinkStore,
+  uninstallWorkLinkStore,
+} from '../../../services/work-graph/index.js';
 
 const server = listeningServer(composedListener(new MainRequestAdmission(), { sessions: {} }));
 
@@ -131,13 +137,13 @@ describe('GET /api/sessions/:id', () => {
   it('returns 400 for invalid (non-UUID) session ID', async () => {
     const res = await request(server).get('/api/sessions/nonexistent');
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_SESSION_ID');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('returns 404 for missing session', async () => {
     const res = await request(server).get('/api/sessions/00000000-0000-4000-8000-ffffffffffff');
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Session not found');
+    expect(res.body.code).toBe('session_not_found');
   });
 });
 
@@ -242,8 +248,8 @@ describe('GET /:id/messages cwd resolution', () => {
     const res = await request(server).get(`/api/sessions/${S1}/messages`);
 
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('SESSION_CWD_REQUIRED');
-    expect(res.body.error).toMatch(/cwd/i);
+    expect(res.body.code).toBe('session_not_found');
+    expect(res.body.detail).toMatch(/cwd/i);
     expect(fakeRuntime.getMessageHistory).not.toHaveBeenCalled();
   });
 
@@ -304,7 +310,7 @@ describe('POST /api/sessions/:id/fork', () => {
   it('returns 400 for invalid session ID', async () => {
     const res = await request(server).post('/api/sessions/not-a-uuid/fork').send({});
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID_SESSION_ID');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('forks the internal session and returns 201 with the new one', async () => {
@@ -323,18 +329,36 @@ describe('POST /api/sessions/:id/fork', () => {
     });
   });
 
+  it('records the fork forked_from the id actually forked, in the work graph (DOR-4968)', async () => {
+    installWorkLinkStore(createTestDb());
+    try {
+      // The runtime's own id for S1 differs from the request's, so the edge must name it.
+      const internalId = '00000000-0000-4000-8000-internal00002';
+      fakeRuntime.getInternalSessionId.mockReturnValue(internalId);
+      fakeRuntime.forkSession.mockResolvedValue(FORKED);
+
+      const res = await request(server).post(`/api/sessions/${S1}/fork`).send({});
+      expect(res.status).toBe(201);
+      expect(getWorkLinkStore()!.from({ kind: 'chat', id: FORKED.id })).toEqual([
+        expect.objectContaining({ relation: 'forked_from', to: { kind: 'chat', id: internalId } }),
+      ]);
+    } finally {
+      uninstallWorkLinkStore();
+    }
+  });
+
   it.each([
     [
-      '404 FORK_FAILED when the session is not found',
+      '404 session_not_found when the session is not found',
       () => fakeRuntime.forkSession.mockResolvedValue(null),
       404,
-      'FORK_FAILED',
+      'session_not_found',
     ],
     [
-      '500 FORK_ERROR when the runtime throws',
+      '500 internal_error when the runtime throws',
       () => fakeRuntime.forkSession.mockRejectedValue(new Error('SDK crash')),
       500,
-      'FORK_ERROR',
+      'internal_error',
     ],
   ])('returns %s', async (_case, arrange, status, code) => {
     arrange();

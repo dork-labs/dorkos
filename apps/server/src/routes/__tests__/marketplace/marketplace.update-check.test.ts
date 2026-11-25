@@ -69,7 +69,7 @@ describe('POST /packages/:name/update', () => {
     const res = await update({}, 'ghost-plugin');
 
     expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Package not installed: ghost-plugin');
+    expect(res.body.detail).toBe("Some of those packages aren't installed here.");
     expect(h.updateFlow.run).not.toHaveBeenCalled();
   });
 
@@ -128,19 +128,22 @@ describe('POST /packages/:name/update', () => {
     expect(res.body.checks).toEqual([unknown]);
   });
 
-  it("answers git's own failures with honest statuses and plain messages, not a 500", async () => {
+  it("answers git's own failures with honest statuses and fixed sentences, not a 500", async () => {
     const url = 'https://github.com/dork-labs/marketplace.git';
-    const cases: [Error, number][] = [
-      [new GitRefNotFoundError('release', url), 404],
-      [new GitCommitNotFoundError('a'.repeat(40), url), 404],
-      [new GitRemoteUnreachableError(url, 'connection timed out'), 502],
-      [new GitFetchError(url, 'the fetched tree did not match its commit'), 502],
+    const notFound = "That version isn't in the package's repository.";
+    const unreachable = "Couldn't reach the package's repository. Try again.";
+    const cases: [Error, number, string][] = [
+      [new GitRefNotFoundError('release', url), 404, notFound],
+      [new GitCommitNotFoundError('a'.repeat(40), url), 404, notFound],
+      [new GitRemoteUnreachableError(url, 'connection timed out'), 502, unreachable],
+      [new GitFetchError(url, 'the fetched tree did not match its commit'), 502, unreachable],
     ];
-    for (const [error, status] of cases) {
+    for (const [error, status, detail] of cases) {
       h.updateFlow.run.mockRejectedValueOnce(error);
       const res = await update();
       expect(res.status).toBe(status);
-      expect(res.body).toEqual({ error: error.message });
+      expect(res.body).toMatchObject({ status, detail });
+      expect(JSON.stringify(res.body)).not.toContain(url);
     }
   });
 

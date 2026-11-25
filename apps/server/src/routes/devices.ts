@@ -31,14 +31,10 @@ import type {
   SignOutEverywhereElseResult,
 } from '@dorkos/shared/signed-in-devices';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { RequestFacts } from '../http/request-facts.js';
-import {
-  NEEDS_PERSON_AT_THIS_COMPUTER,
-  requirePersonAtThisComputer,
-} from '../lib/caller-authority.js';
-import { errorBody } from '../lib/route-utils.js';
+import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { getAuth, readOwnerAccount, type Auth } from '../services/core/auth/index.js';
@@ -64,10 +60,7 @@ import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordSignInTrustChange } from '../services/core/auth/auth-audit.js';
 import type { WifiSignInRequestList } from '@dorkos/shared/signed-in-devices';
-import { isOwnOriginJsonWrite, NOT_FROM_OWN_PAGE } from '../lib/http/own-origin-write.js';
-
-/** Refusal code for an agent, an API key or the relay. */
-export const DEVICES_PEOPLE_ONLY = 'DEVICES_PEOPLE_ONLY';
+import { isOwnOriginJsonWrite } from '../lib/http/own-origin-write.js';
 
 /** Who is asking, once they are known to be a person. */
 interface DevicesCaller {
@@ -93,7 +86,7 @@ interface DevicesCaller {
 async function resolveCaller(c: Context<ApiEnv>): Promise<DevicesCaller | null | Response> {
   const facts = honoRequestFacts(c);
   const peopleOnly = (): Response =>
-    c.json(errorBody('Only a person can manage signed-in devices.', DEVICES_PEOPLE_ONLY), 403);
+    problem(c, 'person_only', { detail: 'Only a person can manage signed-in devices.' });
   if (presentsAgentIdentity(facts) || requestSessionRoute(facts) === null) return peopleOnly();
   let user = facts.user;
   if (!user && mayCarrySessionCookie(facts.headers.cookie ?? '')) {
@@ -111,7 +104,14 @@ async function resolveCaller(c: Context<ApiEnv>): Promise<DevicesCaller | null |
     c.set('user', user);
     return { userId: user.userId, sessionId: user.sessionId, atThisComputer };
   }
-  if (!atThisComputer) return c.json(authRequiredBody(facts.ingress), 401);
+  if (!atThisComputer) {
+    // How to sign in from here (a hub, a network code), as the session gate says it.
+    const { signInWith } = authRequiredBody(facts.ingress);
+    return problem(c, 'unauthenticated', {
+      detail: 'Sign in to manage signed-in devices.',
+      ...(signInWith ? { extensions: { signInWith } } : {}),
+    });
+  }
   // The person at this computer, with no sign-in of their own: the owner's.
   const owner = readOwnerAccount();
   return owner ? { userId: owner.id, atThisComputer } : null;
@@ -147,7 +147,7 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
   router.delete('/sessions/:id', async (c) => {
     const instance = auth();
     const notFound = (): Response =>
-      c.json(errorBody('That sign-in has already ended.', 'DEVICE_NOT_FOUND'), 404);
+      problem(c, 'not_found', { detail: 'That sign-in has already ended.' });
     if (!instance) return notFound();
     const caller = await resolveCaller(c);
     if (caller instanceof Response) return caller;
@@ -156,13 +156,9 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
     if (!sessionId) return notFound();
     const own = sessionId === caller.sessionId;
     if (!own && !caller.atThisComputer) {
-      return c.json(
-        errorBody(
-          'Sign out other devices on the computer DorkOS runs on.',
-          NEEDS_PERSON_AT_THIS_COMPUTER
-        ),
-        403
-      );
+      return problem(c, 'operator_only', {
+        detail: 'Sign out other devices on the computer DorkOS runs on.',
+      });
     }
     const run = async () => {
       if (!(await signOutSession(instance, caller.userId, sessionId))) return notFound();
@@ -190,17 +186,14 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
   ): Promise<{ userId: string; sessionId: string } | Response> => {
     const facts = honoRequestFacts(c);
     if (write && !isOwnOriginJsonWrite(facts.headers)) {
-      return c.json(errorBody('Do this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
+      return problem(c, 'origin_not_allowed', { detail: 'Do this in the DorkOS app.' });
     }
     const caller = await resolveCaller(c);
     if (caller instanceof Response) return caller;
     // The classifier's own verdict, never a container port or an address.
     const atTheMac = classifyRequest(facts, currentServerRole()).kind === 'this-computer';
     if (!caller || !caller.atThisComputer || !atTheMac || caller.sessionId === undefined) {
-      return c.json(
-        errorBody('Do this on the computer DorkOS runs on.', NEEDS_PERSON_AT_THIS_COMPUTER),
-        403
-      );
+      return problem(c, 'operator_only', { detail: 'Do this on the computer DorkOS runs on.' });
     }
     return { userId: caller.userId, sessionId: caller.sessionId };
   };
@@ -208,13 +201,13 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
   router.put('/sessions/:id/runs-agents', async (c) => {
     const instance = auth();
     const notFound = (): Response =>
-      c.json(errorBody('That sign-in has already ended.', 'DEVICE_NOT_FOUND'), 404);
+      problem(c, 'not_found', { detail: 'That sign-in has already ended.' });
     if (!instance) return notFound();
     const owner = await ownerAtTheMac(c, true);
     if (owner instanceof Response) return owner;
     const body = (readJsonBody(c) ?? null) as { on?: unknown; passkey?: unknown } | null;
     if (typeof body?.on !== 'boolean') {
-      return c.json(errorBody('Say whether this device may run agents.', 'INVALID_BODY'), 400);
+      return problem(c, 'invalid_request', { detail: 'Say whether this device may run agents.' });
     }
     const on = body.on;
     const deviceId = c.req.param('id');
@@ -241,10 +234,7 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
     if (owner instanceof Response) return owner;
     const viewId = c.req.param('id');
     const gone = (): Response =>
-      c.json(
-        errorBody('That request has ended. Ask the device to try again.', 'REQUEST_ENDED'),
-        404
-      );
+      problem(c, 'not_found', { detail: 'That request has ended. Ask the device to try again.' });
     if (!listWifiSignInRequests().some((request) => request.id === viewId && !request.approved)) {
       return gone();
     }
@@ -270,13 +260,9 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
     const caller = instance ? await resolveCaller(c) : null;
     if (caller instanceof Response) return caller;
     if (caller && !caller.atThisComputer) {
-      return c.json(
-        errorBody(
-          'Sign out everywhere on the computer DorkOS runs on.',
-          NEEDS_PERSON_AT_THIS_COMPUTER
-        ),
-        403
-      );
+      return problem(c, 'operator_only', {
+        detail: 'Sign out everywhere on the computer DorkOS runs on.',
+      });
     }
     if (!instance || !caller) return c.json({ signedOut: 0 } satisfies SignOutEverywhereElseResult);
     return runFrontDoorWrite(c, {

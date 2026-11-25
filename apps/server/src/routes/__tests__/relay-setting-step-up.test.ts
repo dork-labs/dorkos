@@ -211,7 +211,7 @@ describe.each(ROUTES)('$name with a person’s setting', ({ send, call, reason }
 
   it('a wrong password runs nothing; the right one runs it as the person', async () => {
     const id = StepUpRequiredBodySchema.parse((await send(request(app()))).body).heldActionId;
-    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong-password');
+    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong_password');
     expect(call()).not.toHaveBeenCalled();
     const done = await confirmWith(id, PASSWORD);
     expect(done.body.ok).toBe(true);
@@ -333,7 +333,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     const res = await withStrangerMarkFlag(true, () => duringMarkedTurn(send));
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_typed_secret');
+    expect(res.body.code).toBe('forbidden');
+    expect(res.body.detail).toMatch(/can't enter a secret/);
     expect(saved()).not.toHaveBeenCalled();
   });
 
@@ -351,7 +352,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_typed_secret');
+    expect(res.body.code).toBe('forbidden');
+    expect(res.body.detail).toMatch(/can't enter a secret/);
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -377,7 +379,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
 
     expect(added.status).toBe(201);
     expect(saved.status).toBe(403);
-    expect(saved.body.code).toBe('marked_turn_typed_secret');
+    expect(saved.body.code).toBe('forbidden');
+    expect(saved.body.detail).toMatch(/can't enter a secret/);
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -433,7 +436,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_typed_secret');
+    expect(res.body.code).toBe('forbidden');
+    expect(res.body.detail).toMatch(/can't enter a secret/);
     expect(manager.testConnection).not.toHaveBeenCalled();
   });
 
@@ -459,8 +463,9 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_typed_secret');
-    expect(res.body.error).toContain("couldn't tell which agent");
+    expect(res.body.code).toBe('forbidden');
+    expect(res.body.detail).toMatch(/can't enter a secret/);
+    expect(res.body.detail).toContain("couldn't tell which agent");
     expect(manager.addAdapter).not.toHaveBeenCalled();
   });
 
@@ -489,7 +494,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('marked_turn_typed_secret');
+    expect(res.body.code).toBe('forbidden');
+    expect(res.body.detail).toMatch(/can't enter a secret/);
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 
@@ -537,7 +543,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('marked_turn_moves_secret');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toMatch(/can't change a connection with saved secrets/);
       expect(manager.updateConfig).not.toHaveBeenCalled();
     });
 
@@ -556,7 +563,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('marked_turn_moves_secret');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toMatch(/can't change a connection with saved secrets/);
       expect(manager.updateConfig).not.toHaveBeenCalled();
     });
 
@@ -590,7 +598,8 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
       );
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('marked_turn_moves_secret');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toMatch(/can't change a connection with saved secrets/);
     });
 
     it('lets an unmarked agent turn move it, as before', async () => {

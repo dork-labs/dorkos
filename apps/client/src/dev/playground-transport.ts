@@ -81,6 +81,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: true,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     nativeContext: [],
     permissionModes: {
@@ -162,6 +164,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     nativeContext: [],
     logBackedHistory: true,
@@ -218,6 +222,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     nativeContext: [],
     logBackedHistory: true,
@@ -363,7 +369,7 @@ export function createPlaygroundTransport(): Transport {
       ) {
         return async () => {
           throw Object.assign(new Error('This room does not have files of its own.'), {
-            code: 'ROOM_HAS_NO_REPO',
+            code: 'room_has_no_repo',
             status: 409,
           });
         };
@@ -403,6 +409,9 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'setAccountOnlyProjects') return async () => ({ onlyProjects: null });
       if (prop === 'setAccountNoAutoMove') {
         return async (_id: string, noAutoMove: boolean) => ({ noAutoMove });
+      }
+      if (prop === 'setAccountAgentsMayPick') {
+        return async (_id: string, agentsMayPick: boolean) => ({ agentsMayPick });
       }
       // The DorkOS model form (the first run's "Other service" row) reads what
       // is saved before it draws; nothing saved and no credits is the honest

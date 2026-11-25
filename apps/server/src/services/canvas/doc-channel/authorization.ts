@@ -34,20 +34,20 @@ export class DocChannelNotFoundError extends Error {
 }
 
 /**
- * A refusal's reason: the ones the owner may be told, plus `NOT_OPERATOR`, which
+ * A refusal's reason: the ones the owner may be told, plus `not_operator`, which
  * is logged only. It is decided before the caller is known to be the owner, so
  * telling the caller would say the document exists to someone who may not.
  */
-export type DocRefusalReason = DocSaveRefusalReason | 'NOT_OPERATOR';
+export type DocRefusalReason = DocSaveRefusalReason | 'not_operator';
 
 /**
  * The reason a refusal may carry to its caller, or undefined. Every code but
- * `NOT_OPERATOR` is decided only after the owner's own access was checked.
+ * `not_operator` is decided only after the owner's own access was checked.
  *
  * @param error - Anything a document route caught.
  */
 export function disclosableRefusalReason(error: unknown): DocSaveRefusalReason | undefined {
-  if (!(error instanceof DocChannelNotFoundError) || error.reason === 'NOT_OPERATOR') return;
+  if (!(error instanceof DocChannelNotFoundError) || error.reason === 'not_operator') return;
   return error.reason;
 }
 /** An authorized room remains readable while its writes are stopped. */

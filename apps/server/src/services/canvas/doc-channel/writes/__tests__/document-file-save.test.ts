@@ -24,6 +24,12 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
 import { createFileRoutes } from '../../../../../routes/files.js';
 import { saveOriginalDocumentFile } from '../installation-file-writes.js';
+import { saved } from './saved-outcome.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const target = swappableServer();
 const cleanups: Array<() => Promise<void>> = [];
@@ -57,8 +63,8 @@ async function setup() {
     expectedContent: before,
     documentSave: { documentId: h.documentId, eventId: randomUUID(), incarnation },
   });
-  const save = (input: ReturnType<typeof request>, headers: Record<string, string> = {}) =>
-    saveOriginalDocumentFile(h.http.fileWrites, input, { headers });
+  const save = async (input: ReturnType<typeof request>, headers: Record<string, string> = {}) =>
+    saved(await saveOriginalDocumentFile(h.http.fileWrites, input, { headers }));
   const intent = (eventId: string) =>
     h.db
       .select()
@@ -323,7 +329,8 @@ it('the real ordinary PUT route exposes receipt refusals as 404 and 412 rather t
     .put('/api/files/content')
     .send({ ...input, content: 'changed UUID request' });
   expect(conflict.status).toBe(412);
-  expect(conflict.body.code).toBe('DOC_SAVE_ID_CONFLICT');
+  expect(conflict.headers['content-type']).toContain('application/problem+json');
+  expect(conflict.body.code).toBe('precondition_failed');
   const missing = randomUUID();
   const refused = await request(target.server)
     .put('/api/files/content')
@@ -336,7 +343,7 @@ it('the real ordinary PUT route exposes receipt refusals as 404 and 412 rather t
       },
     });
   expect(refused.status).toBe(404);
-  expect(refused.body.code).toBe('CANVAS_DOCUMENT_NOT_FOUND');
+  expect(refused.body.code).toBe('not_found');
   expect(await fs.readFile(f.h.path, 'utf8')).toBe(input.content);
 });
 

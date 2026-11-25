@@ -202,7 +202,7 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
 
   it('wrong password: no record, and the row stays paused', async () => {
     const id = await heldId();
-    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong-password');
+    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong_password');
     expect(confirmReferences).not.toHaveBeenCalled();
     expect(connection.paused).toBe(true);
   });
@@ -233,8 +233,8 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
     const res = await confirmWith(id, PASSWORD);
     expect(res.body).toMatchObject({
       ok: true,
-      status: 409,
-      result: { code: 'CONFIRMATION_STALE' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(connection.paused).toBe(true);
   });

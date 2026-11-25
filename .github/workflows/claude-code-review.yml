@@ -1,12 +1,14 @@
 name: claude-code-review
 
 # Automated PR review by Claude Code, posting inline comments on the specific
-# lines where it finds issues. Runs on-demand, not on every push: a full review
-# fires when a PR is opened or marked ready-for-review, and re-reviews fire when
-# the author applies the `re-review` label (auto-cleared after, so it is a reusable
-# "re-request review" button). Since Nov 23 every push runs too (see `on:`),
-# because the Security lens's verdict has to name the exact head; since Nov 24 a
-# push to an already-reviewed PR runs the Security lens only. Controls (labels): `skip-review`
+# lines where it finds issues. It runs a full review when a PR is opened or
+# marked ready for review, and a Security-lens re-check on every push to a PR
+# that has already had a full review (the Security verdict has to name the
+# exact head).
+# Which of the two a push gets is decided by scripts/review-mode.sh from the
+# review's own marked summaries (see PUSH MODE beside `on:`). The `re-review`
+# label asks for a full re-review (auto-cleared after, so it is a reusable
+# "re-request review" button). Controls (labels): `skip-review`
 # (no review at all), `review:light` / `review:deep` (intensity). See the
 # `creating-pull-requests` skill for the author-facing flow. This is the "auto"
 # half of the Claude review setup; claude.yml is the interactive "@claude" half.
@@ -206,7 +208,9 @@ on:
   # runs scripts/review-mode.sh (main's copy) over the PR's comments before the
   # review starts and hands the prompt `REVIEW MODE: push-recheck` or
   # `REVIEW MODE: full`. Push re-check needs a push AND a full review's summary
-  # posted by `claude[bot]` itself; a push re-check's own summary does not
+  # posted by `claude[bot]` itself, recognised by the hidden marker that
+  # scripts/review-gh.sh appends to every summary (head and mode, from this
+  # workflow, never from the reviewer); a push re-check's own summary does not
   # count. So a PR whose first review was lost (a conflicted open, a spent
   # quota) still gets a full one on its next push, and every doubt is `full`.
   # A full re-review on demand is still the `re-review` label.
@@ -490,7 +494,7 @@ jobs:
           exit 1
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # Empty means "checkout's own default", which for a `pull_request` run is
@@ -821,7 +825,9 @@ jobs:
       # the reviewer never has to work it out from the comments itself. The
       # rule is scripts/review-mode.sh, pinned by scripts/test-review-mode.sh:
       # push-recheck only for a push (`synchronize`) to a PR that has a full
-      # review's summary posted by `claude[bot]` (user type Bot). Run from the
+      # review's summary posted by `claude[bot]` (user type Bot) and marked
+      # mode=full by scripts/review-gh.sh, which stamps this step's output
+      # (REVIEW_MODE below) into every summary it posts. Run from the
       # DEFAULT BRANCH's copy, like the classifier and the helper, because
       # nothing executed in this job may come from the checkout. Every doubt
       # is `full`: not a push, the script not on the default branch yet, the
@@ -888,7 +894,7 @@ jobs:
       - name: Claude Code review
         id: claude-review
         continue-on-error: true
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@f431adaf77e0fecf918431e75a2b5b45b85af002 # v1.0.283
         env:
           # The reviewer's destination, read by scripts/review-gh.sh. It lives in
           # the environment rather than in the helper's arguments precisely so the
@@ -902,6 +908,9 @@ jobs:
           # the PR's current head itself. A SHA from the event payload, never a
           # path, so it cannot point anything into the workspace.
           REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # The mode decided above, stamped by the helper into the summary's
+          # marker, which is what the next push's mode is decided from.
+          REVIEW_MODE: ${{ steps.review-mode.outputs.mode || 'full' }}
           # Where `review-gh.sh security-findings` saves a failing Security
           # lens's details, for the send step below to encrypt and delete. Out of
           # the workspace, and chosen here so the model cannot point it anywhere.

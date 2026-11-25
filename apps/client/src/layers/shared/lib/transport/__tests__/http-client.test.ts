@@ -120,10 +120,13 @@ describe('fetchJSON', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: 'The local owner changed.',
-          code: 'COMMUNITY_OWNER_CHANGED',
+          type: 'urn:dorkos:problem:owner_changed',
+          title: 'The owner of this DorkOS changed. Reload.',
+          status: 412,
+          code: 'owner_changed',
+          detail: 'The local owner changed.',
         }),
-        { status: 409 }
+        { status: 412, headers: { 'content-type': 'application/problem+json' } }
       )
     );
 

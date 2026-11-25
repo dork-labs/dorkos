@@ -1,7 +1,7 @@
 ---
 number: 56
 title: Persist Onboarding State Server-Side in Config
-status: draft
+status: archived
 created: 2026-03-01
 spec: first-time-user-experience
 superseded-by: null

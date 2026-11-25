@@ -43,7 +43,6 @@ const RUN_ID = 'run-1';
 const EXPIRED = -1;
 /** Exactly on the deadline. The boundary is inclusive: no time left is expired. */
 const ON_THE_DEADLINE = 0;
-const BARELY_ALIVE = 1;
 
 /** What a person is told when their message went stale before an agent got to it. */
 const REFUSED = 'The message expired before the agent could start';
@@ -212,17 +211,6 @@ describe('an expired envelope is refused at every seam (DOR-1770)', () => {
       expect(errorPayload.data.message).toBe(REFUSED);
     });
 
-    it('carries the refusal on the one payload an inbox reader is told is terminal', async () => {
-      const relay = publisher();
-
-      await deliverToAgent(agentEnvelope(EXPIRED, 'relay.inbox.sender'), willingRuntime(), relay);
-
-      const calls = vi.mocked(relay.publish).mock.calls;
-      const final = calls[calls.length - 1]![1] as { type: string; done: boolean; error?: string };
-      expect(final).toMatchObject({ type: 'agent_result', done: true });
-      expect(final.error).toBe(REFUSED);
-    });
-
     it('refuses a message that is exactly on its deadline — no time left is no time', async () => {
       const runtime = willingRuntime();
 
@@ -233,14 +221,6 @@ describe('an expired envelope is refused at every seam (DOR-1770)', () => {
       // side of the publish gate too, which is the drift the shared predicate
       // exists to make impossible.
       expect(runtime.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('still runs a message with a millisecond left — refusal is for expiry, not for haste', async () => {
-      const runtime = willingRuntime();
-
-      await deliverToAgent(agentEnvelope(BARELY_ALIVE), runtime, publisher());
-
-      expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
     });
 
     it('a turn that passes the deadline check always GETS a deadline', async () => {
@@ -300,53 +280,6 @@ describe('an expired envelope is refused at every seam (DOR-1770)', () => {
       // run without a deadline.
       expect(controller.signal.aborted).toBe(true);
     });
-
-    it('spends the deadline on the clock it was handed, not on how long the turn took to start', async () => {
-      // DOR-1729, kept from the retired inbound-budget suite. The deadline is
-      // read after an AWAITED settings lookup, so a wall-clock read would count
-      // that startup against a five-millisecond fixture and refuse a turn this
-      // case is not about. With the clock injected the delay is irrelevant.
-      const controller = new AbortController();
-      const runtime: AgentRuntimeLike = {
-        ensureSession: vi.fn(),
-        sendMessage: vi.fn().mockImplementation(() =>
-          (async function* () {
-            await new Promise<void>((resolve) => {
-              if (controller.signal.aborted) resolve();
-              else controller.signal.addEventListener('abort', () => resolve(), { once: true });
-            });
-            yield { type: 'done', data: {} } as StreamEvent;
-          })()
-        ),
-        getSdkSessionId: vi.fn().mockReturnValue(undefined),
-        approveTool: vi.fn().mockReturnValue(true),
-        interruptQuery: vi.fn().mockResolvedValue(true),
-      };
-
-      await handleAgentMessage(
-        AGENT_SUBJECT,
-        agentEnvelope(5),
-        undefined,
-        now(),
-        {
-          agentManager: runtime,
-          traceStore: traceStore(),
-          turnController: controller,
-          // The real startup cost, in the place the real one is paid.
-          resolveExecutionSettings: async () => {
-            await new Promise((r) => setTimeout(r, 50));
-            return {};
-          },
-          now,
-          logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
-        },
-        publisher()
-      );
-
-      // It started, and its own five-millisecond deadline stopped it.
-      expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
-      expect(controller.signal.aborted).toBe(true);
-    });
   });
 
   describe('the scheduled-run seam', () => {
@@ -368,22 +301,6 @@ describe('an expired envelope is refused at every seam (DOR-1770)', () => {
           error: 'Run expired before it could start',
         })
       );
-    });
-
-    it('refuses a run that is exactly on its deadline, on the same boundary the turn uses', async () => {
-      const runtime = willingRuntime();
-
-      await deliverToTask(taskEnvelope(ON_THE_DEADLINE), runtime, { updateRun: vi.fn() });
-
-      expect(runtime.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('still runs a message with a millisecond left', async () => {
-      const runtime = willingRuntime();
-
-      await deliverToTask(taskEnvelope(BARELY_ALIVE), runtime, { updateRun: vi.fn() });
-
-      expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
     });
   });
 

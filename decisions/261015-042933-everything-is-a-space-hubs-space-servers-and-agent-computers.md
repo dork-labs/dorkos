@@ -32,6 +32,8 @@ Accepted (operator decision, #dorkos, 2026-10-15: "lets move forward with your p
 - [260727-184933](260727-184933-the-community-server-never-runs-a-members-agent.md): retires "hosted agent execution is a separate future product, not scheduled". Cloud agent computers ship at launch. "A space server never runs a member's agent" **stands**, and is joined by "a hub never runs an agent": agents run only on agent computers and on people's own computers.
 - [0319](0319-account-first-cloud-identity-device-link.md): the DorkOS account becomes the door to a person's whole DorkOS, not only to Cloud features. The device link stands, and is how a Mac is linked to its owner's hub.
 
+**Amended by** [261124-194115](261124-194115-your-mac-is-the-home-of-your-private-space.md) (accepted 2026-11-24): "Two hubs (Mac and cloud) are peers that do not sync" is retired. A person's own computer is the home of their private space when they have one; their DorkOS in the cloud is the home only when they have none, and otherwise a way in.
+
 ## Context
 
 Dorian asked for two experiences (#dorkos, 2026-10-15). Away from home, at dorkos.ai, he sees and uses every agent he has: the ones on his Mac and the ones in the cloud, with the Mac's going offline when it is shut down. And a person who never installs anything signs up on the web, creates agents and runs them. He also gave the mental model: everything is a space, an account gets a private space, collaborating means a separate space, every server is a space server, and any instance can be a home.

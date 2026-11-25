@@ -47,6 +47,30 @@ describe('createComputerRuntime', () => {
     });
   });
 
+  it('claims neither restart capability, whatever host OpenCode declares', () => {
+    const real = OpenCodeRuntime.prototype.getCapabilities;
+    // Host OpenCode flipped both: the guest must still claim neither.
+    const host = vi
+      .spyOn(OpenCodeRuntime.prototype, 'getCapabilities')
+      .mockImplementation(function (this: OpenCodeRuntime) {
+        return {
+          ...real.call(this),
+          wakesForLostBackgroundWork: true,
+          continuesInterruptedTurn: true,
+        };
+      });
+    try {
+      const { runtime } = factory();
+      expect(runtime.getCapabilities()).toMatchObject({
+        wakesForLostBackgroundWork: false,
+        continuesInterruptedTurn: false,
+      });
+      expect(host).toHaveBeenCalled();
+    } finally {
+      host.mockRestore();
+    }
+  });
+
   it('keeps host identity intact and uses actual computer policy identity', async () => {
     const host = new OpenCodeRuntime({ provider: { getClient: vi.fn(), peekClient: () => null } });
     const { runtime } = factory();

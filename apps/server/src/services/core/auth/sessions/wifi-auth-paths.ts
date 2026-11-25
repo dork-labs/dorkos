@@ -11,9 +11,6 @@
  * @module services/core/auth/sessions/wifi-auth-paths
  */
 
-/** Refusal code for a Better Auth endpoint a Wi-Fi request may not reach. */
-export const WIFI_SIGN_IN_NEEDS_CODE = 'WIFI_SIGN_IN_NEEDS_CODE';
-
 /** The Better Auth endpoints a Wi-Fi request may reach. */
 const WIFI_AUTH_PATHS: ReadonlySet<string> = new Set([
   '/api/auth/get-session',

@@ -1,3 +1,4 @@
+import { A2A_GATEWAY_SENDER } from '@dorkos/shared/relay-schemas';
 import type { SessionOrigin } from '@dorkos/shared/types';
 
 const RELAY_CONTEXT_START = '<relay_context>';
@@ -42,7 +43,7 @@ function composeChannelLabel(platformLabel: string, sender?: string, chat?: stri
 
 /** Classify a `<relay_context>` block's `From:` value into an origin + label, first-match-wins. */
 function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?: string } {
-  if (from === 'a2a-gateway') {
+  if (from === A2A_GATEWAY_SENDER) {
     return { origin: 'external', originLabel: 'A2A client' };
   }
   if (from === 'relay.external.mcp') {
@@ -86,8 +87,8 @@ function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?
  *
  * Pure and synchronous — no IO. Absent `origin` in the result means
  * user-initiated, the unmarked default. Best-effort and advisory only: this
- * is a UX affordance, never a security boundary (the raw relay publish route
- * lets callers assert `from`).
+ * is a UX affordance, never a security boundary (it reads the transcript's own
+ * text, which the words of a message can imitate).
  *
  * For channel-origin sessions (Telegram/Slack/Webhook), when the
  * block also carries `Sender:`/`Chat:` lines (DOR-411 producer), the origin

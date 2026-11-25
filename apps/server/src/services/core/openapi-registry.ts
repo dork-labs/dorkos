@@ -299,6 +299,8 @@ import {
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
+import { problemResponse } from './openapi/problem-openapi.js';
+import { PROBLEM_CONTENT_TYPE, ProblemSchema } from '@dorkos/shared/problem';
 import {
   CanvasChannelEventSchema,
   CanvasChannelFrameSchema,
@@ -414,7 +416,7 @@ const LocalInstallRequestBodySchema = z.object({
   projectPath: z.string().optional(),
   approvedDisclosure: DisclosedEffectsSchema.optional().describe(
     "Install only: the preview's `disclosed`, sent back untouched. The install refuses a " +
-      'package that now runs anything else (409 `disclosure_changed`).'
+      'package that now runs anything else (412 `precondition_failed`).'
   ),
   approvedContentHash: z
     .string()
@@ -626,9 +628,8 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
     .describe('What the installed version runs now; null when it could not be read.'),
 });
 
-/** The 404 body when an update names packages or installations not in view. */
-const NotInstalledForUpdateSchema = z.object({
-  error: z.string(),
+/** The 404 `not_found` problem when an update names packages or installations not in view. */
+const NotInstalledForUpdateSchema = ProblemSchema.extend({
   packageNames: z.array(z.string()),
   installPaths: z.array(z.string()),
 });
@@ -717,10 +718,7 @@ registry.registerPath({
         'application/json': { schema: SessionListResponseSchema },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -756,10 +754,7 @@ registry.registerPath({
         'application/json': { schema: RecentSessionsResponseSchema },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -780,10 +775,7 @@ registry.registerPath({
         'application/json': { schema: SessionDailyCountsResponseSchema },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -800,10 +792,7 @@ registry.registerPath({
       description: 'Session details',
       content: { 'application/json': { schema: SessionSchema } },
     },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Session not found'),
   },
 });
 
@@ -848,7 +837,7 @@ registry.registerPath({
           description:
             'A message id. Answers the page of up to 100 messages directly older than it, ' +
             'with `earlierMessages` counting what remains before the page. An id no message ' +
-            'has answers 404 HISTORY_CURSOR_UNKNOWN (DOR-2889).',
+            'has answers 404 `not_found` (DOR-2889).',
         }),
       newest: z
         .enum(['1'])
@@ -869,13 +858,11 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description:
-        "Could not determine this session's working directory (SESSION_CWD_REQUIRED); " +
+    404: problemResponse(
+      "Could not determine this session's working directory (SESSION_CWD_REQUIRED); " +
         'retry with an explicit `cwd`. Or `before` names a message the history does ' +
-        'not hold (HISTORY_CURSOR_UNKNOWN).',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+        'not hold (`not_found`).'
+    ),
   },
 });
 
@@ -956,14 +943,8 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Invalid session ID',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid session ID'),
+    404: problemResponse('Session not found'),
   },
 });
 
@@ -984,10 +965,7 @@ registry.registerPath({
         'application/json': { schema: StoredSessionSettingsResponseSchema },
       },
     },
-    400: {
-      description: 'Invalid session ID',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid session ID'),
   },
 });
 
@@ -1008,10 +986,7 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Session not found'),
   },
 });
 
@@ -1052,14 +1027,8 @@ registry.registerPath({
         'in flight — it applies from the next reply',
       content: { 'application/json': { schema: SessionUpdateResponseSchema } },
     },
-    400: {
-      description: 'Validation error, or a permission mode the runtime does not declare',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error, or a permission mode the runtime does not declare'),
+    404: problemResponse('Session not found'),
   },
 });
 
@@ -1081,8 +1050,8 @@ registry.registerPath({
     'applied disposition (queue/steer/stage), not whether a turn began. A busy session ' +
     'is never a `409` here — read and edit what is waiting through ' +
     '`/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would ' +
-    "run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own " +
-    'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
+    "run (`desk_not_own`: inside a room's files, or a room's agent outside its own " +
+    'folder; `room_session_moved`: a room conversation its runtime keeps inside the ' +
     "room's files), or because the account the new session would run on may not work in " +
     "its folder's project (`account_not_allowed_here`, with `project` and `accountId`), " +
     'and nothing was started. An id this server does not know is a `404 ' +
@@ -1106,33 +1075,24 @@ registry.registerPath({
         'application/json': { schema: SendMessageResponseSchema },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description:
-        'The message names DorkOS credits (`account: "dorkos-credits"`) and the caller is not ' +
+    400: problemResponse('Validation error'),
+    403: problemResponse(
+      'The message names DorkOS credits (`account: "dorkos-credits"`) and the caller is not ' +
         'the owner of this DorkOS (`person_only`, `owner_only`); or a caller other than the ' +
         "person named another agent's folder, home or chat, or a caller DorkOS cannot name " +
-        "named any agent's (`DESK_NOT_OWN`); nothing started",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description:
-        'No session has this id and the body did not send `create: true` ' +
-        '(`SESSION_NOT_FOUND`); nothing started',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'Refused before anything started, for where the turn would run ' +
-        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`), or because the account may not work in ' +
+        "named any agent's (`desk_not_own`); nothing started"
+    ),
+    404: problemResponse(
+      'No session has this id and the body did not send `create: true` ' +
+        '(`session_not_found`); nothing started'
+    ),
+    409: problemResponse(
+      'Refused before anything started, for where the turn would run ' +
+        '(`desk_not_own`, `room_session_moved`), or because the account may not work in ' +
         'this project (`account_not_allowed_here`, whose body also names `project` and ' +
-        '`accountId`), or because the agent is paused (`AGENT_PAUSED`, whose body also ' +
-        'names `agentId`); the body says what to do instead',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+        '`accountId`), or because the agent is paused (`agent_paused`, whose body also ' +
+        'names `agentId`); the body says what to do instead'
+    ),
   },
 });
 
@@ -1153,10 +1113,7 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Accepted; recorded when the caller is a person at the app' },
-    400: {
-      description: 'The id is not a session id (`INVALID_SESSION_ID`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('The id is not a session id (`invalid_request`)'),
   },
 });
 
@@ -1177,11 +1134,9 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Logged' },
-    400: {
-      description:
-        'The id is not a session id (`INVALID_SESSION_ID`), or the body is not a report (`VALIDATION_ERROR`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The id is not a session id (`invalid_request`), or the body is not a report (`invalid_request`)'
+    ),
   },
 });
 
@@ -1201,10 +1156,7 @@ registry.registerPath({
       description: "The chat's messaging",
       content: { 'application/json': { schema: ChatActivityResponseSchema } },
     },
-    400: {
-      description: 'Invalid session id',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid session id'),
   },
 });
 
@@ -1223,10 +1175,7 @@ registry.registerPath({
       description: "The session's queue, in dispatch order",
       content: { 'application/json': { schema: SessionQueueResponseSchema } },
     },
-    400: {
-      description: 'Invalid session id',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid session id'),
   },
 });
 
@@ -1253,18 +1202,9 @@ registry.registerPath({
       description: 'The edited message and the queue around it',
       content: { 'application/json': { schema: UpdateQueuedMessageResponseSchema } },
     },
-    400: {
-      description: 'Invalid ids, or a body that asks for no change',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such message on this queue (dispatched, removed, or never here)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The edit tried to reword a message another chat sent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid ids, or a body that asks for no change'),
+    404: problemResponse('No such message on this queue (dispatched, removed, or never here)'),
+    409: problemResponse('The edit tried to reword a message another chat sent'),
   },
 });
 
@@ -1283,18 +1223,9 @@ registry.registerPath({
       description: 'The queue as it now stands',
       content: { 'application/json': { schema: SessionQueueResponseSchema } },
     },
-    400: {
-      description: 'Invalid ids',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such message on this queue',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The message is being sent into the running turn right now',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid ids'),
+    404: problemResponse('No such message on this queue'),
+    409: problemResponse('The message is being sent into the running turn right now'),
   },
 });
 
@@ -1314,22 +1245,10 @@ registry.registerPath({
       description: 'The message joined the running turn or moved to the front',
       content: { 'application/json': { schema: SteerQueuedChatMessageResponseSchema } },
     },
-    400: {
-      description: 'Invalid ids',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'The caller cannot act on this chat, or is not a person',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such message on this queue',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The row is not from another chat, or it is already starting',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid ids'),
+    403: problemResponse('The caller cannot act on this chat, or is not a person'),
+    404: problemResponse('No such message on this queue'),
+    409: problemResponse('The row is not from another chat, or it is already starting'),
   },
 });
 
@@ -1348,7 +1267,7 @@ registry.registerPath({
     'client-side and never reach this route. Capability-gated: a runtime that does not ' +
     'support the intent (e.g. Codex) returns `422` and the adapter is never called — ' +
     'never a silent no-op. Unlike the message trigger (which queues instead), this ' +
-    'route still answers `409` SESSION_LOCKED when a turn is already running: a ' +
+    'route still answers `409` `session_locked` when a turn is already running: a ' +
     "command intent is not a person's words waiting to be said, so it is refused " +
     'rather than queued.',
   request: {
@@ -1374,22 +1293,10 @@ registry.registerPath({
         'application/json': { schema: SessionTriggerResponseSchema },
       },
     },
-    400: {
-      description: 'Invalid session id or malformed request body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Session locked by another client',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    422: {
-      description: 'Unknown intent, or the session runtime does not support it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid session id or malformed request body'),
+    404: problemResponse('Session not found'),
+    409: problemResponse('Session locked by another client'),
+    422: problemResponse('Unknown intent, or the session runtime does not support it'),
   },
 });
 
@@ -1413,14 +1320,8 @@ registry.registerPath({
         'application/json': { schema: z.object({ ok: z.boolean() }) },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No pending approval',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
+    404: problemResponse('No pending approval'),
   },
 });
 
@@ -1442,14 +1343,8 @@ registry.registerPath({
         'application/json': { schema: z.object({ ok: z.boolean() }) },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No pending question',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
+    404: problemResponse('No pending question'),
   },
 });
 
@@ -1459,7 +1354,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Dispatch a generative-UI widget agent action',
   description:
-    "A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). Unlike the message trigger (which queues instead), this route answers 409 SESSION_LOCKED while the agent is still PRODUCING a turn: a widget click is not a person's words waiting to be said, so it is refused rather than queued. A click that lands after the turn ended is accepted, even if the runtime is still closing that turn's stream behind it.",
+    "A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). Unlike the message trigger (which queues instead), this route answers 409 `session_locked` while the agent is still PRODUCING a turn: a widget click is not a person's words waiting to be said, so it is refused rather than queued. A click that lands after the turn ended is accepted, even if the runtime is still closing that turn's stream behind it.",
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -1473,18 +1368,9 @@ registry.registerPath({
         'application/json': { schema: SessionTriggerResponseSchema },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Session is running a turn (locked)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
+    404: problemResponse('Session not found'),
+    409: problemResponse('Session is running a turn (locked)'),
   },
 });
 
@@ -1506,22 +1392,10 @@ registry.registerPath({
       description: 'The resource body plus its sandbox metadata',
       content: { 'application/json': { schema: McpAppResourceResponseSchema } },
     },
-    400: {
-      description: 'Validation error or non-ui:// URI',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session, server, or captured config not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    415: {
-      description: 'Resource is not renderable HTML',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'Upstream MCP read failed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error or non-ui:// URI'),
+    404: problemResponse('Session, server, or captured config not found'),
+    415: problemResponse('Resource is not renderable HTML'),
+    502: problemResponse('`upstream_unavailable`: the MCP server did not send the resource'),
   },
 });
 
@@ -1838,18 +1712,14 @@ registry.registerPath({
       description: 'Directory listing',
       content: { 'application/json': { schema: BrowseDirectoryResponseSchema } },
     },
-    400: {
-      description: 'Invalid path',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Access denied (path outside home directory)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Directory not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request` (a bad query, or a path with a NUL byte) or `not_a_folder` (the path is a file)'
+    ),
+    403: problemResponse(
+      '`outside_boundary` (the path is outside the folders DorkOS may use) or `forbidden` (the system would not let DorkOS read it)'
+    ),
+    404: problemResponse('`not_found`: no folder at that path'),
+    500: problemResponse('`internal_error`: the folder could not be read'),
   },
 });
 
@@ -1868,6 +1738,7 @@ registry.registerPath({
         },
       },
     },
+    500: { $ref: '#/components/responses/InternalErrorProblem' },
   },
 });
 
@@ -1896,14 +1767,11 @@ registry.registerPath({
       description: 'Signed URL to load, or a null url with an honest reason',
       content: { 'application/json': { schema: WorkbenchSignResponseSchema } },
     },
-    400: {
-      description: 'Invalid body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Access denied: cwd outside directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: { $ref: '#/components/responses/ValidationProblem' },
+    403: problemResponse(
+      '`outside_boundary`: `cwd` or `path` is outside the folders DorkOS may use'
+    ),
+    500: problemResponse('`internal_error`: the folder could not be checked or the preview opened'),
   },
 });
 
@@ -1926,10 +1794,10 @@ registry.registerPath({
       description: 'Whether something accepted a connection on that port',
       content: { 'application/json': { schema: WorkbenchProbeResponseSchema } },
     },
-    400: {
-      description: 'Invalid body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: { $ref: '#/components/responses/ValidationProblem' },
+    409: problemResponse(
+      '`conflict`: this computer does not look for dev servers (a hub or agent computer)'
+    ),
   },
 });
 
@@ -1953,10 +1821,7 @@ registry.registerPath({
       description: 'The recorded decision for that page',
       content: { 'application/json': { schema: WorkbenchBridgeStatusResponseSchema } },
     },
-    400: {
-      description: 'Invalid body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: { $ref: '#/components/responses/ValidationProblem' },
   },
 });
 
@@ -1980,22 +1845,17 @@ registry.registerPath({
   },
   responses: {
     200: { description: 'File contents, content-typed by extension' },
-    400: {
-      description: 'Invalid path (null byte, symlink loop, not a directory)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Token expired',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Token forged/malformed, wrong scope, or path escapes the boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'File not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: a bad path (null byte, symlink loop, not a directory)'
+    ),
+    401: problemResponse('`unauthenticated`: the link expired'),
+    403: problemResponse(
+      '`forbidden` (a forged or malformed link, the wrong kind of link, or a protected file) or `outside_boundary` (the path escapes `cwd`)'
+    ),
+    404: problemResponse(
+      '`not_found`: no such file, a folder, or a computer that serves no previews'
+    ),
+    500: problemResponse('`internal_error`: the file could not be read'),
   },
 });
 
@@ -2051,14 +1911,8 @@ registry.registerPath({
       description: 'Created schedule',
       content: { 'application/json': { schema: TaskSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'CWD outside directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
+    403: problemResponse('CWD outside directory boundary'),
   },
 });
 
@@ -2078,10 +1932,7 @@ registry.registerPath({
       description: 'Updated schedule',
       content: { 'application/json': { schema: TaskSchema } },
     },
-    404: {
-      description: 'Schedule not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Schedule not found'),
   },
 });
 
@@ -2098,10 +1949,7 @@ registry.registerPath({
       description: 'Deleted',
       content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
     },
-    404: {
-      description: 'Schedule not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Schedule not found'),
   },
 });
 
@@ -2122,14 +1970,10 @@ registry.registerPath({
       description: 'Run started',
       content: { 'application/json': { schema: z.object({ runId: z.string() }) } },
     },
-    400: {
-      description: 'The body is not valid, or the picked mode is not one the task can run in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Schedule not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The body is not valid, or the picked mode is not one the task can run in'
+    ),
+    404: problemResponse('Schedule not found'),
   },
 });
 
@@ -2150,18 +1994,9 @@ registry.registerPath({
       description: 'The schedule, back on its old mode',
       content: { 'application/json': { schema: TaskSchema } },
     },
-    403: {
-      description: 'Only a person can do this',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Schedule not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Nothing to undo: the mode changed again since',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Only a person can do this'),
+    404: problemResponse('Schedule not found'),
+    409: problemResponse('Nothing to undo: the mode changed again since'),
   },
 });
 
@@ -2192,22 +2027,10 @@ registry.registerPath({
       description: 'The schedule, its cap lifted',
       content: { 'application/json': { schema: TaskSchema } },
     },
-    400: {
-      description: 'The body names no cap',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Only a person can do this',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Schedule not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The file changed again since the cap you saw',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('The body names no cap'),
+    403: problemResponse('Only a person can do this'),
+    404: problemResponse('Schedule not found'),
+    412: problemResponse('`precondition_failed`: the file changed again since the cap you saw'),
   },
 });
 
@@ -2240,10 +2063,7 @@ registry.registerPath({
       description: 'Run details',
       content: { 'application/json': { schema: TaskRunSchema } },
     },
-    404: {
-      description: 'Run not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Run not found'),
   },
 });
 
@@ -2260,35 +2080,16 @@ registry.registerPath({
       description: 'A runner has the stop request, or the run had already finished',
       content: { 'application/json': { schema: CancelTaskRunResponseSchema } },
     },
-    404: {
-      description: 'Run not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description:
-        'The stop request went out and nothing acknowledged it — the run may still be going',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Run not found'),
+    502: problemResponse(
+      '`upstream_unavailable`: the stop request could not be sent, was refused, or nothing ' +
+        'acknowledged it; the run may still be going'
+    ),
   },
 });
 
 // --- Relay ---
 
-/** Receipt availability errors are safe and distinguish acceptance from response loss. */
-const RelayReceiptAvailabilityErrorSchema = z.object({
-  error: z.string(),
-  code: z.enum([
-    'RELAY_RECEIPT_TRANSACTION_ACTIVE',
-    'RELAY_RECEIPT_OBSERVER_BUSY',
-    'RELAY_RECEIPT_STORAGE_UNAVAILABLE',
-  ]),
-});
-const RelayReceiptResponseErrorSchema = z.object({
-  error: z.string(),
-  code: z.literal('RELAY_RECEIPT_RESPONSE_UNAVAILABLE'),
-  messageId: RelayMessageIdSchema,
-  statusUrl: z.string(),
-});
 const RelayPublishResponseSchema = z.object({
   messageId: z.string(),
   deliveredTo: z.number(),
@@ -2331,7 +2132,7 @@ registry.registerPath({
   tags: ['Relay'],
   summary: 'Send a relay message',
   description:
-    "Publish a message using the caller-supplied `from`. Reserved server senders, destinations, and reply addresses are refused. `from` is a caller's claim, not authenticated attribution. HTTP authentication permits the request but does not bind the sender to the authenticated person. A program run by an agent can also choose a permitted `relay.human.*` address.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nA permitted human sender may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Agent, session, and external MCP sender addresses cannot use those three turn-shaping fields. Account selection follows separate host policy for new conversations and grants no sender authority.",
+    "Publish a message. The server sets its sender. The person's own turn (no agent identity, and the person's browser session wherever one can exist) sends from the `from` it names. An agent whose token verified sends from its own registered address, or `relay.external.http` when the registry does not know it. Any other caller sends from `relay.external.http`. A caller other than the person naming a `relay.human.*` sender is refused with `person_required`, except a verified agent, which is sent from its own address; an app window without a session is asked for the password instead (`person_session_required`). A verified agent sending to a chat's own address (`relay.agent.<runtime>.<sessionId>`) meets the same place rule as `POST /api/sessions/{id}/messages`: its own chat, or a chat about a folder no agent owns, is delivered, and another agent's chat is refused with `DESK_NOT_OWN`. Reserved server senders, destinations, and reply addresses are refused.\n\nWith login off, no app credential is required. The Host allowlist permits loopback addresses, configured trusted hosts, and the live tunnel unless `DORKOS_ALLOW_INSECURE_BIND` disables it. With login on, a session cookie or per-user bearer API key is required and the Host guard is off; an API key is not the person. CORS browser-origin policy still applies and permits requests without Origin; it does not authenticate the sender.\n\nThe person's message may supply `payload.cwd`, `payload.forAgent` (agent home path), and `payload.__bindingPermissions.permissionMode`. Existing folder and agent checks apply. The nested mode defaults to `default`; top-level `payload.permissionMode` does not set it. Supported approval modes depend on the receiving runtime. Any other caller's message has those fields, `payload.responseContext`, `payload.senderName` and `payload.channelName` removed, runs no looser than the receiving runtime's default, and carries the marks its agent's running turns hold; a message from `relay.external.http` is always marked as an outsider's. MCP send tools instead publish a server-resolved sender under separate MCP authentication and tool permissions. Account selection follows separate host policy for new conversations and grants no sender authority.",
   request: {
     body: {
       content: { 'application/json': { schema: RelaySendMessageRequestSchema } },
@@ -2343,31 +2144,20 @@ registry.registerPath({
         'Publication result. Agent-target scheduling counts do not confirm delivery or turn success; receipt/statusUrl observe target delivery.',
       content: { 'application/json': { schema: RelayPublishResponseSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: the body failed its checks, or the bus refused the message before accepting it.'
+    ),
     401: {
-      description: 'Login requires a verified session or per-user API key',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Reserved sender, destination or reply address',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    422: {
-      description: 'Publication refused before acceptance',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    503: {
       description:
-        'Receipt storage/observer/caller transaction unavailable before acceptance, or response unavailable after durable acceptance. A retained locator does not permit replay.',
-      content: {
-        'application/json': {
-          schema: z.union([RelayReceiptAvailabilityErrorSchema, RelayReceiptResponseErrorSchema]),
-        },
-      },
+        'Login requires a verified session or per-user API key, or an app window without a session must confirm the person (person_session_required)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    403: problemResponse(
+      "`reserved_sender`, `reserved_subject` (a destination or reply address DorkOS keeps), `room_conversation` (post in the room instead), `person_only` (a person's address, sent by someone other than the person), `desk_not_own` (a chat a verified agent may not send into) or `not_from_wifi`."
+    ),
+    503: problemResponse(
+      '`temporarily_unavailable`: delivery status storage is unavailable before acceptance, or the answer is unavailable after it. After acceptance the problem carries `messageId` and `statusUrl`; a retained locator does not permit replay.'
+    ),
   },
 });
 
@@ -2385,23 +2175,15 @@ registry.registerPath({
       headers: { 'Cache-Control': { schema: { type: 'string', const: 'no-store' } } },
       content: { 'application/json': { schema: RelayDeliveryReceiptSchema } },
     },
-    400: {
-      description: 'INVALID_RELAY_MESSAGE_ID after authentication',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: not a message id (checked after authentication).'),
     401: {
       description: 'AUTH_REQUIRED before ID validation',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    404: {
-      description:
-        'RELAY_RECEIPT_NOT_FOUND: unknown, expired, untracked and other-owner locators have the same response',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    503: {
-      description: 'Receipt observer/storage/caller transaction unavailable',
-      content: { 'application/json': { schema: RelayReceiptAvailabilityErrorSchema } },
-    },
+    404: problemResponse(
+      '`not_found`: unknown, expired, untracked and other-owner locators have the same response.'
+    ),
+    503: problemResponse('`temporarily_unavailable`: delivery status storage is unavailable.'),
   },
 });
 
@@ -2460,10 +2242,7 @@ registry.registerPath({
       description: 'Message details with per-endpoint delivery breakdown',
       content: { 'application/json': { schema: RelayMessageDetailSchema } },
     },
-    404: {
-      description: 'Message not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Message not found'),
   },
 });
 
@@ -2503,10 +2282,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2525,10 +2301,7 @@ registry.registerPath({
         'application/json': { schema: z.object({ success: z.boolean() }) },
       },
     },
-    404: {
-      description: 'Endpoint not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Endpoint not found'),
   },
 });
 
@@ -2571,10 +2344,7 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Endpoint not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Endpoint not found'),
   },
 });
 
@@ -2669,10 +2439,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2698,14 +2465,10 @@ registry.registerPath({
       description: 'Registered agent (adopted, when the directory already had one)',
       content: { 'application/json': { schema: AgentManifestSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    422: {
-      description: 'Registration refused — an existing manifest there could not be read or adopted',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
+    422: problemResponse(
+      'Registration refused — an existing manifest there could not be read or adopted'
+    ),
   },
 });
 
@@ -2726,10 +2489,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2746,10 +2506,7 @@ registry.registerPath({
       description: 'Agent details',
       content: { 'application/json': { schema: AgentManifestSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2769,10 +2526,7 @@ registry.registerPath({
       description: 'Updated agent',
       content: { 'application/json': { schema: AgentManifestSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2798,10 +2552,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2858,10 +2609,7 @@ registry.registerPath({
       description: 'The rule as applied',
       content: { 'application/json': { schema: CrossNamespaceRuleSchema } },
     },
-    400: {
-      description: 'Validation error, including `*` on one side only',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error, including `*` on one side only'),
   },
 });
 
@@ -2882,10 +2630,7 @@ registry.registerPath({
         'application/json': { schema: z.object({ success: z.boolean() }) },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2903,10 +2648,7 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -2928,10 +2670,7 @@ registry.registerPath({
         'application/json': { schema: z.object({ success: z.boolean() }) },
       },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -3138,16 +2877,6 @@ registry.registerPath({
   },
 });
 
-/**
- * The refusal both package-source WRITE routes answer with when the caller is not
- * the operator (DOR-502). Not an approval gate: there is no token that unlocks it.
- */
-const MarketplaceSourceRefusalSchema = z.object({
-  error: z.string(),
-  code: z.literal('operator_only_marketplace_source'),
-  message: z.string(),
-});
-
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources',
@@ -3170,18 +2899,13 @@ registry.registerPath({
       description: 'Source added, with how the first fetch of its listing went',
       content: { 'application/json': { schema: AddedMarketplaceSourceSchema } },
     },
-    400: {
-      description: 'Validation error, a name DorkOS cannot use, or an address it will not fetch',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
-    },
-    409: {
-      description: 'Duplicate source name',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error, a name DorkOS cannot use, or an address it will not fetch'
+    ),
+    403: problemResponse(
+      '`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)'
+    ),
+    409: problemResponse('`conflict`: duplicate source name'),
   },
 });
 
@@ -3201,10 +2925,9 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Source removed' },
-    403: {
-      description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)'
+    ),
   },
 });
 
@@ -3228,10 +2951,9 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Source removed' },
-    403: {
-      description: 'Caller is not the operator',
-      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent, or not at this computer) or `person_only` (sign in to the app)'
+    ),
   },
 });
 
@@ -3264,14 +2986,10 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Source not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'Upstream fetch failure',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: source not found'),
+    502: problemResponse(
+      '`upstream_unavailable`: the source could not be fetched and nothing is cached'
+    ),
   },
 });
 
@@ -3308,14 +3026,10 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Source not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'Upstream fetch failure',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: source not found'),
+    502: problemResponse(
+      '`upstream_unavailable`: the source could not be fetched and nothing is cached'
+    ),
   },
 });
 
@@ -3347,14 +3061,8 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'projectPath given more than once',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'projectPath outside the directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: `projectPath` given more than once'),
+    403: problemResponse('`outside_boundary`: `projectPath` is outside the folders DorkOS may use'),
   },
 });
 
@@ -3384,10 +3092,7 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: package not installed'),
   },
 });
 
@@ -3431,10 +3136,7 @@ registry.registerPath({
       description: 'Prune result',
       content: { 'application/json': { schema: PruneMarketplaceCacheResponseSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error'),
   },
 });
 
@@ -3452,10 +3154,7 @@ registry.registerPath({
         },
       },
     },
-    500: {
-      description: 'Aggregation failure',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    500: problemResponse('`internal_error`: aggregation failure'),
   },
 });
 
@@ -3486,14 +3185,10 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or invalid package',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Marketplace or package not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)'
+    ),
+    404: problemResponse('`not_found`: marketplace or package not found'),
   },
 });
 
@@ -3527,14 +3222,10 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or invalid package',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Marketplace or package not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)'
+    ),
+    404: problemResponse('`not_found`: marketplace or package not found'),
   },
 });
 
@@ -3569,27 +3260,23 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or invalid package',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Marketplace or package not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: validation error or invalid package (`errors` and `codes` say what failed)'
+    ),
+    404: problemResponse('`not_found`: marketplace or package not found'),
     409: {
-      description:
-        'Install blocked by conflicts, or (`code: disclosure_changed`) the package now runs something other than `approvedDisclosure`',
+      description: '`conflict`: blocked by the packages listed in `conflicts`',
       content: {
-        'application/json': {
-          schema: z.object({
-            error: z.string(),
+        [PROBLEM_CONTENT_TYPE]: {
+          schema: ProblemSchema.extend({
             conflicts: z.array(LocalConflictReportSchema).optional(),
-            code: z.literal('disclosure_changed').optional(),
           }),
         },
       },
     },
+    412: problemResponse(
+      '`precondition_failed`: the package now runs something other than `approvedDisclosure`'
+    ),
   },
 });
 
@@ -3639,14 +3326,8 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or an invalid package name',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error or an invalid package name'),
+    404: problemResponse('`not_found`: package not installed'),
   },
 });
 
@@ -3660,8 +3341,8 @@ registry.registerPath({
     "or left over from the earlier version, the person's: the record stops listing them, and " +
     'nothing is moved or deleted (DOR-2341). Only a person may do this: an agent is refused ' +
     '(`operator_only`), and under login so is anything but a signed-in session ' +
-    '(`operator_cookie_required`). Bound to `keepKey` as the installed list showed it: when a ' +
-    'kept file or the installed version changed since, the answer is 409 `kept_files_changed` ' +
+    '(`person_only`). Bound to `keepKey` as the installed list showed it: when a ' +
+    'kept file or the installed version changed since, the answer is 409 `conflict` ' +
     'and nothing is written. For a global package held back from sessions, `review` (exactly as ' +
     '`GET /held-back` listed it) also approves what the package discloses now, like a Review.',
   request: {
@@ -3698,22 +3379,12 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Validation error or an invalid package name',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Not a person (`operator_only`, `operator_cookie_required`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The kept files changed since they were shown (`kept_files_changed`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error or an invalid package name'),
+    403: problemResponse(
+      '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
+    ),
+    404: problemResponse('`not_found`: package not installed'),
+    412: problemResponse('`precondition_failed`: the kept files changed since they were shown'),
   },
 });
 
@@ -3740,14 +3411,8 @@ registry.registerPath({
       description: 'Uninstall result',
       content: { 'application/json': { schema: LocalUninstallResultSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error'),
+    404: problemResponse('`not_found`: package not installed'),
   },
 });
 
@@ -3774,18 +3439,11 @@ registry.registerPath({
       description: 'The check for the installation the name means in this scope',
       content: { 'application/json': { schema: LocalUpdateResultSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Package not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: "The package's git remote could not be reached, or its fetch failed",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: validation error'),
+    404: problemResponse('`not_found`: package not installed'),
+    502: problemResponse(
+      "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed"
+    ),
   },
 });
 
@@ -3809,14 +3467,8 @@ registry.registerPath({
       description: 'One check per installation, in scan order',
       content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
     },
-    400: {
-      description: 'projectPath given more than once',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'projectPath outside the directory boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: `projectPath` given more than once'),
+    403: problemResponse('`outside_boundary`: `projectPath` is outside the folders DorkOS may use'),
   },
 });
 
@@ -3828,8 +3480,8 @@ registry.registerPath({
   description:
     'Reinstalls each target whose check is `update-available`, in the scope it was found in, one at ' +
     'a time. Each target carries the `latestVersion` and `disclosed` its check reported, sent back ' +
-    'untouched: the server recomputes both, and if either moved the whole apply is refused (409 ' +
-    '`disclosure_changed`) with nothing reinstalled; each reinstall is then held to its disclosure. ' +
+    'untouched: the server recomputes both, and if either moved the whole apply is refused (412 ' +
+    '`precondition_failed`) with nothing reinstalled; each reinstall is then held to its disclosure. ' +
     'Each reinstall is authorized as `marketplace.install` first. The person applies directly; an ' +
     "agent's apply raises the same approval card `marketplace_update` does (202 " +
     '`requires_confirmation`) and runs once retried with its `confirmationToken` after a person ' +
@@ -3878,37 +3530,28 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description:
-        'Validation error (a body without `apply: true`, no targets, or a retired selector)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description:
-        'Refused by the permission check, a person declined the card, or projectPath outside the boundary',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: a body only an older CLI sends, or one that fails its checks'
+    ),
+    403: problemResponse(
+      '`needs_approval` (a batch that would need a card per package), `declined` (a person said no), `outside_boundary`, or the permission check’s refusal'
+    ),
     404: {
-      description: 'A target install path is not installed in view',
-      content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
+      description: '`not_found`: a target install path is not installed in view',
+      content: { [PROBLEM_CONTENT_TYPE]: { schema: NotInstalledForUpdateSchema } },
     },
-    409: {
+    412: {
       description:
-        'A new version, or what it runs, is not what was shown (`disclosure_changed`); nothing ran',
+        '`precondition_failed`: a new version, or what it runs, is not what was shown; nothing ran',
       content: {
-        'application/json': {
-          schema: z.object({
-            error: z.string(),
-            code: z.literal('disclosure_changed'),
-            changed: z.array(z.unknown()),
-          }),
+        [PROBLEM_CONTENT_TYPE]: {
+          schema: ProblemSchema.extend({ changed: z.array(z.unknown()) }),
         },
       },
     },
-    502: {
-      description: "The package's git remote could not be reached, or its fetch failed",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    502: problemResponse(
+      "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed"
+    ),
   },
 });
 
@@ -3956,10 +3599,9 @@ registry.registerPath({
       description: 'The card is raised; a person decides on it',
       content: { 'application/json': { schema: z.object({ status: z.literal('asked') }) } },
     },
-    409: {
-      description: 'Not held back, or cannot be shown on a card (the error says what to do)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse(
+      '`conflict`: not held back, or cannot be shown on a card (`detail` says what to do)'
+    ),
   },
 });
 
@@ -3991,16 +3633,12 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Recorded' },
-    403: {
-      description:
-        'Not the person (`operator_only`), or sign-in is on and this is not a signed-in ' +
-        'session (`operator_cookie_required`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Not held back, unreadable, or changed since it was shown',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
+    ),
+    412: problemResponse(
+      '`precondition_failed`: not held back, unreadable, or changed since it was shown'
+    ),
   },
 });
 
@@ -4021,14 +3659,6 @@ const LocalDevLinkStatusSchema = z.object({
     .describe('The installed copy set aside for the link, or null.'),
   linkedAt: z.string(),
   lastReloadAt: z.string().optional(),
-});
-
-const LocalDevLinkErrorSchema = z.object({
-  error: z.string().describe('One plain sentence: what did not happen and what to do.'),
-  code: z.string(),
-  realPath: z.string().optional(),
-  name: z.string().optional(),
-  installedVersion: z.string().optional(),
 });
 
 const DevLinkScopeBody = {
@@ -4112,18 +3742,11 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Not linkable (`code` says why)',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
-    403: {
-      description: 'Outside the folders DorkOS may use',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
-    409: {
-      description: 'The slot or the name is taken',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
+    400: problemResponse('`invalid_request`: not linkable; `detail` says why'),
+    403: problemResponse(
+      '`forbidden` (`detail` says why) or `outside_boundary`: outside the folders DorkOS may use'
+    ),
+    409: problemResponse('`conflict`: the slot or the name is taken; `detail` says which'),
   },
 });
 
@@ -4171,20 +3794,14 @@ registry.registerPath({
       description: 'A person has been asked; retry with the approval token',
       content: { 'application/json': { schema: z.object({ status: z.string() }).passthrough() } },
     },
-    400: {
-      description: 'Not linkable, or a malformed body',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
-    403: {
-      description: 'Refused by the gate, or outside the folders DorkOS may use',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The slot or the name is taken, or the folder changed after it was approved ' +
-        '(`dev_link_changed`)',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: not linkable (`detail` says why), or a malformed body'
+    ),
+    403: problemResponse(
+      'Refused by the permission check, or `forbidden`/`outside_boundary`: outside the folders DorkOS may use'
+    ),
+    409: problemResponse('`conflict`: the slot or name is taken'),
+    412: problemResponse('`precondition_failed`: the folder changed after it was approved'),
   },
 });
 
@@ -4220,14 +3837,10 @@ registry.registerPath({
         },
       },
     },
-    403: {
-      description: 'Not the person (`operator_only`), or not a signed-in session under sign-in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such dev link',
-      content: { 'application/json': { schema: LocalDevLinkErrorSchema } },
-    },
+    403: problemResponse(
+      '`operator_only` (an agent) or `person_only` (sign-in is on and this is not a signed-in session)'
+    ),
+    404: problemResponse('`not_found`: no such dev link'),
   },
 });
 
@@ -4270,43 +3883,25 @@ const CloudSummarySchema = z.object({
   lastHeartbeatAt: z.string().nullable(),
 });
 
-/**
- * The owner bar's refusal on a DorkOS account write that answers with a status
- * object (`routes/cloud-owner-bar.ts`, DOR-2652).
- */
-const CloudOwnerOnlyErrorDocSchema = z
-  .object({
-    error: z.string().openapi({ description: 'One plain sentence saying who may do this.' }),
-    code: z.enum(['person_only', 'owner_only']),
-  })
-  .openapi('CloudOwnerOnlyError');
-
-/** The same refusal, on a DorkOS account write whose answer is an `ok` envelope. */
-const CloudOwnerOnlyEnvelopeDocSchema = z
-  .object({
-    ok: z.literal(false),
-    code: z.enum(['person_only', 'owner_only']),
-    message: z.string().openapi({ description: 'One plain sentence saying who may do this.' }),
-  })
-  .openapi('CloudOwnerOnlyRefusal');
-
-/** What a 403 on a DorkOS account write means, said once for every one of them. */
-const OWNER_ONLY_403 =
-  'Only the owner of this DorkOS may do this: never an agent or a caller holding an ' +
-  'approval token, and with login on never an API key or another signed-in account.';
-
-const CLOUD_OWNER_ONLY_ERROR = {
-  403: {
-    description: OWNER_ONLY_403,
-    content: { 'application/json': { schema: CloudOwnerOnlyErrorDocSchema } },
-  },
+/** The owner bar's 403 on a DorkOS account write (`routes/cloud-owner-bar.ts`, DOR-2652). */
+const CLOUD_OWNER_ONLY = {
+  403: problemResponse(
+    'Only the owner of this DorkOS may do this: never an agent (`person_only`), and with ' +
+      'login on never an API key or another signed-in account (`owner_only`).'
+  ),
 };
 
-const CLOUD_OWNER_ONLY_ENVELOPE = {
-  403: {
-    description: OWNER_ONLY_403,
-    content: { 'application/json': { schema: CloudOwnerOnlyEnvelopeDocSchema } },
-  },
+/** A hub's account link belongs to DorkOS Cloud, so it is never linked or unlinked here. */
+const HUB_LINKED_BY_CLOUD_409 = {
+  409: problemResponse('This DorkOS is a hub, linked by DorkOS Cloud (`hub_linked_by_cloud`)'),
+};
+
+/** A read that can only fail inside the server. */
+const INTERNAL_ONLY = { 500: { $ref: '#/components/responses/InternalErrorProblem' } };
+
+/** The DorkOS account didn't answer a read or the link start. */
+const CLOUD_UNREACHABLE_502 = {
+  502: problemResponse('The DorkOS account could not be reached (`upstream_unavailable`)'),
 };
 
 registry.registerPath({
@@ -4323,11 +3918,9 @@ registry.registerPath({
       description: 'Device codes to display',
       content: { 'application/json': { schema: StartLinkResultSchema } },
     },
-    ...CLOUD_OWNER_ONLY_ERROR,
-    502: {
-      description: 'Could not reach the DorkOS cloud',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    ...CLOUD_OWNER_ONLY,
+    ...HUB_LINKED_BY_CLOUD_409,
+    ...CLOUD_UNREACHABLE_502,
   },
 });
 
@@ -4341,6 +3934,7 @@ registry.registerPath({
       description: 'Link-flow state machine',
       content: { 'application/json': { schema: CloudLinkStatusSchema } },
     },
+    ...INTERNAL_ONLY,
   },
 });
 
@@ -4358,7 +3952,8 @@ registry.registerPath({
       description: 'The state the link flow settled in',
       content: { 'application/json': { schema: CloudLinkStatusSchema } },
     },
-    ...CLOUD_OWNER_ONLY_ERROR,
+    ...CLOUD_OWNER_ONLY,
+    ...HUB_LINKED_BY_CLOUD_409,
   },
 });
 
@@ -4372,11 +3967,9 @@ registry.registerPath({
       description: 'Unlinked',
       content: { 'application/json': { schema: z.object({ ok: z.boolean() }) } },
     },
-    ...CLOUD_OWNER_ONLY_ERROR,
-    500: {
-      description: 'Unlink failed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    ...CLOUD_OWNER_ONLY,
+    ...HUB_LINKED_BY_CLOUD_409,
+    500: problemResponse('Unlinking failed on this computer (`internal_error`)'),
   },
 });
 
@@ -4390,6 +3983,7 @@ registry.registerPath({
       description: 'Linked state, account label, and last heartbeat',
       content: { 'application/json': { schema: CloudSummarySchema } },
     },
+    ...INTERNAL_ONLY,
   },
 });
 
@@ -4407,7 +4001,7 @@ registry.registerPath({
       description: 'Linked state, account label, and last heartbeat, after the check',
       content: { 'application/json': { schema: CloudSummarySchema } },
     },
-    ...CLOUD_OWNER_ONLY_ENVELOPE,
+    ...CLOUD_OWNER_ONLY,
   },
 });
 
@@ -4480,10 +4074,7 @@ registry.registerPath({
       description: 'The offers, or nothing to show',
       content: { 'application/json': { schema: CloudOffersResponseDocSchema } },
     },
-    502: {
-      description: 'Could not reach the DorkOS account',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    ...CLOUD_UNREACHABLE_502,
   },
 });
 
@@ -4510,19 +4101,9 @@ registry.registerPath({
       description: 'The page address, or a refusal',
       content: { 'application/json': { schema: CloudBillingSessionResponseDocSchema } },
     },
-    ...CLOUD_OWNER_ONLY_ENVELOPE,
-    400: {
-      description: 'A checkout that names no offer',
-      content: {
-        'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
-      },
-    },
-    404: {
-      description: 'Not a billing page this server opens',
-      content: {
-        'application/json': { schema: z.object({ ok: z.literal(false), message: z.string() }) },
-      },
-    },
+    ...CLOUD_OWNER_ONLY,
+    400: problemResponse('A checkout that names no offer (`invalid_request`)'),
+    404: problemResponse('Not a billing page this server opens (`not_found`)'),
   },
 });
 
@@ -4562,7 +4143,7 @@ registry.registerPath({
       description: 'Where the export stands, or a refusal',
       content: { 'application/json': { schema: CloudAccountExportResponseDocSchema } },
     },
-    ...CLOUD_OWNER_ONLY_ENVELOPE,
+    ...CLOUD_OWNER_ONLY,
   },
 });
 
@@ -4600,7 +4181,7 @@ registry.registerPath({
       description: 'Where the confirmation link went, or a refusal',
       content: { 'application/json': { schema: CloudAccountDeletionResponseDocSchema } },
     },
-    ...CLOUD_OWNER_ONLY_ENVELOPE,
+    ...CLOUD_OWNER_ONLY,
   },
 });
 
@@ -4716,10 +4297,8 @@ registry.registerPath({
         'Apply result (chrome + activated extensions + created schedules, warnings, offers)',
       content: { 'application/json': { schema: LocalApplyShapeResultSchema } },
     },
-    404: {
-      description: 'Shape is not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: not a Shape name'),
+    404: problemResponse('`not_found`: the Shape is not installed'),
   },
 });
 
@@ -4739,14 +4318,11 @@ registry.registerPath({
       description: 'The forked Shape descriptor',
       content: { 'application/json': { schema: LocalForkShapeResultSchema } },
     },
-    404: {
-      description: 'Source Shape is not installed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Fork name is invalid or already taken',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      '`invalid_request`: not a Shape name, or the forked manifest is not valid'
+    ),
+    404: problemResponse('`not_found`: the source Shape is not installed'),
+    409: problemResponse('`conflict`: the fork name is taken or the same as the source'),
   },
 });
 
@@ -4806,10 +4382,7 @@ registry.registerPath({
       description: 'The provider status after the reload',
       content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
     },
-    400: {
-      description: 'Unknown provider or empty secret',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown provider or empty secret'),
   },
 });
 
@@ -4829,10 +4402,7 @@ registry.registerPath({
       description: 'The provider status after the reload',
       content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
     },
-    400: {
-      description: 'Unknown provider',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown provider'),
   },
 });
 
@@ -4859,10 +4429,7 @@ registry.registerPath({
       description: 'Account-free connector catalog page',
       content: { 'application/json': { schema: ConnectorCatalogResourcePageSchema } },
     },
-    400: {
-      description: 'Invalid catalog query or cursor',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid catalog query or cursor'),
   },
 });
 
@@ -4889,10 +4456,7 @@ registry.registerPath({
         ])
       ),
     },
-    404: {
-      description: 'The app has no logo, or its logo could not be fetched just now',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('The app has no logo, or its logo could not be fetched just now'),
   },
 });
 
@@ -4906,10 +4470,7 @@ registry.registerPath({
       description: 'Owner-scoped stable connection inventory',
       content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
     },
-    403: {
-      description: 'Verified operator authority is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Verified operator authority is required'),
   },
 });
 
@@ -4928,18 +4489,11 @@ registry.registerPath({
       description: 'Durable owner-only authentication flow state',
       content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    403: {
-      description: 'Verified operator authority is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The idempotency key belongs to a different request',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    422: {
-      description: 'Authentication is unavailable for the selected provider route',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Verified operator authority is required'),
+    409: problemResponse('The idempotency key belongs to a different request'),
+    404: problemResponse(
+      '`app_not_set_up`: no working way to reach this app, so there is nothing to sign in to.'
+    ),
   },
 });
 
@@ -4954,10 +4508,7 @@ registry.registerPath({
       description: 'Current owner-only authentication state',
       content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    404: {
-      description: 'Flow absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Flow absent or owned by someone else'),
   },
 });
 
@@ -4972,10 +4523,7 @@ registry.registerPath({
       description: 'Owner-visible connection detail',
       content: { 'application/json': { schema: ConnectorConnectionDetailSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4993,10 +4541,7 @@ registry.registerPath({
       description: 'Updated lifecycle projection',
       content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -5012,10 +4557,7 @@ registry.registerPath({
       description: 'Local lifecycle and external cleanup state',
       content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -5038,22 +4580,10 @@ registry.registerPath({
       description: 'The app’s actions, or an honest unlisted answer',
       content: { 'application/json': { schema: ConnectorAppActionsSchema } },
     },
-    400: {
-      description: 'Invalid app id or query',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Only the owner can read this, from the DorkOS app',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'The named way of reaching apps is not set up',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    502: {
-      description: 'The service could not list the app’s actions just now',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid app id or query'),
+    403: problemResponse('Only the owner can read this, from the DorkOS app'),
+    404: problemResponse('The named way of reaching apps is not set up'),
+    502: problemResponse('The service could not list the app’s actions just now'),
   },
 });
 
@@ -5068,10 +4598,7 @@ registry.registerPath({
       description: 'Current grant, session, and subscription impact',
       content: { 'application/json': { schema: ConnectorDisconnectImpactSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -5083,14 +4610,8 @@ registry.registerPath({
   request: { params: z.object({ connectionId: z.string().min(1) }) },
   responses: {
     204: { description: 'Account removed from the owner inventory' },
-    404: {
-      description: 'Account absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Account must finish disconnecting before removal',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Account absent or owned by someone else'),
+    409: problemResponse('Account must finish disconnecting before removal'),
   },
 });
 
@@ -5108,14 +4629,8 @@ registry.registerPath({
       description: 'Durable owner-only authentication flow state',
       content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The idempotency key belongs to a different request',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
+    409: problemResponse('The idempotency key belongs to a different request'),
   },
 });
 
@@ -5131,10 +4646,7 @@ for (const action of ['pause', 'resume'] as const) {
         description: 'Local lifecycle and managed authority synchronization state',
         content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
       },
-      404: {
-        description: 'Connection absent or owned by someone else',
-        content: { 'application/json': { schema: ErrorResponseSchema } },
-      },
+      404: problemResponse('Connection absent or owned by someone else'),
     },
   });
 }
@@ -5150,10 +4662,7 @@ registry.registerPath({
       description: 'Canonical agent connection grants',
       content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
     },
-    404: {
-      description: 'Agent absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Agent absent or owned by someone else'),
   },
 });
 
@@ -5183,10 +4692,7 @@ registry.registerPath({
       description: 'Canonical session connector access',
       content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
     },
-    404: {
-      description: 'Session absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Session absent or owned by someone else'),
   },
 });
 
@@ -5206,23 +4712,12 @@ registry.registerPath({
       description: 'The chat’s connector access after the change',
       content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
     },
-    400: {
-      description: 'Invalid request body or connection id',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Refused: agents and programs cannot make account decisions',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Session absent, or the agent was not given that app account-wide',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'Refused: turning it on would drop a limit the owner set on this chat for another agent (`session_access_other_agent`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Invalid request body or connection id'),
+    403: problemResponse('Refused: agents and programs cannot make account decisions'),
+    404: problemResponse('Session absent, or the agent was not given that app account-wide'),
+    409: problemResponse(
+      '`other_agent_chat`: turning it on would drop a limit the owner set on this chat for another agent.'
+    ),
   },
 });
 
@@ -5248,14 +4743,8 @@ registry.registerPath({
         },
       },
     },
-    401: {
-      description: 'A verified program credential is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Agent identity or an unverified operator is refused',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    401: problemResponse('A verified program credential is required'),
+    403: problemResponse('Agent identity or an unverified operator is refused'),
   },
 });
 
@@ -5270,10 +4759,7 @@ registry.registerPath({
       description: 'Requester-safe lifecycle and outcome',
       content: { 'application/json': { schema: ConnectorProgramReviewStatusSchema } },
     },
-    404: {
-      description: 'Review absent or belongs to another requester',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Review absent or belongs to another requester'),
   },
 });
 
@@ -5306,10 +4792,7 @@ registry.registerPath({
       description: 'Owner-visible review context and lifecycle',
       content: { 'application/json': { schema: ConnectorManagementReviewItemSchema } },
     },
-    404: {
-      description: 'Review absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Review absent or owned by someone else'),
   },
 });
 
@@ -5327,10 +4810,7 @@ registry.registerPath({
       description: 'Durably resolved review',
       content: { 'application/json': { schema: ConnectorManagementReviewDecisionResultSchema } },
     },
-    409: {
-      description: 'Review is no longer pending or the target changed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('Review is no longer pending or the target changed'),
   },
 });
 
@@ -5349,10 +4829,7 @@ registry.registerPath({
       description: 'Complete immutable grant preview',
       content: { 'application/json': { schema: ConnectorReconciliationPreviewSchema } },
     },
-    409: {
-      description: 'The connection must be reconciled before it can be edited',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The connection must be reconciled before it can be edited'),
   },
 });
 
@@ -5369,10 +4846,7 @@ registry.registerPath({
       description: 'How many shared actions ended',
       content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
     },
-    404: {
-      description: 'Connection absent or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -5391,10 +4865,7 @@ registry.registerPath({
       description: 'Exact persisted grants and hosted authority synchronization state',
       content: { 'application/json': { schema: ConnectorReconciliationApplyResponseSchema } },
     },
-    409: {
-      description: 'The preview was consumed, expired, or superseded',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The preview was consumed, expired, or superseded'),
   },
 });
 
@@ -5409,10 +4880,7 @@ registry.registerPath({
       description: 'Agent-scoped accessible connections',
       content: { 'application/json': { schema: ConnectorAccessibleConnectionsResponseSchema } },
     },
-    401: {
-      description: 'A verified program credential is required',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    401: problemResponse('A verified program credential is required'),
   },
 });
 
@@ -5430,10 +4898,7 @@ registry.registerPath({
       description: 'Exact agent-scoped operation revisions',
       content: { 'application/json': { schema: ConnectorAccessibleOperationsResponseSchema } },
     },
-    404: {
-      description: 'Connection absent, ungranted, or owned by someone else',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Connection absent, ungranted, or owned by someone else'),
   },
 });
 
@@ -5528,14 +4993,8 @@ registry.registerPath({
       description: 'The re-pointed binding',
       content: { 'application/json': { schema: BindingResponseSchema } },
     },
-    400: {
-      description: 'Unknown agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Unknown binding',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown agent'),
+    404: problemResponse('Unknown binding'),
   },
 });
 
@@ -5583,18 +5042,9 @@ registry.registerPath({
       description: 'The binding created from this claim, optionally bridged',
       content: { 'application/json': { schema: ClaimUnclaimedChatResponseSchema } },
     },
-    400: {
-      description: 'Unknown agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'Unknown unclaimed chat',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The chat was bound by something else in the meantime',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown agent'),
+    404: problemResponse('Unknown unclaimed chat'),
+    409: problemResponse('The chat was bound by something else in the meantime'),
   },
 });
 
@@ -5609,10 +5059,7 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Muted' },
-    404: {
-      description: 'Unknown unclaimed chat',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Unknown unclaimed chat'),
   },
 });
 
@@ -5627,10 +5074,7 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Blocked' },
-    404: {
-      description: 'Unknown unclaimed chat',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('Unknown unclaimed chat'),
   },
 });
 
@@ -5668,7 +5112,7 @@ registry.registerPath({
     'Records that a person allowed this extension to run code inside DorkOS, bound to the copy on ' +
     'disk (its folder and the plugin that carried it), and starts it. The body is optional: send ' +
     'the path, version and plugin of the copy the person was shown (the Activity inbox always ' +
-    'does), and the approval is refused with `stale_approval` unless the copy on disk is still ' +
+    'does), and the approval is refused with `412 precondition_failed` unless the copy on disk is still ' +
     'exactly that one, so an old row can never turn on a copy that took its place. Clears any ' +
     '"Not now" for this id. A caller naming itself an agent is refused in every posture, and a ' +
     'signed-in person is required when login is on. There is no MCP tool for this. When the ' +
@@ -5694,28 +5138,14 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Invalid extension id or body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Refused: an agent or another site cannot turn an extension on',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such extension',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
-        '(`stale_approval`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: an invalid extension id or body'),
+    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
+    403: problemResponse('`person_only`: an agent or another site cannot turn an extension on'),
+    404: problemResponse('`not_found`: no such extension'),
+    409: problemResponse(
+      '`conflict`: the extension ships with DorkOS, or its copy cannot be checked (`detail` says which)'
+    ),
+    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });
 
@@ -5729,7 +5159,7 @@ registry.registerPath({
     'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
     'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
     'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
-    'refused with `stale_approval`. The same person bar as approving applies: a caller naming ' +
+    'refused with `412 precondition_failed`. The same person bar as approving applies: a caller naming ' +
     'itself an agent is refused in every posture, and a signed-in person is required when login ' +
     'is on. There is no MCP tool for this.',
   request: {
@@ -5738,44 +5168,21 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Declined for now' },
-    400: {
-      description: 'Invalid extension id or body',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: 'Login is enabled and the caller is not signed in',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    403: {
-      description: 'Refused: an agent or another site cannot answer this',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such extension',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The extension ships with DorkOS, or the copy changed since the person saw it ' +
-        '(`stale_approval`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('`invalid_request`: an invalid extension id or body'),
+    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
+    403: problemResponse('`person_only`: an agent or another site cannot answer this'),
+    404: problemResponse('`not_found`: no such extension'),
+    409: problemResponse('`conflict`: the extension ships with DorkOS'),
+    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });
 
 const TRUSTED_SOURCE_BAR_RESPONSES = {
-  400: {
-    description: 'The body does not name a GitHub `owner/repo`',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  401: {
-    description: 'Login is enabled and the caller is not signed in',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  403: {
-    description: 'Refused: an agent or another site cannot change which sources are trusted',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  400: problemResponse('`invalid_request`: the body does not name a GitHub `owner/repo`'),
+  401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
+  403: problemResponse(
+    '`person_only` (an agent or another site) or `operator_only` (not the owner at this computer)'
+  ),
 } as const;
 
 registry.registerPath({
@@ -5815,10 +5222,7 @@ registry.registerPath({
       content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
     },
     ...TRUSTED_SOURCE_BAR_RESPONSES,
-    409: {
-      description: 'Nothing installed provably comes from that source (`unproven_source`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('`conflict`: nothing installed provably comes from that source'),
   },
 });
 
@@ -5840,10 +5244,7 @@ registry.registerPath({
       content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
     },
     ...TRUSTED_SOURCE_BAR_RESPONSES,
-    404: {
-      description: 'That source is not trusted',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('`not_found`: that source is not trusted'),
   },
 });
 
@@ -5872,7 +5273,7 @@ const PERMISSION_WRITE_REFUSALS = {
     description:
       'Refused: only a person can change permissions. A caller presenting an agent identity ' +
       '(`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in ' +
-      'every posture, and with login on a per-user API key is refused (`operator_cookie_required`)',
+      'every posture, and with login on a per-user API key is refused (`person_only`)',
     content: { 'application/json': { schema: ErrorResponseSchema } },
   },
 } as const;
@@ -5982,7 +5383,7 @@ registry.registerPath({
   description:
     'Makes the folder, scaffolds the agent and registers it. Two sources need more than that ' +
     '(DOR-2325). `template` is cloned into a staging folder and read before it lands: a person ' +
-    'whose template brings settings or programs gets 409 `template_needs_review` with what it ' +
+    'whose template brings settings or programs gets 409 `needs_review` with what it ' +
     'brings, and creates it by sending back `approvedTemplateHash`; anyone else (an agent) gets ' +
     '202 `requires_confirmation` and an approval card, and retries with `confirmationToken`. ' +
     '`package` creates the agent a marketplace package brings, through the marketplace installer, ' +
@@ -6023,15 +5424,11 @@ registry.registerPath({
         },
       },
     },
-    403: {
-      description: 'Turned down, nobody can be asked, or a package requested by an agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        '`template_needs_review` (with `template`), `disclosure_changed`, or a collision',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Turned down, nobody can be asked, or a package requested by an agent'),
+    409: problemResponse('`needs_review` (with `template`), or a collision'),
+    412: problemResponse(
+      '`precondition_failed`: the package changed what it runs since it was shown'
+    ),
   },
 });
 
@@ -6086,10 +5483,7 @@ registry.registerPath({
       description: "The agent's permissions",
       content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
     },
-    404: {
-      description: 'No such agent (`UNKNOWN_AGENT`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such agent (`not_found`)'),
   },
 });
 
@@ -6107,10 +5501,7 @@ registry.registerPath({
       description: "The agent's level",
       content: { 'application/json': { schema: AgentLevelResponseSchema } },
     },
-    404: {
-      description: 'No such agent (`UNKNOWN_AGENT`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such agent (`not_found`)'),
   },
 });
 
@@ -6135,10 +5526,7 @@ registry.registerPath({
         },
       },
     },
-    404: {
-      description: 'No such agent (`UNKNOWN_AGENT`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such agent (`not_found`)'),
     ...PERMISSION_WRITE_REFUSALS,
   },
 });
@@ -6161,10 +5549,9 @@ const RoomEntryParams = RoomIdParams.extend({ entryId: z.string().min(1) });
 const RoomAttachmentParams = RoomIdParams.extend({ attachmentId: z.string().min(1) });
 
 /** 404 body shared by every room path: an unknown room and one the caller may not see. */
-const roomNotFound = {
-  description: 'No such room, or the caller may not see it (an agent sees only its own rooms)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const roomNotFound = problemResponse(
+  'No such room, or the caller may not see it (an agent sees only its own rooms)'
+);
 /**
  * 401 shared by every path that resolves a room caller.
  *
@@ -6172,20 +5559,14 @@ const roomNotFound = {
  * that claim stays true — the refusal itself is cross-cutting and comes from
  * `resolveCaller` before any route body runs (DOR-1361).
  */
-const roomAgentUnverified = {
-  description:
-    'The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, ' +
-    'expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
-const roomValidationError = {
-  description: 'Validation error',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
-const roomOperatorOnly = {
-  description: 'Only the local human may change a roster; an agent caller is refused',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const roomAgentUnverified = problemResponse(
+  'The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, ' +
+    'expired, or never minted here (`agent_identity_unverified`)'
+);
+const roomValidationError = problemResponse('Validation error');
+const roomOperatorOnly = problemResponse(
+  'Only the local human may change a roster; an agent caller is refused'
+);
 
 /**
  * The documentation shape of a room's repo binding — one of the `Local*Schema`
@@ -6276,14 +5657,8 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomWithRosterSchema } },
     },
     400: roomValidationError,
-    403: {
-      description: 'An agent caller tried to seed the room with a SECOND agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'A live channel already holds that slug',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('An agent caller tried to seed the room with a SECOND agent'),
+    409: problemResponse('A live channel already holds that slug'),
   },
 });
 
@@ -6308,7 +5683,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Where each of a room's agents does its work",
   description:
-    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a DorkOS client can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates\' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `PEOPLE_ONLY`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.',
+    'One `authorId → sessionId` pair per agent that has answered in this room, and nothing else — no session content, no working directory, no status. The narrowness is the point: this exists so a DorkOS client can turn "Meeting Notes is working on it" into a link you can follow, and a route that answered more would be a second way to read a session, reached through a room. A room the caller cannot see answers 404, exactly as reading the room does. **Only a person may ask** — an agent enumerating its room-mates\' sessions is arbitration this domain has declined, so a caller whose `X-DorkOS-Agent` token resolves to a live agent is refused 403 `person_only`, and one whose token does not resolve is refused 401 before the room is looked up at all. A revoked agent is still an agent.',
   request: { params: RoomIdParams },
   responses: {
     200: {
@@ -6316,10 +5691,9 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomSessionsResponseSchema } },
     },
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller presented an agent identity, which may not ask this (`PEOPLE_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse(
+      'The caller presented an agent identity, which may not ask this (`person_only`)'
+    ),
     404: roomNotFound,
   },
 });
@@ -6342,10 +5716,7 @@ registry.registerPath({
     },
     400: roomValidationError,
     404: roomNotFound,
-    409: {
-      description: 'Un-archiving would collide with a live channel holding the slug',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('Un-archiving would collide with a live channel holding the slug'),
   },
 });
 
@@ -6413,10 +5784,7 @@ registry.registerPath({
     400: roomValidationError,
     401: roomAgentUnverified,
     404: roomNotFound,
-    409: {
-      description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The room is archived'),
   },
 });
 
@@ -6446,23 +5814,13 @@ registry.registerPath({
     },
     400: roomValidationError,
     401: roomAgentUnverified,
-    403: {
-      description: 'Only a person can attach a file; an agent caller is refused',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Only a person can attach a file; an agent caller is refused'),
     404: roomNotFound,
-    409: {
-      description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    413: {
-      description: 'A file is larger than the configured limit, refused while still being read',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    415: {
-      description: "A file's type is not in the configured allowlist",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The room is archived'),
+    413: problemResponse(
+      'A file is larger than the configured limit, refused while still being read'
+    ),
+    415: problemResponse("A file's type is not in the configured allowlist"),
   },
 });
 
@@ -6480,14 +5838,8 @@ registry.registerPath({
       content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
     },
     304: { description: 'Not modified — the `If-None-Match` ETag still matches' },
-    400: {
-      description: 'The id could never name a stored file',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such file, or not yours to read',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('The id could never name a stored file'),
+    404: problemResponse('No such file, or not yours to read'),
   },
 });
 
@@ -6507,19 +5859,10 @@ registry.registerPath({
       description: "Accepted; the entry's new reaction set rides the room SSE stream",
       content: { 'application/json': { schema: ToggleReactionResponseSchema } },
     },
-    400: {
-      description: 'Validation error, including anything that is not a single emoji',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error, including anything that is not a single emoji'),
     401: roomAgentUnverified,
-    404: {
-      description: 'No such room, not a member of it, or no such entry in it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such room, not a member of it, or no such entry in it'),
+    409: problemResponse('The room is archived'),
   },
 });
 
@@ -6541,10 +5884,7 @@ registry.registerPath({
     },
     400: roomValidationError,
     403: roomOperatorOnly,
-    404: {
-      description: 'No such room, no such author, or no agent registered at that path',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such room, no such author, or no agent registered at that path'),
   },
 });
 
@@ -6566,10 +5906,7 @@ registry.registerPath({
     },
     400: roomValidationError,
     403: roomOperatorOnly,
-    404: {
-      description: 'No such room, or not a member of it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such room, or not a member of it'),
   },
 });
 
@@ -6583,10 +5920,7 @@ registry.registerPath({
   responses: {
     204: { description: 'Member removed' },
     403: roomOperatorOnly,
-    404: {
-      description: 'No such room, or not a member of it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such room, or not a member of it'),
   },
 });
 
@@ -6606,25 +5940,17 @@ registry.registerPath({
       description: 'The author, with its handle as stored',
       content: { 'application/json': { schema: AuthorRefSchema } },
     },
-    400: {
-      description: 'The handle fails the grammar (`INVALID_HANDLE`), or the body is malformed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The handle fails the grammar (`invalid_handle`), or the body is malformed'
+    ),
     401: roomAgentUnverified,
-    403: {
-      description:
-        "An agent caller tried to change a handle (`OPERATOR_ONLY`), or a person on a plain-http network sign-in tried to change an agent's (`NOT_FROM_WIFI`)",
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No author carries that id (`MEMBER_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded words `everyone`/`here`/`channel`/`room` (`HANDLE_RESERVED`), or reads as one of those once case-folded and skeletoned by Unicode TR39 (`HANDLE_LOOKALIKE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse(
+      "An agent caller tried to change a handle (`operator_only`), or a person on a plain-http network sign-in tried to change an agent's (`not_from_wifi`)"
+    ),
+    404: problemResponse('No author carries that id (`not_found`)'),
+    409: problemResponse(
+      'The handle is live on another author (`handle_taken`), or reserved to one — a handle they released, or one of the seeded words `everyone`/`here`/`channel`/`room` (`handle_reserved`), or reads as one of those once case-folded and skeletoned by Unicode TR39 (`handle_lookalike`)'
+    ),
   },
 });
 
@@ -6634,7 +5960,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Reply inside a thread',
   description:
-    'A thread is a relation between entries in this room, not a room of its own, so there is nothing to create first: this posts the first reply and every later one. The reply keeps the room roster, the room read cursor and the room budget, and answers to the same rules any post does — the caller must be a member, and an archived room refuses. One level only: a reply whose root is itself a reply is refused with 400 (`NESTED_THREAD`). Trigger-only, like `POST /api/rooms/{id}/entries`: 202 with the entry identity, while the entry itself rides the room event stream to every reader.',
+    'A thread is a relation between entries in this room, not a room of its own, so there is nothing to create first: this posts the first reply and every later one. The reply keeps the room roster, the room read cursor and the room budget, and answers to the same rules any post does — the caller must be a member, and an archived room refuses. One level only: a reply whose root is itself a reply is refused with 400 (`invalid_request`). Trigger-only, like `POST /api/rooms/{id}/entries`: 202 with the entry identity, while the entry itself rides the room event stream to every reader.',
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: PostThreadReplyRequestSchema } } },
@@ -6644,18 +5970,9 @@ registry.registerPath({
       description: 'Accepted; the entry reaches readers over the room event stream',
       content: { 'application/json': { schema: PostToRoomResponseSchema } },
     },
-    400: {
-      description: 'Validation error, or the root entry is itself a reply',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such room, not a member of it, or no such entry in it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error, or the root entry is itself a reply'),
+    404: problemResponse('No such room, not a member of it, or no such entry in it'),
+    409: problemResponse('The room is archived'),
   },
 });
 
@@ -6673,14 +5990,8 @@ registry.registerPath({
       content: { 'application/json': { schema: HaltRoomResponseSchema } },
     },
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is not a person; agents do not stop each other',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such room, or not a member of it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is not a person; agents do not stop each other'),
+    404: problemResponse('No such room, or not a member of it'),
   },
 });
 
@@ -6699,14 +6010,8 @@ registry.registerPath({
       content: { 'application/json': { schema: HaltRoomResponseSchema } },
     },
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is not a person; agents do not stop each other',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such room, not a member of it, or no such agent on its roster',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is not a person; agents do not stop each other'),
+    404: problemResponse('No such room, not a member of it, or no such agent on its roster'),
   },
 });
 
@@ -6724,14 +6029,8 @@ registry.registerPath({
       content: { 'application/json': { schema: PromoteHoldResponseSchema } },
     },
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is not a person; agents do not reorder each other',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No such room, or not a member of it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is not a person; agents do not reorder each other'),
+    404: problemResponse('No such room, or not a member of it'),
   },
 });
 
@@ -6741,7 +6040,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Give a room files of its own',
   description:
-    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as whoever asked. Takes no body: there is nothing to configure. **Any member of the room may call it, an agent included.** A caller presenting a token this machine cannot verify is refused 401. A room the caller cannot see answers 404, the same way reading it does. An archived room answers 409 `ROOM_ARCHIVED`; bring it back before giving it files. Calling it twice is safe: the second call answers 409 `ROOM_REPO_EXISTS` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `ROOM_REPOS_DISABLED` — and nothing on disk is touched, so switching them back on returns everything.',
+    'Creates the room’s own git repo — a home directory under the DorkOS data directory, an empty checkout whose branch is `main`, and a first `ROOM.md` committed as whoever asked. Takes no body: there is nothing to configure. **Any member of the room may call it, an agent included.** A caller presenting a token this machine cannot verify is refused 401. A room the caller cannot see answers 404, the same way reading it does. An archived room answers 409 `room_archived`; bring it back before giving it files. Calling it twice is safe: the second call answers 409 `room_repo_exists` carrying the binding that is already there, and makes no second commit. With room files switched off in settings, 409 `room_repos_disabled` — and nothing on disk is touched, so switching them back on returns everything.',
   request: { params: RoomIdParams },
   responses: {
     201: {
@@ -6751,24 +6050,11 @@ registry.registerPath({
       },
     },
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is not the person who owns this install (`OPERATOR_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is not the person who owns this install (`operator_only`)'),
     404: roomNotFound,
-    409: {
-      description:
-        'The room already has files (`ROOM_REPO_EXISTS`, with the existing binding), is archived (`ROOM_ARCHIVED`), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
-      content: {
-        'application/json': {
-          schema: z.object({
-            error: z.string(),
-            code: z.string(),
-            repo: LocalRoomRepoSchema.optional(),
-          }),
-        },
-      },
-    },
+    409: problemResponse(
+      'The room already has files (`room_repo_exists`, with the existing binding as `repo`), is archived (`room_archived`), or room files are switched off on this install (`room_repos_disabled`)'
+    ),
   },
 });
 
@@ -6856,11 +6142,9 @@ registry.registerPath({
     },
     401: roomAgentUnverified,
     404: roomNotFound,
-    409: {
-      description:
-        'The room has no files (`NOT_A_PROJECT_ROOM`), or room files are switched off on this install (`ROOM_REPOS_DISABLED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse(
+      'The room has no files (`conflict`), or room files are switched off on this install (`room_repos_disabled`)'
+    ),
   },
 });
 
@@ -6870,7 +6154,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Bring an agent’s work into the room',
   description:
-    'Merges an agent’s branch into the room’s `main`, in the room’s own checkout, and posts one line in the room saying what landed. Merges into one room run **one at a time**: a second caller waits its turn, and is refused 429 `MERGE_IN_FLIGHT` only if the wait runs out. Every other refusal is a 409 and says which: `UNCOMMITTED_WORK` (the working copy has changes nobody committed), `BEHIND_MAIN` (the room has moved on — sync in your own copy first; the message says how far), `NOTHING_TO_MERGE`, `SYMLINK_ESCAPES_REPO` (a shortcut pointing outside the room’s files), `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `MAIN_CHECKOUT_DIRTY` (something outside DorkOS wrote in the room’s own copy), `MERGE_CONFLICT` (nothing was changed). Nothing here can rewrite history: there is no force, no reset and no push on this surface or under it. Naming a `worktree` merges somebody else’s working copy and is owner-only (403 `OPERATOR_ONLY`); an agent omits it and merges its own.',
+    'Merges an agent’s branch into the room’s `main`, in the room’s own checkout, and posts one line in the room saying what landed. Merges into one room run **one at a time**: a second caller waits its turn, and is refused 429 `merge_in_flight` only if the wait runs out. Every other refusal is a 409 and says which: `conflict` (the working copy has changes nobody committed), `conflict` (the room has moved on — sync in your own copy first; the message says how far), `conflict`, `conflict` (a shortcut pointing outside the room’s files), `file_too_large`, `repo_cap_exceeded`, `main_checkout_dirty` (something outside DorkOS wrote in the room’s own copy), `conflict` (nothing was changed). Nothing here can rewrite history: there is no force, no reset and no push on this surface or under it. Naming a `worktree` merges somebody else’s working copy and is owner-only (403 `operator_only`); an agent omits it and merges its own.',
   request: {
     params: RoomIdParams,
     body: {
@@ -6882,30 +6166,21 @@ registry.registerPath({
       description: 'The work is on the room’s `main`, and the room has been told once',
       content: { 'application/json': { schema: RoomMergeResultSchema } },
     },
-    400: {
-      description: 'The request did not carry a summary anybody could read',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('The request did not carry a summary anybody could read'),
     401: roomAgentUnverified,
-    403: {
-      description: 'Only the owner may merge somebody else’s working copy (`OPERATOR_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Only the owner may merge somebody else’s working copy (`operator_only`)'),
     404: roomNotFound,
-    409: {
-      description: 'The merge was refused; `code` says which of the reasons above it was',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The merge was refused; `code` says which of the reasons above it was'),
     429: {
-      description:
-        'Another merge held the room’s queue and the wait ran out, or the queue was already full when this call arrived — both `MERGE_IN_FLIGHT`, with a message saying which. `Retry-After` carries the room’s own queue wait in seconds, so a client does not have to guess a backoff.',
+      ...problemResponse(
+        'Another merge held the room’s queue and the wait ran out, or the queue was already full when this call arrived — both `merge_in_flight`, with a message saying which. `Retry-After` carries the room’s own queue wait in seconds, so a client does not have to guess a backoff.'
+      ),
       headers: {
         'Retry-After': {
           description: 'Seconds to wait before merging again.',
           schema: { type: 'integer' },
         },
       },
-      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -6916,29 +6191,23 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "List one directory of a room's own files",
   description:
-    "Serves the room's git repo, **as of the commit `main` points at** — never the checkout on disk, so a half-written edit or a merge in flight is not something a reader can see, and `.git` is not a path anybody can name because it is not in the tree. `commit` says exactly which snapshot this listing is. `path` is a directory relative to the repo root and defaults to it; `..`, an absolute path, a backslash, a control character, a doubled slash and leading or trailing whitespace are all refused (400) before git is asked anything — the whitespace rule is a refusal rather than a repair, because a filename may legitimately end in a space and trimming the request would answer with a different file. **The server never rewrites a path**, so every `path` in a listing can be handed straight to the content route. Entries come back directories first, then files, each group in code-unit order — byte order rather than the machine's locale, so one room lists identically everywhere. **Membership gates it exactly as reading the room's history does** — a caller who is not on the roster gets the same 404 an unknown room gets, so a room id is never a capability, and an agent that IS a member may read, because a room's files are what its members are working on together. A member of a room that has no files of its own gets 409 `ROOM_HAS_NO_REPO`, and that question is asked strictly AFTER membership so that nobody can learn which rooms are project rooms by probing ids. Each entry carries the last commit that touched it — author, time and subject — from one bounded walk of the room's history, so a directory of five hundred files costs the same handful of git commands as a directory of five; an entry nobody touched inside that window answers `lastCommit: null`, which means \"not known here\" rather than \"never changed\". A symlink is listed as a `symlink` and is never followed. Everything here — filenames, commit subjects, author names — is written by the room's members: render it as untrusted text.",
+    "Serves the room's git repo, **as of the commit `main` points at** — never the checkout on disk, so a half-written edit or a merge in flight is not something a reader can see, and `.git` is not a path anybody can name because it is not in the tree. `commit` says exactly which snapshot this listing is. `path` is a directory relative to the repo root and defaults to it; `..`, an absolute path, a backslash, a control character, a doubled slash and leading or trailing whitespace are all refused (400) before git is asked anything — the whitespace rule is a refusal rather than a repair, because a filename may legitimately end in a space and trimming the request would answer with a different file. **The server never rewrites a path**, so every `path` in a listing can be handed straight to the content route. Entries come back directories first, then files, each group in code-unit order — byte order rather than the machine's locale, so one room lists identically everywhere. **Membership gates it exactly as reading the room's history does** — a caller who is not on the roster gets the same 404 an unknown room gets, so a room id is never a capability, and an agent that IS a member may read, because a room's files are what its members are working on together. A member of a room that has no files of its own gets 409 `room_has_no_repo`, and that question is asked strictly AFTER membership so that nobody can learn which rooms are project rooms by probing ids. Each entry carries the last commit that touched it — author, time and subject — from one bounded walk of the room's history, so a directory of five hundred files costs the same handful of git commands as a directory of five; an entry nobody touched inside that window answers `lastCommit: null`, which means \"not known here\" rather than \"never changed\". A symlink is listed as a `symlink` and is never followed. Everything here — filenames, commit subjects, author names — is written by the room's members: render it as untrusted text.",
   request: { params: RoomIdParams, query: RoomFilesQuerySchema },
   responses: {
     200: {
       description: 'The directory, with per-entry provenance',
       content: { 'application/json': { schema: RoomFileListResponseSchema } },
     },
-    400: {
-      description:
-        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names something that is not a directory (`ROOM_FILE_NOT_READABLE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The path could have meant somewhere else (`room_file_path_invalid`), or names something that is not a directory (`room_file_not_readable`)'
+    ),
     401: roomAgentUnverified,
-    404: {
-      description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such directory in the commit (`ROOM_FILE_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse(
+      'No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such directory in the commit (`room_file_not_found`)'
+    ),
+    409: problemResponse(
+      'The room has no files of its own, or room files are switched off on this install (`room_has_no_repo`); or this machine has no git (`room_repo_git_unavailable`)'
+    ),
   },
 });
 
@@ -6948,29 +6217,23 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "One picture from a room's own files",
   description:
-    "The picture's bytes, as of the commit `main` points at, for the room's file viewer. Named and gated exactly like `GET /api/rooms/{id}/files/content`: a caller who is not on the roster gets the same 404 an unknown room gets, and membership is asked before `ROOM_HAS_NO_REPO`. **Pictures only**: PNG, JPEG, GIF, WebP, AVIF, BMP and ICO, by extension. An SVG can carry script, so it is refused 400 `ROOM_FILE_NOT_READABLE`, as is any other type, a picture over the install's file ceiling, a folder, a link and another repository. Served with the type from the name, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so the bytes never act as a page.",
+    "The picture's bytes, as of the commit `main` points at, for the room's file viewer. Named and gated exactly like `GET /api/rooms/{id}/files/content`: a caller who is not on the roster gets the same 404 an unknown room gets, and membership is asked before `room_has_no_repo`. **Pictures only**: PNG, JPEG, GIF, WebP, AVIF, BMP and ICO, by extension. An SVG can carry script, so it is refused 400 `room_file_not_readable`, as is any other type, a picture over the install's file ceiling, a folder, a link and another repository. Served with the type from the name, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so the bytes never act as a page.",
   request: { params: RoomIdParams, query: RoomFileContentQuerySchema },
   responses: {
     200: {
       description: 'The picture',
       content: { 'image/*': { schema: { type: 'string', format: 'binary' } } },
     },
-    400: {
-      description:
-        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names something that is not a picture this route serves (`ROOM_FILE_NOT_READABLE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The path could have meant somewhere else (`room_file_path_invalid`), or names something that is not a picture this route serves (`room_file_not_readable`)'
+    ),
     401: roomAgentUnverified,
-    404: {
-      description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file in the commit (`ROOM_FILE_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse(
+      'No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file in the commit (`room_file_not_found`)'
+    ),
+    409: problemResponse(
+      'The room has no files of its own, or room files are switched off on this install (`room_has_no_repo`); or this machine has no git (`room_repo_git_unavailable`)'
+    ),
   },
 });
 
@@ -6980,7 +6243,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Save one of a room's files",
   description:
-    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `PEOPLE_ONLY` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `FILE_CHANGED` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. A save that commits posts one quiet entry in the room (`body.fileChange`, `kind: 'edit'` or `'add'`) that addresses nobody and wakes no agent. With login on, the commit is authored as the signed-in person (`person-<authorId>@dorkos.local`); with login off, as the operator. Refused otherwise with: `ROOM_FILE_PATH_INVALID` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `ROOM_FILE_NOT_READABLE` (a folder, a link, or another repository — a save never writes through a link — or a name that differs only in capital letters from a file or folder the room already has, which is the same name on macOS and Windows; the message names the real one), **missing folders above the file are created**, and a folder in the path that is really a file is `ROOM_FILE_PATH_INVALID`, `ROOM_FILE_NOT_TEXT` (a `NUL` byte, which would make the file unreadable through the read route), `FILE_TOO_LARGE` and `REPO_CAP_EXCEEDED` against the room's own frozen caps, `MAIN_CHECKOUT_DIRTY` while something outside DorkOS has written in the room's copy, and `ROOM_ARCHIVED`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `request_too_large` by the request parser, where a save that fits the request and not the room is refused 409 `FILE_TOO_LARGE`.",
+    "Writes one file into the room's own copy and commits it, **as one commit authored by the person who saved it**. The file is named in the body rather than the URL, so a save and a read spell a path the same way. **People only**: a member AGENT is refused 403 `person_only` — it has a working copy of its own and `merge_to_room_main` to bring work back through, and a second writer in the integration tree is the one-writer rule undone. Membership is still asked first, so a non-member gets the same 404 an unknown room gets. **Optimistic locking is about the FILE**: `baseCommit` is the commit the editor read it at, and the save is refused 409 `file_changed` only if THAT PATH changed since — not merely because the room moved on, which it does every time anybody merges. That refusal carries `conflict` — the commit `main` is at now, and who last touched the file — which is what a reload / keep-mine choice is drawn from; sending the conflict's own commit back as `baseCommit` is how a person overwrites deliberately. Saving text that is byte-for-byte what the file already held commits nothing and answers `committed: false`. A save that commits posts one quiet entry in the room (`body.fileChange`, `kind: 'edit'` or `'add'`) that addresses nobody and wakes no agent. With login on, the commit is authored as the signed-in person (`person-<authorId>@dorkos.local`); with login off, as the operator. Refused otherwise with: `room_file_path_invalid` (a path that could mean somewhere else, or that names the room's own git directory in any of its spellings), `room_file_not_readable` (a folder, a link, or another repository — a save never writes through a link — or a name that differs only in capital letters from a file or folder the room already has, which is the same name on macOS and Windows; the message names the real one), **missing folders above the file are created**, and a folder in the path that is really a file is `room_file_path_invalid`, `room_file_not_text` (a `NUL` byte, which would make the file unreadable through the read route), `file_too_large` and `repo_cap_exceeded` against the room's own frozen caps, `main_checkout_dirty` while something outside DorkOS has written in the room's copy, and `room_archived`. **Two ceilings, two answers**: the request body limit is 1 MB, below the default file cap, so a very large save never reaches the room's own cap at all — it is refused 413 `request_too_large` by the request parser, where a save that fits the request and not the room is refused 409 `file_too_large`.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileSaveRequestSchema } } },
@@ -6990,39 +6253,29 @@ registry.registerPath({
       description: 'The file is on the room’s `main`',
       content: { 'application/json': { schema: RoomFileSaveResponseSchema } },
     },
-    400: {
-      description:
-        'The path could have meant somewhere else, names something that is not a file, or the contents would not be text',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The path could have meant somewhere else, names something that is not a file, or the contents would not be text'
+    ),
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is an agent; only people save a room’s files (`PEOPLE_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is an agent; only people save a room’s files (`person_only`)'),
+    404: problemResponse(
+      'No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both'
+    ),
     409: {
       description:
-        'The file changed while it was being edited — `FILE_CHANGED`, and ONLY that code carries `conflict` — or the save was refused for one of the room-state reasons above (`MAIN_CHECKOUT_DIRTY`, `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `ROOM_ARCHIVED`, `ROOM_HAS_NO_REPO`, `ROOM_REPOS_DISABLED`, `ROOM_REPO_GIT_UNAVAILABLE`), which answer with the code and the sentence alone. Switch on `code`, never on the presence of a field',
+        'The file changed while it was being edited — `file_changed`, and ONLY that code carries `conflict` — or the save was refused for one of the room-state reasons above (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`), which answer with the code and the sentence alone. Switch on `code`, never on the presence of a field',
       content: {
         'application/json': {
           schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
         },
       },
     },
-    413: {
-      description:
-        'The request body is over the server’s 1 MB limit (`request_too_large`). That limit is below the room’s own file cap, so a very large save meets this one first',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    429: {
-      description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    413: problemResponse(
+      'The request body is over the server’s 1 MB limit (`request_too_large`). That limit is below the room’s own file cap, so a very large save meets this one first'
+    ),
+    429: problemResponse(
+      'Another write held the room’s queue and the wait ran out (`merge_in_flight`)'
+    ),
   },
 });
 
@@ -7033,34 +6286,26 @@ const roomFileChangeResponses = {
       'The change is one commit on the room’s `main`, authored as the person, and one quiet room entry',
     content: { 'application/json': { schema: RoomFileChangeResponseSchema } },
   },
-  400: {
-    description:
-      'A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`ROOM_FILE_PATH_INVALID`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`ROOM_FILE_NOT_READABLE`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  400: problemResponse(
+    'A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`)'
+  ),
   401: roomAgentUnverified,
-  403: {
-    description: 'The caller is an agent; only people change a room’s files (`PEOPLE_ONLY`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  404: {
-    description:
-      'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file or folder (`ROOM_FILE_NOT_FOUND`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  403: problemResponse('The caller is an agent; only people change a room’s files (`person_only`)'),
+  404: problemResponse(
+    'No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`)'
+  ),
   409: {
     description:
-      'A path changed since the person read it — `FILE_CHANGED`, the ONLY code that carries `conflict` — or the room already holds that path (`ROOM_FILE_EXISTS`, naming it), or one of the room-state refusals a save gives (`MAIN_CHECKOUT_DIRTY`, `FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, `ROOM_ARCHIVED`, `ROOM_HAS_NO_REPO`, `ROOM_REPOS_DISABLED`, `ROOM_REPO_GIT_UNAVAILABLE`). Switch on `code`',
+      'A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code`',
     content: {
       'application/json': {
         schema: z.union([RoomFileConflictResponseSchema, ErrorResponseSchema]),
       },
     },
   },
-  429: {
-    description: 'Another write held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`)',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  429: problemResponse(
+    'Another write held the room’s queue and the wait ran out (`merge_in_flight`)'
+  ),
 };
 
 registry.registerPath({
@@ -7069,7 +6314,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Upload files into a room's files",
   description:
-    "Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `ROOM_FILE_EXISTS`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `FILE_TOO_LARGE`); more than 20 files is 400 `ROOM_UPLOAD_TOO_MANY_FILES`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.",
+    "Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `room_file_exists`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `file_too_large`); more than 20 files is 400 `room_upload_too_many_files`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.",
   request: {
     params: RoomIdParams,
     body: {
@@ -7094,7 +6339,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Rename or move one of a room's files or folders",
   description:
-    "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `FILE_CHANGED` with the conflict. `to` must not exist (409 `ROOM_FILE_EXISTS`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
+    "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `file_changed` with the conflict. `to` must not exist (409 `room_file_exists`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileMoveRequestSchema } } },
@@ -7108,7 +6353,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Delete one of a room's files or folders",
   description:
-    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `FILE_CHANGED`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
+    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `file_changed`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileDeleteRequestSchema } } },
@@ -7122,18 +6367,16 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Keep a chat attachment as one of the room's files",
   description:
-    "Copies a file somebody attached to a message in THIS room into the room's files, under `name` (the attachment's own name when omitted) in `dir`. One commit, `Add <path> from the chat`, authored as the person, and one quiet room entry (`kind: 'from-attachment'`). The attachment must be on a posted message in this room — another room's attachment, an unposted upload and an unknown id are all 404 `ATTACHMENT_NOT_FOUND`, the attachments route's own answer. A name the folder already holds is 409 `ROOM_FILE_EXISTS`.",
+    "Copies a file somebody attached to a message in THIS room into the room's files, under `name` (the attachment's own name when omitted) in `dir`. One commit, `Add <path> from the chat`, authored as the person, and one quiet room entry (`kind: 'from-attachment'`). The attachment must be on a posted message in this room — another room's attachment, an unposted upload and an unknown id are all 404 `attachment_not_found`, the attachments route's own answer. A name the folder already holds is 409 `room_file_exists`.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileFromAttachmentRequestSchema } } },
   },
   responses: {
     ...roomFileChangeResponses,
-    404: {
-      description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`), or no such attachment on a message in this room (`ATTACHMENT_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse(
+      'No such room, or the caller is not a member of it (`room_not_found`), or no such attachment on a message in this room (`attachment_not_found`)'
+    ),
   },
 });
 
@@ -7143,7 +6386,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Deal with changes somebody made outside DorkOS',
   description:
-    'A room’s own copy has one writer and it is DorkOS, so anything uncommitted in it came from outside — a person with a terminal — and while it is there, every merge and every save in the room refuses `MAIN_CHECKOUT_DIRTY`. This is the way out. `{"action":"commit"}` keeps everything as one commit authored by you; `{"action":"discard","paths":[…]}` throws away exactly the files named, and every one of them has to be a path `GET /repo/status` is reporting as changed right now — anything else is 404, so a screen drawn ten minutes ago cannot delete something that arrived since. Committing keeps work and loses nothing, which is why it needs no list; discarding is the only irreversible act on this surface, which is why it demands one. **Operator-only** (403 `OPERATOR_ONLY`). A room’s copy that is on some other branch is refused rather than fixed — DorkOS does not check out over work it did not put there. `clean` in the answer says whether the room is unstuck: discarding some of the changes and not others leaves it paused, honestly.',
+    'A room’s own copy has one writer and it is DorkOS, so anything uncommitted in it came from outside — a person with a terminal — and while it is there, every merge and every save in the room refuses `main_checkout_dirty`. This is the way out. `{"action":"commit"}` keeps everything as one commit authored by you; `{"action":"discard","paths":[…]}` throws away exactly the files named, and every one of them has to be a path `GET /repo/status` is reporting as changed right now — anything else is 404, so a screen drawn ten minutes ago cannot delete something that arrived since. Committing keeps work and loses nothing, which is why it needs no list; discarding is the only irreversible act on this surface, which is why it demands one. **Operator-only** (403 `operator_only`). A room’s copy that is on some other branch is refused rather than fixed — DorkOS does not check out over work it did not put there. `clean` in the answer says whether the room is unstuck: discarding some of the changes and not others leaves it paused, honestly.',
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomMainRepairRequestSchema } } },
@@ -7161,30 +6404,18 @@ registry.registerPath({
         },
       },
     },
-    400: {
-      description: 'Neither action was named, or a discard named no files',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Neither action was named, or a discard named no files'),
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is not the person who owns this install (`OPERATOR_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description:
-        'No such room (`ROOM_NOT_FOUND`), or a named path is not one of the changes waiting (`ROOM_FILE_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The room has no files (`ROOM_HAS_NO_REPO`), its copy is on another branch (`MAIN_CHECKOUT_DIRTY`), or room files are switched off (`ROOM_REPOS_DISABLED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    429: {
-      description:
-        'A merge or a save held the room’s queue and the wait ran out (`MERGE_IN_FLIGHT`) — a repair takes the same one lane every other write to a room’s files takes',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is not the person who owns this install (`operator_only`)'),
+    404: problemResponse(
+      'No such room (`room_not_found`), or a named path is not one of the changes waiting (`room_file_not_found`)'
+    ),
+    409: problemResponse(
+      'The room has no files (`room_has_no_repo`), its copy is on another branch (`main_checkout_dirty`), or room files are switched off (`room_repos_disabled`)'
+    ),
+    429: problemResponse(
+      'A merge or a save held the room’s queue and the wait ran out (`merge_in_flight`) — a repair takes the same one lane every other write to a room’s files takes'
+    ),
   },
 });
 
@@ -7194,29 +6425,23 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Read one file from a room's files",
   description:
-    "Gated identically to `GET /api/rooms/{id}/files`, and read from the same commit. The file is named by the `path` QUERY parameter rather than by a path segment, because a repo path holds slashes and a segment would mean encoding them on the way out and decoding them on the way in. **Three honest answers, not one plus two errors**: `text` carries the contents exactly as committed; `binary` is a file with a `NUL` byte in it — git's own test — whose bytes are never decoded into a string; `too-large` is a file over `rooms.repo.maxFileBytes`, checked against the size git already knows so an enormous file costs nothing to refuse. `size` is always the real size, whichever answer came back. A directory, a symlink and a submodule are each refused 400 `ROOM_FILE_NOT_READABLE` — **a link is listed but never followed**, so a symlink in the tree naming a path outside the room cannot be read through this. The contents are member-written: render them as untrusted text, never as a document with an origin.",
+    "Gated identically to `GET /api/rooms/{id}/files`, and read from the same commit. The file is named by the `path` QUERY parameter rather than by a path segment, because a repo path holds slashes and a segment would mean encoding them on the way out and decoding them on the way in. **Three honest answers, not one plus two errors**: `text` carries the contents exactly as committed; `binary` is a file with a `NUL` byte in it — git's own test — whose bytes are never decoded into a string; `too-large` is a file over `rooms.repo.maxFileBytes`, checked against the size git already knows so an enormous file costs nothing to refuse. `size` is always the real size, whichever answer came back. A directory, a symlink and a submodule are each refused 400 `room_file_not_readable` — **a link is listed but never followed**, so a symlink in the tree naming a path outside the room cannot be read through this. The contents are member-written: render them as untrusted text, never as a document with an origin.",
   request: { params: RoomIdParams, query: RoomFileContentQuerySchema },
   responses: {
     200: {
       description: 'The file, or why its bytes are not here',
       content: { 'application/json': { schema: RoomFileContentResponseSchema } },
     },
-    400: {
-      description:
-        'The path could have meant somewhere else (`ROOM_FILE_PATH_INVALID`), or names a folder, a link or another repository (`ROOM_FILE_NOT_READABLE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The path could have meant somewhere else (`room_file_path_invalid`), or names a folder, a link or another repository (`room_file_not_readable`)'
+    ),
     401: roomAgentUnverified,
-    404: {
-      description:
-        'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — or no such file in the commit (`ROOM_FILE_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description:
-        'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse(
+      'No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file in the commit (`room_file_not_found`)'
+    ),
+    409: problemResponse(
+      'The room has no files of its own, or room files are switched off on this install (`room_has_no_repo`); or this machine has no git (`room_repo_git_unavailable`)'
+    ),
   },
 });
 
@@ -7224,10 +6449,9 @@ registry.registerPath({
 const RoomCanvasParams = RoomIdParams.extend({ documentId: z.string().min(1) });
 
 /** 404 shared by the canvas routes that name a document. */
-const canvasDocumentNotFound = {
-  description: 'No such room, the caller may not see it, or no such document on its canvas',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const canvasDocumentNotFound = problemResponse(
+  'No such room, the caller may not see it, or no such document on its canvas'
+);
 
 registry.registerPath({
   method: 'get',
@@ -7269,14 +6493,8 @@ registry.registerPath({
       content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
     },
     401: roomAgentUnverified,
-    404: {
-      description: 'No such room, the caller may not see it, or no such file on its canvas',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    416: {
-      description: 'The requested range is outside the file',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('No such room, the caller may not see it, or no such file on its canvas'),
+    416: problemResponse('The requested range is outside the file'),
   },
 });
 
@@ -7317,11 +6535,9 @@ registry.registerPath({
     400: roomValidationError,
     401: roomAgentUnverified,
     404: roomNotFound,
-    409: {
-      description:
-        'The room is archived, or somebody else is editing the document this would have refreshed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse(
+      'The room is archived, or somebody else is editing the document this would have refreshed'
+    ),
   },
 });
 
@@ -7344,10 +6560,7 @@ registry.registerPath({
     400: roomValidationError,
     401: roomAgentUnverified,
     404: canvasDocumentNotFound,
-    409: {
-      description: 'The room is archived, or somebody else is editing this document',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The room is archived, or somebody else is editing this document'),
   },
 });
 
@@ -7363,10 +6576,7 @@ registry.registerPath({
     204: { description: 'Closed' },
     401: roomAgentUnverified,
     404: canvasDocumentNotFound,
-    409: {
-      description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The room is archived'),
   },
 });
 
@@ -7389,10 +6599,7 @@ registry.registerPath({
     400: roomValidationError,
     401: roomAgentUnverified,
     404: canvasDocumentNotFound,
-    409: {
-      description: 'The room is archived, or somebody else already holds this lock',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The room is archived, or somebody else already holds this lock'),
   },
 });
 
@@ -7415,10 +6622,7 @@ registry.registerPath({
     },
     401: roomAgentUnverified,
     404: canvasDocumentNotFound,
-    409: {
-      description: 'The room is archived',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse('The room is archived'),
   },
 });
 
@@ -7430,20 +6634,17 @@ registry.registerPath({
 // last refresh, and is gone when the server restarts.
 
 /** 403 shared by the follow routes, which no agent may call. */
-const followPeopleOnly = {
-  description: 'The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const followPeopleOnly = problemResponse(
+  'The caller is an agent, which cannot follow or be followed (`person_only`)'
+);
 
 /**
  * 403 on both review routes: reading or changing somebody ELSE's working copy is
  * a person's, on the same instrument `PUT /:id/files/content` uses.
  */
-const canvasDiffPeopleOnly = {
-  description:
-    'The caller is an agent; only people review somebody else’s working copy (`PEOPLE_ONLY`)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const canvasDiffPeopleOnly = problemResponse(
+  'The caller is an agent; only people review somebody else’s working copy (`person_only`)'
+);
 
 /**
  * 404 on both: a room the caller may not see, a room that is not there, and a
@@ -7454,11 +6655,9 @@ const canvasDiffPeopleOnly = {
  * not in the working copy any more (`ROOM_FILE_NOT_FOUND`), which a client
  * drawing "this file has moved on" needs named.
  */
-const canvasDiffNotFound = {
-  description:
-    'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — no such document on this room’s canvas (`CANVAS_DOCUMENT_NOT_FOUND`), or the file is not in that working copy any more (`ROOM_FILE_NOT_FOUND`)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const canvasDiffNotFound = problemResponse(
+  'No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — no such document on this room’s canvas (`not_found`), or the file is not in that working copy any more (`room_file_not_found`)'
+);
 
 /**
  * 400 on the read: the document is not a review, or its stored tree or path is
@@ -7468,17 +6667,12 @@ const canvasDiffNotFound = {
  * what the room's error table maps it to — the request named something this
  * surface has no answer for, rather than meeting a room state that will change.
  */
-const canvasDiffNotReviewable = {
-  description:
-    'The document is not a review of somebody’s working copy, or its tree or path is not one this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const canvasDiffNotReviewable = problemResponse(
+  'The document is not a review of somebody’s working copy, or its tree or path is not one this room keeps (`invalid_request`)'
+);
 
 /** 409 on the read: the one room-state refusal it can meet. */
-const canvasDiffNoRoomFiles = {
-  description: 'This room has no files of its own (`NOT_A_PROJECT_ROOM`)',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const canvasDiffNoRoomFiles = problemResponse('This room has no files of its own (`conflict`)');
 
 registry.registerPath({
   method: 'put',
@@ -7493,18 +6687,13 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Following' },
-    400: {
-      description: 'The request named you (`CANNOT_FOLLOW_YOURSELF`), or was malformed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('The request named you (`invalid_request`), or was malformed'),
     401: roomAgentUnverified,
     403: followPeopleOnly,
     404: roomNotFound,
-    429: {
-      description:
-        'This machine is already holding as many claims as it will (`TOO_MANY_FOLLOWERS`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    429: problemResponse(
+      'This machine is already holding as many claims as it will (`rate_limited`)'
+    ),
   },
 });
 
@@ -7553,7 +6742,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Read the two copies of the file behind a worktree diff',
   description:
-    'The room’s own copy of the file and the member’s working copy, so the review can be drawn side by side. **Not the ordinary file API**: a member’s working copy lives under the DorkOS data directory, which the raw file surfaces are deliberately confined out of — so this names a room and a DOCUMENT, and the tree and the path both come off that row rather than being chosen by the caller. `base` is the empty string for a file this work ADDS, which is ordinary rather than an error. **People only, unlike every other room read**: this hands back the contents of somebody ELSE’s working copy, which an agent is refused everywhere else, so a member agent is refused 403 `PEOPLE_ONLY` — the same instrument `PUT /:id/files/content` uses. Membership is asked FIRST, so a caller who is not on the roster gets the same 404 an unknown room gets and never learns the room exists. Any member who is a person may read it; whether they may MERGE what they see is a separate question, answered by `POST /:id/repo/merge`, which is the owner’s alone.',
+    'The room’s own copy of the file and the member’s working copy, so the review can be drawn side by side. **Not the ordinary file API**: a member’s working copy lives under the DorkOS data directory, which the raw file surfaces are deliberately confined out of — so this names a room and a DOCUMENT, and the tree and the path both come off that row rather than being chosen by the caller. `base` is the empty string for a file this work ADDS, which is ordinary rather than an error. **People only, unlike every other room read**: this hands back the contents of somebody ELSE’s working copy, which an agent is refused everywhere else, so a member agent is refused 403 `person_only` — the same instrument `PUT /:id/files/content` uses. Membership is asked FIRST, so a caller who is not on the roster gets the same 404 an unknown room gets and never learns the room exists. Any member who is a person may read it; whether they may MERGE what they see is a separate question, answered by `POST /:id/repo/merge`, which is the owner’s alone.',
   request: { params: RoomCanvasParams },
   responses: {
     200: {
@@ -7574,7 +6763,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Put a reviewed file back in the member’s working copy',
   description:
-    'How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. **People only** (403 `PEOPLE_ONLY`), on the same instrument `PUT /:id/files/content` uses: this writes into a colleague’s checkout, and an agent doing that leaves that colleague dirty — the state their own merge then refuses. Membership is asked first, so a non-member still gets 404. Any member who is a person may send a hunk back; only the owner may merge. Archived rooms refuse it 409, like every other canvas write.',
+    'How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. **People only** (403 `person_only`), on the same instrument `PUT /:id/files/content` uses: this writes into a colleague’s checkout, and an agent doing that leaves that colleague dirty — the state their own merge then refuses. Membership is asked first, so a non-member still gets 404. Any member who is a person may send a hunk back; only the owner may merge. Archived rooms refuse it 409, like every other canvas write.',
   request: {
     params: RoomCanvasParams,
     body: { content: { 'application/json': { schema: RoomCanvasDiffWriteRequestSchema } } },
@@ -7584,19 +6773,15 @@ registry.registerPath({
       description: 'What was written, or what the file holds now',
       content: { 'application/json': { schema: RoomCanvasDiffWriteResultSchema } },
     },
-    400: {
-      description:
-        'The body is not a valid request, or the document is not a review of a working copy this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'The body is not a valid request, or the document is not a review of a working copy this room keeps (`invalid_request`)'
+    ),
     401: roomAgentUnverified,
     403: canvasDiffPeopleOnly,
     404: canvasDiffNotFound,
-    409: {
-      description:
-        'The room is archived (`ROOM_ARCHIVED`), or it has no files of its own (`NOT_A_PROJECT_ROOM`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    409: problemResponse(
+      'The room is archived (`room_archived`), or it has no files of its own (`conflict`)'
+    ),
   },
 });
 
@@ -7617,34 +6802,23 @@ const SessionCanvasParams = z.object({
 const SessionCanvasIdParams = z.object({ id: z.string().min(1) });
 
 /** 403 for an agent: a session's canvas belongs to the person whose session it is. */
-const sessionCanvasPeopleOnly = {
-  description: 'A session’s canvas is the person’s own',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const sessionCanvasPeopleOnly = problemResponse('A session’s canvas is the person’s own');
 
 /** 404 for a document this session's canvas does not hold. */
-const sessionCanvasDocumentNotFound = {
-  description: 'No such document on this canvas',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const sessionCanvasDocumentNotFound = problemResponse('No such document on this canvas');
 
 /** 400 for an `:id` that is not a session id. Every route here answers it. */
-const sessionCanvasInvalidId = {
-  description: 'That is not a session id',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const sessionCanvasInvalidId = problemResponse('That is not a session id');
 
 /** 400 on the routes that also carry a body, which can be refused for either reason. */
-const sessionCanvasBadRequest = {
-  description: 'That is not a session id, or the body is not a valid request',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const sessionCanvasBadRequest = problemResponse(
+  'That is not a session id, or the body is not a valid request'
+);
 
 /** 401 for an agent identity this machine cannot verify. */
-const sessionCanvasIdentityUnverified = {
-  description: 'That agent identity could not be verified — its token may be revoked or expired',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const sessionCanvasIdentityUnverified = problemResponse(
+  'That agent identity could not be verified — its token may be revoked or expired'
+);
 
 /**
  * 503 for a process that stood no canvas up.
@@ -7653,10 +6827,7 @@ const sessionCanvasIdentityUnverified = {
  * read-only registers no canvas writer on purpose, and an honest refusal beats
  * a fabricated empty table.
  */
-const sessionCanvasUnavailable = {
-  description: 'This server has no canvas',
-  content: { 'application/json': { schema: ErrorResponseSchema } },
-};
+const sessionCanvasUnavailable = problemResponse('This server has no canvas');
 
 registry.registerPath({
   method: 'get',
@@ -7718,14 +6889,8 @@ registry.registerPath({
     400: sessionCanvasBadRequest,
     401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
-    404: {
-      description: 'That id names no session this server knows',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    409: {
-      description: 'Somebody is editing the document this would have refreshed',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('That id names no session this server knows'),
+    409: problemResponse('Somebody is editing the document this would have refreshed'),
     503: sessionCanvasUnavailable,
   },
 });
@@ -7769,14 +6934,9 @@ registry.registerPath({
     403: sessionCanvasPeopleOnly,
     503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
-    409: {
-      description: 'Original save needs settlement; document remains open',
-      content: {
-        'application/json': {
-          schema: z.object({ error: z.string(), code: z.literal('DOC_SAVE_RECOVERY_REQUIRED') }),
-        },
-      },
-    },
+    409: problemResponse(
+      'Original save needs settlement; document remains open (`conflict`, with `recoveryCode: "DOC_SAVE_RECOVERY_REQUIRED"`)'
+    ),
   },
 });
 
@@ -7879,12 +7039,12 @@ registry.registerPath({
     "nothing. The cursor written is always the caller's own — there is no way to name a user in " +
     "this request, and therefore no way to read or move anybody else's read state. **Only people " +
     'have read state here** — a caller the server resolves as an agent (one presenting a valid ' +
-    '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, and one whose token does not verify is ' +
+    '`X-DorkOS-Agent`) is refused with 403 `person_only`, and one whose token does not verify is ' +
     'refused with 401, because what an agent has been shown is ' +
     'the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as ' +
     'entries are delivered to it, and reachable through no route at all. **A `room` cursor is ' +
     'written through the rooms domain**, so the caller must be able to see the room (404 ' +
-    '`ROOM_NOT_FOUND` / `MEMBER_NOT_FOUND` otherwise), and the broadcast carries the unread count ' +
+    '`room_not_found` / `not_found` otherwise), and the broadcast carries the unread count ' +
     'the room list redraws from. A `session` or `inbox` cursor names a thread this server cannot ' +
     'check and is stored as given.',
   request: {
@@ -7898,22 +7058,17 @@ registry.registerPath({
       description: 'The cursor as it now stands',
       content: { 'application/json': { schema: ReadCursorSchema } },
     },
-    400: {
-      description:
-        'Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse(
+      'Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer'
+    ),
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description:
-        'Only for `kind: room` — no such room, or the caller is not a member of it. A `session` ' +
-        'or `inbox` thread is never checked for existence, so those kinds cannot answer 404',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse(
+      'The caller resolved to an agent, which has no read state here (`person_only`)'
+    ),
+    404: problemResponse(
+      'Only for `kind: room` — no such room, or the caller is not a member of it. A `session` ' +
+        'or `inbox` thread is never checked for existence, so those kinds cannot answer 404'
+    ),
   },
 });
 
@@ -7929,22 +7084,18 @@ registry.registerPath({
     'the state every thread starts in rather than a missing resource; `null` is also distinct ' +
     'from a stored `0`, which is a thread read up to its own beginning. As with the write, the ' +
     "cursor is always the caller's own — there is no way to name a user — and an agent caller is " +
-    'refused with 403 `PEOPLE_ONLY`, or with 401 when its token does not verify.',
+    'refused with 403 `person_only`, or with 401 when its token does not verify.',
   request: { params: ReadCursorParamsSchema },
   responses: {
     200: {
       description: "The caller's cursor, or null when they have never read this thread",
       content: { 'application/json': { schema: ReadCursorResponseSchema } },
     },
-    400: {
-      description: 'Unknown `kind` or empty `id`',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Unknown `kind` or empty `id`'),
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse(
+      'The caller resolved to an agent, which has no read state here (`person_only`)'
+    ),
   },
 });
 
@@ -7973,10 +7124,7 @@ registry.registerPath({
       description: 'Roster envelope: the operator first, then people, then agents',
       content: { 'application/json': { schema: TeamRosterResponseSchema } },
     },
-    500: {
-      description: 'The roster itself could not be assembled (not a per-source failure)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    500: problemResponse('The roster itself could not be assembled (not a per-source failure)'),
   },
 });
 
@@ -8002,7 +7150,7 @@ registry.registerPath({
     '**People only.** The path takes any member’s id, so an agent that could call it would read ' +
     'the title of every direct message the operator has — the membership scope the rooms domain ' +
     'imposes, walked around by asking about somebody else. An agent presenting `X-DorkOS-Agent` ' +
-    'is refused (403 `PEOPLE_ONLY`), the same way read state is.',
+    'is refused (403 `person_only`), the same way read state is.',
   request: {
     params: z.object({ memberId: z.string().min(1) }),
   },
@@ -8011,18 +7159,9 @@ registry.registerPath({
       description: 'The member’s rooms, newest activity first',
       content: { 'application/json': { schema: MemberRoomsResponseSchema } },
     },
-    403: {
-      description: 'The caller is an agent — a profile is read by people (`PEOPLE_ONLY`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: 'No member on this install carries that id (`MEMBER_NOT_FOUND`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    500: {
-      description: 'The membership read failed (`MEMBER_ROOMS_FAILED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is an agent — a profile is read by people (`person_only`)'),
+    404: problemResponse('No member on this install carries that id (`not_found`)'),
+    500: problemResponse('The membership read failed (`internal_error`)'),
   },
 });
 
@@ -8060,20 +7199,16 @@ registry.registerPath({
       description: 'Hits, best first, across every source this caller may read',
       content: { 'application/json': { schema: SearchResponseSchema } },
     },
-    400: {
-      description:
-        'The request could not be read (`INVALID_SEARCH_QUERY`), or it named a source that does ' +
-        'not exist (`UNKNOWN_SEARCH_SOURCE`). The `error` sentence says which field was wrong: `q` ' +
+    400: problemResponse(
+      'The request could not be read (`invalid_request`), or it named a source that does ' +
+        'not exist (`invalid_request`). The `error` sentence says which field was wrong: `q` ' +
         'holds no WORD of at least the minimum length — counted over the words a search is split ' +
         'into, so `a,` and a string of spaces are refused exactly as `a` is — or `limit` was not a ' +
-        'whole number above zero.',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description:
-        'The caller presented an agent token this machine could not verify (`AGENT_IDENTITY_UNVERIFIED`)',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+        'whole number above zero.'
+    ),
+    401: problemResponse(
+      'The caller presented an agent token this machine could not verify (`agent_identity_unverified`)'
+    ),
   },
 });
 
@@ -8106,15 +7241,9 @@ registry.registerPath({
       description: 'Saved. The name the roster will now show.',
       content: { 'application/json': { schema: ProfileUpdateResponseSchema } },
     },
-    400: {
-      description: 'The name is empty or longer than 80 characters',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('The name is empty or longer than 80 characters'),
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is an agent — a person’s name is theirs to set',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is an agent — a person’s name is theirs to set'),
   },
 });
 
@@ -8151,23 +7280,11 @@ registry.registerPath({
       description: 'Stored. The URL to render and to keep.',
       content: { 'application/json': { schema: ProfileAvatarResponseSchema } },
     },
-    400: {
-      description: 'No file was attached, or the upload could not be read',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('No file was attached, or the upload could not be read'),
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is an agent — a profile photo is the operator’s to set',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    413: {
-      description: 'Larger than 2 MB, refused while still being read',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-    415: {
-      description: 'The bytes are not a PNG, JPEG or WebP',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is an agent — a profile photo is the operator’s to set'),
+    413: problemResponse('Larger than 2 MB, refused while still being read'),
+    415: problemResponse('The bytes are not a PNG, JPEG or WebP'),
   },
 });
 
@@ -8182,10 +7299,7 @@ registry.registerPath({
   responses: {
     204: { description: 'Gone' },
     401: roomAgentUnverified,
-    403: {
-      description: 'The caller is an agent',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('The caller is an agent'),
   },
 });
 
@@ -8196,21 +7310,13 @@ const identityLinkParams = {
 };
 
 const identityLinkRefusals = {
-  400: {
-    description:
-      'That identity is not somebody on another platform, so it cannot be claimed — an ' +
-      'agent’s row, the system author, or a person on this machine',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  400: problemResponse(
+    'That identity is not somebody on another platform, so it cannot be claimed — an ' +
+      'agent’s row, the system author, or a person on this machine'
+  ),
   401: roomAgentUnverified,
-  403: {
-    description: 'The caller is an agent, or a person who does not own this install',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
-  404: {
-    description: 'No identity by that id',
-    content: { 'application/json': { schema: ErrorResponseSchema } },
-  },
+  403: problemResponse('The caller is an agent, or a person who does not own this install'),
+  404: problemResponse('No identity by that id'),
 };
 
 registry.registerPath({
@@ -8268,10 +7374,7 @@ registry.registerPath({
       },
     },
     304: { description: 'The caller already has this exact photo' },
-    404: {
-      description: 'That identity has no photo',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    404: problemResponse('That identity has no photo'),
   },
 });
 
@@ -8493,10 +7596,7 @@ registry.registerPath({
       description: 'One page of history, with the unfiltered unread count',
       content: { 'application/json': { schema: ListNotificationsResponseSchema } },
     },
-    400: {
-      description: 'Validation error',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    400: problemResponse('Validation error'),
   },
 });
 
@@ -8511,10 +7611,7 @@ registry.registerPath({
       description: 'How many rows moved, and the unread count after',
       content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
     },
-    403: {
-      description: 'Only the operator may move read state',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Only the operator may move read state'),
   },
 });
 
@@ -8528,10 +7625,7 @@ registry.registerPath({
       description: 'How many rows moved, and the unread count after',
       content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
     },
-    403: {
-      description: 'Only the operator may move read state',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    403: problemResponse('Only the operator may move read state'),
   },
 });
 
@@ -8636,10 +7730,7 @@ registry.registerPath({
       description: 'The scanned root and what it holds',
       content: { 'application/json': { schema: WorktreeScanResultSchema } },
     },
-    500: {
-      description: 'The scan could not run',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
+    500: problemResponse('The scan could not run'),
   },
 });
 

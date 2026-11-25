@@ -30,13 +30,15 @@ import { UiActionRequestSchema } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isPersonTurn } from '../lib/caller-authority.js';
+import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
 import { personTurnBound } from './room-post-bound.js';
-import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { parseSessionId } from '../lib/route-utils.js';
+import { invalidSessionId, sessionLocked, sessionNotFound } from './session-route-replies.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -63,14 +65,13 @@ function uiActionCeiling(
  */
 export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
 
   const parsed = UiActionRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    // Surface the first issue (e.g. the serialized-payload size cap) — every
-    // field feeds the injected turn prompt, so a clear reject beats a generic one.
-    const detail = parsed.error.issues[0]?.message ?? 'Invalid request';
-    return c.json(errorBody(detail, 'VALIDATION_ERROR'), 400);
+    // The detail names the first issue (e.g. the serialized-payload size cap) —
+    // every field feeds the injected turn prompt, so a clear reject beats a generic one.
+    return validationProblem(c, parsed.error);
   }
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
@@ -87,7 +88,7 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
     const probeCwd = parsed.data.cwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     const stored = await runtime.getSession(probeCwd, sessionId);
     if (!stored) {
-      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+      return sessionNotFound(c);
     }
   }
 
@@ -109,6 +110,7 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
 
   const result = await dispatchMessage({
     turnStarter: isPersonTurn(honoRequestFacts(c)) ? 'person' : 'agent',
+    origin: httpTurnOrigin(!isPersonTurn(honoRequestFacts(c))),
     sessionId,
     clientId,
     content,
@@ -146,15 +148,7 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
       // does not read as a session locked against itself by mistake.
       ownTurn: holder?.clientId === clientId,
     });
-    return c.json(
-      {
-        error: 'Session locked',
-        code: 'SESSION_LOCKED',
-        lockedBy: holder?.clientId ?? 'unknown',
-        lockedAt: new Date(holder?.since ?? Date.now()).toISOString(),
-      },
-      409
-    );
+    return sessionLocked(c, holder?.clientId, holder?.since ?? Date.now());
   }
 
   return c.json({ sessionId: result.canonicalId }, 202);

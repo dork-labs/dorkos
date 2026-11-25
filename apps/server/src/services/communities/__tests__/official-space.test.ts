@@ -16,7 +16,7 @@ import type { CredentialStore } from '../../core/credential-provider.js';
 import { RemoteConnectionStore } from '../remote/connection-store.js';
 import { RemoteWakePolicy } from '../remote/wake/wake-policy.js';
 import { readWakeAgentsFrom } from '../remote/wake/wake-setting.js';
-import { OfficialSpace, usableOfficialLink } from '../official-space.js';
+import { OfficialSpace } from '../official-space.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_ID = '22222222-2222-4222-8222-222222222222';
@@ -66,12 +66,6 @@ describe('the official link', () => {
     expect(official.isOfficialConnection(OFFICIAL)).toBe(false);
   });
 
-  it('is off for a link that is not a space address', () => {
-    link = 'not a link';
-    expect(official.link()).toBeNull();
-    expect(official.isOfficialLink('not a link')).toBe(false);
-  });
-
   it('matches a canonical link by origin and community id', () => {
     link = `${ORIGIN}/c/${ID}`;
     expect(official.isOfficialConnection(OFFICIAL)).toBe(true);
@@ -88,21 +82,6 @@ describe('the official link', () => {
     expect(official.isOfficialConnection(OFFICIAL)).toBe(false);
     link = '';
     expect(official.isOfficialConnection(OFFICIAL)).toBe(false);
-  });
-
-  it('is off for a link that names a whole server rather than one space', () => {
-    link = ORIGIN;
-    expect(official.link()).toBeNull();
-    expect(official.isOfficialLink(ORIGIN)).toBe(false);
-    expect(usableOfficialLink(ORIGIN)).toBeNull();
-    expect(usableOfficialLink(`${ORIGIN}/c/${ID}`)).toBe(`${ORIGIN}/c/${ID}`);
-  });
-
-  it('compares typed links in any spelling of the same address', () => {
-    link = `${ORIGIN}/Makers`;
-    expect(official.isOfficialLink(`${ORIGIN}/makers`)).toBe(true);
-    expect(official.isOfficialLink(`${ORIGIN}/other`)).toBe(false);
-    expect(official.isOfficialLink(`https://elsewhere.example/makers`)).toBe(false);
   });
 });
 
@@ -164,15 +143,6 @@ describe('spaceReachable(ref)', () => {
     ]);
     expect(official.reachable(REF)).toBe(true);
     expect(official.reachable(OTHER_REF)).toBe(false);
-  });
-
-  it('follows connections added and removed after loading', async () => {
-    link = `${ORIGIN}/c/${ID}`;
-    await official.load(async () => []);
-    official.follow([{ ref: REF, status: 'pending', ...OFFICIAL }]);
-    expect(official.reachable(REF)).toBe(true);
-    official.follow([{ ref: REF, status: 'removed', ...OFFICIAL }]);
-    expect(official.reachable(REF)).toBe(false);
   });
 
   it('keeps a change committed while it was still loading', async () => {

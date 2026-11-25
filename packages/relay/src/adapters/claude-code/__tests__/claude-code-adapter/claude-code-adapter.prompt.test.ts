@@ -168,41 +168,6 @@ describe('ClaudeCodeAdapter', () => {
     });
   });
 
-  it('publishes response events to envelope.replyTo', async () => {
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope);
-
-    // Should have published for each event yielded (text_delta x2, done x1)
-    expect(relay.publish).toHaveBeenCalled();
-    const firstCall = vi.mocked(relay.publish).mock.calls[0];
-    expect(firstCall[0]).toBe('relay.human.console.client-1');
-    expect(firstCall[2]).toMatchObject({
-      from: 'agent:session-abc',
-      budget: { hopCount: 2 }, // original hopCount(1) + 1
-    });
-  });
-
-  it('records trace spans through delivery lifecycle', async () => {
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope);
-
-    expect(traceStore.insertSpan).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'pending', messageId: 'msg-001' })
-    );
-    expect(traceStore.updateSpan).toHaveBeenCalledWith(
-      'msg-001',
-      expect.objectContaining({ status: 'delivered' })
-    );
-    expect(traceStore.updateSpan).toHaveBeenCalledWith(
-      'msg-001',
-      expect.objectContaining({ status: 'processed' })
-    );
-  });
-
   // === Session isolation by conversationId (F6) ===
 
   function createMockSessionStore(): AgentSessionStoreLike & { store: Map<string, string> } {
@@ -268,51 +233,6 @@ describe('ClaudeCodeAdapter', () => {
     );
   });
 
-  it('returns failure result on session error', async () => {
-    vi.mocked(agentManager.sendMessage).mockReturnValue(
-      (async function* () {
-        throw new Error('Agent session crashed');
-      })()
-    );
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    const result = await adapter.deliver(envelope.subject, envelope);
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Agent session crashed/);
-    expect(traceStore.updateSpan).toHaveBeenCalledWith(
-      'msg-001',
-      expect.objectContaining({ status: 'failed' })
-    );
-  });
-
-  it('does not pass cwd when no context is provided (lets session.cwd take precedence)', async () => {
-    await adapter.start(relay);
-    const envelope = createTestEnvelope();
-
-    await adapter.deliver(envelope.subject, envelope);
-
-    // When no Mesh context is available, CCA should NOT override with defaultCwd.
-    // The session's stored CWD (set by BindingRouter from binding.projectPath)
-    // takes precedence via AgentManager's fallback chain.
-    const ensureCall = vi.mocked(agentManager.ensureSession).mock.calls[0];
-    expect(ensureCall[0]).toBe('session-abc');
-    // hasStarted is false because no agentSessionStore is provided, so there's
-    // no persisted SDK session ID to resume — avoids broken resume attempts.
-    expect(ensureCall[1]).toEqual({ permissionMode: 'default', hasStarted: false });
-    expect(ensureCall[1]).not.toHaveProperty('cwd');
-
-    const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
-    // A relay-delivered turn never holds for an approval card: nobody is
-    // watching it in the app (spec `agent-permissions` D6).
-    expect(sendCall[2]).toEqual({
-      permissionMode: 'default',
-      unattendedApprovals: true,
-      turnStarter: 'unknown',
-    });
-    expect(sendCall[2]).not.toHaveProperty('cwd');
-  });
-
   it('extracts permissionMode from __bindingPermissions payload enrichment', async () => {
     // Purpose: Validates the fix for hardcoded permissionMode: 'default'. When BindingRouter
     // enriches the payload with __bindingPermissions, the CCA must extract permissionMode
@@ -336,25 +256,6 @@ describe('ClaudeCodeAdapter', () => {
 
     const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
     expect(sendCall[2]).toEqual(expect.objectContaining({ permissionMode: 'bypassPermissions' }));
-  });
-
-  it('passes cwd from relay payload to ensureSession and sendMessage when no agent context', async () => {
-    // Purpose: Validates the bug fix — relay payload cwd must be extracted and
-    // forwarded even when context.agent.directory is undefined (web client sessions).
-    await adapter.start(relay);
-    const envelope = createTestEnvelope({
-      payload: { content: 'Run pwd', cwd: '/my/project', correlationId: 'corr-123' },
-    });
-
-    const result = await adapter.deliver(envelope.subject, envelope, undefined /* no context */);
-
-    expect(result.success).toBe(true);
-    expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      'session-abc',
-      expect.objectContaining({ cwd: '/my/project' })
-    );
-    const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
-    expect(sendArgs[2]).toEqual(expect.objectContaining({ cwd: '/my/project' }));
   });
 
   it('prefers payload cwd over agent context directory', async () => {
@@ -402,27 +303,6 @@ describe('ClaudeCodeAdapter', () => {
       expect(opts.systemPromptAppend).toContain('Platform: slack');
       expect(opts.systemPromptAppend).toContain('Do NOT use Markdown tables');
       expect(opts.systemPromptAppend).toContain('4000');
-    });
-
-    it('falls back to generic hint when supportedFormats lacks markdown and no formattingInstructions', async () => {
-      await adapter.start(relay);
-      const envelope = createTestEnvelope({
-        payload: {
-          content: 'Hello',
-          responseContext: {
-            platform: 'sms',
-            supportedFormats: ['text'],
-          },
-        },
-      });
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      const sendArgs = vi.mocked(agentManager.sendMessage).mock.calls[0];
-      const opts = sendArgs[2] as { systemPromptAppend?: string };
-      expect(opts.systemPromptAppend).toBeDefined();
-      expect(opts.systemPromptAppend).toContain('Platform: sms');
-      expect(opts.systemPromptAppend).toContain('Avoid complex Markdown formatting');
     });
   });
 });

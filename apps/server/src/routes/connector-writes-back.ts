@@ -19,7 +19,7 @@ import {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import {
   readWritesBack,
@@ -142,15 +142,19 @@ export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterD
 }
 
 /**
- * A missing or someone else's connection answers 404, an app the switch isn't offered for 422;
- * anything else is thrown on.
+ * A missing or someone else's connection answers `404 not_found`, an app the
+ * switch isn't offered for `422 app_not_supported`; anything else is thrown on.
  */
 function notFoundOr(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof WritesBackConnectionNotFoundError) {
-    return c.json({ error: error.message, code: error.code }, 404);
+    return problem(c, 'not_found', {
+      detail: 'That app isn’t connected anymore. Pick it again from the list.',
+    });
   }
   if (error instanceof WritesBackUnsupportedAppError) {
-    return c.json({ error: error.message, code: error.code }, 422);
+    return problem(c, 'app_not_supported', {
+      detail: 'Agents always ask before writing to this app. Its changes reach other people.',
+    });
   }
   throw error;
 }

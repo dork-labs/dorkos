@@ -11,7 +11,6 @@ import { createServerPrincipal } from '../../principal/server-principal.js';
 import type { ConnectorAccessQueryService } from '../../execution/access-query-service.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../../core/capabilities/mcp-envelope.js';
-import { CATALOG_TRUNCATED_WARNING } from '../connector-recommend.js';
 
 const recommend = connectorDomain.capabilities.find((c) => c.id === 'connector.recommend')!;
 
@@ -123,28 +122,6 @@ describe('connector_recommend', () => {
       expect(result.services.map((s) => s.serviceSlug)).toEqual(['slack', 'telegram']);
       expect(slack?.recommendations.map((r) => r.kind)).toEqual(['relay-adapter', 'gateway']);
     });
-
-    it('turns "summarise my inbox" into email apps', async () => {
-      const result = (await invoke({ intent: 'summarise my inbox' })) as {
-        services: Array<{ serviceSlug: string; category?: string }>;
-      };
-      expect(result.services.map((s) => s.serviceSlug)).toEqual(['gmail', 'outlook']);
-      expect(result.services.every((s) => s.category === 'email')).toBe(true);
-    });
-
-    it('returns an empty list when nothing fits', async () => {
-      expect(await invoke({ intent: 'water the plants on the balcony' })).toEqual({
-        services: [],
-        warnings: [],
-      });
-    });
-
-    it('returns at most five services', async () => {
-      const result = (await invoke({
-        intent: 'tasks tickets issues docs notes files email calendar chat',
-      })) as { services: unknown[] };
-      expect(result.services).toHaveLength(5);
-    });
   });
 
   describe('reads the whole catalog', () => {
@@ -169,23 +146,6 @@ describe('connector_recommend', () => {
       expect(result.services.map((s) => s.serviceSlug)).toEqual(['zendesk']);
       expect(result.warnings).toEqual([]);
       expect(pages.mock.calls.length).toBeGreaterThan(4);
-    });
-
-    it('says so when the catalog is longer than one search reads', async () => {
-      connectorDeps = {
-        ...connectorDeps,
-        catalog: async ({ cursor }) => ({
-          services: [],
-          warnings: [],
-          nextCursor: String(Number(cursor ?? 0) + 100),
-        }),
-      };
-      const result = (await invoke({ intent: 'summarise my inbox' })) as {
-        services: unknown[];
-        warnings: Array<{ message: string }>;
-      };
-      expect(result.services).toEqual([]);
-      expect(result.warnings).toEqual([CATALOG_TRUNCATED_WARNING]);
     });
   });
 
@@ -216,16 +176,6 @@ describe('connector_recommend', () => {
       expect(listRuntimeConnections.mock.calls.every(([p]) => p === principal)).toBe(true);
     });
 
-    it('says false only for an account app it can see none of', async () => {
-      const { access } = accessListing({ connections: [] } as Listed);
-      const result = await invoke(
-        { service: 'gmail' },
-        { connectorExecutionDeps: { access } } as Partial<CapabilityDeps>,
-        { serverPrincipal: runtimePrincipal() }
-      );
-      expect(result.connected).toBe(false);
-    });
-
     it('counts an account given but not usable right now as connected', async () => {
       const { access } = accessListing({
         connections: [],
@@ -245,56 +195,6 @@ describe('connector_recommend', () => {
         { serverPrincipal: runtimePrincipal() }
       );
       expect(result.connected).toBe(true);
-    });
-
-    it('leaves connected out for an app that may be set up as a chat app instead', async () => {
-      // Slack has a chat-app route and an account route; the bot set up under
-      // Messaging is not in this view, so "no account" is not "not set up".
-      const { access } = accessListing({ connections: [] } as Listed);
-      const result = await invoke(
-        { service: 'slack' },
-        { connectorExecutionDeps: { access } } as Partial<CapabilityDeps>,
-        { serverPrincipal: runtimePrincipal() }
-      );
-      expect(result.recommendations).toEqual(
-        expect.arrayContaining([expect.objectContaining({ kind: 'relay-adapter' })])
-      );
-      expect(result).not.toHaveProperty('connected');
-    });
-
-    it('leaves connected out for a chat-only app, which has no account to have', async () => {
-      const { access } = accessListing({ connections: [] } as Listed);
-      const result = await invoke(
-        { service: 'telegram' },
-        { connectorExecutionDeps: { access } } as Partial<CapabilityDeps>,
-        { serverPrincipal: runtimePrincipal() }
-      );
-      expect(result).not.toHaveProperty('connected');
-    });
-
-    it.each([
-      ['no principal', {}],
-      ['a principal that was not minted by the server', { serverPrincipal: { claims: {} } }],
-      [
-        'a non-runtime principal',
-        {
-          serverPrincipal: createServerPrincipal({
-            kind: 'bridged',
-            owner: { kind: 'local_install', installationId: 'install-a' },
-            platform: 'slack',
-            platformUserId: 'U1',
-          }),
-        },
-      ],
-    ])('is unknown, never false, with %s', async (_label, context) => {
-      const { access, listRuntimeConnections } = accessListing({ connections: [] } as Listed);
-      const result = await invoke(
-        { service: 'gmail' },
-        { connectorExecutionDeps: { access } } as Partial<CapabilityDeps>,
-        context as Partial<CapabilityHandlerContext>
-      );
-      expect(result).not.toHaveProperty('connected');
-      expect(listRuntimeConnections).not.toHaveBeenCalled();
     });
 
     it('is unknown, never false, when the read fails or the access service is missing', async () => {

@@ -15,6 +15,8 @@
  */
 import { z } from 'zod';
 
+import type { ProblemCode } from './problem.js';
+
 /** The code a person-only action answers with when no session proves the person. */
 export const PERSON_SESSION_REQUIRED_CODE = 'person_session_required';
 
@@ -60,15 +62,23 @@ export const PersonSessionRequestSchema = z.object({
 /** The body {@link PERSON_SESSION_PATH} takes. */
 export type PersonSessionRequest = z.infer<typeof PersonSessionRequestSchema>;
 
-/** Why a step-up was refused, as `code` on its error body. */
+/**
+ * Why a step-up was refused, as `code` on its problem document: each is a
+ * code on `PROBLEM_CODE_LIST` (`./problem.ts`).
+ */
 export const PERSON_SESSION_REFUSAL_CODES = [
-  'wrong-password',
-  'too-many-attempts',
-  'no-owner',
-  'no-password',
-  'not-at-this-computer',
-  'not-a-person',
-] as const;
+  'wrong_password',
+  /** Too many wrong passwords lately: wait `retryAfterMs`, then try again. */
+  'rate_limited',
+  /** No password was sent. */
+  'invalid_request',
+  'no_owner',
+  'no_password',
+  /** Asked from anywhere but the computer DorkOS runs on. */
+  'operator_only',
+  /** A program, or a page that isn't the app's own. */
+  'person_only',
+] as const satisfies readonly ProblemCode[];
 
 /** Why a step-up was refused. */
 export type PersonSessionRefusalCode = (typeof PERSON_SESSION_REFUSAL_CODES)[number];
