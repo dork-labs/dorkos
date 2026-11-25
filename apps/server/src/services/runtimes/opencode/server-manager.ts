@@ -416,8 +416,13 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * synchronously before the kill is awaited, so a `getClient()` that races the
    * teardown never receives the stale client. No-op when no sidecar is up (the
    * next boot already picks up the credential) or after {@link shutdown}.
+   *
+   * @param opts - `immediate` (a folder gained its own plugins, DOR-4412):
+   *   SIGKILL the sidecar's whole process group at once. A loaded plugin can
+   *   trap SIGTERM and keep running through a grace window, and can start
+   *   children of its own.
    */
-  async recycle(): Promise<void> {
+  async recycle(opts: { immediate?: boolean } = {}): Promise<void> {
     if (this.phase === 'stopped') return;
     this.cancelRestart();
     const child = this.child;
@@ -431,7 +436,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     this.restartAttempts = 0;
     this.phase = 'idle';
     if (child) {
-      await this.killChild(child);
+      await this.killChild(child, opts.immediate === true);
       logger.info('[OpenCode] sidecar recycled — next use reboots with fresh provider env');
     }
     if (this.attempt) await this.confirmCustodyStop('recycle');
@@ -573,7 +578,9 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       attempt.checkReady();
       return this.publishClient(url, password);
     }
-    const child = spawn(binary, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Its own process group, so a kill reaches whatever it started too (DOR-4412).
+    const detached = process.platform !== 'win32';
+    const child = spawn(binary, argv, { env, stdio: ['ignore', 'pipe', 'pipe'], detached });
     this.child = child;
     this.running = plan;
 
@@ -769,20 +776,44 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     });
   }
 
-  /** SIGTERM the child and escalate to SIGKILL after the grace window. */
-  private async killChild(child: ChildProcess): Promise<void> {
+  /**
+   * SIGTERM the child's process group and escalate to SIGKILL after the grace
+   * window, or SIGKILL it at once when `now`.
+   */
+  private async killChild(child: ChildProcess, now = false): Promise<void> {
     // Nothing to reap when the child already exited, or when spawn failed so no
     // OS process ever existed (`pid` undefined means no 'exit' will ever fire,
     // so awaiting one would hang). Returning here keeps this safe to await.
     if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
     const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-    child.kill('SIGTERM');
+    if (now) {
+      signalGroup(child, 'SIGKILL');
+      await exited;
+      return;
+    }
+    signalGroup(child, 'SIGTERM');
     const escalation = setTimeout(() => {
-      child.kill('SIGKILL');
+      signalGroup(child, 'SIGKILL');
     }, SIDECAR_TIMING.shutdownGraceMs);
     await exited;
     clearTimeout(escalation);
   }
+}
+
+/**
+ * Signal the sidecar's whole process group (it is spawned detached, so its pid
+ * leads one), falling back to the child alone where there is no group.
+ */
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (process.platform !== 'win32' && child.pid !== undefined) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+  } catch {
+    // No such group (already gone, or not a leader): signal the child itself.
+  }
+  child.kill(signal);
 }
 
 /**

@@ -138,7 +138,7 @@ describe('census: every turn start passes the plugin gate', () => {
     const gate = source
       .slice(start)
       .search(
-        /const pluginRefusal = projectPluginRefusal\(cwd\);\s*if \(pluginRefusal\) return yield pluginRefusal;/
+        /const pluginTurn = await this\.pluginRecheck\.admit\(cwd\);\s*if \(pluginTurn\.refusal\) return yield pluginTurn\.refusal;/
       );
     expect(start).toBeGreaterThan(-1);
     expect(gate).toBeGreaterThan(-1);
@@ -150,11 +150,28 @@ describe('census: every turn start passes the plugin gate', () => {
   it("checks the session's stored folder before the turn's callback can send", () => {
     const start = source.indexOf('private async *runOpenCodeTurn(');
     const resolved = source.indexOf('directory = await sessionDirectoryOf(', start);
-    const second = source.indexOf('assertNoProjectPlugins(cwd, directory);', start);
+    const second = source.indexOf('pluginTurn.assertNoPlugins(directory);', start);
     const sent = source.indexOf('await trigger(', start);
     expect(resolved).toBeGreaterThan(start);
     expect(second).toBeGreaterThan(resolved);
     expect(sent).toBeGreaterThan(second);
+  });
+
+  it('sends nothing on a sidecar a plugin restart began to stop (DOR-4412)', () => {
+    const start = source.indexOf('private async *runOpenCodeTurn(');
+    const sent = source.indexOf('await trigger(', start);
+    const current = source.lastIndexOf('pluginTurn.assertCurrent();', sent);
+    expect(current).toBeGreaterThan(start);
+    // Nothing that waits sits between the check and the send.
+    expect(source.slice(current, sent)).not.toContain('await ');
+  });
+
+  it("looks again first thing in the turn's teardown, before it waits on anything (DOR-4412)", () => {
+    const start = source.indexOf('private async *runOpenCodeTurn(');
+    const sent = source.indexOf('await trigger(', start);
+    const teardown = source.indexOf('} finally {', sent);
+    const body = source.slice(teardown + '} finally {'.length).replace(/^\s*(\/\/.*\n\s*)*/, '');
+    expect(body.startsWith('this.pluginRecheck.afterTurn(cwd, directory);')).toBe(true);
   });
 
   it('sends a prompt or a summary only from inside a turn the gate checked', () => {
