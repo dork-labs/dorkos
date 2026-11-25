@@ -32,6 +32,12 @@ changed since G) stops with one note on the failure-group issues and no revert. 
 narrowed to the failed specs: the balanced-shard reporter and the fan-in's every-spec-ran check need
 the whole spec set. The canary collector leaves bisect runs out.
 
+Nov 25 fix: the bisect never started on its first real failure (browser-test at 7878dda), because
+`auto-revert.sh` skipped the one re-run (`red-before-this-merge`: the rolling run's parent had no run
+of its own), so no attempt 2 ever came. `auto-revert.sh` now re-runs a rolling workflow's first
+failure before any other rule; its rolling list is pinned to this workflow's `workflows:` by
+`test-auto-revert.sh`.
+
 Baseline (Nov 24): 0 of the rolling browser-test failures on main name a merge; every one lists the
 whole range.
 Target: 80% of rolling browser-test failures that survive the re-run end in a named merge within 3

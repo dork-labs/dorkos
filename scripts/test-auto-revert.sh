@@ -67,6 +67,32 @@ d '.branch = "release/v1"'
 check 'only main counts' 'skip not-a-push-to-main' "$out"
 d '.sha = "abc"'
 check 'a bad sha is skipped' 'skip bad-sha' "$out"
+
+# A ROLLING run (one run for several merges): re-run first, before anything
+# about its head commit, so rolling-bisect.yml (attempt >= 2 only) can start.
+# Nov 25, 7878dda: `skip red-before-this-merge` at attempt 1 meant no bisect.
+d '.workflow = "browser-test" | .rolling = true | .attempt = 1 | .parentConclusion = "none"'
+check 'rolling, attempt 1, parent never ran: re-run' rerun "$out"
+d '.workflow = "browser-test" | .rolling = true | .attempt = 1 | .parentConclusion = "failure"'
+check 'rolling, attempt 1, parent red: re-run' rerun "$out"
+d '.rolling = true | .attempt = 1 | .subject = "chore(release): v0.142.0 (#4200)"'
+check 'rolling, attempt 1, at the release commit: still re-run (the bisect never blames it)' rerun "$out"
+d '.rolling = true | .attempt = 1 | .pr = 0'
+check 'rolling, attempt 1, no PR at the head: still re-run' rerun "$out"
+d '.rolling = true | .attempt = 1 | .conclusion = "cancelled"'
+check 'rolling, a cancel does nothing' 'skip not-a-failure' "$out"
+d '.rolling = true | .attempt = 1 | .event = "workflow_dispatch"'
+check 'rolling, a bisect (dispatch) run is never re-run here' 'skip not-a-push-to-main' "$out"
+d '.rolling = true | .parentConclusion = "none"'
+check 'rolling, attempt 2, parent never ran: skip (the bisect names the merge)' 'skip red-before-this-merge' "$out"
+d '.rolling = true | .parentConclusion = "failure"'
+check 'rolling, attempt 2, parent red: skip (the bisect names the merge)' 'skip red-before-this-merge' "$out"
+d '.rolling = true'
+check 'rolling, attempt 2, green parent: the merge is H, revert as before' "revert $S 12" "$out"
+d '.rolling = false | .attempt = 1 | .parentConclusion = "none"'
+check 'not rolling, attempt 1, parent never ran: skip, no re-run (as before)' 'skip red-before-this-merge' "$out"
+d '.rolling = false | .attempt = 1 | .parentConclusion = "failure"'
+check 'not rolling, attempt 1, parent red: skip, no re-run (as before)' 'skip red-before-this-merge' "$out"
 echo 'not json' >"$tmp/f.json"
 out=$("$SCRIPT" decide "$tmp/f.json" 2>&1)
 rc=$?
@@ -93,7 +119,7 @@ EOF
 chmod +x "$tmp/gh"
 mkdir -p "$tmp/fx"
 export GH="$tmp/gh" GH_LOG="$tmp/gh.log" REPO=made-up/repo FX=$tmp/fx
-echo "{\"run_attempt\":2,\"conclusion\":\"failure\",\"event\":\"push\",\"head_branch\":\"main\",\"head_sha\":\"$S\",\"workflow_id\":5}" >"$tmp/fx/run"
+echo "{\"run_attempt\":2,\"conclusion\":\"failure\",\"event\":\"push\",\"head_branch\":\"main\",\"head_sha\":\"$S\",\"workflow_id\":5,\"name\":\"db-check\"}" >"$tmp/fx/run"
 printf "%s\n" "{\"parents\":[{\"sha\":\"$P\"}],\"commit\":{\"message\":\"fix(x): a thing (#12)\\n\\nbody\"}}" >"$tmp/fx/commit"
 echo '[{"number":12,"merged_at":"2026-11-23T10:00:00Z"}]' >"$tmp/fx/pulls"
 echo '{"workflow_runs":[{"status":"completed","conclusion":"failure","updated_at":"2026-11-23T09:00:00Z"},{"status":"completed","conclusion":"success","updated_at":"2026-11-23T09:30:00Z"}]}' >"$tmp/fx/wfruns"
@@ -108,6 +134,30 @@ check 'the parent newest attempt wins' success "$(jq -r .parentConclusion "$tmp/
 check 'the subject is the first line only' 'fix(x): a thing (#12)' "$(jq -r .subject "$tmp/facts.json")"
 check 'it reads the parent runs of the same workflow' yes "$(grep -qF "workflows/5/runs?head_sha=$P&event=push" "$GH_LOG" && echo yes || echo no)"
 check 'facts makes no write call' no "$(grep -qE -- '--method|-X ' "$GH_LOG" && echo yes || echo no)"
+check 'facts names the workflow' db-check "$(jq -r .workflow "$tmp/facts.json")"
+check 'a non-rolling workflow is not rolling' false "$(jq -r .rolling "$tmp/facts.json")"
+# The Nov 25 shape end to end: browser-test, attempt 1, the parent never ran.
+jq '.run_attempt = 1 | .name = "browser-test"' "$tmp/fx/run" >"$tmp/fx/run.new" && mv "$tmp/fx/run.new" "$tmp/fx/run"
+echo '{"workflow_runs":[]}' >"$tmp/fx/wfruns"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>"$tmp/err"
+check 'browser-test is rolling' true "$(jq -r .rolling "$tmp/facts.json")"
+check 'its parent never ran' none "$(jq -r .parentConclusion "$tmp/facts.json")"
+check 'rolling facts at attempt 1 feed a re-run' rerun "$("$SCRIPT" decide "$tmp/facts.json")"
+
+# --- the rolling list cannot drift from the workflows that act on it ---
+rolling_list=$(sed -n "s/^ROLLING_WORKFLOWS='\(.*\)'$/\1/p" "$SCRIPT" | jq -c 'sort')
+bisect_list=$(awk '/^on:/{on=1} on && /^  workflow_run:/{wr=1} wr && /^    workflows:/{print; exit}' \
+  "$repo_root/.github/workflows/rolling-bisect.yml" |
+  sed 's/^ *workflows: *//' | tr -d '[]' | tr ',' '\n' | sed 's/^ *//; s/ *$//' | sed '/^$/d' | jq -Rsc 'split("\n") | map(select(. != "")) | sort')
+check 'ROLLING_WORKFLOWS is rolling-bisect.yml'"'"'s workflows:' "$bisect_list" "$rolling_list"
+check 'the rolling list is not empty' yes "$([ "$(jq length <<<"$rolling_list")" -gt 0 ] && echo yes || echo no)"
+ar_block=$(awk '/^    workflows:/{on=1} on{print} on && /\]/{exit}' "$repo_root/.github/workflows/auto-revert.yml")
+alert_expr=$(grep -E '^ *ROLLING:' "$repo_root/.github/workflows/after-merge-alert.yml")
+for w in $(jq -r '.[]' <<<"$rolling_list"); do
+  check "rolling $w is in auto-revert.yml's workflows: (or it is never re-run)" yes \
+    "$(grep -qE "^ *$w,?\$" <<<"$ar_block" && echo yes || echo no)"
+  check "after-merge-alert.yml sets ROLLING=1 for $w" yes "$(grep -qF "== '$w'" <<<"$alert_expr" && echo yes || echo no)"
+done
 rm "$tmp/fx/main"
 "$SCRIPT" facts 77 >/dev/null 2>&1
 check 'an unreadable main is exit 2' 2 "$?"

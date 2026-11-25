@@ -7,7 +7,9 @@ name: rolling-bisect
 # almost never has. scripts/rolling-bisect.sh has the rules.
 #
 # When the push run fails at H and still fails after auto-revert's one re-run
-# (attempt 2), this binary-searches the merges since the last green push run
+# (attempt 2; auto-revert.sh re-runs a rolling workflow's first failure before
+# any other rule, and its ROLLING_WORKFLOWS list is pinned to `workflows:`
+# below by scripts/test-auto-revert.sh), this binary-searches the merges since the last green push run
 # (G): it dispatches the same workflow on main with `bisect_sha=<merge>`, which
 # checks that merge out and runs the full suite on it, titled
 # "bisect <sha> for run <id>". Each bisect run's completion wakes this
@@ -30,7 +32,10 @@ name: rolling-bisect
 # Bisecting and reporting run whatever AUTO_REVERT says.
 #
 # Add a workflow to `workflows:` below when its push run becomes rolling AND it
-# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml).
+# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml),
+# and add it to ROLLING_WORKFLOWS in scripts/auto-revert.sh in the same PR
+# (test-auto-revert.sh fails until both lists match), or its first failure is
+# never re-run and this never starts.
 #
 # If a wake-up is ever lost, the next rolling failure (or a dispatch of this
 # workflow with the run id) resumes: every decision is rebuilt from the runs.

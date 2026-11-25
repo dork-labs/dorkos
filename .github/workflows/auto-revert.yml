@@ -20,6 +20,11 @@ name: auto-revert
 # never has a green run on its parent, so its failures go to rolling-bisect.yml,
 # which finds the first bad merge and reverts it through the same
 # `scripts/auto-revert.sh revert` path, under the same AUTO_REVERT switch.
+# rolling-bisect.yml starts only once the rolling run has failed its re-run
+# (attempt 2), so a rolling run's first failure is ALWAYS re-run here, before
+# the green-parent rule (Nov 25: skipping it at 7878dda meant no bisect). The
+# full order, and the rolling list that must match rolling-bisect.yml's
+# `workflows:`, are in the header of scripts/auto-revert.sh.
 #
 # A `workflow_run` workflow runs the default branch's copy, and both jobs check
 # out main, so a PR cannot change it. Nothing from the reverted commit runs.

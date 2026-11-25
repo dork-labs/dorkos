@@ -32,6 +32,11 @@
 #                           re-run, main recovered, a single merge, which
 #                           auto-revert.sh already decides).
 #
+# The re-run that makes attempt 2 is auto-revert.sh's: it re-runs a rolling
+# workflow's first failure before its green-parent rule (ROLLING_WORKFLOWS
+# there must equal rolling-bisect.yml's `workflows:`; test-auto-revert.sh
+# checks it). Without it, `not-yet-re-run` would be the answer forever.
+#
 # facts.json: {origin, workflow, workflowFile, url, event, branch, sha,
 #              conclusion, attempt, good, newerGreen, workflowChanged,
 #              originFamilies, range: [{sha, subject, pr}] (oldest first, H
