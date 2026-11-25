@@ -13,16 +13,16 @@ import { isCommunityInvitationUrl } from '@dorkos/shared/community-wire';
  * Four refusals get their own words, because "check the address" would send
  * the person looking for a typo in each of them:
  *
- * - `COMMUNITY_SELECTION_REQUIRED`: the address leads to a server holding
+ * - `space_choice_required`: the address leads to a server holding
  *   several spaces. It is right as far as it goes; they need one space's own
  *   link, so the example is built on the server they typed.
- * - `COMMUNITY_NAME_NOT_FOUND`: the server is real but knows no space by that
+ * - `space_name_not_found`: the server is real but knows no space by that
  *   short address. Here the spelling really is the thing to check.
- * - `COMMUNITY_RATE_LIMITED`: the server limits how often one machine may
+ * - `rate_limited`: the server limits how often one machine may
  *   look up a name or start a connection, and this one has reached it. The
  *   address may be fine; the answer is to wait, for as long as the server said
  *   when it said.
- * - `COMMUNITY_UPGRADE_REQUIRED`: the space's server is older than this
+ * - `space_server_outdated`: the space's server is older than this
  *   DorkOS can connect to. Nothing the person types fixes it; whoever runs the
  *   server has to update it.
  *
@@ -34,16 +34,16 @@ import { isCommunityInvitationUrl } from '@dorkos/shared/community-wire';
 export function startErrorMessage(error: unknown, address: string | undefined): string {
   const refusal =
     typeof error === 'object' && error !== null
-      ? (error as { code?: unknown; body?: { retryAfterSeconds?: unknown } })
+      ? (error as { code?: unknown; retryAfterMs?: unknown })
       : {};
   switch (refusal.code) {
-    case 'COMMUNITY_SELECTION_REQUIRED':
+    case 'space_choice_required':
       return `That address has several spaces. Use one space’s own link, like ${shortAddressExample(address)}.`;
-    case 'COMMUNITY_NAME_NOT_FOUND':
+    case 'space_name_not_found':
       return 'No space uses that address. Check the spelling, or ask for its full link.';
-    case 'COMMUNITY_RATE_LIMITED':
-      return `Too many tries. Your address may be fine. Wait ${describeCommunityRetryWait(refusal.body?.retryAfterSeconds)}, then try again.`;
-    case 'COMMUNITY_UPGRADE_REQUIRED':
+    case 'rate_limited':
+      return `Too many tries. Your address may be fine. Wait ${describeCommunityRetryWait(retrySeconds(refusal.retryAfterMs))}, then try again.`;
+    case 'space_server_outdated':
       return 'This space’s server is too old for this DorkOS. Ask its owner to update it.';
     default:
       return 'Couldn’t connect. Check the space’s address and try again.';
@@ -60,7 +60,14 @@ export function startErrorMessage(error: unknown, address: string | undefined): 
 export function blamesAddress(error: unknown): boolean {
   const code =
     typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : '';
-  return code !== 'COMMUNITY_RATE_LIMITED' && code !== 'COMMUNITY_UPGRADE_REQUIRED';
+  return code !== 'rate_limited' && code !== 'space_server_outdated';
+}
+
+/** The host's wait in whole seconds, from the refusal's `retryAfterMs`, or nothing when it named none. */
+function retrySeconds(retryAfterMs: unknown): number | undefined {
+  return typeof retryAfterMs === 'number' && retryAfterMs > 0
+    ? Math.ceil(retryAfterMs / 1000)
+    : undefined;
 }
 
 /** A short address on the server the person typed, or a generic one when it cannot be read. */

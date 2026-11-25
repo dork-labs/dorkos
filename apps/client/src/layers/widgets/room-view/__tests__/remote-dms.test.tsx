@@ -237,7 +237,7 @@ describe('Message on an agent’s row', () => {
   it('says plainly when the agent isn’t taking them', async () => {
     const transport = transportFor(true);
     vi.mocked(transport.startRemoteCommunityDm).mockRejectedValue(
-      Object.assign(new Error('refused'), { code: 'AGENT_NOT_TAKING_DMS' })
+      Object.assign(new Error('refused'), { code: 'agent_not_taking_dms' })
     );
     roster(transport);
 

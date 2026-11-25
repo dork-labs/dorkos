@@ -251,14 +251,14 @@ describe('remote community delivery drafts', () => {
    * The error `fetchJSON` throws for the local route's gone refusal, exactly as the server sends
    * it (`routes/remote-communities.ts`, `verifiedConnection`): status, code and plain wording.
    */
-  function goneRefusal(code: 'COMMUNITY_DELETED' | 'COMMUNITY_TAKEN_DOWN') {
+  function goneRefusal(code: 'space_deleted' | 'space_taken_down') {
     const body =
-      code === 'COMMUNITY_DELETED'
+      code === 'space_deleted'
         ? { code, error: 'This space was deleted.' }
         : { code, error: 'This space was taken down.' };
     return Object.assign(new Error(body.error), {
       code,
-      status: code === 'COMMUNITY_DELETED' ? 410 : 423,
+      status: code === 'space_deleted' ? 410 : 423,
       body,
     });
   }
@@ -267,7 +267,7 @@ describe('remote community delivery drafts', () => {
   // can never go through, and the room is about to be replaced by the gone panel, so the message
   // goes back into its composer's draft, in front of anything typed since, files and all, where
   // the panel counts it and offers to copy it.
-  it.each(['COMMUNITY_DELETED', 'COMMUNITY_TAKEN_DOWN'] as const)(
+  it.each(['space_deleted', 'space_taken_down'] as const)(
     'puts a message refused with %s back into the draft',
     async (code) => {
       const { transport, receipt, wrapper } = harness();
@@ -382,12 +382,12 @@ describe('a post the space’s moderation held (DOR-2770)', () => {
   function held(code: string, retryAfterMs?: number) {
     return Object.assign(new Error('Held'), {
       code,
-      status: code === 'COMMUNITY_SLOW_MODE' ? 429 : 403,
+      status: code === 'space_slow_mode' ? 429 : 403,
       ...(retryAfterMs ? { retryAfterMs } : {}),
     });
   }
 
-  it.each(['COMMUNITY_MUTED', 'COMMUNITY_SLOW_MODE', 'COMMUNITY_RULES_NOT_ACCEPTED'])(
+  it.each(['space_muted', 'space_slow_mode', 'space_rules_not_accepted'])(
     'puts a %s message back in its draft and says which hold, never a failed row',
     async (code) => {
       const { transport, receipt, wrapper } = harness();
@@ -417,7 +417,7 @@ describe('a post the space’s moderation held (DOR-2770)', () => {
       id: `upload-${(uploads += 1)}`,
     }));
     vi.mocked(transport.postRemoteCommunityEntry)
-      .mockRejectedValueOnce(held('COMMUNITY_RULES_NOT_ACCEPTED'))
+      .mockRejectedValueOnce(held('space_rules_not_accepted'))
       .mockResolvedValue(entry);
     const { result } = renderHook(() => useRemoteCommunityDrafts(options(receipt, { onHold })), {
       wrapper,

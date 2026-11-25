@@ -33,7 +33,10 @@ const fixture = vi.hoisted(() => {
   return { ref, full, adapter, enrollments, dmsStore };
 });
 
-vi.mock('../community-connections.js', () => ({ resolveCommunityOwner: () => 'owner-a' }));
+vi.mock('../community-problems.js', async (original) => ({
+  ...(await original<typeof import('../community-problems.js')>()),
+  resolveCommunityOwner: () => 'owner-a',
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined) },
 }));
@@ -127,7 +130,8 @@ describe('direct messages in a space, through this computer', () => {
     expect(response.body).toEqual({ community: fixture.ref, available: false, dms: [] });
     expect(fixture.adapter.listDirectMessages).not.toHaveBeenCalled();
     const started = await request(server).post(`${base}/dms`).send({ agentMemberId: 'remote-x' });
-    expect(started.status).toBe(404);
+    expect(started.status).toBe(409);
+    expect(started.body.code).toBe('space_unsupported');
     expect(fixture.adapter.startDirectMessage).not.toHaveBeenCalled();
   });
 
@@ -167,7 +171,7 @@ describe('direct messages in a space, through this computer', () => {
     );
     const refused = await request(server).post(`${base}/dms`).send({ agentMemberId: 'remote-dee' });
     expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe('AGENT_NOT_TAKING_DMS');
+    expect(refused.body.code).toBe('agent_not_taking_dms');
   });
 
   it('sets the owner’s switch on the space and remembers it here', async () => {

@@ -8,6 +8,7 @@
  * requests are refused, a hub that cannot sign spends no code, and the gate's
  * exemption covers this one path and nothing beside it.
  */
+import { problemBody } from '@dorkos/http-kit';
 import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
@@ -164,7 +165,9 @@ describe('linking with a good code', () => {
 });
 
 describe('refusals', () => {
-  const REFUSED = { error: 'That link code did not work. Make a new one.', code: 'LINK_REFUSED' };
+  const REFUSED = problemBody('link_code_refused', {
+    detail: 'That link code didn’t work. Make a new one.',
+  });
 
   it('refuses a replayed code with the same 401', async () => {
     const code = codes.mint().code;
@@ -215,7 +218,7 @@ describe('refusals', () => {
     const code = codes.mint().code;
     const res = await post(linkRequest(code), { 'Sec-Fetch-Site': 'same-origin' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('FORBIDDEN');
+    expect(res.body.code).toBe('forbidden');
     expect((await post(linkRequest(code))).status).toBe(200);
   });
 
@@ -305,10 +308,11 @@ describe('refusals', () => {
       );
       const res = await post(intruder);
       expect(res.status).toBe(409);
-      expect(res.body).toEqual({
-        error: 'That computer is already linked. Remove it first.',
-        code: 'ALREADY_LINKED',
-      });
+      expect(res.body).toEqual(
+        problemBody('already_linked', {
+          detail: 'That computer is already linked. Remove it first.',
+        })
+      );
       expect(readLinkedComputers(storeHome)).toEqual(first);
       // The code was spent.
       expect((await post(linkRequest(code))).status).toBe(401);
@@ -351,6 +355,6 @@ describe('the session gate exemption', () => {
   it('covers a trailing slash only because the router reads it as the same route', async () => {
     const res = await request(server).post('/api/hub/link/').send({});
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('INVALID');
+    expect(res.body.code).toBe('invalid_request');
   });
 });

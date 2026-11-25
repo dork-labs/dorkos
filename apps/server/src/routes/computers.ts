@@ -13,7 +13,10 @@ import {
 import { type ComputerService, ComputerRefusal } from '../services/computers/computer-service.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import type { ComputerErrorCode } from '@dorkos/shared/computer-schemas';
+import type { ProblemCode } from '@dorkos/shared/problem';
+import { logger, logError } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 
 /** Narrow service boundary for the authenticated computer routes. */
@@ -31,6 +34,41 @@ export type ComputerRoutesService = Pick<
   | 'input'
 >;
 const releaseSchema = z.object({ leaseId: z.string().min(1).max(128) }).strict();
+/**
+ * Each computer refusal as a problem (DOR-4979): total by type, so a new
+ * refusal can't reach a response without a row here.
+ */
+const COMPUTER_PROBLEMS: Record<ComputerErrorCode, { code: ProblemCode; detail: string }> = {
+  unsupported: {
+    code: 'computer_unsupported',
+    detail: 'This computer can’t run an agent computer.',
+  },
+  disabled: { code: 'computer_disabled', detail: 'Agent computers are turned off.' },
+  'setup-failed': {
+    code: 'computer_setup_failed',
+    detail: 'The agent computer couldn’t be set up. Restart DorkOS.',
+  },
+  'not-ready': {
+    code: 'temporarily_unavailable',
+    detail: 'The agent computer isn’t ready yet. Try again soon.',
+  },
+  'sign-in-required': {
+    code: 'computer_sign_in_required',
+    detail: 'Sign in inside the agent computer first.',
+  },
+  'control-lost': {
+    code: 'computer_control_lost',
+    detail: 'Another window took control. Take control again.',
+  },
+  'cleanup-uncertain': {
+    code: 'computer_cleanup_uncertain',
+    detail: 'DorkOS can’t confirm the agent computer stopped.',
+  },
+  unavailable: {
+    code: 'temporarily_unavailable',
+    detail: 'The agent computer isn’t available. Try again.',
+  },
+};
 const clientSchema = z
   .string()
   .min(1)
@@ -44,10 +82,12 @@ export function createComputerRoutes(service: ComputerRoutesService): Hono<ApiEn
     const facts = honoRequestFacts(c);
     const refusal = refuseUnlessAccountOwner(facts);
     if (refusal)
-      return c.json({ error: 'Only the owner can use this computer.', code: refusal }, 403);
+      return problem(c, refusal === 'not-a-person' ? 'person_only' : 'owner_only', {
+        detail: 'Only the owner can use this computer.',
+      });
     const client = clientSchema.safeParse(c.req.header('X-Client-Id'));
     if (!client.success)
-      return c.json({ error: 'A valid app window is required.', code: 'invalid-client' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Open this from the DorkOS app.' });
     await next();
   });
   const owner = (c: Context<ApiEnv>) =>
@@ -64,17 +104,12 @@ export function createComputerRoutes(service: ComputerRoutesService): Hono<ApiEn
       return c.json(schema.parse(await action()));
     } catch (error) {
       if (error instanceof ComputerRefusal) {
-        const status =
-          error.code === 'control-lost' || error.code === 'cleanup-uncertain'
-            ? 409
-            : error.code === 'unavailable' ||
-                error.code === 'not-ready' ||
-                error.code === 'setup-failed'
-              ? 503
-              : 400;
-        return c.json({ error: 'Computer action unavailable.', code: error.code }, status);
+        const { code, detail } = COMPUTER_PROBLEMS[error.code];
+        return problem(c, code, { detail });
       }
-      return c.json({ error: 'Computer action unavailable.', code: 'unavailable' }, 503);
+      logger.warn('[Computers] A computer action failed', logError(error));
+      const { code, detail } = COMPUTER_PROBLEMS.unavailable;
+      return problem(c, code, { detail });
     }
   };
   routes.get('/', (c) => execute(c, () => service.status(), ComputerStatusSchema));
@@ -90,7 +125,7 @@ export function createComputerRoutes(service: ComputerRoutesService): Hono<ApiEn
   routes.delete('/control', async (c) => {
     const body = releaseSchema.safeParse(await readJsonBody(c));
     if (!body.success)
-      return c.json({ error: 'Invalid control request.', code: 'invalid-input' }, 400);
+      return validationProblem(c, body.error, { detail: 'Send the control lease to return.' });
     return execute(c, async () => {
       await service.release(owner(c), body.data.leaseId);
       return { ok: true };
@@ -99,7 +134,7 @@ export function createComputerRoutes(service: ComputerRoutesService): Hono<ApiEn
   routes.post('/input', async (c) => {
     const body = ComputerInputSchema.safeParse(await readJsonBody(c));
     if (!body.success)
-      return c.json({ error: 'Invalid computer input.', code: 'invalid-input' }, 400);
+      return validationProblem(c, body.error, { detail: 'That isn’t a desktop action.' });
     return execute(c, async () => {
       await service.input(owner(c), body.data);
       return { ok: true };

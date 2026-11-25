@@ -44,8 +44,7 @@ describe('community outbox', () => {
       expect.objectContaining({
         id: item.id,
         state: 'failed',
-        failure:
-          'This space is on hold. You can read it, but no one can post. Its owner can still export it.',
+        failure: 'This space is on hold. You can read it, but no one can post.',
       }),
     ]);
 

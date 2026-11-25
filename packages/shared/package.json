@@ -437,6 +437,10 @@
       "types": "./src/cloud-schemas.ts",
       "default": "./dist/cloud-schemas.js"
     },
+    "./move-sizes": {
+      "types": "./src/move-sizes.ts",
+      "default": "./dist/move-sizes.js"
+    },
     "./onboarding-schemas": {
       "types": "./src/onboarding-schemas.ts",
       "default": "./dist/onboarding-schemas.js"

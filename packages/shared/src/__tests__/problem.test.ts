@@ -147,6 +147,64 @@ describe('PROBLEM_CODE_LIST', () => {
   });
 });
 
+describe('the space, account, tunnel, hub and computer codes', () => {
+  it('holds each at its status (DOR-4979)', () => {
+    const expected: ReadonlyArray<readonly [string, number]> = [
+      ['owner_changed', 412],
+      ['pairing_busy', 409],
+      ['reconnect_required', 409],
+      ['space_choice_required', 409],
+      ['space_name_not_found', 404],
+      ['space_server_outdated', 426],
+      ['space_deleted', 410],
+      ['space_taken_down', 423],
+      ['space_suspended', 423],
+      ['space_on_hold', 423],
+      ['space_read_only', 423],
+      ['space_not_open', 409],
+      ['space_muted', 403],
+      ['space_slow_mode', 429],
+      ['space_rules_not_accepted', 403],
+      ['space_limit_reached', 409],
+      ['space_unsupported', 409],
+      ['space_name_taken', 409],
+      ['report_not_allowed', 409],
+      ['reply_on_top_level_only', 409],
+      ['move_pending', 409],
+      ['length_required', 411],
+      ['computer_offline', 503],
+      ['computer_timed_out', 504],
+      ['agent_not_taking_dms', 409],
+      ['cloud_not_linked', 409],
+      ['hub_linked_by_cloud', 409],
+      ['runtime_busy', 409],
+      ['credits_off', 409],
+      ['disk_full', 507],
+      ['disk_space_unknown', 507],
+      ['auth_required_for_exposure', 409],
+      ['tunnel_running', 409],
+      ['tunnel_token_missing', 400],
+      ['tunnel_port_mismatch', 409],
+      ['computer_waking', 503],
+      ['computer_refused', 502],
+      ['needs_update', 501],
+      ['link_code_refused', 401],
+      ['already_linked', 409],
+      ['computer_limit_reached', 409],
+      ['not_acceptable', 406],
+      ['computer_unsupported', 400],
+      ['computer_disabled', 400],
+      ['computer_sign_in_required', 400],
+      ['computer_control_lost', 409],
+      ['computer_cleanup_uncertain', 409],
+      ['computer_setup_failed', 503],
+    ];
+    for (const [code, status] of expected) {
+      expect(PROBLEM_CODES[code as keyof typeof PROBLEM_CODES]?.status, code).toBe(status);
+    }
+  });
+});
+
 describe('agreement with the DorkOS Cloud contract', () => {
   it('spells every code both lists hold the same way', () => {
     const cloud = new Set<string>(CloudProblemCodeSchema.options);

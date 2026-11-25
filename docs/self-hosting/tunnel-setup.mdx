@@ -162,7 +162,7 @@ Remote Access is for using the app from your phone or another computer. Some add
 
 Common issues:
 
-- **"Tunnel is already running"**: the server replies with a 409 status, its polite way of saying "one at a time." Stop the existing tunnel first.
+- **"Remote access is already on"**: the server replies with a 409 status and the code `tunnel_running`, its polite way of saying "one at a time." Stop the existing tunnel first.
 - **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access tab in Settings.
 - **Custom domain errors**: verify your domain is claimed at dashboard.ngrok.com/domains.
 - **Connection quality red**: latency to the tunnel is over 500ms, usually because the nearest ngrok edge server is far from you geographically.

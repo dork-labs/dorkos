@@ -124,11 +124,15 @@ async function mockSpace(page: Page, arranged: Partial<Space> = {}) {
         space.slowRefusals -= 1;
         return route.fulfill({
           status: 429,
-          headers: { 'Retry-After': '2' },
-          json: {
-            code: 'COMMUNITY_SLOW_MODE',
-            error: 'This channel is in slow mode. Wait a moment, then post again.',
-          },
+          headers: { 'Retry-After': '2', 'content-type': 'application/problem+json' },
+          body: JSON.stringify({
+            type: 'urn:dorkos:problem:space_slow_mode',
+            title: 'This channel is in slow mode.',
+            status: 429,
+            code: 'space_slow_mode',
+            detail: 'This channel is in slow mode. Wait a moment, then post again.',
+            retryAfterMs: 2000,
+          }),
         });
       }
       return route.fulfill({

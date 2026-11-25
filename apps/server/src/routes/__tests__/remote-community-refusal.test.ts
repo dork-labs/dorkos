@@ -20,36 +20,33 @@ const community = 'remote_a' as CommunityRef;
 
 describe('communityRefusal', () => {
   it.each([
-    [new PinnedHttpError(400, 'STATE_CONFLICT'), 400, 'COMMUNITY_REJECTED'],
-    [new PinnedHttpError(401, 'UNAUTHENTICATED'), 403, 'COMMUNITY_ACCESS_DENIED'],
-    [new PinnedHttpError(403, 'FORBIDDEN'), 403, 'COMMUNITY_ACCESS_DENIED'],
-    [new PinnedHttpError(404, 'NOT_FOUND'), 404, 'COMMUNITY_NOT_FOUND'],
-    [new PinnedHttpError(409, 'STATE_CONFLICT'), 409, 'COMMUNITY_CONFLICT'],
-    [new PinnedHttpError(410, 'CURSOR_STALE'), 410, 'COMMUNITY_CURSOR_STALE'],
-    [new PinnedHttpError(410), 410, 'COMMUNITY_CURSOR_STALE'],
+    [new PinnedHttpError(400, 'STATE_CONFLICT'), 400, 'invalid_request'],
+    [new PinnedHttpError(401, 'UNAUTHENTICATED'), 403, 'forbidden'],
+    [new PinnedHttpError(403, 'FORBIDDEN'), 403, 'forbidden'],
+    [new PinnedHttpError(404, 'NOT_FOUND'), 404, 'not_found'],
+    // Changed since it was read: 412, as everywhere else (DOR-4979).
+    [new PinnedHttpError(409, 'STATE_CONFLICT'), 412, 'precondition_failed'],
+    [new PinnedHttpError(410, 'CURSOR_STALE'), 412, 'precondition_failed'],
+    [new PinnedHttpError(410), 412, 'precondition_failed'],
     // DOR-2334: a deleted community is neither a stale cursor nor a missing room.
-    [new PinnedHttpError(410, 'COMMUNITY_DELETED'), 410, 'COMMUNITY_DELETED'],
-    [new CommunityDeletedError(community, 'room-a'), 410, 'COMMUNITY_DELETED'],
+    [new PinnedHttpError(410, 'COMMUNITY_DELETED'), 410, 'space_deleted'],
+    [new CommunityDeletedError(community, 'room-a'), 410, 'space_deleted'],
     // DOR-2334: taken down by the host, which is not "archived" like the other 423s.
-    [new PinnedHttpError(423, 'COMMUNITY_TAKEN_DOWN'), 423, 'COMMUNITY_TAKEN_DOWN'],
-    [new CommunityTakenDownError(community, 'room-a'), 423, 'COMMUNITY_TAKEN_DOWN'],
-    [new PinnedHttpError(413, 'ATTACHMENT_TOO_LARGE'), 413, 'COMMUNITY_TOO_LARGE'],
-    [new PinnedHttpError(415, 'UNSUPPORTED_ATTACHMENT_TYPE'), 415, 'COMMUNITY_UNSUPPORTED_FILE'],
-    [new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'), 423, 'COMMUNITY_READ_ONLY'],
-    [new PinnedHttpError(429, 'RATE_LIMITED'), 429, 'COMMUNITY_LIMIT_REACHED'],
-    [new PinnedHttpError(422), 422, 'COMMUNITY_REJECTED'],
+    [new PinnedHttpError(423, 'COMMUNITY_TAKEN_DOWN'), 423, 'space_taken_down'],
+    [new CommunityTakenDownError(community, 'room-a'), 423, 'space_taken_down'],
+    [new PinnedHttpError(413, 'ATTACHMENT_TOO_LARGE'), 413, 'request_too_large'],
+    [new PinnedHttpError(415, 'UNSUPPORTED_ATTACHMENT_TYPE'), 415, 'unsupported_media_type'],
+    [new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'), 423, 'space_read_only'],
+    [new PinnedHttpError(429, 'RATE_LIMITED'), 429, 'rate_limited'],
+    [new PinnedHttpError(422), 422, 'invalid_request'],
     // DOR-2768: the space's moderation holds the post, and says which hold.
-    [new PinnedHttpError(403, 'COMMUNITY_MUTED'), 403, 'COMMUNITY_MUTED'],
-    [new PinnedHttpError(429, 'COMMUNITY_SLOW_MODE'), 429, 'COMMUNITY_SLOW_MODE'],
-    [new PinnedHttpError(403, 'COMMUNITY_RULES_NOT_ACCEPTED'), 403, 'COMMUNITY_RULES_NOT_ACCEPTED'],
-    [new PinnedHttpError(503, 'COMMUNITY_SUSPENDED'), 423, 'COMMUNITY_SUSPENDED'],
-    [new CommunityRoomNotFoundError(community, 'room-a'), 404, 'COMMUNITY_NOT_FOUND'],
-    [new StaleCommunityCursorError(community, 'room-a', 'stale'), 410, 'COMMUNITY_CURSOR_STALE'],
-    [
-      new CommunityUnsupportedError(community, 'roomAdmin', 'addMember'),
-      409,
-      'COMMUNITY_UNSUPPORTED',
-    ],
+    [new PinnedHttpError(403, 'COMMUNITY_MUTED'), 403, 'space_muted'],
+    [new PinnedHttpError(429, 'COMMUNITY_SLOW_MODE'), 429, 'space_slow_mode'],
+    [new PinnedHttpError(403, 'COMMUNITY_RULES_NOT_ACCEPTED'), 403, 'space_rules_not_accepted'],
+    [new PinnedHttpError(503, 'COMMUNITY_SUSPENDED'), 423, 'space_suspended'],
+    [new CommunityRoomNotFoundError(community, 'room-a'), 404, 'not_found'],
+    [new StaleCommunityCursorError(community, 'room-a', 'stale'), 412, 'precondition_failed'],
+    [new CommunityUnsupportedError(community, 'roomAdmin', 'addMember'), 409, 'space_unsupported'],
   ])('passes a refusal on in its status class: %s', (error, status, code) => {
     expect(communityRefusal(error)).toMatchObject({ status, code });
   });
@@ -72,24 +69,24 @@ describe('communityRefusal', () => {
     ],
     ['MEMBER_LIMIT_REACHED', 'This space is full. Ask its owner to make room.'],
     ['STORAGE_LIMIT_REACHED', 'This space is out of file space.'],
-  ] as const)('names the %s cap as a state, not a conflict or an outage', (code, error) => {
+  ] as const)('names the %s cap as a state, not a conflict or an outage', (code, detail) => {
     // Purpose: a Community answers a cap with 409 and its own code; fails if that reads as a
     // generic conflict ("refresh and try again") that no refresh can fix.
     expect(communityRefusal(new PinnedHttpError(409, code))).toEqual({
       status: 409,
-      code: 'COMMUNITY_LIMIT_REACHED',
-      error,
+      code: 'space_limit_reached',
+      detail,
     });
   });
 
   it('names the agent limit when adding an agent hits a 429', () => {
     expect(communityRefusal(new PinnedHttpError(429, 'RATE_LIMITED'), 'enroll-agent')).toEqual({
-      status: 429,
-      code: 'COMMUNITY_LIMIT_REACHED',
-      error: 'You’ve reached this space’s limit on active agents. Remove one to add another.',
+      status: 409,
+      code: 'space_limit_reached',
+      detail: 'You’ve reached this space’s limit on active agents. Remove one to add another.',
     });
-    expect(communityRefusal(new PinnedHttpError(429, 'RATE_LIMITED'))?.error).toBe(
-      'This space’s limit was reached. Try again later.'
+    expect(communityRefusal(new PinnedHttpError(429, 'RATE_LIMITED'))?.detail).toBe(
+      'This space is busy. Try again later.'
     );
   });
 
@@ -105,26 +102,28 @@ describe('communityRefusal', () => {
     // "archived" would send people to an owner who cannot lift it.
     expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_HELD'))).toEqual({
       status: 423,
-      code: 'COMMUNITY_HELD',
-      error:
-        'This space is on hold. You can read it, but no one can post. Its owner can still export it.',
+      code: 'space_on_hold',
+      detail: 'This space is on hold. You can read it, but no one can post.',
     });
   });
 
   it('tells an archived community apart from one being deleted', () => {
-    expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'))?.error).toBe(
+    expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'))?.detail).toBe(
       'This space is archived, so it’s read-only.'
     );
-    expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_DELETION_PENDING'))?.error).toBe(
+    expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_DELETION_PENDING'))?.detail).toBe(
       'This space is being deleted.'
     );
   });
 
   it('words a reply-on-a-reply and a closed community specifically', () => {
-    expect(communityRefusal(new PinnedHttpError(409, 'NESTED_THREAD'))?.error).toBe(
+    expect(communityRefusal(new PinnedHttpError(409, 'NESTED_THREAD'))?.code).toBe(
+      'reply_on_top_level_only'
+    );
+    expect(communityRefusal(new PinnedHttpError(409, 'NESTED_THREAD'))?.detail).toBe(
       'Replies can only go on a top-level message.'
     );
-    expect(communityRefusal(new PinnedHttpError(409, 'COMMUNITY_UNAVAILABLE'))?.error).toBe(
+    expect(communityRefusal(new PinnedHttpError(409, 'COMMUNITY_UNAVAILABLE'))?.detail).toBe(
       'This space isn’t open right now.'
     );
   });

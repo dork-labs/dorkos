@@ -315,7 +315,55 @@
           "signin_unreachable",
           "spend_limit_reached",
           "schedule_package_owned",
-          "past_due"
+          "past_due",
+          "owner_changed",
+          "pairing_busy",
+          "reconnect_required",
+          "space_choice_required",
+          "space_name_not_found",
+          "space_server_outdated",
+          "space_deleted",
+          "space_taken_down",
+          "space_suspended",
+          "space_on_hold",
+          "space_read_only",
+          "space_not_open",
+          "space_muted",
+          "space_slow_mode",
+          "space_rules_not_accepted",
+          "space_limit_reached",
+          "space_unsupported",
+          "space_name_taken",
+          "report_not_allowed",
+          "reply_on_top_level_only",
+          "agent_not_taking_dms",
+          "cloud_not_linked",
+          "hub_linked_by_cloud",
+          "runtime_busy",
+          "credits_off",
+          "move_pending",
+          "length_required",
+          "disk_full",
+          "disk_space_unknown",
+          "auth_required_for_exposure",
+          "tunnel_running",
+          "tunnel_token_missing",
+          "tunnel_port_mismatch",
+          "computer_waking",
+          "computer_refused",
+          "computer_offline",
+          "computer_timed_out",
+          "needs_update",
+          "link_code_refused",
+          "already_linked",
+          "computer_limit_reached",
+          "not_acceptable",
+          "computer_unsupported",
+          "computer_disabled",
+          "computer_sign_in_required",
+          "computer_control_lost",
+          "computer_cleanup_uncertain",
+          "computer_setup_failed"
         ],
         "description": "The machine-readable failure code. Permanent once published."
       },
@@ -14631,53 +14679,6 @@
           "deniedAt"
         ]
       },
-      "CloudOwnerOnlyError": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "description": "One plain sentence saying who may do this."
-          },
-          "code": {
-            "type": "string",
-            "enum": [
-              "person_only",
-              "owner_only"
-            ]
-          }
-        },
-        "required": [
-          "error",
-          "code"
-        ]
-      },
-      "CloudOwnerOnlyRefusal": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              false
-            ]
-          },
-          "code": {
-            "type": "string",
-            "enum": [
-              "person_only",
-              "owner_only"
-            ]
-          },
-          "message": {
-            "type": "string",
-            "description": "One plain sentence saying who may do this."
-          }
-        },
-        "required": [
-          "ok",
-          "code",
-          "message"
-        ]
-      },
       "CloudOffersResponse": {
         "anyOf": [
           {
@@ -28002,181 +28003,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -28295,181 +28156,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -28590,181 +28311,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -28885,181 +28466,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -29180,181 +28621,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -29418,181 +28719,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -29665,181 +28826,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -29897,181 +28918,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -30143,181 +29024,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -30508,181 +29249,41 @@
             }
           },
           "400": {
-            "description": "Invalid request, disabled experiment or unsupported host",
+            "description": "No app window (`invalid_request`), a body that fails its checks, the experiment off (`computer_disabled`), an unsupported host (`computer_unsupported`), or a sign-in needed inside it (`computer_sign_in_required`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "The caller is not the account owner",
+            "description": "The caller is not the account owner (`person_only`, `owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Control lost or cleanup unconfirmed",
+            "description": "Control lost (`computer_control_lost`) or cleanup unconfirmed (`computer_cleanup_uncertain`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "Computer unavailable, not ready or setup failed",
+            "description": "Computer unavailable or not ready (`temporarily_unavailable`), or setup failed (`computer_setup_failed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "unsupported",
-                            "disabled",
-                            "setup-failed",
-                            "not-ready",
-                            "sign-in-required",
-                            "control-lost",
-                            "cleanup-uncertain",
-                            "unavailable"
-                          ]
-                        },
-                        {
-                          "type": "string",
-                          "enum": [
-                            "invalid-client",
-                            "invalid-input",
-                            "not-a-person",
-                            "not-the-owner"
-                          ]
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40021,29 +38622,11 @@
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40051,27 +38634,9 @@
           "404": {
             "description": "Not a hub, no such linked computer, or no such chat or agent on it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40155,57 +38720,21 @@
             }
           },
           "400": {
-            "description": "Not a request the relay carries",
+            "description": "Not a request the relay carries (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40213,111 +38742,79 @@
           "404": {
             "description": "Not a hub, no such linked computer, or no such chat or agent on it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The computer could not do that right now (`conflict`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "501": {
-            "description": "The computer needs an update for this (`code: needs_update`)",
+            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "The computer turned the request away (`code: computer_refused`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`code: computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40374,57 +38871,21 @@
             }
           },
           "400": {
-            "description": "Not a request the relay carries",
+            "description": "Not a request the relay carries (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40432,139 +38893,89 @@
           "404": {
             "description": "Not a hub, no such linked computer, or no such chat or agent on it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "406": {
-            "description": "The request does not accept `text/event-stream`",
+            "description": "The request does not accept `text/event-stream` (`not_acceptable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The computer could not do that right now (`conflict`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "501": {
-            "description": "The computer needs an update for this (`code: needs_update`)",
+            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "The computer turned the request away (`code: computer_refused`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`code: computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40659,57 +39070,21 @@
             }
           },
           "400": {
-            "description": "Not a request the relay carries",
+            "description": "Not a request the relay carries (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40717,111 +39092,79 @@
           "404": {
             "description": "Not a hub, no such linked computer, or no such chat or agent on it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The computer could not do that right now (`conflict`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "501": {
-            "description": "The computer needs an update for this (`code: needs_update`)",
+            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "The computer turned the request away (`code: computer_refused`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`code: computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40885,57 +39228,21 @@
             }
           },
           "400": {
-            "description": "Not a request the relay carries",
+            "description": "Not a request the relay carries (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -40943,111 +39250,79 @@
           "404": {
             "description": "Not a hub, no such linked computer, or no such chat or agent on it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The computer could not do that right now (`conflict`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "501": {
-            "description": "The computer needs an update for this (`code: needs_update`)",
+            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "The computer turned the request away (`code: computer_refused`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`code: computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -41129,57 +39404,21 @@
             }
           },
           "400": {
-            "description": "Not a request the relay carries",
+            "description": "Not a request the relay carries (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -41187,111 +39426,79 @@
           "404": {
             "description": "Not a hub, no such linked computer, or no such chat or agent on it",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The computer could not do that right now (`conflict`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "501": {
-            "description": "The computer needs an update for this (`code: needs_update`)",
+            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "502": {
-            "description": "The computer turned the request away (`code: computer_refused`)",
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`code: computer_waking`).",
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "feature": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -41331,67 +39538,31 @@
             }
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Not a hub",
+            "description": "Not a hub (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The hub is not serving yet",
+            "description": "The hub is not serving yet (`temporarily_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -41422,45 +39593,21 @@
             "description": "Unlinked"
           },
           "403": {
-            "description": "Not the person's own browser sign-in: an agent or an API key never reaches these routes",
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Not a hub, or no such linked computer",
+            "description": "Not a hub, or no such linked computer (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -41588,177 +39735,81 @@
             }
           },
           "400": {
-            "description": "Not a link request",
+            "description": "Not a link request (`invalid_request`, `malformed_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "401": {
-            "description": "The code or the signature did not check out",
+            "description": "The code or the signature did not check out (`link_code_refused`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "A browser sent it",
+            "description": "A browser sent it (`forbidden`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Not a hub",
+            "description": "Not a hub (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "That computer id is already linked under another key, or the hub cannot link another",
+            "description": "That computer id is already linked under another key (`already_linked`), or the hub cannot link another (`computer_limit_reached`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "413": {
-            "description": "The body is over 4 KB",
+            "description": "The body is over 4 KB (`request_too_large`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "429": {
-            "description": "Too many wrong codes lately, from anywhere",
+            "description": "Too many wrong codes lately, from anywhere (`rate_limited`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "503": {
-            "description": "The hub is not serving, or has no signing key yet",
+            "description": "The hub is not serving, or has no signing key yet (`temporarily_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61364,11 +59415,21 @@
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyError"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This DorkOS is a hub, linked by DorkOS Cloud (`hub_linked_by_cloud`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61395,11 +59456,11 @@
             }
           },
           "502": {
-            "description": "Could not reach the DorkOS cloud",
+            "description": "The DorkOS account could not be reached (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61486,6 +59547,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "cloud.getLinkStatus"
@@ -61572,11 +59636,21 @@
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyError"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This DorkOS is a hub, linked by DorkOS Cloud (`hub_linked_by_cloud`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61611,21 +59685,31 @@
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyError"
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This DorkOS is a hub, linked by DorkOS Cloud (`hub_linked_by_cloud`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "500": {
-            "description": "Unlink failed",
+            "description": "Unlinking failed on this computer (`internal_error`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61672,6 +59756,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
         "operationId": "cloud.getStatus"
@@ -61718,11 +59805,11 @@
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61750,11 +59837,11 @@
             }
           },
           "502": {
-            "description": "Could not reach the DorkOS account",
+            "description": "The DorkOS account could not be reached (`upstream_unavailable`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61812,61 +59899,31 @@
             }
           },
           "400": {
-            "description": "A checkout that names no offer",
+            "description": "A checkout that names no offer (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "message"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Not a billing page this server opens",
+            "description": "Not a billing page this server opens (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "message"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61915,11 +59972,11 @@
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -61968,11 +60025,11 @@
             }
           },
           "403": {
-            "description": "Only the owner of this DorkOS may do this: never an agent or a caller holding an approval token, and with login on never an API key or another signed-in account.",
+            "description": "Only the owner of this DorkOS may do this: never an agent (`person_only`), and with login on never an API key or another signed-in account (`owner_only`).",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CloudOwnerOnlyRefusal"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -111529,7 +109586,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111840,7 +109904,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111906,7 +109977,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -111980,7 +110058,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112067,7 +110152,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112131,7 +110223,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112195,7 +110294,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112271,7 +110377,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112335,7 +110448,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -112474,7 +110594,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -113054,7 +111181,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -113118,7 +111252,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -113182,7 +111323,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",

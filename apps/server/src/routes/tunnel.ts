@@ -4,8 +4,8 @@
  * @module routes/tunnel
  */
 import { createHash } from 'node:crypto';
-import { Hono, type MiddlewareHandler } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -19,15 +19,11 @@ import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import {
   canExpose,
-  AUTH_REQUIRED_FOR_EXPOSURE,
   EXPOSURE_REQUIRES_LOGIN_MESSAGE,
 } from '../services/core/auth/exposure-guard.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
-import {
-  OPERATOR_ONLY_CONFIG_CODE,
-  OPERATOR_ONLY_CONFIG_ERROR,
-} from '../services/core/operator/config-write-policy.js';
+import { OPERATOR_ONLY_CONFIG_ERROR } from '../services/core/operator/config-write-policy.js';
 import {
   readCallerAuthority,
   refuseFrontDoorChange,
@@ -37,9 +33,6 @@ import { logger, logError } from '../lib/logger.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 
 const router = new Hono<ApiEnv>();
-
-/** Refusal code when an agent reads the tunnel's state. */
-export const TUNNEL_STATUS_NOT_FOR_AGENTS = 'TUNNEL_STATUS_NOT_FOR_AGENTS';
 
 /**
  * The read bar (DOR-3650): the status carries this machine's public address.
@@ -51,7 +44,7 @@ export const TUNNEL_STATUS_NOT_FOR_AGENTS = 'TUNNEL_STATUS_NOT_FOR_AGENTS';
  */
 const refuseAgentRead: MiddlewareHandler<ApiEnv> = async (c, next) =>
   presentsAgentIdentity(honoRequestFacts(c))
-    ? c.json({ error: 'Agents can’t read Remote Access.', code: TUNNEL_STATUS_NOT_FOR_AGENTS }, 403)
+    ? problem(c, 'person_only', { detail: 'Agents can’t read remote access.' })
     : next();
 
 /** GET /api/tunnel/status — on-demand status check. */
@@ -84,6 +77,17 @@ router.get('/stream', refuseAgentRead, (c) =>
   })
 );
 
+/**
+ * The `409 tunnel_running` for a tunnel already open, with its address in
+ * `url`: not a failure, the answer converging on a tunnel that is up.
+ */
+function alreadyRunning(c: Context<ApiEnv>): Response {
+  return problem(c, 'tunnel_running', {
+    detail: 'Remote access is already on.',
+    extensions: { url: tunnelManager.status.url ?? null },
+  });
+}
+
 router.post('/start', async (c) => {
   // Opening a tunnel publishes this machine, and `tunnel.enabled` is one of the
   // operator-only settings in `config-write-policy.ts` — which this route then
@@ -108,38 +112,30 @@ router.post('/start', async (c) => {
   const caller = honoRequestFacts(c);
   const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'Remote Access');
   if (cookieRefusal) {
-    return c.json(
-      { error: cookieRefusal.error, code: cookieRefusal.code },
-      cookieRefusal.status as ContentfulStatusCode
-    );
+    return problem(c, 'person_only', { detail: `${cookieRefusal.error}.` });
   }
   if (!trustedCaller(readCallerAuthority(caller))) {
     logger.warn('[Tunnel] Blocked start — an agent may not publish this machine');
-    return c.json({ error: OPERATOR_ONLY_CONFIG_ERROR, code: OPERATOR_ONLY_CONFIG_CODE }, 403);
+    return problem(c, 'person_only', { detail: `${OPERATOR_ONLY_CONFIG_ERROR}.` });
   }
   // The front-door bar (DOR-2969): only the owner, at this computer, publishes it.
   const frontDoor = refuseFrontDoorChange(caller, 'remote access');
-  if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
+  if (frontDoor) return problem(c, 'operator_only', { detail: frontDoor.error });
 
   // Return 409 if a tunnel is already open. Asked of the manager rather than of
   // `status.connected`, which goes false for as long as ngrok is reconnecting
   // while the listener is still open — reading it turned a momentary
   // disconnect into `start()` throwing 'Tunnel is already running', answered as
   // a 500 (DOR-1738).
-  if (tunnelManager.isRunning) {
-    return c.json({ error: 'Tunnel is already running', url: tunnelManager.status.url }, 409);
-  }
+  if (tunnelManager.isRunning) return alreadyRunning(c);
 
   // Exposure guard (task 1.3): never open a public tunnel without a real login.
   // Allowed only when an owner account exists: every request through the tunnel
   // is another device, which always signs in as it (ADR 261015-125850). The
-  // AUTH_REQUIRED_FOR_EXPOSURE code routes the client into owner-account creation.
+  // `auth_required_for_exposure` code routes the client into owner-account creation.
   if (!canExpose()) {
     logger.warn('[Tunnel] Blocked start — exposing DorkOS requires an owner account');
-    return c.json(
-      { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
-      409
-    );
+    return problem(c, 'auth_required_for_exposure', { detail: EXPOSURE_REQUIRES_LOGIN_MESSAGE });
   }
 
   const tunnelConfig = configManager.get('tunnel');
@@ -152,7 +148,7 @@ router.post('/start', async (c) => {
   });
 
   if (!config.authtoken) {
-    return c.json({ error: 'No ngrok auth token configured' }, 400);
+    return problem(c, 'tunnel_token_missing', { detail: 'Add an ngrok auth token first.' });
   }
 
   return runFrontDoorWrite(c, {
@@ -169,18 +165,14 @@ router.post('/start', async (c) => {
     subject: 'remote access',
     run: async () => {
       if (JSON.stringify(configManager.get('tunnel')) !== JSON.stringify(tunnelConfig)) {
-        return c.json(
-          { error: 'Tunnel settings changed. Try again.', code: 'TUNNEL_SETTINGS_CHANGED' },
-          409
-        );
+        return problem(c, 'precondition_failed', { detail: 'Tunnel settings changed. Try again.' });
       }
       if (!canExpose()) {
-        return c.json(
-          { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
-          409
-        );
+        return problem(c, 'auth_required_for_exposure', {
+          detail: EXPOSURE_REQUIRES_LOGIN_MESSAGE,
+        });
       }
-      if (tunnelManager.isRunning) return c.json({ error: 'Tunnel is already running' }, 409);
+      if (tunnelManager.isRunning) return alreadyRunning(c);
       try {
         await tunnelManager.start(config);
 
@@ -195,14 +187,14 @@ router.post('/start', async (c) => {
         // with a stable code the app and scripts can act on (DOR-4263).
         if (err instanceof TunnelPortMismatchError) {
           logger.warn('[Tunnel] Refused start — TUNNEL_PORT points past Remote Access');
-          return c.json({ error: err.message, code: err.code }, 409);
+          return problem(c, 'tunnel_port_mismatch', {
+            detail: 'Remote access can’t reach that port. Unset TUNNEL_PORT, or fix it.',
+          });
         }
-        // Say what went wrong somewhere a person can read it. The 500 body carries
-        // one sentence; whoever is debugging raised the log level for the stack, and
-        // before DOR-1738 found nothing there at all (GitHub #1458).
+        // Say what went wrong in the log, where a person debugging reads it: the
+        // answer carries one fixed sentence, never the error's own text (GitHub #1458).
         logger.error('[Tunnel] Failed to start', logError(err));
-        const message = err instanceof Error ? err.message : 'Failed to start tunnel';
-        return c.json({ error: message }, 500);
+        return problem(c, 'internal_error', { detail: 'Couldn’t open your link. Try again.' });
       }
     },
   });
@@ -235,8 +227,9 @@ router.post('/stop', async (c) => {
     return c.json({ ok: true });
   } catch (err) {
     logger.error('[Tunnel] Failed to stop', logError(err));
-    const message = err instanceof Error ? err.message : 'Failed to stop tunnel';
-    return c.json({ error: message }, 500);
+    return problem(c, 'internal_error', {
+      detail: 'Couldn’t close your link. DorkOS can’t tell if it’s still on.',
+    });
   }
 });
 

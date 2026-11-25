@@ -157,13 +157,13 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
   });
 
   // Security S5 on DOR-4355 M3: a save read as adding nothing must still add nothing when it lands.
-  it('answers 409 for a free save judged before the person took a channel away', async () => {
+  it('answers 412 for a free save judged before the person took a channel away', async () => {
     const url = '/api/community-connections/northwind/answer-in';
     // Read before the person's removal landed: #help was still listed.
     policy.getAnswerIn.mockResolvedValueOnce(['help']);
     const res = await owner.call('put', url, 'own-tunnel').send({ answerIn: ['#Help'] });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('ANSWER_IN_CHANGED');
+    expect(res.status).toBe(412);
+    expect(res.body.code).toBe('precondition_failed');
     expect(wake.answerIn).toEqual([]);
   });
 });

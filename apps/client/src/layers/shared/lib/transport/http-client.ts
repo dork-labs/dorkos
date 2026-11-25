@@ -107,7 +107,7 @@ async function request(
       setSignInWith(named === 'dorkos' || named === 'wifi-code' ? named : 'password');
       setAuthRequired(true);
     }
-    if (res.status === 409 && reading.code === 'COMMUNITY_OWNER_CHANGED') {
+    if (res.status === 412 && reading.code === 'owner_changed') {
       invalidateCommunityAuthority();
     }
     throw err;

@@ -8,6 +8,7 @@
  * contract package's own synthetic fixtures, so no plan name or price is ever
  * written down here.
  */
+import { problemBody } from '@dorkos/http-kit';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -509,11 +510,9 @@ describe('billing-page routes', () => {
     );
 
     describe('only the person may ask', () => {
-      const refused = {
-        ok: false,
-        code: 'person_only',
-        message: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
-      };
+      const refused = problemBody('person_only', {
+        detail: 'Only you can delete your DorkOS account, from the DorkOS app while signed in.',
+      });
 
       it('refuses a caller that names itself an agent, and sends nothing', async () => {
         const seen = fakeAccount({

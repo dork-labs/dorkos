@@ -47,7 +47,7 @@ export interface RemoteAccessTransport {
   /**
    * Let devices on this network in, or stop them. Takes effect at once, no
    * restart. Turning it on needs login first: a refusal carries
-   * `AUTH_REQUIRED_FOR_EXPOSURE`, the same code the tunnel uses.
+   * `auth_required_for_exposure`.
    *
    * @param enabled - `true` to open the network listener, `false` to close it.
    */
