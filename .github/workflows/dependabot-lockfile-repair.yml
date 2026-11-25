@@ -227,12 +227,12 @@ jobs:
       # refuses a PR that changes it.
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          version: 10.33.0
+          version: 10.34.9
 
       - name: Refuse a PR that changes the pinned pnpm
         run: |
           set -euo pipefail
-          want="pnpm@10.33.0"
+          want="pnpm@10.34.9"
           got=$(jq -r '.packageManager // ""' package.json)
           if [ "$got" != "$want" ]; then
             echo "::error::package.json asks for '${got}', not ${want}; refusing to run pnpm on it. Update the pin in this workflow on main first."

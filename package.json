@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.141.0",
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.34.9",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "dev": "dotenv -- turbo dev --filter=!@dorkos/desktop --filter=!@dorkos/community --filter=!@dorkos/design-system",
