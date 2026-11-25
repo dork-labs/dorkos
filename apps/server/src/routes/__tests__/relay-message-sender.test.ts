@@ -27,6 +27,7 @@ import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/
 import { handleAgentMessage } from '../../../../../packages/relay/src/adapters/claude-code/agent-handler.js';
 import { initAuth } from '../../services/core/auth/index.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { markIngress, type IngressKind } from '../../services/core/remote/ingress-mark.js';
 import { countWhileRunning } from '../../services/core/turn-power/live-outsider-turns.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
@@ -36,6 +37,7 @@ import { relayRoutesListener } from './relay-routes-listener.js';
 const target = swappableServer();
 const SUBJECT = 'relay.agent.default.scout';
 const PORTER = '/made-up/agents/porter';
+const SCOUT = '/made-up/agents/scout';
 const PORTER_SUBJECT = 'relay.agent.default.porter';
 const NOW = Date.UTC(2026, 10, 24, 12, 0, 0);
 const ZW = '​';
@@ -63,6 +65,15 @@ function mount(): void {
     {
       relayCore,
       agentSubjectOf: (agentPath) => (agentPath === PORTER ? PORTER_SUBJECT : undefined),
+      // Mesh knows both addresses as agents, as it does in production (DOR-5200).
+      chatMesh: () =>
+        ({
+          listWithPaths: () => [
+            { id: 'scout', name: 'scout', projectPath: SCOUT },
+            { id: 'porter', name: 'porter', projectPath: PORTER },
+          ],
+          getProjectPath: (id: string) => ({ scout: SCOUT, porter: PORTER })[id],
+        }) as never,
     },
     {
       before: async (c, next) => {
@@ -156,6 +167,8 @@ beforeAll(async () => {
   initConfigManager(tmpDir);
   const db = createDb(path.join(tmpDir, 'auth.db'));
   runMigrations(db);
+  // The chat place rule asks the registry whether a subject names a chat it holds (DOR-5200).
+  runtimeRegistry.setDb(db);
   const auth = initAuth(db, tmpDir);
   const signUp = await auth.api.signUpEmail({
     body: { email: 'owner' + '@' + 'dork.test', password: 'a-long-password-1', name: 'Owner' },

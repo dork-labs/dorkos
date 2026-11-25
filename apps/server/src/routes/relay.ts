@@ -6,7 +6,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
-import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
+import type { AgentSessionStoreLike, RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
@@ -44,6 +44,7 @@ import {
   type RelayPublishDeps,
 } from './relay-delivery-receipts.js';
 import { relayMessageSender, type AgentSubjectLookup } from './relay-message-sender.js';
+import { relayChatPlaceRefusal, type RelayChatMesh } from './relay-chat-place.js';
 
 /** Allowed subject prefixes for SSE subscription patterns. */
 const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
@@ -196,6 +197,10 @@ export interface RelayRouteDeps extends RelayPublishDeps {
   isRoomSession: (sessionId: string) => boolean;
   /** The registry's relay address for the agent at a home, so its message goes from it (DOR-5151). */
   agentSubjectOf?: AgentSubjectLookup;
+  /** Mesh, read at request time, so an agent's message into a chat meets the chat route's place rule (DOR-5200). */
+  chatMesh?: () => RelayChatMesh | undefined;
+  /** The relay adapter's conversation map, so the place rule asks of the chat a turn would run in. */
+  agentSessions?: () => AgentSessionStoreLike | undefined;
 }
 
 /** Why a message addressed to a room's own conversation is refused. */
@@ -269,8 +274,17 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
       return problem(c, 'room_conversation', { detail: ROOM_SESSION_REFUSAL });
     }
 
+    // DOR-5200: a verified agent's message into a chat follows the chat route's place rule.
+    const facts = honoRequestFacts(c);
+    const placeRefused = await relayChatPlaceRefusal(facts, result.data, {
+      mesh: deps.chatMesh?.(),
+      agentSessions: deps.agentSessions?.(),
+    });
+    if (placeRefused)
+      return problem(c, 'desk_not_own', { detail: placeRefused.error, status: 403 });
+
     // DOR-5151: the server sets the sender, by the chat route's own reading of the caller.
-    const sent = relayMessageSender(honoRequestFacts(c), result.data, deps.agentSubjectOf);
+    const sent = relayMessageSender(facts, result.data, deps.agentSubjectOf);
     if ('refused' in sent) return problem(c, 'person_only', { detail: sent.refused.detail });
     return publishRelayMessage(c, deps, { ...result.data, ...sent });
   });

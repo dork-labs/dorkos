@@ -244,6 +244,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
         roomStore.sessionLedger.bindingForSession(sessionId) !== undefined,
       // Read at request time, as an agent registers after these routes mount.
       agentSubjectOf: (agentPath) => refs.meshCore?.getSubjectByPath(agentPath)?.subject,
+      chatMesh: () => refs.meshCore,
+      agentSessions: () => refs.adapterManager?.getAgentSessionStore(),
     };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).

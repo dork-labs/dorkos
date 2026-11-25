@@ -20,7 +20,11 @@ _openapi:
           `relay.human.*` sender is refused with `person_required`, except a
           verified agent, which is sent from its own address; an app window
           without a session is asked for the password instead
-          (`person_session_required`). Reserved server senders, destinations,
+          (`person_session_required`). A verified agent sending to a chat's own
+          address (`relay.agent.<runtime>.<sessionId>`) meets the same place
+          rule as `POST /api/sessions/{id}/messages`: its own chat, or a chat
+          about a folder no agent owns, is delivered, and another agent's chat
+          is refused with `DESK_NOT_OWN`. Reserved server senders, destinations,
           and reply addresses are refused.
 
 
