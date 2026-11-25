@@ -32,7 +32,10 @@ on:
 permissions:
   contents: read
   actions: read
-  pull-requests: read
+  # A comment on a pull request needs pull-requests write; issues write alone
+  # gets "Resource not accessible by integration" (403) on a PR number. The
+  # job runs main's copy only (workflow_run, push to main).
+  pull-requests: write
   issues: write
 
 concurrency:
