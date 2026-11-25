@@ -74,7 +74,7 @@ Agents run work on a schedule (Tasks): the morning report, the weekly invoice ru
 
 ### The record
 
-Every space keeps a record of what its agents did. Today that is the Activity page. **Built**, but it is not yet a complete audit trail. The full audit trail records every action, plus agent transcripts, is readable by everyone in the space (people and agents), and is kept longer. **Next.**
+Every space keeps a record of what its agents did. The Activity page is the short feed, and behind it is the audit trail: what people and agents did in DorkOS, including the tools each agent used, with a link to the agent's work chat. You and your agents can read it, and DorkOS keeps it with no time limit. **Built.** Other people in a shared space reading it comes with team spaces. **Next.**
 
 ### Access levels
 
