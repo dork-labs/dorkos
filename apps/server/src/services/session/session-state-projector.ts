@@ -49,6 +49,7 @@ import {
 import { withToolApprovalCode } from '../core/approvals/model/tool-approval-binding.js';
 import { listPendingInteractions, pendingInteractionEntry } from './pending-interactions.js';
 import { coldStatus, mergeBaseContextUsage } from './projector/cold-status.js';
+import { fanOutStatusChange, type ProjectorStatusUpdate } from './projector/status-change.js';
 import { RunningTaskDetails, staleUnlessLive } from './projector/running-tasks.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
@@ -282,67 +283,21 @@ interface TrackedInteraction {
  */
 type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
 
-/**
- * A lifecycle-bearing status update fanned out to global listeners (the
- * session-list broadcaster turns these into `session_status` events on
- * `/api/events`, which drive the sidebar's liveness indicators).
- */
-export interface ProjectorStatusUpdate {
-  /** The id the projector is CURRENTLY registered under (canonical post-rekey). */
-  sessionId: string;
-  /** Working directory of the session, when known — lets clients group liveness per agent. */
-  cwd: string | undefined;
-  /**
-   * On a rekey re-announce only: the request UUID this projector streamed
-   * under before the canonical id resolved. Listeners must retire any state
-   * held under it — pre-rekey transitions fanned out under that id, and no
-   * removal event will ever follow for it.
-   */
-  retiredSessionId?: string;
-  /** A copy of the full projected status. */
-  status: SessionStatus;
-}
-
-/** Listener invoked whenever any projector's `lifecycle` transitions. */
-type StatusChangeListener = (update: ProjectorStatusUpdate) => void;
-
-/** Global lifecycle-transition listeners (registry-level, not per-projector). */
-const statusChangeListeners = new Set<StatusChangeListener>();
-
-/**
- * Register a listener invoked whenever ANY session's projected `lifecycle`
- * transitions (idle/streaming/blocked/error/interrupted). Notification is
- * lifecycle-gated deliberately: per-chunk `status_change` deltas (output-token
- * counts) do NOT fan out, so listeners see only the infrequent transitions the
- * sidebar actually renders.
- *
- * @param listener - Receives the projector's current id, cwd (when known), and status.
- * @returns Unsubscribe function.
- */
-export function onProjectorStatusChange(listener: StatusChangeListener): () => void {
-  statusChangeListeners.add(listener);
-  return () => statusChangeListeners.delete(listener);
-}
+export { onProjectorStatusChange, type ProjectorStatusUpdate } from './projector/status-change.js';
 
 /** Fan a projector's current status to all global listeners (throw-isolated). */
-function notifyStatusChange(projector: SessionStateProjector, retiredSessionId?: string): void {
-  if (statusChangeListeners.size === 0) return;
-  const update: ProjectorStatusUpdate = {
+function notifyStatusChange(
+  projector: SessionStateProjector,
+  retiredSessionId?: string,
+  turnRef?: number
+): void {
+  fanOutStatusChange(() => ({
     sessionId: projector.sessionId,
     cwd: projector.cwd,
     ...(retiredSessionId !== undefined && { retiredSessionId }),
+    ...(turnRef !== undefined && { turnRef }),
     status: projector.getStatus(),
-  };
-  for (const listener of statusChangeListeners) {
-    try {
-      listener(update);
-    } catch (err) {
-      logger.warn('[SessionStateProjector] status-change listener threw', {
-        sessionId: update.sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  }));
 }
 
 /**
@@ -673,6 +628,8 @@ export class SessionStateProjector {
     const event = guardEventSize({ ...raw, seq: ++this.counter } as SessionEvent);
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
+    // The turn this event belongs to, read before a `turn_end` closes it.
+    const turnRef = this.inProgressTurn?.[0]?.seq;
     const activityBefore = this.status.activity;
     const limitSinceBefore = this.status.limit?.since;
     // Capture the completing turn BEFORE project() clears inProgressTurn, so a
@@ -710,7 +667,7 @@ export class SessionStateProjector {
     // 3. A NEW activity — throttled, because a chatty turn starts tools far
     //    faster than anybody can read them.
     if (this.status.lifecycle !== lifecycleBefore) {
-      this.announceNow();
+      this.announceNow(turnRef);
     } else if (activityBefore !== undefined && this.status.activity === undefined) {
       this.announceActivityNow();
     } else if (this.status.activity !== activityBefore) {
@@ -737,10 +694,12 @@ export class SessionStateProjector {
    * rate-limit tool churn, and a lifecycle transition is not tool churn: charging
    * it against the same budget delayed the FIRST tool of every turn by the full
    * window, because `turn_start` had just spent it.
+   *
+   * @param turnRef - The turn the transition belongs to (see `ProjectorStatusUpdate.turnRef`).
    */
-  private announceNow(): void {
+  private announceNow(turnRef?: number): void {
     this.cancelActivityFlush();
-    notifyStatusChange(this);
+    notifyStatusChange(this, undefined, turnRef);
   }
 
   /** Announce an activity change now, and re-arm the throttle from this moment. */

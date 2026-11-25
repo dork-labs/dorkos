@@ -23,6 +23,7 @@ import {
   resumeChatQueue,
 } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
+import { startRunEffects } from '../../services/runs/index.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -118,6 +119,12 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     PORT,
     docDeliveryRunner,
   } = built;
+
+  // The outbox's worker, first: the follow-ups runs saved are carried out from
+  // here on, whatever below throws, and before any chat's queue resumes (spec
+  // `turns-survive-restarts` §7.3). Until it runs, the "finished" emitter
+  // tells every turn itself.
+  startRunEffects();
 
   // A hub reads who it belongs to and refuses everybody until it serves them
   // (DOR-2934). The server is listening, so Cloud's health check answers

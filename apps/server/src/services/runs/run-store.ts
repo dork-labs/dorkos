@@ -34,6 +34,9 @@ import {
   lt,
   max,
   ne,
+  notInArray,
+  or,
+  sql,
   turnRuns,
   LIVE_TURN_RUN_STATUSES,
   type Db,
@@ -116,6 +119,21 @@ export interface TurnRun {
   endedAt: string | null;
   /** When recovery decided what follows this run; empty until it has. */
   recoveryDecidedAt: string | null;
+  settledAt: string | null;
+}
+
+/**
+ * Whether a run's ending waits on recovery before anything may follow it: a
+ * `process_died` or `shutdown` ending recovery has not decided yet (§7.1). Such
+ * a run stays `ended`, so the boot that decides it can still add the effects
+ * of its decision (§7.3, step 4).
+ *
+ * @param run - An `ended` run.
+ */
+export function isUndecided(run: Pick<TurnRun, 'ending' | 'recoveryDecidedAt'>): boolean {
+  return (
+    (run.ending === 'process_died' || run.ending === 'shutdown') && run.recoveryDecidedAt === null
+  );
 }
 
 /** Thrown for a status change the transition table does not hold. */
@@ -238,6 +256,7 @@ function toRun(row: TurnRunRow): TurnRun {
     deliveredAt: row.deliveredAt,
     endedAt: row.endedAt,
     recoveryDecidedAt: row.recoveryDecidedAt,
+    settledAt: row.settledAt,
   };
 }
 
@@ -265,6 +284,13 @@ export interface RunStoreOptions {
    * that failed left it live); absent, every run this boot owns counts as held.
    */
   ownerHolds?: (runId: string) => boolean;
+  /**
+   * Called inside the transaction of every move to `ended`, with the run as
+   * stored after the move: where the run's follow-up effects are written, so
+   * they commit or roll back with the ending that causes them (§6.1,
+   * "Writing"). A throw rolls the move back.
+   */
+  onEnded?: (run: TurnRun) => void;
 }
 
 /** The run record over the machine store's `turn_runs` table. */
@@ -565,14 +591,46 @@ export class RunStore {
    */
   move(run: TurnRun, to: RunStatus, patch: RunPatch = {}): TurnRun {
     if (!canTransition(run.status, to)) throw new IllegalRunTransitionError(run.id, run.status, to);
-    const changed = this.db
-      .update(turnRuns)
-      .set({ status: to, ...patchColumns(patch) })
-      .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, run.status)))
-      .run().changes;
-    if (changed === 0) throw new IllegalRunTransitionError(run.id, run.status, to);
-    if (to !== 'queued' && this.heldWords.delete(run.id)) this.dropFrames.at(-1)?.push(run.id);
-    return this.get(run.id)!;
+    return this.transaction(() => {
+      const changed = this.db
+        .update(turnRuns)
+        .set({ status: to, ...patchColumns(patch) })
+        .where(and(eq(turnRuns.id, run.id), eq(turnRuns.status, run.status)))
+        .run().changes;
+      if (changed === 0) throw new IllegalRunTransitionError(run.id, run.status, to);
+      if (to !== 'queued' && this.heldWords.delete(run.id)) this.dropFrames.at(-1)?.push(run.id);
+      const moved = this.get(run.id)!;
+      if (to === 'ended') this.opts.onEnded?.(moved);
+      return moved;
+    });
+  }
+
+  /**
+   * `ended` runs that are ready to settle (transition 13): their ending needs
+   * no recovery (see {@link isUndecided}) and none of their effects is still
+   * `pending` or `leased`. Oldest first.
+   *
+   * @param limit - At most this many.
+   */
+  endedRunsToSettle(limit: number): TurnRun[] {
+    return this.db
+      .select()
+      .from(turnRuns)
+      .where(
+        and(
+          eq(turnRuns.status, 'ended'),
+          or(
+            notInArray(turnRuns.ending, ['process_died', 'shutdown']),
+            isNotNull(turnRuns.recoveryDecidedAt)
+          ),
+          sql`NOT EXISTS (SELECT 1 FROM "turn_effects" AS "open"
+            WHERE "open"."run_id" = ${turnRuns.id} AND "open"."state" IN ('pending', 'leased'))`
+        )
+      )
+      .orderBy(turnRuns.endedAt)
+      .limit(limit)
+      .all()
+      .map(toRun);
   }
 
   /**

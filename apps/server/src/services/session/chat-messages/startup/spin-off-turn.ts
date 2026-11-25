@@ -12,7 +12,8 @@ import { getSpinOffStartup } from './spin-off-startup.js';
  */
 export function watchSpinOffTurn(
   source: AsyncIterable<StreamEvent>,
-  projector: Pick<SessionStateProjector, 'sessionId'>
+  projector: Pick<SessionStateProjector, 'sessionId'>,
+  onActed?: () => void
 ): WatchedTurn {
   async function* tapped(): AsyncIterable<StreamEvent> {
     let waiting = false;
@@ -34,5 +35,9 @@ export function watchSpinOffTurn(
       if (waiting) getSpinOffStartup()?.doneWaiting(projector.sessionId);
     }
   }
-  return watchNotStarted(tapped(), () => getSpinOffStartup()?.started(projector.sessionId));
+  return watchNotStarted(
+    tapped(),
+    () => getSpinOffStartup()?.started(projector.sessionId),
+    onActed
+  );
 }

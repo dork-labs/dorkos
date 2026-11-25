@@ -64,6 +64,9 @@ vi.mock('@dorkos/db', async (original) => ({
 }));
 
 const { startAfterListen } = await import('../steps/after-listen.js');
+const { createTestDb } = await import('@dorkos/test-utils/db');
+const { getRunRecord, installRunRecord, uninstallRunRecord } =
+  await import('../../services/runs/index.js');
 
 const resolved = () => ({ catch: () => undefined, then: () => ({ catch: () => undefined }) });
 /** Everything `startAfterListen` reads, as inert stubs. */
@@ -123,5 +126,19 @@ describe('startAfterListen on an agent computer', () => {
     expect(started.autostartOwnTunnel).toHaveBeenCalledTimes(1);
     expect(started.initOnStartup).toHaveBeenCalledTimes(1);
     expect(started.startCreditsLifecycle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the outbox worker at startAfterListen', () => {
+  it('starts before anything that can throw, so a failing step never leaves it stopped', async () => {
+    env.DORKOS_SERVER_ROLE = 'computer';
+    installRunRecord(createTestDb(), { epoch: '01AFTERLISTENBOOT000000000' });
+    try {
+      refs.schedulerService.start.mockRejectedValueOnce(new Error('scheduler down'));
+      await expect(startAfterListen(refs as never, built())).rejects.toThrow('scheduler down');
+      expect(getRunRecord()?.worker.isRunning).toBe(true);
+    } finally {
+      uninstallRunRecord();
+    }
   });
 });

@@ -11,7 +11,7 @@
  * is kept in `trail`, and a hit would be logged as an error.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { agents, sessionMetadata, type Db } from '@dorkos/db';
+import { agents, eq, notifications, sessionMetadata, type Db } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
@@ -54,9 +54,16 @@ import {
   markRunsShutdown,
   recordStopReceipt,
   recordStopRequest,
+  startRunEffects,
   uninstallRunRecord,
 } from '../index.js';
 import { RunStore, RUN_LEASE_MS, type TurnRun } from '../run-store.js';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
+import { watchSessionLifecycle } from '../../notifications/emitters/session-lifecycle.js';
 
 /** A made-up agent, the one being paused. */
 const BETA = { id: '01BETAAGENTULID00000000000', home: '/demo/agents/beta' } as const;
@@ -129,6 +136,24 @@ function send(clientId: string, content: string, extra: Record<string, unknown> 
     cwd: BETA.home,
     ...extra,
   });
+}
+
+/**
+ * The person's inbox live, as a server wires it: the notification pipeline,
+ * the "finished" emitter and the outbox's worker.
+ */
+function liveInbox(): { finished: () => { dedupeKey: string }[]; off: () => void } {
+  setNotificationService(new NotificationService(new NotificationStore(db)));
+  const unwatch = watchSessionLifecycle();
+  startRunEffects();
+  return {
+    finished: () =>
+      db.select().from(notifications).where(eq(notifications.kind, 'turn.completed')).all(),
+    off: () => {
+      unwatch();
+      setNotificationService(null);
+    },
+  };
 }
 
 /** The server's rearm sweep, as the health tick and a resume run it. */
@@ -357,6 +382,32 @@ describe('a pause cut (F1, F2, F3)', () => {
     ]);
     expect(queue.get(rowId)).toBeUndefined();
   });
+
+  it.each([
+    ['F1', [] as StreamEvent[]],
+    ['F2', LAUNCH_EVENTS],
+  ])(
+    '%s with the inbox live: the cut turn is told nothing, and its re-run is told once',
+    async (_, shown) => {
+      const inbox = liveInbox();
+      try {
+        const { runId } = await startThenPause(shown, []);
+        // Only the turn ahead of it finished.
+        await vi.waitFor(() => expect(inbox.finished()).toHaveLength(1));
+        expect(inbox.finished().some((row) => row.dedupeKey.includes(runId))).toBe(false);
+
+        await resume();
+        await vi.waitFor(() =>
+          expect(
+            inbox.finished().filter((row) => row.dedupeKey === `notify:${runId}:completed`)
+          ).toHaveLength(1)
+        );
+        expect(inbox.finished()).toHaveLength(2);
+      } finally {
+        inbox.off();
+      }
+    }
+  );
 
   it('F2: cut after the runtime’s first event: 15, the row re-inserted with its own id', async () => {
     const { rowId, runId, midTurn } = await startThenPause(LAUNCH_EVENTS, []);
@@ -729,6 +780,66 @@ describe('the ending at turn_end, the status at settle (F9)', () => {
       'started→running',
       'running→ended',
     ]);
+  });
+
+  it('tells the person "finished" at turn_end, while background work still drains, and once', async () => {
+    setNotificationService(new NotificationService(new NotificationStore(db)));
+    const off = watchSessionLifecycle();
+    startRunEffects();
+    try {
+      const drain = gate();
+      inner.withScenarios([drainingTurn(drain.wait)]);
+      await send('person-window', 'start the build');
+      const [run] = runs.listForChat(sessionId);
+      const told = () =>
+        db
+          .select()
+          .from(notifications)
+          .where(eq(notifications.dedupeKey, `notify:${run!.id}:completed`))
+          .all();
+
+      await vi.waitFor(() => expect(told()).toHaveLength(1));
+      expect(runs.get(run!.id)).toMatchObject({ status: 'running', ending: 'completed' });
+
+      drain.open();
+      await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('settled'));
+      expect(told()).toHaveLength(1);
+      expect(
+        db.select().from(notifications).where(eq(notifications.kind, 'turn.completed')).all()
+      ).toHaveLength(1);
+    } finally {
+      off();
+      setNotificationService(null);
+    }
+  });
+
+  it('a turn whose agent did nothing visible by turn_end is told at settle, once', async () => {
+    const inbox = liveInbox();
+    try {
+      const drain = gate();
+      inner.withScenarios([
+        async function* (): AsyncGenerator<StreamEvent> {
+          // Bookkeeping only: not the agent acting (DOR-4353).
+          yield {
+            type: 'session_status',
+            data: { sessionId: 'x', model: 'claude-made-up' },
+          } as never;
+          yield { type: 'done', data: {} };
+          await drain.wait;
+        },
+      ]);
+      await send('person-window', 'anything there?');
+      const [run] = runs.listForChat(sessionId);
+      await vi.waitFor(() => expect(runs.get(run!.id)?.ending).toBe('completed'));
+      await settle();
+      expect(inbox.finished()).toHaveLength(0); // turn_end seen, but a pause could still put it back
+
+      drain.open();
+      await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('settled'));
+      expect(inbox.finished().map((row) => row.dedupeKey)).toEqual([`notify:${run!.id}:completed`]);
+    } finally {
+      inbox.off();
+    }
   });
 
   it('a kill in that window, seen by a later boot once the lease ran out, ends it with that ending', async () => {

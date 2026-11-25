@@ -369,6 +369,11 @@ export function launchDispatchInner(
       // The runtime has the words: the row goes, except while a pause may
       // still put it back (§4.7, transition 10).
       onDelivered: () => recordTurnDelivered(plan, heldByPause === undefined),
+      // Past this, no pause can put the turn back, so its "finished" is told
+      // at `turn_end` rather than at settle (§4.7). Not while a pause holds it.
+      onActed: () => {
+        if (heldByPause === undefined) feedRun(plan, 'acted', (feed, id) => feed.turnActed(id));
+      },
       onError: turn.onError,
       onSettled: (turnOutcome, reason, agentActed) => {
         // This turn has let go of the write-lock, so whatever the lock refused
