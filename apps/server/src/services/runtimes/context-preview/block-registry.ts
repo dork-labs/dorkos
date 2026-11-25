@@ -104,6 +104,15 @@ export const SESSION_BLOCKS: readonly ContextBlockSpec[] = [
   },
   toolDoc('ui_tools', 'App window tools', 'Always.'),
   {
+    id: 'github_cli',
+    title: 'GitHub CLI notice',
+    source: 'runtimes/codex/agent-context.ts',
+    condition: 'always',
+    conditionNote: 'Every Codex turn: why gh can’t sign in here.',
+    locked: true,
+    runtimes: ['codex'],
+  },
+  {
     id: 'browser_tools',
     title: 'Browser tools',
     source: 'runtimes/codex/agent-context.ts',

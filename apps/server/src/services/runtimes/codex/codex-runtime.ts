@@ -978,11 +978,7 @@ export class CodexRuntime implements AgentRuntime {
 
       // The room verbs and the Blocked-area lines ride outside the gate, per
       // turn (`agent-context.ts`).
-      const agentContext = await buildCodexAgentContext(
-        selection.text,
-        Boolean(dorkosTools),
-        agentPath
-      );
+      const agentContext = await buildCodexAgentContext(selection, Boolean(dorkosTools), agentPath);
 
       const accessContext =
         connectorTools && this.connectorRuntimeTools && meshAgent
