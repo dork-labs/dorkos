@@ -1,6 +1,6 @@
 # Design note: the permission gate across the wire
 
-**For:** the architect, Security, Dorian · **Status:** ideation; Security's questions answered by an independent security read, 2026-11-24, and read again by Security, 2026-11-24; waiting on the operator's ruling · **Builds on:** ADR `261124-150516` (two sides, one contract), `specs/everything-is-a-space/design-agent-computers.md` §2 and §3 · **Tickets:** DOR-5165 (this note), DOR-5166 (the build), epic DOR-5152
+**For:** the architect, Security, Dorian · **Status:** ideation; Security's questions answered by an independent security read, 2026-11-24, and read again by Security, 2026-11-24; the operator's four questions answered, 2026-11-25 · **Builds on:** ADR `261124-150516` (two sides, one contract), `specs/everything-is-a-space/design-agent-computers.md` §2 and §3 · **Tickets:** DOR-5165 (this note), DOR-5166 (the build), epic DOR-5152
 
 Every claim about today's code names a file in this repository at the commit this note was written on. Line numbers are approximate and move with the code.
 
@@ -245,9 +245,9 @@ The one list a builder checks. Each row comes from the independent security read
 7. "Always allow" moves to a space-side record on a Mac too: yes (§5).
 8. A lowered level interrupts a runtime that cannot tighten in place, when its mode lets through, unasked, what the new level would ask about or refuse. This overturns the draft (§3).
 
-**For the operator** (two options each, with a pick):
+**For the operator: answered 2026-11-25.** He took the pick on all four ("yes to all four"). Each is now a decision.
 
-1. When the connection to a computer drops mid-turn: **(a)** keep running what the copy allows until the lease ends, then stop; **(b)** stop at once. Pick **(a)**: a half-done edit is worse than a few minutes of local work under rules already granted.
-2. Lowering an agent's level: **(a)** reaches running turns; **(b)** applies from the next turn, as today. Pick **(a)**, on a Mac too: a person who lowers a level means now.
-3. Order of work: **(a)** the `TurnRules` object on a Mac before any wire work; **(b)** build the wire first for cloud computers. Pick **(a)**: one design, proven where the bugs are cheap.
-4. The copy for teammate-tier turns (another agent's turn, ADR `261015-042933` rule 6): **(a)** the same shape with `tier: teammate`; **(b)** no native tools at all until a card says yes. Pick **(a)**: the tier already caps what runs, and one shape is simpler to review.
+1. When the connection to a computer drops mid-turn, the turn keeps running what the copy allows until the lease ends, then stops (§3). Not chosen: stop at once. A half-done edit is worse than a few minutes of local work under rules already granted.
+2. Lowering an agent's level reaches running turns, on a Mac too (§3). Not chosen: from the next turn, as today. A person who lowers a level means now.
+3. Order of work: the `TurnRules` object on a Mac before any wire work (§6, §11). Not chosen: the wire first, for cloud computers. One design, proven where the bugs are cheap.
+4. The copy for teammate-tier turns (another agent's turn, ADR `261015-042933` rule 6) has the same shape with `tier: teammate` (§3, §4). Not chosen: no native tools at all until a card says yes. The tier already caps what runs, and one shape is simpler to review.
