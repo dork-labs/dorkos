@@ -34,6 +34,13 @@
  *                The baseline is lowered (and carried across a rename) by
  *                `--update`, never raised by hand.
  *
+ * GROWTH IS JUDGED PER CHANGE. With `--base <ref>`, a `grew` or `new` file that
+ * was already at least that long at `ref` is a note, not a failure: the lines
+ * came in with another change. In the merge queue `ref` is the previous entry,
+ * so a PR is never failed for a PR ahead of it, and a baseline measured before
+ * those entries landed can still land. A change that adds even one line to
+ * such a file fails as before.
+ *
  * TEST FILES HAVE THEIR OWN BASELINE (`TEST_BASELINE_PATH`). DOR-2822 left
  * them out and 627 grew past 500 by 2026-11-23. TypeScript tests (`.ts`,
  * `.tsx`) follow every rule above, counted the same way; `.mjs` tests are not
@@ -108,7 +115,7 @@ export interface Counts {
 /** One reason the check fails. */
 export interface Finding {
   /** Which rule of the ratchet was broken. */
-  kind: 'grew' | 'new' | 'stale' | 'raised';
+  kind: 'grew' | 'new' | 'stale' | 'raised' | 'inherited';
   /** The repo-relative file. */
   file: string;
   /** The file's count now, when it has one in scope. */
@@ -209,14 +216,7 @@ export async function measure(root: string): Promise<Counts> {
 
   // The rule as the configs set it, with only the limit lowered so it reports
   // (and switched on for test files, whose config has it off).
-  const counter = new ESLint({
-    cwd: root,
-    allowInlineConfig: false,
-    ruleFilter: ({ ruleId }) => ruleId === 'max-lines',
-    overrideConfig: {
-      rules: { 'max-lines': ['warn', { max: 0, skipBlankLines: true, skipComments: true }] },
-    },
-  });
+  const counter = ruleCounter(root);
   const counts: Counts = { source: {}, tests: {} };
   const results = inScope.length ? await counter.lintFiles(inScope.map((f) => join(root, f))) : [];
   if (unlinted.length) {
@@ -226,12 +226,76 @@ export async function measure(root: string): Promise<Counts> {
     const file = result.filePath.slice(resolve(root).length + 1);
     const fatal = result.messages.find((m) => m.fatal);
     if (fatal) throw new MaxLinesError(`${file}: ESLint could not parse it (${fatal.message})`);
-    const message = result.messages.find((m) => m.ruleId === 'max-lines');
-    const count = Number(/\((\d+)\)/.exec(message?.message ?? '')?.[1]);
-    if (!Number.isInteger(count)) throw new MaxLinesError(`${file}: no max-lines count reported`);
+    const count = reportedCount(result);
+    if (count === undefined) throw new MaxLinesError(`${file}: no max-lines count reported`);
     if (count > LIMIT) counts[TEST_FILE.test(file) ? 'tests' : 'source'][file] = count;
   }
   return { source: sortKeys(counts.source), tests: sortKeys(counts.tests) };
+}
+
+/**
+ * The rule as the configs set it, with only the limit lowered so it reports
+ * (and switched on for test files, whose config has it off).
+ *
+ * @param root - The tree to measure.
+ */
+function ruleCounter(root: string): ESLint {
+  return new ESLint({
+    cwd: root,
+    allowInlineConfig: false,
+    ruleFilter: ({ ruleId }) => ruleId === 'max-lines',
+    overrideConfig: {
+      rules: { 'max-lines': ['warn', { max: 0, skipBlankLines: true, skipComments: true }] },
+    },
+  });
+}
+
+/** The count a `max-lines` message reports, or undefined when there is none. */
+function reportedCount(result: ESLint.LintResult): number | undefined {
+  const message = result.messages.find((m) => m.ruleId === 'max-lines');
+  const count = Number(/\((\d+)\)/.exec(message?.message ?? '')?.[1]);
+  return Number.isInteger(count) ? count : undefined;
+}
+
+/**
+ * Each file's count as it was at `ref`, counted the way {@link measure} counts
+ * it. A file `ref` did not have gets no entry.
+ *
+ * @param root - The checkout, which must have `ref`.
+ * @param ref - The base commit.
+ * @param files - Repo-relative files to count.
+ */
+async function countsAt(
+  root: string,
+  ref: string,
+  files: string[]
+): Promise<Record<string, number>> {
+  const counter = ruleCounter(root);
+  const bare = bareCounter(root);
+  const out: Record<string, number> = {};
+  for (const file of files) {
+    let text: string;
+    try {
+      text = execFileSync('git', ['show', `${ref}:${file}`], {
+        cwd: root,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      continue; // not in that tree
+    }
+    const filePath = join(root, file);
+    let [result] = await counter.lintText(text, { filePath });
+    // An ignored or unconfigured test is counted with the bare parser, as in measure().
+    if (result && reportedCount(result) === undefined)
+      [result] = await bare.lintText(text, { filePath });
+    const count = result && reportedCount(result);
+    if (count === undefined)
+      throw new MaxLinesError(`${file} at ${ref}: no max-lines count reported`);
+    out[file] = count;
+  }
+  return out;
 }
 
 /**
@@ -368,6 +432,7 @@ export function lowered(
 
 /** A stale test entry, which passes: what changed and how to lock it in. */
 export function describeNote(f: Finding): string {
+  if (f.kind === 'inherited') return describe(f);
   const now = f.count === undefined ? 'gone or under the limit' : `down to ${f.count}`;
   return `${f.file}: ${now} (baseline ${f.baseline}); run \`pnpm check:max-lines -- --update\` to lock it in`;
 }
@@ -387,6 +452,8 @@ export function describe(f: Finding): string {
       return f.baseline === undefined
         ? `${f.file}: added to the baseline at ${f.count}. The baseline is never added to by hand; split the file instead.`
         : `${f.file}: baseline raised from ${f.baseline} to ${f.count}. The baseline only goes down; split the file instead.`;
+    case 'inherited':
+      return `${f.file}: ${f.count} lines, over its entry, but it was ${f.baseline} before this change, so the growth came in elsewhere. Not this change's to fix.`;
   }
 }
 
@@ -503,11 +570,33 @@ async function main(argv: string[]): Promise<number> {
       continue;
     }
 
-    for (const f of compare(measured, baseline)) {
+    const before = base ? baselineAt(root, base, held.path) : null;
+    const findings = compare(measured, baseline);
+    // Growth this change did not make: the file was already this long at the
+    // base. In the merge queue the base holds the entries ahead, so without
+    // this a PR is failed for lines another PR added, and a baseline measured
+    // before those entries could never land. Only while this change leaves
+    // the file's entry as the base had it (or the base had no baseline yet):
+    // deleting or lowering an entry stays a failure.
+    const grown = findings.filter(
+      (f) =>
+        (f.kind === 'grew' || f.kind === 'new') && (!before || before[f.file] === baseline[f.file])
+    );
+    const atBase =
+      base && grown.length
+        ? await countsAt(
+            root,
+            base,
+            grown.map((f) => f.file)
+          )
+        : {};
+    for (const f of findings) {
+      const then = atBase[f.file];
       if (f.kind === 'stale' && !held.staleFails) notes.push(f);
+      else if (then !== undefined && f.count !== undefined && f.count <= then)
+        notes.push({ ...f, kind: 'inherited', baseline: then });
       else problems.push(f);
     }
-    const before = base ? baselineAt(root, base, held.path) : null;
     if (before) problems.push(...raisedAgainst(baseline, before, renames));
   }
 

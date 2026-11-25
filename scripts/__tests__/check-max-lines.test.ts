@@ -253,6 +253,23 @@ describe('the script, on a planted tree', () => {
       );
     });
 
+    it('passes growth that came in before this change, as the queue builds it, and fails one more line', () => {
+      // A PR ahead in the queue grew it and added a long test, past this baseline.
+      plant('src/__tests__/big.test.ts', 720);
+      plant('src/__tests__/ahead.test.ts', 600);
+      git('commit', '-qm', 'an entry ahead');
+      const result = run('--base', 'HEAD');
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(
+        'src/__tests__/big.test.ts: 720 lines, over its entry, but it was 720 before this change'
+      );
+      expect(result.stdout).toContain('src/__tests__/ahead.test.ts: 600 lines');
+      plant('src/__tests__/big.test.ts', 721);
+      const grown = run('--base', 'HEAD');
+      expect(grown.status).toBe(1);
+      expect(grown.stderr).toContain('src/__tests__/big.test.ts: grew to 721 lines (baseline 700)');
+    });
+
     it('notes a shrink without failing, and --update locks it in', () => {
       plant('src/__tests__/big.test.ts', 650);
       const result = run('--base', 'HEAD');
