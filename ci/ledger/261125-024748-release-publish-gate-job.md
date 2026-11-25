@@ -2,10 +2,10 @@
 id: 261125-024748
 title: Release Publish runs release-gate.sh in a gate job before npm
 kind: hygiene
-status: proposed
+status: active
 actor: agent
 gates: [wf.release-publish.gate]
-prs: []
+prs: [4358]
 ratchet-release: []
 field-changes: []
 ---
