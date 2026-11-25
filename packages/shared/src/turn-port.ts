@@ -1,0 +1,738 @@
+/**
+ * The turn port's contract: every value that crosses the one door a
+ * space-side caller uses to start, watch and stop a turn (spec
+ * `turns-survive-restarts` §3, ADR 261124-150517).
+ *
+ * The port has two faces. The **space face** (`services/runs`) takes a
+ * {@link StartTurnInput}, saves a run and answers {@link StartTurnResult} at
+ * acceptance. Only the space face calls the **computer face**
+ * (`services/session/turn-port`), with a {@link TurnStartRequest}, and the
+ * computer face answers {@link TurnStartAnswer}, then reports what happens to
+ * the turn as {@link RunFact} values through one sink.
+ *
+ * ## Plain data only
+ *
+ * Every payload here is a Zod schema over JSON values: strings, numbers,
+ * booleans, arrays and plain objects. No function, class instance,
+ * `AbortSignal` or live handle crosses the port, because the port is the
+ * in-process form of a wire (`session-relay-agent-computer.ts`), and a value
+ * that cannot be written to that wire would make the two forms disagree. Every
+ * object is strict, so a callback slipped in beside the data is refused
+ * rather than dropped. `__tests__/turn-port.test.ts` round-trips every schema
+ * through JSON and walks each one to prove no member can hold anything else.
+ *
+ * ## The run record's vocabulary
+ *
+ * {@link RunStatus}, {@link RunEnding}, {@link AttemptReason},
+ * {@link WaitReason} and the transition table ({@link RUN_TRANSITIONS},
+ * {@link canTransition}) are the run record's words (spec §4.3, §4.4). They
+ * live here, not in the run store, because the store's methods take and
+ * return these types and never Drizzle rows (§4.2).
+ *
+ * A run is referenced as `dork:turn:<id>` ({@link runReference}); `dork:run:`
+ * stays the reference of a scheduled task's run (spec §12, choice 3).
+ *
+ * @module shared/turn-port
+ */
+import { z } from 'zod';
+import { AGENT_ID_PATTERN, formatDorkReference, parseDorkReference } from './dork-ref.js';
+import { RelayMessageContentSchema } from './session-relay.js';
+import {
+  AgentComputerTurnOriginSchema,
+  AgentComputerTurnTierSchema,
+} from './session-relay-agent-computer.js';
+import {
+  BackgroundTaskTypeSchema,
+  InterruptReceiptSchema,
+  SessionSettingsSchema,
+  turnEnded,
+} from './schemas.js';
+import type { DirectoryGrant, TurnPermissionCeiling } from './agent-runtime.js';
+
+// === Turn origin ===
+
+/**
+ * What is starting this turn, as the thing that knows describes itself.
+ *
+ * One member per turn-starting surface in the server. None of them names a
+ * permission mode: mapping a surface onto a power level is
+ * `permissionSeedForOrigin`'s job, which stays in the server beside the write
+ * it decides (`apps/server/src/services/session/origin/turn-origin.ts`, which
+ * also re-exports this type from its old path).
+ *
+ * A member is a bare discriminant unless a field changes an answer somebody
+ * reads. Ids nothing reads are not carried "for later".
+ */
+export type TurnOrigin =
+  /**
+   * A person is here, watching. `POST /api/sessions/:id/messages` is the only
+   * caller: a message posted there came from somebody holding that session's
+   * event stream open, so a stop they configured is a stop they can answer.
+   */
+  | { readonly kind: 'interactive' }
+  /**
+   * The owner sent this from their own DorkOS on the web, through the session
+   * relay (`services/core/session-relay/`): a viewer holds the chat's stream
+   * open through the relay, the way `interactive`'s person holds it open here.
+   * The relay is the owner, never an outsider, so the words are the owner's
+   * own typing.
+   */
+  | { readonly kind: 'session-relay' }
+  /**
+   * A room turn — unattended, because a room triggers a turn into the dark.
+   *
+   * `externalAuthor` says whether the message that triggered it came from
+   * somebody off this machine (a bridged Telegram or Slack chat). A bridged
+   * chat is a projection of a relay binding into a room, and a binding carries
+   * its own grant precisely because nobody picked a level for strangers
+   * (DOR-604), so that is the one fact which changes a room's answer.
+   */
+  | { readonly kind: 'room'; readonly externalAuthor: boolean }
+  /**
+   * A scheduled task's run, whether the timer fired it or a person pressed
+   * "Run now".
+   *
+   * Seeded with no mode: a run's power comes off
+   * `pulse_schedules.permission_mode`, decided once at CREATE, and it reaches
+   * the runtime through `ensureSession`/`sendMessage` rather than through this
+   * row. Whether it should also reach the row is DOR-2100, which will add
+   * whatever it needs to read here.
+   */
+  | { readonly kind: 'schedule' }
+  /**
+   * A chat binding created a session for an inbound message — Telegram, Slack,
+   * a webhook. The binding carries the grant a person set on it, and an absent
+   * grant there is NOT consent (DOR-604), so nothing about the operator's own
+   * level may be seeded onto the row.
+   */
+  | { readonly kind: 'relay-binding' }
+  /**
+   * One agent addressed another directly over the relay (a publish to a mesh
+   * endpoint stamped as one of our agents; agents' own send tool for this
+   * retired with spec `spin-off-chats`, which routes them through chats). Nobody created a session for it and nobody is watching it;
+   * like a binding, it carries its own grant and seeds no operator stop.
+   */
+  | { readonly kind: 'agent-dm' }
+  /**
+   * A message on the relay addressed to an agent, from a sender that is NOT one
+   * of our agents: the A2A gateway (another company's agent), an external MCP
+   * client, or a hand-built publish. It arrives on the same agent subject an
+   * agent's own publish does, so the stamped sender is the only fact that
+   * tells it apart, and it gets its own member so that a later change letting
+   * our own agents' DMs follow a configured level can never carry it along
+   * (spec `trusted-by-default-flip` §4).
+   */
+  | { readonly kind: 'outside-sender' }
+  /**
+   * A connector event woke an agent up (`services/connectors/events/`). Same
+   * rule as a binding: the subscription a person approved is the grant, so the
+   * row seeds no operator stop.
+   */
+  | { readonly kind: 'connector-event' }
+  /**
+   * An agent started this session through the `session_start` tool, or by
+   * posting to `POST /api/sessions/:id/messages` with its identity. Nobody
+   * chose a trust stop for it: the operator's stop is a promise about a person
+   * who can answer, and the agent that asked for the session is not that
+   * person. So the row seeds no operator stop. Its power is the mode the tool
+   * grants: the calling chat's own live level or lower, checked against that
+   * ceiling and always written to the row (spec `inherited-start-permission`).
+   *
+   * `launchedBy` names who chose where it runs (DOR-3644): the agent's Mesh id,
+   * its home, or `unidentified`. The binding row keeps it.
+   */
+  | { readonly kind: 'agent-launch'; readonly launchedBy?: string }
+  /**
+   * An extension started work in a new chat (spec `flow-multiproject` §7.7):
+   * a person's click on an outcome button (`api.startWork`), or the
+   * extension's own rules deciding it (`ctx.sessions.start`). Either way the
+   * chat is a new one in the person's own project, doing the person's work, so
+   * it is born with the new-session defaults a person's chat gets: the seam
+   * must not change the permission mode, in either direction.
+   */
+  | { readonly kind: 'extension-start' }
+  /**
+   * An extension's server half sent one of the person's agents a message
+   * (`ctx.agent.send`, DOR-2683), opening the chat it keeps with that agent
+   * on the first one. The words are app data, not a person's request, and
+   * the extension is not the person the operator's stop was set for, so the
+   * row seeds no operator stop — like a connector event waking an agent.
+   * Sent into a chat that already exists, it changes nothing: that row was
+   * bound first and keeps its power.
+   */
+  | { readonly kind: 'extension-message' }
+  /**
+   * Another chat sent this one a message (`chat_send`, a spin-off's report,
+   * spec `spin-off-chats`), or opened an agent's DM chat to send the first.
+   * A chat it OPENS is born at the operator's configured stop, the same as a
+   * room turn by a local author, and every turn a message starts is held to
+   * the sending chat's level by a ceiling the dispatcher reads at launch. So a
+   * message runs at the stricter of the two, and never carries more power than
+   * the chat that sent it. Seeding nothing here used to mean the runtime's
+   * Default, which made that stricter of the two always Default: two Full
+   * autonomy agents talking held each other to asking, and every reply after
+   * the first kept it that way.
+   */
+  | { readonly kind: 'chat-message' }
+  /**
+   * A limited session's work carried over to a new session on another account
+   * (spec `claude-account-fleet` D9), by a person or by the account advisor.
+   * The new session's settings row is copied from the source session before
+   * the send, and that copy is the power: this origin adds none.
+   */
+  | { readonly kind: 'account-handoff' }
+  /**
+   * A limited session's account reset and core resumed the SAME session by
+   * itself (spec `claude-account-fleet` D9 "Wait, then resume by itself"). The
+   * session is already bound, so its settings row decides its power: this
+   * origin adds none.
+   */
+  | { readonly kind: 'account-resume' }
+  /**
+   * An agent's own heartbeat (spec `heartbeats` §7.2): a turn the beat runner
+   * starts in the agent's beat chat for the day, when a beat found work.
+   * Nobody started it by typing, and nobody is waiting on it, the same as a
+   * room turn by a local author: trusted by default, at the operator's
+   * configured stop. The origin seeds the chat's row once; whether a LATER turn
+   * in that chat is a beat is the live registry's question
+   * (`services/heartbeats/beat-turns.ts`), so a person typing in the beat chat
+   * is an ordinary turn.
+   */
+  | { readonly kind: 'heartbeat' }
+  /**
+   * The in-process end-to-end harness, reachable only on a server started with
+   * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
+   * itself.
+   *
+   * It is a named member rather than a borrowed one so no production surface's
+   * power decision has to describe a test. Exactly one production file uses
+   * it, and the server's `session/origin/__tests__/turn-origin-call-sites.test.ts`
+   * is what keeps that true — a unit test that just needs a session bound
+   * names the surface it is standing in for instead.
+   */
+  | { readonly kind: 'test-harness' };
+
+/** A member of {@link TurnOrigin} that carries nothing but its kind. */
+const bareOrigin = <K extends string>(kind: K) => z.strictObject({ kind: z.literal(kind) });
+
+/**
+ * {@link TurnOrigin} as a schema, so an origin can cross the port as data.
+ * Proven against the hand-written type in both directions below.
+ */
+export const TurnOriginSchema = z.discriminatedUnion('kind', [
+  bareOrigin('interactive'),
+  bareOrigin('session-relay'),
+  z.strictObject({ kind: z.literal('room'), externalAuthor: z.boolean() }),
+  bareOrigin('schedule'),
+  bareOrigin('relay-binding'),
+  bareOrigin('agent-dm'),
+  bareOrigin('outside-sender'),
+  bareOrigin('connector-event'),
+  z.strictObject({ kind: z.literal('agent-launch'), launchedBy: z.string().optional() }),
+  bareOrigin('extension-start'),
+  bareOrigin('extension-message'),
+  bareOrigin('chat-message'),
+  bareOrigin('account-handoff'),
+  bareOrigin('account-resume'),
+  bareOrigin('heartbeat'),
+  bareOrigin('test-harness'),
+]);
+
+/**
+ * Compile-time proof that {@link TurnOriginSchema} and {@link TurnOrigin} name
+ * the same members with the same fields, in both directions. Never evaluated.
+ *
+ * @internal
+ */
+type AssertTurnOrigin = [z.output<typeof TurnOriginSchema>] extends [TurnOrigin]
+  ? [TurnOrigin] extends [z.input<typeof TurnOriginSchema>]
+    ? true
+    : never
+  : never;
+const _assertTurnOrigin: AssertTurnOrigin = true;
+void _assertTurnOrigin;
+
+/** Every {@link TurnOrigin} kind, read off the schema (16 today). */
+export const TURN_ORIGIN_KINDS: readonly TurnOrigin['kind'][] = TurnOriginSchema.options.map(
+  (option) => option.shape.kind.value
+);
+
+/** Where a turn came from, in the four words the agent-computer wire carries. */
+export type WireOrigin = z.infer<typeof AgentComputerTurnOriginSchema>;
+
+/**
+ * The wire's coarse origin for a turn origin: `room` for a room turn, `task`
+ * for a scheduled task's run, `beat` for a heartbeat, and `chat` for every
+ * other surface, since each of those starts or continues a chat (spec §3.2).
+ *
+ * Exhaustive by construction: a new {@link TurnOrigin} member fails to compile
+ * here until somebody decides which word it travels as.
+ *
+ * @param origin - What is starting the turn.
+ * @returns The `turn.start` origin word.
+ */
+export function wireOriginOf(origin: TurnOrigin): WireOrigin {
+  switch (origin.kind) {
+    case 'room':
+      return 'room';
+    case 'schedule':
+      return 'task';
+    case 'heartbeat':
+      return 'beat';
+    case 'interactive':
+    case 'session-relay':
+    case 'relay-binding':
+    case 'agent-dm':
+    case 'outside-sender':
+    case 'connector-event':
+    case 'agent-launch':
+    case 'extension-start':
+    case 'extension-message':
+    case 'chat-message':
+    case 'account-handoff':
+    case 'account-resume':
+    case 'test-harness':
+      return 'chat';
+    default: {
+      const unhandled: never = origin;
+      throw new Error(`unhandled turn origin: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+// === Ids and references ===
+
+/**
+ * A run's id: a ULID minted by the space side (spec §4.1). Spelled like a Mesh
+ * agent id, so it reuses that one pattern, and it fits the `dork:` id grammar.
+ */
+export const RunIdSchema = z.string().regex(AGENT_ID_PATTERN);
+
+/**
+ * A run's `dork:` reference: `dork:turn:<id>` (spec §12, choice 3).
+ *
+ * @param runId - The run's id.
+ * @returns Its reference.
+ * @throws {TypeError} When the id does not fit the `dork:` id grammar.
+ */
+export function runReference(runId: string): string {
+  return formatDorkReference({ kind: 'turn', id: runId });
+}
+
+/** A `dork:<kind>:<id>` reference of a kind DorkOS mints (`@dorkos/shared/dork-ref`). */
+const DorkReferenceSchema = z
+  .string()
+  .refine((value) => parseDorkReference(value).ok, { message: 'Not a dork: reference' });
+
+/** A chat, by its canonical id. */
+const SessionIdSchema = z.string().min(1).max(200);
+
+/** An agent, by its Mesh id (a ULID). */
+const AgentIdSchema = z.string().regex(AGENT_ID_PATTERN);
+
+/** A moment, as epoch milliseconds. */
+const EpochMsSchema = z.number().int().nonnegative();
+
+// === Turn options ===
+
+/** A teammate whose words started the chain (`TeammateOrigin`). */
+const TeammateOriginSchema = z.strictObject({
+  roomId: z.string().min(1),
+  authorId: z.string().min(1),
+});
+
+/** A permission level as asking and reach (`TurnPermissionLevel`). */
+const TurnPermissionLevelSchema = z.strictObject({
+  asks: z.enum(['always', 'when-risky', 'never']),
+  reach: z.enum(['read', 'edit', 'workspace', 'everything']),
+  auto: z.literal(true).optional(),
+  outsider: z.literal(true).optional(),
+  teammate: z.array(TeammateOriginSchema).readonly().optional(),
+});
+
+/** One bound: a level, or the receiving runtime's own default (`TurnPermissionBound`). */
+const TurnPermissionBoundSchema = z.union([
+  TurnPermissionLevelSchema,
+  z.literal('runtime-default'),
+]);
+
+/** The loosest level a turn may run at (`TurnPermissionCeiling`). */
+const TurnPermissionCeilingSchema = z.union([
+  TurnPermissionBoundSchema,
+  z.array(TurnPermissionBoundSchema).readonly(),
+]);
+
+/** A folder a turn may reach beyond its cwd (`DirectoryGrant`). */
+const DirectoryGrantSchema = z.strictObject({
+  path: z.string().min(1),
+  access: z.enum(['read', 'write']),
+});
+
+/** Per-turn execution settings the caller resolved itself (`DispatchMessageOpts.settings`). */
+const TurnSettingsSchema = z.strictObject({
+  model: SessionSettingsSchema.shape.model,
+  effort: SessionSettingsSchema.shape.effort,
+});
+
+/**
+ * Compile-time proof that the option schemas above carry the runtime's own
+ * types, in both directions: what a schema parses can be handed to a runtime,
+ * and what a caller holds today can be parsed. Never evaluated.
+ *
+ * @internal
+ */
+type AssertMirrors<S extends z.ZodType, T> = [z.output<S>] extends [T]
+  ? [T] extends [z.input<S>]
+    ? true
+    : never
+  : never;
+const _assertCeiling: AssertMirrors<typeof TurnPermissionCeilingSchema, TurnPermissionCeiling> =
+  true;
+const _assertGrant: AssertMirrors<typeof DirectoryGrantSchema, DirectoryGrant> = true;
+void _assertCeiling;
+void _assertGrant;
+
+/**
+ * Work the computer side does when a turn LAUNCHES, named rather than passed
+ * as a function (spec §3.2). A preparer registry on the computer side resolves
+ * each kind.
+ *
+ * - `room-files`: refresh the room's worktree for the member before the turn
+ *   runs (`contributing/architecture-target.md` §3 step 5), which today is the
+ *   room runner's `prepareLaunch` function.
+ */
+export const TurnPreparationSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('room-files'),
+    /** The room whose files the turn works in. */
+    roomId: z.string().min(1),
+    /** The room member the turn runs as. */
+    authorId: z.string().min(1),
+  }),
+]);
+
+/** A named preparation. See {@link TurnPreparationSchema}. */
+export type TurnPreparation = z.infer<typeof TurnPreparationSchema>;
+
+/**
+ * The fields of a turn that its caller decides, shared by both faces' inputs.
+ * The space face adds nothing to them and the computer face reads them as
+ * given.
+ */
+const callerTurnFields = {
+  /** The chat, by its canonical id. */
+  sessionId: SessionIdSchema,
+  /** The agent the turn runs as, by its Mesh id. */
+  agentId: AgentIdSchema,
+  /** The directory the turn runs in, absolute. */
+  cwd: z.string().min(1),
+  /**
+   * The words, inline, as `turn.start` carries them: never empty, at most
+   * `SESSION_RELAY_MAX_MESSAGE_LENGTH` (200,000) characters. Longer is
+   * refused at parse, naming the cap, before anything is saved.
+   */
+  content: RelayMessageContentSchema,
+  /** What is starting the turn. */
+  origin: TurnOriginSchema,
+  /**
+   * The thing the turn came from, as a `dork:` reference (a room, a task run).
+   * Optional for every origin here; the wire's own rule that a room, task or
+   * beat turn names one is the wire's to apply.
+   */
+  originRef: DorkReferenceSchema.optional(),
+  /** The tier the turn runs at, decided by the space side. */
+  tier: AgentComputerTurnTierSchema,
+  /** The loosest level the turn may run at. */
+  permissionCeiling: TurnPermissionCeilingSchema.optional(),
+  /** Standing instructions for the turn's system prompt. */
+  systemPromptAppend: z.string().optional(),
+  /** Folders the turn may reach beyond its cwd. Absent means none. */
+  additionalDirectories: z.array(DirectoryGrantSchema).readonly().optional(),
+  /** Work to do when the turn launches, by name. */
+  prepare: TurnPreparationSchema.optional(),
+  /** Model and effort, when the caller resolved them itself. */
+  settings: TurnSettingsSchema.optional(),
+};
+
+// === Space face ===
+
+/**
+ * What a space-side caller hands the space face's `start()` (spec §3.1).
+ *
+ * The caller's turn fields, plus the two things only a caller can say about
+ * waiting and billing. What the space face mints (`runId`, `attempt`), derives
+ * (`wireOrigin`) or decides at admission (`accountRef`, `playbookId`) is not
+ * here: it is added when the `start_turn` handler builds the
+ * {@link TurnStartRequest}.
+ */
+export const StartTurnInputSchema = z.strictObject({
+  ...callerTurnFields,
+  /**
+   * Epoch ms. The run waits for its turn, and is cancelled as `expired` if it
+   * has not started by then. Replaces `whenBusy: 'refuse'` (spec §3.2, §3.5).
+   * Absent: it waits as long as the run ahead of it in its chat.
+   */
+  notAfter: EpochMsSchema.optional(),
+  /**
+   * The caller's account choice, which admission passes through as the
+   * request's `accountRef` (spec §3.5; DOR-5190 replaces the choice).
+   */
+  accountHint: z.string().min(1).optional(),
+});
+
+/** What a caller hands `start()`. See {@link StartTurnInputSchema}. */
+export type StartTurnInput = z.infer<typeof StartTurnInputSchema>;
+
+/** The run record's eight statuses (spec §4.3). */
+export const RunStatusSchema = z.enum([
+  'queued',
+  'starting',
+  'started',
+  'running',
+  'ended',
+  'settled',
+  'cancelled',
+  'superseded',
+]);
+
+/** A run's status. See {@link RunStatusSchema}. */
+export type RunStatus = z.infer<typeof RunStatusSchema>;
+
+/**
+ * The space face's answer to `start()`, given at acceptance, never at turn
+ * start (spec §3.1). `queuePosition` is 1-based, as the message receipt's is:
+ * 1 means nothing of this chat is ahead of it.
+ */
+export const StartTurnResultSchema = z.strictObject({
+  runId: RunIdSchema,
+  status: RunStatusSchema,
+  queuePosition: z.number().int().positive(),
+});
+
+/** The space face's answer. See {@link StartTurnResultSchema}. */
+export type StartTurnResult = z.infer<typeof StartTurnResultSchema>;
+
+// === Computer face ===
+
+/**
+ * What the space face hands the computer face (spec §3.2): the caller's turn
+ * fields, plus the run's identity and what admission decided. A queue row id,
+ * `source_ref` or effect id is a space-side detail and never appears here.
+ */
+export const TurnStartRequestSchema = z
+  .strictObject({
+    /** The run this turn is an attempt of. */
+    runId: RunIdSchema,
+    /** 1 for a new turn; one more than the run it continues otherwise. */
+    attempt: z.number().int().min(1),
+    /** The run this attempt continues after a restart (§7.3). Present exactly when `attempt` > 1. */
+    continuesRunId: RunIdSchema.optional(),
+    ...callerTurnFields,
+    /** The wire's word for `origin`; always `wireOriginOf(origin)`. */
+    wireOrigin: AgentComputerTurnOriginSchema,
+    /** The account the turn runs on, as admission chose it (§3.5). */
+    accountRef: z.string().min(1).optional(),
+    /** The playbook the turn starts under (DOR-5187). Absent until playbooks exist. */
+    playbookId: z.string().min(1).optional(),
+  })
+  .refine((request) => request.wireOrigin === wireOriginOf(request.origin), {
+    message: 'wireOrigin must be wireOriginOf(origin)',
+    path: ['wireOrigin'],
+  })
+  .refine((request) => (request.attempt === 1) === (request.continuesRunId === undefined), {
+    message: 'A first attempt continues nothing; a later attempt names the run it continues',
+    path: ['continuesRunId'],
+  });
+
+/** What the computer face is asked to start. See {@link TurnStartRequestSchema}. */
+export type TurnStartRequest = z.infer<typeof TurnStartRequestSchema>;
+
+/**
+ * Why the computer face refused a start. It has no "waiting" answer: waiting
+ * is decided on the space side before the computer face is asked (spec §3.5).
+ *
+ * - `already_held`: the computer face already holds a run with this id, so a
+ *   repeated start never starts the turn twice (§6.2).
+ * - `agent_paused`: the agent is paused and the turn is a person's own chat,
+ *   which keeps today's `AGENT_PAUSED` refusal (§3.5).
+ */
+export const RefusalReasonSchema = z.enum(['already_held', 'agent_paused']);
+
+/** Why a start was refused. See {@link RefusalReasonSchema}. */
+export type RefusalReason = z.infer<typeof RefusalReasonSchema>;
+
+/** The computer face's answer to a {@link TurnStartRequest}: accepted, or refused with a reason. */
+export const TurnStartAnswerSchema = z.union([
+  z.strictObject({ accepted: z.literal(true) }),
+  z.strictObject({ refused: RefusalReasonSchema }),
+]);
+
+/** The computer face's answer. See {@link TurnStartAnswerSchema}. */
+export type TurnStartAnswer = z.infer<typeof TurnStartAnswerSchema>;
+
+// === Facts ===
+
+/**
+ * How a run's turn ended, as DorkOS observed it (spec §4.4). DorkOS never
+ * writes an ending it did not observe (ADR 260823-021312).
+ *
+ * - `completed`, `failed`: the runtime's turn ended on its own.
+ * - `stopped`: a stop ended it, with the receipt that observed the end.
+ * - `limited`: a usage limit ended it.
+ * - `refused`: the runtime refused before the agent saw it.
+ * - `shutdown`: DorkOS ended it while shutting down gracefully.
+ * - `process_died`: the process ended with no `turn_end`.
+ */
+export const RunEndingSchema = z.enum([
+  'completed',
+  'failed',
+  'stopped',
+  'limited',
+  'refused',
+  'shutdown',
+  'process_died',
+]);
+
+/** How a run ended. See {@link RunEndingSchema}. */
+export type RunEnding = z.infer<typeof RunEndingSchema>;
+
+/** Why a run exists: a new turn, or a continuation after a restart (spec §4.1). */
+export const AttemptReasonSchema = z.enum(['initial', 'restart']);
+
+/** Why a run exists. See {@link AttemptReasonSchema}. */
+export type AttemptReason = z.infer<typeof AttemptReasonSchema>;
+
+/**
+ * Why a `queued` run is waiting (spec §3.5, §4.1). Admission's answer; the
+ * computer face never gives one.
+ */
+export const WaitReasonSchema = z.enum([
+  'chat_busy',
+  'agent_busy',
+  'machine_full',
+  'paused',
+  'held_after_restart',
+]);
+
+/** Why a run waits. See {@link WaitReasonSchema}. */
+export type WaitReason = z.infer<typeof WaitReasonSchema>;
+
+/** One piece of background work a run's process holds: its kind and a label (spec §7.4). */
+const BackgroundWorkEntrySchema = z.strictObject({
+  kind: BackgroundTaskTypeSchema,
+  label: z.string().min(1),
+});
+
+/**
+ * What the computer face reports about a run, through the one sink registered
+ * at startup (spec §3.1). Each fact names its run by `runId`.
+ *
+ * - `accepted`: the computer face took the start. `joinedRunId` when the
+ *   words joined another run's turn instead (a drain join), which supersedes
+ *   this run (§4.3 row 6).
+ * - `started`: `turn_start` was ingested. `openedBy: 'runtime'` for a turn
+ *   the runtime opened on its own, whose run the computer side names itself
+ *   because no caller did (§4.3 row 2); `runtime` and `runtimeTurnRef` (the
+ *   `seq` of `turn_start`) and `turnBindingId` feed the record's columns.
+ * - `delivered`: the runtime's first event for the turn arrived.
+ * - `waiting_on_person`, `resumed_from_person`: an ask opened, and closed.
+ * - `background_work`: the work the run's process holds now, the whole list.
+ * - `ended`: the turn ended. A `stopped` ending carries the stop's receipt,
+ *   which must have observed the end (an `unconfirmed` stop leaves the run
+ *   where it was); a `refused` one may carry the runtime's words.
+ */
+export const RunFactSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('accepted'),
+    runId: RunIdSchema,
+    joinedRunId: RunIdSchema.optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('started'),
+    runId: RunIdSchema,
+    sessionId: SessionIdSchema,
+    openedBy: z.enum(['caller', 'runtime']),
+    runtime: z.string().min(1),
+    runtimeTurnRef: z.number().int().nonnegative(),
+    turnBindingId: z.string().min(1).optional(),
+  }),
+  z.strictObject({ kind: z.literal('delivered'), runId: RunIdSchema }),
+  z.strictObject({ kind: z.literal('waiting_on_person'), runId: RunIdSchema }),
+  z.strictObject({ kind: z.literal('resumed_from_person'), runId: RunIdSchema }),
+  z.strictObject({
+    kind: z.literal('background_work'),
+    runId: RunIdSchema,
+    work: z.array(BackgroundWorkEntrySchema).readonly(),
+  }),
+  z
+    .strictObject({
+      kind: z.literal('ended'),
+      runId: RunIdSchema,
+      ending: RunEndingSchema,
+      /** The stop's receipt (ADR 260823-021312's vocabulary), strict as every port object is. */
+      receipt: z.strictObject(InterruptReceiptSchema.shape).optional(),
+      refusal: z.string().min(1).optional(),
+    })
+    .refine((fact) => (fact.ending === 'stopped') === (fact.receipt !== undefined), {
+      message: 'A stopped ending carries its receipt, and only a stopped ending does',
+      path: ['receipt'],
+    })
+    .refine((fact) => fact.receipt === undefined || turnEnded(fact.receipt), {
+      message: 'A stop that did not observe the end leaves the run where it was',
+      path: ['receipt'],
+    })
+    .refine((fact) => fact.refusal === undefined || fact.ending === 'refused', {
+      message: "Only a refused ending carries the runtime's refusal",
+      path: ['refusal'],
+    }),
+]);
+
+/** One fact about a run. See {@link RunFactSchema}. */
+export type RunFact = z.infer<typeof RunFactSchema>;
+
+// === Transitions ===
+
+/** One legal move of a run's status; `from: null` creates the run. */
+export interface RunTransition {
+  /** The row of the spec's table (§4.3), for tracing a write back to its rule. */
+  readonly row: number;
+  /** The status before, or `null` when the write creates the run. */
+  readonly from: RunStatus | null;
+  /** The status after. */
+  readonly to: RunStatus;
+}
+
+/**
+ * The thirteen legal transitions (spec §4.3); every other pair is illegal.
+ * The run store checks each write against this table and throws on a pair it
+ * does not hold.
+ */
+export const RUN_TRANSITIONS: readonly RunTransition[] = [
+  { row: 1, from: null, to: 'queued' },
+  { row: 2, from: null, to: 'running' },
+  { row: 3, from: 'queued', to: 'queued' },
+  { row: 4, from: 'queued', to: 'starting' },
+  { row: 5, from: 'queued', to: 'cancelled' },
+  { row: 6, from: 'queued', to: 'superseded' },
+  { row: 7, from: 'starting', to: 'started' },
+  { row: 8, from: 'starting', to: 'queued' },
+  { row: 9, from: 'starting', to: 'cancelled' },
+  { row: 10, from: 'started', to: 'running' },
+  { row: 11, from: 'started', to: 'ended' },
+  { row: 12, from: 'running', to: 'ended' },
+  { row: 13, from: 'ended', to: 'settled' },
+];
+
+/** The statuses no transition leaves (spec §4.3). */
+export const TERMINAL_RUN_STATUSES: readonly RunStatus[] = ['settled', 'cancelled', 'superseded'];
+
+/**
+ * Whether a run may move from one status to another.
+ *
+ * @param from - The status before, or `null` for a run being created.
+ * @param to - The status after.
+ * @returns True only for a pair in {@link RUN_TRANSITIONS}.
+ */
+export function canTransition(from: RunStatus | null, to: RunStatus): boolean {
+  return RUN_TRANSITIONS.some((transition) => transition.from === from && transition.to === to);
+}

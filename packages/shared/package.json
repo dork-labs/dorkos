@@ -481,6 +481,10 @@
       "types": "./src/session-relay-agent-computer.ts",
       "default": "./dist/session-relay-agent-computer.js"
     },
+    "./turn-port": {
+      "types": "./src/turn-port.ts",
+      "default": "./dist/turn-port.js"
+    },
     "./bounded-json": {
       "types": "./src/bounded-json.ts",
       "default": "./dist/bounded-json.js"

@@ -15,8 +15,7 @@
  *    convenient subset of it.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { TURN_ORIGIN_KINDS } from '@dorkos/shared/turn-port';
 import {
   permissionSeedForOrigin,
   relayTurnOrigin,
@@ -97,17 +96,13 @@ describe('permissionSeedForOrigin', () => {
     // The compiler makes the SWITCH exhaustive. Nothing makes this FILE
     // exhaustive, and a table that quietly stopped covering a member would
     // leave a surface's power untested while every case still passed. So the
-    // union's own members are read off the source it is declared in and
-    // compared with what the table exercises.
-    const source = readFileSync(
-      fileURLToPath(new URL('../turn-origin.ts', import.meta.url)),
-      'utf8'
+    // union's own members are read off its schema in `@dorkos/shared/turn-port`
+    // (proven against the type there, in both directions) and compared with
+    // what the table exercises.
+    expect(TURN_ORIGIN_KINDS).toHaveLength(16);
+    expect([...new Set(TABLE.map(([origin]) => origin.kind))].sort()).toEqual(
+      [...TURN_ORIGIN_KINDS].sort()
     );
-    const declared = new Set(
-      [...source.matchAll(/readonly kind: '([a-z-]+)'/g)].map((match) => match[1])
-    );
-    expect(declared.size).toBeGreaterThan(0);
-    expect([...new Set(TABLE.map(([origin]) => origin.kind))].sort()).toEqual([...declared].sort());
   });
 });
 
