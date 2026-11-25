@@ -422,7 +422,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
           .toBe('paused');
         const paused = await execute();
         expect(paused.status()).toBe(409);
-        expect(await paused.json()).toMatchObject({ code: 'CONNECTOR_NOT_EXECUTABLE' });
+        expect(await paused.json()).toMatchObject({ code: 'connection_not_ready' });
         await fix.getByRole('button', { name: 'Resume', exact: true }).click();
         // Turning an account back on waits for the owner to confirm it's them (DOR-4355).
         const sheet = page.getByRole('alertdialog', { name: 'Confirm it’s you' });

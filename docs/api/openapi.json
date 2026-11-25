@@ -237,6 +237,7 @@
           "signing_in",
           "history_refused",
           "agent_paused",
+          "connection_not_ready",
           "room_session_moved",
           "desk_not_own",
           "protected_folder",

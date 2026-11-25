@@ -252,7 +252,7 @@ test.describe('The request card @permissions', () => {
       title,
     });
     expect(direct.status()).toBe(403);
-    expect(((await direct.json()) as { message: string }).message).toContain('request_permission');
+    expect(((await direct.json()) as { detail: string }).detail).toContain('request_permission');
 
     const request_ = {
       action: 'create_room',

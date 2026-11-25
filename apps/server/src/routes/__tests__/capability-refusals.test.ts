@@ -58,6 +58,10 @@ describe('toolRefusalProblem', () => {
     ['SLUG_TAKEN', 'slug_taken', 409],
     ['ROOM_FILE_EXISTS', 'room_file_exists', 409],
     ['NAME_TAKEN', 'conflict', 409],
+    // A connection that is paused, signed out or waiting on its owner (not the caller's input).
+    ['CONNECTOR_NOT_EXECUTABLE', 'connection_not_ready', 409],
+    ['CONNECTOR_SIGN_IN_ENDED', 'connection_not_ready', 409],
+    ['CONNECTOR_MANAGED_AUTHORITY_PENDING', 'connection_not_ready', 409],
     ['UNDO_CONFLICT', 'conflict', 409],
     ['BUSY', 'temporarily_unavailable', 503],
     ['DNS_TIMEOUT', 'temporarily_unavailable', 503],
@@ -152,5 +156,11 @@ describe('gateRefusalProblem', () => {
     const body = gateRefusalProblem({ ...base, reason });
     expect(body).toMatchObject({ code, status: 403 });
     expect(body.detail).not.toContain('Delete an agent');
+  });
+
+  it('tells an agent it may ask a person when a block can be asked past', () => {
+    const body = gateRefusalProblem({ ...base, reason: 'permission_blocked', approvable: true });
+    expect(body).toMatchObject({ code: 'forbidden', status: 403, approvable: true });
+    expect(body.detail).toContain('request_permission');
   });
 });
