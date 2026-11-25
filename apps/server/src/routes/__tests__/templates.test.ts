@@ -25,14 +25,23 @@ import path from 'node:path';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import { createTemplateRoutes } from '../templates.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { templatesDomain } from '../../services/core/agent-templates/template-catalog.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 let DORK_HOME: string;
 
+/**
+ * The read is the capability `templates.list`, served by the mount from the
+ * same data directory the hand routes write.
+ */
 function createApp(): RequestListener {
-  return honoGroupListener({ path: '/api/templates', routes: createTemplateRoutes(DORK_HOME) });
+  return honoGroupListener([
+    capabilityGroup(templatesDomain, { templateDeps: { dorkHome: DORK_HOME } }),
+    { path: '/api/templates', routes: createTemplateRoutes(DORK_HOME) },
+  ]);
 }
 
 function catalogPath(): string {

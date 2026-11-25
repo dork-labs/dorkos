@@ -207,6 +207,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       permissionService,
       // The Activity feed is on every server, whatever runtimes started.
       activityDeps: { activityService },
+      // `templates.list` reads the data directory the template routes write.
+      ...(deps.templates && { templateDeps: { dorkHome: deps.templates.dorkHome } }),
       ...(refs.mcpToolDeps && { operatorDeps: refs.mcpToolDeps }),
       ...(refs.marketplaceMcpDeps && { marketplaceDeps: refs.marketplaceMcpDeps }),
       // Ordinary MCP surfaces expose only provider-neutral discovery. Private

@@ -113,6 +113,16 @@ describe('the mount', () => {
       'agent.resume',
       'agent.list_paused',
       'link.resolve',
+      'directory.browse',
+      'directory.default',
+      'diff.baseline',
+      'diff.advance_baseline',
+      'diff.pending',
+      'diff.revert',
+      'workspaces.list',
+      'workspaces.scan',
+      'workspaces.pin',
+      'templates.list',
     ]);
   });
 

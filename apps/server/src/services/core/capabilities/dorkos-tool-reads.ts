@@ -215,6 +215,19 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'permissions.change': 'local',
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
+  // Folder names, workspaces and the template catalog: what is on this
+  // computer, written by the team.
+  'directory.browse': 'local',
+  'directory.default': 'local',
+  // Any file's text inside a folder the caller names, a cloned repo's included.
+  'diff.baseline': 'outside',
+  'diff.advance_baseline': 'local',
+  'diff.pending': 'local',
+  'diff.revert': 'local',
+  'workspaces.list': 'local',
+  'workspaces.scan': 'local',
+  'workspaces.pin': 'local',
+  'templates.list': 'local',
   ping: 'local',
   get_server_info: 'local',
   get_session_count: 'local',

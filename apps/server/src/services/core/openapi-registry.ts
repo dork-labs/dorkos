@@ -69,8 +69,6 @@ import {
   McpAppResourceRequestSchema,
   McpAppResourceResponseSchema,
   ListSessionsQuerySchema,
-  BrowseDirectoryQuerySchema,
-  BrowseDirectoryResponseSchema,
   CommandsQuerySchema,
   CommandRegistrySchema,
   HealthResponseSchema,
@@ -111,7 +109,6 @@ import {
   ClaimUnclaimedChatRequestSchema,
   ClaimUnclaimedChatResponseSchema,
 } from '@dorkos/shared/relay-schemas';
-import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import {
   HarnessAdoptBodySchema,
   HarnessAdoptResponseSchema,
@@ -1689,53 +1686,6 @@ registry.registerPath({
         },
       },
     },
-  },
-});
-
-// --- Directory ---
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/directory',
-  tags: ['Directory'],
-  summary: 'Browse directories',
-  description:
-    'Browse directories on the server filesystem. Restricted to the home directory for security.',
-  request: {
-    query: BrowseDirectoryQuerySchema,
-  },
-  responses: {
-    200: {
-      description: 'Directory listing',
-      content: { 'application/json': { schema: BrowseDirectoryResponseSchema } },
-    },
-    400: problemResponse(
-      '`invalid_request` (a bad query, or a path with a NUL byte) or `not_a_folder` (the path is a file)'
-    ),
-    403: problemResponse(
-      '`outside_boundary` (the path is outside the folders DorkOS may use) or `forbidden` (the system would not let DorkOS read it)'
-    ),
-    404: problemResponse('`not_found`: no folder at that path'),
-    500: problemResponse('`internal_error`: the folder could not be read'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/directory/default',
-  tags: ['Directory'],
-  summary: 'Get default working directory',
-  description: "Returns the server's boundary-resolved default working directory.",
-  responses: {
-    200: {
-      description: 'Default directory path',
-      content: {
-        'application/json': {
-          schema: z.object({ path: z.string() }),
-        },
-      },
-    },
-    500: { $ref: '#/components/responses/InternalErrorProblem' },
   },
 });
 
@@ -7658,24 +7608,6 @@ registry.registerPath({
       content: { 'application/json': { schema: DeletePushSubscriptionResponseSchema } },
     },
     403: problemResponse('`operator_only`: only the operator may remove a push device'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/workspaces/scan',
-  tags: ['Workspaces'],
-  summary: 'List the real checkouts on disk',
-  description:
-    'Read-only scan of the workspace root. Reports every git checkout found there — ' +
-    'branch, uncommitted changes, ahead/behind, last commit — without writing to any of them. ' +
-    'A checkout git cannot describe is reported with `readable: false` rather than dropped.',
-  responses: {
-    200: {
-      description: 'The scanned root and what it holds',
-      content: { 'application/json': { schema: WorktreeScanResultSchema } },
-    },
-    500: problemResponse('The scan could not run'),
   },
 });
 

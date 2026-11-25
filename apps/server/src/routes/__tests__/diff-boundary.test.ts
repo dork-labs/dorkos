@@ -22,10 +22,18 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { editBaselineStore } from '../../services/diff/index.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { diffDomain } from '../../services/diff/diff-capabilities.js';
 
 const admission = new MainRequestAdmission();
-// Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(admission));
+// Routed as the running server routes: the moved groups answer from Hono, and
+// the JSON routes are capabilities the mount serves.
+const testServer = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([diffDomain], { logger: noopLogger }),
+  })
+);
 const SESSION = 'sess-diff-1';
 
 describe('Diff routes — real boundary + symlink escapes', () => {
@@ -79,6 +87,25 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     expect(res.body.code).toBe('outside_boundary');
   });
 
+  it('POST /baseline/advance is a person’s mark: an agent is refused person_only', async () => {
+    await fs.writeFile(path.join(cwd, 'reviewed.txt'), 'v1\n');
+    const res = await request(testServer)
+      .post('/api/diff/baseline/advance')
+      .set('X-DorkOS-Agent', 'not-a-real-token')
+      .send({ cwd, path: 'reviewed.txt', sessionId: SESSION });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+  });
+
+  it('POST /baseline/advance marks a file reviewed for the person', async () => {
+    await fs.writeFile(path.join(cwd, 'reviewed.txt'), 'v1\n');
+    const res = await request(testServer)
+      .post('/api/diff/baseline/advance')
+      .send({ cwd, path: 'reviewed.txt', sessionId: SESSION });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
   it('GET /pending rejects a cwd outside the boundary (403)', async () => {
     const res = await request(testServer)
       .get('/api/diff/pending')
@@ -102,6 +129,17 @@ describe('Diff routes — real boundary + symlink escapes', () => {
       .query({ cwd, path: 'logo.bin', sessionId: SESSION });
     expect(res.status).toBe(415);
     expect(res.body.code).toBe('binary_file');
+  });
+
+  it('answers an agent that may not read the chat as if the chat did not exist', async () => {
+    await fs.writeFile(path.join(cwd, 'secret.txt'), 'mine\n');
+    const res = await request(testServer)
+      .get('/api/diff/baseline')
+      .set('X-DorkOS-Agent', 'not-a-real-token')
+      .query({ cwd, path: 'secret.txt', sessionId: SESSION });
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ code: 'session_not_found', detail: 'No chat with that id.' });
+    expect(JSON.stringify(res.body)).not.toContain('mine');
   });
 
   it('GET /baseline resolves an empty base for an untracked, unsnapshotted file (control)', async () => {

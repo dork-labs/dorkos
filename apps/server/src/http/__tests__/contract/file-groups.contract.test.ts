@@ -609,12 +609,15 @@ contractSuite('file, diff, upload and profile groups', [
     expect: { status: 200, body: { ok: true } },
   },
   {
-    name: 'POST /api/diff/baseline/advance refuses an agent that may not read the session',
+    name: 'POST /api/diff/baseline/advance refuses an agent: marking reviewed is a person’s',
     method: 'POST',
     path: '/api/diff/baseline/advance',
     headers: AGENT,
     body: { cwd: CWD, path: 'notes.txt', sessionId: SESSION },
-    expect: { status: 404, body: DIFF_SESSION_NOT_FOUND },
+    expect: {
+      status: 403,
+      schema: z.object({ code: z.literal('person_only'), status: z.literal(403) }).loose(),
+    },
   },
   {
     name: 'POST /api/diff/revert is a 404 with nothing to restore',

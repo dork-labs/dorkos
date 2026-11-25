@@ -1,5 +1,8 @@
 /**
- * Workspace HTTP API (DOR-84) — thin handlers over the WorkspaceManager.
+ * Workspace HTTP API (DOR-84) — thin handlers over the WorkspaceManager: make,
+ * read by id, resolve a path, the port block and remove. Listing, the scan and
+ * the pin are capabilities the mount serves
+ * (`services/workspace/workspace-capabilities.ts`).
  *
  * @module server/routes/workspaces
  */
@@ -8,8 +11,6 @@ import { z } from 'zod';
 import { EnsureWorkspaceRequestSchema, derivePorts } from '@dorkos/shared/workspace';
 import {
   getWorkspaceManager,
-  getWorkspaceRoot,
-  scanWorktrees,
   UnsafeWorkspaceSourceError,
   workspaceGateFor,
   WorkspaceApprovalPendingError,
@@ -30,10 +31,8 @@ import { runFrontDoorWrite } from './front-door-step-up.js';
 
 const router = new Hono<ApiEnv>();
 
-const ListQuerySchema = z.object({ projectKey: z.string().optional() });
 const ResolveQuerySchema = z.object({ path: z.string().min(1) });
 const PortsBodySchema = z.object({ path: z.string().min(1) });
-const PinBodySchema = z.object({ pinned: z.boolean() });
 const RemoveQuerySchema = z.object({
   force: z.coerce.boolean().optional(),
   approvedRemoveHooks: z.string().min(1).optional(),
@@ -66,36 +65,10 @@ function shownOf(inspection: WorkspaceInspection) {
   };
 }
 
-/** List workspaces (optionally one project), each with attached sessions. */
-router.get('/', async (c) => {
-  const parsed = ListQuerySchema.safeParse(readQuery(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  try {
-    const workspaces = await getWorkspaceManager().list({ projectKey: parsed.data.projectKey });
-    return c.json({ workspaces });
-  } catch (err) {
-    logger.error('[workspaces] GET / failed', { err });
-    return problem(c, 'internal_error');
-  }
-});
-
 /**
- * Read-only adoption scan (DOR-1056): every real checkout under the workspace
- * root, with the facts git can answer cheaply. Declared before `/:id` so the
- * literal path wins over the parameter.
+ * Resolve an absolute path (e.g. a session cwd) to its containing workspace.
+ * Declared before `/:id` so the literal path wins over the parameter.
  */
-router.get('/scan', async (c) => {
-  try {
-    return c.json(await scanWorktrees(getWorkspaceRoot()));
-  } catch (err) {
-    logger.error('[workspaces] GET /scan failed', { err });
-    return problem(c, 'internal_error');
-  }
-});
-
-/** Resolve an absolute path (e.g. a session cwd) to its containing workspace. */
 router.get('/resolve', async (c) => {
   const parsed = ResolveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
@@ -224,21 +197,6 @@ router.get('/:id', async (c) => {
   } catch (err) {
     logger.error('[workspaces] GET /:id failed', { err });
     return problem(c, 'internal_error');
-  }
-});
-
-/** Pin or unpin a workspace. */
-router.post('/:id/pin', async (c) => {
-  const parsed = PinBodySchema.safeParse(readJsonBody(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  try {
-    const workspace = await getWorkspaceManager().setPinned(c.req.param('id'), parsed.data.pinned);
-    return c.json(workspace);
-  } catch (err) {
-    logger.error('[workspaces] POST /:id/pin failed', { err });
-    return problem(c, 'not_found', { detail: 'No workspace with that id.' });
   }
 });
 
