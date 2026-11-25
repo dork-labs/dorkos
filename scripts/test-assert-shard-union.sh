@@ -236,5 +236,83 @@ check 'both options together pass on a full union' 0 "$result"
 result=$(WORKSPACE_ROOT="$ws" bash "$assert" --quarantined "$qempty" --require-files "$rall" "$lists_nobin" >/dev/null 2>&1; echo $?)
 check 'both options together still fail on a missing required file' 1 "$result"
 
+# ---- the planned set (DOR-5130) ----
+#
+# A merge-queue build runs only the suites its change can reach. --packages
+# names them; the union must cover exactly those, and nothing else is required.
+# Without the flag (the push run on main, the canary) every test-script package
+# is still required: case 2 above pins that beta's absence fails there.
+run_planned() {
+  local lists=$1 pfile=$2
+  WORKSPACE_ROOT="$ws" bash "$assert" --packages "$pfile" "$lists" >/dev/null 2>&1
+  echo $?
+}
+palpha="$work_dir/planned-alpha.txt"
+printf 'apps/alpha\n' > "$palpha"
+check 'a planned union passes without the unplanned packages' 0 "$(run_planned "$lists2" "$palpha")"
+check 'the same union without a plan still fails (full set)' 1 "$(run_case "$lists2")"
+
+pboth="$work_dir/planned-both.txt"
+printf 'apps/alpha\npackages/beta\n' > "$pboth"
+check 'a planned package missing from the union fails' 1 "$(run_planned "$lists2" "$pboth")"
+out=$(WORKSPACE_ROOT="$ws" bash "$assert" --packages "$pboth" "$lists2" 2>&1)
+case "$out" in
+*packages/beta*) check 'the failure names the missing planned package' 0 0 ;;
+*) check 'the failure names the missing planned package' 0 1
+   printf '        actual output: %s\n' "$out" >&2 ;;
+esac
+check 'every planned package in the union passes' 0 "$(run_planned "$lists1" "$pboth")"
+
+pempty="$work_dir/planned-empty.txt"
+printf '\n' > "$pempty"
+check 'an empty plan is refused, never read as nothing to check' 1 "$(run_planned "$lists1" "$pempty")"
+check 'a missing plan file is refused' 1 "$(run_planned "$lists1" "$work_dir/nope-planned.txt")"
+
+pnotest="$work_dir/planned-notest.txt"
+printf 'packages/no-tests\n' > "$pnotest"
+check 'a planned package with no test script is refused' 1 "$(run_planned "$lists3" "$pnotest")"
+pghost="$work_dir/planned-ghost.txt"
+printf 'packages/ghost\n' > "$pghost"
+check 'a planned package that does not exist is refused' 1 "$(run_planned "$lists1" "$pghost")"
+pdeep="$work_dir/planned-deep.txt"
+printf 'apps/alpha/src\n' > "$pdeep"
+check 'a planned path that is not a package directory is refused' 1 "$(run_planned "$lists1" "$pdeep")"
+
+# A sibling prefix does not satisfy a planned package either.
+pbeta="$work_dir/planned-beta.txt"
+printf 'packages/beta\n' > "$pbeta"
+mkdir -p "$ws/packages/beta-extras"
+printf '{"name":"beta-extras","scripts":{"test":"vitest run"}}\n' > "$ws/packages/beta-extras/package.json"
+check 'a sibling-prefix package does not satisfy a planned beta' 1 "$(run_planned "$lists5" "$pbeta")"
+rm -rf "$ws/packages/beta-extras"
+
+# A quarantined test in a package outside the plan is not expected in a
+# planned union: it is counted out loud, never reported missing. Inside the
+# plan the interlock holds exactly as before.
+qbeta="$work_dir/quarantine-beta.txt"
+printf 'packages/beta/src/__tests__/c.test.ts › beta does its thing\n' > "$qbeta"
+result=$(WORKSPACE_ROOT="$ws" bash "$assert" --packages "$palpha" --quarantined "$qbeta" "$lists2" >/dev/null 2>&1; echo $?)
+check 'a quarantined file outside the plan does not fail a planned union' 0 "$result"
+qout=$(WORKSPACE_ROOT="$ws" bash "$assert" --packages "$palpha" --quarantined "$qbeta" "$lists2" 2>&1)
+case "$qout" in
+*'1 in a package outside the plan'*) check 'and it is counted out loud' 0 0 ;;
+*) check 'and it is counted out loud' 0 1
+   printf '        actual output: %s\n' "$qout" >&2 ;;
+esac
+result=$(WORKSPACE_ROOT="$ws" bash "$assert" --quarantined "$qbeta" "$lists2" >/dev/null 2>&1; echo $?)
+check 'the same lane without a plan still fails on the missing file' 1 "$result"
+result=$(WORKSPACE_ROOT="$ws" bash "$assert" --packages "$palpha" --quarantined "$qgone" "$lists1" >/dev/null 2>&1; echo $?)
+check 'a vanished quarantined file inside the plan still fails' 1 "$result"
+
+# All three options together.
+result=$(WORKSPACE_ROOT="$ws" bash "$assert" --packages "$palpha" --quarantined "$qfile" --require-files "$rall" "$lists_bin" >/dev/null 2>&1; echo $?)
+check 'a plan, a lane and required files together pass' 0 "$result"
+planned_out=$(WORKSPACE_ROOT="$ws" bash "$assert" --packages "$palpha" "$lists1" 2>&1)
+case "$planned_out" in
+*'1 planned package(s)'*) check 'a planned run says it checked the planned set' 0 0 ;;
+*) check 'a planned run says it checked the planned set' 0 1
+   printf '        actual output: %s\n' "$planned_out" >&2 ;;
+esac
+
 printf 'test-assert-shard-union: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

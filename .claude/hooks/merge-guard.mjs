@@ -226,6 +226,18 @@ const STDIN_SHELLS = new Set([
   '.',
 ]);
 
+/** Shell options that take the next word as their value (not a script file). */
+const SHELL_FLAGS_WITH_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
+
+/** A redirection written apart from its target: `<`, `<<`, `<<-`, `>`, `2>>`, `>|`, `&>`. */
+const BARE_REDIRECTION = /^(\d*[<>]+[-|&]?|&>>?)$/;
+
+/** A redirection that writes, with its target attached: `>f`, `2>>f`, `>|f`, `&>f` (not `>&2`). */
+const ATTACHED_WRITE = /^(?:\d*>>?\|?|&>>?)([^&].*)$/;
+
+/** A "script file" that is really stdin: `bash /dev/stdin <<EOF` runs the body. */
+const STDIN_DEVICE = /^\/dev\/(stdin|fd\/\d+)$|^\/proc\/self\/fd\/\d+$/;
+
 /**
  * Decide whether an already-tokenized command is an admin merge.
  *
@@ -353,18 +365,82 @@ function inspectSegment(segment, depth) {
 }
 
 /**
- * Decide whether a segment hands text to a shell: a shell word (`bash`,
- * `sh -s`, `ssh`, `eval`, ...) appears as one of its whole tokens. Matching
- * any whole token, not only the command word, catches `sudo bash`,
- * `timeout 5 sh -s` and `cat <<'EOF' | bash` without modelling every runner,
- * while a sentence that merely contains the word (`-m "run it in bash"`) is a
- * single token and does not match.
+ * The files a line writes through a redirection (`> f`, `>>f`, `&> f`) or
+ * `tee`, so `bash f` on the same line counts as running text from the line.
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {Set<string>} Normalized paths the line writes.
+ */
+function writtenFiles(segments) {
+  const written = new Set();
+  for (const segment of segments) {
+    const tokens = tokenize(segment);
+    const tee = tokens.findIndex((token) => basename(token) === 'tee');
+    tokens.forEach((token, index) => {
+      let target = /^(\d*>>?\|?|&>>?)$/.test(token)
+        ? tokens[index + 1]
+        : (ATTACHED_WRITE.exec(token)?.[1] ?? null);
+      if (tee !== -1 && index > tee && !token.startsWith('-')) target = token;
+      if (target) written.add(path.normalize(target));
+    });
+  }
+  return written;
+}
+
+/**
+ * Decide whether a segment hands TEXT to a shell. A shell word (`bash`,
+ * `sh`, `ssh`, `eval`, ...) as one of its whole tokens, not only the command
+ * word, catches `sudo bash`, `timeout 5 sh -s` and `cat <<'EOF' | bash`
+ * without modelling every runner, while a sentence that merely contains the
+ * word (`-m "run it in bash"`) is a single token and does not match.
+ *
+ * The shell word counts only when that shell runs text: `eval`, `ssh` (its
+ * remote command or stdin), `-c`/`-s` (also combined, `-lc`), or no script
+ * file, so it reads stdin (piped into, `bash <<EOF`). `bash <script file>`
+ * runs a file, so a quoted heredoc elsewhere on the line stays data (Nov 25:
+ * a PR body heredoc naming the refused command beside
+ * `bash scripts/open-pr.sh` was refused; heavy-command-guard.mjs #4436). The
+ * script file is the first word that is not a flag, a flag's value (`-o
+ * pipefail`, `-O extglob`, `+o`, `+O`, `--rcfile f`, `--init-file f`) or a
+ * redirection and its target. It still counts as text when it is stdin
+ * (`/dev/stdin`, `/dev/fd/0`), a process substitution (`<(...)`), or a file
+ * this same line writes (`cat > m.sh <<'EOF' ... bash m.sh`).
  *
  * @param {string} segment - One command segment.
+ * @param {Set<string>} [written] - Files the line writes (`writtenFiles`).
  * @returns {boolean} True when the segment runs text through a shell.
  */
-function feedsAShell(segment) {
-  return tokenize(segment).some((token) => STDIN_SHELLS.has(basename(token)));
+function feedsAShell(segment, written = new Set()) {
+  const tokens = tokenize(segment);
+  return tokens.some((token, index) => {
+    const name = basename(token);
+    if (!STDIN_SHELLS.has(name)) return false;
+    if (name === 'eval' || name === 'ssh') return true;
+    const rest = tokens.slice(index + 1);
+    if (rest.some((arg) => /^-[a-zA-Z]*[cs][a-zA-Z]*$/.test(arg))) return true;
+    for (let k = 0; k < rest.length; k++) {
+      const arg = rest[k];
+      if (arg.startsWith('<(')) return true;
+      if (SHELL_FLAGS_WITH_VALUE.has(arg) || BARE_REDIRECTION.test(arg)) {
+        k++;
+        continue;
+      }
+      if (/^[-+]/.test(arg) || /^(\d*[<>]|&>)/.test(arg)) continue;
+      return STDIN_DEVICE.test(arg) || written.has(path.normalize(arg));
+    }
+    return true;
+  });
+}
+
+/**
+ * Whether any segment of a line hands text to a shell (`feedsAShell`).
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {boolean} True when the line runs text through a shell.
+ */
+function lineFeedsAShell(segments) {
+  const written = writtenFiles(segments);
+  return segments.some((segment) => feedsAShell(segment, written));
 }
 
 /** Shell operators that end one command, longest first. */
@@ -434,7 +510,7 @@ function commandSegments(command, strict) {
     }
   }
   keep(start, masked.length);
-  return segments.some(feedsAShell) ? splitSegments(command) : segments;
+  return lineFeedsAShell(segments) ? splitSegments(command) : segments;
 }
 
 /**
@@ -460,7 +536,7 @@ function inspectCommand(command, depth = 0, strict = false) {
   // a segment feeds a shell, every argument that holds a whole command line is
   // read as one. Lines with no shell receiver never take this path, so a
   // commit message or PR body naming an admin merge stays allowed.
-  if (depth < 2 && segments.some(feedsAShell)) {
+  if (depth < 2 && lineFeedsAShell(segments)) {
     for (const segment of segments) {
       for (const token of tokenize(segment)) {
         if (!/\s/.test(token)) continue;

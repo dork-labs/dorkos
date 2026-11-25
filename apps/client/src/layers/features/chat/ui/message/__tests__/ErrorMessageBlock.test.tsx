@@ -191,7 +191,7 @@ describe('ErrorMessageBlock', () => {
   });
 
   it('names the next step for the exact Git refusal and preserves its message and details', () => {
-    const message = 'Codex can’t protect this folder’s Git files. Choose another folder.';
+    const message = 'Codex can’t work inside a Git folder. Choose the project folder instead.';
     const details = 'Synthetic Git metadata refusal details';
     render(
       <ErrorMessageBlock

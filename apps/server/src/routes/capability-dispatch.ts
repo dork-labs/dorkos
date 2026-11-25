@@ -40,12 +40,14 @@ import {
   APPROVAL_TOKEN_HEADER,
   CapabilityGateRefusal,
   CapabilityToolError,
+  ConfirmFirstRequired,
   personCaller,
   type CapabilityRegistry,
   type CapabilityRequestFacts,
 } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
+import { deviceIdOf } from '../services/core/auth/sessions/signed-in-devices.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -56,12 +58,17 @@ import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { heldWifiOwner, personProof } from '../services/todos/caller.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
+import { holdConfirmFirst } from './capability-confirm-first.js';
+import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 
 /** What a request answers while boot has not handed the registry over. */
 const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
 
 /** What an id no capability has answers. */
 const UNKNOWN_CAPABILITY = 'No action has that id. List them with `dorkos capabilities`.';
+
+/** What a commit answers when its confirmation was not for the call it ran. */
+const CONFIRMED_ANOTHER_CALL = 'That confirmation was for a different request. Confirm this one.';
 
 /** What an unexpected failure answers; the error itself goes to the log. */
 const CAPABILITY_FAILED = 'DorkOS hit an error running that action. Try again.';
@@ -76,6 +83,13 @@ export interface CapabilityDispatch {
   input: unknown;
   /** The status a success answers with. Defaults to `200`. */
   success?: HttpSuccessStatus;
+  /**
+   * Set by the capability's own REST path (`capability-http.ts`), never by
+   * `POST /api/capabilities/{id}/invoke`: only this door mints the person proof
+   * for every `observe` call, which lets the person's own read pass an area
+   * Blocked for agents (DOR-4978).
+   */
+  rest?: true;
 }
 
 /**
@@ -122,6 +136,40 @@ export async function dispatchCapability(
     return problem(c, 'not_from_wifi', { detail: WIFI_ACTION_REFUSAL });
   }
 
+  // A confirm-first capability runs the account owner bar first, held or not, as
+  // the account writes always did (ADR 261125-114705, decision 4).
+  if (capability.confirmFirst) {
+    const refusal = problemRefusalUnlessOwner(facts, capability.confirmFirst.accountOwner);
+    if (refusal) return sendProblem(c, refusal);
+  }
+  return invokeAs(
+    c,
+    registry,
+    { id, input, success: dispatch.success ?? 200, ...(dispatch.rest ? { rest: true } : {}) },
+    facts
+  );
+}
+
+/**
+ * Invoke one capability as one request's caller, and answer.
+ *
+ * @param c - The request the answer is for.
+ * @param registry - The composed registry.
+ * @param call - The capability, its raw input, its success status, and whether it came
+ *   through the capability's own REST path (`rest`, never `/invoke`).
+ * @param facts - The caller: the asking request's facts, or, when a held call
+ *   commits, the confirming request's.
+ * @param confirmed - The person's confirmation, only when a held call commits.
+ */
+async function invokeAs(
+  c: Context<ApiEnv>,
+  registry: CapabilityRegistry,
+  call: { id: string; input: unknown; success: HttpSuccessStatus; rest?: boolean },
+  facts: RequestFacts,
+  confirmed?: unknown
+): Promise<Response> {
+  const { id, input, success } = call;
+  const capability = registry.get(id);
   // The call is attributed when the caller presented a resolved agent token;
   // without one it runs unattributed, which does NOT make it ungated: the
   // capability's tier decides that (`tier-enforcement.ts`). The wider fact, that
@@ -135,15 +183,28 @@ export async function dispatchCapability(
   // approval is bound to a hash of that input.
   const header = facts.headers[APPROVAL_TOKEN_HEADER];
   const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
-  // Proof of a person, asked only by a person-only capability, which
-  // `registry.invoke` refuses without it (ADR 261123-170830). The same bar the
-  // decide endpoint and the hand person-only routes use, plus no bearer.
+  // Proof of a person: the same bar the decide endpoint and the hand person-only
+  // routes use, plus no bearer. A person-only capability asks for it, and
+  // `registry.invoke` refuses one without it (ADR 261123-170830). A
+  // capability's own REST path also mints it for every `observe` call, tagged
+  // `rest-proof` when no program credential came either (no API key): that
+  // lets the person's own read pass an area a person Blocked for agents, and
+  // nothing else (DOR-4978, `personReadsPastArea`). Only for a read: minting
+  // marks a missing person session, which would turn an `act` call's own
+  // refusal into a password prompt that changes nothing. `/invoke` never tags it.
+  // Only from the live request: a held call's replay (`confirmed`) never mints it.
+  const restRead = call.rest === true && confirmed === undefined && capability?.tier === 'observe';
   const person =
-    capability.surfaces.http?.audience === 'person'
-      ? personCaller({
-          ...readCallerAuthority(facts),
-          authorizationPresented: facts.headers.authorization !== undefined,
-        })
+    restRead || capability?.surfaces.http?.audience === 'person'
+      ? personCaller(
+          {
+            ...readCallerAuthority(facts),
+            authorizationPresented: facts.headers.authorization !== undefined,
+          },
+          restRead && !presentsProgramCredential(facts)
+            ? { readGroup: readGroupOf(facts) }
+            : undefined
+        )
       : undefined;
 
   try {
@@ -155,12 +216,22 @@ export async function dispatchCapability(
       ...(person ? { person } : {}),
       request: capabilityRequestFacts(facts),
       retryChannel: 'http-header',
+      ...(confirmed !== undefined ? { confirmed } : {}),
     });
-    const success = dispatch.success ?? 200;
     return success === 204 ? c.body(null, 204) : c.json(result, success);
   } catch (err) {
     // 202: recorded and waiting on a person, so come back. 403: refused for good.
     if (err instanceof CapabilityGateRefusal) return gateResponse(c, err.decision);
+    // Held for the "Confirm it's you" sheet; a held call that commits is never held again.
+    if (err instanceof ConfirmFirstRequired) {
+      // Defence in depth: a commit replays the same call it held, so its confirmation matches.
+      if (confirmed !== undefined) {
+        return problem(c, 'precondition_failed', { detail: CONFIRMED_ANOTHER_CALL });
+      }
+      return holdConfirmFirst(c, id, err, (confirming, confirmation) =>
+        invokeAs(c, registry, call, confirming, confirmation)
+      );
+    }
     if (err instanceof z.ZodError) {
       return validationProblem(c, err);
     }
@@ -207,4 +278,18 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
       return (held ??= heldWifiOwner(facts));
     },
   };
+}
+
+/**
+ * What a person's repeated reads are grouped by in the audit log (DOR-4978):
+ * the sign-in's opaque device id, else the network address. Never a session
+ * id, a key or anything the caller chose. Carried on the person proof to the
+ * audit observer only, never into a handler's context.
+ *
+ * @param facts - The request's facts.
+ */
+function readGroupOf(facts: RequestFacts): string {
+  const sessionId = facts.user?.sessionId;
+  if (sessionId) return `sign-in:${deviceIdOf(sessionId)}`;
+  return `address:${facts.peerAddress ?? 'unknown'}`;
 }

@@ -40,6 +40,12 @@ export interface ResolvedPermission {
    * (DOR-3703). Either way, only a setting for the action itself allows it.
    */
   destructiveAsk?: true;
+  /**
+   * True when a setting for the action itself decided, not its area's: an
+   * agent's or the install's action entry, or the preset's own entry for the
+   * action (which also reports `source: 'preset'`). Absent for an area-level one.
+   */
+  actionLevel?: true;
 }
 
 /** The install-wide half of the model: the preset and the changes on top of it. */
@@ -197,9 +203,14 @@ export function resolvePermission(input: ResolvePermissionInput): ResolvedPermis
   }
 
   const layer = AGENT_SOURCES.has(source) ? 'agent' : 'default';
-  return destructiveAsk
-    ? { area, state, source, layer, destructiveAsk }
-    : { area, state, source, layer };
+  return {
+    area,
+    state,
+    source,
+    layer,
+    ...(destructiveAsk ? { destructiveAsk } : {}),
+    ...(actionLevel ? { actionLevel: true as const } : {}),
+  };
 }
 
 /** Where a Files & commands stop came from. */

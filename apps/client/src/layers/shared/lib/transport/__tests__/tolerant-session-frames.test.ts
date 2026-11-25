@@ -210,6 +210,58 @@ describe('parseSessionEvent', () => {
   });
 });
 
+describe('a chat’s runs from a newer server (spec `turns-survive-restarts` §4.6)', () => {
+  /** One run as the server sends it. */
+  const run = (overrides: Record<string, unknown> = {}) => ({
+    id: '01RUNDEMO00000000000000000',
+    chatSeq: 1,
+    status: 'ended',
+    openedBy: 'caller',
+    attempt: 1,
+    waitReason: null,
+    queueMessageId: null,
+    queuePosition: null,
+    waitingOnPerson: false,
+    ending: 'process_died',
+    notice: 'restart_stopped',
+    runtimeTurnRef: 3,
+    warnings: [],
+    createdAt: '2026-11-25T09:00:00.000Z',
+    startedAt: '2026-11-25T09:00:01.000Z',
+    endedAt: '2026-11-25T09:02:00.000Z',
+    ...overrides,
+  });
+
+  it('reads a line this window does not know as no line, and keeps the frame', () => {
+    const result = parseSessionEvent({
+      type: 'run_update',
+      seq: 4,
+      runs: [run({ notice: 'restart_continued' })],
+    });
+
+    expect(result).toMatchObject({ ok: true, event: { runs: [{ notice: null }] } });
+  });
+
+  it('leaves out only a run whose status this window does not know', () => {
+    const result = parseSessionEvent({
+      type: 'run_update',
+      seq: 4,
+      runs: [run(), run({ id: '01RUNNEWER0000000000000000', chatSeq: 2, status: 'resuming' })],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.event.type !== 'run_update') return;
+    expect(result.event.runs.map((kept) => kept.id)).toEqual(['01RUNDEMO00000000000000000']);
+    expect(result.unreadable?.path).toBe('runs.1.status');
+  });
+
+  it('does the same for the runs a snapshot carries', () => {
+    const result = parseSessionSnapshot(snapshotWith({ runs: [run({ notice: 'chain_cap' })] }));
+
+    expect(result).toMatchObject({ ok: true, snapshot: { runs: [{ notice: null }] } });
+  });
+});
+
 describe('parsePendingInteractionsResponse', () => {
   afterEach(() => {
     vi.restoreAllMocks();

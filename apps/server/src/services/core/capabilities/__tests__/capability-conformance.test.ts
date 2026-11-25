@@ -779,6 +779,11 @@ capabilityConformance(registry, {
     'workspaces.pin': { id: 'conformance-workspace', pinned: true },
     // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
     'heartbeat.end_beat': { summary: 'A conformance beat.' },
+    // A valid answer; the person-only door refuses the anonymous call before it runs.
+    'heartbeat.choose_triage_credits': { useCredits: false },
+    // A chat id is required, so `{}` would be a ZodError. With no run record
+    // wired here, the handler answers its own `NOT_READY` refusal.
+    'runs.chat_runs': { id: '00000000-0000-4000-8000-0000000c0a55' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

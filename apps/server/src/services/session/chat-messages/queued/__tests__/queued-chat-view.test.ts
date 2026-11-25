@@ -149,6 +149,7 @@ describe('the queue a person reads', () => {
       ...chatRow(fenced('Please hold PR #12.')),
       position: 1,
       inTurn: false,
+      restored: false,
       context: null,
       heldToDefault: false,
       carriedLimits: null,

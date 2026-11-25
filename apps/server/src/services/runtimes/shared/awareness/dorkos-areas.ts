@@ -63,8 +63,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // Work claims ride here with no words of their own: a claim is a chat saying
     // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    // A chat's change review (diff.*) rides here with no words of its own (DOR-4978).
-    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.', 'diff.'],
+    // A chat's change review (diff.*) and its run list (runs.*, DOR-5212) ride
+    // here with no words of their own (DOR-4978).
+    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.', 'diff.', 'runs.'],
     areas: ['agents', 'messages', 'own_chat'],
   },
   {
@@ -147,7 +148,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'Tasks',
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
-    // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978).
+    // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978), and the
+    // owner's answer to the credits offer (`heartbeat.choose_triage_credits`), person-only, so no
+    // agent can call it.
     covers: ['tasks_', 'heartbeat.'],
     areas: ['tasks'],
   },

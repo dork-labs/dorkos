@@ -1200,6 +1200,119 @@ describe('quoting and redirects that hid a write (Security, #3487)', () => {
   });
 });
 
+describe('a command on the line after a heredoc is read on its own', () => {
+  const settings = () => `${agent}/.claude/settings.json`;
+  const key = () => path.join(roots.home, '.ssh', 'id_ed25519');
+  // [form, command, what the write check answers, whether it reaches a protected read]
+  const forms: Array<[string, () => string, 'writes' | 'none', boolean]> = [
+    ['a redirect', () => `cat > notes.md <<EOF\nhi\nEOF\necho x > ${settings()}`, 'writes', false],
+    ['rm -rf', () => `cat > notes.md <<EOF\nhi\nEOF\nrm -rf ${agent}/.claude`, 'writes', false],
+    ['cp', () => `cat > notes.md <<EOF\nhi\nEOF\ncp notes.md ${settings()}`, 'writes', false],
+    ['tee', () => `cat > notes.md <<EOF\nhi\nEOF\ntee ${settings()} notes.md`, 'writes', false],
+    ['mv', () => `cat > notes.md <<EOF\nhi\nEOF\nmv notes.md ${settings()}`, 'writes', false],
+    [
+      'sed -i after a quoted delimiter',
+      () => `cat > notes.md <<'EOF'\nhi\nEOF\nsed -i '' s/a/b/ ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      '`<<-` with tabs',
+      () => `cat > notes.md <<-EOF\n\thi\n\tEOF\ncp notes.md ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      'a delimiter with a space',
+      () => `cat > notes.md <<"E O"\nhi\nE O\ncp notes.md ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      'a command after `;` on the heredoc line',
+      () => `cat <<A > notes.md; cp notes.md ${settings()}\na\nA`,
+      'writes',
+      false,
+    ],
+    [
+      'two heredocs on one line',
+      () => `cat <<A <<B\na\nA\nb\nB\ncp notes.md ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      'a heredoc inside $(…)',
+      () => `x=$(cat <<EOF\nhi\nEOF\n); cp notes.md ${settings()}`,
+      'writes',
+      false,
+    ],
+    ['the heredoc’s own target', () => `cat <<EOF > ${settings()}\nhi\nEOF\nls`, 'writes', false],
+    ['a redirect on the next line', () => `cat <<EOF\nhi\nEOF\n> ${settings()}`, 'writes', false],
+    [
+      'a heredoc a shell runs',
+      () => `bash <<EOF\ncp notes.md ${settings()}\nEOF\nls`,
+      'writes',
+      false,
+    ],
+    [
+      'a heredoc piped to a shell',
+      () => `cat <<EOF | sh\ncp notes.md ${settings()}\nEOF\nls`,
+      'writes',
+      false,
+    ],
+    ['a read on the next line', () => `cat > notes.md <<EOF\nhi\nEOF\ncat ${key()}`, 'none', true],
+    [
+      'a plain command on the next line',
+      () => 'cat > notes.md <<EOF\nhi\nEOF\nls -la',
+      'none',
+      false,
+    ],
+    ['a path inside the note', () => `cat > notes.md <<EOF\n${settings()}\nEOF\nls`, 'none', false],
+    [
+      'a heredoc never closed',
+      () => `cat <<EOF\nunterminated\ncp notes.md ${settings()}`,
+      'none',
+      false,
+    ],
+    ['a shift, not a heredoc', () => `echo $((1<<2)); cp notes.md ${settings()}`, 'writes', false],
+    [
+      'a blank line after the heredoc',
+      () => `cat > notes.md <<EOF\nhi\nEOF\n\ncp notes.md ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      'a commit message heredoc, then &&',
+      () => `git commit -m "$(cat <<'EOF'\nmsg\nEOF\n)" && cp n ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      'a commit message heredoc, then a new line',
+      () => `git commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"\ncp n ${settings()}`,
+      'writes',
+      false,
+    ],
+    [
+      'a comment body heredoc',
+      () => `gh issue comment 1 --body "$(cat <<'EOF'\nbody\nEOF\n)"; ls`,
+      'none',
+      false,
+    ],
+    [
+      'a commit message heredoc alone',
+      () => `git commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"`,
+      'none',
+      false,
+    ],
+  ];
+
+  it.each(forms)('%s', async (_form, command, verdict, reads) => {
+    expect(shellWriteVerdict(command(), roots)).toBe(verdict);
+    expect(await commandReachesProtectedRead(command(), roots)).toBe(reads);
+  });
+});
+
 describe('createShellPathGuardHook', () => {
   const log = { info: () => {}, warn: () => {} };
   const signal = { signal: new AbortController().signal };

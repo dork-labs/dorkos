@@ -40,7 +40,7 @@ type Repo =
  * Run the real "Pick the shard count" step for one event over a fixture repo
  * shaped like actions/checkout's pull request checkout: a test-merge commit
  * whose first parent is the base and whose second parent is the PR's head.
- * `plan` is what the step before it, "Plan this pull request's suites",
+ * `plan` is what the step before it, "Plan this change's suites",
  * handed over; by default a narrow plan that selected one client suite.
  */
 function pick(
@@ -94,9 +94,10 @@ function pick(
 
 const SIX = [1, 2, 3, 4, 5, 6];
 const TEN = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-// The queue's and the canary's list, read from the real step (ledger 261031-150702,
-// ten since DOR-5113, ledger 261123-194400).
-const shardIds = pick('merge_group', { kind: 'none' });
+// The full sweep's list (the queue with every suite planned, the push run on
+// main and the canary), read from the real step (ledger 261031-150702, ten since
+// DOR-5113, ledger 261123-194400).
+const shardIds = pick('merge_group', { kind: 'none' }, { scope: 'full' });
 const prShardIds = pick('pull_request', { kind: 'merge', files: ['apps/client/src/a.ts'] });
 
 /** Extract the real shell body; no copy of the lane intersection algorithm. */
@@ -224,8 +225,26 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
     );
     expect(workflow).toMatch(/^ {6}matrix: \$\{\{ steps\.count\.outputs\.matrix \}\}$/m);
   });
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])('%s always gets ten', (event) => {
-    expect(pick(event, { kind: 'none' })).toEqual(TEN);
+  it.each(['push', 'schedule', 'workflow_dispatch'])(
+    '%s always gets ten, whatever plan it is handed',
+    (event) => {
+      expect(pick(event, { kind: 'none' })).toEqual(TEN);
+      expect(pick(event, { kind: 'none' }, { scope: 'full' })).toEqual(TEN);
+    }
+  );
+  // The queue runs its plan (DOR-5130): ten for every suite or a plan that
+  // reaches packages/shared, six for one that reaches apps/server, two for
+  // anything narrower. Any doubt keeps ten.
+  it.each([
+    [{ scope: 'full' }, TEN],
+    [{ scope: '' }, TEN],
+    [{ scope: 'selected', dirs: '' }, TEN],
+    [{ scope: 'selected', dirs: 'apps/client packages/shared ' }, TEN],
+    [{ scope: 'selected', dirs: 'apps/client apps/server ' }, SIX],
+    [{ scope: 'selected', dirs: 'apps/client packages/shared-ui ' }, [1, 2]],
+    [{ scope: 'selected', dirs: 'apps/server-notes packages/ci-steward ' }, [1, 2]],
+  ])('merge_group with plan %j gets %j', (plan, expected) => {
+    expect(pick('merge_group', { kind: 'none' }, plan)).toEqual(expected);
   });
   // A release pull request runs the full sweep but is armed on a pull request's
   // CI proof, which counts at most six shards.

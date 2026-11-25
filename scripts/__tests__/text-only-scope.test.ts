@@ -615,7 +615,7 @@ describe('the workflows take the text-only lane on a pull request only', () => {
       expect(out.status).toBe(0);
       expect(outputs).toBe('text_only=false\nvitest_files=[]\nbrowser=full\nspecs=[]\n');
       expect(out.stdout).toContain(
-        'not text only (a merge queue build; the queue runs every suite)'
+        'not text only (a merge queue build; the text-only lane is pull-request only)'
       );
       expect(reached).toBe(false);
     }

@@ -107,4 +107,8 @@ export const SESSION_EVENT_TYPES = [
   // the nudge the Sent cards and "Stopped by" lines re-read on. Registered with
   // the contract: a dropped nudge leaves a card saying Queued long after it ran.
   'chat_activity',
+  // A chat's runs, from the run record (spec `turns-survive-restarts` §4.6).
+  // Registered with the contract in the same PR as the event: a dropped frame
+  // leaves a turn whose process died reading "working" in every other window.
+  'run_update',
 ] as const;

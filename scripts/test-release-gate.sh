@@ -157,6 +157,12 @@ check 'no suites read refuses' "REFUSE required check typecheck has no merge-que
 cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=.
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --jq ] && filter=${args[$((i + 1))]}; done
@@ -173,7 +179,7 @@ case "$*" in
   *) exit 1 ;;
 esac
 [ -f "$FX/$f" ] || exit 1
-jq -r "$filter" "$FX/$f"
+gh_jq "$filter" "$FX/$f"
 EOF
 chmod +x "$tmp/gh"
 fx=$tmp/fx
@@ -196,6 +202,8 @@ jq -nc --arg p "$P" '{total_count: 2, workflow_runs: [
   {id: 5, event: "merge_group", status: "completed", conclusion: "success", head_sha: $p,
    head_branch: "gh-readonly-queue/main/pr-42-1", created_at: "2026-11-23T09:00:00Z", path: ".github/workflows/browser-test.yml"}]}' \
   >"$fx/runs-browser-test.yml"
+# The full unit sweep is a rolling run on main too (#4257): the same shape.
+sed 's|browser-test\.yml|test.yml|g' "$fx/runs-browser-test.yml" >"$fx/runs-test.yml"
 jq -nc '{total_count: 3, check_runs: [
   {id: 100, name: "typecheck", status: "completed", conclusion: "success", app: {id: 15368}, check_suite: {id: 7}},
   {id: 101, name: "browser-test", status: "completed", conclusion: "success", app: {id: 15368}, check_suite: {id: 7}}]}' >"$fx/checkruns"
@@ -219,6 +227,14 @@ check 'it compares P to that same head' yes "$(grep -qF "compare/$P...$H" "$GH_L
 check 'it reads only GitHub Actions check runs' yes "$(grep -qF "check-runs?app_id=15368" "$GH_LOG" && echo yes || echo no)"
 check 'it looks for P own auto-revert branch' yes "$(grep -qF "head=made-up:auto-revert/${P:0:12}" "$GH_LOG" && echo yes || echo no)"
 check 'facts makes no write call' no "$(grep -qE -- '--method|-X |-f |--field|--input' "$GH_LOG" && echo yes || echo no)"
+
+# A red full unit run on P refuses, like a red browser run (the default list has both).
+sed 's|"conclusion":"success","head_sha"|"conclusion":"failure","head_sha"|' "$fx/runs-test.yml" >"$fx/runs-test.yml.red"
+cp "$fx/runs-test.yml" "$fx/runs-test.yml.green"
+cp "$fx/runs-test.yml.red" "$fx/runs-test.yml"
+"$SCRIPT" facts 0.150.0 "$P" >"$tmp/facts.json" 2>/dev/null
+check 'a red full unit run on P refuses' 'REFUSE the newest full test.yml run on P (10) concluded failure' "$("$SCRIPT" decide "$tmp/facts.json")"
+cp "$fx/runs-test.yml.green" "$fx/runs-test.yml"
 
 FULL_RUN_WORKFLOWS='browser-test.yml unit-full.yml' "$SCRIPT" facts 0.150.0 "$P" >"$tmp/facts.json" 2>/dev/null
 check 'an unreadable extra full-run workflow is named' '["unit-full.yml runs"]' "$(jq -c .unreadable "$tmp/facts.json")"

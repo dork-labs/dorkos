@@ -485,6 +485,10 @@
       "types": "./src/session-relay-agent-computer.ts",
       "default": "./dist/session-relay-agent-computer.js"
     },
+    "./run-schemas": {
+      "types": "./src/run-schemas.ts",
+      "default": "./dist/run-schemas.js"
+    },
     "./turn-port": {
       "types": "./src/turn-port.ts",
       "default": "./dist/turn-port.js"

@@ -209,7 +209,9 @@ export function noteReadMark(
   noteEverRead(sessionId);
   // Every read adds its source, the first and each later one, before the early return below.
   noteReadSource(sessionId, source);
-  if (readMarks.has(sessionId)) return;
+  const existing = readMarks.get(sessionId);
+  // A record with no agent yet takes one when a later read names it.
+  if (existing || (existing === null && agentPath === undefined)) return;
   const key = agentPath !== undefined ? homeKey(agentPath) : undefined;
   if (key === undefined) {
     readMarks.set(sessionId, null);

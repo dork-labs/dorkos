@@ -72,6 +72,7 @@ import {
 import { CanvasDocumentSchema } from './canvas-schemas.js';
 import { CanvasChannelNotificationSchema } from './canvas-channel-schemas.js';
 import { AccountUsageSchema } from './account-usage.js';
+import { ChatRunSchema } from './run-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -1112,6 +1113,18 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('chat_activity'),
     }),
+    // A run of this chat changed status (spec `turns-survive-restarts` §4.6):
+    // the chat's live run, its waiting runs and, while nothing is live, the run
+    // that ended last. The whole list every time, like `queue_update`, read
+    // from the run record, so a turn whose process died never reads "working".
+    // Emitted by the run record (`services/runs`), never by turn code. It
+    // carries runs and their lines only, never a turn's words.
+    z.object({
+      ...seqShape,
+      type: z.literal('run_update'),
+      /** The chat's runs, oldest first. */
+      runs: z.array(ChatRunSchema),
+    }),
   ])
   .openapi('SessionEvent');
 
@@ -1259,6 +1272,14 @@ export const SessionSnapshotSchema = z
      * copied into each of them (ADR-0310's reasoning, in the other direction).
      */
     canvas: z.array(CanvasDocumentSchema),
+    /**
+     * The chat's runs, read from the run record (spec `turns-survive-restarts`
+     * §4.6): the same list `run_update` carries. Decorated in
+     * `deliverSessionStream`, beside the canvas: the record is the server's,
+     * not a runtime's. Absent from a runtime's own snapshot, which knows no
+     * runs; a reader treats absent as none.
+     */
+    runs: z.array(ChatRunSchema).optional(),
     /** Highest `seq` reflected in this snapshot; the resume point for replay. */
     cursor: z.number().int().nonnegative(),
   })

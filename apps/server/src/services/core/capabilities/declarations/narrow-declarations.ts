@@ -23,7 +23,10 @@ export const CANCEL_WINDOW_CAPABILITY_IDS: ReadonlySet<string> = new Set([
  * - `lowers-power`: actions that only lower an agent's power, which a person
  *   on the network must be able to take.
  * - `person-held`: a person's own to-do writes, which the app makes from any
- *   device on purpose (DOR-5070); the mount holds them to the Wi-Fi hold.
+ *   device on purpose (DOR-5070); the mount holds them to the Wi-Fi hold. And
+ *   the owner's answer to the credits offer, which a phone could always give:
+ *   Not now runs; Use credits is confirm-first, and the front-door bar refuses
+ *   it from Wi-Fi before anything is held.
  */
 export const WIFI_MODE_CAPABILITY_IDS: ReadonlyMap<string, CapabilityWifiMode> = new Map([
   ['agent.pause', 'lowers-power'],
@@ -31,21 +34,47 @@ export const WIFI_MODE_CAPABILITY_IDS: ReadonlyMap<string, CapabilityWifiMode> =
   ['todos.change_as_person', 'person-held'],
   ['todos.change_promise', 'person-held'],
   ['todos.confirm_promise', 'person-held'],
+  ['heartbeat.choose_triage_credits', 'person-held'],
+]);
+
+/**
+ * The only capabilities that may declare a confirm-first hold (`confirmFirst`,
+ * ADR 261125-114705, decision 4), each a person's account write the person
+ * confirms on the "Confirm it's you" sheet.
+ *
+ * - `heartbeat.choose_triage_credits`: using DorkOS credits for heartbeat checks.
+ */
+export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlySet<string> = new Set([
+  'heartbeat.choose_triage_credits',
 ]);
 
 /**
  * Refuse a core capability that makes a narrow declaration it is not listed for.
  *
  * @param capability - The capability being composed.
- * @throws When it declares `cancelWindow` or a `wifi` mode without being listed
- *   for it, or `person-held` on a capability any agent may call.
+ * @throws When it declares `cancelWindow`, a `wifi` mode or `confirmFirst`
+ *   without being listed for it, or `person-held` or `confirmFirst` on a
+ *   capability any agent may call.
  */
 export function assertNarrowDeclarations(
-  capability: Pick<CapabilityDefinition, 'id' | 'cancelWindow' | 'wifi' | 'surfaces'>
+  capability: Pick<
+    CapabilityDefinition,
+    'id' | 'cancelWindow' | 'wifi' | 'confirmFirst' | 'surfaces'
+  >
 ): void {
   const { id } = capability;
   if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
+  }
+  if (capability.confirmFirst) {
+    if (!CONFIRM_FIRST_CAPABILITY_IDS.has(id)) {
+      throw new Error(`Capability registry: "${id}" may not declare a confirm-first hold.`);
+    }
+    if (capability.surfaces.http?.audience !== 'person') {
+      throw new Error(
+        `Capability registry: "${id}" is confirm-first, so only a person may call it.`
+      );
+    }
   }
   if (capability.wifi === undefined) return;
   if (WIFI_MODE_CAPABILITY_IDS.get(id) !== capability.wifi) {

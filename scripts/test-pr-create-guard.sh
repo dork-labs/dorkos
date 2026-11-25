@@ -149,6 +149,45 @@ case_check 'a commit message heredoc' allow \
 case_check 'a heredoc fed to bash' block \
   $'bash <<\'EOF\'\ngh pr create --title x\nEOF'
 
+# --- `bash <script file>` runs a file, so a quoted heredoc beside it stays data (Nov 25, as #4436). ---
+case_check 'a PR-body heredoc naming gh pr create, beside bash <script>' allow \
+  $'cat > /tmp/b.md <<\'EOF\'\ngh pr create --fill is refused; use open-pr.sh\nEOF\nbash scripts/open-pr.sh --title x --body-file /tmp/b.md'
+case_check 'a heredoc beside bash -o pipefail <script>' allow \
+  $'cat > /tmp/b.md <<\'EOF\'\ngh pr create --title x\nEOF\nbash -o pipefail scripts/open-pr.sh --title x --body-file /tmp/b.md'
+case_check 'bash <script> does not hide gh pr create beside it' block \
+  'bash scripts/x.sh && gh pr create --title x'
+case_check 'bash <script> does not hide gh pr create on the next line' block \
+  $'bash scripts/x.sh\ngh pr create --title x'
+# ...while every form that feeds the text to a shell still reads it as commands.
+case_check 'bash << EOF with a space' block \
+  $'bash << \'EOF\'\ngh pr create --title x\nEOF'
+case_check 'a heredoc piped into bash' block \
+  $'cat <<\'EOF\' | bash\ngh pr create --title x\nEOF'
+case_check 'a heredoc piped into bash -o pipefail' block \
+  $'cat <<\'EOF\' | bash -o pipefail\ngh pr create --title x\nEOF'
+case_check 'a heredoc piped into bash --init-file f' block \
+  $'cat <<\'EOF\' | bash --init-file /tmp/rc\ngh pr create --title x\nEOF'
+case_check 'bash -s <<EOF' block \
+  $'bash -s <<\'EOF\'\ngh pr create --title x\nEOF'
+case_check 'a heredoc to a remote shell' block \
+  $'ssh build-box <<\'EOF\'\ngh pr create --title x\nEOF'
+case_check 'bash /dev/stdin <<EOF' block \
+  $'bash /dev/stdin <<\'EOF\'\ngh pr create --title x\nEOF'
+case_check 'a script written by a heredoc and run on the same line' block \
+  $'cat > /tmp/p.sh <<\'EOF\'\ngh pr create --title x\nEOF\nbash /tmp/p.sh'
+case_check 'a script written by echo and run on the same line' block \
+  "echo 'gh pr create --title x' >/tmp/p.sh; sh /tmp/p.sh"
+case_check 'sh -lc runs its argument' block "sh -lc 'gh pr create --title x'"
+case_check 'eval runs its argument' block "eval 'gh pr create --title x'"
+# shellcheck disable=SC2016 # the $( ) is text for the guard to read
+case_check 'a double-quoted substitution beside bash <script>' block \
+  'bash scripts/x.sh "$(gh pr create --title x)"'
+# The substitution reader is unchanged here (not #4436's masked read): a
+# single-quoted substitution on a line that is not all text-takers still counts.
+# shellcheck disable=SC2016 # the $( ) is text for the guard to read
+case_check 'a single-quoted substitution behind git rebase -x' block \
+  "git rebase -x 'echo \$(gh pr create --title x)' main"
+
 # --- the refusal says what to run instead. ---
 message=$(PR_CREATE_GUARD_FIXTURE_COMMAND='gh pr create --title x' node -e '
   require("fs").writeFileSync(process.env.PR_CREATE_GUARD_FIXTURE_PAYLOAD,

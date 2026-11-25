@@ -4,7 +4,12 @@ import { check, index, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite
 /**
  * What an edge says about its two ends, read "from <relation> to":
  *
- * - `started`: a chat started another chat.
+ * - `started`: a chat asked for another chat to be started, recorded in the
+ *   step that recorded the start. The child may never have launched (a start
+ *   cancelled before its chat ran keeps its link), so readers go through the
+ *   lineage query (W3, DOR-4969), which shows it as never started or leaves it
+ *   out. A carry to another account is a move, not a start, and is never
+ *   written as `started`.
  * - `claims`: a chat claims a ticket or pull request.
  * - `opened`: a chat opened a pull request, a branch or a worktree.
  * - `works_on`: a chat works on a ticket, a pull request or a branch.

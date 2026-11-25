@@ -26,8 +26,9 @@
  *
  * **Watching.** {@link SpaceTurnPort.watch} hears every committed status
  * change of a run, as the run now reads, after the transaction that made it
- * (§3.1 `watch`). The durable `run_update` stream with its cursor is T3's;
- * this is the in-process half a space-side caller needs today.
+ * (§3.1 `watch`). Every device reads the durable half, `run_update` on the
+ * chat's stream (`run-view.ts`); this is the in-process half a space-side
+ * caller needs today.
  *
  * `stop` and `answer` arrive with their first callers (T6 onward).
  *

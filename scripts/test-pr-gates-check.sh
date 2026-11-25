@@ -80,6 +80,12 @@ cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
 [ "$1" = api ] || { echo "stub gh: unexpected $*" >&2; exit 1; }
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 url= filter=. paginate=
 args=("$@")
 for ((i = 1; i < ${#args[@]}; i++)); do
@@ -107,10 +113,10 @@ esac
 if jq -e 'type == "array"' "$FX/$f" >/dev/null; then
   last=$([ -n "$paginate" ] && echo 1000000 || echo 100)
   jq -c --argjson last "$last" '. as $a | range(0; [length, $last] | min; 100) | $a[.:. + 100]' "$FX/$f" >"$FX/.pages" || exit 1
-  while IFS= read -r page; do jq -r "$filter" <<<"$page" || exit 1; done <"$FX/.pages"
+  while IFS= read -r page; do gh_jq "$filter" <<<"$page" || exit 1; done <"$FX/.pages"
   exit 0
 fi
-jq -r "$filter" "$FX/$f"
+gh_jq "$filter" "$FX/$f"
 EOF
 chmod +x "$tmp/gh"
 export GH="$tmp/gh" GH_LOG="$tmp/gh.log" REPO=made-up/repo FX=$fx

@@ -57,7 +57,7 @@ NPM=${NPM:-npm}
 REPO=${REPO:-${GITHUB_REPOSITORY:-dork-labs/dorkos}}
 WINDOW_HOURS=${WINDOW_HOURS:-48}
 MAX_CANDIDATES=${MAX_CANDIDATES:-5}
-FULL_RUN_WORKFLOWS=${FULL_RUN_WORKFLOWS:-browser-test.yml}
+FULL_RUN_WORKFLOWS=${FULL_RUN_WORKFLOWS:-browser-test.yml test.yml}
 GATE=${GATE:-$(dirname "${BASH_SOURCE[0]}")/release-gate.sh}
 HOLD_LABEL=${HOLD_LABEL:-release-hold}
 PACKAGE=dorkos
@@ -199,8 +199,11 @@ facts() {
   # The hold a rollback opens: the oldest open issue with the label. Pull
   # requests are issues to this API too; a labelled one holds just the same.
   local holdIssue='null'
+  # gh prints nothing at all for a --jq result of null, so an empty answer from
+  # a call that succeeded means no open hold issue.
   if raw=$("$GH" api "repos/$REPO/issues?labels=$HOLD_LABEL&state=open&sort=created&direction=asc&per_page=1" \
     --jq 'first | if . == null then null else {number, title} end') &&
+    raw=${raw:-null} &&
     jq -e 'type == "null" or (type == "object" and (.number | type) == "number")' <<<"$raw" >/dev/null 2>&1; then
     holdIssue=$(jq -c . <<<"$raw")
   else mark 'release-hold issues'; fi

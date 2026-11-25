@@ -26,6 +26,12 @@ export {
 } from './registry.js';
 export type { CapabilityRequestFacts } from './context/request-facts.js';
 export {
+  ConfirmFirstRequired,
+  personConfirmed,
+  type CapabilityConfirmFirst,
+  type ConfirmFirstOwnerWording,
+} from './declarations/confirm-first.js';
+export {
   isPersonCaller,
   isTrustedCaller,
   personCaller,

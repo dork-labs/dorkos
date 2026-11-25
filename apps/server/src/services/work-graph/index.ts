@@ -4,8 +4,8 @@
  * references. This barrel installs the edge store and owns its write sites.
  *
  * Every write site here follows one rule: recording the edge never decides the
- * action. A write that fails is logged and dropped, and the re-key or the fork
- * it describes goes on, because a chat must not fail for want of its own record.
+ * action. A write that fails is logged and dropped, and the re-key, the fork or
+ * the start it describes goes on, because a chat must not fail for want of its own record.
  *
  * Write sites today:
  *
@@ -17,6 +17,18 @@
  *   records nothing.
  * - **A fork**: the fork's id is recorded `forked_from` its source chat
  *   ({@link recordChatFork}, called by `POST /api/sessions/:id/fork`).
+ * - **A start** (DOR-5263): a chat that another chat started (the
+ *   `session_start` tool, a spin-off) is recorded as the starting chat
+ *   `started` the new one, in the same step as its `session_started_by` row,
+ *   through `onSessionStartRecorded`
+ *   (`session/origin/session-started-by-store.ts`). A start no chat made (an
+ *   extension's own, or the work queue's) records nothing: it has no starting
+ *   chat to name. A carry-over to another account records nothing either: it
+ *   is a move, not a new start, and the lineage query follows carries from
+ *   `session_started_by` itself. A second record of the same start is not
+ *   announced, so it records nothing new. The link stays even when the start
+ *   is cancelled before its chat launches, so read starts through the lineage
+ *   query (W3, DOR-4969), not this table alone.
  *
  * One read site: the re-key edges are registered as the durable record
  * `followChatRekey` asks once the in-memory redirect is gone
@@ -28,7 +40,8 @@
  * code reaches it only through hooks or events, so DOR-5139 is a store move,
  * not a rewrite. Nothing under `services/runtimes/` or `services/session/`
  * imports this domain (the `work-graph/stay-out` lint rule): the re-key
- * write and read register themselves on the session's hooks, and the fork
+ * write and read and the start write register themselves on the session's
+ * hooks, and the fork
  * write is called by the route, since a fork raises no event.
  *
  * @module services/work-graph
@@ -36,6 +49,7 @@
 import type { Db } from '@dorkos/db';
 import { entityRef } from '@dorkos/shared/entity-ref';
 import { logger } from '../../lib/logger.js';
+import { onSessionStartRecorded } from '../session/origin/session-started-by-store.js';
 import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js';
 import { registerDurableRekeyResolver } from '../session/turn-identity/follow-chat-rekey.js';
 import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
@@ -56,13 +70,14 @@ export { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
 let store: WorkLinkStore | null = null;
 let stopRekeyWrites: (() => void) | null = null;
 let stopRekeyReads: (() => void) | null = null;
+let stopStartWrites: (() => void) | null = null;
 
 /**
- * Install the edge store over the database, start recording re-keys, and
- * answer `followChatRekey` from the recorded ones. Called once at startup,
- * before any runtime takes a turn. Installing again replaces the store; the
- * re-key participant and resolver are registered once and read the current
- * store.
+ * Install the edge store over the database, start recording re-keys and the
+ * chats a chat starts, and answer `followChatRekey` from the recorded re-keys.
+ * Called once at startup, before any runtime takes a turn. Installing again
+ * replaces the store; the re-key participant, the start listener and the
+ * resolver are registered once and read the current store.
  *
  * @param db - The DorkOS database.
  * @returns The installed store.
@@ -73,11 +88,16 @@ export function installWorkLinkStore(db: Db): WorkLinkStore {
   stopRekeyReads ??= registerDurableRekeyResolver(
     (chatId) => store?.resolveRekey(chatId) ?? chatId
   );
+  stopStartWrites ??= onSessionStartRecorded(({ sessionId, startedBySessionId, carried }) => {
+    if (startedBySessionId !== null && !carried) recordChatStart(startedBySessionId, sessionId);
+  });
   return store;
 }
 
-/** Remove the installed store and stop recording and answering re-keys. For tests. */
+/** Remove the installed store and stop recording re-keys and starts and answering re-keys. For tests. */
 export function uninstallWorkLinkStore(): void {
+  stopStartWrites?.();
+  stopStartWrites = null;
   stopRekeyWrites?.();
   stopRekeyWrites = null;
   stopRekeyReads?.();
@@ -93,10 +113,11 @@ export function getWorkLinkStore(): WorkLinkStore | null {
 /**
  * Record one chat-to-chat edge, never throwing. A refusal or a database
  * failure is logged with `ids` (named for the action: `oldId`/`newId` for a
- * re-key, `sourceId`/`forkId` for a fork) and dropped.
+ * re-key, `sourceId`/`forkId` for a fork, `starterId`/`chatId` for a start)
+ * and dropped.
  */
 function recordChatLink(
-  relation: 'rekeyed_from' | 'forked_from',
+  relation: 'rekeyed_from' | 'forked_from' | 'started',
   fromChatId: string,
   toChatId: string,
   ids: Record<string, string>
@@ -147,4 +168,12 @@ export function recordChatRekey(oldId: string, newId: string): void {
  */
 export function recordChatFork(sourceId: string, forkId: string): void {
   recordChatLink('forked_from', forkId, sourceId, { sourceId, forkId });
+}
+
+/**
+ * Record that `starterId` started `chatId`, so "which chats did this chat
+ * start" can be answered from the graph. Never throws.
+ */
+function recordChatStart(starterId: string, chatId: string): void {
+  recordChatLink('started', starterId, chatId, { starterId, chatId });
 }

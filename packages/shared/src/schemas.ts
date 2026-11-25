@@ -1351,6 +1351,14 @@ export const QueuedMessageSchema = z
      * entry per message, in the order they were sent (DOR-3060).
      */
     fromChats: z.array(QueuedChatEntrySchema).optional(),
+    /**
+     * True for a restored draft (spec `turns-survive-restarts` §4.6, §7.3): a
+     * turn started with these words, DorkOS restarted before the runtime read
+     * them, and they came back. It never runs by itself. Sending it starts a
+     * new turn and uses the row up; removing it discards the draft. Missing
+     * means the row is waiting in line.
+     */
+    restored: z.boolean().optional(),
   })
   .openapi('QueuedMessage');
 

@@ -1741,7 +1741,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     });
   });
 
-  it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
+  // Full applies no Git rules, so it starts there (DOR-4542).
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits'] as const)(
     'refuses a writable Git repository inside a protected folder before acquisition at %s',
     async (permissionMode) => {
       const turn = request('protected-git-grant', undefined, {
@@ -1767,7 +1768,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         expect(events[0]).toMatchObject({
           data: {
             code: 'codex_git_metadata_unavailable',
-            message: 'Codex can’t protect this folder’s Git files. Choose another folder.',
+            message: expect.stringContaining('inside a protected folder on Linux'),
           },
         });
         expect(spawned).toHaveLength(count);

@@ -1,13 +1,15 @@
 /**
- * The work graph's two write sites (DOR-4968): a chat's re-key (ADR-0267) and a
- * fork. Each records its edge, and neither fails its action when the record
- * cannot be written. And its one read site: `followChatRekey` answers an old
+ * The work graph's write sites: a chat's re-key (ADR-0267) and a fork
+ * (DOR-4968), and a chat that starts a chat (DOR-5263). Each records its edge,
+ * and none fails its action when the record cannot be written. And its one read site: `followChatRekey` answers an old
  * chat id from the recorded re-key once a restart has cleared the in-memory
  * redirect (DOR-5046).
  *
  * The re-key is driven through the real `createCanonicalRekey` and the real
  * projector registry, so the edge is proved to land where every caller's
- * re-key is made durable, not only when the participant is called by hand.
+ * re-key is made durable, not only when the participant is called by hand. A
+ * start is driven through the real start-work seam over the real
+ * `session_started_by` store, the path `session_start` and a carry-over take.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -21,6 +23,11 @@ import {
   peekProjector,
   rekeyProjector,
 } from '../../session/index.js';
+import { StartWorkService } from '../../extensions/start-work.js';
+import {
+  onSessionStartRecorded,
+  SessionStartedByStore,
+} from '../../session/origin/session-started-by-store.js';
 import { onDurableSessionRekey } from '../../session/turn-identity/durable-rekey.js';
 import { followChatRekey } from '../../session/turn-identity/follow-chat-rekey.js';
 import {
@@ -182,5 +189,140 @@ describe('the fork write site', () => {
     expect(() => recordChatFork('source-chat', 'not a chat id')).not.toThrow();
     db.run(sql`DROP TABLE work_links`);
     expect(() => recordChatFork('source-chat', 'fork-chat')).not.toThrow();
+  });
+});
+
+describe('the start write site', () => {
+  /** The real start seam over the real `session_started_by` store; only starts are asked of it. */
+  function startWork(): { service: StartWorkService; starts: SessionStartedByStore } {
+    const starts = new SessionStartedByStore(db);
+    const service = new StartWorkService({
+      store: starts,
+      projects: {
+        rootWithin: async () => null,
+        listForExtension: async () => [],
+        list: async () => [],
+      },
+      extensionName: (id) => id,
+      runningSessionIds: () => [],
+      port: () => undefined,
+    });
+    return { service, starts };
+  }
+
+  /** Every `started` edge, as `starter -> chat`. */
+  function startedEdges(): string[] {
+    return db
+      .select()
+      .from(workLinks)
+      .all()
+      .filter((row) => row.relation === 'started')
+      .map((row) => `${row.fromRef} -> ${row.toRef}`);
+  }
+
+  it('records the starting chat started the new one, with its started-by row', () => {
+    const { service, starts } = startWork();
+    const claimed = service.reserveFromChat({
+      sessionId: 'child-chat',
+      parentSessionId: 'parent-chat',
+    });
+    expect(claimed.ok).toBe(true);
+    expect(starts.get('child-chat')).toMatchObject({
+      kind: 'chat',
+      startedBySessionId: 'parent-chat',
+    });
+    expect(getWorkLinkStore()!.from({ kind: 'chat', id: 'parent-chat' }, 'started')).toEqual([
+      expect.objectContaining({ to: { kind: 'chat', id: 'child-chat' }, source: 'server' }),
+    ]);
+  });
+
+  it('records nothing for a start no chat made, and says nothing about it', () => {
+    const warn = vi.spyOn(logger, 'warn');
+    const { service } = startWork();
+    service.reserveUnattended('queued-chat');
+    expect(
+      service.reserve({
+        sessionId: 'app-chat',
+        kind: 'extension',
+        extensionId: 'flow',
+        startedBySessionId: null,
+        originExtensionId: null,
+        reason: null,
+      }).ok
+    ).toBe(true);
+    expect(db.select().from(workLinks).all()).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('records nothing for a carry to another account: a move is not a start', () => {
+    const { service, starts } = startWork();
+    service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'parent-chat' });
+    const carried = service.reserveFromChat({
+      sessionId: 'successor-chat',
+      parentSessionId: 'child-chat',
+      carry: true,
+    });
+    expect(carried.ok && carried.reservation).toBeTruthy();
+    expect(starts.get('successor-chat')).toMatchObject({
+      carried: true,
+      startedBySessionId: 'child-chat',
+    });
+    expect(startedEdges()).toEqual(['dork:chat:parent-chat -> dork:chat:child-chat']);
+  });
+
+  it('records nothing new when the same start is recorded again', () => {
+    const { service, starts } = startWork();
+    service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'parent-chat' });
+    // The first starter stands, so a second claim from another chat is no start.
+    service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'other-chat' });
+    expect(starts.get('child-chat')?.startedBySessionId).toBe('parent-chat');
+    expect(startedEdges()).toEqual(['dork:chat:parent-chat -> dork:chat:child-chat']);
+  });
+
+  it('still starts the chat when the edge is refused or cannot be written', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { service, starts } = startWork();
+    expect(
+      service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'not a chat id' }).ok
+    ).toBe(true);
+    db.run(sql`DROP TABLE work_links`);
+    expect(
+      service.reserveFromChat({ sessionId: 'later-chat', parentSessionId: 'parent-chat' }).ok
+    ).toBe(true);
+    expect(starts.get('child-chat')).not.toBeNull();
+    expect(starts.get('later-chat')).not.toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      '[work-graph] a chat id has no reference form; edge not recorded',
+      { relation: 'started', starterId: 'not a chat id', chatId: 'child-chat' }
+    );
+    expect(warn).toHaveBeenCalledWith(
+      '[work-graph] could not record an edge',
+      expect.objectContaining({
+        relation: 'started',
+        starterId: 'parent-chat',
+        chatId: 'later-chat',
+      })
+    );
+  });
+
+  it('still starts the chat, and tells the other listeners, when a listener throws', () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const stopThrowing = onSessionStartRecorded(() => {
+      throw new Error('listener broke');
+    });
+    const heard: string[] = [];
+    const stopHearing = onSessionStartRecorded(({ sessionId }) => heard.push(sessionId));
+    try {
+      const { service, starts } = startWork();
+      expect(
+        service.reserveFromChat({ sessionId: 'child-chat', parentSessionId: 'parent-chat' }).ok
+      ).toBe(true);
+      expect(starts.get('child-chat')).not.toBeNull();
+    } finally {
+      stopThrowing();
+      stopHearing();
+    }
+    expect(heard).toEqual(['child-chat']);
+    expect(startedEdges()).toEqual(['dork:chat:parent-chat -> dork:chat:child-chat']);
   });
 });

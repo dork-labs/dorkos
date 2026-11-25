@@ -164,6 +164,7 @@ describe('WorkLinkStore', () => {
     [{ to: { kind: 'worktree', id: '/Users/someone/wt' } }, 'bad-to'],
     [{ relation: 'mentions' }, 'bad-relation'],
     [{ relation: 'rekeyed_from', to: { kind: 'pr', id: '#4' } }, 'bad-kinds'],
+    [{ relation: 'started', to: { kind: 'pr', id: '#4' } }, 'bad-kinds'],
     [{ to: { kind: 'chat', id: 'chat-a' } }, 'self-link'],
     [{ source: 'Open PR' }, 'bad-source'],
     [{ recordingChatId: 'not an id' }, 'bad-recording-chat'],
