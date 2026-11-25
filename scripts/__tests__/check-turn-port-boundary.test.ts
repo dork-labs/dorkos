@@ -31,6 +31,11 @@ describe('countCrossings', () => {
       "const later = () => import('../session/message-queue-store.js');",
     ].join('\n');
     expect(countCrossings(join(SERVICES, 'rooms/example.ts'), text)).toBe(4);
+    const typeForms = [
+      "type Plan = import('../session/message-dispatcher/types.js').DispatchPlan;",
+      "import queue = require('../session/message-queue-store.js');",
+    ].join('\n');
+    expect(countCrossings(join(SERVICES, 'rooms/example.ts'), typeForms)).toBe(2);
   });
 
   it('never counts the turn port, chat messages, a package, or a folder named session elsewhere', () => {

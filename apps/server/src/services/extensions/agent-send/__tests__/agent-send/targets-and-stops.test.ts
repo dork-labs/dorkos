@@ -251,6 +251,33 @@ describe('ctx.agent.send — the extension stops', () => {
     h.projectors.push(...h.reserved);
   });
 
+  it('takes its messages still waiting in a chat’s queue back too, and never runs them', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await h.service.send(EXT, {
+      to: h.session,
+      text: 'later',
+      idempotencyKey: 'q',
+    });
+    await settle();
+    expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
+
+    h.service.extensionStopped(EXT);
+    first.open();
+    await settle();
+
+    expect(h.queue.list(h.session)).toEqual([]);
+    expect(runOfMessage(receipt.messageId)?.status).toBe('cancelled');
+    expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.events).toEqual([
+      expect.objectContaining({
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        reason: 'stopped',
+      }),
+    ]);
+  });
+
   it('leaves held messages alone when the whole server shuts down', async () => {
     h.agents.set(AGENT, HOME);
     h.limitFull = true;

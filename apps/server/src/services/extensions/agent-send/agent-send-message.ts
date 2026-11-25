@@ -70,7 +70,7 @@ export const FAILURE_MESSAGE: Record<AgentDeliveryFailureReason, string> = {
   interrupted:
     'DorkOS restarted before the message finished. Check the chat to see how far it got.',
   undeliverable: 'When its turn came, the agent or chat could not take the message.',
-  stopped: 'The message was waiting for room when the extension stopped, so it was never sent.',
+  stopped: 'The extension stopped before the message started, so it was never sent.',
 };
 
 /**

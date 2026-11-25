@@ -80,7 +80,6 @@ import {
 } from '@dorkos/extension-api/server';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logError, logger } from '../../../lib/logger.js';
-import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import {
   TurnStartRefusedError,
   turnPort,
@@ -330,20 +329,23 @@ export class AgentSendService {
   }
 
   /**
-   * An extension stopped, reloaded, was turned off or removed: its held
-   * messages (waiting for room, never handed to a chat) are failed with
-   * `stopped`, so nothing it sent goes out after it is gone. Messages already
-   * in a chat's queue are the person's to see and remove, and stay. A server
+   * An extension stopped, reloaded, was turned off or removed: nothing it sent
+   * goes out after it is gone. Its held messages (waiting for its start limits)
+   * and its messages still waiting to start (their run queued, in a chat's
+   * queue or not handed over yet) are failed with `stopped`, and their runs
+   * taken back. A message whose turn already started runs to its end. A server
    * shutting down is not an extension stopping: after {@link stop}, this does
-   * nothing, so held messages survive a restart.
+   * nothing, so waiting messages survive a restart.
    *
    * @param extensionId - The extension that stopped.
    */
   extensionStopped(extensionId: string): void {
     if (this.stopped) return;
     this.stoppedExtensions.add(extensionId);
-    for (const row of this.deps.store.listByStatus(['held'])) {
-      if (row.extensionId === extensionId) this.fail(row, 'stopped');
+    for (const row of this.deps.store.listByStatus(['held', 'queued'])) {
+      if (row.extensionId !== extensionId) continue;
+      if (row.status === 'queued') this.attach()?.withdraw(row.id, 'stopped');
+      this.fail(row, 'stopped');
     }
   }
 
@@ -542,12 +544,13 @@ export class AgentSendService {
     try {
       ({ runId } = door.start(
         {
+          origin: { kind: 'extension-message' },
           sessionId,
           ...(target.agent ? { agentId: target.agent.id } : {}),
-          // An existing chat runs in its own folder whatever this names.
-          cwd: row.cwd ?? target.agent?.path ?? DEFAULT_CWD,
+          // The chat's folder when known, an agent's home for its new chat, and
+          // otherwise nothing: the launch path places it as it always has.
+          ...(row.cwd ? { cwd: row.cwd } : target.agent ? { cwd: target.agent.path } : {}),
           content: row.content ?? '',
-          origin: { kind: 'extension-message' },
           tier: 'owner',
           sourceRef: sendSourceRef(row.id),
           ...(reservation

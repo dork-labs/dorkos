@@ -51,6 +51,17 @@ describe('the turn port ratchet', { timeout: LINT_TIMEOUT_MS }, () => {
     );
   });
 
+  it('counts the type-query and require forms too, as the baseline script does', async () => {
+    // Purpose: fails if the rule and `check:turn-port` could count one file differently.
+    const code = [
+      "type Plan = import('../session/message-dispatcher/types.js').DispatchPlan;",
+      "import queue = require('../session/message-queue-store.js');",
+      'export type { Plan };',
+      'void queue;',
+    ].join('\n');
+    expect(await boundary('src/services/rooms/scratch-example.ts', code)).toHaveLength(2);
+  });
+
   it('lets a space-side domain reach the turn port, chat messages and its own folders', async () => {
     // Purpose: fails if the rule matched text instead of resolving paths: `tasks/session/` and
     // `session/chat-messages/` are not turn code.
