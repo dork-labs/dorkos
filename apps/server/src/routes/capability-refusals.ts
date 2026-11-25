@@ -184,6 +184,36 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'internal_error',
     detail: 'The agent’s settings file couldn’t be read. Check it, then try again.',
   },
+  // A refused path (`services/core/directory/path-refusal.ts`), in the
+  // words the hand routes used before they moved onto the mount.
+  PATH_NULL_BYTE: {
+    code: 'invalid_request',
+    detail: 'That path has a character paths can’t hold.',
+  },
+  PATH_OUTSIDE_BOUNDARY: {
+    code: 'outside_boundary',
+    detail: 'Pick a folder inside the ones DorkOS may use.',
+  },
+  FOLDER_NOT_READABLE: { code: 'forbidden', detail: 'DorkOS isn’t allowed to read that folder.' },
+  PATH_UNFOLLOWABLE: { code: 'invalid_request', detail: 'That path can’t be followed.' },
+  // `/api/directory`, `/api/diff` and `/api/workspaces` kept
+  // their own sentences when they moved onto the mount.
+  FOLDER_MISSING: { code: 'not_found', detail: 'That folder doesn’t exist.' },
+  FOLDER_UNREADABLE: { code: 'internal_error', detail: 'Couldn’t read that folder. Try again.' },
+  PATH_IS_A_FILE: { code: 'not_a_folder', detail: 'That path is a file, not a folder.' },
+  DIFF_SESSION_NOT_FOUND: { code: 'session_not_found', detail: 'No chat with that id.' },
+  DIFF_FILE_TOO_LARGE: { code: 'too_large', detail: 'This file is too large to diff here.' },
+  DIFF_NOT_A_FILE: { code: 'not_a_file', detail: 'This path is a folder, not a file.' },
+  DIFF_BINARY_FILE: {
+    code: 'binary_file',
+    detail: 'This file isn’t text, so it has no text diff.',
+  },
+  DIFF_NO_EARLIER_VERSION: {
+    code: 'not_found',
+    detail: 'This file has no earlier version to restore.',
+  },
+  DIFF_WRITE_NOT_ALLOWED: { code: 'forbidden', detail: 'DorkOS isn’t allowed to write this file.' },
+  WORKSPACE_NOT_FOUND: { code: 'not_found', detail: 'No workspace with that id.' },
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

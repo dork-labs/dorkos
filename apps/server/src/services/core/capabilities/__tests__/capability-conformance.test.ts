@@ -65,10 +65,26 @@ vi.mock('../../update-checker.js', () => ({
 }));
 // update_agent validates its target cwd against the filesystem boundary, which
 // throws when uninitialized; stub it to pass the sandbox path through.
-vi.mock('../../../../lib/boundary.js', () => ({
-  validateBoundaryOrDorkHome: (p: string) => p,
-  BoundaryError: class BoundaryError extends Error {},
-}));
+vi.mock('../../../../lib/boundary.js', () => {
+  class BoundaryError extends Error {
+    constructor(
+      message: string,
+      readonly code: string
+    ) {
+      super(message);
+    }
+  }
+  return {
+    validateBoundaryOrDorkHome: (p: string) => p,
+    // The diff review's paths land outside, so each answers its own refusal.
+    validateBoundary: async () => {
+      throw new BoundaryError('outside', 'OUTSIDE_BOUNDARY');
+    },
+    getBoundary: () => '/conformance-boundary',
+    resolveAgentsRoot: async () => '/conformance-agents',
+    BoundaryError,
+  };
+});
 // update_agent reads the target agent's manifest off disk; stub it to "no agent
 // here" so the handler returns its structured NOT_FOUND (a CapabilityToolError),
 // never a raw filesystem throw.
@@ -599,6 +615,9 @@ capabilityConformance(registry, {
       error instanceof DocDownstreamError &&
       error.code === 'DOC_CHANNEL_UNAVAILABLE' &&
       error.status === 503,
+    // No workspace subsystem starts in this suite; the real server sets it up at boot.
+    'workspaces.list': (error) => error.message === 'WorkspaceManager not initialized',
+    'workspaces.scan': (error) => error.message === 'Workspace root not initialized',
   },
   sampleInputs: {
     'operator.update_agent': { cwd: SANDBOX_CWD, displayName: 'Conformance' },
@@ -655,6 +674,15 @@ capabilityConformance(registry, {
     'agent.resume': { agentId: 'conformance-agent' },
     // A room the operator is in, so the link reaches the real rooms service and opens it.
     'link.resolve': { uri: `dork:room:${CONFORMANCE_ROOM_ID}` },
+    // A folder that is not there, so the handler answers its own `FOLDER_MISSING`.
+    'directory.browse': { path: '/conformance-no-such-folder' },
+    // Paths outside the boundary, so each answers its own path refusal.
+    'diff.baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
+    'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    // No workspace subsystem here, so the pin answers its own `WORKSPACE_NOT_FOUND`.
+    'workspaces.pin': { id: 'conformance-workspace', pinned: true },
     // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
     'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // Anonymous here, so the handler refuses with its own structured error

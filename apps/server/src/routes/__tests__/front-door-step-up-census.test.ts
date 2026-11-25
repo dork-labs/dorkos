@@ -136,7 +136,6 @@ const EXCEPTIONS: Record<string, string> = {
     'Re-reads a source a person already added; adds none.',
   'shapes POST /:name/fork': 'Copies a Shape to edit; applies nothing.',
   'workspaces POST /ports': 'Reads a workspace’s ports.',
-  'workspaces POST /:id/pin': 'Pins a workspace in the list.',
   'runtimes POST /opencode/provision':
     'Installs OpenCode at this computer only; grants no account or key.',
   'runtimes POST /codex/provision':

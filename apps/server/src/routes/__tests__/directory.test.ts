@@ -53,16 +53,24 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+import { noopLogger } from '@dorkos/shared/logger';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { directoryDomain } from '../../services/core/directory/directory-capabilities.js';
 
 // Import the mocked BoundaryError for instanceof checks
 import { BoundaryError } from '../../lib/boundary.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 
 // The routes are served from the Hono `/api` app, so the test serves the
-// server's real routing rather than the Express app alone.
+// server's real routing rather than the Express app alone. The reads are
+// capabilities (`directory.browse`, `directory.default`) the mount serves.
 const admission = new MainRequestAdmission();
-const testServer = listeningServer(composedListener(admission));
+const testServer = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([directoryDomain], { logger: noopLogger }),
+  })
+);
 const BOUNDARY = '/Users/testuser';
 const AGENTS_ROOT = '/home/node/.dork/agents';
 

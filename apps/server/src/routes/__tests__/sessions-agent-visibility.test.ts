@@ -87,6 +87,9 @@ import {
 } from '../../services/session/message-queue-store.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { recordDispatchStart } from '../../services/observability/dispatch-buffers.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { diffDomain } from '../../services/diff/diff-capabilities.js';
 import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -94,8 +97,13 @@ import { registerClaudeCodeFacts } from '../../startup/register-claude-code-fact
 registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
-// Routed as the running server routes: the diff routes answer from Hono.
-const server = listeningServer(composedListener(admission));
+// Routed as the running server routes: the diff routes answer from Hono, and
+// all but the raw bytes are capabilities the mount serves.
+const server = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([diffDomain], { logger: noopLogger }),
+  })
+);
 
 /** A person's own chat in the app. */
 const PRIVATE = '00000000-0000-4000-8000-0000000000a1';

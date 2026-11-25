@@ -107,3 +107,26 @@ describe('composeCapabilityRegistryForDocs', () => {
     ).toEqual([]);
   });
 });
+
+describe('composeDorkOsCapabilityRegistry', () => {
+  it('serves the folder picker, the diff review, the workspace reads and the templates on a bare server', () => {
+    // These paths were hand routes mounted on every server, so their
+    // capabilities must not wait on any service handle: a server that started
+    // nothing else still answers them (DOR-4978).
+    const bare = composeDorkOsCapabilityRegistry({ logger: noopLogger });
+    for (const id of [
+      'directory.browse',
+      'directory.default',
+      'diff.baseline',
+      'diff.advance_baseline',
+      'diff.pending',
+      'diff.revert',
+      'workspaces.list',
+      'workspaces.scan',
+      'workspaces.pin',
+      'templates.list',
+    ]) {
+      expect(bare.get(id), `${id} is missing from a bare server`).toBeDefined();
+    }
+  });
+});

@@ -55,6 +55,10 @@ import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
 import { linkDomain } from '../links/link-capabilities.js';
 import { createLocalBrowserDomain } from '../../session/local-browser/capabilities.js';
+import { directoryDomain } from '../directory/directory-capabilities.js';
+import { diffDomain } from '../../diff/diff-capabilities.js';
+import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
+import { templatesDomain } from '../agent-templates/template-catalog.js';
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -115,6 +119,10 @@ export function composeDorkOsCapabilityRegistry(
   // Unconditional too: `end_beat` needs no service handle, and outside a beat
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
+  // Unconditional too: the folder picker, the diff review, the workspace reads
+  // and the template catalog read the filesystem and process-wide stores every
+  // server has, so their paths answer wherever the hand routes used to.
+  domains.push(directoryDomain, diffDomain, workspacesDomain, templatesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
   // Back-write the composed registry so `capabilities.list` can serialize it.
@@ -182,6 +190,10 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     instructionsDomain,
     permissionsDomain,
     heartbeatDomain,
+    directoryDomain,
+    diffDomain,
+    workspacesDomain,
+    templatesDomain,
   ];
   const deps: CapabilityDeps = {
     logger: noopLogger,

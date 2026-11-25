@@ -14,6 +14,8 @@ import { execFileSync } from 'node:child_process';
 import type { RequestListener } from 'node:http';
 import workspaceRoutes from '../workspaces.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { workspacesDomain } from '../../services/workspace/workspace-capabilities.js';
 import {
   setWorkspaceManager,
   setWorkspaceRoot,
@@ -31,7 +33,12 @@ const fixtureTarget = swappableServer();
 
 function mountWith(manager: Partial<WorkspaceManager>): RequestListener {
   setWorkspaceManager(manager as WorkspaceManager);
-  return honoGroupListener({ path: '/api/workspaces', routes: workspaceRoutes });
+  // Listing, the scan, resolving a path and the pin are capabilities the
+  // mount serves ahead of the hand routes, as the real app registers them.
+  return honoGroupListener([
+    capabilityGroup(workspacesDomain),
+    { path: '/api/workspaces', routes: workspaceRoutes },
+  ]);
 }
 
 const sampleWorkspace: Workspace = {
