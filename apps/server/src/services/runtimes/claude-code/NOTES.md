@@ -145,6 +145,17 @@ reasoned one — live turns on 2026-09-26 against SDK 0.3.280 / CLI 2.1.280, eac
 `--add-dir`, the second with `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`). The module doc carries
 the detail.
 
+One folder does ride `Options.additionalDirectories`: the agent's own registered home, when the turn
+works outside it (DOR-5250, `tooling/home-skills-folder.ts`), so its skills, commands and agents load
+and a `/name` from them runs. It is the agent's own folder from the registry, never a room's, and never
+on a marked turn. Run live against SDK 0.3.304 / CLI 2.1.304 (`home-skills-folder.binary.test.ts`): the home's
+`.claude/settings*.json` hooks and allow rules and its `.mcp.json` do not load from an added folder; its
+`CLAUDE.md` would load when the user settings set the variable above, so the launch blanks it in its
+flag-level `settings.env`; the home's deny rules still refuse a write to `.dork/agent.json`. The pin is
+the same `additionalDirectories` row, with the added folders after the grants, so a turn that moves in
+or out of the home relaunches. The `/` menu's command list is cached per folder AND added home
+(`commandsKeyFor`), so another agent's session in the same folder never sees it.
+
 ### `mcpServers` is compared by DECLARED CONFIG, not by instance
 
 The MCP server factory builds new `McpServer` objects per launch on purpose ("Already

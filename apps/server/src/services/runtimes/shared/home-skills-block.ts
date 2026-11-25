@@ -20,7 +20,7 @@ import path from 'node:path';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
 import { SkillFrontmatterSchema, SKILL_FILENAME } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-identity/index.js';
 
 /** At most this many skills are listed, so a large home can't crowd the context. */
 export const HOME_SKILLS_LIMIT = 40;
@@ -46,6 +46,22 @@ function realFolder(folder: string): string {
 export function isInsideHome(home: string, cwd: string): boolean {
   const relative = path.relative(realFolder(home), realFolder(cwd));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/**
+ * The agent's registered home, by real path, when a session in `cwd` works
+ * outside it, else `undefined` (DOR-5250). The home comes from the registry
+ * through {@link resolveAgentHome}: a folder that is another agent's, or an
+ * `agentPath` no agent is registered at, answers `undefined`. A runtime adds
+ * the home's skills to the `/` menu, and Claude Code loads them, only from it.
+ *
+ * @param cwd - The session's working folder.
+ * @param agentPath - The agent the session is for, as the server recorded it.
+ */
+export function homeOutside(cwd: string | undefined, agentPath?: string): string | undefined {
+  if (!cwd) return undefined;
+  const home = homeOf(resolveAgentHome(cwd, agentPath));
+  return home && !isInsideHome(home, cwd) ? realFolder(home) : undefined;
 }
 
 /** One line of agent-written text, with nothing that could close the block. */

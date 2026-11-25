@@ -2435,11 +2435,11 @@ export interface AgentRuntime {
 
   /**
    * Return the command registry for this runtime.
-   *
    * @param forceRefresh - If true, bypass the cache and re-scan
    * @param cwd - Optional working directory for per-directory command resolution
+   * @param agentPath - The session's recorded agent: outside its home, its skills join (DOR-5250)
    */
-  getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry>;
+  getCommands(forceRefresh?: boolean, cwd?: string, agentPath?: string): Promise<CommandRegistry>;
 
   // --- Lifecycle ---
 

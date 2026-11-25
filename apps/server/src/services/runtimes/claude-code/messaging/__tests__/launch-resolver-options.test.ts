@@ -14,7 +14,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';
 import { eq, roomSeatLaunchRequirements, sessionMetadata } from '@dorkos/db';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
@@ -779,6 +779,95 @@ describe('the launch options every Claude Code turn is given', () => {
       expect(launched.enrichedContent).toBe(
         `<room_context>bo: ${ZW}@/etc/hosts</room_context>\n\nsee @notes.md`
       );
+    });
+  });
+
+  describe('the agent’s own home on a launch outside it (DOR-5250)', () => {
+    let root: string;
+    let ana: string;
+    let bo: string;
+    let project: string;
+    const CLAUDE_MD_VAR = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
+
+    beforeEach(() => {
+      root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'dorkos-home-dir-')));
+      [ana, bo, project] = ['agents/ana', 'agents/bo', 'work/site'].map((dir) => {
+        mkdirSync(path.join(root, dir), { recursive: true });
+        return path.join(root, dir);
+      });
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === ana || dir === bo,
+        listRegisteredHomes: () => [ana, bo],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+    });
+
+    afterEach(() => {
+      setAgentHomeRegistry(undefined);
+      heldChats.clear();
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    const launch = async (cwd: string, forAgent?: string) =>
+      (
+        await resolveLaunch({
+          sessionId: 's1',
+          content: 'hello',
+          session: makeSession(),
+          opts: makeOpts({ cwd }),
+          messageOpts: forAgent ? { forAgent } : {},
+          effectiveCwd: cwd,
+        })
+      ).sdkOptions;
+    const settingsEnv = (options: Options) =>
+      (options.settings as { env?: Record<string, string> } | undefined)?.env;
+
+    it('adds the home, and blanks the variable that would load its CLAUDE.md', async () => {
+      vi.stubEnv(CLAUDE_MD_VAR, '1');
+      const options = await launch(project, ana);
+      expect(options.additionalDirectories).toEqual([ana]);
+      expect(Object.keys(options.env ?? {})).not.toContain(CLAUDE_MD_VAR);
+      expect(settingsEnv(options)?.[CLAUDE_MD_VAR]).toBe('');
+    });
+
+    it('adds nothing inside the home, for a turn with no agent, or for a marked turn', async () => {
+      for (const options of [
+        await launch(ana, ana),
+        await launch(path.join(root, 'work'), undefined),
+      ]) {
+        expect(options.additionalDirectories).toBeUndefined();
+        expect(settingsEnv(options)?.[CLAUDE_MD_VAR]).toBeUndefined();
+      }
+      heldChats.add('sdk-1');
+      expect((await launch(project, ana)).additionalDirectories).toBeUndefined();
+    });
+
+    it('never adds another agent’s home, or a folder no agent is registered at', async () => {
+      // Standing in Bo's home, a turn for Ana resolves to nobody.
+      expect((await launch(bo, ana)).additionalDirectories).toBeUndefined();
+      const stray = path.join(root, 'work');
+      expect((await launch(project, stray)).additionalDirectories).toBeUndefined();
+    });
+
+    it('relaunches a warm process when the home it added changes', async () => {
+      const fingerprint = async (cwd: string) =>
+        captureLaunchFingerprint(
+          (
+            await resolveLaunch({
+              sessionId: 's1',
+              content: 'hello',
+              session: makeSession(),
+              opts: makeOpts({ cwd }),
+              messageOpts: { forAgent: ana },
+              effectiveCwd: cwd,
+            })
+          ).launch
+        );
+      const outside = await fingerprint(project);
+      expect(outside.pins.additionalDirectories).toContain(`${ana}:added`);
+      expect((await fingerprint(ana)).pins.additionalDirectories).toBe('');
     });
   });
 
