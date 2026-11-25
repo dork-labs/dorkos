@@ -19,7 +19,7 @@ import {
   ConnectorWritesBackChangeSchema,
   ConnectorWritesBackSchema,
 } from '@dorkos/shared/connector-exclusion-schemas';
-import { problemResponse } from '../../core/openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../../core/openapi/problem-openapi.js';
 
 const notFound = problemResponse(
   '`not_found`: no such app account here, it belongs to someone else, or no such agent'
@@ -73,6 +73,7 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
       "text, attributed to the agent: it is the agent's words, not DorkOS's.",
     request: { query: ConnectorAccessChangeListQuerySchema },
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'The changes',
         content: { 'application/json': { schema: ConnectorAccessChangeListSchema } },

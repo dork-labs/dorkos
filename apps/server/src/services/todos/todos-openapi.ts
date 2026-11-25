@@ -5,7 +5,7 @@
  * @module services/todos/todos-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { problemResponse } from '../core/openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   CreateTodoRequestSchema,
@@ -34,6 +34,7 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       'view hides and the rail badge.',
     request: { query: ListTodosQuerySchema },
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'The to-dos',
         content: { 'application/json': { schema: ListTodosResponseSchema } },

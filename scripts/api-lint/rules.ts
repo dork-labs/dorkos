@@ -78,7 +78,7 @@ export const RULES: Record<RuleId, RuleSpec> = {
   },
   'error-shape': {
     blocking: true,
-    fix: 'Point each 4xx and 5xx body at a shared error schema (ErrorResponse).',
+    fix: 'Answer each 4xx and 5xx with a problem document: `problemResponse()` in the route’s registration.',
   },
   'list-paging': {
     blocking: true,
@@ -137,15 +137,15 @@ export const ALLOWED_VERBS: readonly string[] = [
 export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
 
 /**
- * Schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every
- * switched route answers with (DOR-4979), the older `ErrorResponse` the routes
- * not yet switched still send, and the two 428 "confirm first" answers, which
- * are shared, deliberate shapes rather than error one-offs: `StepUpRequired` on
- * every held write and `PasskeyCheckRequired` on the passkey-checked device writes.
+ * Schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every route
+ * answers with (ADR 261123-170831), and the few shared answers that are not
+ * problems on purpose: the login gate's `AuthRequired` 401, and the two 428
+ * "confirm first" answers, `StepUpRequired` on every held write and
+ * `PasskeyCheckRequired` on the passkey-checked device writes.
  */
 export const SHARED_ERROR_SCHEMAS: readonly string[] = [
   'Problem',
-  'ErrorResponse',
+  'AuthRequired',
   'StepUpRequired',
   'PasskeyCheckRequired',
 ];
@@ -292,11 +292,19 @@ export function errorMissingItems(doc: OpenApiDocument): Items {
   return items;
 }
 
-function isSharedErrorRef(schema: SchemaNode | undefined): boolean {
+function isSharedErrorRef(doc: OpenApiDocument, schema: SchemaNode | undefined): boolean {
   const isShared = (node: SchemaNode | undefined) =>
     SHARED_ERROR_SCHEMAS.some((name) => node?.$ref === `#/components/schemas/${name}`);
-  // A problem with extension members is the shared schema plus its own fields.
-  return isShared(schema) || (schema?.allOf ?? []).some(isShared);
+  // A problem with extension members is the shared schema plus its own fields,
+  // inline or as a named component of its own.
+  const extendsShared = (node: SchemaNode | undefined) =>
+    isShared(node) ||
+    (node?.allOf ?? []).some(isShared) ||
+    (node?.$ref !== undefined && (resolveSchema(doc, node).allOf ?? []).some(isShared));
+  if (extendsShared(schema)) return true;
+  // A choice between such answers (a 409 that may carry `conflict`) is one too.
+  const members = [...(schema?.anyOf ?? []), ...(schema?.oneOf ?? [])];
+  return members.length > 0 && members.every(extendsShared);
 }
 
 /**
@@ -314,7 +322,7 @@ export function errorShapeItems(doc: OpenApiDocument): Items {
       const body =
         resolved.content?.['application/problem+json']?.schema ??
         resolved.content?.['application/json']?.schema;
-      if (!isSharedErrorRef(body)) {
+      if (!isSharedErrorRef(doc, body)) {
         add(items, groupOf(operation.path), `${label(operation)} ${status}`);
       }
     }

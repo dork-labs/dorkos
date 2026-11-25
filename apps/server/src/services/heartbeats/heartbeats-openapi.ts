@@ -7,7 +7,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { HeartbeatStatusSchema, TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
 import { WakersOffSchema } from '@dorkos/shared/waker-schemas';
-import { problemResponse } from '../core/openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
  * Register `GET /api/agents/{id}/heartbeat`, `PUT /api/heartbeats/triage-credits` and
@@ -62,8 +62,10 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
         description: 'The answer, stored',
         content: { 'application/json': { schema: TriageCreditsChoiceSchema } },
       },
-      400: { description: 'The body is not an answer' },
-      403: { description: 'Only the owner of this DorkOS can answer' },
+      400: problemResponse('`invalid_request`: the body is not an answer'),
+      403: problemResponse(
+        '`owner_only` or `person_only`: only the owner of this DorkOS can answer, in the app'
+      ),
     },
   });
   registry.registerPath({
@@ -76,6 +78,7 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
       'to off, each paused agent, and heartbeats as a whole when they are off. Each says since ' +
       'when, when DorkOS knows, and the person who can turn it back on. Longest off first.',
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'The wakers that cannot wake',
         content: { 'application/json': { schema: WakersOffSchema } },
