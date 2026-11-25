@@ -244,6 +244,14 @@ nativeSuite('the protected profile without the request’s selection', { timeout
     });
     const sshKey = path.join(home!, '.ssh', 'authorized_keys');
     fs.writeFileSync(sshKey, 'CANARY-ssh-key');
+    // Well-known credential files, denied home-wide, not only in agent folders (DOR-4388).
+    const homeSecrets = ['.git-credentials', '.kube/config', '.pypirc', '.gnupg/private.key'].map(
+      (rel) => path.join(home!, rel)
+    );
+    for (const file of homeSecrets) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `CANARY-home-secret:${path.basename(file)}`);
+    }
     const backups = path.join(home!, '.claude', 'backups');
     const backup = path.join(backups, FIXTURE_BACKUP_NAME);
     if (withBackups) fs.writeFileSync(backup, 'CANARY-claude-backup');
@@ -291,6 +299,8 @@ nativeSuite('the protected profile without the request’s selection', { timeout
               'printf PROBE-START',
               `cat ${quote(sshKey)}`,
               `cat ${quote(backup)}`,
+              ...homeSecrets.map((file) => `cat ${quote(file)} 2>/dev/null`),
+              `ls -A ${quote(path.join(home!, '.kube'))} 2>/dev/null | sed 's/^/KUBE:/'`,
               `ls -A ${quote(backups)} 2>/dev/null | sed 's/^/LISTED:/'`,
               `printf sandbox > ${quote(written)}`,
               `curl -s -m 5 ${base}/net-probe`,
@@ -320,6 +330,9 @@ nativeSuite('the protected profile without the request’s selection', { timeout
     console.info('Codex default-permissions probe', { mode, output });
     expect(returned).not.toContain('CANARY-ssh-key');
     expect(returned).not.toContain('CANARY-claude-backup');
+    expect(output).not.toContain('CANARY-home-secret');
+    // The file is denied exactly: its folder still lists.
+    expect(output).toContain('KUBE:config');
     expect(output).not.toContain('LISTED:');
     expect(fs.existsSync(written)).toBe(mode !== 'default');
     expect(networkHits > 0).toBe(mode === 'bypassPermissions');

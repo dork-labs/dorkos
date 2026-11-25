@@ -177,6 +177,11 @@ export const HOME_SECRET_PATHS: readonly ProtectedPath[] = [
     ['.npmrc', 'file'],
     ['.docker/config.json', 'file'],
     ['.config/gcloud', 'folder'],
+    // Everywhere in the home, not only in agent folders (DOR-4388).
+    ['.git-credentials', 'file'],
+    ['.kube/config', 'file'],
+    ['.pypirc', 'file'],
+    ['.gnupg', 'folder'],
     ['.claude.json*', 'file'],
     ['.claude/.credentials*', 'file'],
     ['.claude/backups', 'folder'],
