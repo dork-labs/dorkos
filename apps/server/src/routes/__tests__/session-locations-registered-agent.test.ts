@@ -1,6 +1,6 @@
 /** Registered-agent birth through the person front door, live Mesh and real settings writes. */
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -173,7 +173,7 @@ function patch(id: string, settings = { fastMode: false }, cwd = agentHome) {
   return harness.call('patch', `/api/sessions/${id}?cwd=${encodeURIComponent(cwd)}`).send(settings);
 }
 
-type FixtureSendOptions = { workspaceKey?: string; agentPath?: string | undefined };
+type FixtureSendOptions = { workspaceKey?: string; agentPath?: string | undefined; cwd?: string };
 
 function send(id: string, options: FixtureSendOptions = {}) {
   ids.add(id);
@@ -409,4 +409,48 @@ it('keeps legacy agent sends and binds the acknowledged owner when first send om
       modelLaunchState: 'pending-v1',
     },
   });
+});
+
+it('starts a chat reached through a folder alias as exactly the registered agent', async () => {
+  // A real symlink, the shape of macOS's `/var` and `/private/var`: one folder,
+  // two spellings. The registry holds one, the chat the other (DOR-5117).
+  const alias = join(root, 'project-alias');
+  const second = join(project, 'second-agent');
+  const stray = join(project, 'stray-folder');
+  await Promise.all([second, stray].map((dir) => mkdir(dir, { mode: 0o700, recursive: true })));
+  await symlink(project, alias);
+  await symlink(second, join(project, 'second-alias'));
+  await symlink(stray, join(project, 'stray-alias'));
+  await symlink(outsideHome, join(project, 'outside-alias'));
+  const aliasHome = join(alias, projectKey);
+  scripted.withScenarios([reply, reply, reply]);
+
+  const agent = await register();
+  const id = await allocate(agent.id);
+  // An alias of a folder no agent is registered at names no agent at all, and
+  // an alias of another agent's home cannot take over this agent's chat.
+  const strayAlias = join(project, 'stray-alias');
+  expect((await send(randomUUID(), { agentPath: strayAlias, cwd: strayAlias })).status).toBe(400);
+  for (const agentPath of [strayAlias, join(project, 'outside-alias')]) {
+    expect((await send(id, { agentPath, cwd: agentPath })).status).toBe(404);
+  }
+  expect(read(id).allocation).toMatchObject({ recordedRegisteredPath: agentHome });
+
+  // The alias resolves to the registered agent, stored in the registry's spelling.
+  await sendAndSettle(id, { agentPath: aliasHome, cwd: aliasHome });
+  expect(read(id).metadata).toMatchObject({ agentPath: agentHome, launchOrigin: 'interactive' });
+  expect(scripted.sendMessage).toHaveBeenLastCalledWith(
+    id,
+    'Owned registered-agent fixture turn',
+    expect.objectContaining({ forAgent: agentHome })
+  );
+  const legacyId = randomUUID();
+  await sendAndSettle(legacyId, { agentPath: aliasHome, cwd: aliasHome });
+  expect(read(legacyId).metadata).toMatchObject({ agentPath: agentHome });
+
+  // The reverse: registered through the alias, the chat names the real folder.
+  const viaAlias = await register(join(project, 'second-alias'));
+  const reverseId = await allocate(viaAlias.id);
+  await sendAndSettle(reverseId, { agentPath: second, cwd: second });
+  expect(read(reverseId).metadata).toMatchObject({ agentPath: join(project, 'second-alias') });
 });
