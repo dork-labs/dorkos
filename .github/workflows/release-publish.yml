@@ -11,6 +11,10 @@ name: Release Publish
 # prepare: only after that passes, installs the release checkout, builds and
 #          packs the three packages with main's release-cli (which proves again).
 #          No npm or deploy rights.
+# gate:    after both, right before npm (DOR-5123, ADR clause 6): main's
+#          scripts/release-gate.sh must answer exactly SHIP for P, the release
+#          point prove verified (the branch's merge-base with main). REFUSE
+#          fails the job, so publish never starts. Read-only token, no secrets.
 # publish: waits for a person's approval on npm-release, checks that approval
 #          inside the job, re-checks the tip, then publishes the exact packed
 #          tarballs with npm trusted publishing (OIDC, no npm token).
@@ -56,6 +60,10 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      # P, the release point: set only after proof.ts has shown it is the
+      # branch's merge-base with main (routine mode). The gate job reads it.
+      p: ${{ steps.proven.outputs.p }}
     steps:
       - name: Refuse anything but main's copy and strict inputs
         run: |
@@ -94,6 +102,14 @@ jobs:
           node --experimental-strip-types trusted/packages/cli/scripts/release-branch/proof.ts \
             release "$GITHUB_REPOSITORY" "$RELEASE_VERSION" "$RELEASE_EXPECTED_SHA" \
             "release/v$RELEASE_VERSION" "$RELEASE_MODE" "$RELEASE_BASE" "$RELEASE_EXPECTED_SHA"
+      - name: Name the proven release point P
+        id: proven
+        run: |
+          set -euo pipefail
+          # Reached only when the proof passed: in routine mode proof.ts asserts
+          # that the merge-base of the tip and main equals this base.
+          [[ "$RELEASE_MODE" == routine && "$RELEASE_BASE" =~ ^[0-9a-f]{40}$ ]]
+          echo "p=$RELEASE_BASE" >>"$GITHUB_OUTPUT"
 
   prepare:
     needs: prove
@@ -196,8 +212,79 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  gate:
+    # Right before npm (DOR-5123; ADR 261118-135124 clause 6): main's
+    # scripts/release-gate.sh must print exactly SHIP for P. It re-proves at
+    # publish time what made P worth releasing: on main's first-parent history,
+    # not reverted, no open auto-revert PR, its full run on main green, and
+    # every required check green in its merge-queue build. Anything else is
+    # REFUSE <reason>: this job fails, so publish never starts. After prepare,
+    # so the answer is as fresh as it can be before npm.
+    needs: [prove, prepare]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Read-only, no secrets, no environment: only the reads release-gate.sh makes.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    env:
+      P: ${{ needs.prove.outputs.p }}
+      # The workflows whose newest completed push/schedule run on P must have
+      # passed. test.yml joins when the full unit sweep moves to a rolling run
+      # on main (PR #4257); until then the queue runs it, and check 3 covers it.
+      FULL_RUN_WORKFLOWS: browser-test.yml
+    steps:
+      - name: Refuse anything but main's copy, routine mode and a proven P
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release-publish.yml@refs/heads/main" ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          # Hotfix mode is refused (ADR clause 6) and prove already stopped it;
+          # the gate refuses it again rather than trust job order alone.
+          if [[ "$RELEASE_MODE" != routine ]]; then
+            echo "::error::release-gate: mode $RELEASE_MODE is not gated for npm; only routine publishes."
+            exit 1
+          fi
+          [[ "$P" =~ ^[0-9a-f]{40}$ && "$P" == "$RELEASE_BASE" ]]
+      - name: Check out main's gate script only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # github.sha is main's commit this run's own file came from (the job
+          # runs only on refs/heads/main). Never the release branch.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-gate.sh
+          sparse-checkout-cone-mode: false
+      - name: Ship only on the exact answer SHIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          facts="$RUNNER_TEMP/release-gate-facts.json"
+          bash scripts/release-gate.sh facts "$RELEASE_VERSION" "$P" >"$facts"
+          echo "::group::facts"
+          cat "$facts"
+          echo "::endgroup::"
+          decision=$(bash scripts/release-gate.sh decide "$facts")
+          echo "Decision: $decision"
+          {
+            echo "### Release gate: v$RELEASE_VERSION from P \`${P:0:12}\`"
+            echo
+            echo "\`${decision//\`/}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [[ "$decision" != SHIP ]]; then
+            echo "::error title=release-gate refused v$RELEASE_VERSION::${decision//$'\n'/ }"
+            exit 1
+          fi
+
   publish:
-    needs: prepare
+    # smoke (the release lead's job, design §6) joins here: [prepare, gate, smoke].
+    needs: [prepare, gate]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20

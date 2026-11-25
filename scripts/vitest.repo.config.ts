@@ -77,6 +77,8 @@ export const REPO_WIDE_SUITES = [
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
   '__tests__/pr-related-step.test.ts',
   '__tests__/release-branch-ci.test.ts',
+  // Reads release-publish.yml: publish needs the npm gate job (DOR-5123).
+  '__tests__/release-publish-gate.test.ts',
   // The guard over these two lists. It reads only scripts/, but a new suite
   // can land from any PR, so it must run in the queue too (DOR-4224).
   '__tests__/repo-wide-suites.test.ts',
