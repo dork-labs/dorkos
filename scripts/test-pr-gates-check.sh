@@ -51,8 +51,19 @@ comments() {
 # Canned answers, one file per endpoint, rewritten by each case.
 fx=$tmp/fx
 mkdir -p "$fx"
+# pull_json <head repo> <changed files>: the PR, opened from <head repo> into made-up/repo.
+pull_json() {
+  jq -n --arg h "$H" --arg r "$1" --argjson n "$2" \
+    '{head: {sha: $h, ref: "feat/x", repo: (if $r == "" then null else {full_name: $r} end)},
+      base: {repo: {full_name: "made-up/repo"}}, title: "feat(server): x", changed_files: $n}' >"$fx/pull"
+}
+# files_json <name>...: the PR's changed files, all modified.
+files_json() {
+  printf '%s\n' "$@" | jq -R '{filename: ., status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1 @@\n-a\n+b"}' |
+    jq -s . >"$fx/files"
+}
 reset_fixtures() {
-  printf '{"head":{"sha":"%s","ref":"feat/x"},"title":"feat(server): x","changed_files":1}' "$H" >"$fx/pull"
+  pull_json made-up/repo 1
   echo '{"commit":{"committer":{"date":"2026-11-23T10:00:00Z"}}}' >"$fx/commit"
   echo '{"workflow_runs":[{"path":".github/workflows/typecheck.yml","head_branch":"feat/x","head_repository":{"full_name":"made-up/repo"},"created_at":"2026-11-23T10:01:00Z"}]}' >"$fx/runs"
   echo '[]' >"$fx/statuses"
@@ -69,12 +80,12 @@ cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
 [ "$1" = api ] || { echo "stub gh: unexpected $*" >&2; exit 1; }
-url= filter=.
+url= filter=. paginate=
 args=("$@")
 for ((i = 1; i < ${#args[@]}; i++)); do
   case "${args[$i]}" in
     --jq) filter=${args[$((i + 1))]}; i=$((i + 1)) ;;
-    --paginate) ;;
+    --paginate) paginate=1 ;;
     *) [ -z "$url" ] && url=${args[$i]} ;;
   esac
 done
@@ -91,6 +102,14 @@ case "$url" in
   *) echo "stub gh: unexpected $url" >&2; exit 1 ;;
 esac
 [ "${FAKE_FAIL:-}" = "$f" ] && exit 1
+# A list answer comes in pages of 100, as GitHub's does: without --paginate only
+# the first page, with it every page, the filter run on each (as gh does).
+if jq -e 'type == "array"' "$FX/$f" >/dev/null; then
+  last=$([ -n "$paginate" ] && echo 1000000 || echo 100)
+  jq -c --argjson last "$last" '. as $a | range(0; [length, $last] | min; 100) | $a[.:. + 100]' "$FX/$f" >"$FX/.pages" || exit 1
+  while IFS= read -r page; do jq -r "$filter" <<<"$page" || exit 1; done <"$FX/.pages"
+  exit 0
+fi
 jq -r "$filter" "$FX/$f"
 EOF
 chmod +x "$tmp/gh"
@@ -405,6 +424,159 @@ echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses
 run run 12
 check 'needs-design with only a cloud pass: passes' 0 "$rc"
 check 'and notes the design gate' yes "$(has "$out" 'no-design-ok')"
+
+# --- outside contributions: another repository's PR that changes workflows,
+# scripts, package manifests or lockfiles needs Security's signed review ---
+cloud_pass() { echo "[$(sv success 'github-actions[bot]' 2026-11-23T10:10:00Z)]" >"$fx/statuses"; }
+SECURITY_SIGNOFF=cloud SIGNED_REVIEW_ONLY=yes run decide 'KEEP gates-met proof=ci-green stamp=yes'
+check 'decide: an outside contribution with only the cloud verdict fails' 1 "$rc"
+check 'and names the reason' yes "$(has "$out" 'outside-contribution-needs-signed-review')"
+SECURITY_SIGNOFF=signed SIGNED_REVIEW_ONLY=yes run decide 'KEEP gates-met proof=ci-green stamp=yes'
+check 'decide: an outside contribution with a signed review passes' 0 "$rc"
+
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 2
+files_json apps/server/src/lib/thing.ts .github/workflows/x.yml
+run run 12
+check 'another repo, a workflow change, the cloud verdict only: fails' 1 "$rc"
+check 'and names the reason' yes "$(has "$out" 'outside-contribution-needs-signed-review')"
+check 'and lists the path' yes "$(has "$out" 'changed: ".github/workflows/x.yml"')"
+check 'and not the other one' no "$(has "$out" 'changed: "apps/server')"
+check 'and says the cloud verdict does not count for it' yes "$(has "$out" "only Security's signed review counts.")"
+
+reset_fixtures
+cloud_pass
+pull_json someone/fork 2
+files_json apps/server/src/lib/thing.ts .github/workflows/x.yml
+run run 12
+check 'another repo, a workflow change, a signed review: passes' 0 "$rc"
+
+reset_fixtures
+comments
+pull_json someone/fork 2
+files_json apps/server/src/lib/thing.ts .github/workflows/x.yml
+run run 12
+check 'another repo, a workflow change, no sign-off: fails' 1 "$rc"
+check 'with the outside-contribution reason' yes "$(has "$out" 'outside-contribution-needs-signed-review')"
+
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 2
+files_json docs/guide.mdx contributing/ci.md
+run run 12
+check 'another repo, docs only, the cloud verdict: passes' 0 "$rc"
+check 'with no outside-contribution note' no "$(has "$out" 'Outside contribution')"
+
+reset_fixtures
+comments
+cloud_pass
+pull_json made-up/repo 3
+files_json .github/workflows/x.yml scripts/x.sh pnpm-lock.yaml
+run run 12
+check 'this repo, workflow and lockfile changes, the cloud verdict: passes (unchanged)' 0 "$rc"
+
+for p in packages/foo/package.json apps/site/package.json package.json pnpm-lock.yaml \
+  pnpm-workspace.yaml .npmrc packages/foo/.npmrc lefthook.yml scripts/x.sh tools/t/run.sh \
+  packages/cli/scripts/build.ts .claude/hooks/h.mjs ci/required-checks.json patches/p.patch \
+  .pnpmfile.cjs turbo.json packages/ci-steward/src/cli.ts Scripts/x.sh .GitHub/workflows/a.yml \
+  Package.JSON packages/foo/PACKAGE.json Dockerfile Dockerfile.hub apps/x/Dockerfile.dev \
+  docker/entrypoint.sh apps/desktop/build/entitlements.mac.plist apps/desktop/electron-builder.yml \
+  apps/desktop/electron.vite.config.ts; do
+  reset_fixtures
+  comments
+  cloud_pass
+  pull_json someone/fork 1
+  files_json "$p"
+  run run 12
+  check "another repo changing $p with the cloud verdict only: fails" 1 "$rc"
+done
+
+reset_fixtures
+cloud_pass
+pull_json someone/fork 1
+files_json packages/foo/package.json
+run run 12
+check 'another repo, a nested package.json, a signed review: passes' 0 "$rc"
+
+for p in packages/foo/src/package.ts docs/scripts.md apps/client/src/tools.ts README.md \
+  apps/desktop/src/main/index.ts apps/e2e/reporters/manifest-reporter.ts docs/docker.md \
+  apps/client/vite.config.ts; do
+  reset_fixtures
+  comments
+  cloud_pass
+  pull_json someone/fork 1
+  files_json "$p"
+  run run 12
+  check "another repo changing only $p with the cloud verdict: passes" 0 "$rc"
+done
+
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 1
+echo '[{"filename":"docs/x.sh","previous_filename":"scripts/x.sh","status":"renamed","additions":0,"deletions":0}]' >"$fx/files"
+run run 12
+check 'another repo renaming a file out of scripts/: needs the signed review' 1 "$rc"
+check 'and lists the old name' yes "$(has "$out" 'changed: "scripts/x.sh"')"
+
+reset_fixtures
+comments
+cloud_pass
+pull_json '' 1
+files_json .github/workflows/x.yml
+run run 12
+check 'a head repository that no longer exists counts as another repo' 1 "$rc"
+
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 1
+files_json .github/workflows/x.yml
+jq 'del(.base)' "$fx/pull" >"$fx/pull.new" && mv "$fx/pull.new" "$fx/pull"
+run run 12
+check 'an unreadable base repository fails closed with exit 2' 2 "$rc"
+
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 3
+files_json docs/a.md docs/b.md
+run run 12
+check 'another repo with an incomplete file list fails closed with exit 2' 2 "$rc"
+
+# Pagination: 150 files come in two pages; the one that matters is on the second.
+many=()
+for i in $(seq 1 150); do many+=("docs/page-$i.md"); done
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 150
+files_json "${many[@]}"
+run run 12
+check 'another repo, 150 docs files, the cloud verdict: passes' 0 "$rc"
+files_calls=$(grep -E 'pulls/12/files' "$GH_LOG" || true)
+check 'the file list is read with --paginate' yes "$(grep -q -- '--paginate' <<<"$files_calls" && echo yes || echo no)"
+many[139]=.github/workflows/late.yml
+reset_fixtures
+comments
+cloud_pass
+pull_json someone/fork 150
+files_json "${many[@]}"
+run run 12
+check 'another repo, a workflow change on the second page: fails' 1 "$rc"
+check 'and lists it' yes "$(has "$out" 'changed: ".github/workflows/late.yml"')"
+
+many=()
+for i in $(seq 1 25); do many+=("scripts/s-$i.sh"); done
+reset_fixtures
+comments
+pull_json someone/fork 25
+files_json "${many[@]}"
+run run 12
+check 'a long path list is cut at 20' yes "$(has "$out" '...and 5 more')"
 
 for f in pull commit runs statuses checkruns events labels files comments; do
   reset_fixtures
