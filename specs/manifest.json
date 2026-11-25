@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261125-225407",
+      "slug": "your-dorkos-on-the-web",
+      "title": "Your DorkOS on the web, re-baselined: one window onto your homes, the link the Mac controls, one list by home, the notice, search across homes, the cloud home's wake, and a verdict for every step of the three older plans",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-2932"
+    },
+    {
       "id": "261125-193257",
       "slug": "send-to-an-agent",
       "title": "Send to an agent: one capability, the seat rule, a program's own identity and level, the reply by id and as a stream, A2A as a projection, and a server with one agent",
