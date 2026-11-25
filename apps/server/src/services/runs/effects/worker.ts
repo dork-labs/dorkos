@@ -19,19 +19,28 @@
  * `repeatable` to `pending`, `once` to `unknown` (§6.2, rule 1). This boot's
  * own leases are never taken back by itself.
  *
- * **Answers.** A handler answers `done`, `wait(retryAt)` or `drop(reason)`; the
- * spec's fourth answer, `await(fact)`, arrives with `start_turn` (T5), its only
- * user. A throw on a `repeatable` effect retries after 1 s, 5 s, 30 s, 2 min,
+ * **Answers.** A handler answers `done`, `wait(retryAt)`, `drop(reason)` or
+ * `await`. `await` keeps the effect leased, renewed by this boot's heartbeat
+ * (every 20 seconds, every lease it holds), until a fact ends it in its own
+ * transaction: only `start_turn` uses it, waiting for its run's `started`,
+ * `superseded` or `cancelled` (§6.2). A throw on a `repeatable` effect retries after 1 s, 5 s, 30 s, 2 min,
  * then every 10 min, and is `dropped` after its eighth attempt; a throw on a
  * `once` effect is `unknown`. A handler whose work is a write to `dork.db`
  * does that write and calls {@link EffectContext.markDone} inside the same
  * transaction (§6.4), which is what makes that write happen exactly once.
  *
  * **One effect at a time.** A pass awaits each handler before it takes the
- * next, so a handler that never settles stalls the whole outbox in this
- * process until a restart (its lease then lapses and the next boot takes it
- * back). `notify_person` always settles; T5 bounds every handler with a
- * timeout before `start_turn`, which can wait long, joins.
+ * next, bounded by {@link EFFECT_HANDLER_TIMEOUT_MS}, so a handler that never
+ * settles cannot stall the outbox. Past the bound, a handler that declares
+ * `onTimeout: 'await'` (`start_turn`, whose hand-over can wait on a runtime's
+ * own launch) keeps its lease and finishes on its own; any other is treated
+ * as a throw.
+ *
+ * **Deadlines.** A pending effect past its `not_after` is `expired`, and its
+ * kind's `onExpired` runs in the same transaction (a `start_turn` cancels its
+ * run). An effect this boot holds past its deadline is offered to its kind's
+ * `expireHeld` (a `start_turn` waiting in the dispatcher is withdrawn there,
+ * unless its launch is under way).
  *
  * **Shutdown** stops the wake-ups and nothing else: an effect still pending
  * stays pending, and one whose handler was cut short is taken back by the
@@ -71,6 +80,9 @@ export const EFFECT_RETRY_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000, 600_000] 
 /** A `repeatable` effect is dropped after this many failed attempts. */
 export const EFFECT_MAX_ATTEMPTS = 8;
 
+/** The longest a pass waits on one handler before it takes the next (see the module doc). */
+export const EFFECT_HANDLER_TIMEOUT_MS = 30_000;
+
 /** How many `ended` runs one pass reads to settle. */
 const SETTLE_BATCH = 100;
 
@@ -78,7 +90,9 @@ const SETTLE_BATCH = 100;
 export type EffectAnswer =
   | { kind: 'done'; outcome?: unknown }
   | { kind: 'wait'; retryAt: number; outcome?: unknown }
-  | { kind: 'drop'; reason: string };
+  | { kind: 'drop'; reason: string }
+  /** Keep the lease until a fact ends the effect in its own transaction (`start_turn` only). */
+  | { kind: 'await' };
 
 /** Thrown by {@link EffectContext.markDone} when the lease is no longer this worker's. */
 export class EffectLeaseLostError extends Error {
@@ -105,6 +119,12 @@ export interface EffectContext {
    * rolls that transaction back.
    */
   markDone: (outcome?: unknown) => void;
+  /**
+   * Hand the effect back to `pending`, due at `retryAt`, from a handler that
+   * finishes after the worker stopped waiting on it. A no-op once the lease
+   * is gone.
+   */
+  release: (retryAt: number, outcome?: unknown) => void;
 }
 
 /** One kind's handler (§6.2). */
@@ -116,6 +136,21 @@ export interface EffectHandler {
    * @param ctx - The clock and the in-transaction finish.
    */
   handle(effect: TurnEffect, ctx: EffectContext): Promise<EffectAnswer> | EffectAnswer;
+  /** What a handler still working past {@link EFFECT_HANDLER_TIMEOUT_MS} is taken to answer. */
+  onTimeout?: 'await';
+  /**
+   * The effect passed its `not_after` while pending and is now `expired`.
+   * Runs inside that transaction.
+   *
+   * @param effect - The effect, as expired.
+   */
+  onExpired?(effect: TurnEffect): void;
+  /**
+   * This boot holds the effect past its `not_after` (it answered `await`).
+   *
+   * @param effect - The effect, still leased.
+   */
+  expireHeld?(effect: TurnEffect): void;
 }
 
 /** The handler registry: one per kind that has one. */
@@ -149,6 +184,7 @@ export class EffectWorker {
   private looping = false;
   private again = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private heartbeat: ReturnType<typeof setInterval> | undefined;
   private afterLapse: ReturnType<typeof setTimeout> | undefined;
   private stopListening: (() => void) | undefined;
 
@@ -180,6 +216,18 @@ export class EffectWorker {
       Math.max(RUN_LEASE_MS, EFFECT_LEASE_MS) + EFFECT_TICK_MS
     );
     this.afterLapse.unref?.();
+    // Every lease this boot holds, an awaited `start_turn`'s included, lives
+    // as long as this process does.
+    this.heartbeat = setInterval(() => {
+      try {
+        this.opts.effects.renewOwned(this.opts.epoch, EFFECT_LEASE_MS);
+      } catch (err) {
+        logger.warn('[runs] could not renew this boot’s effect leases', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }, EFFECT_LEASE_RENEW_MS);
+    this.heartbeat.unref?.();
     this.wake();
   }
 
@@ -192,6 +240,8 @@ export class EffectWorker {
     this.timer = undefined;
     if (this.afterLapse) clearTimeout(this.afterLapse);
     this.afterLapse = undefined;
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = undefined;
   }
 
   /**
@@ -297,10 +347,16 @@ export class EffectWorker {
         kind: effect.kind,
       });
     }
-    for (const effect of effects.expireDue()) {
+    const { handlers } = this.opts;
+    for (const effect of effects.expireDue((expired) =>
+      handlers[expired.kind]?.onExpired?.(expired)
+    )) {
       // Whoever asked is told by the kind that asked (§6.1); a notice that
       // itself expires is recorded and tells nobody.
       logger.info('[runs] an effect expired', { effectId: effect.id, kind: effect.kind });
+    }
+    for (const effect of effects.heldPastDeadline(this.opts.epoch)) {
+      handlers[effect.kind]?.expireHeld?.(effect);
     }
     for (const run of runs.endedRunsToSettle(SETTLE_BATCH)) {
       effects.transaction(() => this.settleRun(run.id));
@@ -357,20 +413,41 @@ export class EffectWorker {
       }
     }, EFFECT_LEASE_RENEW_MS);
     renew.unref?.();
+    let bound: ReturnType<typeof setTimeout> | undefined;
     try {
-      const answer = await handler.handle(effect, {
-        now: this.now,
-        markDone: (outcome) => {
-          if (!this.end(effect, 'done', outcome)) throw new EffectLeaseLostError(effect.id);
-        },
+      const working = Promise.resolve(
+        handler.handle(effect, {
+          now: this.now,
+          markDone: (outcome) => {
+            if (!this.end(effect, 'done', outcome)) throw new EffectLeaseLostError(effect.id);
+          },
+          release: (retryAt, outcome) => {
+            this.opts.effects.release(lease, retryAt, outcome);
+          },
+        })
+      );
+      const timedOut = new Promise<'timeout'>((resolve) => {
+        bound = setTimeout(() => resolve('timeout'), EFFECT_HANDLER_TIMEOUT_MS);
+        bound.unref?.();
       });
+      const answer = await Promise.race([working, timedOut]);
+      if (answer === 'timeout') {
+        // Still working: it finishes on its own, or is treated as a throw.
+        working.catch((err: unknown) => this.failed(effect, err));
+        if (handler.onTimeout === 'await') return;
+        throw new Error(
+          `the ${effect.kind} handler took longer than ${EFFECT_HANDLER_TIMEOUT_MS} ms`
+        );
+      }
       if (!this.holds(effect)) return; // marked done in its own transaction, or taken back
+      if (answer.kind === 'await') return; // a fact ends it
       if (answer.kind === 'done') this.end(effect, 'done', answer.outcome);
       else if (answer.kind === 'drop') this.end(effect, 'dropped', { reason: answer.reason });
       else this.opts.effects.release(lease, answer.retryAt, answer.outcome);
     } catch (err) {
       this.failed(effect, err);
     } finally {
+      clearTimeout(bound);
       clearInterval(renew);
     }
   }

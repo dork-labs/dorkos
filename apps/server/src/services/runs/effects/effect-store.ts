@@ -16,6 +16,7 @@ import {
   and,
   count,
   eq,
+  gt,
   inArray,
   isNotNull,
   lt,
@@ -267,7 +268,12 @@ export class EffectStore {
   /**
    * Take the next due effect: `pending`, due by `available_at`, within its
    * `not_after`, and with no earlier effect of its run still open, so a run's
-   * follow-ups run in the order they were written (§5, item 5). One
+   * follow-ups run in the order they were written (§5, item 5). A chat's
+   * `start_turn` effects that order behind it (`session_id` set: runs whose
+   * words stay at their source) are handed over in the order they were
+   * written too, so those runs start in `chat_seq` order among themselves; a
+   * run whose words wait in the composer orders behind nothing here, so a
+   * row never waits on them, nor they on a row. One
    * conditional update in an immediate transaction, so of two workers asking
    * at once only one gets it.
    *
@@ -290,7 +296,11 @@ export class EffectStore {
               SELECT 1 FROM "turn_effects" AS "earlier"
               WHERE "earlier"."run_id" = ${turnEffects.runId}
                 AND "earlier"."id" < ${turnEffects.id}
-                AND "earlier"."state" IN ('pending', 'leased')))`
+                AND "earlier"."state" IN ('pending', 'leased')))`,
+            sql`(${turnEffects.kind} <> 'start_turn' OR ${turnEffects.sessionId} IS NULL OR NOT EXISTS (
+              SELECT 1 FROM "turn_effects" AS "ahead"
+              WHERE "ahead"."kind" = 'start_turn' AND "ahead"."session_id" = ${turnEffects.sessionId}
+                AND "ahead"."id" < ${turnEffects.id} AND "ahead"."state" IN ('pending', 'leased')))`
           )
         )
         .orderBy(turnEffects.id)
@@ -429,9 +439,11 @@ export class EffectStore {
    * left to its holder; once its lease lapses, {@link reclaimLapsed} hands it
    * back and the next call here expires it.
    *
+   * @param onExpired - Called for each, inside the same transaction: a
+   *   `start_turn` past its deadline cancels its run there (§6.2).
    * @returns The effects it expired.
    */
-  expireDue(): TurnEffect[] {
+  expireDue(onExpired?: (effect: TurnEffect) => void): TurnEffect[] {
     return this.transaction(() => {
       const now = this.now();
       const due = this.db
@@ -459,9 +471,171 @@ export class EffectStore {
           })
           .where(and(eq(turnEffects.id, row.id), eq(turnEffects.state, 'pending')))
           .run();
+        onExpired?.(this.get(row.id)!);
       }
       return due.map((row) => this.get(row.id)!);
     });
+  }
+
+  /**
+   * A run's `start_turn` that still owes its hand-over, if it has one.
+   *
+   * @param runId - The run.
+   */
+  openStartOf(runId: string): TurnEffect | undefined {
+    const row = this.db
+      .select()
+      .from(turnEffects)
+      .where(and(this.startsOf(runId), inArray(turnEffects.state, OPEN_STATES)))
+      .get();
+    return row ? toEffect(row) : undefined;
+  }
+
+  /**
+   * End a run's open `start_turn`, whoever holds it: the run started, joined
+   * another turn or was cancelled (transitions 5, 6, 7 and 9 settle it, §6.2).
+   * Not fenced by a lease, because the run's own move decides it; a handler
+   * still holding the lease finds it gone and writes nothing more.
+   *
+   * @param runId - The run.
+   * @param state - `done`, or `expired` for a run cancelled past its deadline.
+   * @param outcome - What to keep about how it ended.
+   */
+  endStartOf(runId: string, state: 'done' | 'expired', outcome?: unknown): void {
+    this.db
+      .update(turnEffects)
+      .set({
+        state,
+        leaseUntil: null,
+        outcome: outcome === undefined ? null : JSON.stringify(outcome),
+        settledAt: new Date(this.now()).toISOString(),
+      })
+      .where(and(this.startsOf(runId), inArray(turnEffects.state, OPEN_STATES)))
+      .run();
+  }
+
+  /**
+   * Hand a run's open `start_turn` back to `pending`, due at `availableAt`:
+   * the run went back in line with its words at the space side (transition
+   * 8), so it is handed over again for a new launch (§6.2).
+   *
+   * @param runId - The run.
+   * @param availableAt - Epoch ms; not before.
+   */
+  reopenStartOf(runId: string, availableAt: number): void {
+    const changed = this.db
+      .update(turnEffects)
+      .set({ state: 'pending', availableAt, leaseUntil: null })
+      .where(and(this.startsOf(runId), inArray(turnEffects.state, OPEN_STATES)))
+      .run().changes;
+    if (changed > 0) this.announceWork();
+  }
+
+  /**
+   * Make a chat's waiting `start_turn` effects due now: the run that held the
+   * chat let go of it (spec §3.5, "released by that run's `ended` fact").
+   *
+   * @param sessionId - The chat, as its queue rows are kept.
+   */
+  wakeStartsOf(sessionId: string): void {
+    const now = this.now();
+    const changed = this.db
+      .update(turnEffects)
+      .set({ availableAt: now })
+      .where(
+        and(
+          eq(turnEffects.kind, 'start_turn'),
+          eq(turnEffects.sessionId, sessionId),
+          eq(turnEffects.state, 'pending'),
+          gt(turnEffects.availableAt, now)
+        )
+      )
+      .run().changes;
+    if (changed > 0) this.announceWork();
+  }
+
+  /**
+   * Make every waiting `start_turn` due now: a pause was lifted, and the runs
+   * it held may go (§3.5).
+   */
+  wakeAllStarts(): void {
+    const now = this.now();
+    const changed = this.db
+      .update(turnEffects)
+      .set({ availableAt: now })
+      .where(
+        and(
+          eq(turnEffects.kind, 'start_turn'),
+          eq(turnEffects.state, 'pending'),
+          gt(turnEffects.availableAt, now)
+        )
+      )
+      .run().changes;
+    if (changed > 0) this.announceWork();
+  }
+
+  /**
+   * The effects this boot holds past their deadline: a `start_turn` whose
+   * handler answered `await` and whose run is still waiting for `started`.
+   *
+   * @param owner - This boot's epoch.
+   */
+  heldPastDeadline(owner: string): TurnEffect[] {
+    return this.db
+      .select()
+      .from(turnEffects)
+      .where(
+        and(
+          eq(turnEffects.state, 'leased'),
+          eq(turnEffects.leaseOwner, owner),
+          isNotNull(turnEffects.notAfter),
+          lt(turnEffects.notAfter, this.now())
+        )
+      )
+      .all()
+      .map(toEffect);
+  }
+
+  /**
+   * Renew every lease this boot holds: what keeps an awaited `start_turn`
+   * leased while its run waits for `started` (the owner's heartbeat, §6.1).
+   *
+   * @param owner - This boot's epoch.
+   * @param leaseMs - How long from now.
+   */
+  renewOwned(owner: string, leaseMs: number): number {
+    return this.db
+      .update(turnEffects)
+      .set({ leaseUntil: this.now() + leaseMs })
+      .where(and(eq(turnEffects.state, 'leased'), eq(turnEffects.leaseOwner, owner)))
+      .run().changes;
+  }
+
+  /**
+   * A chat's open `start_turn` effects for runs without a queue row, oldest
+   * first: the order those runs wait in (§4.6, `queuePosition`).
+   *
+   * @param sessionId - The chat, as its queue rows are kept.
+   */
+  openStartRunsOf(sessionId: string): string[] {
+    return this.db
+      .select({ runId: turnEffects.runId })
+      .from(turnEffects)
+      .where(
+        and(
+          eq(turnEffects.kind, 'start_turn'),
+          eq(turnEffects.sessionId, sessionId),
+          inArray(turnEffects.state, OPEN_STATES)
+        )
+      )
+      .orderBy(turnEffects.id)
+      .all()
+      .flatMap((row) => (row.runId === null ? [] : [row.runId]));
+  }
+
+  /** A run's `start_turn` effects. */
+  private startsOf(runId: string) {
+    return and(eq(turnEffects.kind, 'start_turn'), eq(turnEffects.runId, runId));
   }
 
   /** The condition every fenced write carries: still leased, to this owner. */

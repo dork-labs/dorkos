@@ -44,7 +44,6 @@ import {
 } from '@dorkos/db';
 import {
   canTransition,
-  TurnOriginSchema,
   type AttemptReason,
   type RunEnding,
   type RunStatus,
@@ -53,6 +52,9 @@ import {
 } from '@dorkos/shared/turn-port';
 import type { InterruptReceipt } from '@dorkos/shared/schemas';
 import { chatKeyOf } from '../session/turn-port/index.js';
+import { patchColumns, toRun } from './run-rows.js';
+
+export { isUniqueViolation } from './run-rows.js';
 
 /** How long a live run's lease lasts after each renewal (§4.1, §7.1). */
 export const RUN_LEASE_MS = 60_000;
@@ -105,6 +107,12 @@ export interface TurnRun {
   attempt: number;
   attemptReason: AttemptReason;
   queueMessageId: string | null;
+  /** Where the words wait when they are not in the queue (`<kind>:<id>`, §4.1). */
+  sourceRef: string | null;
+  /** Who asked, as a `dork:` reference. */
+  askedByRef: string | null;
+  /** Epoch ms: a run still waiting past this is cancelled as `expired`. */
+  notAfter: number | null;
   runtime: string | null;
   runtimeTurnRef: number | null;
   turnBindingId: string | null;
@@ -165,6 +173,10 @@ export interface NewRun {
   openedBy: TurnRun['openedBy'];
   origin: TurnOrigin | null;
   queueMessageId?: string;
+  /** A caller on the turn port: where its words wait, who asked, and its deadline. */
+  sourceRef?: string;
+  askedByRef?: string;
+  notAfter?: number;
   agentId?: string;
   runtime?: string;
   runtimeTurnRef?: number;
@@ -187,89 +199,9 @@ export type RunPatch = Partial<
     | 'endedAt'
     | 'settledAt'
     | 'agentId'
+    | 'queueMessageId'
   >
 > & { endingDetail?: RunEndingDetail };
-
-/**
- * Whether an error is SQLite refusing a unique index, through any wrapper
- * Drizzle adds around it.
- *
- * @param error - What was thrown.
- */
-export function isUniqueViolation(error: unknown): boolean {
-  for (let e: unknown = error; e instanceof Error; e = (e as { cause?: unknown }).cause) {
-    const code = (e as { code?: unknown }).code;
-    if (code === 'SQLITE_CONSTRAINT_UNIQUE' || /UNIQUE constraint failed/.test(e.message)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Read a stored origin, degrading an unreadable one to "not recorded". */
-function parseOrigin(json: string | null): TurnOrigin | null {
-  if (json === null) return null;
-  try {
-    const parsed = TurnOriginSchema.safeParse(JSON.parse(json));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Read a stored `ending_detail`, degrading an unreadable one to empty. */
-function parseDetail(json: string | null): RunEndingDetail {
-  if (json === null) return {};
-  try {
-    const parsed: unknown = JSON.parse(json);
-    return parsed !== null && typeof parsed === 'object' ? (parsed as RunEndingDetail) : {};
-  } catch {
-    return {};
-  }
-}
-
-/** A stored row as the store answers it. */
-function toRun(row: TurnRunRow): TurnRun {
-  return {
-    id: row.id,
-    sessionId: row.sessionId,
-    chatSeq: row.chatSeq,
-    chainId: row.chainId,
-    agentId: row.agentId,
-    origin: parseOrigin(row.originJson),
-    openedBy: row.openedBy,
-    status: row.status,
-    waitReason: row.waitReason,
-    attempt: row.attempt,
-    attemptReason: row.attemptReason,
-    queueMessageId: row.queueMessageId,
-    runtime: row.runtime,
-    runtimeTurnRef: row.runtimeTurnRef,
-    turnBindingId: row.turnBindingId,
-    ownerEpoch: row.ownerEpoch,
-    leaseUntil: row.leaseUntil,
-    waitingOnPerson: row.waitingOnPerson,
-    ending: row.ending,
-    endingDetail: parseDetail(row.endingDetail),
-    createdAt: row.createdAt,
-    startedAt: row.startedAt,
-    deliveredAt: row.deliveredAt,
-    endedAt: row.endedAt,
-    recoveryDecidedAt: row.recoveryDecidedAt,
-    settledAt: row.settledAt,
-  };
-}
-
-/** The column values a {@link RunPatch} writes. */
-function patchColumns(patch: RunPatch): Partial<TurnRunRow> {
-  const { endingDetail, ...rest } = patch;
-  return {
-    ...rest,
-    ...(endingDetail !== undefined
-      ? { endingDetail: Object.keys(endingDetail).length > 0 ? JSON.stringify(endingDetail) : null }
-      : {}),
-  };
-}
 
 /** Options for {@link RunStore}. */
 export interface RunStoreOptions {
@@ -291,6 +223,12 @@ export interface RunStoreOptions {
    * "Writing"). A throw rolls the move back.
    */
   onEnded?: (run: TurnRun) => void;
+  /**
+   * Called inside the transaction of every move, after {@link onEnded}, with
+   * the run as stored and the status it left: where a run's `start_turn`
+   * settles, goes back to `pending`, or wakes its chat's waiting starts (§6.2).
+   */
+  onMoved?: (run: TurnRun, from: RunStatus) => void;
 }
 
 /** The run record over the machine store's `turn_runs` table. */
@@ -442,9 +380,10 @@ export class RunStore {
    * A `queued` run with no queue row and no source whose words this process
    * does not hold: an earlier boot made it, its words were in that process's
    * memory, and they are gone. Cancelled (5) as `start_lost`, or it would
-   * read as waiting forever. From T5 a run with a pending or leased
-   * `start_turn` effect is never cancelled by this rule: its words are at
-   * their source, not in memory. A known edge: with the instance lock
+   * read as waiting forever. A run with a pending or leased `start_turn`
+   * effect is never cancelled by this rule: the turn port handed it over,
+   * and its words are at their source or with the space side, not in the
+   * dispatcher's memory. A known edge: with the instance lock
    * skipped, two servers sharing one data folder would cancel each other's
    * waiting rowless runs, as each holds only its own.
    *
@@ -482,6 +421,9 @@ export class RunStore {
           eq(turnRuns.status, 'queued'),
           isNull(turnRuns.queueMessageId),
           isNull(turnRuns.sourceRef),
+          // Handed over through the turn port: the space side holds its words (§4.7).
+          sql`NOT EXISTS (SELECT 1 FROM "turn_effects" AS "start" WHERE "start"."run_id" =
+            ${turnRuns.id} AND "start"."kind" = 'start_turn' AND "start"."state" IN ('pending', 'leased'))`,
           ...(chatKey !== undefined ? [eq(turnRuns.sessionId, chatKey)] : [])
         )
       )
@@ -566,6 +508,9 @@ export class RunStore {
           openedBy: input.openedBy,
           status: input.status,
           queueMessageId: input.queueMessageId ?? null,
+          sourceRef: input.sourceRef ?? null,
+          askedByRef: input.askedByRef ?? null,
+          notAfter: input.notAfter ?? null,
           runtime: input.runtime ?? null,
           runtimeTurnRef: input.runtimeTurnRef ?? null,
           ...(live ? this.lease() : {}),
@@ -601,6 +546,7 @@ export class RunStore {
       if (to !== 'queued' && this.heldWords.delete(run.id)) this.dropFrames.at(-1)?.push(run.id);
       const moved = this.get(run.id)!;
       if (to === 'ended') this.opts.onEnded?.(moved);
+      this.opts.onMoved?.(moved, run.status);
       return moved;
     });
   }

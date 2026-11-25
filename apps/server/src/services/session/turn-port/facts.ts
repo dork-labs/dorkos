@@ -87,6 +87,32 @@ export interface DispatcherRunFeed {
    */
   accept(input: { chatKey: string; origin: TurnOrigin | null; queueMessageId?: string }): string;
   /**
+   * A run the turn port handed over took its words into the queue: the row
+   * is recorded on the run (§4.7, write 1). Called inside the transaction
+   * that writes the row.
+   *
+   * @param runId - The run the port saved.
+   * @param queueMessageId - Its queue row.
+   */
+  queueRowTaken(runId: string, queueMessageId: string): void;
+  /**
+   * The turn port's run whose words stay at their source started no turn and
+   * goes back to the space side: `queued` again (transition 8 from
+   * `starting`), its `start_turn` back to `pending` so it is handed over for
+   * a new launch (§6.2).
+   *
+   * @param runId - The run.
+   */
+  handBack(runId: string): void;
+  /**
+   * The chat's live run (`starting`, `started` or `running`), by id: what the
+   * computer face reads before it takes a run whose words stay at their
+   * source (§3.1, `chat_busy`).
+   *
+   * @param chatKey - The chat, by the id its queue rows are kept under.
+   */
+  liveRunOf(chatKey: string): string | undefined;
+  /**
    * The run of a queue row this process is adopting: the one its acceptance
    * wrote, its `paused` wait cleared (transition 3) since a re-arm is what a
    * resume does; or, for a row an earlier build accepted, a new one

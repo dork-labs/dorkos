@@ -95,6 +95,27 @@ export function acceptRun(
 }
 
 /**
+ * A run the turn port saved took its words into the queue: the row is
+ * recorded on it, inside the transaction that writes the row (§4.7, write 1).
+ *
+ * @param runId - The run the port saved.
+ * @param queueMessageId - Its queue row.
+ */
+export function recordRunRow(runId: string, queueMessageId: string): void {
+  toRuns('row taken', (feed) => feed.queueRowTaken(runId, queueMessageId), undefined);
+}
+
+/**
+ * A turn-port run whose words stay at their source started no turn: it goes
+ * back to the space side, which hands it over again for a new launch (§6.2).
+ *
+ * @param plan - The message.
+ */
+export function handBackRun(plan: Pick<DispatchPlan, 'runId'>): void {
+  feedRun(plan, 'hand back', (feed, runId) => feed.handBack(runId));
+}
+
+/**
  * The run of a queue row this process is adopting.
  *
  * @param sessionId - The chat, by any id it answers to.

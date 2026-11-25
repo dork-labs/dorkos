@@ -81,6 +81,8 @@ import { initAgentIdentityService } from '../../services/core/agent-identity/ind
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { wireAuditTrail } from '../../services/audit/index.js';
 import { wireAgentPause } from '../../services/mesh/pause/index.js';
+import { agentPause } from '../../services/mesh/pause/agent-pause.js';
+import { isAgentLaunchCapFull } from '../../services/session/launch/launch-cap.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { ServerRefs } from '../server-refs.js';
@@ -164,6 +166,25 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // naming did not travel with the notice.
   installRunRecord(db, {
     epoch: ulid(),
+    // The turn port's door (spec §3.1, §3.5): Mesh and the pause service are
+    // read at call time, since both start later in boot.
+    agentHome: () => {
+      const mesh = refs.meshCore;
+      return mesh ? (agentId) => mesh.getProjectPath(agentId) : undefined;
+    },
+    admission: {
+      admission: {
+        isPaused: (agentId, cwd) => {
+          const pauses = agentPause();
+          if (!pauses) return false;
+          return agentId !== null
+            ? pauses.pausedAgent(agentId) !== undefined
+            : pauses.isPaused(cwd) !== undefined;
+        },
+        machineFull: isAgentLaunchCapFull,
+      },
+    },
+    onResumed: (listener) => agentPause()?.onResumed(listener) ?? (() => {}),
     handlers: {
       placeOf: (sessionId) => {
         const cwd = knownChatCwd(db, sessionId);

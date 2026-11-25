@@ -36,6 +36,17 @@ import type {
 } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
 import type { TurnNotices } from './effects/turn-notices.js';
+
+/** What the sink needs of the turn port's hand-overs (`effects/start-turns.ts`). */
+export interface HandedStarts {
+  /**
+   * A `queued` run's words went back to the space side without a status
+   * change: its `start_turn` goes back to `pending` (§6.2).
+   *
+   * @param run - The run, `queued`.
+   */
+  reopen(run: TurnRun): void;
+}
 import {
   isUniqueViolation,
   type RunEndingDetail,
@@ -217,7 +228,11 @@ function observedEnding(run: TurnRun, observed: ObservedTurnEnd): NonNullable<Tu
  * @param store - The run store.
  * @param notices - The runs that owe a "finished" notice, when the outbox is wired.
  */
-function dispatcherFeed(store: RunStore, notices: TurnNotices | undefined): DispatcherRunFeed {
+function dispatcherFeed(
+  store: RunStore,
+  notices: TurnNotices | undefined,
+  starts: HandedStarts | undefined
+): DispatcherRunFeed {
   return {
     accept: ({ chatKey, origin, queueMessageId }) =>
       store.create({
@@ -227,6 +242,24 @@ function dispatcherFeed(store: RunStore, notices: TurnNotices | undefined): Disp
         origin,
         ...(queueMessageId !== undefined ? { queueMessageId } : {}),
       }).id,
+
+    queueRowTaken: (runId, queueMessageId) =>
+      store.transaction(() => {
+        if (store.get(runId)?.status === 'queued') store.annotate(runId, { queueMessageId });
+      }),
+
+    handBack: (runId) =>
+      store.transaction(() => {
+        const run = store.get(runId);
+        // From `starting`, the move itself sends its `start_turn` back (§6.2).
+        if (run?.status === 'starting') {
+          store.move(run, 'queued', { ownerEpoch: null, leaseUntil: null });
+        } else if (run?.status === 'queued') {
+          starts?.reopen(run);
+        }
+      }),
+
+    liveRunOf: (chatKey) => store.liveRunOf(chatKey)?.id,
 
     runOfQueueRow: ({ chatKey, queueMessageId }) =>
       store.transaction(() => {
@@ -396,10 +429,15 @@ function rowLeaving(store: RunStore, queueMessageId: string, why: QueueRowExit):
  *
  * @param store - The run store the facts are written to.
  * @param notices - The runs that owe their person a "finished" notice, when the outbox is wired.
+ * @param starts - The turn port's hand-overs, when the outbox is wired.
  */
-export function createRunFactsSink(store: RunStore, notices?: TurnNotices): TurnFactsSink {
+export function createRunFactsSink(
+  store: RunStore,
+  notices?: TurnNotices,
+  starts?: HandedStarts
+): TurnFactsSink {
   return {
     report: (fact) => report(store, fact, notices),
-    dispatcher: dispatcherFeed(store, notices),
+    dispatcher: dispatcherFeed(store, notices, starts),
   };
 }

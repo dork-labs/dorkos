@@ -6,12 +6,21 @@
  * Space side. Turn code never imports this domain; it reports through the
  * facts sink this module registers at startup
  * (`services/session/turn-port/facts.ts`, §3.1). The space face of the turn
- * port (`start`, `stop`, `get`, `list`) lands here with T5.
+ * port (`start`, `get`, `list`, `watch`) is `turn-port.ts`, reached through
+ * {@link turnPort}; a space-side caller starts a turn there and nowhere else.
  *
  * @module services/runs
  */
 import type { Db } from '@dorkos/db';
-import { chatKeyOf, isRunHeld, setTurnFactsSink } from '../session/turn-port/index.js';
+import {
+  chatKeyOf,
+  getComputerTurnPort,
+  isAgentLaunchCapFull,
+  isRunHeld,
+  queueRowExists,
+  setTurnFactsSink,
+  type ComputerTurnPort,
+} from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
 import { createRunFactsSink } from './run-facts-sink.js';
 import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
@@ -21,6 +30,9 @@ import { TurnNotices } from './effects/turn-notices.js';
 import type { ChatPlace } from './effects/handlers/notify-person.js';
 import { effectHandlers, type EffectHandlerDeps } from './effects/handlers/index.js';
 import { EffectWorker } from './effects/worker.js';
+import { StartTurns } from './effects/start-turns.js';
+import { startTurnHandler, type StartTurnDeps } from './effects/handlers/start-turn.js';
+import { SpaceTurnPort } from './turn-port.js';
 
 export {
   IllegalRunTransitionError,
@@ -33,6 +45,13 @@ export {
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
 export type { StopRequestRef } from './run-stops.js';
+export {
+  SpaceTurnPort,
+  TurnStartRefusedError,
+  type RunWatchFilter,
+  type SpaceRefusalReason,
+  type WordSource,
+} from './turn-port.js';
 
 /** The run record and its outbox, as one boot holds them. */
 export interface RunRecord {
@@ -41,9 +60,19 @@ export interface RunRecord {
   worker: EffectWorker;
   /** The runs that owe their person a "finished" notice (§6.2). */
   notices: TurnNotices;
+  /** The space face of the turn port (§3.1). */
+  port: SpaceTurnPort;
+  /** What a run's moves do to its `start_turn` (§6.2). */
+  starts: StartTurns;
 }
 
-let installed: (RunRecord & { renew: ReturnType<typeof setInterval> }) | undefined;
+let installed:
+  | (RunRecord & {
+      renew: ReturnType<typeof setInterval>;
+      onResumed?: RunRecordOptions['onResumed'];
+      stopResumes?: () => void;
+    })
+  | undefined;
 
 /** What {@link createRunRecord} and {@link installRunRecord} need. */
 export interface RunRecordOptions {
@@ -58,6 +87,17 @@ export interface RunRecordOptions {
   ownerHolds?: (runId: string) => boolean;
   /** What the outbox's handlers need from the rest of the server. */
   handlers?: EffectHandlerDeps;
+  /** The computer face the `start_turn` handler calls; defaults to the one startup wired. */
+  computer?: () => ComputerTurnPort | undefined;
+  /** Mesh's answer for an agent's home, read at call time; absent until Mesh runs. */
+  agentHome?: () => ((agentId: string) => string | undefined) | undefined;
+  /**
+   * Admission's sources (startup passes the pause service's answer) and, in
+   * tests, admission itself (§3.5).
+   */
+  admission?: Partial<Pick<StartTurnDeps, 'admission' | 'admit'>>;
+  /** A lifted pause, heard so the runs it held go at once (`AgentPauseService.onResumed`). */
+  onResumed?: (listener: () => void) => () => void;
 }
 
 /**
@@ -69,7 +109,14 @@ export interface RunRecordOptions {
  * @param opts - This boot's epoch (§6.1), what the handlers need, and in tests the clock.
  */
 export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
-  const { handlers: handlerDeps, ...storeOpts } = opts;
+  const {
+    handlers: handlerDeps,
+    computer,
+    agentHome,
+    admission,
+    onResumed: _onResumed,
+    ...storeOpts
+  } = opts;
   const now = opts.now ?? Date.now;
   const effects = new EffectStore(db, { now });
   // Renewed, and kept from retirement, only while this process holds the run.
@@ -78,15 +125,42 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     ...storeOpts,
     // A run with nothing to follow it settles on the worker's next pass.
     onEnded: () => effects.announceWork(),
+    // Its `start_turn` settles, goes back to `pending`, or wakes the waiting.
+    // Read at call time: nothing moves a run before the record is built.
+    onMoved: (run, from) => starts.onRunMoved(run, from),
   });
+  const port = new SpaceTurnPort({ runs: store, effects, ...(agentHome ? { agentHome } : {}) });
+  const starts = new StartTurns(store, effects, () => port, now);
   const worker = new EffectWorker({
     effects,
     runs: store,
-    handlers: effectHandlers(handlerDeps),
+    handlers: {
+      ...effectHandlers(handlerDeps),
+      start_turn: startTurnHandler({
+        runs: store,
+        starts,
+        port,
+        computer: computer ?? getComputerTurnPort,
+        queueRowExists,
+        // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
+        admission: admission?.admission ?? {
+          isPaused: () => false,
+          machineFull: isAgentLaunchCapFull,
+        },
+        ...(admission?.admit ? { admit: admission.admit } : {}),
+      }),
+    },
     epoch: opts.epoch,
     now,
   });
-  return { store, effects, worker, notices: new TurnNotices(store, effects, now) };
+  return {
+    store,
+    effects,
+    worker,
+    notices: new TurnNotices(store, effects, now),
+    port,
+    starts,
+  };
 }
 
 /**
@@ -103,7 +177,7 @@ export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
   uninstallRunRecord();
   const record = createRunRecord(db, opts);
   const { store } = record;
-  setTurnFactsSink(createRunFactsSink(store, record.notices));
+  setTurnFactsSink(createRunFactsSink(store, record.notices, record.starts));
   const renew = setInterval(() => {
     try {
       store.renewLeases();
@@ -114,7 +188,7 @@ export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
     }
   }, RUN_LEASE_RENEW_MS);
   renew.unref?.();
-  installed = { ...record, renew };
+  installed = { ...record, renew, ...(opts.onResumed ? { onResumed: opts.onResumed } : {}) };
   return store;
 }
 
@@ -124,7 +198,15 @@ export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
  * chat's queue resumes (§7.3, step 8).
  */
 export function startRunEffects(): void {
-  installed?.worker.start();
+  if (!installed) return;
+  installed.worker.start();
+  // A lifted pause lets the runs it held go now, not at their next backoff (§3.5).
+  installed.stopResumes ??= installed.onResumed?.(() => installed?.effects.wakeAllStarts());
+}
+
+/** The space face of the turn port, or `undefined` before startup wired the run record. */
+export function turnPort(): SpaceTurnPort | undefined {
+  return installed?.port;
 }
 
 /** The installed run record and its outbox, or `undefined` before startup wired them. */
@@ -164,6 +246,7 @@ export function claimTurnFinished(
 export function uninstallRunRecord(): void {
   if (!installed) return;
   installed.worker.stop();
+  installed.stopResumes?.();
   clearInterval(installed.renew);
   setTurnFactsSink(undefined);
   installed = undefined;
