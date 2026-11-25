@@ -22,8 +22,15 @@ import {
 } from '../safe-git.js';
 
 const realGit = execFileSync('sh', ['-c', 'command -v git']).toString().trim();
+// A commit starts `git maintenance run --auto --detach`, which can write and
+// delete files under .git/objects after git returns. The tests copy .git
+// folders, so that background job made a copy fail with ENOENT. Setting this
+// on the command line, not in the repository, keeps the audited settings as
+// they were.
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync(realGit, args, { cwd, stdio: 'pipe' }).toString().trim();
+  execFileSync(realGit, ['-c', 'maintenance.auto=false', ...args], { cwd, stdio: 'pipe' })
+    .toString()
+    .trim();
 
 describe('runSafeGit', () => {
   let scratch: string;
