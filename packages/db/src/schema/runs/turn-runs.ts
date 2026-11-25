@@ -141,6 +141,12 @@ export const turnRuns = sqliteTable(
     endingDetail: text('ending_detail'),
     /** JSON: the background work that died with it. */
     lostBackgroundJson: text('lost_background_json'),
+    /**
+     * JSON: the launch's warnings, as its `started` fact carried them (the
+     * plain-words notices a person is owed, such as an agentless Codex chat
+     * having no DorkOS tools). Shown by T3; DorkOS copy, never transcript text.
+     */
+    warningsJson: text('warnings_json'),
     /** Set in the transaction that decides what follows a dead run. */
     recoveryDecidedAt: text('recovery_decided_at'),
     createdAt: text('created_at').notNull(),

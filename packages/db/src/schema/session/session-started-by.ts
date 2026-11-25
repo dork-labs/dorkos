@@ -78,6 +78,22 @@ export const sessionStartedBy = sqliteTable(
      * CHECK on purpose: the reader takes any other value as a run.
      */
     scheduledOrigin: text('scheduled_origin'),
+    /**
+     * The words a start asked of the new chat (`api.startWork`,
+     * `ctx.sessions.start`), kept from the moment the start is answered until
+     * its turn has them, then cleared (spec `turns-survive-restarts` §3.2: the
+     * run's `sourceRef` names this row). So a restart in between hands the
+     * start over again instead of losing it. Null once handed over, and for
+     * every chat started any other way.
+     */
+    prompt: text('prompt'),
+    /**
+     * The title a start asked for, kept with its words until its turn has
+     * begun and the chat could take it (spec `turns-survive-restarts`,
+     * DOR-5232): a restart in between still titles the chat. Null once set,
+     * and for every chat started any other way.
+     */
+    title: text('title'),
     /** When it was started (ISO 8601). */
     createdAt: text('created_at').notNull(),
   },

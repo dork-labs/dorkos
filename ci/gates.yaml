@@ -476,6 +476,9 @@ gates:
   - id: lefthook.pre-push.own-mocks
     source: lefthook.yml
     purpose: Refuses new vi.mock calls on our own modules before pushing.
+  - id: lefthook.pre-push.turn-port
+    source: lefthook.yml
+    purpose: Refuses an entry of the turn port's import baseline raised or added by hand before pushing.
   - id: lefthook.pre-push.test-ratio
     source: lefthook.yml
     purpose: Refuses a package adding tests faster than source past its test budget, or a budget loosened by hand, before pushing.

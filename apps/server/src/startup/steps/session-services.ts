@@ -7,6 +7,8 @@
  *
  * @module startup/steps/session-services
  */
+import { createComputerTurnPort } from '../../services/session/turn-port/computer-turn-port.js';
+import { setComputerTurnPort } from '../../services/session/turn-port/index.js';
 import { initSeenVersions } from '../../services/session/new-since/seen-versions.js';
 import { IS_DEV_BUILD, SERVER_VERSION } from '../../lib/version.js';
 import {
@@ -122,6 +124,14 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
       extensionName: (id) => refs.extensionManager?.get(id)?.manifest.name ?? id,
       activity: activityService,
       taskStore: () => refs.taskStore,
+    })
+  );
+  // The computer face of the turn port (spec `turns-survive-restarts` §3.1):
+  // the one way a run the space face saved reaches this Mac's dispatcher.
+  setComputerTurnPort(
+    createComputerTurnPort({
+      meshCore: () => refs.meshCore,
+      roomSessionPlace: () => refs.roomSessionPlacePort,
     })
   );
   // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of

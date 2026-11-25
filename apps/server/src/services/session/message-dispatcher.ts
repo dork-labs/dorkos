@@ -144,7 +144,7 @@ import type {
   MessageDisposition,
 } from '@dorkos/shared/schemas';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
-import { getMessageQueueStore } from './message-queue-store.js';
+import { getMessageQueueStore, type QueuedMessageRecord } from './message-queue-store.js';
 import { queuedLimitsOf } from './message-dispatcher/carried-limits.js';
 import { onProjectorRekey, onProjectorTurnBoundary } from './session-state-projector.js';
 import {
@@ -199,7 +199,7 @@ import { adoptMessagesForDispatch } from './message-dispatcher/adopt.js';
 import { hasHeldMessage, noteTurnBoundary, schedulePump } from './message-dispatcher/pump.js';
 import { clearCompactionTimers } from './message-dispatcher/agent-compaction.js';
 import { noteSessionOrphaned } from './message-dispatcher/queue-upkeep.js';
-import { acceptRun, recordTurnEnd } from './message-dispatcher/run-feed.js';
+import { acceptRun, recordRunRow, recordTurnEnd } from './message-dispatcher/run-feed.js';
 import type {
   DeliverStageOpts,
   DeliverSteerOpts,
@@ -242,6 +242,7 @@ export {
   cancelPendingDispatch,
   listQueuedMessages,
   noteSessionOrphaned,
+  rearmChatQueues,
   suspendPrivateDispatches,
   sweepOrphanedMessageQueues,
 } from './message-dispatcher/queue-upkeep.js';
@@ -567,9 +568,10 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   //
   // The run record gets the message's run in the same transaction as its row
   // (spec `turns-survive-restarts` §4.7, transition 1); a rowless one, alone.
-  const queueStore = whenBusy === 'queue' ? getMessageQueueStore() : undefined;
-  let runId: string | undefined;
-  const record = queueStore?.atomically(() => {
+  const queueStore =
+    whenBusy === 'queue' && !opts.wordsAtSource ? getMessageQueueStore() : undefined;
+  let runId = opts.runId;
+  const record = queueStore?.atomically((): QueuedMessageRecord | undefined => {
     const row = queueStore.enqueue({
       ...(opts.messageId !== undefined ? { id: opts.messageId } : {}),
       sessionId: queueKey,
@@ -582,10 +584,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
       // it (DOR-4350).
       carriedLimits: queuedLimitsOf(opts),
     });
-    runId = acceptRun({ sessionId, turn: opts }, row.id);
+    // A run the turn port saved gets its row; any other caller's run is written now.
+    if (runId === undefined) runId = acceptRun({ sessionId, turn: opts }, row.id);
+    else if (!recordRunRow(runId, row.id)) {
+      // Taken back while it was being handed over (its app stopped): no row
+      // stays, and its launch finds the run gone.
+      queueStore.remove(row.id);
+      return undefined;
+    }
     return row;
   });
-  if (!record) runId = acceptRun({ sessionId, turn: opts }, undefined);
+  runId ??= acceptRun({ sessionId, turn: opts }, undefined);
   // **The person first** (spec `spin-off-chats` §3): a message a person (or
   // anything but another chat) queues goes ahead of every row another chat
   // sent, so a busy agent answers its person before its peers. Done as a real
@@ -629,6 +638,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     content,
     messageId,
     ...(runId !== undefined ? { runId } : {}),
+    ...(opts.wordsAtSource ? { wordsAtSource: true as const } : {}),
     projector,
     runtime,
     budgetMs,

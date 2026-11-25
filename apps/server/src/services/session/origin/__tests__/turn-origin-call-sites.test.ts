@@ -107,8 +107,17 @@ const ORIGIN_HELPERS: Readonly<Record<string, readonly string[]>> = {
   'httpTurnOrigin(': ['agent-launch', 'interactive'],
 };
 
-/** The calls that bind a session and name an origin at the call. */
-const BINDING_CALL = /(?:persistSessionRuntime|dispatchSessionMessage)\(/g;
+/**
+ * The calls that bind a session and name an origin at the call. A caller on the
+ * turn port names its origin at the space face's `start` (spec
+ * `turns-survive-restarts` §3.1), spelled `door.start(` so it is told apart
+ * from every other `start`; the computer face is a doorway like the launch
+ * service, pinned at the bottom.
+ */
+const BINDING_CALL = /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(/g;
+
+/** The turn port's computer face: it forwards the request's origin to the launch service. */
+const COMPUTER_FACE = 'services/session/turn-port/computer-turn-port.ts';
 
 /** Every `.ts` file under `apps/server/src` that is not a test. */
 function sourceFiles(dir: string): string[] {
@@ -148,7 +157,11 @@ describe('every session-binding call site declares what it is', () => {
   const found: Record<string, string[]> = {};
   for (const file of sourceFiles(SRC)) {
     const source = readFileSync(file, 'utf8');
-    if (!source.includes('persistSessionRuntime(') && !source.includes('dispatchSessionMessage('))
+    if (
+      !source.includes('persistSessionRuntime(') &&
+      !source.includes('dispatchSessionMessage(') &&
+      !source.includes('door.start(')
+    )
       continue;
     const rel = relative(SRC, file);
     if (rel === PASS_THROUGH) continue;
@@ -174,5 +187,11 @@ describe('every session-binding call site declares what it is', () => {
     const window = source.slice(call, call + 200);
     expect(window).toMatch(/runtimeType,\s*origin,/);
     expect(source).not.toMatch(/\bkind: '[a-z-]+'/);
+  });
+
+  it("the turn port's computer face forwards the run's origin and names none of its own", () => {
+    const source = readFileSync(join(SRC, COMPUTER_FACE), 'utf8');
+    expect(source).toMatch(/origin: request\.origin,/);
+    expect(source).not.toMatch(/\borigin: \{ kind: '[a-z-]+'/);
   });
 });

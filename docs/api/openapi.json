@@ -20889,6 +20889,7 @@
           "extension.approval",
           "extension.decision",
           "extension.stopped",
+          "extension.work_not_started",
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
@@ -22865,12 +22866,6 @@
         "properties": {
           "sessionId": {
             "type": "string"
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SessionLaunchWarning"
-            }
           }
         },
         "required": [

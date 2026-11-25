@@ -1,12 +1,14 @@
 /**
- * `ctx.agent.send` end to end below the extension boundary (DOR-2683): the
- * agent-send seam driving the REAL dispatcher over a real SQLite queue, with a
- * fake runtime standing in for the agent.
+ * `ctx.agent.send` end to end below the extension boundary (DOR-2683, DOR-5232):
+ * the agent-send seam driving the REAL turn port (space face, admission, the
+ * `start_turn` effect and its worker, the computer face) and the REAL
+ * dispatcher over real SQLite, with a fake runtime standing in for the agent.
  *
- * The launch path above the dispatcher (`dispatchSessionMessage`: runtime
+ * The launch path under the computer face (`dispatchSessionMessage`: runtime
  * binding, workspaces, the cap counter) is replaced by a thin stand-in that
- * hands the message straight to `dispatchMessage`, so every rule these cases
- * pin — a busy chat holds, the receipt and the turn share one id — is the
+ * hands the run straight to `dispatchMessage`, and admission reads the launch
+ * cap off a switch, so every rule these cases pin (a busy chat makes the
+ * message wait, the run carries the receipt's words) is the port's and the
  * dispatcher's own behaviour, not a mock's.
  *
  * This module holds that setup for the agent-send suites.
@@ -43,6 +45,13 @@ import type {
   DispatchSessionMessageOpts,
   DispatchSessionMessageResult,
 } from '../../../../session/launch/launch-session.js';
+import { createComputerTurnPort } from '../../../../session/turn-port/computer-turn-port.js';
+import {
+  getRunRecord,
+  installRunRecord,
+  startRunEffects,
+  uninstallRunRecord,
+} from '../../../../runs/index.js';
 import { AgentSendStore } from '../../agent-send-store.js';
 import { AgentSendService, type SessionFacts } from '../../agent-send.js';
 
@@ -62,7 +71,14 @@ export const h = {
   projectors: [] as string[],
   events: [] as AgentDeliveryEvent[],
   dispatched: [] as DispatchSessionMessageOpts[],
+  /** Every launch slot under `runtimes.maxAgentChats` taken: admission makes messages wait. */
   capFull: false,
+  /** The agent the pause service says is paused, when one is. */
+  pausedAgent: undefined as { name: string } | undefined,
+  /** The extension's own start limits refuse a new kept chat: the message is held. */
+  limitFull: false,
+  /** Set to refuse the next launch at the door, as the real launch path can. */
+  refuse: undefined as DispatchSessionMessageResult | undefined,
   sessions: new Map<string, SessionFacts>(),
   agents: new Map<string, string>(),
   reserved: [] as string[],
@@ -94,8 +110,12 @@ export function quickTurn() {
 }
 
 export async function settle(): Promise<void> {
-  for (let i = 0; i < 8; i++) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  // The outbox's worker wakes on a timer, then the hand-over and the turn
+  // each take a few ticks of their own.
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 export function projectorFor(id: string) {
@@ -115,42 +135,57 @@ export function chat(facts: Partial<SessionFacts> = {}): SessionFacts {
   };
 }
 
-/** When set, every dispatch waits on it first: a send or retry caught mid-flight. */
-export const dispatchHooks = {
-  dispatchGate: undefined as Promise<void> | undefined,
-  /** The canonical id the next dispatch reports, when a case wants one that differs. */
-  canonicalFor: undefined as ((sessionId: string) => string) | undefined,
-};
-
-/** The launch path, reduced to the dispatcher, with the cap as a switch. */
-export async function fakeDispatch(
+/** The launch path under the computer face, reduced to the dispatcher. */
+export async function fakeLaunch(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   h.dispatched.push(opts);
-  if (dispatchHooks.dispatchGate) await dispatchHooks.dispatchGate;
-  if (opts.countsTowardLaunchCap && h.capFull) {
-    return { refused: 'LAUNCH_CAP_FULL', message: 'Too many spin-off chats are running.' };
-  }
-  // A new chat is bound by its first dispatch, as the real launch path does.
+  if (h.refuse) return h.refuse;
+  // A new chat is bound by its first launch, as the real launch path does.
   if (!h.sessions.has(opts.sessionId)) {
     h.sessions.set(
       opts.sessionId,
       chat({ launchOrigin: opts.origin.kind, agentPath: opts.request.agentPath ?? null })
     );
   }
-  const result = await dispatchMessage({
-    origin: { kind: 'interactive' },
+  return dispatchMessage({
+    origin: opts.origin,
     sessionId: opts.sessionId,
     clientId: opts.clientId,
     content: opts.request.content,
     ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
+    ...(opts.runId !== undefined ? { runId: opts.runId } : {}),
+    ...(opts.wordsAtSource ? { wordsAtSource: true as const } : {}),
     projector: projectorFor(opts.sessionId),
     runtime: h.runtime,
-    ...(opts.onSettled ? { onSettled: opts.onSettled } : {}),
   });
-  return dispatchHooks.canonicalFor
-    ? { ...result, canonicalId: dispatchHooks.canonicalFor(opts.sessionId) }
-    : result;
+}
+
+/** The run of a message, by the message id its receipt carried. */
+export function runOfMessage(messageId: string) {
+  return getRunRecord()!
+    .port.list(h.store.get(messageId)?.sessionId ?? h.session)
+    .find((run) => run.sourceRef === `extension-send:${messageId}`);
+}
+
+/** Install the run record, its worker and the computer face, as a boot does. */
+export function bootTurnPort(opts: { epoch?: string; now?: () => number } = {}): void {
+  const computer = createComputerTurnPort({
+    meshCore: () => ({
+      getProjectPath: (id: string) => h.agents.get(id),
+      listWithPaths: () =>
+        [...h.agents].map(([id, projectPath]) => ({ id, name: id, projectPath })) as never,
+    }),
+    roomSessionPlace: () => undefined,
+    dispatch: fakeLaunch,
+  });
+  installRunRecord(h.db, {
+    epoch: opts.epoch ?? '01BOOTEPOCHAGENTSEND000000',
+    ...(opts.now ? { now: opts.now } : {}),
+    computer: () => computer,
+    admission: { admission: { pausedAgent: () => h.pausedAgent, machineFull: () => h.capFull } },
+  });
+  startRunEffects();
 }
 
 /** A person's own turn, holding the chat until `hold` opens. */
@@ -180,23 +215,31 @@ export function build(overrides: Partial<ConstructorParameters<typeof AgentSendS
     }),
     describeSession: async (id) => h.sessions.get(id) ?? chat({ bound: false, launchOrigin: null }),
     sessionCwd: async () => '/work/project',
-    isBusy: async (id) => isTurnInFlight(id, h.runtime),
-    dispatch: fakeDispatch,
     reserveChat: (_ext, id) => {
+      if (h.limitFull) return { ok: false, message: 'Flow Dashboard started a lot of chats.' };
       h.reserved.push(id);
       return { ok: true, reservation: { settle() {}, cancel() {}, rekey() {} } };
     },
+    port: () => getRunRecord()?.port,
+    // The re-arm a restart does: a mini app's rows in this chat's queue.
     resumeQueue: async (id, cwd) => {
       adoptQueuedMessages({
         sessionId: id,
         projector: projectorFor(id),
         runtime: h.runtime,
         ...(cwd ? { cwd } : {}),
+        onlyFromChats: true,
+        orFromApps: true,
       });
     },
     nonce: () => 'abcd1234',
     ...overrides,
   });
+}
+
+/** Whether a chat has a turn in flight, as the dispatcher sees it. */
+export function busy(sessionId: string): boolean {
+  return isTurnInFlight(sessionId, h.runtime);
 }
 
 beforeEach(async () => {
@@ -208,8 +251,9 @@ beforeEach(async () => {
   h.dispatched = [];
   h.reserved = [];
   h.capFull = false;
-  dispatchHooks.canonicalFor = undefined;
-  dispatchHooks.dispatchGate = undefined;
+  h.pausedAgent = undefined;
+  h.limitFull = false;
+  h.refuse = undefined;
   h.agents = new Map();
   h.sessions = new Map([[h.session, chat()]]);
   h.db = createTestDb();
@@ -218,6 +262,7 @@ beforeEach(async () => {
   h.store = new AgentSendStore(h.db);
   h.runtime = new FakeAgentRuntime();
   h.runtime.getInternalSessionId.mockReturnValue(undefined);
+  bootTurnPort();
   h.service = build();
   await h.service.start();
   h.service.subscribe(EXT, (event) => h.events.push(event));
@@ -229,6 +274,7 @@ afterEach(async () => {
   for (const open of h.gates) open();
   await settle();
   resetMessageDispatcher();
+  uninstallRunRecord();
   setMessageQueueStore(undefined);
   for (const id of h.projectors) disposeProjector(id);
   vi.restoreAllMocks();

@@ -498,7 +498,7 @@ export class ExtensionServerLifecycle {
           }
         }
         // Started (above) lifted the stop on its messages; nothing runs now.
-        getAgentSendService()?.extensionStopped(id);
+        getAgentSendService()?.extensionStopped(id, { takeBack: true });
         logger.info(`[Extensions] ${id} was turned off or stopped while starting; left off`);
         return { ok: false, error: 'Extension was turned off while it was starting' };
       }
@@ -589,7 +589,7 @@ export class ExtensionServerLifecycle {
     getExtensionInbox()?.markStopped(id);
     // Nor can it be told what became of a message still waiting for room:
     // fail those now, so nothing it sent goes out after it is gone (DOR-2683).
-    getAgentSendService()?.extensionStopped(id);
+    getAgentSendService()?.extensionStopped(id, { takeBack: true });
 
     for (const cancel of active.scheduledCleanups) {
       try {
@@ -667,10 +667,11 @@ export class ExtensionServerLifecycle {
     getAgentSendService()?.extensionStarted(id);
     const connections = extensionConnections.isolatedConnectionsFor(record);
     const built = createDataProviderContext({ ...deps, connections: connections.api });
-    const release = (): void => {
+    // A failed start holds back what it sent; a stop asked for takes it back.
+    const release = (opts: { takeBack?: boolean } = {}): void => {
       built.tools.close();
       built.dispose();
-      getAgentSendService()?.extensionStopped(id);
+      getAgentSendService()?.extensionStopped(id, opts);
     };
 
     let host: IsolatedExtensionHost;
@@ -729,7 +730,7 @@ export class ExtensionServerLifecycle {
     // Starting waited; a turn-off or revoke meanwhile wins.
     if (!this.stillWanted(record)) {
       await host.stop();
-      release();
+      release({ takeBack: true });
       logger.info(`[Extensions] ${id} was turned off or stopped while starting; left off`);
       return { ok: false, error: 'Extension was turned off while it was starting' };
     }
