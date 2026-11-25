@@ -120,6 +120,34 @@ describe('mayReadChat', () => {
   });
 });
 
+describe('mayReadChat — how far down its starts a chat reads (an access bound)', () => {
+  it('reads agent work eight levels down, and not nine', () => {
+    let parent = 'lead';
+    for (let level = 1; level <= 9; level += 1) {
+      start(`level-${level}`, parent);
+      parent = `level-${level}`;
+    }
+    expect(mayReadChat(store, as('lead'), 'level-8')).toBe(true);
+    // Agent work any related chat could read: only the reach keeps it out.
+    expect(mayReadChat(store, as('lead'), 'level-9')).toBe(false);
+  });
+
+  it('follows a carried move inside that reach, as it always has', () => {
+    start('spin-off', 'lead');
+    startedBy.insert({
+      sessionId: 'carried-on',
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: 'spin-off',
+      originExtensionId: null,
+      reason: null,
+      carried: true,
+      createdAt: new Date(Date.UTC(2026, 9, 10, 12, 0, clock++)).toISOString(),
+    });
+    expect(mayReadChat(store, as('lead'), 'carried-on')).toBe(true);
+  });
+});
+
 describe('mayReadChat — what the agent asked', () => {
   const BO = '/agents/bo';
 
