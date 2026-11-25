@@ -403,13 +403,35 @@ interface WrittenWord {
   takes?: boolean;
 }
 
-/** The words of a `find` that would change files: its starting folders and what it looks for. */
-function findTargets(args: readonly string[]): string[] {
+/** The folders a `find` starts in, past the options that may come before them. */
+function findStarts(args: readonly string[]): string[] {
+  const starts: string[] = [];
+  let i = 0;
+  // Options that come before the paths: -H -L -P -E -X -s -x, `-D x`, `-O n` or `-On`, BSD's `-f path`.
+  for (; i < args.length; i++) {
+    const arg = args[i]!;
+    if (/^-[HLPEXsx]+$/.test(arg) || /^-O\d+$/.test(arg)) continue;
+    if (arg === '-D' || arg === '-O') i++;
+    else if (arg === '-f') starts.push(args[++i] ?? '');
+    else break;
+  }
+  for (; i < args.length && !args[i]!.startsWith('-') && args[i] !== '!' && args[i] !== '('; i++) {
+    starts.push(args[i]!);
+  }
+  return starts;
+}
+
+/** Whether a `find` removes what it matches: `-delete`, or an `-exec` that writes. */
+function findDeletes(args: readonly string[]): boolean {
   const execAt = args.findIndex((arg) => /^-(exec|execdir|ok|okdir)$/.test(arg));
   const execVerb = execAt === -1 ? '' : path.basename(args[execAt + 1] ?? '');
-  if (!args.includes('-delete') && !WRITERS.has(execVerb) && !INTERPRETERS.has(execVerb)) return [];
-  const firstFlag = args.findIndex((arg) => arg.startsWith('-'));
-  const starts = args.slice(0, firstFlag === -1 ? args.length : firstFlag);
+  return args.includes('-delete') || WRITERS.has(execVerb) || INTERPRETERS.has(execVerb);
+}
+
+/** The words of a `find` that would change files: its starting folders and what it looks for. */
+function findTargets(args: readonly string[]): string[] {
+  if (!findDeletes(args)) return [];
+  const starts = findStarts(args);
   const names = args.filter((_, i) => /^-i?name$/.test(args[i - 1] ?? ''));
   return [...starts, ...starts.flatMap((start) => names.map((name) => `${start}/${name}`))];
 }
@@ -454,10 +476,10 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
   }
   if (verb === 'find') {
     written.push(...findTargets(args).map((word) => plain(word)));
-    // A `-delete` can take anything below each folder it starts in, `.` when it names none.
-    const firstFlag = args.findIndex((arg) => arg.startsWith('-'));
-    const starts = args.slice(0, firstFlag === -1 ? args.length : firstFlag);
-    if (args.includes('-delete')) {
+    // A delete or a writing `-exec` can take anything below each folder it starts in, `.`
+    // when it names none.
+    const starts = findStarts(args);
+    if (findDeletes(args)) {
       written.push(...(starts.length ? starts : ['.']).map((w) => ({ ...plain(w), takes: true })));
     }
   }
@@ -465,8 +487,10 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
     // `--delete` takes from where it lands, `--remove-source-files` from what it copies.
     const landing = operands.slice(-1);
     const taken = [
-      ...(args.some((arg) => arg.startsWith('--delete')) ? landing : []),
-      ...(args.includes('--remove-source-files') ? operands.slice(0, -1) : []),
+      ...(args.some((arg) => arg.startsWith('--delete') || arg === '--del') ? landing : []),
+      ...(args.some((arg) => /^--remove-(source|sent)-files$/.test(arg))
+        ? operands.slice(0, -1)
+        : []),
     ];
     written.push(...taken.map((word) => ({ ...plain(word), takes: true })));
   }

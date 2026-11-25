@@ -971,6 +971,20 @@ describe('removing or moving a folder that holds a protected entry', () => {
       'a sync that takes the source',
       () => [base, `rsync -a --remove-source-files ${projects}/ ${base}/plain/`],
     ],
+    [
+      'a delete past find’s leading options',
+      () => [`${base}/plain`, `find -L ${projects} -delete`],
+    ],
+    ['a delete from find’s -f folder', () => [`${base}/plain`, `find -f ${projects} -O3 -delete`]],
+    ['a recursive removal run by find', () => [base, `find ${projects} -type d -exec rm -rf {} +`]],
+    [
+      'a sync that deletes under its short name',
+      () => [base, `rsync -a --del ${base}/plain/ ${projects}/`],
+    ],
+    [
+      'a sync that takes what it sent',
+      () => [base, `rsync -a --remove-sent-files ${projects}/ ${base}/plain/`],
+    ],
   ])('refuses %s, at every level', (_label, call) => {
     const [cwd, command] = call();
     expect(shellWriteVerdict(command!, at(cwd!, false))).toBe('writes');
@@ -985,6 +999,7 @@ describe('removing or moving a folder that holds a protected entry', () => {
     ['removing a project with big dependencies and git history', () => `rm -rf ${base}/app`],
     ['moving a file into a project', () => `mv ${base}/plain/build/out.js ${site}`],
     ['a filtered delete in a plain folder', () => `find ${base}/plain -name '*.pyc' -delete`],
+    ['a delete past find’s options in a plain folder', () => `find -L ${base}/plain -delete`],
     [
       'names from a plain folder piped into a removal',
       () => `find ${base}/plain/build | xargs rm -rf`,
