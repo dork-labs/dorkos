@@ -1,11 +1,11 @@
 /**
  * Transport-neutral handlers for the self-service & observability MCP tools
- * (`update_agent`, `update_agent_boundaries`, `activity_list`, `config_get`,
+ * (`update_agent`, `update_agent_boundaries`, `config_get`,
  * `config_patch`, `sidebar_add_to_group`, `sidebar_remove_from_group`,
  * `check_update`, `agents_recent_activity`, `feedback_draft`).
  *
  * Each handler is a thin wrapper over existing service logic — the agent-update
- * service, `ActivityService`, `ConfigManager` (via the shared config-patch
+ * service, `ConfigManager` (via the shared config-patch
  * service), `update-checker`, and the recent-sessions fan-out — so no route
  * validation is duplicated. Handlers take plain args and return an MCP
  * text-content result, importing neither MCP SDK. Each is wrapped by a
@@ -16,8 +16,6 @@
  * @module services/core/operator/operator-tool-handlers
  */
 import path from 'node:path';
-import { z } from 'zod';
-import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import { buildIssueDraft, gatherFeedbackReport, type FeedbackKind } from '@dorkos/shared/feedback';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -449,38 +447,6 @@ export function createUpdateAgentExecutionHandler(deps: McpToolDeps) {
       return jsonResult(updated);
     } catch (err) {
       return agentUpdateFailure(err, "Failed to change the agent's runtime, model or effort");
-    }
-  };
-}
-
-/**
- * `activity_list` — query the append-only activity feed through
- * {@link ActivityService}, validating args with the same
- * {@link ListActivityQuerySchema} the HTTP route uses.
- *
- * @param deps - Tool deps (`activityService`).
- * @returns The bound handler.
- */
-export function createActivityListHandler(deps: McpToolDeps) {
-  return async (args: Record<string, unknown>): Promise<OperatorToolResult> => {
-    if (!deps.activityService) {
-      return jsonResult({ error: 'Activity feed is not available in this instance.' }, true);
-    }
-    const parsed = ListActivityQuerySchema.safeParse(args);
-    if (!parsed.success) {
-      return jsonResult(
-        { error: 'Validation failed', details: z.flattenError(parsed.error) },
-        true
-      );
-    }
-    try {
-      const result = await deps.activityService.list(parsed.data);
-      return jsonResult(result);
-    } catch (err) {
-      return jsonResult(
-        { error: err instanceof Error ? err.message : 'Failed to fetch activity events' },
-        true
-      );
     }
   };
 }

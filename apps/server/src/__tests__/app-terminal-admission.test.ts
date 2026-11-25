@@ -253,7 +253,6 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/connectors/webhooks/admission-fixture');
     expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
-    expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
     // 70 -> 72: `/api/todo-promises` and `/api/agents/:id/todo-promises` (spec
     // `heartbeats` §12).
@@ -318,7 +317,6 @@ describe('main HTTP admission through the real app', () => {
     // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
     expect(mounts).toContain('/api/tasks');
     // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
-    expect(mounts).toContain('/api/sessions/running');
     // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462).
     expect(mounts).toContain('/api/work-queues');
     // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
@@ -335,7 +333,10 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/owner-factors');
     // 92 -> 93: the person's own backup copies, ahead of `/api/config` (DOR-4253).
     expect(mounts).toContain('/api/config/backups');
-    expect(mounts).toHaveLength(93);
+    // 93 -> 90: the activity feed, the audit reads and every chat running now
+    // are capabilities the mount serves (DOR-4978), so they are asked for by
+    // hand below.
+    expect(mounts).toHaveLength(90);
     const byHand = [
       '/',
       '/x/fixture',
@@ -347,6 +348,9 @@ describe('main HTTP admission through the real app', () => {
       '/.well-known/agent.json',
       '/a2a',
       '/api/relay/webhooks/admission-fixture',
+      '/api/activity',
+      '/api/audit',
+      '/api/sessions/running',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

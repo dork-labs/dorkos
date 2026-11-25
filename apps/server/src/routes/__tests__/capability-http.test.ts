@@ -46,6 +46,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
   HAND_SERVED_CAPABILITIES,
   NOT_ON_THIS_COMPUTER,
+  SKIPPABLE_MIDDLEWARE,
   assertNoCapabilityRouteCollisions,
   compareRouteSpecificity,
   createCapabilityHttpRoutes,
@@ -93,6 +94,7 @@ const AS_SCOUT: AgentIdentity = {
 describe('the mount', () => {
   it('serves exactly the declared surfaces no hand route still serves', () => {
     expect(mountedCapabilities().map((capability) => capability.id)).toEqual([
+      'operator.activity_list',
       'mcp.list',
       'mcp.add',
       'mcp.import',
@@ -102,6 +104,11 @@ describe('the mount', () => {
       'mcp.disable',
       'mcp.test',
       'mcp.set_client',
+      'audit.verify',
+      'audit.query',
+      'audit.get',
+      'audit.account_timeline',
+      'audit.running_chats',
       'agent.pause',
       'agent.resume',
       'agent.list_paused',
@@ -123,13 +130,7 @@ describe('the mount', () => {
   // too. Never add one.
   it('pins the hand-served list, which may only shrink', () => {
     expect(Object.keys(HAND_SERVED_CAPABILITIES).sort()).toEqual([
-      'audit.account_timeline',
-      'audit.get',
-      'audit.query',
-      'audit.running_chats',
-      'audit.verify',
       'capabilities.list',
-      'operator.activity_list',
       'rooms.reseat',
       'rooms.reseat_options',
     ]);
@@ -223,6 +224,43 @@ describe('mount order', () => {
     });
     expect(() => assertNoCapabilityRouteCollisions(built, [running()])).toThrow(
       /\(demo.running\) skips middleware ALL \/api\/sessions\/\*/
+    );
+  });
+
+  it('lets a capability skip the hand middleware listed with a reason, and no other', () => {
+    const real = demo('audit.running_chats', { method: 'get', path: '/api/sessions/running' });
+    const guarded = app([real], {
+      after: (hand) => hand.use('/api/sessions/:id/*', async (_c, next) => next()),
+    });
+    expect(
+      SKIPPABLE_MIDDLEWARE['GET /api/sessions/running skips ALL /api/sessions/:id/*']
+    ).toBeTruthy();
+    expect(() => assertNoCapabilityRouteCollisions(guarded, [real])).not.toThrow();
+    const other = app([real], {
+      after: (hand) => hand.use('/api/sessions/*', async (_c, next) => next()),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(other, [real])).toThrow(/skips middleware/);
+  });
+
+  it('never counts the mount’s own routes against each other', () => {
+    const fixed = demo('demo.fixed', { method: 'get', path: '/api/demo/fixed' });
+    const any = demo('demo.any', { method: 'get', path: '/api/demo/{id}' });
+    const built = app([any, fixed], {});
+    expect(() => assertNoCapabilityRouteCollisions(built, [any, fixed])).not.toThrow();
+    // A hand route on a capability's own path is still a claim.
+    const claimed = app([any, fixed], {
+      after: (hand) => hand.get('/api/demo/fixed', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(claimed, [any, fixed])).toThrow(
+      /\(demo.fixed\) is claimed by GET \/api\/demo\/fixed/
+    );
+    // One registered before the mount is a hand route too, never the mount's
+    // own, so it cannot slip past the shadow check for its neighbours.
+    const early = app([any, fixed], {
+      before: (hand) => hand.get('/api/demo/fixed', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(early, [any, fixed])).toThrow(
+      /\(demo.any\) is shadowed by GET \/api\/demo\/fixed/
     );
   });
 

@@ -14,7 +14,7 @@ The audit log is one append-only, hash-chained table, `audit_events`, that recor
 | Stable actor ids                 | `apps/server/src/services/audit/account-ids.ts` (`AccountIds`)               |
 | Activity → audit copy            | `apps/server/src/services/audit/activity-tee.ts`                             |
 | The `audit.*` capabilities       | `apps/server/src/services/audit/audit-capabilities.ts`                       |
-| `/api/audit` routes              | `apps/server/src/routes/audit.ts`                                            |
+| `/api/audit` routes              | the capability mount, `apps/server/src/routes/capability-http.ts`            |
 | The one reader rule              | `apps/server/src/services/audit/visibility.ts` (`canRead`)                   |
 | Who may read a session           | `apps/server/src/services/audit/session-visibility.ts`                       |
 | The reader of an HTTP request    | `apps/server/src/routes/audit-reader.ts`                                     |

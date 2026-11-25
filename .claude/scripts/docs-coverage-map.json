@@ -56,7 +56,6 @@
         "services/audit/",
         "schema/audit/",
         "audit-schemas",
-        "routes/audit.ts",
         "services/mesh/pause/",
         "routes/capability-http.ts"
       ]

@@ -52,8 +52,6 @@ export interface MountLateRoutesInput {
   mountedRouters: string[];
   activityService: WireCoreStoresResult['activityService'];
   permissionService: MountCoreRoutesResult['permissionService'];
-  auditLog: WireCoreStoresResult['auditLog'];
-  auditAccounts: WireCoreStoresResult['auditAccounts'];
   notificationService: WireSessionServicesResult['notificationService'];
   pushSubscriptions: WireSessionServicesResult['pushSubscriptions'];
   webPushChannel: WireSessionServicesResult['webPushChannel'];
@@ -82,8 +80,6 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
     mountedRouters,
     activityService,
     permissionService,
-    auditLog,
-    auditAccounts,
     notificationService,
     pushSubscriptions,
     webPushChannel,
@@ -200,7 +196,6 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
 
   // Activity feed — always available, not behind a feature flag.
   deps.activity = activityService;
-  deps.audit = { log: auditLog, accounts: auditAccounts };
   mountedRouters.push('activity');
 
   // The Inbox — always available for the same reason: the history is written

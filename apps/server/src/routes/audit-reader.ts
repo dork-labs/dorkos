@@ -13,7 +13,6 @@
  *
  * @module routes/audit-reader
  */
-import type { AccountIds } from '../services/audit/account-ids.js';
 import { auditTrail } from '../services/audit/audit-trail.js';
 import { OWNER_READER, type AuditReader } from '../services/audit/visibility.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
@@ -26,20 +25,17 @@ import type { RequestFacts } from '../http/request-facts.js';
 type ReaderFacts = Pick<RequestFacts, 'headers' | 'agentIdentity'>;
 
 /**
- * Who is reading, from the request.
+ * Who is reading, from the request. The same answer `readerFor`
+ * (`services/audit/audit-capabilities.ts`) gives a capability call.
  *
  * @param facts - The request's facts (`http/request-facts.ts`), for the raw
  *   agent header and the resolved identity. A WebSocket upgrade passes
  *   `upgradeCaller(headers, locals)`.
- * @param accounts - Names an agent as a stable account id; defaults to the
- *   process-wide audit trail's.
  */
-export function readerOfRequest(
-  facts: ReaderFacts,
-  accounts: Pick<AccountIds, 'forAgentIdentity'> | undefined = auditTrail()?.accounts
-): AuditReader {
+export function readerOfRequest(facts: ReaderFacts): AuditReader {
   if (!presentsAgentIdentity(facts)) return OWNER_READER;
   const identity = facts.agentIdentity;
+  const accounts = auditTrail()?.accounts;
   const accountId =
     identity && accounts ? accounts.forAgentIdentity(identity).accountId : 'unidentified';
   return { kind: 'agent', accountId };

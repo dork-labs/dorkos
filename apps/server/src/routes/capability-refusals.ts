@@ -131,6 +131,10 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'outside_boundary',
     detail: 'That folder is outside the folders DorkOS may use.',
   },
+  // `GET /api/activity` and `GET /api/audit/{id}` kept their own sentences when
+  // they moved onto the mount.
+  ACTIVITY_READ_FAILED: { code: 'internal_error', detail: 'The activity feed couldn’t be read.' },
+  AUDIT_EVENT_NOT_FOUND: { code: 'not_found', detail: 'No audit event with that id.' },
   // Connected apps.
   CONNECTOR_TARGET_NOT_FOUND: {
     code: 'not_found',
