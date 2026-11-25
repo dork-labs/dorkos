@@ -5,6 +5,16 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE } from '@dorkos/shared/mesh-schemas';
 import { createMeshRoutes, type MeshRouterDeps } from '../mesh.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { meshDomain } from '../../services/mesh/doors/mesh-capabilities.js';
+
+/** The registry's doors as the app serves them: the capability mount, then the hand routes. */
+function meshListener(deps: MeshRouterDeps) {
+  return honoGroupListener([
+    capabilityGroup(meshDomain, { meshDeps: deps }),
+    { path: '/api/mesh', routes: createMeshRoutes(deps) },
+  ]);
+}
 
 // The `/api` chain reads config (login, the host allowlist); nothing is set.
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -82,12 +92,7 @@ describe('Mesh topology routes', () => {
 
   beforeEach(() => {
     meshCore = createMockMeshCore();
-    app = target.mount(
-      honoGroupListener({
-        path: '/api/mesh',
-        routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore }),
-      })
-    );
+    app = target.mount(meshListener({ meshCore: meshCore as unknown as MeshCore }));
   });
 
   // --- GET /topology ---
@@ -363,7 +368,7 @@ describe('Topology enrichment — Tasks agent linking', () => {
       meshCore: meshCore as unknown as MeshCore,
       taskStore,
     };
-    app = target.mount(honoGroupListener({ path: '/api/mesh', routes: createMeshRoutes(deps) }));
+    app = target.mount(meshListener(deps));
   }
 
   it('counts tasks linked to the agent by agentId', async () => {
@@ -541,7 +546,7 @@ describe('Topology enrichment — relayAdapters excludes sibling agent ULIDs', (
         ],
       },
     };
-    app = target.mount(honoGroupListener({ path: '/api/mesh', routes: createMeshRoutes(deps) }));
+    app = target.mount(meshListener(deps));
   });
 
   function findAgent(

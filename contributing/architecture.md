@@ -1038,7 +1038,7 @@ Health is returned by `GET /api/mesh/agents/:id/health` and aggregated by `GET /
 
 ### Server Integration
 
-The server exposes Mesh via `routes/mesh.ts` (always mounted, no feature flag). MCP tools in `services/runtimes/claude-code/mcp-tools/mesh-tools.ts` (projected for every runtime through the capability registry) allow agents to discover, register, deny, inspect, and query topology programmatically (`mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`, `mesh_query_topology`).
+The server exposes Mesh on `/api/mesh` (always mounted, no feature flag): the capability mount serves the reads and a person's registry changes (`services/mesh/doors/mesh-capabilities.ts`, person-only writes), and `routes/mesh.ts` keeps the agent update and the heartbeat by hand. MCP tools in `services/runtimes/claude-code/mcp-tools/mesh-tools.ts` (projected for every runtime through the capability registry) allow agents to discover, register, deny, inspect, and query topology programmatically (`mesh_discover`, `mesh_register`, `mesh_deny`, `mesh_list`, `mesh_unregister`, `mesh_status`, `mesh_inspect`, `mesh_query_topology`).
 
 ### Lifecycle Hooks
 

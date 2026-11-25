@@ -32,7 +32,7 @@
 # almost never has a run of its own: at 7878dda step 4 answered
 # `red-before-this-merge`, nothing was re-run, and the bisect, which then
 # waited for attempt 2, never started). Re-running it is no fix either: a
-# re-run of an old push run joins browser-test's `gate` concurrency group
+# re-run of an old push run joins its workflow's `gate` concurrency group
 # (same event and ref as a new push run), where it would cancel the pending
 # newest-main run or be cancelled by the next merge. So rolling-bisect.yml
 # starts on the first failure and re-tests the failing head itself in a
@@ -66,7 +66,7 @@ REPO=${REPO:-${GITHUB_REPOSITORY:-dork-labs/dorkos}}
 # Workflow names whose push run on main is rolling (one run for several
 # merges), as a JSON array: never re-run or reverted from here. Kept equal to
 # rolling-bisect.yml's `workflows:` by scripts/test-auto-revert.sh.
-ROLLING_WORKFLOWS='["browser-test"]'
+ROLLING_WORKFLOWS='["browser-test","test"]'
 
 usage() {
   sed -n '4,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2

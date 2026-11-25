@@ -18,6 +18,10 @@ import {
   setProjectConfigActivity,
 } from '../../services/runtimes/codex/app-server/project-config-activity.js';
 import {
+  createSecretFileActivityWriter,
+  setSecretFileActivity,
+} from '../../services/runtimes/codex/policy/secret-file-activity.js';
+import {
   createPluginRestartActivityWriter,
   setPluginRestartActivity,
 } from '../../services/runtimes/opencode/messaging/project-plugin-recheck.js';
@@ -154,6 +158,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   setRepoConfigActivity(createRepoConfigActivityWriter(activityService));
   // A folder's own Codex settings that loaded at Full, by name (DOR-4408).
   setProjectConfigActivity(createProjectConfigActivityWriter(activityService));
+  // A secret file that appeared during a Codex turn on macOS, by path (DOR-4358).
+  setSecretFileActivity(createSecretFileActivityWriter(activityService));
   // OpenCode restarted because a folder gained its own plugins in a turn (DOR-4412).
   setPluginRestartActivity(createPluginRestartActivityWriter(activityService));
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed

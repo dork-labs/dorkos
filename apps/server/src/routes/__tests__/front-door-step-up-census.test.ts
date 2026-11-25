@@ -59,16 +59,9 @@ const GROUPS = [
   ...M3_GROUPS,
 ];
 const EXCEPTIONS: Record<string, string> = {
-  'mesh POST /discover': 'Reads agent candidates; grants no account access.',
-  'mesh POST /agents': 'Registers an agent without recording credits consent.',
-  'mesh PUT /topology/access':
-    'Changes agent-to-agent visibility without granting credentials or spending consent.',
+  // The other mesh writes are person-only capabilities the mount serves (DOR-4978); none
+  // records a credits choice or grants access, so none waits for a step-up.
   'mesh POST /agents/:id/heartbeat': 'Records agent health.',
-  'mesh DELETE /agents/:id/data': 'Removes an agent and its data.',
-  'mesh DELETE /agents/:id': 'Removes an agent.',
-  'mesh POST /deny': 'Prevents agent discovery.',
-  'mesh DELETE /denied':
-    'Removes a discovery denial without granting credentials or spending consent.',
   'tasks DELETE /:id': 'Removes a scheduled task.',
   'tasks POST /:id/trigger':
     'Runs once under its existing owner bar without changing any lasting credits choice.',

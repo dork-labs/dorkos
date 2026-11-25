@@ -7,6 +7,7 @@ import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { gitMetadataReadRules } from '../policy/git-metadata.js';
 import { codexGlobLiteral } from '../policy/codex-path-keys.js';
+import { explicitDenyKeys } from '../policy/expand-deep-globs.js';
 
 const MODES = ['default', 'acceptEdits', 'bypassPermissions'];
 const INSIDE_GIT = 'Codex can’t work inside a Git folder. Choose the project folder instead.';
@@ -97,13 +98,23 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
   it('protects both a temporary folder alias and its canonical spelling', () => {
     const real = path.join(root, 'real');
     const alias = path.join(root, 'alias');
-    fs.mkdirSync(path.join(real, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(real, '.git', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(real, '.git', 'x', '.credentials.json'), 'made-up');
     fs.symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
     const files = render(alias);
     expect(files[key(path.join(alias, '.git'))]).toBe('read');
     expect(files[key(path.join(real, '.git'))]).toBe('read');
+    // On macOS the deep rule names each match exactly (DOR-4358).
     for (const dir of [alias, real])
-      expect(files[key(path.join(dir, '.git', '**', '.credentials*'))]).toBe('deny');
+      expect(
+        files[
+          key(
+            process.platform === 'darwin'
+              ? path.join(dir, '.git', 'x', '[.]credentials.json')
+              : path.join(dir, '.git', '**', '.credentials*')
+          )
+        ]
+      ).toBe('deny');
   });
 
   it('does not reopen metadata underneath a protected secret folder', () => {
@@ -212,11 +223,17 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
       const cwd = path.join(root, 'a\\b');
       const lookalike = path.join(root, 'ab');
       for (const dir of [cwd, lookalike]) fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(lookalike, '.env'), 'made-up');
+      // On macOS the deep rule names each match instead (DOR-4358).
+      const guard =
+        process.platform === 'darwin'
+          ? explicitDenyKeys(`${key(lookalike)}/.env`, false)![0]!
+          : `${key(lookalike)}/**/.env`;
       for (const mode of MODES) {
         expect(() => render(cwd, mode)).toThrow(
           'Codex can’t protect a folder with a backslash in its path. Choose another folder.'
         );
-        expect(render(lookalike, mode)[`${key(lookalike)}/**/.env`]).toBe('deny');
+        expect(render(lookalike, mode)[guard]).toBe('deny');
       }
     }
   );

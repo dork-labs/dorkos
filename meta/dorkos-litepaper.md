@@ -43,7 +43,7 @@ The agents in this office are **co-workers, not assistants.** They are co-creato
 
 A chat workspace with people and agents is table stakes. Slack Code, Buzz, ChatGPT Space and Ando all have one or soon will. It is what DorkOS is, not why a founder picks it. Three things are, in this order:
 
-1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. A dashboard, a tracker, a page for the one job nobody sells software for. Today an agent can build one, a person says yes, and it opens inside DorkOS (**Built**; see "Mini apps" below for exactly how far it goes).
+1. **Mini apps.** Ask for a tool your business needs, and your agents build it inside DorkOS. A dashboard, a tracker, a tool for the one job nobody sells software for. Today an agent can build one, a person says yes, and it opens inside DorkOS (**Built**; see "Mini apps" below for exactly how far it goes).
 2. **Built for founders.** DorkOS is not general purpose. It is for the semi-technical founder running a big or complex business mostly with agents. Goals, business connections and ready-made founder mini apps are the direction (**Later**).
 3. **Ownership.** Your agents, tools, files and data stay yours, wherever they run. That means your real files, your AI plans (your own Claude or ChatGPT sign-in) and your data. MIT license, free forever on your own computer, with no DorkOS account needed (**Built**). Inside the team this principle is called "local first, cloud optional"; in public it is ownership.
 
@@ -191,14 +191,14 @@ They become one. Every message will be a DM, a group DM, a channel post or a thr
 - **Your own computer is a one-person space.** It is free forever, with no required account or fee. **Built.**
 - **Everything is a space.** A DorkOS server holds one or many spaces. Your account gets a private space, just you and your agents, that you can open from anywhere you sign in; working with others happens in a team space. Local and hosted are the same program and the same app. **Next** (ADR `261015-042933`).
 - **Your own DorkOS in the cloud.** Sign up on the web and get the full app there, made the first time you open it. It sleeps when idle and runs no agents; your agents run on your own computer or on a cloud agent computer. An agent that runs on a cloud agent computer has its home here, so it keeps working while your computer is off. From the web you can chat with your Mac's agents too. **Next.**
-- **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: publish a page, sync a doc, move an agent. Only one place runs an agent at a time. **Later.**
+- **Anything made locally can be pushed** to another DorkOS: DorkOS Cloud, or one you host yourself. It works like git remotes: sync a doc, move an agent. (Publishing a page is its own item, below.) Only one place runs an agent at a time. **Later.**
 - **You can leave the cloud at any time.**
 
 DorkOS Cloud today offers accounts, remote access and credits. **Built.** Managed remote access through DorkOS Cloud is being built. **Next.** Cloud agent computers, web sign-up and team spaces on DorkOS Cloud come with it: not built yet. Cloud agents run on OpenCode at first. **Next.**
 
 ### Publishing
 
-Anyone with a free account can publish pages, within limits on size, storage and how long a page stays up. Free pages are public and searchable. Paid unlocks private, link-only and members-only pages and bigger limits. Pages live on their own separate web address, with abuse controls. **Later.**
+Anyone with a free account can publish a mini app or a doc as a published page: a saved copy with a link, within limits on size, storage, use and how long a page stays up. A published mini app is a live app: anyone it is shared with can use it on the web, with no DorkOS of their own. A new page is private until it is shared: with named people, with a space's members, with anyone who has the link, or listed in public. An agent can publish; an agent needs a yes to widen who can open a page. Bigger limits are paid. Pages live on their own separate web address, with abuse controls. **Later** (roadmap item 19, ADR `261125-183122`).
 
 ---
 

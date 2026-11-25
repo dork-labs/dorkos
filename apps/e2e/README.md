@@ -189,6 +189,11 @@ If every test in a new spec is `@integration`-only, register its path in
 file to that guard's synthetic fixtures. The default report omits the whole
 file, so the inventory gate needs that explicit, self-tested exception.
 
+A plain `.ts` module under `tests/` that a spec imports a `register…Tests`
+function from must be listed in `REGISTERED_MODULES` in the same script;
+`__tests__/registered-modules.test.ts` checks that list against the specs'
+imports, in both directions, on every pull request that touches apps/e2e.
+
 ## Specs that need the sidebar to themselves (`@sole-sidebar`)
 
 Most shared state in this suite is isolated by NAMING: `roomsApi` gives every

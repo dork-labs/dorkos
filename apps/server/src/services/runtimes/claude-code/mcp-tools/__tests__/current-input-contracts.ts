@@ -59,7 +59,9 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         // +1 total for the owner's answer to the credits offer (person-only, no MCP surface,
         // DOR-4978).
         // +1 total for a chat's runs list (GET /api/sessions/{id}/runs, no MCP surface, DOR-5212).
-        total: 162,
+        // +11 total for the agent registry's doors on `/api/mesh/*`: four reads and seven writes
+        // (no MCP surface, DOR-4978).
+        total: 173,
         relevant: 132,
         ordinary: 120,
         inSession: 119,

@@ -7,8 +7,10 @@
 # DOR-5122, under DOR-5098 (Dorian, Nov 23: release fast, fix forward). The
 # decision behind .github/workflows/rolling-bisect.yml.
 #
-# A ROLLING workflow (browser-test's push run, DOR-5130) keeps one run in
-# flight on main, so one run covers every merge since the previous one. When it
+# A ROLLING workflow (browser-test's and test's push runs, DOR-5130; test
+# since DOR-5254) keeps one run in flight on main, so one run covers every
+# merge since the previous one. Nothing here names a workflow: the file comes
+# from the run's path, and a failure family is a failed job of that run. When it
 # fails at H, auto-revert.sh leaves it alone (it never re-runs or reverts a
 # rolling workflow: see "WHY ROLLING RUNS ARE NEVER RE-RUN HERE" there), and
 # this takes it from the FIRST failure. The first probe re-tests H itself: the

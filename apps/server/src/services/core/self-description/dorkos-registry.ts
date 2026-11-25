@@ -47,6 +47,7 @@ import { todoPromiseHttpDomain, todoViewDomain } from '../../todos/todo-http-cap
 import { todoPromiseWriteDomain, todoWriteDomain } from '../../todos/todo-write-capabilities.js';
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabilities.js';
+import { meshDomain } from '../../mesh/doors/mesh-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
@@ -104,6 +105,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.todoWriteDeps && env.DORKOS_TODOS_ENABLED) domains.push(todoWriteDomain);
   if (deps.workQueueDeps) domains.push(workQueueDomain);
   if (deps.workQueuePersonDeps) domains.push(workQueuePersonDomain);
+  // The agent registry's doors on `/api/mesh/*`, when the mesh started (DOR-4978).
+  if (deps.meshDeps) domains.push(meshDomain);
   if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
@@ -197,6 +200,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     ...(env.DORKOS_TODOS_ENABLED ? [todosDomain, todoViewDomain, todoWriteDomain] : []),
     workQueueDomain,
     workQueuePersonDomain,
+    meshDomain,
     workClaimDomain,
     auditDomain,
     agentPauseDomain,
@@ -233,6 +237,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     todoWriteDeps: {} as CapabilityDeps['todoWriteDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
     workQueuePersonDeps: {} as CapabilityDeps['workQueuePersonDeps'],
+    meshDeps: {} as CapabilityDeps['meshDeps'],
     workClaimDeps: {} as CapabilityDeps['workClaimDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],

@@ -444,6 +444,17 @@ const registry = composeDorkOsCapabilityRegistry({
     agentExists: () => false,
     isOwner: () => true,
   },
+  // The agent registry's doors on `/api/mesh/*` (DOR-4978), over an empty registry.
+  meshDeps: {
+    meshCore: {
+      listWithPaths: () => [],
+      listWithHealth: () => [],
+      get: () => undefined,
+      getProjectPath: () => undefined,
+      getStatus: () => ({ totalAgents: 0, activeCount: 0, inactiveCount: 0, staleCount: 0 }),
+      getTopology: () => ({ callerNamespace: '*', namespaces: [], accessRules: [] }),
+    } as unknown as NonNullable<CapabilityDeps['meshDeps']>['meshCore'],
+  },
   // The link domain serves `GET /api/links/target` (DOR-5046), over the
   // harness's real rooms; it holds no chats and no agents.
   linkDeps: {

@@ -114,6 +114,10 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'an agent makes and changes to-dos with its own tools, which carry its turn’s power; the mount refuses an agent’s write (DOR-3088)',
     ['POST /api/todos', 'PATCH /api/todos/:id'],
   ],
+  [
+    'a scan registers the agents it finds, so it is a person’s (mesh.discover, person-only); agents use mesh_discover (DOR-4978)',
+    ['POST /api/mesh/discover'],
+  ],
   ['no person signs in or up here', ['ALL /api/auth/*']],
   ['middleware in front of the routes it guards', ['ALL /api/canvas/docs/*']],
   [

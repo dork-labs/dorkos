@@ -23,14 +23,18 @@ const USAGE = {
   total_tokens: 12,
 };
 
-/** One streamed answer that runs `cmd` through `exec_command`. */
-export function execCall(cmd: string): string {
+/** One streamed answer that runs `cmd` through `exec_command`, waiting up to `yieldMs` for it. */
+export function execCall(cmd: string, yieldMs?: number): string {
   const call = {
     type: 'function_call',
     id: 'fc_1',
     call_id: 'call_default_permissions',
     name: 'exec_command',
-    arguments: JSON.stringify({ cmd, login: false }),
+    arguments: JSON.stringify({
+      cmd,
+      login: false,
+      ...(yieldMs ? { yield_time_ms: yieldMs } : {}),
+    }),
   };
   return stream([
     { type: 'response.created', response: { id: 'resp_call' } },
@@ -157,10 +161,10 @@ export function rawAppServer(binary: string, cwd: string, env: Record<string, st
       child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
     });
   const notify = (method: string) => child.stdin.write(`${JSON.stringify({ method })}\n`);
-  const until = async (method: string, deadlineMs = 60_000) => {
+  const until = async (method: string, deadlineMs = 60_000, nth = 1) => {
     const deadline = Date.now() + deadlineMs;
     for (;;) {
-      const found = notifications.find((n) => n.method === method);
+      const found = notifications.filter((n) => n.method === method)[nth - 1];
       if (found) return found;
       if (Date.now() > deadline) throw new Error(`no ${method}; stderr: ${stderr.slice(-2000)}`);
       await new Promise<void>((resolve) => {
@@ -169,5 +173,5 @@ export function rawAppServer(binary: string, cwd: string, env: Record<string, st
       });
     }
   };
-  return { request, notify, until, stderr: () => stderr };
+  return { request, notify, until, stderr: () => stderr, pid: child.pid! };
 }
