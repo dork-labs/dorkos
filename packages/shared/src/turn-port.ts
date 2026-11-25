@@ -10,9 +10,9 @@
  * computer face answers {@link TurnStartAnswer}, then reports what happens to
  * the turn as {@link RunFact} values through one sink.
  *
- * Only `start` has payload schemas here. The argument schemas of `stop`,
- * `answer` and `watch` arrive with the port door itself (T5); `stop` answers
- * the existing `InterruptReceipt` (`@dorkos/shared/schemas`).
+ * Only `start` has payload schemas here. The argument schemas of `stop` and
+ * `answer` arrive with their first callers; `stop` answers the existing
+ * `InterruptReceipt` (`@dorkos/shared/schemas`).
  *
  * ## Plain data only
  *
@@ -48,6 +48,7 @@ import {
 import {
   BackgroundTaskTypeSchema,
   InterruptReceiptSchema,
+  SEED_CONTEXT_MAX_LENGTH,
   SessionSettingsSchema,
 } from './schemas.js';
 import type { DirectoryGrant, TurnPermissionCeiling } from './agent-runtime.js';
@@ -314,6 +315,38 @@ export function wireOriginOf(origin: TurnOrigin): WireOrigin {
   }
 }
 
+/**
+ * Whether a turn's words wait as a queue row a person can see, edit and
+ * reorder (spec §3.5): a person's own message, or another chat's message.
+ * Every other origin's words stay at their source (a room entry, a mini
+ * app's send, a wake) and wait on the space side until the chat is free, so
+ * no prompt nobody typed ever sits in a person's composer. On a Mac, a run
+ * whose words wait in the composer skips admission's chat-busy check and is
+ * queued as a row; any other run is handed over only when no live run holds
+ * its chat, and the computer face refuses it `chat_busy` otherwise.
+ *
+ * @param origin - What is starting the turn.
+ * @returns True when the words wait in the composer.
+ */
+export function wordsWaitInComposer(origin: TurnOrigin): boolean {
+  return (
+    origin.kind === 'interactive' ||
+    origin.kind === 'session-relay' ||
+    origin.kind === 'chat-message'
+  );
+}
+
+/**
+ * Whether a person typed the words (here, or from the web through the
+ * session relay): such a turn never counts toward the launch cap, and a
+ * paused agent refuses it rather than holding it (spec §3.5).
+ *
+ * @param origin - What is starting the turn.
+ */
+export function personTyped(origin: TurnOrigin): boolean {
+  return origin.kind === 'interactive' || origin.kind === 'session-relay';
+}
+
 // === Ids and references ===
 
 /**
@@ -337,6 +370,12 @@ export function runReference(runId: string): string {
 const DorkReferenceSchema = z
   .string()
   .refine((value) => parseDorkReference(value).ok, { message: 'Not a dork: reference' });
+
+/** Where a run's words wait: `<kind>:<id>`, a source kind and that source's own id. */
+const SourceRefSchema = z
+  .string()
+  .max(200)
+  .regex(/^[a-z][a-z-]{0,31}:[^\s]{1,160}$/u, { message: 'Not a <kind>:<id> source' });
 
 /** A chat, by its canonical id. */
 const SessionIdSchema = z.string().min(1).max(200);
@@ -470,6 +509,12 @@ const callerTurnFields = {
   prepare: TurnPreparationSchema.optional(),
   /** Model and effort, when the caller resolved them itself. */
   settings: TurnSettingsSchema.optional(),
+  /**
+   * Background the turn's opener attaches to it (`SendMessageRequest.seedContext`):
+   * one honest line so the model does not take the words for a person's own. It
+   * rides the neutral context bag, never `content`, and is never drawn.
+   */
+  seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
 };
 
 // === Space face ===
@@ -484,12 +529,26 @@ const callerTurnFields = {
  * {@link TurnStartRequest}.
  *
  * Three record columns get their input fields with the callers that need
- * them: `askedByRef` with T5, `startKey` with T7, `sourceRef` with T8 (then
- * T10 and T11). The schema is strict, so adding an optional field later
- * changes nothing a caller sends today.
+ * them: `askedByRef` and `sourceRef` with T5 (a mini app's send keeps its
+ * words in its own row), `startKey` with T7. The schema is strict, so adding
+ * an optional field later changes nothing a caller sends today.
  */
 export const StartTurnInputSchema = z.strictObject({
   ...callerTurnFields,
+  /**
+   * Who asked, as a `dork:` reference (spec §4.1, `asked_by_ref`): a chat, a
+   * room, a task run, a person or an agent. Kept on the record; never sent to
+   * the computer.
+   */
+  askedByRef: DorkReferenceSchema.optional(),
+  /**
+   * Where the words wait until the turn starts, when the caller keeps them in
+   * a store of its own (spec §4.1, `source_ref`): `<kind>:<id>`, read back by
+   * the source the kind's owner registered. Absent, the words live in this
+   * process only until the turn starts, and a restart in between cancels the
+   * run as `start_lost`. `content` still carries them, for the cap check.
+   */
+  sourceRef: SourceRefSchema.optional(),
   /**
    * Epoch ms. The run waits for its turn, and is cancelled as `expired` if it
    * has not started by then. Replaces `whenBusy: 'refuse'` (spec §3.2, §3.5).
@@ -576,33 +635,51 @@ export const TurnStartRequestSchema = z
 export type TurnStartRequest = z.infer<typeof TurnStartRequestSchema>;
 
 /**
- * Why the computer face refused a start. It has no "waiting" answer: waiting
- * is decided on the space side before the computer face is asked (spec §3.5).
+ * Why the computer face refused a start (spec §3.1). It has no "waiting"
+ * answer: waiting is decided on the space side before the computer face is
+ * asked (spec §3.5). Closed: each reason says what happens to the run.
  *
  * - `already_held`: the computer side already holds THIS `runId`: a repeated
- *   start (§6.2). No second turn starts and no transition is written: the
- *   run keeps its status, and the `start_turn` handler keeps waiting for the
- *   `started` fact. It is not answered as `accepted`.
+ *   start (§6.2), or a hand-over racing a launch the dispatcher still holds.
+ *   No second turn starts and no transition is written: the run keeps its
+ *   status, and the `start_turn` handler keeps waiting for the `started`
+ *   fact. It is not answered as `accepted`.
+ * - `chat_busy`: a live run of the chat holds it, and this run's words stay
+ *   at their source (no queue row). The run stays `queued` (on a Mac it never
+ *   left it; for a remote computer the handler writes transition 8), and the
+ *   handler tries again with backoff, without counting attempts, bounded by
+ *   the run's `notAfter`. Words that belong in a composer are queued as a row
+ *   instead and never refused for a busy chat, and a chat busy with no run
+ *   behind it (a summary, an open ask) is never `chat_busy`.
  * - `agent_paused`: the agent is paused and the turn is a person's own chat.
- *   The run goes `starting` → `cancelled` and the caller sees today's
- *   `AGENT_PAUSED` refusal (§3.5).
+ *   The caller sees today's `AGENT_PAUSED` refusal (§3.5).
+ * - The door's own refusals, each answered before the chat is bound or
+ *   anything is queued (`launch-session.ts`): `invalid_agent_path` (no
+ *   registered agent there), `unknown_runtime`, `room_session_moved` (a room
+ *   conversation kept in the room's files), `desk_not_own` (the turn would
+ *   stand in a room's files, or in a folder that is not its agent's), and
+ *   `account_not_allowed` (the account may not work in this project).
  *
- * "This chat has another live turn" is not a reason: this computer's
- * dispatcher queues it, and the wire's answer for it comes with DOR-5163.
- *
- * Closed at these two for now. T5 widens it with the door's own refusals
- * (`invalid_agent_path`, `unknown_runtime`, `room_session_moved`,
- * `desk_not_own`, `account_not_allowed`), each in the PR whose caller can hit
- * it, and each cancels the run. None is ever carried as `ended` with
+ * Every reason but `already_held` and `chat_busy` cancels the run, with the
+ * reason kept in `ending_detail`. None is ever carried as `ended` with
  * `refused`, which stays the runtime's own refusal (DOR-2994).
  *
  * Where a refusal cancels from depends on who writes `queued` → `starting`.
- * On a Mac the dispatcher hook writes it inside the chat's mutex when the
- * launch begins, so a door refusal cancels the run from `queued` (row 5).
- * For a remote computer the space side has already written `starting`, so it
- * cancels from `starting` (row 9).
+ * On a Mac the dispatcher hook writes it when the launch begins, so a door
+ * refusal cancels the run from `queued` (row 5). For a remote computer the
+ * space side has already written `starting`, so it cancels from `starting`
+ * (row 9).
  */
-export const RefusalReasonSchema = z.enum(['already_held', 'agent_paused']);
+export const RefusalReasonSchema = z.enum([
+  'already_held',
+  'chat_busy',
+  'agent_paused',
+  'invalid_agent_path',
+  'unknown_runtime',
+  'room_session_moved',
+  'desk_not_own',
+  'account_not_allowed',
+]);
 
 /** Why a start was refused. See {@link RefusalReasonSchema}. */
 export type RefusalReason = z.infer<typeof RefusalReasonSchema>;
