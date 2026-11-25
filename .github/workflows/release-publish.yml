@@ -237,9 +237,9 @@ jobs:
     env:
       P: ${{ needs.prove.outputs.p }}
       # The workflows whose newest completed push/schedule run on P must have
-      # passed. test.yml joins when the full unit sweep moves to a rolling run
-      # on main (PR #4257); until then the queue runs it, and check 3 covers it.
-      FULL_RUN_WORKFLOWS: browser-test.yml
+      # passed: the full browser suite and, since #4257 made it a rolling run
+      # on main, the full unit sweep.
+      FULL_RUN_WORKFLOWS: browser-test.yml test.yml
     steps:
       - name: Refuse anything but main's copy, routine mode and a proven P
         run: |

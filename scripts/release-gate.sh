@@ -39,7 +39,7 @@ set -uo pipefail
 
 GH=${GH:-gh}
 REPO=${REPO:-${GITHUB_REPOSITORY:-dork-labs/dorkos}}
-FULL_RUN_WORKFLOWS=${FULL_RUN_WORKFLOWS:-browser-test.yml}
+FULL_RUN_WORKFLOWS=${FULL_RUN_WORKFLOWS:-browser-test.yml test.yml}
 FULL_RUN_EVENTS=${FULL_RUN_EVENTS:-push schedule}
 # The GitHub Actions app. Only its check runs count, never statuses.
 ACTIONS_APP_ID=15368
