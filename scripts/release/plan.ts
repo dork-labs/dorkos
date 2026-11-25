@@ -27,6 +27,8 @@ import { DOCS_ARCHIVE, DOCS_CHANGELOG, syncDocsChangelog } from './docs-changelo
 import { ReleaseCommitError } from './errors.ts';
 import { decideBump, parseFragments, parseVersion, type BumpDecision } from './fragments.ts';
 import { findMentions } from './markdown.ts';
+import { MIGRATIONS_FILE } from './migration-table.ts';
+import { applyMigrationFloor, newestPendingKey } from './migration-floor.ts';
 import {
   parseCommitList,
   renderNotes,
@@ -76,6 +78,8 @@ export interface ReleasePlan {
   fragments: string[];
   /** Every changed file, sorted by path. */
   changes: PlannedChange[];
+  /** Files the plan read to decide and does not change, with the text it read. */
+  inputs: { path: string; before: string }[];
   /** The new `CHANGELOG.md` section. */
   section: CompiledSection;
   /** The GitHub release notes. */
@@ -117,7 +121,14 @@ export function buildReleasePlan(input: PlanInput): ReleasePlan {
       text: name.endsWith('/') ? '' : reader.read(`changelog/unreleased/${name}`),
     }))
   );
-  const decision = decideBump(fragments, previous, input.version);
+  // The table decides the version too, so it is read like every other input:
+  // as P's text, kept in the plan so the commit can check P still has it.
+  const migrations = reader.read(MIGRATIONS_FILE);
+  const decision = applyMigrationFloor(
+    decideBump(fragments, previous, input.version),
+    previous,
+    newestPendingKey(migrations, previous)
+  );
   const { version } = decision;
   const changes: PlannedChange[] = [];
   const modify = (path: string, edit: (text: string) => string) => {
@@ -190,6 +201,7 @@ export function buildReleasePlan(input: PlanInput): ReleasePlan {
     decision,
     fragments: fragments.map((fragment) => fragment.file),
     changes,
+    inputs: [{ path: MIGRATIONS_FILE, before: migrations }],
     section,
     notes: renderNotes(section, previous, version),
     prBody: renderPrBody({ decision, previous, fragments, unfragmented }),
@@ -255,6 +267,8 @@ export function planJson(plan: ReleasePlan): string {
         bump: plan.decision.bump,
         bumpReason: plan.decision.reason,
         breaking: plan.decision.breaking,
+        migrationKey: plan.decision.migrationKey ?? null,
+        raisedFrom: plan.decision.raisedFrom ?? null,
         subject: releaseSubject(plan.version),
         fragments: plan.fragments,
         files: plan.changes.map((change) => ({ path: change.path, status: change.status })),

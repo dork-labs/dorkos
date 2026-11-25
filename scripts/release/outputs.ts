@@ -101,6 +101,7 @@ export function renderPrBody(input: {
     '',
     `- Version: ${previous} to ${decision.version} (${decision.bump}: ${decision.reason})`,
     `- Breaking: ${decision.breaking ? 'yes, called out at the top of the notes' : 'no'}`,
+    ...migrationLine(decision),
     '',
     '## Commits with no changelog entry',
     '',
@@ -119,6 +120,16 @@ export function renderPrBody(input: {
   }
   lines.push('');
   return lines.join('\n');
+}
+
+/** The PR body's config migration line, when a key is pending. */
+function migrationLine({ migrationKey, raisedFrom }: BumpDecision): string[] {
+  if (!migrationKey) return [];
+  if (!raisedFrom)
+    return [`- Config migrations: the newest key, \`${migrationKey}\`, runs in this release`];
+  return [
+    `- Config migrations: raised from ${raisedFrom} to reach the key \`${migrationKey}\`, because conf runs a key only from its version up`,
+  ];
 }
 
 function covers(claim: string, commit: ListedCommit): boolean {
