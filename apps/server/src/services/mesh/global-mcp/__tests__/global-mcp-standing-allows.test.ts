@@ -87,10 +87,20 @@ describe('standing yeses for a global server (DOR-4118)', () => {
     expect(await readStandingAllows('tracker', [atlas])).toEqual([]);
   });
 
-  it('reads only what a launch would pass: no wildcard, nothing malformed', async () => {
-    allow(atlas, 'settings.local.json', ['mcp__tracker*', 42, '', 'mcp__tracker‮']);
+  it('leaves out what names no tool: a non-string, a blank, an invisible character', async () => {
+    allow(atlas, 'settings.local.json', [42, '', 'mcp__tracker‮']);
 
     expect(await readStandingAllows('tracker', [atlas])).toEqual([]);
+  });
+
+  it('lists a wildcard that reaches the server as every tool (DOR-5237)', async () => {
+    allow(atlas, 'settings.local.json', ['mcp__tracker*', 'mcp__*', 'mcp__other*']);
+
+    const found = await readStandingAllows('tracker', [atlas]);
+    expect(found.map((a) => [a.rule, a.breadth])).toEqual([
+      ['mcp__tracker*', 'server'],
+      ['mcp__*', 'server'],
+    ]);
   });
 
   it('skips an agent with no settings, or settings that do not parse', async () => {
@@ -135,7 +145,11 @@ describe('standingAllowBreadth', () => {
     ['mcp__docs-search__*', { breadth: 'server' }],
     ['mcp__docs-search__find', { breadth: 'tool', tool: 'find' }],
     ['mcp__docs-search__', null],
-    ['mcp__docs-search*', null],
+    ['mcp__docs-search*', { breadth: 'server' }],
+    ['mcp__docs-search__get*', { breadth: 'server' }],
+    ['mcp__*', { breadth: 'server' }],
+    ['mcp__docs*', { breadth: 'server' }],
+    ['mcp__other*', null],
     ['mcp__docs', null],
     ['Read(./docs/**)', null],
   ])('%s', (rule, expected) => {

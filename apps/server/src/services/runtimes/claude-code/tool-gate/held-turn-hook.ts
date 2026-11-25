@@ -18,14 +18,31 @@
  * (`turn-bounds.ts` assigns the ceiling per send), and background work an earlier held turn left
  * running keeps its ceiling too.
  *
+ * **Below Full on any turn, the same answer for a rule nobody approved (DOR-5237).** A turn that
+ * is not held gets the same `ask` when the launch's folder-settings check says a person must
+ * decide (`folder-file-allows.ts`). The same calls pass through, plus, under Accept edits, an edit
+ * inside the working folder, which that mode runs anyway.
+ *
  * @module services/runtimes/claude-code/tool-gate/held-turn-hook
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import { chosenFullAutonomy, heldForOutsider, type CeilingedMode } from '../turn-permission.js';
+import path from 'node:path';
+import {
+  chosenFullAutonomy,
+  gatePermissionMode,
+  heldForOutsider,
+  type CeilingedMode,
+} from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
-import { fileReadStaysInside, isPlainReadCommand, type ReadFolders } from './held-turn-reads.js';
+import {
+  fileReadStaysInside,
+  isPlainReadCommand,
+  realLocation,
+  type ReadFolders,
+} from './held-turn-reads.js';
 import type { ToolGateLogger } from '../messaging/interactive-handlers.js';
+import type { FolderAllowWatch } from './folder-file-allows.js';
 
 /**
  * Tools that pass through untouched: the CLI's own bookkeeping, which runs nothing on the computer
@@ -56,19 +73,22 @@ export const HELD_TURN_ASK_REASON =
 
 /**
  * The hook. Answers nothing unless the running turn (or background work an earlier one left) is
- * held to the runtime's default and the call is one DorkOS would not run unasked anyway, or a read
- * that stays inside the agent's folders (`held-turn-reads.ts`).
+ * held to the runtime's default, or the call is one only a folder rule nobody approved could allow,
+ * and the call is one DorkOS would not run unasked anyway, or a read that stays inside the agent's
+ * folders (`held-turn-reads.ts`).
  *
  * @param session - The session's chosen mode and both ceilings.
  * @param resolveIdentity - The memoized session-identity resolver `canUseTool` uses.
  * @param log - Where a failed identity lookup is reported.
  * @param folders - The agent's folders, for the reads let through.
+ * @param folderAllows - The launch's check of the folder's own allow rules (DOR-5237).
  */
 export function createHeldTurnHook(
   session: CeilingedMode<PermissionModeId>,
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger,
-  folders: ReadFolders
+  folders: ReadFolders,
+  folderAllows?: Pick<FolderAllowWatch, 'mustAsk'>
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
@@ -81,9 +101,16 @@ export function createHeldTurnHook(
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
-    if (!heldForOutsider(session)) return {};
+    const held = heldForOutsider(session);
     // A held turn runs at Default or stricter, a mode that asks.
     if (PASS_THROUGH_TOOLS.has(toolName)) return {};
+    if (
+      !held &&
+      (acceptEditsRunsIt(session, toolName, input, folders.cwd) ||
+        !(await folderAllows?.mustAsk(toolName, input)))
+    ) {
+      return {};
+    }
     if (fileReadStaysInside(toolName, input, folders.cwd, folders.roots)) return {};
     if (
       toolName === 'Bash' &&
@@ -105,15 +132,54 @@ export function createHeldTurnHook(
     ) {
       return {};
     }
-    return ASK;
+    return held ? ASK : askFor(FOLDER_RULE_ASK_REASON);
   };
 }
 
-/** The hook's answer when a person must decide. */
-const ASK = {
-  hookSpecificOutput: {
-    hookEventName: 'PreToolUse' as const,
-    permissionDecision: 'ask' as const,
-    permissionDecisionReason: HELD_TURN_ASK_REASON,
-  },
+/** The file tools Accept edits runs inside the working folder, and the field each names its file in. */
+const EDIT_PATHS: Readonly<Record<string, string>> = {
+  Edit: 'file_path',
+  Write: 'file_path',
+  MultiEdit: 'file_path',
+  NotebookEdit: 'notebook_path',
 };
+
+/**
+ * Whether the turn's mode is Accept edits and the call edits a file inside the working folder, by
+ * real path: the mode runs that with no card, so asking adds nothing.
+ */
+function acceptEditsRunsIt(
+  session: CeilingedMode<PermissionModeId>,
+  toolName: string,
+  input: Record<string, unknown>,
+  cwd: string
+): boolean {
+  const field = EDIT_PATHS[toolName];
+  const target = field === undefined ? undefined : input[field];
+  if (gatePermissionMode(session) !== 'acceptEdits' || typeof target !== 'string' || !target) {
+    return false;
+  }
+  const rel = path.relative(
+    realLocation(path.resolve(cwd)),
+    realLocation(path.resolve(cwd, target))
+  );
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+/** What the model is told when only a folder rule nobody approved would have run a call. */
+export const FOLDER_RULE_ASK_REASON =
+  'A person has not approved the folder allow rule that would run this, so they decide.';
+
+/** The hook's answer when a person must decide, and why. */
+function askFor(reason: string) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse' as const,
+      permissionDecision: 'ask' as const,
+      permissionDecisionReason: reason,
+    },
+  };
+}
+
+/** The hook's answer on a held turn. */
+const ASK = askFor(HELD_TURN_ASK_REASON);
