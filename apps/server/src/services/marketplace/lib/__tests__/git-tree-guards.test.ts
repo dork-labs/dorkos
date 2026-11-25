@@ -56,7 +56,7 @@ vi.mock('node:child_process', async () => {
       const settings: string[] = [];
       while (
         args[0] === '-c' &&
-        /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath)=/.test(args[1]!)
+        /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath|submodule\.recurse)=/.test(args[1]!)
       ) {
         settings.push(args[1]!);
         args = args.slice(2);
@@ -153,6 +153,7 @@ describe('git settings a fetched folder could abuse (DOR-2326)', () => {
           'safe.bareRepository=explicit',
           'core.fsmonitor=',
           expect.stringMatching(/^core\.hooksPath=/),
+          'submodule.recurse=false',
         ])
       );
     }
@@ -199,6 +200,7 @@ describe('the GitHub token', () => {
       'safe.bareRepository': 'explicit',
       'core.fsmonitor': '',
       'core.hooksPath': process.platform === 'win32' ? 'NUL' : '/dev/null',
+      'submodule.recurse': 'false',
       'http.https://github.com/.extraHeader': HEADER,
     });
   });

@@ -58,7 +58,14 @@ import {
 } from '../repo-config-consent.js';
 import { pinRepoBaseline } from '../repo-baseline.js';
 import { readLocalSettings } from '../repo-local-settings.js';
-import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
+import {
+  git,
+  isolateGitEnv,
+  makeRepo,
+  makeSubmodule,
+  writeFile,
+  type RepoFixture,
+} from './git-fixture.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
 import { watchFolderAllows } from '../../tool-gate/folder-file-allows.js';
 import { readFolderSettingsEntries } from '../../tool-gate/folder-settings-files.js';
@@ -918,5 +925,89 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     await vi.waitFor(() => expect(cards).toHaveLength(2));
     expect(cards[1].capabilityId).not.toBe(firstId);
     expect(cards[1].inputHash).not.toBe(cards[0].inputHash);
+  });
+});
+
+describe('a git submodule (DOR-5244)', () => {
+  /** The submodule's own top, and `x` in it, which holds committed hooks. */
+  function submodule(where: 'sm/x' | 'smwt/x'): string {
+    const sm = makeSubmodule(repo.root, {
+      'x/.claude/settings.json': GUARD_SETTINGS,
+      'x/.claude/hooks/guard.mjs': 'process.exit(0);\n',
+    });
+    return path.join(where === 'sm/x' ? sm.top : sm.addWorktree('smwt'), 'x');
+  }
+
+  it.each(['sm/x', 'smwt/x'] as const)(
+    'asks to trust the submodule’s own default branch, at %s',
+    async (where) => {
+      const cwd = submodule(where);
+      expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(true);
+      await vi.waitFor(() => expect(cards).toHaveLength(1));
+      expect(cards[0].capabilityId).toBe('runtime.apply_repo_hooks');
+      expect(cards[0].summary).toContain("DorkOS hasn't seen this repo before.");
+      expect(cards[0].detail).toContain('x/.claude/hooks/guard.mjs');
+    }
+  );
+
+  it.each(['sm/x', 'smwt/x'] as const)(
+    'compares against that commit once trusted, at %s',
+    async (where) => {
+      const cwd = submodule(where);
+      expect(await pinRepoBaseline(cwd)).toBe(true);
+      const clean = await resolveRepoConfigForLaunch(turn(cwd));
+      expect(clean).toMatchObject({ dropLocal: false, pauseHooks: false, mcpServers: null });
+
+      writeFile(path.join(cwd, '.claude/hooks/guard.mjs'), 'console.log("allow");\n');
+      expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(true);
+      await settle();
+      expect(cards).toHaveLength(1);
+      expect(cards[0].summary).toContain(
+        '"x/.claude/hooks/guard.mjs" differs from the default branch.'
+      );
+      expect(activity.map((entry) => entry.summary)).toEqual([
+        'Paused repo hooks in x: x/.claude/hooks/guard.mjs changed.',
+      ]);
+
+      answer.outcome = 'granted';
+      await vi.waitFor(
+        () => expect((store.harness.approvedRepoConfig as string[] | undefined)?.length).toBe(1),
+        { timeout: 5_000 }
+      );
+      expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(false);
+    }
+  );
+
+  it.each([
+    ['names a git folder that is missing', 'gitdir: nowhere\n'],
+    ['has no gitdir line', 'not a pointer\n'],
+    ['is empty', ''],
+    ['leads to a shared folder not named .git', 'gitdir: store/worktrees/w\n'],
+  ])(
+    'checks the local settings above an agent home whose .git file %s',
+    async (_label, pointer) => {
+      const top = path.join(repo.root, 'broken');
+      const home = path.join(top, 'agent');
+      fs.mkdirSync(path.join(top, 'store', 'worktrees', 'w'), { recursive: true });
+      fs.writeFileSync(path.join(top, 'store', 'worktrees', 'w', 'commondir'), '../..\n');
+      fs.mkdirSync(home, { recursive: true });
+      fs.writeFileSync(path.join(top, '.git'), pointer);
+      writeFile(path.join(top, '.claude/settings.local.json'), SELF_GRANT);
+      expect((await resolveRepoConfigForLaunch(turn(home, { home }))).dropLocal).toBe(true);
+      await settle();
+      expect(cards.map((card) => card.capabilityId)).toEqual(['runtime.apply_repo_local_settings']);
+      expect(activity).toEqual([expect.objectContaining({ state: 'paused', cwd: top })]);
+    }
+  );
+
+  it('compares the repo that holds a submodule against its own default branch', async () => {
+    const { superproject } = makeSubmodule(repo.root, {});
+    writeFile(path.join(superproject, 'x/.claude/settings.json'), GUARD_SETTINGS);
+    writeFile(path.join(superproject, 'x/.claude/hooks/guard.mjs'), 'process.exit(0);\n');
+    git(superproject, ['add', '-A']);
+    git(superproject, ['commit', '-q', '-m', 'hooks']);
+    expect(await pinRepoBaseline(superproject)).toBe(true);
+    const cwd = path.join(superproject, 'x');
+    expect((await resolveRepoConfigForLaunch(turn(cwd))).pauseHooks).toBe(false);
   });
 });

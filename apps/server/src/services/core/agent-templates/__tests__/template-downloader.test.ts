@@ -364,6 +364,8 @@ describe('execGitClone', () => {
         'core.fsmonitor=',
         '-c',
         `core.hooksPath=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`,
+        '-c',
+        'submodule.recurse=false',
         'clone',
         '--depth',
         '1',
