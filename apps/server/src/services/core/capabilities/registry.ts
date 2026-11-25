@@ -45,6 +45,8 @@ import {
   type GrantedApproval,
 } from './tier-enforcement.js';
 import { assertCallerProofs, type PersonCaller, type TrustedCaller } from './trusted-caller.js';
+import { personReadsPastArea } from './context/person-read.js';
+import { notify } from './context/notify-observer.js';
 import { connectorGateFacts, resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
 import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permission.js';
@@ -367,6 +369,12 @@ export interface CapabilityHandlerContext {
    */
   sessionId?: string;
   /**
+   * Set by the registry, never by a caller: this `observe` call ran past an
+   * area a person Blocked for agents on the person's own REST-path proof
+   * (DOR-4978), so the audit records it as that person's read.
+   */
+  personRead?: 'rest-proof';
+  /**
    * That session's working directory, when the surface carries one — for a
    * handler that must record WHERE the caller is, not merely which session it
    * is. The managed-MCP sign-in stores it on its flow so a token that lands after
@@ -409,6 +417,12 @@ export type CapabilityInvocationObserver = (event: {
   context: CapabilityHandlerContext;
   /** Whether the handler completed without throwing. */
   ok: boolean;
+  /**
+   * For a person's read past an area Blocked for agents: the sign-in or
+   * address the audit groups its rows by (DOR-4978). Opaque, and never in the
+   * handler's context.
+   */
+  readGroup?: string;
   /**
    * What the handler threw, when it did. Lets the observer tell a refusal the
    * request tool passed on (a card raised, a request held back by its limits)
@@ -546,26 +560,6 @@ export function serializeCapability(capability: CapabilityDefinition): Serialize
     // a core capability's entry stays exactly as it was (DOR-2685).
     ...(capability.source ? { source: { ...capability.source } } : {}),
   };
-}
-
-/**
- * Call an invocation observer, swallowing anything it throws.
- *
- * Attribution is a side channel: it must never turn a successful capability
- * call into a failed one, nor mask the handler's own error with its own.
- */
-function notify(
-  observer: CapabilityInvocationObserver,
-  capability: CapabilityDefinition,
-  context: CapabilityInvocationContext,
-  ok: boolean,
-  error?: unknown
-): void {
-  try {
-    observer({ capability, context, ok, ...(ok ? {} : { error }) });
-  } catch {
-    // Deliberately ignored — see the TSDoc above.
-  }
 }
 
 /**
@@ -913,8 +907,13 @@ export function composeRegistry(
               ...principalTurnOf(supplied.serverPrincipal),
               ...connectorGateFacts(preflight),
             });
+        // The person's own read on a capability's REST path passes an area a
+        // person Blocked for agents, and only that (DOR-4978, `personReadsPastArea`).
+        const personRead = personReadsPastArea(capability, supplied, resolved);
+        if (personRead) invocationContext.personRead = 'rest-proof';
+        const areaPermission = personRead ? null : resolved;
         // A paid run that must ask does so at every level (DOR-4204 PR 2).
-        const permission = spendAsks ? spendPermission(resolved) : resolved;
+        const permission = spendAsks ? spendPermission(areaPermission) : areaPermission;
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card
         // that says WHICH thing it is about.
@@ -1010,17 +1009,19 @@ export function composeRegistry(
       // that RAN with an `approval_required` line and then silence. An
       // unidentified `act` now does too, because trusted-by-default makes it the
       // common case; the observer sends it to the audit log rather than the feed.
-      const silent = !invocationContext.identity && capability.tier === 'observe';
+      // A person's read past a Blocked area is the exception: it is recorded (DOR-4978).
+      const unnamed = !invocationContext.identity && !invocationContext.personRead;
+      const silent = unnamed && capability.tier === 'observe';
       if (!onInvocation || silent) return run();
 
       // Report the outcome either way: a failed attempt by a named agent is
       // exactly as interesting to an audit trail as a successful one.
       try {
         const result = await run();
-        notify(onInvocation, capability, invocationContext, true);
+        notify(onInvocation, capability, invocationContext, supplied, true);
         return result;
       } catch (err) {
-        notify(onInvocation, capability, invocationContext, false, err);
+        notify(onInvocation, capability, invocationContext, supplied, false, err);
         throw err;
       }
     },

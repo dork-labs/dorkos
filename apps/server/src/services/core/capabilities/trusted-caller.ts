@@ -191,6 +191,14 @@ export function isTrustedCaller(value: unknown): value is TrustedCaller {
 class PersonCallerMarker {
   /** What it proves, for a reader of a logged context. */
   readonly proves = 'person' as const;
+
+  /**
+   * Construct the marker. Reachable only from {@link personCaller}.
+   *
+   * @param from - `rest-proof` when minted on a capability's own REST path for a
+   *   caller with no program credential; see `context/person-read.ts`.
+   */
+  constructor(readonly from?: 'rest-proof') {}
 }
 
 /**
@@ -218,11 +226,38 @@ export interface PersonCallerRequest extends DecisionAuthorityRequest {
  * header at all.
  *
  * @param request - What the caller presented; see {@link PersonCallerRequest}.
+ * @param rest - Only from a capability's own REST path, for an `observe` call
+ *   from a caller that sent no program credential at all (no API key either):
+ *   tags the marker `rest-proof` (`context/person-read.ts`) and records the
+ *   sign-in or address its audit rows are grouped by.
  * @returns The marker for a person, otherwise `undefined`.
  */
-export function personCaller(request: PersonCallerRequest): PersonCaller | undefined {
-  if (request.authorizationPresented) return undefined;
-  return trustedCaller(request) ? new PersonCallerMarker() : undefined;
+export function personCaller(
+  request: PersonCallerRequest,
+  rest?: { readGroup: string }
+): PersonCaller | undefined {
+  if (request.authorizationPresented || !trustedCaller(request)) return undefined;
+  const marker = new PersonCallerMarker(rest ? 'rest-proof' : undefined);
+  if (rest) READ_GROUPS.set(marker, rest.readGroup);
+  return marker;
+}
+
+/**
+ * The sign-in or address a REST-path proof was minted for, keyed by the
+ * marker and kept off it, so no logged or forwarded context carries it. Read
+ * only by the audit observer, to group a person's repeated reads (DOR-4978).
+ */
+const READ_GROUPS = new WeakMap<PersonCallerMarker, string>();
+
+/**
+ * The read group a REST-path person proof was minted with, for the audit
+ * observer alone (`capability-attribution.ts`); never a handler's to read.
+ *
+ * @param value - The call's person proof, if any.
+ * @returns The group, or `undefined` for anything but a REST-path proof.
+ */
+export function personReadGroup(value: unknown): string | undefined {
+  return isPersonCaller(value) ? READ_GROUPS.get(value) : undefined;
 }
 
 /**

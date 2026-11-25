@@ -47,6 +47,7 @@ import {
 } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
+import { deviceIdOf } from '../services/core/auth/sessions/signed-in-devices.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -82,6 +83,13 @@ export interface CapabilityDispatch {
   input: unknown;
   /** The status a success answers with. Defaults to `200`. */
   success?: HttpSuccessStatus;
+  /**
+   * Set by the capability's own REST path (`capability-http.ts`), never by
+   * `POST /api/capabilities/{id}/invoke`: only this door mints the person proof
+   * for every `observe` call, which lets the person's own read pass an area
+   * Blocked for agents (DOR-4978).
+   */
+  rest?: true;
 }
 
 /**
@@ -134,7 +142,12 @@ export async function dispatchCapability(
     const refusal = problemRefusalUnlessOwner(facts, capability.confirmFirst.accountOwner);
     if (refusal) return sendProblem(c, refusal);
   }
-  return invokeAs(c, registry, { id, input, success: dispatch.success ?? 200 }, facts);
+  return invokeAs(
+    c,
+    registry,
+    { id, input, success: dispatch.success ?? 200, ...(dispatch.rest ? { rest: true } : {}) },
+    facts
+  );
 }
 
 /**
@@ -142,7 +155,8 @@ export async function dispatchCapability(
  *
  * @param c - The request the answer is for.
  * @param registry - The composed registry.
- * @param call - The capability, its raw input and its success status.
+ * @param call - The capability, its raw input, its success status, and whether it came
+ *   through the capability's own REST path (`rest`, never `/invoke`).
  * @param facts - The caller: the asking request's facts, or, when a held call
  *   commits, the confirming request's.
  * @param confirmed - The person's confirmation, only when a held call commits.
@@ -150,7 +164,7 @@ export async function dispatchCapability(
 async function invokeAs(
   c: Context<ApiEnv>,
   registry: CapabilityRegistry,
-  call: { id: string; input: unknown; success: HttpSuccessStatus },
+  call: { id: string; input: unknown; success: HttpSuccessStatus; rest?: boolean },
   facts: RequestFacts,
   confirmed?: unknown
 ): Promise<Response> {
@@ -169,15 +183,28 @@ async function invokeAs(
   // approval is bound to a hash of that input.
   const header = facts.headers[APPROVAL_TOKEN_HEADER];
   const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
-  // Proof of a person, asked only by a person-only capability, which
-  // `registry.invoke` refuses without it (ADR 261123-170830). The same bar the
-  // decide endpoint and the hand person-only routes use, plus no bearer.
+  // Proof of a person: the same bar the decide endpoint and the hand person-only
+  // routes use, plus no bearer. A person-only capability asks for it, and
+  // `registry.invoke` refuses one without it (ADR 261123-170830). A
+  // capability's own REST path also mints it for every `observe` call, tagged
+  // `rest-proof` when no program credential came either (no API key): that
+  // lets the person's own read pass an area a person Blocked for agents, and
+  // nothing else (DOR-4978, `personReadsPastArea`). Only for a read: minting
+  // marks a missing person session, which would turn an `act` call's own
+  // refusal into a password prompt that changes nothing. `/invoke` never tags it.
+  // Only from the live request: a held call's replay (`confirmed`) never mints it.
+  const restRead = call.rest === true && confirmed === undefined && capability?.tier === 'observe';
   const person =
-    capability?.surfaces.http?.audience === 'person'
-      ? personCaller({
-          ...readCallerAuthority(facts),
-          authorizationPresented: facts.headers.authorization !== undefined,
-        })
+    restRead || capability?.surfaces.http?.audience === 'person'
+      ? personCaller(
+          {
+            ...readCallerAuthority(facts),
+            authorizationPresented: facts.headers.authorization !== undefined,
+          },
+          restRead && !presentsProgramCredential(facts)
+            ? { readGroup: readGroupOf(facts) }
+            : undefined
+        )
       : undefined;
 
   try {
@@ -251,4 +278,18 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
       return (held ??= heldWifiOwner(facts));
     },
   };
+}
+
+/**
+ * What a person's repeated reads are grouped by in the audit log (DOR-4978):
+ * the sign-in's opaque device id, else the network address. Never a session
+ * id, a key or anything the caller chose. Carried on the person proof to the
+ * audit observer only, never into a handler's context.
+ *
+ * @param facts - The request's facts.
+ */
+function readGroupOf(facts: RequestFacts): string {
+  const sessionId = facts.user?.sessionId;
+  if (sessionId) return `sign-in:${deviceIdOf(sessionId)}`;
+  return `address:${facts.peerAddress ?? 'unknown'}`;
 }
