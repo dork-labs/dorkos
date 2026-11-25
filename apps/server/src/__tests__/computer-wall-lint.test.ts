@@ -140,8 +140,13 @@ describe('the computer wall', { timeout: LINT_TIMEOUT_MS }, () => {
         )
       )
     );
+    // Only the columns this file still holds: a seam step can move one away (C2 did).
+    const held = (['space', 'frontDoor', 'tables'] as const).filter(
+      (column) => (entry[column] ?? 0) > 0
+    );
+    expect(held.length).toBeGreaterThan(0);
     expect(await wall(path, 'export {};')).toEqual(
-      ['space', 'tables'].map(
+      held.map(
         (column) =>
           `This file's ${column} count is 0 and its baseline allows ${entry[column]}. Lock the drop in: pnpm check:computer-wall -- --update.`
       )
