@@ -22,18 +22,13 @@
  *   - tables: each name imported or re-exported from `@dorkos/db` that is on
  *     the side map's space table list.
  *
- * WHAT FAILS (exit 1):
- *   - grew:     a column holds more than the file's entry;
- *   - new:      a file with no entry holds any;
- *   - stale:    a column holds less than its entry, or the file has none left
- *               (or is gone) while the baseline still lists it. Run `--update`,
- *               which only lowers or removes entries, so the gain cannot be
- *               spent later;
- *   - raised:   with `--base <ref>`, an entry's column is higher than the
- *               base's, or the file is new to the baseline;
- *   - unplaced: a non-test file under services/ that no side map path places;
- *   - sides:    the side map places a path twice, names a path that does not
- *               exist, or puts a table on both lists.
+ * WHAT FAILS (exit 1): grew (a column past the file's entry); new (a file
+ * with no entry holds any); stale (a column below its entry, or a listed file
+ * with none left or gone: run `--update`, which only lowers or removes
+ * entries, so the gain cannot be spent later); raised (with `--base <ref>`, a
+ * column higher than the base's, or a file new to the baseline); unplaced (a
+ * non-test file under services/ no side map path places); sides (the side map
+ * places a path twice, names one that does not exist, or lists a table twice).
  *
  * Exit 2 means it could not run (an unreadable baseline, a bad `--base`): a
  * gate that cannot measure must not pass.
