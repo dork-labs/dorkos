@@ -150,6 +150,15 @@ const RUNNERS = new Set([
   'parallel',
 ]);
 
+/** A redirection operator written on its own; the next word is its target. */
+const BARE_REDIRECTION = /^(\d*[<>]+[-|&]?|&>>?)$/;
+
+/** A write redirection with its target attached (`>f`, `2>>f`, `&>f`). */
+const ATTACHED_WRITE = /^(?:\d*>>?\|?|&>>?)([^&].*)$/;
+
+/** A "script file" that is really stdin. */
+const STDIN_DEVICE = /^\/dev\/(stdin|fd\/\d+)$|^\/proc\/self\/fd\/\d+$/;
+
 /** Shell options that take the next word as their value (not a script file). */
 const SHELL_FLAGS_WITH_VALUE = new Set(['-o', '+o', '-O', '+O', '--rcfile', '--init-file']);
 
@@ -512,7 +521,7 @@ function cdTarget(from, target) {
  * @param {string} segment - One command segment.
  * @returns {boolean} True when the segment runs text through a shell.
  */
-function feedsAShell(segment) {
+function feedsAShell(segment, written = new Set()) {
   const tokens = tokenize(segment);
   return tokens.some((token, index) => {
     const name = basename(token);
@@ -522,25 +531,58 @@ function feedsAShell(segment) {
     const rest = tokens.slice(index + 1);
     // `bash -c …`, `bash -lc …`, `bash -s`: text from an argument or stdin.
     if (rest.some((arg) => /^-[a-zA-Z]*[cs][a-zA-Z]*$/.test(arg))) return true;
-    // `bash script.sh` runs a FILE: its words are not shell text, so quoted
-    // heredoc bodies elsewhere on the line stay masked. A shell with no file
-    // argument (piped into, or `bash <<EOF`) reads its commands from stdin.
-    // The first word that is not a flag, a flag's value or a redirection is the
-    // script file. `-o pipefail`, `-O extglob`, `+o`, `+O`, `--rcfile f` and
-    // `--init-file f` take a value, which is not a file.
-    let file = null;
+    // The first word that is not a flag, a flag's value (`-o pipefail`, `-O
+    // extglob`, `+o`, `+O`, `--rcfile f`, `--init-file f`) or a redirection and
+    // its target is the script file. It still counts as text when it is stdin
+    // (`/dev/stdin`, `/dev/fd/0`), a process substitution (`<(…)`), or a file
+    // this same line writes (`cat > m.sh <<'EOF' … bash m.sh`). No file at all:
+    // the shell reads stdin (piped into, `bash <<EOF`).
     for (let k = 0; k < rest.length; k++) {
       const arg = rest[k];
-      if (SHELL_FLAGS_WITH_VALUE.has(arg)) {
+      if (arg.startsWith('<(')) return true;
+      if (SHELL_FLAGS_WITH_VALUE.has(arg) || BARE_REDIRECTION.test(arg)) {
         k++;
         continue;
       }
-      if (/^[-+]/.test(arg) || arg.startsWith('<') || /^\d*[<>]/.test(arg)) continue;
-      file = arg;
-      break;
+      if (/^[-+]/.test(arg) || /^(\d*[<>]|&>)/.test(arg)) continue;
+      return STDIN_DEVICE.test(arg) || written.has(path.normalize(arg));
     }
-    return !file;
+    return true;
   });
+}
+
+/**
+ * The files a line writes through a redirection (`> f`, `>>f`, `&> f`) or
+ * `tee`, so `bash f` on the same line counts as running text from the line.
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {Set<string>} Normalized paths the line writes.
+ */
+function writtenFiles(segments) {
+  const written = new Set();
+  for (const segment of segments) {
+    const tokens = tokenize(segment);
+    const tee = tokens.findIndex((token) => basename(token) === 'tee');
+    tokens.forEach((token, index) => {
+      let target = /^(\d*>>?\|?|&>>?)$/.test(token)
+        ? tokens[index + 1]
+        : (ATTACHED_WRITE.exec(token)?.[1] ?? null);
+      if (tee !== -1 && index > tee && !token.startsWith('-')) target = token;
+      if (target) written.add(path.normalize(target));
+    });
+  }
+  return written;
+}
+
+/**
+ * Whether any segment of a line hands text to a shell (`feedsAShell`).
+ *
+ * @param {string[]} segments - The line's command segments.
+ * @returns {boolean} True when the line runs text through a shell.
+ */
+function lineFeedsAShell(segments) {
+  const written = writtenFiles(segments);
+  return segments.some((segment) => feedsAShell(segment, written));
 }
 
 /** Shell operators that end one command, longest first. */
@@ -589,7 +631,7 @@ function commandSegments(command, strict) {
     }
   }
   keep(start, masked.length);
-  return segments.some(feedsAShell) ? splitSegments(command) : segments;
+  return lineFeedsAShell(segments) ? splitSegments(command) : segments;
 }
 
 /**
@@ -640,7 +682,7 @@ function substitutionText(command, strict) {
   if (strict) return command;
   const masked = maskUnexpandedText(command);
   if (masked === null) return command;
-  return splitSegments(command).some(feedsAShell) ? command : masked;
+  return lineFeedsAShell(splitSegments(command)) ? command : masked;
 }
 
 /**

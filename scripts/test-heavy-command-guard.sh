@@ -256,6 +256,10 @@ check 'a heredoc piped into bash --rcfile f runs it' block "$(verdict $'cat <<\'
 check 'bash -o pipefail ./x.sh runs a file' allow "$(verdict 'bash -o pipefail ./x.sh')"
 check 'bash -o pipefail script beside a heredoc keeps the heredoc text' allow \
   "$(verdict $'cat > /tmp/b.md <<\'EOF\'\nrun turbo build later\nEOF\nbash -o pipefail scripts/open-pr.sh --body-file /tmp/b.md')"
+check 'a script written on the same line then run is text' block "$(verdict $'cat > /tmp/m.sh <<\'EOF\'\nturbo build\nEOF\nbash /tmp/m.sh')"
+check 'a script written through tee then run is text' block "$(verdict $'cat <<\'EOF\' | tee /tmp/m.sh\nturbo build\nEOF\nbash /tmp/m.sh')"
+check 'bash /dev/stdin runs stdin' block "$(verdict $'cat <<\'EOF\' | bash /dev/stdin\nturbo build\nEOF')"
+check 'bash << EOF with a space runs the heredoc' block "$(verdict $'bash << \'EOF\'\nturbo build\nEOF')"
 check 'sh -lc runs its argument' block "$(verdict "sh -lc 'npx tsc --noEmit'")"
 # shellcheck disable=SC2016 # the $( ) is text for the guard to read
 check 'a double-quoted substitution still runs' block "$(verdict 'echo "$(turbo build)"')"
