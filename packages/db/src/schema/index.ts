@@ -72,6 +72,7 @@ export * from './work-queue/work-queue.js';
 export * from './heartbeats/heartbeats.js';
 export * from './remote/remote-commands.js';
 export * from './runs/turn-runs.js';
+export * from './runs/turn-effects.js';
 
 export * from './session/room-seat-launch-requirements.js';
 export * from './session/room-seat-failures.js';

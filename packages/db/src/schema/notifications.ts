@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
@@ -158,6 +159,13 @@ export const notifications = sqliteTable(
     // index. Composite with `created_at` because the probe is always "same key,
     // recently" — never the key alone.
     index('idx_notifications_dedupe_key').on(table.dedupeKey, table.createdAt),
+    // The keys the outbox writes (`notify:<runId>:<ending>`, spec
+    // `turns-survive-restarts` §6.4) are unique for good, not "recently": a
+    // `notify_person` effect run twice says it once. Every other key keeps its
+    // window, so the index covers only this prefix.
+    uniqueIndex('idx_notifications_outbox_key')
+      .on(table.dedupeKey)
+      .where(sql`substr("dedupe_key", 1, 7) = 'notify:'`),
     // Prune-on-write deletes by age, also on every notify().
     index('idx_notifications_created_at').on(table.createdAt),
     // The lens filters (agentId, sessionId, kind, unread) deliberately have no
