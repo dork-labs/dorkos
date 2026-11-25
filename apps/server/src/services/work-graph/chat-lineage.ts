@@ -21,9 +21,12 @@
  * tree and the read tools (W4, W5) read through here and do not repeat it. A
  * chat is shown when it ran, when it is still launching, or when it never
  * started but has a run that says why; a chat with neither a binding nor any
- * run is left out, never shown as a bare id. A chat with a shown child is
- * shown too: it started that child, so it ran, whatever the join could find.
- * Every ancestor of a shown chat is shown for the same reason.
+ * run is left out, never shown as a bare id. Below the asked chat, a chat with
+ * a shown child is shown too, as a chat: it started that child, so it ran,
+ * whatever the join could find. Above it, every parent goes through the same
+ * join: one with neither a binding nor any run ends the walk up there and is
+ * not shown, and one the join can place is shown as a chat, since it started
+ * the chat below it.
  *
  * A chat on another computer (`specs/space-computer-contract`) is not
  * recorded in this computer's `session_metadata`, so the join asks the run
@@ -32,8 +35,10 @@
  *
  * **Bounded.** Each level of the tree is read in a few batched queries,
  * whatever its width. A walk visits a chat once, so a loop in the records
- * ends it; it goes at most {@link LINEAGE_MAX_DEPTH} levels and visits at
- * most {@link LINEAGE_MAX_CHATS} chats, and says when a bound stopped it.
+ * ends it. It goes at most {@link LINEAGE_MAX_DEPTH} levels and visits at
+ * most {@link LINEAGE_MAX_VISITED} chats, and an answer holds at most
+ * {@link LINEAGE_MAX_CHATS} shown chats. `truncated` says when a bound left
+ * chats out.
  *
  * @module services/work-graph/chat-lineage
  */
@@ -50,11 +55,21 @@ export type { LineageState, LineageVia } from './lineage-reads.js';
 export const LINEAGE_MAX_DEPTH = 64;
 
 /**
- * The most chats one lineage read visits below the asked chat. A tree wider
- * or deeper than this is cut off there, oldest first, and the answer says so
- * (`truncated`), so one call can never hold the event loop for long.
+ * The most shown chats one answer holds below the asked chat. Only shown
+ * chats count: one left out takes no place. A capped answer keeps the
+ * shallowest levels first and, within a level, the oldest starts first, so a
+ * kept chat's parent is always kept too; `truncated` is then true.
  */
 export const LINEAGE_MAX_CHATS = 500;
+
+/**
+ * The most chats one read walks below the asked chat, shown or not: the cost
+ * bound, so one call can never hold the event loop for long. Left-out chats
+ * are rare (a start cancelled before it ran), so a walk this long nearly
+ * always fills {@link LINEAGE_MAX_CHATS}; when it stops first, `truncated`
+ * is true.
+ */
+export const LINEAGE_MAX_VISITED = 4 * LINEAGE_MAX_CHATS;
 
 /** One chat above the asked one. */
 export interface LineageAncestor {
@@ -64,7 +79,7 @@ export interface LineageAncestor {
   depth: number;
   /** How the chat one step below came from this one. */
   via: LineageVia;
-  /** What a reader may show of it: always a chat, since it started one that is shown. */
+  /** What a reader may show of it: a chat, since it started the one below it. */
   state: LineageState;
 }
 
@@ -93,8 +108,10 @@ export interface ChatLineage {
   /** Depth first: each chat followed by its own subtree, siblings oldest first. */
   descendants: LineageDescendant[];
   /**
-   * True when {@link LINEAGE_MAX_CHATS} or {@link LINEAGE_MAX_DEPTH} stopped
-   * the walk down with chats left to visit; never for a depth the caller asked.
+   * True when a bound left chats out: more than {@link LINEAGE_MAX_CHATS}
+   * were shown, or {@link LINEAGE_MAX_DEPTH} or {@link LINEAGE_MAX_VISITED}
+   * stopped the walk down with chats left to visit. Never for a depth the
+   * caller asked.
    */
   truncated: boolean;
 }
@@ -142,8 +159,7 @@ export class ChatLineageReader {
    */
   read(chatId: string, opts: ChatLineageOptions = {}): ChatLineage | null {
     const id = this.reads.current([chatId]).get(chatId) ?? chatId;
-    const { visited, truncated } = this.walkDown(id, opts.depth ?? Infinity);
-    const states = this.reads.statesOf([id, ...visited.map((chat) => chat.chatId)]);
+    const { visited, states, stopped } = this.walkDown(id, opts.depth ?? Infinity);
     // Children before parents: a chat with a shown child is shown as a chat.
     const shown = new Map<string, LineageState>();
     const hasShownChild = new Set<string>();
@@ -153,22 +169,46 @@ export class ChatLineageReader {
       shown.set(chat.chatId, state);
       hasShownChild.add(chat.parentId);
     }
-    const state = hasShownChild.has(id) ? SHOWN_CHAT : states.get(id);
+    const state = hasShownChild.has(id) ? SHOWN_CHAT : this.reads.statesOf([id]).get(id);
     if (!state) return null;
+    // `visited` is shallowest first and oldest first within a level, so the
+    // first shown chats in it are the ones a capped answer keeps, and a kept
+    // chat's parent (shown, one level up) is always among them.
+    const kept = new Map(
+      visited
+        .filter((chat) => shown.has(chat.chatId))
+        .slice(0, LINEAGE_MAX_CHATS)
+        .map((chat) => [chat.chatId, shown.get(chat.chatId)!])
+    );
     return {
       chatId: id,
       state,
       ancestors: this.walkUp(id),
-      descendants: depthFirst(id, visited, shown),
-      truncated,
+      descendants: depthFirst(id, visited, kept),
+      truncated: stopped || kept.size < shown.size,
     };
   }
 
-  /** Every chat under `root`, level by level, each under the parent the records name. */
-  private walkDown(root: string, asked: number): { visited: Visited[]; truncated: boolean } {
+  /**
+   * Every chat under `root`, level by level, each under the parent the records
+   * name, with what the join says of it. It stops early, `stopped`, at a bound
+   * with chats left to visit: {@link LINEAGE_MAX_DEPTH},
+   * {@link LINEAGE_MAX_VISITED}, or once every level but the last one walked
+   * already holds {@link LINEAGE_MAX_CHATS} shown chats between them, so
+   * nothing deeper could take a place. That last level is still walked, so its
+   * shown chats can show the hidden ones above them.
+   */
+  private walkDown(
+    root: string,
+    asked: number
+  ): { visited: Visited[]; states: Map<string, LineageState | null>; stopped: boolean } {
     const visited: Visited[] = [];
+    const states = new Map<string, LineageState | null>();
     const seen = new Set([root]);
     let frontier = [root];
+    let shownAbove = 0;
+    let shownInLast = 0;
+    const done = (stopped: boolean) => ({ visited, states, stopped });
     for (let depth = 1; frontier.length > 0 && depth <= asked; depth += 1) {
       const inFrontier = new Set(frontier);
       const candidates = this.reads.candidatesUnder(frontier).filter((id) => !seen.has(id));
@@ -182,18 +222,29 @@ export class ChatLineageReader {
             : [];
         })
         .sort(byStart);
-      if (level.length > 0 && depth > LINEAGE_MAX_DEPTH) return { visited, truncated: true };
-      for (const chat of level) {
-        if (visited.length >= LINEAGE_MAX_CHATS) return { visited, truncated: true };
+      if (level.length === 0) break;
+      if (depth > LINEAGE_MAX_DEPTH || shownAbove >= LINEAGE_MAX_CHATS) return done(true);
+      const taken = level.slice(0, LINEAGE_MAX_VISITED - visited.length);
+      const joined = this.reads.statesOf(taken.map((chat) => chat.chatId));
+      for (const chat of taken) {
         seen.add(chat.chatId);
         visited.push(chat);
+        states.set(chat.chatId, joined.get(chat.chatId) ?? null);
       }
-      frontier = level.map((chat) => chat.chatId);
+      shownAbove += shownInLast;
+      shownInLast = taken.filter((chat) => joined.get(chat.chatId)).length;
+      if (taken.length < level.length) return done(true);
+      frontier = taken.map((chat) => chat.chatId);
     }
-    return { visited, truncated: false };
+    return done(false);
   }
 
-  /** The chats above `chatId`, nearest first. */
+  /**
+   * The chats above `chatId`, nearest first. Each parent goes through the
+   * join: one with neither a binding nor any run ends the walk and is not
+   * shown; one the join can place is shown as a chat, since it started (or
+   * was carried into) the chat below it.
+   */
   private walkUp(chatId: string): LineageAncestor[] {
     const found: LineageAncestor[] = [];
     const seen = new Set([chatId]);
@@ -201,8 +252,8 @@ export class ChatLineageReader {
     for (let depth = 1; depth <= LINEAGE_MAX_DEPTH; depth += 1) {
       const parent = this.reads.parentsOf([current]).get(current);
       if (parent === undefined || seen.has(parent.chatId)) break;
+      if (!this.reads.statesOf([parent.chatId]).get(parent.chatId)) break;
       seen.add(parent.chatId);
-      // It started (or was carried into) a shown chat, so it ran.
       found.push({ chatId: parent.chatId, depth, via: parent.via, state: SHOWN_CHAT });
       current = parent.chatId;
     }

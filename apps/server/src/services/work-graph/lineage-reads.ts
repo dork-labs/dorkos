@@ -22,7 +22,7 @@
  */
 import { and, inArray, isNotNull, sessionMetadata, type Db } from '@dorkos/db';
 import type { SessionStartedByStore } from '../session/origin/session-started-by-store.js';
-import { RUN_ENDS, type RunStore, type TurnRun } from '../runs/index.js';
+import type { RunStore, TurnRun } from '../runs/index.js';
 import { REKEY_MAX_DEPTH, type WorkLinkStore } from './work-link-store.js';
 
 /** Most ids one batched read asks SQLite for at once, well under its variable limit. */
@@ -202,26 +202,11 @@ export class LineageReads {
         .get(id)!
         .flatMap((alias) => runs.get(alias) ?? [])
         .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
-      if (own.some((run) => run.startedAt !== null) || of.get(id)!.some((a) => bound.has(a))) {
+      if (own.some(ranTurn) || of.get(id)!.some((a) => bound.has(a))) {
         states.set(id, { kind: 'chat' });
         continue;
       }
-      const last = own.at(-1);
-      if (last === undefined) states.set(id, null);
-      else if (RUN_ENDS.has(last.status)) {
-        states.set(id, {
-          kind: 'never-started',
-          runId: last.id,
-          reason: last.endingDetail.cancelledBecause ?? last.ending ?? last.status,
-        });
-      } else {
-        states.set(id, {
-          kind: 'launching',
-          runId: last.id,
-          status: last.status === 'queued' ? 'queued' : 'starting',
-          title: rows.get(id)?.title ?? null,
-        });
-      }
+      states.set(id, fromLastRun(own.at(-1), rows.get(id)?.title ?? null));
     }
     return states;
   }
@@ -243,5 +228,42 @@ export class LineageReads {
       for (const row of rows) found.add(row.sessionId);
     }
     return found;
+  }
+}
+
+/**
+ * Whether a run's turn started. `started` and `running` always carry a
+ * `startedAt`, and a pause that cuts a turn before the agent did anything
+ * clears it as the run goes back in line, so the time alone could answer;
+ * the two statuses are named too, so a run in either is never read as one
+ * still launching.
+ */
+function ranTurn(run: TurnRun): boolean {
+  return run.startedAt !== null || run.status === 'started' || run.status === 'running';
+}
+
+/**
+ * What a chat that has not run is shown as, from its last run. Every status
+ * left once {@link ranTurn} is false names itself: `queued` and `starting` are
+ * the two a run holds before its turn starts, and the rest are endings.
+ */
+function fromLastRun(last: TurnRun | undefined, title: string | null): LineageState | null {
+  if (last === undefined) return null;
+  switch (last.status) {
+    case 'queued':
+    case 'starting':
+      return { kind: 'launching', runId: last.id, status: last.status, title };
+    case 'started':
+    case 'running':
+      return { kind: 'chat' };
+    case 'ended':
+    case 'settled':
+    case 'cancelled':
+    case 'superseded':
+      return {
+        kind: 'never-started',
+        runId: last.id,
+        reason: last.endingDetail.cancelledBecause ?? last.ending ?? last.status,
+      };
   }
 }

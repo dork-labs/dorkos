@@ -6,7 +6,7 @@
  * Over the real SQLite stores (`./lineage-fixture.ts`).
  */
 import { describe, expect, it } from 'vitest';
-import { getWorkLinkStore, LINEAGE_MAX_CHATS } from '../index.js';
+import { getWorkLinkStore, LINEAGE_MAX_CHATS, LINEAGE_MAX_DEPTH } from '../index.js';
 import { ran, reader, start, stores, tick, tree, up, useLineageStores } from './lineage-fixture.js';
 
 useLineageStores();
@@ -73,7 +73,32 @@ describe('a middle chat the join cannot place', () => {
       '1:cancelled-mid<-root(started)',
       '2:leaf-b<-cancelled-mid(started)',
     ]);
-    expect(up(reader().read('leaf-a'))).toEqual(['1:unbound-mid(started)', '2:root(started)']);
+    // Promoted, each comes back with a state a reader can put into words.
+    for (const mid of ['unbound-mid', 'cancelled-mid'])
+      expect(lineage?.descendants.find((d) => d.chatId === mid)?.state).toEqual({ kind: 'chat' });
+    // Walking up, a parent goes through the join: one with a run is shown as a chat...
+    expect(up(reader().read('leaf-b'))).toEqual(['1:cancelled-mid(started)', '2:root(started)']);
+    // ...and one with neither a binding nor any run ends the walk, unshown.
+    expect(up(reader().read('leaf-a'))).toEqual([]);
+  });
+});
+
+describe('a parent a stray record names', () => {
+  it('is not shown, and ends the walk up, when it has neither a chat nor any run', () => {
+    start('root', 'child');
+    // A row naming a parent that never ran, as a stray write would leave.
+    stores.starts.insert({
+      sessionId: 'orphan',
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: 'ghost',
+      originExtensionId: null,
+      reason: null,
+      createdAt: tick(),
+    });
+    ran('root', 'child', 'orphan');
+    expect(up(reader().read('orphan'))).toEqual([]);
+    expect(up(reader().read('child'))).toEqual(['1:root(started)']);
   });
 });
 
@@ -94,26 +119,78 @@ describe('a chat two records name different parents for', () => {
   });
 });
 
+/** `count` chats `parent` started, one second apart, named `<prefix>-0000` on. */
+function startMany(parent: string, prefix: string, count: number): string[] {
+  const ids = Array.from({ length: count }, (_, i) => `${prefix}-${String(i).padStart(4, '0')}`);
+  for (const sessionId of ids) {
+    stores.starts.insert({
+      sessionId,
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: parent,
+      originExtensionId: null,
+      reason: null,
+      createdAt: tick(),
+    });
+  }
+  return ids;
+}
+
 describe('the cap on one read', () => {
-  it(`visits at most ${LINEAGE_MAX_CHATS} chats, oldest first, and says it stopped`, () => {
-    const ids = Array.from(
-      { length: LINEAGE_MAX_CHATS + 1 },
-      (_, i) => `wide-${String(i).padStart(4, '0')}`
-    );
-    for (const sessionId of ids) {
-      stores.starts.insert({
-        sessionId,
-        kind: 'chat',
-        extensionId: null,
-        startedBySessionId: 'root',
-        originExtensionId: null,
-        reason: null,
-        createdAt: tick(),
-      });
-    }
+  it(`holds at most ${LINEAGE_MAX_CHATS} shown chats, oldest first, and says it stopped`, () => {
+    const ids = startMany('root', 'wide', LINEAGE_MAX_CHATS + 1);
     ran('root', ...ids);
     const lineage = reader().read('root');
     expect(lineage?.truncated).toBe(true);
     expect(lineage?.descendants.map((d) => d.chatId)).toEqual(ids.slice(0, LINEAGE_MAX_CHATS));
+  });
+
+  it('gives no place to a chat that is left out', () => {
+    // Older starts that never ran, then a full answer's worth that did.
+    startMany('root', 'never', 300);
+    const shown = startMany('root', 'shown', LINEAGE_MAX_CHATS);
+    ran('root', ...shown);
+    const lineage = reader().read('root');
+    expect(lineage?.descendants.map((d) => d.chatId)).toEqual(shown);
+    expect(lineage?.truncated).toBe(false);
+  });
+
+  it('keeps the shallowest levels first when the cap falls inside a deeper one', () => {
+    const top = startMany('root', 'top', LINEAGE_MAX_CHATS - 1);
+    const deep = startMany(top[0]!, 'deep', 2);
+    ran('root', ...top, ...deep);
+    const lineage = reader().read('root');
+    expect(lineage?.truncated).toBe(true);
+    const kept = lineage?.descendants.map((d) => d.chatId) ?? [];
+    expect(kept).toHaveLength(LINEAGE_MAX_CHATS);
+    expect(new Set(kept)).toEqual(new Set([...top, deep[0]]));
+  });
+});
+
+describe('truncated', () => {
+  /** A chain of `length` chats, each started by the one before, that all ran. */
+  function chain(length: number): string[] {
+    const ids = ['chain-0000'];
+    while (ids.length < length) ids.push(...startMany(ids.at(-1)!, `chain-${ids.length}`, 1));
+    ran(...ids);
+    return ids;
+  }
+
+  it(`is true when the ${LINEAGE_MAX_DEPTH}-level stop leaves chats out`, () => {
+    const ids = chain(LINEAGE_MAX_DEPTH + 2);
+    const capped = reader().read(ids[0]!);
+    expect(capped?.descendants).toHaveLength(LINEAGE_MAX_DEPTH);
+    expect(capped?.truncated).toBe(true);
+    // One level down, the rest of the chain fits exactly.
+    const whole = reader().read(ids[1]!);
+    expect(whole?.descendants).toHaveLength(LINEAGE_MAX_DEPTH);
+    expect(whole?.truncated).toBe(false);
+  });
+
+  it('stays false when the walk stops at the depth the caller asked for', () => {
+    const ids = chain(4);
+    const lineage = reader().read(ids[0]!, { depth: 1 });
+    expect(lineage?.descendants.map((d) => d.chatId)).toEqual([ids[1]]);
+    expect(lineage?.truncated).toBe(false);
   });
 });

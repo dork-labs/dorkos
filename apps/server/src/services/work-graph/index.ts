@@ -69,6 +69,7 @@ export {
   ChatLineageReader,
   LINEAGE_MAX_CHATS,
   LINEAGE_MAX_DEPTH,
+  LINEAGE_MAX_VISITED,
   type ChatLineage,
   type ChatLineageDeps,
   type ChatLineageOptions,
