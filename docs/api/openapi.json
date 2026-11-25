@@ -366,7 +366,6 @@
           "length_required",
           "disk_full",
           "disk_space_unknown",
-          "auth_required_for_exposure",
           "tunnel_running",
           "tunnel_token_missing",
           "tunnel_port_mismatch",
