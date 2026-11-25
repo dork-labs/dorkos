@@ -12,6 +12,7 @@ status: specified
 **Carries out:** ADR [`261124-150516`](../../decisions/261124-150516-space-side-and-computer-side-one-contract-two-entries.md). **Builds on:** ADRs `261122-173853` (one space model), `261124-150517` (turns survive restarts), `261125-113808` (each agent has one home), ADR-0089 (each runtime SDK stays in its folder), ADR-0310 (sessions are runtime-owned).
 **Ideation:** [01-ideation.md](01-ideation.md). **Step 5's plan:** [`turns-survive-restarts/02-specification.md`](../turns-survive-restarts/02-specification.md); its steps are named T1 to T20 here.
 **Code read at:** the counts in §1 were measured at `ca404cfc4c`. Main is now `ba50ef6a4f`, and pull request #4401 (step 5's T5, the turn port's door) merged in between. Every `path:line` below was checked at `ba50ef6a4f`; where #4401 changed something, §1.6 says what. The first build step (C1) measures the count again at its own head and records it.
+**To be amended by:** [`space-computer-contract/02-specification.md`](../space-computer-contract/02-specification.md) §17.2, as the contract over the wire is built: who makes a run's local tokens on a computer reached over the wire (§5.3), the table lists (§6), when the browser tables' tie is cut (§6) and the rules a call from an agent computer meets (§7.2). Until a step lands, this spec stands as written.
 
 "§n" is a section of this spec. Paths are under `apps/server/src/` unless they start with `apps/`, `packages/`, `scripts/`, `specs/`, `.github/` or `tools/`.
 

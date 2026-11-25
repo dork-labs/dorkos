@@ -7,6 +7,8 @@
 
 > **Note 2026-11-22, ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** Section 1's split is now the general rule: a space holds its members' data (identity, rules, memory, schedules, conversations, connections, settings) and the computer that runs turns holds only execution state (workspaces, runtime transcripts and sign-ins, processes). A hub is a one-tenant space server. "A hub runs no agents" is a hosting policy read from the role setting, not an architectural wall. A Mac agent's identity stays on the Mac at launch; after launch the private space becomes a tenant on the space store, agents last.
 
+> **To be changed by [`space-computer-contract/02-specification.md`](../space-computer-contract/02-specification.md) §17.4 (2026-11-25)**, as the contract over the wire is built: an agent's placement becomes a record on its home, not `worksOn` in the agent's own folder; section 2's operation table and section 3's hub-setup list are replaced by that spec's sections 5 and 5.3; an agent computer keeps its connection open.
+
 "Hub" is the code's word for a person's own DorkOS in the cloud. No app copy says it: people see **Private**, **Cloud** and their computer's name.
 
 ## 0. The short version

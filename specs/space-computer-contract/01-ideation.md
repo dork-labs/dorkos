@@ -2,7 +2,7 @@
 slug: space-computer-contract
 number: 261124-194020
 created: 2026-11-24
-status: ideation
+status: specified
 ---
 
 # The space-computer contract
@@ -10,7 +10,7 @@ status: ideation
 **Slug:** space-computer-contract
 **Linear:** epic DOR-5152; this part DOR-5165 (design note) and DOR-5166 (build)
 **Decision:** ADR [`261124-150516`](../../decisions/261124-150516-space-side-and-computer-side-one-contract-two-entries.md)
-**Status:** ideation. The first part, the permission gate, has its Security answers (an independent security read, 2026-11-24) and the operator's rulings on its four questions (2026-11-25), so it can be specified.
+**Status:** specified. The permission gate is designed in [design-permission-gate.md](design-permission-gate.md); the contract over the wire is specified in [02-specification.md](02-specification.md).
 
 ## What the contract is
 
@@ -43,14 +43,13 @@ The operation set and the tool bridge come from `specs/everything-is-a-space/des
 - The turn's level and marks come from the space side's record of the turn; the computer may only make a turn stricter.
 - On a Mac the same payloads pass by function call.
 
-## What the later parts will be
+## What the later parts became
 
-1. **The wire operations** (DOR-5163): `agents.sync`, `turn.start`, `tools.*` and `computer.status` served at both ends, with conformance tests.
-2. **The hello** (DOR-5164): the version and the feature list, including the signed rules copy as a feature.
-3. **The forwarding runtime**: the space side drives a remote computer as it drives a local runtime, behind the turn port (DOR-5157) and the run record (ADR `261124-150517`).
-4. **Adding a machine**: the computer record, linking over SSH or the tunnel, and the computer entry with its lint wall (DOR-5158).
-5. **`computer-local` on the contract** (DOR-4902), so the sealed computer on a Mac and a cloud computer are one thing.
+All are specified in [02-specification.md](02-specification.md):
 
-6. **Where a cloud agent's home is when its person's home is a Mac: settled.** A person's own computer is the home of their private space when they have one (ADR `261124-194115`). An agent that runs on a cloud agent computer has its home in the person's DorkOS in the cloud, so it keeps its rules, tools, chats and schedules while the Mac is off, and a person may choose the cloud as an agent's home for good (ADR `261125-113808`). Each agent has one home and does not move back and forth. The forwarding runtime (part 3) is specified on that footing. That record leaves three things to this spec: what an agent in the cloud may do on the person's Mac, which sign-ins and connections it can use, and how the app on a Mac reaches the agents in the cloud.
-
-Each part gets its own design note or specification here when it is next.
+1. **The wire operations** (DOR-5163): §5, built in W7 to W17.
+2. **The hello** (DOR-5164): §4.1 and the minimum feature set of §5.1, built in W1.
+3. **The forwarding runtimes** and the remote computer face: §6, built in W8 and W15 to W17.
+4. **Adding a machine** and the computer record: §11 and §8 (W23, W24, W5); one runner at a time: §9 (W18).
+5. **`computer-local` on the contract** (DOR-5167): §10 (W22).
+6. **A cloud agent's home: settled** by ADR `261125-113808`. What it left open (what an agent in the cloud may do on the person's Mac, its connections there, how the app on a Mac reaches it) is not on this contract: §19, question 4.

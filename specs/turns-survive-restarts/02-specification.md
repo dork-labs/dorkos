@@ -12,6 +12,7 @@ status: specified
 **Carries out:** ADR [`261124-150517`](../../decisions/261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md). **Builds on:** ADRs `261124-150516`, `261124-152801`, `261124-174221` (proposed), ADR-0310, ADR-0255, `0264`, `260811-184735`, `260812-134510`, `260818-234541`, `260823-021312`, `260915-202228`, `260710-024641`, `261009-171114`, `261116-065134` (proposed), `261119-055020` (proposed), `261001-185204`.
 **Ideation:** [01-ideation.md](01-ideation.md).
 **Code read at:** `bc2f55e4df` (`origin/main` of the worktree). Every number below was counted at that commit.
+**To be amended by:** [`space-computer-contract/02-specification.md`](../space-computer-contract/02-specification.md) §17.1, step by step as the contract over the wire is built: the space face's `stop` and `answer`, an `isLive` with three answers, runs owned by another computer, the `lost_contact` ending, the waits for a computer that is away, and the queue for a chat on another computer. Until a step lands, this spec stands as written.
 
 "§n" is a section of this spec.
 
