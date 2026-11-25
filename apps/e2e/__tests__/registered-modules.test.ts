@@ -31,7 +31,7 @@ const PROOF_SCRIPT_NAME = 'scripts/assert-browser-tests-executed.sh';
  * it), and never an error once the list has it, so the fix can merge before or
  * after this file. Delete the entry once that pull request is on main.
  */
-const PENDING_IN_FLIGHT = new Map<string, string>([['chat/ref-link-chip.ts', '#4444']]);
+const PENDING_IN_FLIGHT = new Map<string, string>();
 
 /** The exported name a registered module's entry point carries. */
 const REGISTER_NAME = /^register\w*Tests?$/;
