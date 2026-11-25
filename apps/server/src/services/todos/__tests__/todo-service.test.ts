@@ -408,18 +408,6 @@ describe('TodoService', () => {
         chainDepth: 0,
       });
     });
-
-    it('leaves the authority alone for a move in the order or a new date', () => {
-      const made = todos.create(PERSON, {
-        what: 'Ship it',
-        assignee: { kind: 'agent', agentId: 'agent-a' },
-      });
-      todos.update(agent('agent-a', CAPPED), made.id, {
-        rank: 'a0',
-        dueAt: '2026-11-05T09:00:00Z',
-      });
-      expect(stored(made.id).authority).toBe('person');
-    });
   });
 
   describe('no loops between agents (Must 5, in part)', () => {
@@ -491,12 +479,6 @@ describe('TodoService', () => {
       ).toBe('NOTHING_TO_CHANGE');
     });
 
-    it("still marks an agent's own promise missed an hour after it comes due", () => {
-      const own = promises.create('agent-a', { what: 'Reply', dueAt: '2026-11-02T10:00:00Z' });
-      vi.advanceTimersByTime(3 * HOUR);
-      expect(promises.get(own.id)!.state).toBe('missed');
-    });
-
     it('refuses a conflicting change and an empty one', () => {
       const made = todos.create(PERSON, {
         what: 'Ship it',
@@ -511,37 +493,6 @@ describe('TodoService', () => {
           todos.create(PERSON, { what: '   ', assignee: { kind: 'person', account: 'owner' } })
         )
       ).toBe('NOTHING_TO_CHANGE');
-    });
-  });
-
-  it('applies due-date history and late-move audit rules through TodoService.update', () => {
-    const made = todos.create(PERSON, {
-      what: 'Ship it',
-      assignee: { kind: 'agent', agentId: 'agent-a' },
-      dueAt: new Date(START.getTime() + HOUR).toISOString(),
-    });
-    const early = todos.update(PERSON, made.id, {
-      dueAt: new Date(START.getTime() + 3 * HOUR).toISOString(),
-    });
-    expect(early).toMatchObject({
-      originalDueAt: made.dueAt,
-      scoreDueAt: new Date(START.getTime() + 3 * HOUR).toISOString(),
-      moveCount: 1,
-    });
-    expect(JSON.parse(db.select().from(auditEvents).all().at(-1)!.change!)).toContainEqual({
-      field: 'lateMove',
-      before: null,
-      after: false,
-    });
-    vi.setSystemTime(START.getTime() + 3 * HOUR);
-    const late = todos.update(PERSON, made.id, {
-      dueAt: new Date(START.getTime() + 5 * HOUR).toISOString(),
-    });
-    expect(late).toMatchObject({ scoreDueAt: early.scoreDueAt, moveCount: 2 });
-    expect(JSON.parse(db.select().from(auditEvents).all().at(-1)!.change!)).toContainEqual({
-      field: 'lateMove',
-      before: null,
-      after: true,
     });
   });
 

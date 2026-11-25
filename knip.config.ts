@@ -1,4 +1,47 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { KnipConfig } from 'knip';
+
+const ROOT = fileURLToPath(new URL('.', import.meta.url));
+
+/** Tracked files that start processes: workflows, git hooks, package scripts, shell scripts, images. */
+const RUNNERS = [
+  '.github/workflows',
+  'lefthook.yml',
+  ':(glob)**/package.json',
+  ':(glob)*.sh',
+  ':(glob)scripts/**/*.sh',
+  ':(glob).github/**/*.sh',
+  ':(glob)**/Dockerfile*',
+];
+
+/** A root `scripts/` or `.github/scripts/` source path, not the tail of a longer path. */
+const SCRIPT_PATH =
+  /(?<![\w.-])(?:\.github\/)?scripts\/[\w./-]+?\.(?:ts|mts|cts|mjs|cjs|js)(?![\w.-])/g;
+
+/**
+ * Root scripts a workflow, hook, package script, shell script or image names by path.
+ * `--production` drops plugin-found entries such as workflow steps and package scripts,
+ * so these become production entries (`!`). Only a named file is an entry: its helpers
+ * count through their importers, and a script no runner names is still reported unused.
+ */
+function scriptsRunDirectly(): string[] {
+  const runners = execFileSync('git', ['ls-files', '-z', '--', ...RUNNERS], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+    .split('\0')
+    .filter((file) => file && !/(^|\/)(node_modules|__tests__|fixtures)\//.test(file));
+  const named = new Set<string>();
+  for (const runner of runners) {
+    for (const [path] of readFileSync(join(ROOT, runner), 'utf8').matchAll(SCRIPT_PATH)) {
+      if (!path.includes('/__tests__/') && existsSync(join(ROOT, path))) named.add(path);
+    }
+  }
+  return [...named].sort().map((path) => `${path}!`);
+}
 
 /**
  * Knip configuration for the DorkOS Turborepo.
@@ -39,21 +82,27 @@ const config: KnipConfig = {
 
   workspaces: {
     '.': {
+      // Entries need `!`: the ratchet runs `knip --production`, which ignores the others.
       entry: [
-        // Invoked by the required typecheck workflow, outside the app import graph.
-        'scripts/check-knip.ts!',
+        // Workflows, lefthook, package scripts and shell scripts run these by path.
+        ...scriptsRunDirectly(),
+        // Run through a variable the scan cannot read: `$SCRIPTS/<name>` in
+        // mac-browser-reading.yml, and `$here/run.ts` in scripts/harness-smoke/run.sh.
+        '.github/scripts/mac-browser-reading/{hosts,patch-bundle,reading,scenario}.mjs!',
+        'scripts/harness-smoke/run.ts!',
         // Run by hand to refresh test fixtures from the Composio catalog
         // (contributing/connections-security-verification.md).
-        'scripts/composio-repository-write-arguments.mjs',
-        'scripts/composio-money-word-candidates.mjs',
-        // scripts/heavy-run-lock.sh runs load-gate/turn.ts through tsx (DOR-4209).
-        'scripts/load-gate/turn.ts',
+        'scripts/composio-repository-write-arguments.mjs!',
+        'scripts/composio-money-word-candidates.mjs!',
         // The daily release builds its release commit with this (DOR-5123); ci-steward's
         // daily-release.yml will run it, and until then it is run by hand.
-        'scripts/release/release-commit.ts',
+        'scripts/release/release-commit.ts!',
         // The back-merge stamps the shipped agent release notes with this (DOR-5123).
-        'scripts/release/stamp-release-notes.ts',
+        'scripts/release/stamp-release-notes.ts!',
       ],
+      // Production mode skips devDependencies, but these CI scripts run with them installed:
+      // .github/scripts/coverage-unique/run-chunk.mjs starts the root devDependency vitest.
+      ignoreBinaries: ['vitest'],
     },
     'apps/client': {
       // shadcn/ui add-on-demand registry (main.tsx + test-setup are auto-detected).

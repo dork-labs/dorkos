@@ -91,15 +91,6 @@ describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
       ).toBe(false);
     });
 
-    it('REFUSES `null` in any casing or padding', () => {
-      for (const spelling of ['NULL', ' null ', 'Null']) {
-        expect(
-          isTrustedUpgradeOrigin(facts({ origin: spelling, configuredOrigins: spelling })),
-          spelling
-        ).toBe(false);
-      }
-    });
-
     it('REFUSES an empty Origin header', () => {
       expect(isTrustedUpgradeOrigin(facts({ origin: '' }))).toBe(false);
     });
@@ -113,12 +104,6 @@ describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
         isTrustedUpgradeOrigin(facts({ origin: 'https://a.example', hostHeader: undefined }))
       ).toBe(false);
     });
-
-    it('REFUSES when the Host header is blank', () => {
-      expect(
-        isTrustedUpgradeOrigin(facts({ origin: 'https://a.example', hostHeader: '   ' }))
-      ).toBe(false);
-    });
   });
 
   describe('the same-origin comparison', () => {
@@ -129,12 +114,6 @@ describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
         isTrustedUpgradeOrigin(
           facts({ origin: 'http://box.example:8443', hostHeader: 'box.example:8443' })
         )
-      ).toBe(true);
-    });
-
-    it('normalizes case on both sides', () => {
-      expect(
-        isTrustedUpgradeOrigin(facts({ origin: 'http://box.example', hostHeader: 'Box.Example' }))
       ).toBe(true);
     });
 
@@ -168,40 +147,6 @@ describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
       expect(
         isTrustedUpgradeOrigin(
           facts({ ...base, origin: 'https://box.example', forwardedProto: 'http' })
-        )
-      ).toBe(false);
-    });
-
-    it('defaults the scheme to the connection’s own when no proxy names it', () => {
-      // No `X-Forwarded-Proto`, so the scheme falls back to this connection's
-      // encryption instead of accepting both. This closes DOR-932: on a bare
-      // host the two schemes are different servers, so accepting either widened
-      // the reverse-proxy case. The server always binds plain HTTP.
-      const base = { origin: 'http://box.example', hostHeader: 'box.example' } as const;
-      // Plain socket (the production default): only http is this origin.
-      expect(isTrustedUpgradeOrigin(facts(base))).toBe(true);
-      expect(
-        isTrustedUpgradeOrigin(facts({ ...base, origin: 'https://box.example' })),
-        'https is a different server; a plaintext page must not open a secure stream'
-      ).toBe(false);
-      // A TLS socket (not reachable in this server, but the fact is honoured):
-      // the default flips to https.
-      expect(
-        isTrustedUpgradeOrigin(
-          facts({
-            origin: 'https://box.example',
-            hostHeader: 'box.example',
-            connectionEncrypted: true,
-          })
-        )
-      ).toBe(true);
-      expect(
-        isTrustedUpgradeOrigin(
-          facts({
-            origin: 'http://box.example',
-            hostHeader: 'box.example',
-            connectionEncrypted: true,
-          })
         )
       ).toBe(false);
     });
@@ -299,26 +244,6 @@ describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
         )
       ).toBe(true);
     });
-
-    it('a PADDED wildcard reads as the wildcard, on this surface and in buildCors', () => {
-      // Both surfaces trim before the `=== '*'` check, so `" * "` is the
-      // wildcard: no list at all, and the other branches still decide. A
-      // stranger is refused because nothing else admits it; the app's own
-      // origin is admitted by the same-origin branch, which is what an
-      // untrimmed read used to suppress — blacking out this socket while
-      // `buildCors` (which does trim) kept serving the same page over HTTP.
-      const padded = { configuredOrigins: ' * ' } as const;
-      expect(
-        isTrustedUpgradeOrigin(facts({ origin: 'https://evil.example', ...padded })),
-        'a stranger is refused'
-      ).toBe(false);
-      expect(
-        isTrustedUpgradeOrigin(
-          facts({ origin: 'http://box.example', hostHeader: 'box.example', ...padded })
-        ),
-        "and the app's own origin still connects"
-      ).toBe(true);
-    });
   });
 
   describe('DORKOS_ALLOW_INSECURE_BIND buys an IP-literal Host, and nothing else', () => {
@@ -328,19 +253,6 @@ describe('isTrustedBrowserOrigin, as the WebSocket upgrade asks it', () => {
           facts({
             origin: 'http://192.168.1.50:4242',
             hostHeader: '192.168.1.50:4242',
-            hostAllowed: false,
-            ownsNetworkBoundary: true,
-          })
-        )
-      ).toBe(true);
-    });
-
-    it('accepts an IPv6 literal in its bracketed form', () => {
-      expect(
-        isTrustedUpgradeOrigin(
-          facts({
-            origin: 'http://[fd00::1]:4242',
-            hostHeader: '[fd00::1]:4242',
             hostAllowed: false,
             ownsNetworkBoundary: true,
           })

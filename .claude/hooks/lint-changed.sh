@@ -50,8 +50,7 @@ if [ -z "$FILE_REAL" ] || [[ "$FILE_REAL" != "$REPO_REAL/"* ]]; then
 fi
 RELATIVE="${FILE_REAL#$REPO_REAL/}"
 
-# Detect the file's workspace (same detection as typecheck-changed.sh,
-# generalized: every apps/* and packages/* workspace ships its own
+# Detect the file's workspace (generalized: every apps/* and packages/* workspace ships its own
 # eslint.config.js). Files outside workspaces lint against the root config.
 LINT_DIR="$REPO_ROOT"
 if [[ "$RELATIVE" =~ ^(apps|packages)/([^/]+)/ ]]; then

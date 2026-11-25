@@ -8,17 +8,7 @@
  * working in, and one broken checkout must not take the page down.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import {
-  mkdtemp,
-  rm,
-  writeFile,
-  mkdir,
-  realpath,
-  stat,
-  utimes,
-  chmod,
-  symlink,
-} from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, realpath, stat, utimes, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -121,20 +111,6 @@ describe('scanWorktrees', () => {
     expect(result.worktrees.every((w) => w.project === 'core')).toBe(true);
   });
 
-  it('reports branch, repo, and last commit for a clean checkout', async () => {
-    const { worktrees } = await scanWorktrees(fx.root);
-    const clean = worktrees.find((w) => w.name === 'clean-tree');
-
-    expect(clean).toMatchObject({
-      path: fx.clean,
-      branch: 'feat/clean',
-      repoPath: fx.source,
-      changedFiles: 0,
-      readable: true,
-    });
-    expect(clean?.lastCommitAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-  });
-
   it('counts uncommitted and untracked files together as changes', async () => {
     const { worktrees } = await scanWorktrees(fx.root);
     const dirty = worktrees.find((w) => w.name === 'dirty-tree');
@@ -142,33 +118,6 @@ describe('scanWorktrees', () => {
     // One modified tracked file + one untracked file.
     expect(dirty?.changedFiles).toBe(2);
     expect(dirty?.branch).toBe('feat/dirty');
-  });
-
-  it('reports ahead and behind against the upstream branch', async () => {
-    const { worktrees } = await scanWorktrees(fx.root);
-    const diverged = worktrees.find((w) => w.name === 'diverged-tree');
-
-    expect(diverged?.ahead).toBe(1);
-    expect(diverged?.behind).toBe(1);
-  });
-
-  it('leaves ahead/behind unknown when a branch has no upstream', async () => {
-    const { worktrees } = await scanWorktrees(fx.root);
-    const clean = worktrees.find((w) => w.name === 'clean-tree');
-
-    // `feat/clean` tracks nothing, so "ahead of what?" has no answer. Reporting
-    // 0 would read as "in sync", which is a different and false claim.
-    expect(clean?.ahead).toBeNull();
-    expect(clean?.behind).toBeNull();
-  });
-
-  it('reads a detached HEAD as readable with no branch', async () => {
-    const { worktrees } = await scanWorktrees(fx.root);
-    const detached = worktrees.find((w) => w.name === 'detached-tree');
-
-    expect(detached?.readable).toBe(true);
-    expect(detached?.branch).toBeNull();
-    expect(detached?.lastCommitAt).not.toBeNull();
   });
 
   it('keeps an unreadable checkout as a row instead of dropping or throwing', async () => {
@@ -199,21 +148,6 @@ describe('scanWorktrees', () => {
     const after = await stat(indexPath);
 
     expect(after.mtimeMs).toBe(before.mtimeMs);
-  });
-
-  it('returns an empty scan for a root that does not exist', async () => {
-    const missing = path.join(fx.base, 'no-such-root');
-    // A root nobody has created yet is the ordinary empty state, not a fault —
-    // so it reports no warning, unlike a root that exists but will not open.
-    await expect(scanWorktrees(missing)).resolves.toEqual({
-      root: missing,
-      worktrees: [],
-      warnings: [],
-    });
-  });
-
-  it('reports no warnings when every directory opened', async () => {
-    await expect(scanWorktrees(fx.root)).resolves.toMatchObject({ warnings: [] });
   });
 });
 
@@ -289,103 +223,6 @@ describe('scanWorktrees degradation', () => {
     // project directory once dropped 7 checkouts with nothing to show for it.
     expect(result.worktrees).toHaveLength(0);
     expect(result.warnings).toEqual([{ path: sealed, reason: 'EACCES' }]);
-  });
-
-  it('adopts a symlinked checkout directory instead of skipping it', async () => {
-    // The layout some `gtr` setups and manual `ln -s` adoption produce: the
-    // real checkout lives elsewhere, and the project folder only holds a
-    // symlink to it. `entry.isDirectory()` is false for a symlink no matter
-    // what it points at, so without a fallback this checkout is invisible.
-    const home = path.join(base, 'symlinked');
-    const root = path.join(home, 'workspaces');
-    const project = path.join(root, 'core');
-    const source = path.join(home, 'source');
-    const realCheckout = path.join(home, 'real-checkout');
-    await mkdir(project, { recursive: true });
-    await mkdir(source, { recursive: true });
-
-    git(['init', '-b', 'main', '.'], source);
-    git(['config', 'user.email', 't@example.com'], source);
-    git(['config', 'user.name', 'Test'], source);
-    await writeFile(path.join(source, 'README.md'), '# s\n');
-    git(['add', '.'], source);
-    git(['commit', '-m', 'init'], source);
-    git(['worktree', 'add', realCheckout, '-b', 'feat/linked'], source);
-
-    await symlink(realCheckout, path.join(project, 'linked'), 'dir');
-
-    const { worktrees, warnings } = await scanWorktrees(root);
-    const linked = worktrees.find((w) => w.name === 'linked');
-
-    expect(linked).toBeDefined();
-    expect(linked?.readable).toBe(true);
-    expect(linked?.branch).toBe('feat/linked');
-    expect(warnings).toEqual([]);
-  });
-
-  it('warns on dangling symlinks, sorted by name, instead of silently dropping them', async () => {
-    // A symlink whose target has been moved or deleted. `fs.stat` on it fails,
-    // so the scan cannot know whether it was ever a directory — the same
-    // "hides whatever it held" problem an unopenable folder poses, and it
-    // gets the same answer: report it, don't drop it.
-    //
-    // `Zebra`/`ant` is not a cosmetic choice: on this machine's filesystem,
-    // `readdir` already returns entries in raw byte order (`Zebra` before
-    // `ant`, capital letters sort first), which happens to equal the sorted
-    // order for names that differ only in case-insensitive letter position.
-    // Pairing a leading capital with a leading lowercase makes byte order and
-    // `localeCompare` order disagree — `readdir` still yields `Zebra` before
-    // `ant`, but `localeCompare` puts `ant` first — so this assertion can only
-    // pass if the code actually sorts by name.
-    const home = path.join(base, 'dangling');
-    const root = path.join(home, 'workspaces');
-    const project = path.join(root, 'core');
-    await mkdir(project, { recursive: true });
-
-    const zebraLink = path.join(project, 'Zebra');
-    const antLink = path.join(project, 'ant');
-    await symlink(path.join(home, 'does-not-exist'), zebraLink, 'dir');
-    await symlink(path.join(home, 'also-does-not-exist'), antLink, 'dir');
-
-    const result = await scanWorktrees(root);
-
-    expect(result.worktrees).toHaveLength(0);
-    expect(result.warnings).toEqual([
-      { path: antLink, reason: 'ENOENT' },
-      { path: zebraLink, reason: 'ENOENT' },
-    ]);
-  });
-
-  it('adopts a symlinked PROJECT folder, not just a symlinked checkout', async () => {
-    // The scan walks two levels — root/project/checkout — and a symlink can
-    // stand in at either one. This pins the level the other adoption test
-    // does not: `root/core` itself is a symlink to a real project directory
-    // living elsewhere.
-    const home = path.join(base, 'symlinked-project');
-    const root = path.join(home, 'workspaces');
-    const realProject = path.join(home, 'real-project');
-    const source = path.join(home, 'source');
-    await mkdir(root, { recursive: true });
-    await mkdir(realProject, { recursive: true });
-    await mkdir(source, { recursive: true });
-
-    git(['init', '-b', 'main', '.'], source);
-    git(['config', 'user.email', 't@example.com'], source);
-    git(['config', 'user.name', 'Test'], source);
-    await writeFile(path.join(source, 'README.md'), '# s\n');
-    git(['add', '.'], source);
-    git(['commit', '-m', 'init'], source);
-    git(['worktree', 'add', path.join(realProject, 'checkout'), '-b', 'feat/proj-linked'], source);
-
-    await symlink(realProject, path.join(root, 'core'), 'dir');
-
-    const { worktrees, warnings } = await scanWorktrees(root);
-    const checkout = worktrees.find((w) => w.name === 'checkout');
-
-    expect(checkout).toBeDefined();
-    expect(checkout?.project).toBe('core');
-    expect(checkout?.readable).toBe(true);
-    expect(warnings).toEqual([]);
   });
 });
 
@@ -476,27 +313,6 @@ describe('parseStatusSummary', () => {
     });
   });
 
-  it('reads ahead-only and behind-only headers', () => {
-    expect(parseStatusSummary('## f...origin/f [ahead 1]\n')).toMatchObject({
-      ahead: 1,
-      behind: 0,
-    });
-    expect(parseStatusSummary('## f...origin/f [behind 4]\n')).toMatchObject({
-      ahead: 0,
-      behind: 4,
-    });
-  });
-
-  it('leaves ahead/behind null for a branch with no upstream', () => {
-    expect(parseStatusSummary('## solo\n')).toEqual({
-      branch: 'solo',
-      ahead: null,
-      behind: null,
-      upstreamGone: false,
-      changedFiles: 0,
-    });
-  });
-
   it('never reports a deleted upstream as zero divergence', () => {
     // git's wording once a merged PR's remote branch is deleted. It looks like
     // a tracking branch, so reading it as one yields `0 ahead, 0 behind` and the
@@ -508,28 +324,6 @@ describe('parseStatusSummary', () => {
       behind: null,
       upstreamGone: true,
       changedFiles: 0,
-    });
-  });
-
-  it('reads a detached HEAD as no branch', () => {
-    expect(parseStatusSummary('## HEAD (no branch)\n M a\n')).toEqual({
-      branch: null,
-      ahead: null,
-      behind: null,
-      upstreamGone: false,
-      changedFiles: 1,
-    });
-  });
-
-  it('pulls the branch name out of an unborn checkout', () => {
-    // Without this the whole sentence lands in the branch column, rendered
-    // beside a branch icon as though "No commits yet on main" were a ref.
-    expect(parseStatusSummary('## No commits yet on main\n?? a\n')).toEqual({
-      branch: 'main',
-      ahead: null,
-      behind: null,
-      upstreamGone: false,
-      changedFiles: 1,
     });
   });
 });

@@ -35,6 +35,8 @@ export interface StartWorkInput {
  *   counted: `session_start` over the external `/mcp` server with an agent
  *   token (it names no calling chat), agent-to-agent relay messages,
  *   schedules and rooms.
+ * - `agent_paused`: the agent that would do the work is paused. Nothing is
+ *   kept for later: ask the person to resume it, then start again.
  *
  * `message` is plain words, safe to show as it is. Nothing was started. Match
  * on `err.code` rather than `instanceof`: an extension bundle carries its own
@@ -42,7 +44,7 @@ export interface StartWorkInput {
  */
 export class StartWorkError extends Error {
   /** Which rule refused the start. */
-  readonly code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit';
+  readonly code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit' | 'agent_paused';
 
   /**
    * Refuse a start.
@@ -50,7 +52,10 @@ export class StartWorkError extends Error {
    * @param code - Which rule refused it.
    * @param message - What to tell the person, in plain words.
    */
-  constructor(code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit', message: string) {
+  constructor(
+    code: 'not_a_project' | 'account_not_allowed_here' | 'start_limit' | 'agent_paused',
+    message: string
+  ) {
     super(message);
     this.name = 'StartWorkError';
     this.code = code;

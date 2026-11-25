@@ -49,7 +49,7 @@
  * carrying a DorkOS-style bearer and one with no credentials at all. The verbatim
  * `query.mcpServerStatus()` array is committed at
  * `__tests__/fixtures/mcp-server-status-401.observed.json` and asserted against
- * in `mcp-revocation.test.ts`, so the anchor is reproducible from the repo
+ * in `mcp-revocation.snapshots.test.ts`, so the anchor is reproducible from the repo
  * without spending a turn. The harness that produced it: an `http.createServer`
  * answering every request `401` with a `WWW-Authenticate: Bearer` header, both
  * servers declared under `query({ options: { mcpServers } })`, and the resolved
@@ -122,7 +122,7 @@
  * which closes the "still unverified" note the 0.3.224 pass had to leave. Its
  * output is committed beside the first one, at
  * `__tests__/fixtures/mcp-server-status-401-0.3.268.observed.json`, and replayed
- * in `mcp-revocation.test.ts`. Points 1 and 2 now hold on live evidence at this
+ * in `mcp-revocation.snapshots.test.ts`. Points 1 and 2 now hold on live evidence at this
  * version, and point 3's first half finally has some:
  *
  * - the bearer-carrying server reports `failed` with a message byte-identical to

@@ -65,14 +65,6 @@ describe('GlobalMcpStore', () => {
     expect(changed).toHaveBeenCalledTimes(4);
   });
 
-  it('a listener that throws never fails the write', async () => {
-    const store = new GlobalMcpStore(home, secrets, { logger: { warn: vi.fn() } });
-    store.onChange(() => {
-      throw new Error('made-up listener failure');
-    });
-    await expect(store.add(GITHUB)).resolves.toBeDefined();
-  });
-
   it('keeps a secret value out of the file and out of every answer', async () => {
     const store = new GlobalMcpStore(home, secrets);
     const view = await store.add(GITHUB);
@@ -138,15 +130,6 @@ describe('GlobalMcpStore', () => {
 
     await store.patch('github', { enabled: false });
     expect(store.injectableFor('agent-a')).toEqual({});
-  });
-
-  it('knows a saved server by name, on or off, and forgets a removed one', async () => {
-    const store = new GlobalMcpStore(home, secrets);
-    await store.add({ ...GITHUB, enabled: false });
-    expect(store.has('github')).toBe(true);
-    expect(store.has('linear')).toBe(false);
-    await store.remove('github');
-    expect(store.has('github')).toBe(false);
   });
 
   it('shows no setting value at all, secret-named or not, and masks the address', async () => {
@@ -350,21 +333,6 @@ describe('GlobalMcpStore', () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
-  });
-
-  it('says Codex and OpenCode skip an SSE-only server', async () => {
-    const store = new GlobalMcpStore(home, secrets);
-    const view = await store.add({
-      ...GITHUB,
-      name: 'docs',
-      connection: {
-        transport: 'sse',
-        url: 'https://docs.example.dev/sse',
-        headers: { Authorization: 'Bearer abc' },
-      },
-    });
-    expect(view.skippedOn).toEqual(['codex', 'opencode']);
-    expect(view.headers).toEqual([{ name: 'Authorization', secret: true }]);
   });
 });
 

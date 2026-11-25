@@ -135,8 +135,14 @@ describe('the shards exclude exactly the binary suites', () => {
 });
 
 describe('test-binary and codex-sandbox together run exactly the binary suites', () => {
-  it('the plan is every binary suite outside codex/, on the queue and the canary', () => {
-    for (const EVENT of ['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request']) {
+  it('the plan is every binary suite outside codex/, on a full sweep', () => {
+    for (const EVENT of [
+      'merge_group',
+      'push',
+      'schedule',
+      'workflow_dispatch',
+      'release_pull_request',
+    ]) {
       const { run, files } = plan({ EVENT });
       expect(run).toBe('true');
       expect(files).toEqual(trackedBinarySuites().filter((file) => !file.includes('/codex/')));
@@ -175,6 +181,30 @@ describe('test-binary and codex-sandbox together run exactly the binary suites',
     expect(
       plan({ EVENT: 'pull_request', SCOPE: 'selected', PACKAGES: '@dorkos/server-extras ' }).run
     ).toBe('false');
+  });
+
+  // DOR-5130: a queue entry runs its plan, so the binary suites follow it as on
+  // a pull request; every other full-sweep event ignores any plan it is handed.
+  it('in the merge queue it runs exactly when the planned shards would have', () => {
+    expect(plan({ EVENT: 'merge_group', SCOPE: 'full' }).run).toBe('true');
+    expect(plan({ EVENT: 'merge_group', SCOPE: 'selected', PACKAGES: '@dorkos/server ' }).run).toBe(
+      'true'
+    );
+    expect(plan({ EVENT: 'merge_group', SCOPE: 'selected', PACKAGES: '@dorkos/site ' }).run).toBe(
+      'false'
+    );
+    for (const EVENT of ['push', 'schedule', 'release_pull_request'])
+      expect(plan({ EVENT, SCOPE: 'selected', PACKAGES: '@dorkos/site ' }).run).toBe('true');
+  });
+
+  it('a queue entry that ran no binary suite has nothing for the quarantine gate to read', () => {
+    const gate = binaryJob.slice(
+      binaryJob.indexOf('      - name: Refuse any failure the quarantine lane does not cover\n')
+    );
+    expect(gate).toMatch(/^ {10}RUN: \$\{\{ steps\.plan\.outputs\.run \}\}$/m);
+    expect(stepRun(binaryJob, 'Refuse any failure the quarantine lane does not cover')).toMatch(
+      /^if \[ "\$RUN" != true \]; then\n.*\n {2}exit 0\nfi\n/
+    );
   });
 });
 
@@ -314,5 +344,105 @@ describe('the job and the fan-in', () => {
       "git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts' > \"$RUNNER_TEMP/binary-test-files.txt\""
     );
     expect(union).toContain('--require-files "$RUNNER_TEMP/binary-test-files.txt"');
+  });
+
+  /**
+   * Run the shipped union step in a fixture repo with a stub
+   * assert-shard-union.sh that records its arguments and the files it was
+   * handed. Returns those.
+   */
+  function unionStep(env: Record<string, string>) {
+    const repo = temp();
+    const git = (...args: string[]) =>
+      spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], {
+        cwd: repo,
+        encoding: 'utf8',
+      });
+    git('init', '-q');
+    const binaries = [
+      'apps/server/src/a.binary.test.ts',
+      'apps/server-extras/src/b.binary.test.ts',
+      'packages/cli/src/c.binary.test.ts',
+    ];
+    for (const file of binaries) {
+      mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+      writeFileSync(path.join(repo, file), '');
+    }
+    mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+    writeFileSync(
+      path.join(repo, 'scripts/assert-shard-union.sh'),
+      [
+        'echo "$*" > "$RUNNER_TEMP/args"',
+        'while [ $# -gt 0 ]; do',
+        '  case "$1" in',
+        '    --packages) cp "$2" "$RUNNER_TEMP/got-packages"; shift 2 ;;',
+        '    --require-files) cp "$2" "$RUNNER_TEMP/got-required"; shift 2 ;;',
+        '    --*) shift 2 ;;',
+        '    *) shift ;;',
+        '  esac',
+        'done',
+        '',
+      ].join('\n')
+    );
+    git('add', '-A');
+    git('commit', '-q', '-m', 'fixture');
+    const runnerTemp = temp();
+    const result = spawnSync(
+      'bash',
+      ['-e', '-c', stepRun(fanIn, "Prove the shards' union covers every package")],
+      {
+        cwd: repo,
+        encoding: 'utf8',
+        // eslint-disable-next-line no-restricted-syntax -- the step needs git and awk from the real PATH
+        env: { PATH: process.env.PATH ?? '', RUNNER_TEMP: runnerTemp, ...env },
+      }
+    );
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const read = (name: string) => {
+      try {
+        return readFileSync(path.join(runnerTemp, name), 'utf8').split('\n').filter(Boolean);
+      } catch {
+        return null;
+      }
+    };
+    return {
+      args: read('args')?.[0] ?? '',
+      packages: read('got-packages'),
+      required: read('got-required'),
+    };
+  }
+
+  // DOR-5130: a queue entry proves its PLANNED set; nothing else ever does.
+  it('a queue entry with a plan proves the planned packages and their binary suites only', () => {
+    const r = unionStep({
+      EVENT: 'merge_group',
+      SCOPE: 'selected',
+      DIRS: 'apps/server packages/ui ',
+    });
+    expect(r.args).toContain('--packages');
+    expect(r.packages).toEqual(['apps/server', 'packages/ui']);
+    expect(r.required).toEqual(['apps/server/src/a.binary.test.ts']);
+  });
+
+  it.each([
+    { EVENT: 'merge_group', SCOPE: 'full', DIRS: '' },
+    { EVENT: 'push', SCOPE: 'selected', DIRS: 'apps/server ' },
+    { EVENT: 'schedule', SCOPE: 'selected', DIRS: 'apps/server ' },
+    { EVENT: 'release_pull_request', SCOPE: 'selected', DIRS: 'apps/server ' },
+  ])('$EVENT with scope $SCOPE proves every package and every binary suite', (env) => {
+    const r = unionStep(env);
+    expect(r.args).not.toContain('--packages');
+    expect(r.packages).toBeNull();
+    expect(r.required).toEqual([
+      'apps/server-extras/src/b.binary.test.ts',
+      'apps/server/src/a.binary.test.ts',
+      'packages/cli/src/c.binary.test.ts',
+    ]);
+  });
+
+  it('a queue entry whose selected plan lost its directories hands over an empty plan, which the proof refuses', () => {
+    const r = unionStep({ EVENT: 'merge_group', SCOPE: 'selected', DIRS: '' });
+    expect(r.args).toContain('--packages');
+    expect(r.packages).toEqual([]);
   });
 });

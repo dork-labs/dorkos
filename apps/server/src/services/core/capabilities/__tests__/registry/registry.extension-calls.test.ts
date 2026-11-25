@@ -175,7 +175,7 @@ describe('only a reviewed list runs from Wi-Fi, each in its one mode (ADR 261125
     );
   });
 
-  it('pins the exact set of surfaces with any network mode: the pause and a person’s four to-do writes', () => {
+  it('pins the exact set of surfaces with any network mode: the pause, a person’s four to-do writes and the credits answer', () => {
     const declaring = composeCapabilityRegistryForDocs()
       .capabilities.filter((capability) => capability.wifi !== undefined)
       .map((capability) => [
@@ -188,6 +188,13 @@ describe('only a reviewed list runs from Wi-Fi, each in its one mode (ADR 261125
       .sort(([a], [b]) => String(a).localeCompare(String(b)));
     expect(declaring).toEqual([
       ['agent.pause', 'lowers-power', 'post', '/api/agents/{agentId}/pause', undefined],
+      [
+        'heartbeat.choose_triage_credits',
+        'person-held',
+        'put',
+        '/api/heartbeats/triage-credits',
+        'person',
+      ],
       ['todos.add_as_person', 'person-held', 'post', '/api/todos', 'person'],
       ['todos.change_as_person', 'person-held', 'patch', '/api/todos/{id}', 'person'],
       ['todos.change_promise', 'person-held', 'patch', '/api/todo-promises/{id}', 'person'],
@@ -223,5 +230,53 @@ describe('the cancel window is one action’s alone (spec trusted-by-default-fli
       .capabilities.filter((capability) => capability.cancelWindow !== undefined)
       .map((capability) => capability.id);
     expect(declaring).toEqual(['connectors.execute_destructive']);
+  });
+});
+
+describe('a confirm-first hold is a reviewed list’s alone (ADR 261125-114705, decision 4)', () => {
+  /** A person-only capability no list names, to smuggle a hold onto. */
+  function smuggler(audience?: 'person') {
+    return {
+      ...defineCapability({
+        id: 'config.spend_everything',
+        title: 'Spend',
+        description: 'Spend it.',
+        tier: 'act',
+        area: null,
+        areaNote: 'test',
+        input: z.object({}),
+        output: z.unknown(),
+        surfaces: {
+          http: { method: 'put', path: '/api/spend', ...(audience ? { audience } : {}) },
+        },
+        invoke: async () => ({}),
+      }),
+      confirmFirst: {
+        kind: 'cloud.credits' as const,
+        target: 'everything',
+        reason: 'Spend everything.',
+        accountOwner: { personOnly: 'Only you.', action: 'spend' },
+      },
+    };
+  }
+
+  it('refuses to compose any other capability that declares one', () => {
+    expect(() =>
+      composeRegistry([{ name: 'config', capabilities: [smuggler('person')] }], deps)
+    ).toThrow(/may not declare a confirm-first hold/);
+  });
+
+  it('refuses a listed id that any agent may call', () => {
+    const capability = { ...smuggler(), id: 'heartbeat.choose_triage_credits' as const };
+    expect(() =>
+      composeRegistry([{ name: 'heartbeat', capabilities: [capability] }], deps)
+    ).toThrow(/only a person may call it/);
+  });
+
+  it('is declared by heartbeat.choose_triage_credits and nothing else in the full registry', () => {
+    const declaring = composeCapabilityRegistryForDocs()
+      .capabilities.filter((capability) => capability.confirmFirst !== undefined)
+      .map((capability) => [capability.id, capability.confirmFirst?.kind]);
+    expect(declaring).toEqual([['heartbeat.choose_triage_credits', 'cloud.credits']]);
   });
 });

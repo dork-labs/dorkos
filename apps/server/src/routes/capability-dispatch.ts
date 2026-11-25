@@ -40,6 +40,7 @@ import {
   APPROVAL_TOKEN_HEADER,
   CapabilityGateRefusal,
   CapabilityToolError,
+  ConfirmFirstRequired,
   personCaller,
   type CapabilityRegistry,
   type CapabilityRequestFacts,
@@ -56,12 +57,17 @@ import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { heldWifiOwner, personProof } from '../services/todos/caller.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
+import { holdConfirmFirst } from './capability-confirm-first.js';
+import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 
 /** What a request answers while boot has not handed the registry over. */
 const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
 
 /** What an id no capability has answers. */
 const UNKNOWN_CAPABILITY = 'No action has that id. List them with `dorkos capabilities`.';
+
+/** What a commit answers when its confirmation was not for the call it ran. */
+const CONFIRMED_ANOTHER_CALL = 'That confirmation was for a different request. Confirm this one.';
 
 /** What an unexpected failure answers; the error itself goes to the log. */
 const CAPABILITY_FAILED = 'DorkOS hit an error running that action. Try again.';
@@ -122,6 +128,34 @@ export async function dispatchCapability(
     return problem(c, 'not_from_wifi', { detail: WIFI_ACTION_REFUSAL });
   }
 
+  // A confirm-first capability runs the account owner bar first, held or not, as
+  // the account writes always did (ADR 261125-114705, decision 4).
+  if (capability.confirmFirst) {
+    const refusal = problemRefusalUnlessOwner(facts, capability.confirmFirst.accountOwner);
+    if (refusal) return sendProblem(c, refusal);
+  }
+  return invokeAs(c, registry, { id, input, success: dispatch.success ?? 200 }, facts);
+}
+
+/**
+ * Invoke one capability as one request's caller, and answer.
+ *
+ * @param c - The request the answer is for.
+ * @param registry - The composed registry.
+ * @param call - The capability, its raw input and its success status.
+ * @param facts - The caller: the asking request's facts, or, when a held call
+ *   commits, the confirming request's.
+ * @param confirmed - The person's confirmation, only when a held call commits.
+ */
+async function invokeAs(
+  c: Context<ApiEnv>,
+  registry: CapabilityRegistry,
+  call: { id: string; input: unknown; success: HttpSuccessStatus },
+  facts: RequestFacts,
+  confirmed?: unknown
+): Promise<Response> {
+  const { id, input, success } = call;
+  const capability = registry.get(id);
   // The call is attributed when the caller presented a resolved agent token;
   // without one it runs unattributed, which does NOT make it ungated: the
   // capability's tier decides that (`tier-enforcement.ts`). The wider fact, that
@@ -139,7 +173,7 @@ export async function dispatchCapability(
   // `registry.invoke` refuses without it (ADR 261123-170830). The same bar the
   // decide endpoint and the hand person-only routes use, plus no bearer.
   const person =
-    capability.surfaces.http?.audience === 'person'
+    capability?.surfaces.http?.audience === 'person'
       ? personCaller({
           ...readCallerAuthority(facts),
           authorizationPresented: facts.headers.authorization !== undefined,
@@ -155,12 +189,22 @@ export async function dispatchCapability(
       ...(person ? { person } : {}),
       request: capabilityRequestFacts(facts),
       retryChannel: 'http-header',
+      ...(confirmed !== undefined ? { confirmed } : {}),
     });
-    const success = dispatch.success ?? 200;
     return success === 204 ? c.body(null, 204) : c.json(result, success);
   } catch (err) {
     // 202: recorded and waiting on a person, so come back. 403: refused for good.
     if (err instanceof CapabilityGateRefusal) return gateResponse(c, err.decision);
+    // Held for the "Confirm it's you" sheet; a held call that commits is never held again.
+    if (err instanceof ConfirmFirstRequired) {
+      // Defence in depth: a commit replays the same call it held, so its confirmation matches.
+      if (confirmed !== undefined) {
+        return problem(c, 'precondition_failed', { detail: CONFIRMED_ANOTHER_CALL });
+      }
+      return holdConfirmFirst(c, id, err, (confirming, confirmation) =>
+        invokeAs(c, registry, call, confirming, confirmation)
+      );
+    }
     if (err instanceof z.ZodError) {
       return validationProblem(c, err);
     }

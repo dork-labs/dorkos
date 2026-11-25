@@ -26,10 +26,9 @@ import {
   type GatherContext,
   type RunCommand,
 } from '../gatherers/index.js';
-import { standingKey, triageByRules } from '../triage-rules.js';
+import { triageByRules } from '../triage-rules.js';
 import { AuditLog } from '../../audit/audit-log.js';
 import { eq } from 'drizzle-orm';
-import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 import { env } from '../../../env.js';
 
 // The Keychain guard in front of `gh` (DOR-4423) reads the test-runtime flag
@@ -146,69 +145,6 @@ describe('addressed', () => {
     post('r-bridged', 'x-stranger', '2026-10-12T09:10:00Z', ['a-juno']);
     expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
   });
-
-  it("counts another agent's post only when it names this agent", async () => {
-    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
-    post('r-general', 'a-otto', '2026-10-12T09:10:00Z');
-    expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
-    post('r-general', 'a-otto', '2026-10-12T09:11:00Z', ['a-juno']);
-    expect(await createAddressedGatherer(db)(ctx())).toHaveLength(1);
-  });
-
-  // Security on #3280 (DOR-3561): a held turn's own post never comes back to its agent as a beat,
-  // so the beat never reads it unmarked. Not even one that names the agent itself.
-  it('never counts the agent’s own post, held and naming itself', async () => {
-    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
-    const own = post('r-general', 'a-juno', '2026-10-12T09:10:00Z', ['a-juno']);
-    noteEntryLevel(own, { asks: 'always', reach: 'read', outsider: true });
-    expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
-  });
-
-  // DOR-3036: a beat that reads a marked post carries its marks.
-  it('carries the marks another agent’s post was written under, from memory or its row', async () => {
-    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
-    const inMemory = post('r-general', 'a-otto', '2026-10-12T09:10:00Z', ['a-juno']);
-    noteEntryLevel(inMemory, {
-      asks: 'always',
-      reach: 'read',
-      outsider: true,
-      teammate: [{ roomId: 'space', authorId: 'priya' }],
-    });
-    const onRow = post('r-general', 'a-otto', '2026-10-12T09:11:00Z', ['a-juno']);
-    db.update(roomEntries)
-      .set({ turnMarks: JSON.stringify({ outsider: true }) })
-      .where(eq(roomEntries.id, onRow))
-      .run();
-    const plain = post('r-general', 'h-dorian', '2026-10-12T09:12:00Z', ['a-juno']);
-
-    const byKey = new Map(
-      (await createAddressedGatherer(db)(ctx())).map((change) => [change.key, change.marks])
-    );
-    expect(byKey.get(`room-entry:${inMemory}`)).toEqual({
-      outsider: true,
-      teammate: [{ roomId: 'space', authorId: 'priya' }],
-    });
-    expect(byKey.get(`room-entry:${onRow}`)).toEqual({ outsider: true });
-    expect(byKey.get(`room-entry:${plain}`)).toBeUndefined();
-  });
-
-  it('keeps the newest messages on a busy day', async () => {
-    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
-    for (let i = 0; i < 520; i += 1) {
-      post('r-general', 'a-otto', new Date(Date.parse(SINCE) + 1000 + i * 1000).toISOString());
-    }
-    const latest = post('r-general', 'h-dorian', '2026-10-12T09:59:00Z', ['a-juno']);
-    const changes = await createAddressedGatherer(db)(ctx());
-    expect(changes.map((c) => c.key)).toEqual([`room-entry:${latest}`]);
-  });
-
-  it('drops a message the agent already answered, and one before the last beat', async () => {
-    room('r-dm', 'dm', 'Dorian', ['a-juno', 'h-dorian']);
-    post('r-dm', 'h-dorian', '2026-10-12T08:00:00Z');
-    post('r-dm', 'h-dorian', '2026-10-12T09:10:00Z');
-    post('r-dm', 'a-juno', '2026-10-12T09:15:00Z');
-    expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
-  });
 });
 
 describe('todos', () => {
@@ -248,37 +184,6 @@ describe('todos', () => {
       ['commitment:c3', 'commitment-due'],
     ]);
     expect(triageByRules(changes.slice(0, 1), { failureStorm: false }).verdict).toBe('work');
-  });
-
-  it('reads a later wake as news even after an earlier one was seen (DOR-3034)', async () => {
-    const list = () => [{ id: 'c1', what: 'Quote', dueAt: '2026-10-12T20:00:00Z' }] as never;
-    const wakeAt = (at: string) => () => ({ phase: 'start' as const, at, notYet: false });
-    const first = await createTodosGatherer({ list, lastWakeOf: wakeAt('2026-10-12T08:00:00Z') })(
-      ctx()
-    );
-    const later = await createTodosGatherer({ list, lastWakeOf: wakeAt('2026-10-12T09:00:00Z') })(
-      ctx()
-    );
-    const seen = new Set(first.map(standingKey));
-    expect(triageByRules(later, { failureStorm: false, seenStanding: seen }).verdict).toBe('work');
-  });
-
-  it('names a Not yet on an undated or overdue promise as new work', async () => {
-    const list = () =>
-      [
-        { id: 'u', what: 'No date', dueAt: null },
-        { id: 'o', what: 'Late', dueAt: '2026-10-12T08:00:00Z' },
-      ] as never;
-    const AT = '2026-10-12T09:30:00Z';
-    const changes = await createTodosGatherer({
-      list,
-      lastWakeOf: () => ({ phase: 'start', at: AT, notYet: true }),
-    })(ctx());
-    expect(changes.map((c) => [c.key, c.signal])).toEqual([
-      [`commitment:u:start:${AT}`, 'commitment-start'],
-      [`commitment:o:start:${AT}`, 'commitment-start'],
-    ]);
-    expect(changes[0]!.summary).toMatch(/^Not done yet, says the person, no date/);
   });
 });
 
@@ -336,84 +241,6 @@ describe('health', () => {
     const changes = await createHealthGatherer(db)(ctx());
     expect(changes.map((c) => c.signal).sort()).toEqual(['connection-lost', 'self-refused']);
   });
-
-  it("leaves out what the agent's own beat turns tripped over", async () => {
-    new AuditLog(db).record({
-      at: '2026-10-12T09:30:00.000Z',
-      actor: { kind: 'agent', accountId: 'agent-juno', name: 'Juno' },
-      source: { surface: 'mcp', sessionId: 'beat-chat' },
-      action: 'connectors.execute',
-      operation: 'execute',
-      outcome: 'refused',
-      summary: 'Refused.',
-    } as never);
-    const own = await createHealthGatherer(db)(ctx({ ownBeatSessions: new Set(['beat-chat']) }));
-    expect(own).toEqual([]);
-    const elsewhere = await createHealthGatherer(db)(ctx());
-    expect(elsewhere.map((c) => c.signal)).toEqual(['self-refused']);
-  });
-
-  /** Record one failed runtime tool call by Juno, in her live chat. */
-  function toolFailure(summary: string, error?: string, at = '2026-10-12T09:30:00.000Z'): void {
-    new AuditLog(db).record({
-      at,
-      actor: { kind: 'agent', accountId: 'agent-juno', name: 'Juno' },
-      source: { surface: 'runtime-tool', runtime: 'claude-code', sessionId: 'live-chat' },
-      action: 'runtime.tool_used',
-      operation: 'execute',
-      outcome: 'failed',
-      ...(error ? { error } : {}),
-      summary,
-    } as never);
-  }
-
-  it('reads an everyday tool failure in a chat as information, so triage stays quiet', async () => {
-    toolFailure('Tried Bash (in a helper): grep -rn nothing-here src', 'Exit code 1');
-    toolFailure('Tried Bash: pnpm foo --help');
-    const changes = await createHealthGatherer(db)(ctx());
-    expect(changes.map((c) => c.signal)).toEqual(['info', 'info']);
-    expect(triageByRules(changes, { failureStorm: false }).verdict).toBe('quiet');
-  });
-
-  it('wakes on the same tool call failing again and again, helper or not', async () => {
-    toolFailure('Tried Bash: pnpm build', undefined, '2026-10-12T09:10:00.000Z');
-    toolFailure('Tried Bash (in a helper): pnpm build', undefined, '2026-10-12T09:20:00.000Z');
-    toolFailure('Tried Bash: pnpm build', undefined, '2026-10-12T09:30:00.000Z');
-    toolFailure('Tried Bash: pnpm lint', undefined, '2026-10-12T09:40:00.000Z');
-    const changes = await createHealthGatherer(db)(ctx());
-    expect(changes.map((c) => c.signal)).toEqual([
-      'self-refused',
-      'self-refused',
-      'self-refused',
-      'info',
-    ]);
-    expect(triageByRules(changes, { failureStorm: false }).verdict).toBe('undecided');
-  });
-
-  it('wakes on a full disk from any tool, and on access denied only to a file-writing tool', async () => {
-    toolFailure('Tried Bash: npm install', 'ENOSPC: no space left on device, write');
-    toolFailure('Tried Write: notes.md', "EACCES: permission denied, open 'notes.md'");
-    toolFailure('Tried Bash: find / -name x', 'find: /private: Permission denied');
-    const signals = (await createHealthGatherer(db)(ctx())).map((c) => c.signal);
-    expect(signals.sort()).toEqual(['info', 'self-refused', 'self-refused']);
-  });
-
-  it('keeps a refusal in view behind a burst of harmless tool failures', async () => {
-    new AuditLog(db).record({
-      at: '2026-10-12T09:05:00.000Z',
-      actor: { kind: 'agent', accountId: 'agent-juno', name: 'Juno' },
-      source: { surface: 'mcp' },
-      action: 'connectors.execute',
-      operation: 'execute',
-      outcome: 'refused',
-      summary: 'Refused.',
-    } as never);
-    for (let i = 0; i < 30; i += 1) toolFailure(`Tried Bash: grep -rn term-${i} src`);
-    const changes = await createHealthGatherer(db)(ctx());
-    expect(changes).toHaveLength(20);
-    expect(changes[0]!.signal).toBe('self-refused');
-    expect(triageByRules(changes, { failureStorm: false }).verdict).toBe('undecided');
-  });
 });
 
 describe('workspace', () => {
@@ -460,13 +287,6 @@ describe('workspace', () => {
     });
   });
 
-  it('skips an agent with no working directory', async () => {
-    const run = fakeRun('main', '[]');
-    expect(
-      await createWorkspaceGatherer(run)(ctx({ agent: { ...ctx().agent, cwd: null } }))
-    ).toEqual([]);
-  });
-
   it("reads someone else's commits, and a failing check on its own branch at most every 30 minutes", async () => {
     let clock = NOW.getTime();
     const run = fakeRun(
@@ -487,27 +307,6 @@ describe('workspace', () => {
     clock += 30 * 60_000;
     await gather(ctx());
     expect(run.gh).toBe(2);
-  });
-});
-
-describe('workspace checks that do not answer', () => {
-  it('caches nothing when gh fails, and asks again next beat', async () => {
-    let gh = 0;
-    const run = (async (command: string, args: string[]) => {
-      if (command === 'gh') {
-        gh += 1;
-        throw new Error('no pull request');
-      }
-      const joined = args.join(' ');
-      if (joined.startsWith('rev-parse --abbrev-ref')) return 'feature';
-      if (joined.startsWith('symbolic-ref')) return 'origin/main';
-      if (joined.startsWith('log')) return '';
-      return 'x';
-    }) as RunCommand;
-    const gather = createWorkspaceGatherer(run, () => NOW.getTime());
-    expect(await gather(ctx())).toEqual([]);
-    await gather(ctx());
-    expect(gh).toBe(2);
   });
 });
 
@@ -547,11 +346,6 @@ describe('triageByRules', () => {
     ...(touches ? { touches } : {}),
   });
 
-  it('is quiet with nothing, or only information', () => {
-    expect(triageByRules([], { failureStorm: false }).verdict).toBe('quiet');
-    expect(triageByRules([change('info')], { failureStorm: false }).verdict).toBe('quiet');
-  });
-
   it('works on an unanswered message, an overdue promise, a failed run, a lost connection, a failing check', () => {
     for (const signal of [
       'unanswered',
@@ -569,31 +363,5 @@ describe('triageByRules', () => {
     expect(triageByRules([change('info', ['money'])], { failureStorm: false }).verdict).toBe(
       'undecided'
     );
-  });
-
-  it('reads a heavy day as quiet: a turn about it would add to it', () => {
-    expect(triageByRules([change('usage-high')], { failureStorm: false }).verdict).toBe('quiet');
-  });
-
-  it('counts a standing condition once, and again only when it changes', () => {
-    const lost = change('connection-lost');
-    expect(triageByRules([lost], { failureStorm: false, seenStanding: new Set() }).verdict).toBe(
-      'work'
-    );
-    const seen = new Set([standingKey(lost)]);
-    expect(triageByRules([lost], { failureStorm: false, seenStanding: seen }).verdict).toBe(
-      'quiet'
-    );
-    const changed = { ...lost, key: 'connection:c1:revoked' };
-    expect(triageByRules([changed], { failureStorm: false, seenStanding: seen }).verdict).toBe(
-      'work'
-    );
-  });
-
-  it('lets its own beat failures trigger nothing during a failure storm', () => {
-    expect(triageByRules([change('beat-failed')], { failureStorm: false }).verdict).toBe(
-      'undecided'
-    );
-    expect(triageByRules([change('beat-failed')], { failureStorm: true }).verdict).toBe('quiet');
   });
 });

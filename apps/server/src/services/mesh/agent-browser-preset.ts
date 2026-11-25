@@ -144,8 +144,8 @@ export function agentBrowserNotice(gap: AgentBrowserGap | null): string {
   if (gap === null) return '';
   const situation =
     gap === 'missing'
-      ? 'Your older signed-in browser tools will fail until the person saves browser sign-ins: the saved\nsession file is missing or unreadable.'
-      : 'Your older signed-in browser tools start signed out: the person has not saved a sign-in for any\nsite yet.';
+      ? 'If you have older signed-in browser tools, they will fail until the person saves browser sign-ins:\nthe saved session file is missing or unreadable.'
+      : 'If you have older signed-in browser tools, they start signed out: the person has not saved a\nsign-in for any site yet.';
   return `<agent_browser>
 ${situation} If you can't use a site because of this, say so in plain words
 and ask the person to share a browser page with this chat (Browser, in the right

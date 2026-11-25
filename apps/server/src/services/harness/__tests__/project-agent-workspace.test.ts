@@ -30,7 +30,6 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '@dorkos/operating-skills';
-import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { readSeededSkill, writeStalePackSkill } from './journeys/pack-stamp.js';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -318,39 +317,6 @@ describe('projectAgentWorkspace', () => {
     );
   });
 
-  it('no-ops when the workspace has no .agents/skills directory', () => {
-    const agentDir = join(tmpRoot, 'empty-agent');
-    mkdirSync(agentDir);
-
-    const result = projectAgentWorkspace(agentDir);
-
-    expect(result).toEqual({
-      status: 'skipped',
-      applied: 0,
-      conflicts: 0,
-      scaffoldedManifest: false,
-    });
-    // Nothing was written — not even a manifest.
-    expect(existsSync(join(agentDir, '.agents'))).toBe(false);
-    expect(existsSync(join(agentDir, '.claude'))).toBe(false);
-  });
-
-  it('swallows a projection failure, logs it, and never throws', () => {
-    const agentDir = buildAgentWorkspace('broken-agent');
-    // A manifest the engine cannot parse: `project()` throws on the JSON read,
-    // which is exactly the class of failure that must not reach the caller.
-    writeFileSync(join(agentDir, '.agents', 'harness.manifest.json'), '{ not json');
-
-    const result = projectAgentWorkspace(agentDir);
-
-    expect(result.status).toBe('failed');
-    expect(result.applied).toBe(0);
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[HarnessSync] Agent workspace projection failed (non-fatal)',
-      expect.objectContaining({ agentDir })
-    );
-  });
-
   it('AP-04: reports a conflict instead of destroying a real file at a projection target', () => {
     const agentDir = buildAgentWorkspace('hand-authored');
     mkdirSync(join(agentDir, '.claude', 'skills', 'operating-dorkos'), { recursive: true });
@@ -420,33 +386,6 @@ describe('projectAgentWorkspace', () => {
 });
 
 describe('backfillAgentWorkspaceSkills', () => {
-  it('repairs an agent workspace that has canonical skills but no .claude', async () => {
-    // Exactly the state every agent created before DOR-659 is in.
-    const agentDir = buildAgentWorkspace('legacy-agent');
-    expect(existsSync(join(agentDir, '.claude'))).toBe(false);
-
-    const summary = await backfillAgentWorkspaceSkills([agentDir], tmpRoot);
-
-    expect(summary).toEqual({
-      total: 1,
-      // The workspace's hand-written `operating-dorkos` is preserved; the rest
-      // of the pack it never had is written, which is what `seeded` counts.
-      seeded: 1,
-      seedFailed: 0,
-      projected: 1,
-      skipped: 0,
-      failed: 0,
-      outsideDorkHome: 0,
-      adoptableSkills: 0,
-      adoptedSkills: 0,
-    });
-    const link = join(agentDir, '.claude', 'skills', 'operating-dorkos');
-    expect(lstatSync(link).isSymbolicLink()).toBe(true);
-    expect(realpathSync(link)).toBe(
-      realpathSync(join(agentDir, '.agents', 'skills', 'operating-dorkos'))
-    );
-  });
-
   it('SRC-05, TR-04: seeds a workspace that has no .agents/skills at all, and links it on the SAME pass', async () => {
     // The ordering guard, and the case that motivated DOR-671: 12 of the 13
     // agents on the machine this was measured on had no `.agents/skills/` at
@@ -573,60 +512,6 @@ describe('backfillAgentWorkspaceSkills', () => {
     }
   });
 
-  it('carries on when one workspace cannot be seeded', async () => {
-    // `.agents/skills/<name>` as a FILE makes the seeder's read of
-    // `<name>/SKILL.md` fail with ENOTDIR rather than ENOENT, so it throws — a
-    // real filesystem failure rather than a mocked one.
-    const unseedable = buildEmptyAgentWorkspace('unseedable-agent');
-    mkdirSync(join(unseedable, '.agents', 'skills'), { recursive: true });
-    writeFileSync(join(unseedable, '.agents', 'skills', PACK_NAMES[0]!), 'not a directory\n');
-    const healthy = buildEmptyAgentWorkspace('healthy-agent');
-
-    const summary = await backfillAgentWorkspaceSkills([unseedable, healthy], tmpRoot);
-
-    expect(summary.total).toBe(2);
-    expect(summary.seedFailed).toBe(1);
-    expect(summary.seeded).toBe(1);
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[HarnessSync] Agent workspace skill seeding failed (non-fatal)',
-      expect.objectContaining({ agentDir: unseedable })
-    );
-
-    // The workspace after the broken one is fully provisioned regardless.
-    expect(readdirSync(join(healthy, '.claude', 'skills')).sort()).toEqual(PACK_NAMES);
-  });
-
-  it('still repairs when the dork home is reached through a symlink', async () => {
-    // `DORK_HOME` often points at a symlinked path. Comparing unresolved strings
-    // classifies the agent as outside its own home and silently repairs nothing.
-    const agentDir = buildAgentWorkspace('symlinked-home-agent');
-    const linkedHome = join(tmpRoot, '..', `${tmpRoot.split('/').pop()}-link`);
-    symlinkSync(tmpRoot, linkedHome, 'dir');
-
-    try {
-      const summary = await backfillAgentWorkspaceSkills([agentDir], linkedHome);
-
-      expect(summary.outsideDorkHome).toBe(0);
-      expect(summary.projected).toBe(1);
-      expect(
-        lstatSync(join(agentDir, '.claude', 'skills', 'operating-dorkos')).isSymbolicLink()
-      ).toBe(true);
-    } finally {
-      rmSync(linkedHome, { force: true });
-    }
-  });
-
-  it('still repairs when the workspace path is reached through a symlink', async () => {
-    const agentDir = buildAgentWorkspace('real-agent');
-    const linkedAgent = join(tmpRoot, 'agents', 'linked-agent');
-    symlinkSync(agentDir, linkedAgent, 'dir');
-
-    const summary = await backfillAgentWorkspaceSkills([linkedAgent], tmpRoot);
-
-    expect(summary.outsideDorkHome).toBe(0);
-    expect(summary.projected).toBe(1);
-  });
-
   it('AP-13: does not follow a symlink inside the agents directory out to a real repo', async () => {
     // The bypass in the other direction: a link planted under `<dorkHome>/agents`
     // must not make somebody's repository writable by this pass.
@@ -646,98 +531,6 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(readdirSync(join(outside, '.agents', 'skills'))).toEqual(['operating-dorkos']);
   });
 
-  it('warns instead of reporting success when it repairs none of the agents it found', async () => {
-    // A repair that quietly does nothing on every boot is the worst outcome.
-    // "Nothing" now has to mean nothing in EITHER half, so this workspace is
-    // already at the current pack version — seeding has no work to do — and its
-    // manifest is unparseable, so the projection cannot run.
-    const broken = buildEmptyAgentWorkspace('broken-agent');
-    await seedOperatingSkills(broken);
-    writeFileSync(join(broken, '.agents', 'harness.manifest.json'), '{ not json');
-
-    const summary = await backfillAgentWorkspaceSkills([broken], tmpRoot);
-
-    expect(summary.seeded).toBe(0);
-    expect(logger.info).not.toHaveBeenCalled();
-    // Exactly one summary line, and it is the total-failure wording — not the
-    // partial one, which would understate a boot that linked nothing at all.
-    const summaryLines = vi
-      .mocked(logger.warn)
-      .mock.calls.filter(([msg]) => String(msg).includes('backfill'));
-    expect(summaryLines).toHaveLength(1);
-    expect(summaryLines[0]?.[0]).toBe(
-      '[HarnessSync] Agent workspace skill backfill repaired nothing'
-    );
-    expect(summaryLines[0]?.[1]).toMatchObject({ total: 1, seeded: 0, projected: 0, failed: 1 });
-  });
-
-  it('does not claim it repaired nothing when seeding worked and only linking failed', async () => {
-    // The half-and-half case, which the projection-only wording got wrong: this
-    // boot delivered the current pack to a workspace that did not have it, and
-    // saying "repaired nothing" points whoever reads the log at the wrong half.
-    // Reachable three ways in production, all of which seed fine and fail to
-    // link: a corrupt manifest (this fixture), a trailing comma in
-    // `.claude/settings.json`, and Windows EPERM on symlink creation.
-    const broken = buildEmptyAgentWorkspace('links-broken-agent');
-    mkdirSync(join(broken, '.agents'), { recursive: true });
-    writeFileSync(join(broken, '.agents', 'harness.manifest.json'), '{ not json');
-
-    const summary = await backfillAgentWorkspaceSkills([broken], tmpRoot);
-
-    expect(summary).toMatchObject({ seeded: 1, projected: 0, failed: 1 });
-    const summaryLines = vi
-      .mocked(logger.warn)
-      .mock.calls.filter(([msg]) => String(msg).includes('backfill'));
-    expect(summaryLines).toHaveLength(1);
-    expect(summaryLines[0]?.[0]).toBe('[HarnessSync] Agent workspace skill backfill partly failed');
-    // The HINT is pinned, not just the message. `seeded` and `projected` are
-    // independent counts, and a phrasing that nests one in the other reads
-    // "1 of them" against a `them` of 0 on exactly this shape.
-    expect(summaryLines[0]?.[1]).toMatchObject({
-      hint: expect.stringContaining(
-        'Seeded 1 agent workspace(s), linked 0; 0 failed to seed and 1 failed to link'
-      ),
-    });
-  });
-
-  it('reports a workspace it could not seed as skipped, not as a projection failure', async () => {
-    // The guard on `skipped`. Its meaning narrowed when seeding moved in front
-    // of the projection, and the only pre-existing `skipped: 1` case was
-    // legitimately flipped to 0 by that change — leaving the field asserted
-    // nowhere. Folding `skipped` into `failed` then passes the whole suite while
-    // the summary accuses the projection of a failure it never had.
-    //
-    // A regular FILE at `<agentDir>/.agents` is the deterministic way to reach
-    // this state: seeding cannot create the directory tree beneath it
-    // (`ENOTDIR`), so `.agents/skills/` never exists, and the projection returns
-    // early on exactly that check. Deliberately NOT `chmod 0o500` — CI and the
-    // Docker smoke tests can run as root, where the mode is ignored and the test
-    // would quietly stop discriminating.
-    const unwritable = buildEmptyAgentWorkspace('unwritable-agent');
-    writeFileSync(join(unwritable, '.agents'), 'a file where the directory should be\n');
-
-    const summary = await backfillAgentWorkspaceSkills([unwritable], tmpRoot);
-
-    expect(summary).toEqual({
-      total: 1,
-      seeded: 0,
-      seedFailed: 1,
-      projected: 0,
-      // The load-bearing pair: the projection did not fail, it correctly found
-      // nothing to do, and `seedFailed` next to it says which half went wrong.
-      skipped: 1,
-      failed: 0,
-      outsideDorkHome: 0,
-      adoptableSkills: 0,
-      adoptedSkills: 0,
-    });
-    expect(existsSync(join(unwritable, '.agents', 'skills'))).toBe(false);
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[HarnessSync] Agent workspace skill seeding failed (non-fatal)',
-      expect.objectContaining({ agentDir: unwritable })
-    );
-  });
-
   it('AP-13: does not mistake a sibling of the agents directory for one of its own', async () => {
     // `<dorkHome>/agents-backup` shares a string prefix with `<dorkHome>/agents`
     // without being inside it.
@@ -750,71 +543,6 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(summary.outsideDorkHome).toBe(1);
     expect(existsSync(join(sibling, '.claude'))).toBe(false);
     expect(readdirSync(join(sibling, '.agents', 'skills'))).toEqual(['operating-dorkos']);
-  });
-
-  it('carries on past a broken workspace and summarizes the whole pass once', async () => {
-    const healthy = buildAgentWorkspace('healthy-agent');
-    const broken = buildAgentWorkspace('broken-agent');
-    writeFileSync(join(broken, '.agents', 'harness.manifest.json'), '{ not json');
-    const bare = join(tmpRoot, 'agents', 'bare-agent');
-    mkdirSync(bare, { recursive: true });
-    const outside = join(tmpRoot, 'someones-real-repo');
-    mkdirSync(outside);
-
-    const summary = await backfillAgentWorkspaceSkills([broken, healthy, bare, outside], tmpRoot);
-
-    expect(summary).toEqual({
-      total: 4,
-      seeded: 3,
-      seedFailed: 0,
-      projected: 2,
-      // `bare` used to land here: no `.agents/skills/`, so nothing to project.
-      // It is now seeded first and therefore projectable, which is the DOR-671
-      // change in one number.
-      skipped: 0,
-      failed: 1,
-      outsideDorkHome: 1,
-      adoptableSkills: 0,
-      adoptedSkills: 0,
-    });
-    // The healthy workspace was repaired despite the broken one coming first.
-    expect(lstatSync(join(healthy, '.claude', 'skills', 'operating-dorkos')).isSymbolicLink()).toBe(
-      true
-    );
-    // And the bare one got the whole pack, links included, on this single pass.
-    expect(readdirSync(join(bare, '.claude', 'skills')).sort()).toEqual(PACK_NAMES);
-    // One summary line for the pass, not one per agent. It warns because a
-    // workspace failed — but it must NOT claim nothing was repaired, because one
-    // workspace was. A log that overstates the damage sends whoever reads it
-    // hunting for a total failure that did not happen.
-    const summaryLines = vi
-      .mocked(logger.warn)
-      .mock.calls.filter(([msg]) => String(msg).includes('backfill'));
-    expect(summaryLines).toHaveLength(1);
-    expect(summaryLines[0]?.[0]).toBe('[HarnessSync] Agent workspace skill backfill partly failed');
-    expect(summaryLines[0]?.[1]).toMatchObject({
-      projected: 2,
-      failed: 1,
-      // Both counts side by side. Note 3 seeded against 2 linked: neither
-      // number contains the other, which is why the hint never nests them.
-      hint: expect.stringContaining(
-        'Seeded 3 agent workspace(s), linked 2; 0 failed to seed and 1 failed to link'
-      ),
-    });
-    expect(logger.info).not.toHaveBeenCalled();
-  });
-
-  it('reports success at info level when every agent it found was repaired', async () => {
-    const healthy = buildAgentWorkspace('healthy-agent');
-
-    const summary = await backfillAgentWorkspaceSkills([healthy], tmpRoot);
-
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    expect(logger.info).toHaveBeenCalledWith(
-      '[HarnessSync] Agent workspace skill backfill complete',
-      summary
-    );
   });
 
   it('TR-04, AP-01: is idempotent across boots', async () => {

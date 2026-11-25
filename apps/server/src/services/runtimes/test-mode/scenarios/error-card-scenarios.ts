@@ -47,7 +47,7 @@ export const ERROR_CARD_SCENARIOS: Record<string, ScenarioFn> = {
       type: 'error',
       data: {
         code: 'codex_git_metadata_unavailable',
-        message: 'Codex can’t protect this folder’s Git files. Choose another folder.',
+        message: 'Codex can’t work inside a Git folder. Choose the project folder instead.',
         details: 'Synthetic Git metadata refusal details',
       },
     } as StreamEvent;

@@ -892,6 +892,26 @@ describe('createExtensionAPI', () => {
         message: 'Mine has started a lot of chats in the last hour. Try again later.',
       });
     });
+
+    it('throws agent_paused for a paused agent, so the page can say why', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 409,
+          json: vi.fn().mockResolvedValue({
+            type: 'urn:dorkos:problem:agent_paused',
+            title: 'This agent is paused.',
+            status: 409,
+            code: 'agent_paused',
+            detail: 'The agent is paused. Resume it, then try again.',
+          }),
+        })
+      );
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
+      const err = await api.startWork(input).catch((e: unknown) => e);
+      expect(err).toMatchObject({ name: 'StartWorkError', code: 'agent_paused' });
+    });
   });
 
   // 15. Automatic cleanup tracking

@@ -1,7 +1,7 @@
 /**
  * Triage on a decision model at server startup (spec `heartbeats` §6.2, §6.3):
- * starts the credits triage, hands over what `PUT /api/heartbeats/triage-credits`
- * reads, builds the Heartbeat page's checks block, and raises the credits
+ * starts the credits triage, hands `heartbeat.choose_triage_credits` where the
+ * choice lives, builds the Heartbeat page's checks block, and raises the credits
  * offer's one notification when it first stands.
  *
  * @module services/heartbeats/triage/triage-mount
@@ -10,7 +10,6 @@ import { randomUUID } from 'node:crypto';
 import type { Db } from '@dorkos/db';
 import type { HeartbeatChecks } from '@dorkos/shared/heartbeat-schemas';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
-import type { HeartbeatTriageRouterDeps } from '../../../routes/heartbeat-triage.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import { configManager } from '../../core/config-manager.js';
 import { creditsCanBeHad } from '../../core/cloud/credits-availability.js';
@@ -18,6 +17,7 @@ import { startHeartbeatTriage, stopHeartbeatTriage } from '../../decisions/triag
 import { notify } from '../../notifications/notification-service.js';
 import type { RaiseStore } from '../raises/raise-store.js';
 import { createBeatTriagePort, type BeatTriagePort } from './beat-triage.js';
+import { setTriageCreditsChoiceStore } from './triage-credits-capability.js';
 import {
   checksStatus,
   checksToday,
@@ -28,8 +28,6 @@ import {
 
 /** What startup hands over. */
 export interface TriageMountDeps {
-  /** Where the choice route's reads go (`http/hono-api.ts` mounts it). */
-  routes: { heartbeatTriage?: HeartbeatTriageRouterDeps };
   /** The server's database, for today's checks. */
   db: Db;
   /** The report queue, for what can wait. */
@@ -102,7 +100,7 @@ function recordChoice(before: boolean | null, after: boolean): void {
  */
 export function mountTriage(deps: TriageMountDeps): TriageMount {
   const credits = startHeartbeatTriage({ requestsToday: requestsTodayUtc(deps.db, new Date()) });
-  deps.routes.heartbeatTriage = { choice, setChoice, record: recordChoice };
+  setTriageCreditsChoiceStore({ choice, setChoice, record: recordChoice });
   const offer = () =>
     void notifyOfferOnce({
       dorkHome: resolveDorkHome(),
@@ -128,6 +126,7 @@ export function mountTriage(deps: TriageMountDeps): TriageMount {
     },
     stop() {
       unwatch();
+      setTriageCreditsChoiceStore(undefined);
       stopHeartbeatTriage();
     },
   };

@@ -129,6 +129,7 @@ describe('the mount', () => {
       'agent.list_paused',
       'link.resolve',
       'heartbeat.wakers_off',
+      'heartbeat.choose_triage_credits',
       'directory.browse',
       'directory.default',
       'diff.baseline',

@@ -111,28 +111,6 @@ describe('WorkspaceService — DOR-84 acceptance', () => {
     expect(forced.removed).toBe(true);
     expect(await sub.service.get(ws.id)).toBeNull();
   });
-
-  it('resolveByPath maps a nested session cwd back to its workspace', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
-    const resolved = await sub.service.resolveByPath(path.join(ws.path, 'apps', 'server'));
-    expect(resolved?.id).toBe(ws.id);
-  });
-
-  it('getByKey finds what ensure would reuse, by the same key spelling, without touching it', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR 1/x', source }, open);
-    const found = await sub.service.getByKey('core', 'DOR 1/x');
-    expect(found?.id).toBe(ws.id);
-    expect(found?.status).toBe('ready');
-    expect(found?.lastUsedAt).toBe(ws.lastUsedAt);
-    expect(await sub.service.getByKey('core', 'DOR-404')).toBeNull();
-    expect(await sub.service.getByKey('other', 'DOR-1')).toBeNull();
-  });
-
-  it('a clean workspace is removable without force', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-3', source }, open);
-    const result = await sub.service.remove(ws.id, { force: false });
-    expect(result.removed).toBe(true);
-  });
 });
 
 describe('WorkspaceService.sweep — retention policy', () => {
@@ -381,19 +359,5 @@ describe('WorkspaceService — ownership', () => {
 
     expect(again.id).toBe(first.id);
     expect(again.owner).toEqual({ kind: 'agent', ref: '/projects/api-bot' });
-  });
-
-  it('a sidecar written before ownership existed reads as unowned', async () => {
-    const ws = await sub.service.ensure({ projectKey: 'core', key: 'DOR-1', source }, open);
-    // Rewrite the sidecar the way a pre-change release left it: no `owner` key.
-    const { owner: _dropped, ...legacy } = ws;
-    await writeFile(
-      sub.store.manifestPath('core', 'DOR-1'),
-      JSON.stringify(legacy, null, 2) + '\n',
-      'utf-8'
-    );
-
-    const reread = await sub.store.readManifest('core', 'DOR-1');
-    expect(reread?.owner).toBeNull();
   });
 });

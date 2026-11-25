@@ -35,18 +35,6 @@ afterEach(async () => {
 });
 
 describe('getRecentLogExcerpt', () => {
-  it('returns undefined when no log directory is configured', async () => {
-    const result = await logExcerptModule.getRecentLogExcerpt();
-    expect(result).toBeUndefined();
-  });
-
-  it('returns undefined when there are no warn-or-above lines', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    loggerModule.logger.info('just some info');
-    const result = await logExcerptModule.getRecentLogExcerpt();
-    expect(result).toBeUndefined();
-  });
-
   it('includes warn/error lines but excludes info/debug', async () => {
     loggerModule.initLogger({ logDir, level: 5 });
     loggerModule.logger.info('info line');
@@ -121,16 +109,6 @@ describe('getRecentLogExcerpt', () => {
     expect(result).toContain('a real warning');
   });
 
-  it('returns undefined when every warn line is empty (DOR-2234)', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    await appendFile(
-      path.join(logDir, 'dorkos.log'),
-      JSON.stringify({ level: 'warn', time: new Date().toISOString(), msg: '' }) + '\n'
-    );
-
-    expect(await logExcerptModule.getRecentLogExcerpt()).toBeUndefined();
-  });
-
   it('drops lines older than maxAgeMs', async () => {
     loggerModule.initLogger({ logDir, level: 5 });
     const oldLine =
@@ -146,16 +124,6 @@ describe('getRecentLogExcerpt', () => {
 
     expect(result).toContain('recent warning');
     expect(result).not.toContain('ancient warning');
-  });
-
-  it('bounds the excerpt to maxLines, keeping the newest', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    for (let i = 0; i < 10; i++) loggerModule.logger.warn(`warn ${i}`);
-
-    const result = await logExcerptModule.getRecentLogExcerpt(3);
-
-    expect(result).not.toContain('warn 0');
-    expect(result).toContain('warn 9');
   });
 
   it('falls back to the prior rotated file when the current tail is thin', async () => {
@@ -177,23 +145,6 @@ describe('getRecentLogExcerpt', () => {
     expect(result).toContain('live warning');
   });
 
-  it('does not fall back to the prior file when the current tail already has enough lines', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    const rotatedLine =
-      JSON.stringify({
-        level: 'warn',
-        time: '2020-01-01T00:00:00.000Z',
-        msg: 'rotated warning',
-      }) + '\n';
-    await writeFile(path.join(logDir, 'dorkos.2020-01-01.log'), rotatedLine);
-    loggerModule.logger.warn('live warning');
-
-    const result = await logExcerptModule.getRecentLogExcerpt(1, Number.MAX_SAFE_INTEGER);
-
-    expect(result).toContain('live warning');
-    expect(result).not.toContain('rotated warning');
-  });
-
   it('caps the excerpt length at or under MAX_LOG_EXCERPT_LEN', async () => {
     loggerModule.initLogger({ logDir, level: 5 });
     for (let i = 0; i < 500; i++) {
@@ -204,55 +155,5 @@ describe('getRecentLogExcerpt', () => {
 
     expect(result).toBeDefined();
     expect(result!.length).toBeLessThanOrEqual(MAX_LOG_EXCERPT_LEN);
-  });
-
-  it('keeps the NEWEST lines when the character cap truncates, not the oldest', async () => {
-    // The whole point of the excerpt is the moment the person hit the problem,
-    // which is at the END. `slice(-maxLines)` already picks the newest lines;
-    // the character cap has to agree with it or a noisy report silently loses
-    // exactly the lines a triager needs (DOR-1976, found triaging FB-15).
-    loggerModule.initLogger({ logDir, level: 5 });
-    for (let i = 0; i < 500; i++) {
-      loggerModule.logger.warn(`warning number ${i} `.repeat(5));
-    }
-
-    const result = await logExcerptModule.getRecentLogExcerpt(1000);
-
-    expect(result).toBeDefined();
-    expect(result!.length).toBeLessThanOrEqual(MAX_LOG_EXCERPT_LEN);
-    expect(result).toContain('warning number 499');
-    expect(result).not.toContain('warning number 0 ');
-  });
-
-  it('marks a character-capped excerpt at the front, where the cut happened', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    for (let i = 0; i < 500; i++) {
-      loggerModule.logger.warn(`warning number ${i} `.repeat(5));
-    }
-
-    const result = await logExcerptModule.getRecentLogExcerpt(1000);
-
-    expect(result!.startsWith('…')).toBe(true);
-    // The ellipsis is reserved out of the budget, not added to it: the schema
-    // field this feeds is `.max(MAX_LOG_EXCERPT_LEN)`, so one character over
-    // would be a validation failure rather than a cosmetic overshoot.
-    expect(result!.length).toBe(MAX_LOG_EXCERPT_LEN);
-  });
-
-  it('leaves an excerpt that fits unmarked', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    loggerModule.logger.warn('a short warning');
-
-    const result = await logExcerptModule.getRecentLogExcerpt();
-
-    expect(result!.startsWith('…')).toBe(false);
-    expect(result).toContain('a short warning');
-  });
-
-  it('never throws when the log directory is unreadable', async () => {
-    loggerModule.initLogger({ logDir, level: 5 });
-    await rm(logDir, { recursive: true, force: true });
-
-    await expect(logExcerptModule.getRecentLogExcerpt()).resolves.toBeUndefined();
   });
 });

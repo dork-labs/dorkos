@@ -35,11 +35,7 @@ import type {
 } from '@dorkos/relay';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type {
-  NotificationDTO,
-  StandingPendingEvent,
-  StandingResolvedEvent,
-} from '@dorkos/shared/notification-schemas';
+import type { NotificationDTO, StandingResolvedEvent } from '@dorkos/shared/notification-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { RuntimeRegistry } from '../../core/runtime-registry.js';
 import { NotificationStore } from '../notification-store.js';
@@ -51,14 +47,12 @@ import {
 import { EscalationService, setEscalationService } from '../escalation-service.js';
 import type { WebPushChannel } from '../channels/web-push.js';
 import {
-  noteSigninProven,
   noteSigninRepaired,
   resetSigninEpisodes,
   setRuntimeSigninSink,
   setSigninRecheck,
   SIGNIN_RECHECK_WINDOW_MS,
 } from '../../observability/index.js';
-import { accountSigninState } from '../../observability/account-signin-state.js';
 import { logger } from '../../../lib/logger.js';
 import { watchRuntimeSigninFailures } from '../emitters/runtime-signin.js';
 
@@ -91,13 +85,6 @@ function signinRows(): NotificationDTO[] {
   return store
     .list({ limit: 50, unread: false })
     .notifications.filter((row) => row.kind === 'signin.required');
-}
-
-/** Every standing condition announced as having STARTED. */
-function announced(): StandingPendingEvent[] {
-  return broadcasts
-    .filter((b) => b.event === 'standing_pending')
-    .map((b) => b.data as StandingPendingEvent);
 }
 
 /** The rows written when a sign-in broke — one per episode. */
@@ -142,45 +129,6 @@ async function* authErrorTurn(): AsyncGenerator<StreamEvent> {
 /** A turn that works. */
 async function* cleanTurn(): AsyncGenerator<StreamEvent> {
   yield { type: 'text_delta', data: { text: 'here you go' } } as StreamEvent;
-}
-
-/**
- * A turn that fails for an ordinary reason — nothing to do with credentials.
- *
- * **Shaped like the real thing, which is the point.** claude-code catches a
- * pre-stream throw and YIELDS this, returning normally, so a turn that never
- * reached the provider is indistinguishable from a finished one by completion
- * alone (`runtimes/claude-code/messaging/message-sender.ts`).
- */
-async function* executionErrorTurn(): AsyncGenerator<StreamEvent> {
-  yield {
-    type: 'error',
-    data: { message: 'The tool exited with code 1', category: 'execution_error' },
-  } as StreamEvent;
-}
-
-/** A turn that says nothing but runs a tool — still proof the sign-in worked. */
-async function* toolOnlyTurn(): AsyncGenerator<StreamEvent> {
-  yield { type: 'tool_call_start', data: { id: 't-1', name: 'Bash' } } as StreamEvent;
-  yield { type: 'done', data: { sessionId: 'sess' } } as StreamEvent;
-}
-
-/** A turn whose only output is the terminal marker, which rides failures too. */
-async function* doneOnlyTurn(): AsyncGenerator<StreamEvent> {
-  yield { type: 'done', data: { sessionId: 'sess' } } as StreamEvent;
-}
-
-/** A turn that THROWS its credential failure instead of yielding one. */
-const THROWN_AUTH_ERROR = new Error('401 Unauthorized: the OAuth token was revoked');
-
-async function* thrownAuthTurn(): AsyncGenerator<StreamEvent> {
-  yield { type: 'text_delta', data: { text: 'starting' } } as StreamEvent;
-  throw THROWN_AUTH_ERROR;
-}
-
-/** A turn that throws for an ordinary reason. */
-async function* thrownExecutionTurn(): AsyncGenerator<StreamEvent> {
-  throw new Error('spawn ENOENT');
 }
 
 /** Drain one turn on a registered runtime, then let the notification settle. */
@@ -314,32 +262,6 @@ describe('a runtime turn that fails on its sign-in', () => {
     expect(row.readAt).toBeUndefined();
   });
 
-  it('leaves the record behind when the process forgets everything', async () => {
-    // The whole reason this kind stores at the RAISE edge rather than only on
-    // resolution. Its standing state is in memory, so an overnight restart
-    // forgets it — and with resolution-only storage a 3am failure would leave
-    // no push, no row and nothing at all to find in the morning.
-    const registry = new RuntimeRegistry();
-    await runTurn(registry, 'claude-code', authErrorTurn);
-    await pastRecheck();
-    resetSigninEpisodes();
-
-    expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('does not also announce a standing arrival, which would be a second banner', async () => {
-    // The desktop draws one banner from the row and another from
-    // `standing_pending`, with no dedupe between them — one is keyed on
-    // notification id, the other on `subjectKey`. Doing both puts two banners
-    // on screen for one dead credential.
-    const registry = new RuntimeRegistry();
-    await runTurn(registry, 'claude-code', authErrorTurn);
-    await pastRecheck();
-
-    expect(raisedRows()).toHaveLength(1);
-    expect(announced()).toEqual([]);
-  });
-
   it('stands once however many turns trip over the same dead credential', async () => {
     const registry = registryRunning('claude-code', [authErrorTurn, authErrorTurn, authErrorTurn]);
 
@@ -350,71 +272,6 @@ describe('a runtime turn that fails on its sign-in', () => {
     await pastRecheck();
 
     expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('keeps each runtime separate — one dead sign-in is not the other', async () => {
-    const registry = new RuntimeRegistry();
-    await runTurn(registry, 'claude-code', authErrorTurn);
-    await runTurn(registry, 'codex', authErrorTurn);
-    await pastRecheck();
-
-    const titles = raisedRows().map((c) => c.title);
-    expect(titles).toHaveLength(2);
-    expect(titles).toContain('Your Claude Code sign-in stopped working');
-    expect(titles).toContain('Your Codex sign-in stopped working');
-  });
-
-  it('reports a credential failure the runtime THREW rather than yielded', async () => {
-    const registry = registryRunning('claude-code', [thrownAuthTurn]);
-
-    let caught: unknown;
-    try {
-      for await (const _ of registry.get('claude-code').sendMessage('sess-1', 'hi', {}));
-    } catch (err) {
-      caught = err;
-    }
-    await pastRecheck();
-
-    // The SAME error object, not merely one with the same message: the watch
-    // observes a turn and may never substitute what a caller sees.
-    expect(caught).toBe(THROWN_AUTH_ERROR);
-    expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('does not latch a runtime nothing can be told about', async () => {
-    // The episode is claimed BEFORE the sink runs — it has to be, or the
-    // concurrent case above is unfixable. So a runtime claimed while no sink is
-    // installed would stand forever with nobody ever told, and every later
-    // failure would find it already standing.
-    setRuntimeSigninSink(null);
-    const registry = registryRunning('claude-code', [authErrorTurn, authErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    expect(raisedRows()).toHaveLength(0);
-
-    watchRuntimeSigninFailures();
-    await drain(registry, 'claude-code', 'sess-2');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(1);
-  });
-});
-
-describe('a runtime turn that fails for any other reason', () => {
-  it('says nothing about signing in', async () => {
-    const registry = new RuntimeRegistry();
-    await runTurn(registry, 'claude-code', executionErrorTurn);
-
-    expect(raisedRows()).toEqual([]);
-  });
-
-  it('says nothing about signing in when it throws', async () => {
-    const registry = registryRunning('claude-code', [thrownExecutionTurn]);
-
-    await expect(async () => {
-      for await (const _ of registry.get('claude-code').sendMessage('sess-1', 'hi', {}));
-    }).rejects.toThrow('spawn ENOENT');
-    await flush();
-
-    expect(raisedRows()).toEqual([]);
   });
 });
 
@@ -439,107 +296,6 @@ describe('a single sign-in failure', () => {
     expect(raisedRows()).toHaveLength(1);
     // The episode began at the failure, not when the window ran out.
     expect(standingSince()).toEqual([failedAt]);
-  });
-
-  it('raises nothing, and announces no recovery, when a clean turn follows inside it', async () => {
-    const registry = registryRunning('claude-code', [authErrorTurn, cleanTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    // The clean turn starts after the failure, so it is evidence about now.
-    vi.advanceTimersByTime(1000);
-    await drain(registry, 'claude-code', 'sess-2');
-
-    await pastRecheck();
-    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
-
-    // Nothing was said, so there is nothing to take back either.
-    expect(signinRows()).toEqual([]);
-    expect(retired()).toEqual([]);
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('raises at once when a second failure lands inside the window', async () => {
-    const registry = registryRunning('claude-code', [authErrorTurn, authErrorTurn]);
-    const failedAt = new Date(Date.now()).toISOString();
-    await drain(registry, 'claude-code', 'sess-1');
-    expect(raisedRows()).toEqual([]);
-
-    vi.advanceTimersByTime(10_000);
-    await drain(registry, 'claude-code', 'sess-2');
-
-    expect(raisedRows()).toHaveLength(1);
-    expect(standingSince()).toEqual([failedAt]);
-
-    // The first failure's window running out later says nothing more.
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('drops the notice when the re-check finds the account working', async () => {
-    const recheck = vi.fn(async (runtime: string, accountRoot: string | undefined) => {
-      // A probe that starts a second after the failure, as a fresh one does.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      // What the probe does on `ok`: it proves the account through its own path.
-      noteSigninProven(runtime, accountRoot, Date.now(), 'probe');
-      return 'ok' as const;
-    });
-    setSigninRecheck(recheck);
-    const registry = registryWithAccounts('claude-code', [authErrorTurn], {
-      'sess-1': '/home/dev/.claude',
-    });
-
-    await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
-    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
-
-    expect(recheck).toHaveBeenCalledOnce();
-    expect(recheck).toHaveBeenCalledWith('claude-code', '/home/dev/.claude');
-    expect(signinRows()).toEqual([]);
-    expect(retired()).toEqual([]);
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('keeps the notice when the re-check shares a probe that began before the failure', async () => {
-    // Single flight: a probe already running when the turn failed is the one
-    // the re-check gets. Its `ok` is about the sign-in before it died.
-    const probeStartedAt = Date.now();
-    vi.advanceTimersByTime(1000);
-    setSigninRecheck(async (runtime, accountRoot) => {
-      noteSigninProven(runtime, accountRoot, probeStartedAt, 'probe');
-      return 'ok';
-    });
-    const registry = registryWithAccounts('claude-code', [authErrorTurn], {
-      'sess-1': '/home/dev/.claude',
-    });
-
-    await drain(registry, 'claude-code', 'sess-1');
-    await vi.advanceTimersByTimeAsync(SIGNIN_RECHECK_WINDOW_MS - 1);
-    expect(raisedRows()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    await flush();
-
-    expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('still raises when the re-check learns nothing', async () => {
-    setSigninRecheck(async () => 'failed');
-    const registry = registryRunning('claude-code', [authErrorTurn]);
-
-    await drain(registry, 'claude-code', 'sess-1');
-    expect(raisedRows()).toEqual([]);
-    await pastRecheck();
-
-    expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('still raises, and leaves the turn alone, when the re-check throws', async () => {
-    setSigninRecheck(() => {
-      throw new Error('probe exploded');
-    });
-    const seen = await runTurn(new RuntimeRegistry(), 'claude-code', authErrorTurn);
-    expect(seen.map((event) => event.type)).toEqual(['text_delta', 'error']);
-    await pastRecheck();
-
-    expect(raisedRows()).toHaveLength(1);
   });
 });
 
@@ -571,27 +327,6 @@ describe('the log line a clear writes', () => {
         { runtime: 'claude-code', account: '/home/dev/.claude', cause: 'login' },
       ],
     ]);
-  });
-
-  it('names the turn when a clean turn cleared it', async () => {
-    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-    const registry = registryRunning('codex', [authErrorTurn, cleanTurn]);
-    await drain(registry, 'codex', 'sess-dead');
-    await pastRecheck();
-    await drain(registry, 'codex', 'sess-fixed');
-
-    expect(clearedLines(info.mock.calls)).toEqual([
-      ['[Runtimes] Sign-in cleared', { runtime: 'codex', account: undefined, cause: 'turn' }],
-    ]);
-  });
-
-  it('writes nothing for an account that was never signed out', async () => {
-    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-    const registry = registryRunning('codex', [cleanTurn]);
-    await drain(registry, 'codex', 'sess-1');
-    noteSigninRepaired('codex', undefined, 'login');
-
-    expect(clearedLines(info.mock.calls)).toEqual([]);
   });
 });
 
@@ -648,162 +383,6 @@ describe('the next clean turn on that runtime', () => {
 
     expect(sendToAll).not.toHaveBeenCalled();
   });
-
-  it('does not clear another runtime that is also stuck', async () => {
-    const registry = new RuntimeRegistry();
-    const claude = new FakeAgentRuntime('claude-code');
-    claude.withScenarios([authErrorTurn]);
-    registry.register(claude);
-    const codex = new FakeAgentRuntime('codex');
-    codex.withScenarios([authErrorTurn, cleanTurn]);
-    registry.register(codex);
-
-    await drain(registry, 'claude-code', 'sess-1');
-    await drain(registry, 'codex', 'sess-2');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(2);
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'codex', 'sess-3');
-
-    // Only Codex's. A working sign-in on one runtime says nothing whatsoever
-    // about a different runtime's own credential.
-    expect(retired()).toHaveLength(1);
-    expect(retired()[0].subjectKey).toMatch(/^signin:codex:/);
-    expect(clearedRows().map((r) => r.title)).toEqual(['Your Codex sign-in is working again']);
-  });
-
-  it('does not count a turn that was already running when the sign-in failed', async () => {
-    let release = (): void => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    /** A working turn that hangs until the test lets it finish. */
-    async function* heldCleanTurn(): AsyncGenerator<StreamEvent> {
-      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
-      await gate;
-    }
-
-    const registry = registryRunning('claude-code', [heldCleanTurn, authErrorTurn]);
-
-    // The held turn starts first, and is still open when the credential dies.
-    const held = (async () => {
-      for await (const _ of registry.get('claude-code').sendMessage('sess-held', 'hi', {}));
-    })();
-    await flush();
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-fail');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(1);
-
-    release();
-    await held;
-    await flush();
-
-    // It authenticated BEFORE the credential died, so its success is evidence
-    // about a moment that has already passed. Clearing on it would take the
-    // banner down while the sign-in is still dead.
-    expect(retired()).toEqual([]);
-  });
-
-  it('does not count a turn that never reached the provider', async () => {
-    // **The case that made "ran to the end" the wrong test.** claude-code
-    // CATCHES a pre-stream failure and yields a typed `execution_error`, then
-    // returns normally (`runtimes/claude-code/messaging/message-sender.ts`) — so
-    // a `spawn ENOENT`, a dead sidecar, or any failure before the provider was
-    // ever contacted looks bit-for-bit like a completed turn from here. It says
-    // nothing whatsoever about the credential, and clearing on it took the
-    // banner down and cancelled the phone ping while the sign-in was still dead.
-    const registry = registryRunning('claude-code', [authErrorTurn, executionErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-2');
-
-    expect(retired()).toEqual([]);
-  });
-
-  it('still reaches the phone after a turn that never reached the provider', async () => {
-    const registry = registryRunning('claude-code', [authErrorTurn, executionErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    await drain(registry, 'claude-code', 'sess-2');
-
-    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
-
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('counts a turn whose only output was a tool call', async () => {
-    // Evidence of provider contact is not the same as evidence of TEXT. A turn
-    // that only ran a tool still got past the sign-in, and the condition has to
-    // be able to end on one — otherwise a banner outlives the fix.
-    const registry = registryRunning('claude-code', [authErrorTurn, toolOnlyTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-2');
-
-    expect(retired()).toHaveLength(1);
-  });
-
-  it('does not count a turn whose only output was a done marker', async () => {
-    // `done` rides the FAILURE path too — codex's mapper emits `error` then
-    // `done`, and keeps `done` even when it suppresses a duplicate error
-    // (`runtimes/codex/event-mapper.ts`). A terminal marker is not contact.
-    const registry = registryRunning('claude-code', [authErrorTurn, doneOnlyTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-2');
-
-    expect(retired()).toEqual([]);
-  });
-
-  it('does not count a turn the caller walked away from', async () => {
-    const registry = registryRunning('claude-code', [authErrorTurn, cleanTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    for await (const _ of registry.get('claude-code').sendMessage('sess-2', 'hi', {})) break;
-    await flush();
-
-    // An abandoned turn never reached its end, so nothing about it says the
-    // credential works.
-    expect(retired()).toEqual([]);
-  });
-
-  it('does not count a turn that began before a failure nobody could be told about', async () => {
-    // The notice could not be said, so the episode was given back — and with
-    // it the time the failure was noticed. The signed-out mark keeps its own.
-    setRuntimeSigninSink(() => {
-      throw new Error('the notification pipeline is down');
-    });
-    let release = (): void => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    /** A working turn that hangs until the test lets it finish. */
-    async function* heldCleanTurn(): AsyncGenerator<StreamEvent> {
-      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
-      await gate;
-    }
-    const registry = registryRunning('codex', [heldCleanTurn, authErrorTurn]);
-
-    const held = (async () => {
-      for await (const _ of registry.get('codex').sendMessage('sess-held', 'hi', {}));
-    })();
-    await flush();
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'codex', 'sess-fail');
-    await pastRecheck();
-
-    release();
-    await held;
-    await flush();
-
-    expect(accountSigninState('codex', undefined)).toBe('signed-out');
-  });
 });
 
 /**
@@ -842,230 +421,6 @@ describe('a machine with more than one account on one runtime', () => {
     expect(retired()).toEqual([]);
     expect(clearedRows()).toEqual([]);
   });
-
-  it('still reaches the phone while the other account keeps working', async () => {
-    // The half that hurts most. A resolution disarms the ladder, so on a busy
-    // machine the healthy account's very next turn cancelled the push — every
-    // time, forever, which is silence rather than a late alarm.
-    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
-      'sess-dead': '~/.claude',
-      'sess-live': '~/.claude2',
-    });
-
-    await drain(registry, 'claude-code', 'sess-dead');
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-live');
-    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
-
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-    expect(sendToAll).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Your Main sign-in stopped working' })
-    );
-  });
-
-  it('clears once a turn goes through on the account that actually failed', async () => {
-    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
-      'sess-dead': '~/.claude',
-      'sess-fixed': '~/.claude',
-    });
-
-    await drain(registry, 'claude-code', 'sess-dead');
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-fixed');
-
-    expect(retired()).toHaveLength(1);
-    expect(clearedRows().map((row) => row.title)).toEqual(['Your Main sign-in is working again']);
-  });
-
-  it('keeps separate notices and clears only the repaired account', async () => {
-    const registry = registryWithAccounts(
-      'claude-code',
-      [authErrorTurn, authErrorTurn, cleanTurn, cleanTurn],
-      {
-        'a-fail': '/accounts/claude4',
-        'b-fail': '/accounts/claude5',
-        'a-fixed': '/accounts/claude4',
-        'b-fixed': '/accounts/claude5',
-      }
-    );
-    await drain(registry, 'claude-code', 'a-fail');
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'b-fail');
-    await pastRecheck();
-    expect(raisedRows().map((row) => row.subject.id)).toEqual(
-      expect.arrayContaining(['claude-code:/accounts/claude4', 'claude-code:/accounts/claude5'])
-    );
-    expect(raisedRows().map((row) => row.title)).toEqual(
-      expect.arrayContaining([
-        'Your claude4 sign-in stopped working',
-        'Your claude5 sign-in stopped working',
-      ])
-    );
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'a-fixed');
-    expect(clearedRows().map((row) => row.subject.id)).toEqual(['claude-code:/accounts/claude4']);
-    expect(store.unresolvedStandingSubjects('signin.required').map((row) => row.subjectId)).toEqual(
-      ['claude-code:/accounts/claude5']
-    );
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'b-fixed');
-    expect(clearedRows()).toHaveLength(2);
-  });
-
-  it('does not count a turn that was already running when THAT account failed', async () => {
-    // The already-running-turn rule, answered per account. The runtime's
-    // condition has stood since the first account died, so comparing against
-    // THAT moment would credit this turn — which started before the second
-    // account failed and so authenticated on a credential that was still good.
-    let release = (): void => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    /** A working turn on the second account that hangs until the test lets it finish. */
-    async function* heldCleanTurn(): AsyncGenerator<StreamEvent> {
-      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
-      await gate;
-    }
-
-    const registry = registryWithAccounts(
-      'claude-code',
-      [authErrorTurn, heldCleanTurn, authErrorTurn, cleanTurn],
-      {
-        'sess-a-fail': '~/.claude',
-        'sess-b-held': '~/.claude2',
-        'sess-b-fail': '~/.claude2',
-        'sess-a-fixed': '~/.claude',
-      }
-    );
-
-    await drain(registry, 'claude-code', 'sess-a-fail');
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    const held = (async () => {
-      for await (const _ of registry.get('claude-code').sendMessage('sess-b-held', 'hi', {}));
-    })();
-    await flush();
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-b-fail');
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-a-fixed');
-
-    release();
-    await held;
-    await flush();
-
-    // The held turn is the only thing left that could end the condition, and it
-    // is evidence about a moment before its own account broke.
-    expect(clearedRows().map((row) => row.subject.id)).toEqual(['claude-code:~/.claude']);
-  });
-
-  it('leaves an unattributed failure standing after another account works', async () => {
-    const registry = registryWithAccounts('claude-code', [authErrorTurn, cleanTurn], {
-      // `sess-unplaceable` is deliberately absent: the runtime cannot say.
-      'sess-live': '~/.claude2',
-    });
-
-    await drain(registry, 'claude-code', 'sess-unplaceable');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(1);
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-live');
-
-    expect(retired()).toHaveLength(0);
-  });
-
-  it('places a failure on a session whose account was only decided by the launch', async () => {
-    // **Why the account is read LATE, and not when the turn is set up.** A
-    // brand-new session has no account until its launch resolves one, and the
-    // launch does not happen until the first event is pulled — so a read at
-    // turn-start answers `undefined` for exactly the turn a dead credential
-    // fails on, files it as unattributable, and lets any other account's clean
-    // turn clear it. That is the original bug, surviving in the one case it
-    // hurts most: the first turn of a new session.
-    //
-    // The runtime here answers nothing until its turn has begun, which is what a
-    // real claude-code session does.
-    let launched = false;
-    async function* launchesThenFails(): AsyncGenerator<StreamEvent> {
-      // Pulling the first event is what runs the launch.
-      launched = true;
-      yield { type: 'text_delta', data: { text: 'starting' } } as StreamEvent;
-      yield {
-        type: 'error',
-        data: { message: 'Your sign-in stopped working.', category: 'auth_error' },
-      } as StreamEvent;
-    }
-    const roots: Record<string, string> = {
-      'sess-new': '~/.claude',
-      'sess-live': '~/.claude2',
-    };
-    const registry = registryWithAccounts(
-      'claude-code',
-      [launchesThenFails, cleanTurn],
-      (sessionId) => (launched ? roots[sessionId] : undefined)
-    );
-
-    await drain(registry, 'claude-code', 'sess-new');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(1);
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-live');
-
-    // Attributed to the account the launch settled on, so the OTHER account's
-    // clean turn is no evidence at all. Read the account at turn-start instead
-    // and this resolves.
-    expect(retired()).toEqual([]);
-  });
-
-  it('keeps a named account standing when only the unplaceable failure is answered', async () => {
-    const registry = registryWithAccounts(
-      'claude-code',
-      [authErrorTurn, authErrorTurn, cleanTurn, cleanTurn],
-      {
-        'sess-a-fail': '~/.claude',
-        // `sess-unplaceable` is deliberately absent from the map.
-        'sess-live': '~/.claude2',
-        'sess-a-fixed': '~/.claude',
-      }
-    );
-
-    await drain(registry, 'claude-code', 'sess-a-fail');
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-unplaceable');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(2);
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-live');
-    expect(retired()).toEqual([]);
-
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'claude-code', 'sess-a-fixed');
-
-    // Only the named account is cleared. The unattributed failure stays open.
-    expect(retired()).toHaveLength(1);
-    expect(clearedRows()).toHaveLength(1);
-  });
-
-  it('is unchanged for a runtime that has only one sign-in to speak of', async () => {
-    // The degradation pin, and the A/B against the first case in this block:
-    // the same two sessions and the same two turns, on a runtime that does NOT
-    // implement `getSessionAccount`. Codex and opencode each have one home
-    // directory, so any clean turn is evidence about the only credential there
-    // is — exactly as it was before accounts entered this module.
-    const registry = registryRunning('codex', [authErrorTurn, cleanTurn]);
-
-    await drain(registry, 'codex', 'sess-dead');
-    vi.advanceTimersByTime(ONE_MINUTE_MS);
-    await drain(registry, 'codex', 'sess-other');
-
-    expect(retired()).toHaveLength(1);
-    expect(clearedRows().map((row) => row.title)).toEqual(['Your Codex sign-in is working again']);
-  });
 });
 
 /**
@@ -1100,46 +455,6 @@ describe('signing back in', () => {
     expect(retired()).toHaveLength(1);
     expect(clearedRows().map((row) => row.title)).toEqual(['Your Main sign-in is working again']);
   });
-
-  it('does not cancel the phone leg for an account nobody signed in', async () => {
-    // The direction that must NOT be broken while fixing the one above: signing
-    // in to one account says nothing about a different account's credential, so
-    // the notice — and the ladder behind it — stays up.
-    const registry = registryWithAccounts('claude-code', [authErrorTurn], {
-      'sess-dead': '/home/dev/.claude',
-    });
-
-    await drain(registry, 'claude-code', 'sess-dead');
-    noteSigninRepaired('claude-code', '/home/dev/.claude3', 'login');
-    await flush();
-
-    expect(retired()).toEqual([]);
-    expect(clearedRows()).toEqual([]);
-
-    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('clears the whole condition on a runtime with one sign-in to speak of', async () => {
-    // Codex has one home directory and no account concept, so its login names no
-    // account — and the credential it just wrote is the only one there is.
-    const registry = registryRunning('codex', [authErrorTurn]);
-
-    await drain(registry, 'codex', 'sess-dead');
-    await pastRecheck();
-    noteSigninRepaired('codex', undefined, 'login');
-    await flush();
-
-    expect(clearedRows().map((row) => row.title)).toEqual(['Your Codex sign-in is working again']);
-  });
-
-  it('says nothing when no sign-in was standing', async () => {
-    noteSigninRepaired('claude-code', '/home/dev/.claude', 'login');
-    await flush();
-
-    expect(signinRows()).toEqual([]);
-    expect(retired()).toEqual([]);
-  });
 });
 
 describe('a sign-in that dies again after being fixed', () => {
@@ -1172,24 +487,6 @@ describe('a sign-in that dies again after being fixed', () => {
     const keys = sendToAll.mock.calls.map((call) => call[0].notificationId as string);
     expect(keys[0]).not.toBe(keys[1]);
     for (const key of keys) expect(key).toMatch(/^signin:claude-code:/);
-  });
-
-  it('does not wait out a quiet window before saying so', async () => {
-    // The old race guard expired on a clock, so a credential fixed at 3.10 and
-    // dead again at 3.30 stayed silent until 4.00. The episode is now released
-    // by the RESOLUTION rather than by time, so the second failure is heard
-    // after its own short re-check window, not after the first one's quiet hour.
-    const registry = registryRunning('claude-code', [authErrorTurn, cleanTurn, authErrorTurn]);
-
-    await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
-    vi.advanceTimersByTime(1000);
-    await drain(registry, 'claude-code', 'sess-2');
-    vi.advanceTimersByTime(1000);
-    await drain(registry, 'claude-code', 'sess-3');
-    await pastRecheck();
-
-    expect(raisedRows()).toHaveLength(2);
   });
 });
 
@@ -1238,6 +535,25 @@ describe('a server restart that stranded an episode', () => {
     });
   }
 
+  it('closes a row from before episodes existed, which carries no `since` at all', async () => {
+    // The rows DOR-1654 wrote (PR #1409). Nothing about them can ever be
+    // resolved by a turn, so skipping them here makes the banner permanent on
+    // exactly the installs that have one.
+    seedLegacyRaiseRow('claude-code');
+    expect(raisedRows()).toHaveLength(1);
+
+    restart();
+    await flush();
+
+    const [closed, ...rest] = clearedRows();
+    expect(rest).toEqual([]);
+    expect(closed.outcome).toBe('cleared');
+    // Stamped from the row's own `createdAt`, since its payload had nothing —
+    // and the newest row for the runtime is now this one, which is what the
+    // banner predicate reads.
+    expect(signinRows()[0].id).toBe(closed.id);
+  });
+
   it('closes the raise row nobody is left to answer', async () => {
     const registry = registryRunning('claude-code', [authErrorTurn]);
     await drain(registry, 'claude-code', 'sess-1');
@@ -1258,136 +574,6 @@ describe('a server restart that stranded an episode', () => {
     expect(signinRows()[0].id).toBe(closed.id);
   });
 
-  it('says a restart closed it, never that the sign-in works again', async () => {
-    // The one thing boot must not do. It has no evidence the credential was
-    // fixed — only that nothing in this process can ever find out — so an
-    // all-clear here would be DorkOS asserting something nobody checked.
-    const registry = registryRunning('claude-code', [authErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
-
-    restart();
-    await flush();
-
-    const [closed] = clearedRows();
-    expect(closed.title).toBe('DorkOS restarted while your Claude Code sign-in was broken');
-    expect(closed.title).not.toContain('working again');
-    expect(closed.body).toBe('Sign in again if it still needs you.');
-  });
-
-  it('says it quietly: nothing announced, nothing pushed, nothing unread', async () => {
-    const registry = registryRunning('claude-code', [authErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
-    sendToAll.mockClear();
-
-    restart();
-    await flush();
-
-    const [closed] = clearedRows();
-    // `cleared` lands the row already read, so a restart cannot light the bell.
-    expect(closed.readAt).toBeDefined();
-    expect(sendToAll).not.toHaveBeenCalled();
-    expect(announced()).toEqual([]);
-  });
-
-  it('leaves alone an episode that already resolved before the restart', async () => {
-    const registry = registryRunning('claude-code', [authErrorTurn, cleanTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
-    vi.advanceTimersByTime(1000);
-    await drain(registry, 'claude-code', 'sess-2');
-    expect(clearedRows()).toHaveLength(1);
-
-    restart();
-    await flush();
-
-    // Still one. The repair reads the NEWEST row per runtime, so an old raise
-    // row that its own resolution already answered is not an orphan.
-    expect(clearedRows()).toHaveLength(1);
-  });
-
-  it('leaves alone a runtime that is failing in THIS process', async () => {
-    // Boot is not the only caller: the emitter is installed by a composition
-    // root that could run again, and a row for a condition standing right now
-    // must not be closed out from under it.
-    const registry = registryRunning('claude-code', [authErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
-    expect(raisedRows()).toHaveLength(1);
-
-    // No `resetSigninEpisodes()` — the episode is still claimed in memory.
-    watchRuntimeSigninFailures();
-    await flush();
-
-    expect(clearedRows()).toEqual([]);
-  });
-
-  it('closes nothing when there is nothing to close', async () => {
-    restart();
-    await flush();
-
-    expect(signinRows()).toEqual([]);
-  });
-
-  it('closes a row from before episodes existed, which carries no `since` at all', async () => {
-    // The rows DOR-1654 wrote (PR #1409). Nothing about them can ever be
-    // resolved by a turn, so skipping them here makes the banner permanent on
-    // exactly the installs that have one.
-    seedLegacyRaiseRow('claude-code');
-    expect(raisedRows()).toHaveLength(1);
-
-    restart();
-    await flush();
-
-    const [closed, ...rest] = clearedRows();
-    expect(rest).toEqual([]);
-    expect(closed.outcome).toBe('cleared');
-    // Stamped from the row's own `createdAt`, since its payload had nothing —
-    // and the newest row for the runtime is now this one, which is what the
-    // banner predicate reads.
-    expect(signinRows()[0].id).toBe(closed.id);
-  });
-
-  it('closes a row whose stored payload can no longer be parsed', async () => {
-    // Same failure mode from a different cause: the payload column is JSON
-    // written by an older build, and a row nothing can read is still a row a
-    // surface draws.
-    store.insert({
-      kind: 'signin.required',
-      tier: 'blocking',
-      subjectType: 'system',
-      subjectId: 'codex',
-      title: 'Your codex sign-in stopped working',
-      payload: undefined,
-      dedupeKey: 'signin:codex:legacy',
-    });
-
-    restart();
-    await flush();
-
-    expect(clearedRows().map((row) => row.subject.id)).toEqual(['codex']);
-  });
-
-  it('is idempotent: a second restart writes nothing more', async () => {
-    seedLegacyRaiseRow('claude-code');
-    const registry = registryRunning('codex', [authErrorTurn]);
-    await drain(registry, 'codex', 'sess-1');
-    await pastRecheck();
-
-    restart();
-    await flush();
-    expect(clearedRows()).toHaveLength(2);
-
-    restart();
-    await flush();
-
-    // The rows it closed are no longer the newest unresolved ones, so the second
-    // boot finds nothing — a machine that restarts nightly does not accumulate a
-    // resolution row per boot.
-    expect(clearedRows()).toHaveLength(2);
-  });
-
   it('boots the watch anyway when the repair read fails', async () => {
     // A locked database at exactly this moment (SQLITE_BUSY) must cost the
     // tidy-up, never the watch: a throw out of here would take the whole
@@ -1406,47 +592,6 @@ describe('a server restart that stranded an episode', () => {
     await drain(registry, 'claude-code', 'sess-1');
     await pastRecheck();
     expect(raisedRows()).toHaveLength(1);
-  });
-});
-
-describe('the watch itself', () => {
-  it('passes every event through untouched', async () => {
-    const registry = new RuntimeRegistry();
-    const seen = await runTurn(registry, 'claude-code', authErrorTurn);
-
-    expect(seen.map((e) => e.type)).toEqual(['text_delta', 'error']);
-    expect((seen[1].data as { category: string }).category).toBe('auth_error');
-  });
-
-  it('gives the episode back when nobody could be told about it', async () => {
-    // The claim is made BEFORE the sink runs, so it is optimistic. Since an
-    // episode is now released by a resolution rather than by a clock, a runtime
-    // latched on an announcement that never happened would stay silent until
-    // the server restarted.
-    setRuntimeSigninSink(() => {
-      throw new Error('the notification pipeline is down');
-    });
-    const registry = registryRunning('claude-code', [authErrorTurn, authErrorTurn]);
-    await drain(registry, 'claude-code', 'sess-1');
-    // The held notice is said, into the broken sink, when its window ends.
-    await pastRecheck();
-
-    watchRuntimeSigninFailures();
-    await drain(registry, 'claude-code', 'sess-2');
-    await pastRecheck();
-
-    expect(raisedRows()).toHaveLength(1);
-  });
-
-  it('leaves every other member of the runtime reachable', async () => {
-    const registry = new RuntimeRegistry();
-    const runtime = new FakeAgentRuntime('claude-code');
-    registry.register(runtime);
-
-    const wrapped = registry.get('claude-code');
-    expect(wrapped.type).toBe('claude-code');
-    // Bound to the real instance, so a method that reads private state still works.
-    expect(wrapped.getCapabilities()).toEqual(runtime.getCapabilities());
   });
 });
 

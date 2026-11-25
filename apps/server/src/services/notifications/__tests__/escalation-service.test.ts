@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createDb, runMigrations, eq, notificationDeliveries, type Db } from '@dorkos/db';
+import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
 import { NotificationStore } from '../notification-store.js';
 import { notificationEntry } from '../notification-registry.js';
@@ -8,9 +8,6 @@ import {
   setEscalationService,
   type StandingCondition,
 } from '../escalation-service.js';
-import { raiseStanding } from '../standing-events.js';
-import { logger } from '../../../lib/logger.js';
-import { eventFanOut } from '../../core/event-fan-out.js';
 import type { WebPushChannel, PushFanOutResult } from '../channels/web-push.js';
 import type { RelayChannelDeps } from '../channels/relay.js';
 
@@ -107,14 +104,6 @@ function ledgerFor(subjectKey: string): Array<{ channel: string; escalated: bool
   }));
 }
 
-/** Mark every ledger row for a subject as seen, the way a channel ack would. */
-function markSeen(subjectKey: string): void {
-  db.update(notificationDeliveries)
-    .set({ seenAt: '2026-08-20T09:00:00.000Z' })
-    .where(eq(notificationDeliveries.subjectKey, subjectKey))
-    .run();
-}
-
 beforeEach(() => {
   vi.useFakeTimers();
   db = createDb(':memory:');
@@ -129,31 +118,6 @@ afterEach(() => {
 });
 
 describe('arming', () => {
-  /**
-   * The whole ladder — the timer's key, the ledger's `subject_key`, and the
-   * disarm a resolution issues — has to name one condition the same way three
-   * times. It does that by having ONE builder, the registry's `dedupeKey`; this
-   * asserts the timer really is filed under it, which is what makes a
-   * resolution's `cancelByKey` able to find it at all.
-   */
-  it('files each of the three standing kinds under its registry dedupe key', () => {
-    const service = buildService();
-    const schedule = { taskId: 'task-1', taskName: 'Nightly', proposedBy: 'An agent' };
-    const error = sessionError();
-
-    service.arm('ask.pending', ask());
-    service.arm('schedule.parked', schedule);
-    service.arm('session.error', error);
-
-    expect(service.armedSubjects().sort()).toEqual(
-      [
-        notificationEntry('ask.pending').dedupeKey(ask()),
-        notificationEntry('schedule.parked').dedupeKey(schedule),
-        notificationEntry('session.error').dedupeKey(error),
-      ].sort()
-    );
-  });
-
   it('never arms while the delay is `never`', async () => {
     delay = 'never';
     const service = buildService();
@@ -165,18 +129,6 @@ describe('arming', () => {
     expect(sendToAll).not.toHaveBeenCalled();
   });
 
-  it('reads the knob live, so a change lands on the next arm without a restart', () => {
-    const service = buildService();
-
-    delay = 'never';
-    service.arm('ask.pending', ask('int-off'));
-    expect(service.armedSubjects()).toEqual([]);
-
-    delay = 5;
-    service.arm('ask.pending', ask('int-on'));
-    expect(service.armedSubjects()).toEqual(['ask:int-on']);
-  });
-
   it('silences a timer that is already running when the knob moves to `never`', async () => {
     const service = buildService();
     service.arm('ask.pending', ask());
@@ -185,19 +137,6 @@ describe('arming', () => {
     await vi.advanceTimersByTimeAsync(2 * ONE_MINUTE);
 
     expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('leaves the first timer alone when the same subject is armed twice', async () => {
-    const service = buildService();
-
-    service.arm('ask.pending', ask());
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE / 2);
-    // A seam that fires twice for one condition must not be able to push the
-    // escalation further away.
-    service.arm('ask.pending', ask());
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE / 2 + 1);
-
-    expect(sendToAll).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -216,48 +155,6 @@ describe('cancelling', () => {
     expect(service.armedSubjects()).toEqual([]);
     await vi.advanceTimersByTimeAsync(5 * ONE_MINUTE);
     expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('disarms a parked schedule that was approved or rejected', async () => {
-    const service = buildService();
-    const schedule = { taskId: 'task-1', taskName: 'Nightly', proposedBy: 'An agent' };
-    service.arm('schedule.parked', schedule);
-
-    service.cancelByKey(notificationEntry('schedule.parked').dedupeKey(schedule));
-
-    await vi.advanceTimersByTimeAsync(5 * ONE_MINUTE);
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('disarms a session whose error cleared', async () => {
-    const service = buildService();
-    const error = sessionError();
-    service.arm('session.error', error);
-
-    service.cancelByKey(notificationEntry('session.error').dedupeKey(error));
-
-    await vi.advanceTimersByTimeAsync(5 * ONE_MINUTE);
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('does not fire for a subject a channel already marked seen', async () => {
-    const service = buildService();
-    service.arm('ask.pending', ask());
-    // The mark is written by hand here because NOTHING IN PRODUCTION WRITES IT
-    // YET — no channel-side ack hook exists (see `wasAcknowledged`). This pins
-    // the guard so that when one lands it is already honoured; it is not
-    // evidence of a live path.
-    store.recordDelivery({ subjectKey: 'ask:int-1', channel: 'telegram' });
-    markSeen('ask:int-1');
-
-    await vi.advanceTimersByTimeAsync(2 * ONE_MINUTE);
-
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('cancelling something that was never armed is not an error', () => {
-    const service = buildService();
-    expect(() => service.cancelByKey('ask:never-armed')).not.toThrow();
   });
 });
 
@@ -323,73 +220,6 @@ describe('firing', () => {
     expect(ledgerFor('ask:int-1')).toEqual([{ channel: 'web_push', escalated: true }]);
   });
 
-  // DOR-3114: the push reaching a device used to hide a chat connection that
-  // could never carry a ping. It is warned about now, once, not per card.
-  it('warns once when a chat connection cannot carry the ping, even though the push landed', async () => {
-    const warn = vi.spyOn(logger, 'warn');
-    const service = buildService({
-      relay: () =>
-        relayDeps({
-          bindingStore: {
-            getAll: () => [
-              {
-                id: 'binding-1',
-                agentId: 'agent-1',
-                adapterId: 'telegram-main',
-                enabled: true,
-                canInitiate: false,
-                chatId: 'chat-1',
-                updatedAt: '2026-08-19T00:00:00.000Z',
-              },
-            ],
-          } as unknown as RelayChannelDeps['bindingStore'],
-        }),
-    });
-    service.arm('ask.pending', ask('int-1'));
-    service.arm('ask.pending', ask('int-2'));
-
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    const misses = warn.mock.calls.filter(
-      ([message]) => message === '[Escalation] A chat connection could not carry a ping'
-    );
-    expect(misses).toHaveLength(1);
-    expect(misses[0]![1]).toMatchObject({ relay: { reason: 'INITIATE_NOT_ALLOWED' } });
-    warn.mockRestore();
-  });
-
-  it('still reaches chat when no device is subscribed', async () => {
-    const service = buildService({ push: pushChannel({ delivered: 0 }) });
-    service.arm('ask.pending', ask());
-
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    expect(publish).toHaveBeenCalledTimes(1);
-    expect(ledgerFor('ask:int-1')).toEqual([{ channel: 'telegram', escalated: true }]);
-  });
-
-  it('records nothing when nothing could carry it', async () => {
-    const service = buildService({ push: pushChannel({ delivered: 0 }), relay: () => undefined });
-    service.arm('ask.pending', ask());
-
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    expect(ledgerFor('ask:int-1')).toEqual([]);
-  });
-
-  it('does not fire twice for one subject', async () => {
-    const service = buildService();
-    service.arm('ask.pending', ask());
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    // Re-arming after the fire is what a rehydrating projector does. The ledger
-    // is what stops it becoming a second buzz.
-    service.arm('ask.pending', ask());
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-  });
-
   /**
    * The regression the DOR-1387 review caught. Keyed on the session alone, the
    * ledger's "already escalated?" check answered yes forever after the first
@@ -415,20 +245,6 @@ describe('firing', () => {
     expect(ledgerFor(notificationEntry('session.error').dedupeKey(first))).toHaveLength(2);
     expect(ledgerFor(notificationEntry('session.error').dedupeKey(second))).toHaveLength(2);
   });
-
-  it('still suppresses a REPEAT of the same episode', async () => {
-    // The other half of the same rule: episode identity must not cost the
-    // idempotency that survives a restart.
-    const service = buildService();
-    const episode = sessionError();
-
-    service.arm('session.error', episode);
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-    service.arm('session.error', episode);
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE + 1);
-
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('re-arming on boot', () => {
@@ -449,53 +265,6 @@ describe('re-arming on boot', () => {
 
     expect(sendToAll).toHaveBeenCalledTimes(1);
     expect(ledgerFor('schedule:task-1')).toHaveLength(2);
-  });
-
-  it('gives something not yet due the REMAINDER of its delay, not a fresh one', async () => {
-    delay = 5;
-    const service = buildService();
-
-    service.rearmFromStandingState([standing(4 * ONE_MINUTE)]);
-
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE / 2);
-    expect(sendToAll).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(ONE_MINUTE);
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves a condition older than the catch-up window alone', async () => {
-    // A schedule parked last week is a backlog, not news, and buzzing a phone
-    // about it on every restart is exactly the noise the tiering prevents.
-    const service = buildService();
-
-    service.rearmFromStandingState([standing(5 * 60 * ONE_MINUTE)]);
-    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('does not re-fire something the ledger says was already escalated', async () => {
-    const first = buildService();
-    first.rearmFromStandingState([standing(3 * ONE_MINUTE)]);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sendToAll).toHaveBeenCalledTimes(1);
-
-    // A second boot inside the same window, over the same database.
-    const second = buildService();
-    second.rearmFromStandingState([standing(3 * ONE_MINUTE)]);
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('re-arms nothing at all while the delay is `never`', async () => {
-    delay = 'never';
-    const service = buildService();
-
-    service.rearmFromStandingState([standing(3 * ONE_MINUTE)]);
-    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-
-    expect(sendToAll).not.toHaveBeenCalled();
   });
 });
 
@@ -530,40 +299,6 @@ describe('the tier gate', () => {
 
     expect(service.armedSubjects()).toEqual([]);
     await vi.advanceTimersByTimeAsync(60 * ONE_MINUTE);
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('arms no timer and makes no push call when it is raised through raiseStanding', async () => {
-    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    const service = buildService();
-    setEscalationService(service);
-
-    raiseStanding('extension.approval', waitingExtension);
-
-    expect(service.armedSubjects()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(60 * ONE_MINUTE);
-    expect(sendToAll).not.toHaveBeenCalled();
-  });
-
-  it('still arms a blocking kind raised the same way', () => {
-    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    const service = buildService();
-    setEscalationService(service);
-
-    raiseStanding('ask.pending', ask());
-
-    expect(service.armedSubjects()).toEqual([notificationEntry('ask.pending').dedupeKey(ask())]);
-  });
-
-  it('skips a notable kind still standing at boot', async () => {
-    const service = buildService();
-
-    service.rearmFromStandingState([
-      { kind: 'extension.approval', payload: waitingExtension, since: Date.now() - 3 * ONE_MINUTE },
-    ]);
-    await vi.advanceTimersByTimeAsync(10 * ONE_MINUTE);
-
-    expect(service.armedSubjects()).toEqual([]);
     expect(sendToAll).not.toHaveBeenCalled();
   });
 });

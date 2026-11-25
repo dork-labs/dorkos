@@ -120,10 +120,19 @@ describe('test-builds builds and saves exactly what test.yml restores', () => {
     expect(runsOn(testBuilds)).toBe('ubuntu-latest');
   });
 
-  it('builds with the same command as the queue shards, every package, no filters', () => {
-    expect(
-      stepText(testShard, 'Build what the suites import, once, with no test arguments')
-    ).toContain('          bash scripts/build-test-deps.sh\n');
+  // The shards build every package off the queue's plan (DOR-5130); a queue
+  // entry with a selected plan filters to its suites, and a filter changes
+  // which builds run, never a build's hash, so they still replay this entry.
+  it('builds with the same command as the shards, every package unless the queue planned fewer', () => {
+    const shardBuild = stepText(
+      testShard,
+      'Build what the suites import, once, with no test arguments'
+    );
+    expect(shardBuild).toContain('          bash scripts/build-test-deps.sh "${filters[@]}"\n');
+    expect(shardBuild).toContain(
+      `          if [ "$EVENT" = 'merge_group' ] && [ "\${SCOPE:-}" = 'selected' ]; then\n`
+    );
+    expect(shardBuild.match(/filters\+=/g)).toHaveLength(1);
     const build = stepText(testBuilds, 'Build what the test suites import');
     expect(build).toContain('        run: bash scripts/build-test-deps.sh\n');
     expect(build).toMatch(/^ {8}id: deps$/m);

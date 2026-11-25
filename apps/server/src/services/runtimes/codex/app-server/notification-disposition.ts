@@ -62,7 +62,7 @@ export const NOTIFICATION_DISPOSITION: Record<ServerNotificationMethod, Notifica
   'process/outputDelta': 'ignored',
   'process/exited': 'ignored',
   'item/commandExecution/outputDelta': 'turn',
-  'item/commandExecution/terminalInteraction': 'ignored',
+  'item/commandExecution/terminalInteraction': 'turn',
   'item/fileChange/outputDelta': 'ignored',
   'item/fileChange/patchUpdated': 'ignored',
   'serverRequest/resolved': 'thread',

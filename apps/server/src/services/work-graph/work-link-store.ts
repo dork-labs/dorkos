@@ -52,13 +52,15 @@ const SOURCE_PATTERN = new RegExp(`^[a-z][a-z0-9-]{0,${WORK_LINK_SOURCE_MAX_LENG
 
 /**
  * The kinds each end must have, for the relations that fix them. Both
- * relations from the address design (ADR 261122-124821) join a chat to a chat;
- * the rest are left open until their write sites land.
+ * relations from the address design (ADR 261122-124821) join a chat to a chat,
+ * and so does a start (DOR-5263); the rest are left open until their write
+ * sites land.
  */
 const RELATION_KINDS: Partial<
   Record<WorkLinkRelation, { from: readonly EntityKind[]; to: readonly EntityKind[] }>
 > = {
   forked_from: { from: ['chat'], to: ['chat'] },
+  started: { from: ['chat'], to: ['chat'] },
   rekeyed_from: { from: ['chat'], to: ['chat'] },
 };
 

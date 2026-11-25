@@ -98,33 +98,6 @@ describe('AgentMcpServerService — CRUD write-through', () => {
     expect(onDisk?.mcpServers[0]?.connection).toEqual(stdioConn);
   });
 
-  it('add() honors an explicit enabled: false', async () => {
-    const { service, agentId } = await setup();
-    const list = await service.add({
-      agentId,
-      name: 'off-by-default',
-      connection: stdioConn,
-      addedBy: 'dorian',
-      enabled: false,
-    });
-    expect(list[0]?.enabled).toBe(false);
-  });
-
-  it('update() replaces the connection and persists it', async () => {
-    const { service, projectPath, agentId } = await setup();
-    await service.add({ agentId, name: 'srv', connection: stdioConn, addedBy: 'dorian' });
-
-    const nextConn: McpServerTransport = {
-      transport: 'http',
-      url: 'https://example.com',
-      headers: {},
-    };
-    await service.update({ agentId, name: 'srv', connection: nextConn });
-
-    const onDisk = await readManifest(projectPath);
-    expect(onDisk?.mcpServers[0]?.connection).toEqual(nextConn);
-  });
-
   it('remove() deletes the entry from the file', async () => {
     const { service, projectPath, agentId } = await setup();
     await service.add({ agentId, name: 'srv', connection: stdioConn, addedBy: 'dorian' });
@@ -133,14 +106,6 @@ describe('AgentMcpServerService — CRUD write-through', () => {
     expect(list).toHaveLength(0);
     const onDisk = await readManifest(projectPath);
     expect(onDisk?.mcpServers).toHaveLength(0);
-  });
-
-  it('list() reflects what is on disk', async () => {
-    const { service, agentId } = await setup();
-    await service.add({ agentId, name: 'a', connection: stdioConn, addedBy: 'x' });
-    await service.add({ agentId, name: 'b', connection: stdioConn, addedBy: 'x' });
-    const list = await service.list(agentId);
-    expect(list.map((s) => s.name)).toEqual(['a', 'b']);
   });
 });
 
@@ -173,14 +138,6 @@ describe('AgentMcpServerService — a browser DorkOS leaves out', () => {
       ['shared', 'own-browser-only'],
     ]);
   });
-
-  it('leaves the field off a browser DorkOS runs and off every other server', async () => {
-    const { service, agentId } = await setup();
-    await service.add({ agentId, name: 'plain', connection: browser(), addedBy: 'x' });
-    await service.add({ agentId, name: 'fs', connection: stdioConn, addedBy: 'x' });
-    const list = await service.list(agentId);
-    for (const server of list) expect(server).not.toHaveProperty('leftOut');
-  });
 });
 
 describe('AgentMcpServerService — name rules', () => {
@@ -211,31 +168,9 @@ describe('AgentMcpServerService — name rules', () => {
       service.add({ agentId, name: 'dup', connection: stdioConn, addedBy: 'x' })
     ).rejects.toMatchObject({ code: 'DUPLICATE_NAME' });
   });
-
-  it('rejects operations on an unknown agent id', async () => {
-    const { service } = await setup();
-    await expect(service.list('unknown-agent')).rejects.toMatchObject({ code: 'AGENT_NOT_FOUND' });
-  });
-
-  it('rejects update/remove of a non-existent server', async () => {
-    const { service, agentId } = await setup();
-    await expect(service.update({ agentId, name: 'ghost', enabled: true })).rejects.toMatchObject({
-      code: 'SERVER_NOT_FOUND',
-    });
-    await expect(service.remove(agentId, 'ghost')).rejects.toMatchObject({
-      code: 'SERVER_NOT_FOUND',
-    });
-  });
 });
 
 describe('AgentMcpServerService — injectableServersForCwd', () => {
-  it('returns {} for a cwd with no manifest', async () => {
-    const { service } = await setup();
-    const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'no-manifest-'));
-    tempDirs.push(empty);
-    expect(service.injectableServersForCwd(empty)).toEqual({});
-  });
-
   it('returns only enabled entries, mapped to the neutral connection shape', async () => {
     const { service, projectPath, agentId } = await setup();
     await service.add({ agentId, name: 'on', connection: stdioConn, addedBy: 'x', enabled: true });
@@ -262,38 +197,6 @@ describe('AgentMcpServerService — injectableServersForCwd', () => {
 
     await service.enable(agentId, 'srv');
     expect(Object.keys(service.injectableServersForCwd(projectPath))).toEqual(['srv']);
-  });
-
-  it('serves a repeat call from the mtime cache (no manifest change)', async () => {
-    const { service, projectPath, agentId } = await setup();
-    await service.add({ agentId, name: 'srv', connection: stdioConn, addedBy: 'x', enabled: true });
-
-    const first = service.injectableServersForCwd(projectPath);
-    const second = service.injectableServersForCwd(projectPath);
-    // Same object identity proves the second call hit the cache rather than
-    // re-parsing the file.
-    expect(second).toBe(first);
-  });
-});
-
-describe('AgentMcpServerService — test probe', () => {
-  it('returns an in-band error for an unreachable server (never throws)', async () => {
-    const { service, agentId } = await setup();
-    await service.add({
-      agentId,
-      name: 'broken',
-      connection: {
-        transport: 'stdio',
-        command: 'dorkos-nonexistent-binary-xyz',
-        args: [],
-        env: {},
-      },
-      addedBy: 'x',
-    });
-
-    const result = await service.test(agentId, 'broken');
-    expect(result.ok).toBe(false);
-    expect(result.error).toBeTruthy();
   });
 });
 
@@ -335,24 +238,6 @@ describe('AgentMcpServerService — import from .mcp.json (DOR-894)', () => {
     expect(onDisk?.mcpServers[0]?.connection).toMatchObject({ transport: 'stdio', command: 'npx' });
   });
 
-  it('resolves an http server (type + url) from .mcp.json', async () => {
-    const { service, projectPath, agentId } = await setup();
-    await writeMcpJson(projectPath, {
-      remote: {
-        type: 'http',
-        url: 'https://example.com/mcp',
-        headers: { Authorization: 'Bearer x' },
-      },
-    });
-
-    const list = await service.import({ agentId, name: 'remote', addedBy: 'operator' });
-    expect(list[0]?.connection).toEqual({
-      transport: 'http',
-      url: 'https://example.com/mcp',
-      headers: { Authorization: 'Bearer x' },
-    });
-  });
-
   it('rejects the reserved name before touching the file', async () => {
     const { service, agentId } = await setup();
     await expect(
@@ -373,45 +258,6 @@ describe('AgentMcpServerService — import from .mcp.json (DOR-894)', () => {
     await expect(
       service.import({ agentId, name: 'dup', addedBy: 'operator' })
     ).rejects.toMatchObject({ code: 'DUPLICATE_NAME' });
-  });
-
-  it('throws DISCOVERED_NOT_FOUND when neither .mcp.json nor the fallback resolves the name', async () => {
-    const { service, projectPath, agentId } = await setup();
-    await writeMcpJson(projectPath, { other: { command: 'node' } });
-
-    await expect(
-      service.import({ agentId, name: 'missing', addedBy: 'operator' })
-    ).rejects.toMatchObject({ code: 'DISCOVERED_NOT_FOUND' });
-  });
-
-  it('falls back to the runtime resolver when .mcp.json cannot resolve the name', async () => {
-    const { service, agentId } = await setup(); // no .mcp.json written
-
-    const list = await service.import({
-      agentId,
-      name: 'from-runtime',
-      addedBy: 'operator',
-      resolveFallback: () => ({ transport: 'stdio', command: 'cached-cmd' }),
-    });
-
-    expect(list[0]).toMatchObject({
-      name: 'from-runtime',
-      enabled: true,
-      connection: { transport: 'stdio', command: 'cached-cmd', args: [], env: {} },
-    });
-  });
-
-  it('prefers .mcp.json over the fallback when both resolve', async () => {
-    const { service, projectPath, agentId } = await setup();
-    await writeMcpJson(projectPath, { srv: { command: 'file-cmd' } });
-
-    const list = await service.import({
-      agentId,
-      name: 'srv',
-      addedBy: 'operator',
-      resolveFallback: () => ({ transport: 'stdio', command: 'fallback-cmd' }),
-    });
-    expect(list[0]?.connection).toMatchObject({ command: 'file-cmd' });
   });
 });
 

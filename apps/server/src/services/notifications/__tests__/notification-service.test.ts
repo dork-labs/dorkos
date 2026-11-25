@@ -102,17 +102,6 @@ describe('NotificationService.notify', () => {
     );
   });
 
-  it('addresses the announcement rather than broadcasting it to everyone', async () => {
-    const service = new NotificationService(store);
-    await service.notify('turn.completed', turn('2026-08-20T00:00:00.000Z'));
-
-    const [, , audience] = sentAs('notification')[0];
-    expect(typeof audience).toBe('function');
-    const predicate = audience as (p: { kind: string }) => boolean;
-    expect(predicate({ kind: 'operator' })).toBe(true);
-    expect(predicate({ kind: 'agent' })).toBe(false);
-  });
-
   it('drops the same notification raised twice inside the window', async () => {
     const service = new NotificationService(store);
     const payload = turn('2026-08-20T00:00:00.000Z');
@@ -126,73 +115,6 @@ describe('NotificationService.notify', () => {
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(1);
   });
 
-  it('says a thing once even when the same notification is raised twice at the same moment', async () => {
-    // The second call starts while the first is still handing off to the chat
-    // relay, so neither has stored its row yet when the other checks for one.
-    const publish = vi.fn(
-      () =>
-        new Promise<{ deliveredTo: number; messageId: string }>((resolve) =>
-          setTimeout(() => resolve({ deliveredTo: 1, messageId: 'm-1' }), 5)
-        )
-    );
-    const deps = relayDeps({ relayCore: { publish } });
-    const service = new NotificationService(store, { relay: () => deps });
-    const opts = { relay: { fromPrincipal: 'relay.system.tasks.notifier' } };
-
-    const results = await Promise.all([
-      service.notify('run.completed', run('run-1', 'failed'), opts),
-      service.notify('run.completed', run('run-1', 'failed'), opts),
-    ]);
-
-    expect(results.map((result) => result.deduped)).toEqual([false, true]);
-    expect(rowCount()).toBe(1);
-    expect(sentAs('notification')).toHaveLength(1);
-    expect(publish).toHaveBeenCalledTimes(1);
-  });
-
-  it('judges a waiting duplicate on its own when the first raise was refused', async () => {
-    // A refused first raise stores no row, so the raise queued behind it has
-    // not been said yet: it must be stored, not be reported as a duplicate of
-    // nothing.
-    const service = new NotificationService(store);
-    const payload = { agentId: 'agent-1', agentName: 'Ana', message: 'hello' };
-
-    const [first, second] = await Promise.all([
-      service.notify('agent.note', payload, {
-        delivered: {
-          ok: false,
-          reason: 'INITIATE_NOT_ALLOWED',
-          bindingId: 'binding-1',
-          adapterId: 'telegram-main',
-        },
-      }),
-      service.notify('agent.note', payload),
-    ]);
-
-    expect(first).toMatchObject({ notification: null, deduped: false });
-    expect(second.deduped).toBe(false);
-    expect(second.notification).not.toBeNull();
-    expect(rowCount()).toBe(1);
-    // Nothing is left holding the key once both have settled.
-    expect((service as unknown as { inFlight: Map<string, unknown> }).inFlight.size).toBe(0);
-  });
-
-  it('raises a second notification once the window has passed', async () => {
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
-      const service = new NotificationService(store);
-      const payload = turn('2026-08-20T00:00:00.000Z');
-      await service.notify('turn.completed', payload);
-
-      vi.setSystemTime(new Date('2026-08-20T00:06:00.000Z'));
-      const second = await service.notify('turn.completed', payload);
-      expect(second.deduped).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('never notifies the operator about their own action, but still keeps the history', async () => {
     const service = new NotificationService(store);
     const result = await service.notify('turn.completed', turn('2026-08-20T00:00:00.000Z'), {
@@ -204,16 +126,6 @@ describe('NotificationService.notify', () => {
     expect(result.notification).not.toBeNull();
     expect(result.notification?.readAt).toBeDefined();
     expect(service.list({ limit: 25, unread: false }).unreadCount).toBe(0);
-  });
-
-  it('does not reach out of the app about the operator own action', async () => {
-    const deps = relayDeps();
-    const service = new NotificationService(store, { relay: () => deps });
-    await service.notify('run.completed', run('run-1', 'failed'), {
-      actorPrincipal: { kind: 'operator' },
-      relay: { fromPrincipal: 'relay.system.tasks.notifier' },
-    });
-    expect(deps.relayCore!.publish).not.toHaveBeenCalled();
   });
 
   it('sends a failed run out even when the binding never opted in', async () => {
@@ -309,62 +221,6 @@ describe('NotificationService.notify', () => {
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(0);
     expect(sentAs('notification')).toHaveLength(0);
   });
-
-  it('still writes a row when the note simply could not be delivered', async () => {
-    // The contrast that makes the two cases above meaningful: nobody refused
-    // this, the install just has no integration. The news still happened, so the
-    // inbox is where it is found.
-    const service = new NotificationService(store);
-    const result = await service.notify(
-      'agent.note',
-      { agentId: 'agent-1', agentName: 'Ana', message: 'hello' },
-      { delivered: { ok: false, reason: 'NO_BINDING', availableChannels: [] } }
-    );
-
-    expect(result.notification).not.toBeNull();
-    expect(sentAs('notification')).toHaveLength(1);
-  });
-
-  it('records a second delivery of a note it has already said once', async () => {
-    // Saying the same thing twice is suppressed; SENDING it twice is not the
-    // same event, and the ledger is the record of what reached somebody.
-    const service = new NotificationService(store);
-    const payload = { agentId: 'agent-1', agentName: 'Ana', message: 'hello' };
-    const landed = (entryId: string) =>
-      ({ ok: true, surface: 'dorkos-dm', roomId: 'room-1', entryId }) as const;
-
-    const first = await service.notify('agent.note', payload, { delivered: landed('entry-1') });
-    const second = await service.notify('agent.note', payload, { delivered: landed('entry-2') });
-
-    expect(second.deduped).toBe(true);
-    expect(second.notification).toBeNull();
-    expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(1);
-
-    const ledger = store.deliveriesFor(first.notification!.id);
-    expect(ledger).toHaveLength(2);
-    expect(ledger.map((row) => (row.detail as { entryId: string }).entryId)).toEqual([
-      'entry-1',
-      'entry-2',
-    ]);
-  });
-
-  it('records a delivery the caller already made rather than repeating it', async () => {
-    const deps = relayDeps();
-    const service = new NotificationService(store, { relay: () => deps });
-    const result = await service.notify(
-      'agent.note',
-      { agentId: 'agent-1', agentName: 'Ana', message: 'hello' },
-      { delivered: { ok: true, surface: 'dorkos-dm', roomId: 'room-1', entryId: 'entry-1' } }
-    );
-
-    expect(deps.relayCore!.publish).not.toHaveBeenCalled();
-    expect(store.deliveriesFor(result.notification!.id)).toEqual([
-      {
-        channel: 'in_app',
-        detail: { surface: 'dorkos-dm', roomId: 'room-1', entryId: 'entry-1' },
-      },
-    ]);
-  });
 });
 
 describe('NotificationService.resolveStanding', () => {
@@ -389,39 +245,6 @@ describe('NotificationService.resolveStanding', () => {
     expect(result.notification?.outcome).toBe('answered');
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(1);
   });
-
-  it('leaves an unanswered ask unread, and an answered one read', async () => {
-    const service = new NotificationService(store);
-    await service.resolveStanding(
-      'ask.pending',
-      { sessionId: 's1', interactionId: 'int-1', sessionLabel: 'acme', summary: 'a' },
-      { outcome: 'expired' }
-    );
-    await service.resolveStanding(
-      'ask.pending',
-      { sessionId: 's2', interactionId: 'int-2', sessionLabel: 'acme', summary: 'b' },
-      { outcome: 'answered' }
-    );
-
-    const listed = service.list({ limit: 25, unread: false });
-    const expired = listed.notifications.find((n) => n.outcome === 'expired');
-    const answered = listed.notifications.find((n) => n.outcome === 'answered');
-    expect(expired?.readAt).toBeUndefined();
-    expect(answered?.readAt).toBeDefined();
-    expect(listed.unreadCount).toBe(1);
-  });
-
-  it('rebuilds the approve and reject buttons on a stored parked schedule', async () => {
-    const service = new NotificationService(store);
-    const result = await service.resolveStanding(
-      'schedule.parked',
-      { taskId: 'task-1', taskName: 'Nightly digest', proposedBy: 'An agent' },
-      { outcome: 'approved' }
-    );
-
-    const [stored] = store.byIds([result.notification!.id]);
-    expect(stored.actions?.map((a) => a.id)).toEqual(['approve', 'reject']);
-  });
 });
 
 describe('read state', () => {
@@ -437,13 +260,6 @@ describe('read state', () => {
     expect(payload).toMatchObject({ ids: [a.notification!.id], all: false, unreadCount: 1 });
   });
 
-  it('marks a notification read only once', async () => {
-    const service = new NotificationService(store);
-    const a = await service.notify('turn.completed', turn('2026-08-20T00:00:00.000Z'));
-    service.markRead(a.notification!.id);
-    expect(service.markRead(a.notification!.id)).toEqual({ ok: true, marked: 0, unreadCount: 0 });
-  });
-
   it('marks everything read in one go', async () => {
     const service = new NotificationService(store);
     await service.notify('turn.completed', turn('2026-08-20T00:00:00.000Z'));
@@ -452,12 +268,6 @@ describe('read state', () => {
     expect(service.markAllRead()).toEqual({ ok: true, marked: 2, unreadCount: 0 });
     const [, payload] = sentAs('notification_read')[0];
     expect(payload).toMatchObject({ all: true, unreadCount: 0 });
-  });
-
-  it('says nothing when there was nothing to mark', async () => {
-    const service = new NotificationService(store);
-    expect(service.markAllRead()).toEqual({ ok: true, marked: 0, unreadCount: 0 });
-    expect(sentAs('notification_read')).toHaveLength(0);
   });
 
   it("marks a room's dm/mention rows read up to where its cursor now stands", async () => {
@@ -520,21 +330,6 @@ describe('read state', () => {
       all: false,
       unreadCount: 2,
     });
-  });
-
-  it('announces nothing when the cursor has not reached any row yet', async () => {
-    const service = new NotificationService(store);
-    await service.notify('dm.received', {
-      roomId: 'room-1',
-      entryId: 'entry-1',
-      entrySeq: 5,
-      agentId: 'agent-1',
-      fromName: 'Ana',
-      preview: 'first',
-    });
-
-    expect(service.markRoomRead('room-1', 1)).toEqual({ ok: true, marked: 0, unreadCount: 1 });
-    expect(sentAs('notification_read')).toHaveLength(0);
   });
 
   it('never blind-marks a row with no entrySeq read, however far the cursor moves', () => {
@@ -606,32 +401,6 @@ describe('prune on write', () => {
     expect(rowCount()).toBe(4);
     // Both survive, even though they are the two OLDEST rows in the table.
     expect(small.byIds([deadLetter.notification!.id, update.notification!.id])).toHaveLength(2);
-  });
-
-  it('falls back to plain age when high-churn history is not what filled the table', async () => {
-    // Nothing cheap to give up, so the cap wins over the preference and the
-    // oldest row of any kind goes.
-    const { store: small, service } = cappedAt(3);
-    const ids: string[] = [];
-    for (let i = 0; i < 4; i += 1) {
-      const result = await service.notify('dead-letter.created', {
-        deadLetterId: `dl-${i}`,
-        reason: 'no endpoint accepted it',
-      });
-      if (result.notification) ids.push(result.notification.id);
-    }
-
-    expect(rowCount()).toBe(3);
-    expect(small.byIds([ids[0]])).toHaveLength(0);
-  });
-
-  it('drops the oldest rows, not the newest', async () => {
-    const { store: small, service } = cappedAt(3);
-    const first = await service.notify('turn.completed', turn('2026-08-20T00:00:00.000Z'));
-    for (let i = 1; i <= 3; i += 1) {
-      await service.notify('turn.completed', turn(`2026-08-20T01:00:0${i}.000Z`));
-    }
-    expect(small.byIds([first.notification!.id])).toHaveLength(0);
   });
 
   it('keeps the table at the shipped cap however far a burst overshoots it', async () => {

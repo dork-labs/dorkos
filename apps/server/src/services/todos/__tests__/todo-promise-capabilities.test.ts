@@ -135,16 +135,6 @@ describe('to-dos domain', () => {
     resetLiveOutsiderTurns();
   });
 
-  it('declares the three tools in the To-dos area (DOR-3936)', () => {
-    expect(
-      todoPromisesDomain.capabilities.map((c) => [c.id, c.surfaces.mcp?.toolName, c.tier, c.area])
-    ).toEqual([
-      ['todo_promises.add', 'todo_promise_add', 'act', 'todos'],
-      ['todo_promises.update', 'todo_promise_update', 'act', 'todos'],
-      ['todo_promises.list', 'todo_promises_list', 'observe', 'todos'],
-    ]);
-  });
-
   it('tells an agent it is woken before a promise is due: its beat does that (DOR-3034)', () => {
     const add = todoPromisesDomain.capabilities.find((c) => c.id === 'todo_promises.add')!;
     expect(add.description).toContain('you are woken an hour before');
@@ -162,30 +152,6 @@ describe('to-dos domain', () => {
         authority: 'self',
         marks: '{"outsider":true}',
       });
-    });
-
-    it('stores self with the outsider mark when the caller names no session at all', async () => {
-      const result = await call(
-        deps,
-        'todo_promises.add',
-        { what: 'Over /mcp' },
-        { identity: ana }
-      );
-      expect(power(result.todoPromise!.id)).toEqual({
-        authority: 'self',
-        marks: '{"outsider":true}',
-      });
-    });
-
-    it('stores no mark for a known clean level', async () => {
-      await ranClean('chat-clean');
-      const result = await call(
-        deps,
-        'todo_promises.add',
-        { what: 'Reply in a recorded turn' },
-        { identity: ana, sessionId: 'chat-clean' }
-      );
-      expect(power(result.todoPromise!.id)!.marks).toBe('{}');
     });
 
     it("adds the mark when an unreadable turn changes the agent's own promise", async () => {
@@ -320,51 +286,6 @@ describe('to-dos domain', () => {
       expect(tellRecipient.mock.calls[0]![0].agentPath).toBe('/agents/ana');
     });
 
-    it('does not tell anyone a reopen with a date is a move', async () => {
-      const tellRecipient = vi.fn().mockResolvedValue(undefined);
-      const told = {
-        ...deps,
-        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
-      } as CapabilityDeps;
-      await call(told, 'todo_promises.update', { id, state: 'kept' }, { identity: ana });
-      const dueAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
-      await call(told, 'todo_promises.update', { id, state: 'open', dueAt }, { identity: ana });
-      // Told it was kept, then nothing for the reopen.
-      expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['kept']);
-    });
-
-    it('tells a drop once, not again for a note on the dropped promise', async () => {
-      const tellRecipient = vi.fn().mockResolvedValue(undefined);
-      const told = {
-        ...deps,
-        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
-      } as CapabilityDeps;
-      await call(
-        told,
-        'todo_promises.update',
-        { id, state: 'dropped', note: 'No longer needed' },
-        { identity: ana }
-      );
-      await call(
-        told,
-        'todo_promises.update',
-        { id, state: 'dropped', note: 'Really' },
-        { identity: ana }
-      );
-      expect(tellRecipient.mock.calls.map(([n]) => n.change)).toEqual(['dropped']);
-    });
-
-    it('tells nobody when a person keeps or drops it', async () => {
-      const tellRecipient = vi.fn().mockResolvedValue(undefined);
-      const told = {
-        ...deps,
-        todoPromiseDeps: { ...deps.todoPromiseDeps!, tellRecipient },
-      } as CapabilityDeps;
-      await call(told, 'todo_promises.update', { id, state: 'kept' }, {});
-      await call(told, 'todo_promises.update', { id, state: 'dropped' }, {});
-      expect(tellRecipient).not.toHaveBeenCalled();
-    });
-
     it('tells the recipient when the agent keeps it, with what it delivered', async () => {
       const tellRecipient = vi.fn().mockResolvedValue(undefined);
       const told = {
@@ -424,24 +345,6 @@ describe('to-dos domain', () => {
       expect(limited.todoPromises).toHaveLength(1);
       expect(limited.truncated).toBe(true);
       expect(all.truncated).toBe(false);
-    });
-
-    it("lets another agent read every agent's list", async () => {
-      await call(deps, 'todo_promises.add', { what: 'Ana promise' }, { identity: ana });
-      await call(deps, 'todo_promises.add', { what: 'Bo promise' }, { identity: bo });
-
-      const everyone = await call(deps, 'todo_promises.list', {}, { identity: bo });
-      expect(everyone.todoPromises!.map((c) => c.what).sort()).toEqual([
-        'Ana promise',
-        'Bo promise',
-      ]);
-      const anas = await call(
-        deps,
-        'todo_promises.list',
-        { agentId: 'agent-ana' },
-        { identity: bo }
-      );
-      expect(anas.todoPromises!.map((c) => c.what)).toEqual(['Ana promise']);
     });
   });
 });

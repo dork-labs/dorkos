@@ -36,7 +36,7 @@
       "apps/server/src/services/extensions/inbox/extension-decisions-openapi.ts": 8,
       "apps/server/src/services/extensions/removal/extension-removal-openapi.ts": 3,
       "apps/server/src/services/health/account-signin-openapi.ts": 3,
-      "apps/server/src/services/heartbeats/heartbeats-openapi.ts": 2,
+      "apps/server/src/services/heartbeats/heartbeats-openapi.ts": 1,
       "apps/server/src/services/projects/projects-openapi.ts": 2,
       "apps/server/src/services/rooms/direct-chat/direct-chat-openapi.ts": 2,
       "apps/server/src/services/session/asks/session-approval-openapi.ts": 2,

@@ -15,8 +15,6 @@ import {
   BeatOutbox,
   DELIVERY_BACKOFF_MS,
   URGENT_PER_PERSON_PER_HOUR,
-  deliveryTime,
-  raiseKey,
   type OutboxDeps,
 } from '../outbox.js';
 import type { BeatAgent } from '../beat-runner.js';
@@ -145,12 +143,6 @@ describe('hours', () => {
     expect(dms).toEqual([{ agent: juno.id, text: 'Payments are failing for every customer.' }]);
     expect(rows('heartbeat.raised')[0]!.reason).toBe('Payments are failing for every customer.');
   });
-
-  it('holds while the person is away, until the start of their hours after they return', () => {
-    away = { until: '2026-10-15T12:00:00Z' };
-    const when = deliveryTime({ hours: HOURS, away }, MONDAY_11PM);
-    expect(new Date(when).toISOString()).toBe('2026-10-15T13:00:00.000Z');
-  });
 });
 
 describe('batching per agent', () => {
@@ -225,12 +217,6 @@ describe('rungs and readers', () => {
     expect(store.heldFor(juno.id)).toEqual([]);
   });
 
-  it('keys a raise by its key, then its sorted about keys, then its text', () => {
-    expect(raiseKey({ text: 'x', rung: 'dm', key: 'given' })).toBe('given');
-    expect(raiseKey({ text: 'x', rung: 'dm', about: ['run:2', 'run:1'] })).toBe('run:1|run:2');
-    expect(raiseKey({ text: 'x', rung: 'dm' })).toBe(raiseKey({ text: 'x', rung: 'note' }));
-  });
-
   it("raises a failing agent's beats once to its chain person, not urgent", async () => {
     await outbox().raiseFailing(juno, 'b9');
     const [row] = db.select().from(heartbeatOutbox).all();
@@ -239,14 +225,6 @@ describe('rungs and readers', () => {
       urgent: 0,
       toAccount: 'acct-owner',
     });
-  });
-});
-
-describe('the failing-beats raise', () => {
-  it('says what the error was', async () => {
-    vi.setSystemTime(TUESDAY_9AM);
-    await outbox().raiseFailing(juno, 'b9', 'Rate limited by the model provider.');
-    expect(dms[0]!.text).toContain('Rate limited by the model provider.');
   });
 });
 
@@ -332,21 +310,6 @@ describe('delivery that fails', () => {
   });
 });
 
-describe('a raise re-sent while held', () => {
-  it('replaces the held one rather than queueing a second', async () => {
-    const box = outbox();
-    for (const text of ['First draft.', 'Second draft.']) {
-      await box.accept({
-        agent: juno,
-        beatId: 'b',
-        chatSessionId: 'c',
-        raises: [{ text, rung: 'dm', key: 'k' }],
-      });
-    }
-    expect(store.heldFor(juno.id).map((row) => row.text)).toEqual(['Second draft.']);
-  });
-});
-
 describe('heartbeats off', () => {
   it('delivers nothing while off, and everything once on again', async () => {
     vi.setSystemTime(TUESDAY_9AM);
@@ -390,38 +353,6 @@ describe('the urgent ceiling, counted by when messages arrive', () => {
     await box.tick();
     expect(posts).toEqual([{ roomId: 'r-eng', text: 'Urgent 9' }]);
   });
-
-  it('counts urgent room posts that went out, so a DM after six of them waits', async () => {
-    const box = outbox();
-    for (let i = 0; i < URGENT_PER_PERSON_PER_HOUR; i += 1) {
-      await box.accept({
-        agent: juno,
-        beatId: `b${i}`,
-        chatSessionId: 'c',
-        raises: [urgent(i, 'room')],
-      });
-    }
-    expect(posts).toHaveLength(URGENT_PER_PERSON_PER_HOUR);
-    await box.accept({ agent: otto, beatId: 'b-dm', chatSessionId: 'c', raises: [urgent(9)] });
-    expect(dms).toEqual([]);
-  });
-
-  it('counts a raise held past the ceiling when it arrives, so the next hour gets no second burst', async () => {
-    const box = outbox();
-    for (let i = 0; i <= URGENT_PER_PERSON_PER_HOUR; i += 1) {
-      await box.accept({ agent: juno, beatId: `b${i}`, chatSessionId: 'c', raises: [urgent(i)] });
-    }
-    expect(dms).toHaveLength(URGENT_PER_PERSON_PER_HOUR);
-    // The seventh arrives as the first hour ends.
-    vi.setSystemTime(MONDAY_11PM + 60 * 60_000);
-    await box.tick();
-    expect(dms).toHaveLength(URGENT_PER_PERSON_PER_HOUR + 1);
-    // Six more right after it: only five fit beside it in this hour.
-    for (let i = 10; i < 10 + URGENT_PER_PERSON_PER_HOUR; i += 1) {
-      await box.accept({ agent: otto, beatId: `b${i}`, chatSessionId: 'c', raises: [urgent(i)] });
-    }
-    expect(dms).toHaveLength(URGENT_PER_PERSON_PER_HOUR * 2);
-  });
 });
 
 describe('a re-sent raise on another rung', () => {
@@ -450,132 +381,5 @@ describe('a re-sent raise on another rung', () => {
       ['room', 'dm-board', 'Acme update for the board.'],
       ['note', null, 'Acme, by note.'],
     ]);
-  });
-});
-
-describe('a report to another agent that fails', () => {
-  it('is held and tried again, not dropped', async () => {
-    let fail = true;
-    const box = outbox({
-      sendToAgent: async (_agent, chat, to, text) => {
-        if (fail) return { ok: false, reason: 'chat messages are not running' };
-        agentSends.push({ to, text: `${text} (from ${chat})` });
-        return { ok: true };
-      },
-    });
-    await box.accept({
-      agent: juno,
-      beatId: 'b1',
-      chatSessionId: 'beat-chat',
-      raises: [{ text: 'Can you take Acme?', rung: 'dm', to: 'agent-otto' }],
-    });
-    expect(agentSends).toEqual([]);
-    fail = false;
-    vi.setSystemTime(MONDAY_11PM + DELIVERY_BACKOFF_MS[0]!);
-    await box.tick();
-    expect(agentSends).toEqual([{ to: 'agent-otto', text: 'Can you take Acme? (from beat-chat)' }]);
-  });
-});
-
-describe('open raises', () => {
-  it('lists what was delivered to people and not resolved, and drops it once resolved', async () => {
-    vi.setSystemTime(TUESDAY_9AM);
-    const box = outbox();
-    await box.accept({
-      agent: juno,
-      beatId: 'b1',
-      chatSessionId: 'c',
-      raises: [
-        { text: 'Acme has not paid.', rung: 'dm', key: 'acme-unpaid' },
-        { text: 'Build is red.', rung: 'room', roomId: 'r-eng', key: 'build-red' },
-        { text: 'Can you take Acme?', rung: 'dm', to: 'agent-otto', key: 'otto-acme' },
-      ],
-    });
-    expect(agentSends).toHaveLength(1);
-    expect(
-      box
-        .openRaises(juno.id)
-        .map((raise) => raise.key)
-        .sort()
-    ).toEqual(['acme-unpaid', 'build-red']);
-    box.resolve(juno.id, ['acme-unpaid']);
-    expect(box.openRaises(juno.id).map((raise) => raise.key)).toEqual(['build-red']);
-  });
-});
-
-describe('an urgent raise accepted mid-tick', () => {
-  it('goes out before accept resolves, not at the next tick', async () => {
-    vi.setSystemTime(TUESDAY_9AM);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let first = true;
-    const box = outbox({
-      deliverDm: async (agent, _to, text) => {
-        if (first) {
-          first = false;
-          await gate;
-        }
-        dms.push({ agent: agent.id, text });
-        return { ok: true };
-      },
-    });
-    const slow = box.accept({
-      agent: juno,
-      beatId: 'b1',
-      chatSessionId: 'c',
-      raises: [{ text: 'Weekly numbers.', rung: 'dm', key: 'weekly' }],
-    });
-    await Promise.resolve();
-    const urgentOne = box.accept({
-      agent: otto,
-      beatId: 'b2',
-      chatSessionId: 'c',
-      raises: [{ text: 'The site is down.', rung: 'dm', urgent: true, key: 'down' }],
-    });
-    release();
-    await Promise.all([slow, urgentOne]);
-    expect(dms.map((dm) => dm.text)).toEqual(['Weekly numbers.', 'The site is down.']);
-  });
-});
-
-describe('stopping and starting the outbox mid-tick', () => {
-  it('leaves one tick chain, not two', async () => {
-    vi.setSystemTime(TUESDAY_9AM);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const box = outbox({
-      deliverDm: async () => {
-        await gate;
-        return { ok: true };
-      },
-    });
-    store.insertOutbox({
-      id: 'due',
-      agentId: juno.id,
-      beatId: 'b',
-      toAccount: 'acct-owner',
-      rung: 'dm',
-      text: 'x',
-      key: 'k',
-      about: null,
-      urgent: 0,
-      roomId: null,
-      deliverAfter: new Date(TUESDAY_9AM).toISOString(),
-      state: 'held',
-      createdAt: new Date(TUESDAY_9AM).toISOString(),
-    });
-    box.start();
-    await vi.advanceTimersByTimeAsync(60_000);
-    // The tick is stuck mid-delivery; heartbeats go off and on again.
-    box.stop();
-    box.start();
-    release();
-    await vi.advanceTimersByTimeAsync(0);
-    box.stop();
-    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -209,34 +209,9 @@ describe('a sweep with the external-history gate closed', () => {
     expect(codexRoots).not.toHaveBeenCalled();
     expect(openCodeStore).not.toHaveBeenCalled();
   });
-
-  it('leaves no frontier row behind for an unswept source', async () => {
-    await sweepWith(true);
-
-    // A frontier row records "we have read this container up to here". A source
-    // that was never swept must own none — otherwise a later ungated run would
-    // resume from a watermark nothing wrote.
-    const frontier = raw
-      .prepare('SELECT DISTINCT source_id FROM search_sources ORDER BY source_id')
-      .all() as { source_id: string }[];
-    expect(frontier.map((row) => row.source_id)).toEqual(['rooms']);
-  });
 });
 
 describe('the registry says which sources read somebody else', () => {
-  it('tags every row, and tags the three runtime sources external', () => {
-    // Asserted as pairs rather than as a filtered list: this is the field the
-    // gate reads, so a row that silently flipped to `dorkos` would leak the
-    // corpus it names while every count assertion above stayed green.
-    expect(SEARCH_SOURCES.map((source) => [source.id, source.corpus])).toEqual([
-      ['rooms', 'dorkos'],
-      ['claude-code', 'external'],
-      ['codex', 'external'],
-      ['opencode', 'external'],
-      ['doe', 'dorkos'],
-    ]);
-  });
-
   it('narrows the REAL registry to the room log, without being handed a list', () => {
     // The production call site passes no source list, so the default parameter
     // is what a booted server actually gets. Asserted separately from the

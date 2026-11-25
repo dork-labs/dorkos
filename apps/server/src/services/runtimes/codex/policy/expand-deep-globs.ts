@@ -47,6 +47,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ripgrepScanner, type DeepGlobScanner } from './deep-glob-rg.js';
+import { codexGlobLiteral } from './codex-path-keys.js';
 import { resetTrackedLookups, settleTrackedLookups } from './tracked-npmrc.js';
 
 export { ripgrepScanner, type DeepGlobScanner } from './deep-glob-rg.js';
@@ -193,18 +194,22 @@ function neverScanned(relative: string): boolean {
  * allows. A glob key is rendered as `(deny file-read* …)` and
  * `(deny file-write* …)` rules, unlink included, plus an unlink deny on each
  * folder above it (`build_seatbelt_unreadable_glob_policy`). So the path is
- * written as a glob that matches only itself: each `*`, `?`, `[`, `{` and `}`
- * becomes a one-character class, which Seatbelt matches as the character
- * itself (DOR-4542), and so does the first letter, digit, `.` or `_` of its
- * last name. A lone `]` stays plain. A folder also gets its contents key. A
+ * written as a glob that matches only itself: its glob characters are
+ * escaped as `codexGlobLiteral` does (DOR-4542), and the first letter, digit,
+ * `.` or `_` of its last name becomes a one-character class, which Seatbelt
+ * matches as the character itself. A folder also gets its contents key. A
  * backslash, which Codex reads as an escape, can't be spelled.
  *
  * @param literal - An absolute path in Codex's slash spelling.
  * @param folder - Whether the path is a folder refused whole.
  */
 export function explicitDenyKeys(literal: string, folder: boolean): string[] | undefined {
-  if (literal.includes('\\')) return undefined;
-  const escaped = literal.replace(/[*?[{}]/g, (char) => `[${char}]`);
+  let escaped: string;
+  try {
+    escaped = codexGlobLiteral(literal);
+  } catch {
+    return undefined;
+  }
   const cut = escaped.lastIndexOf('/') + 1;
   const name = escaped.slice(cut);
   const at = name.search(/[A-Za-z0-9._]/);

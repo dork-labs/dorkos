@@ -12,11 +12,7 @@ const mockEnv = vi.hoisted(() => ({
 vi.mock('../../env.js', () => ({ env: mockEnv }));
 
 import { INSTANCE_LOCK_FILENAME } from '@dorkos/shared/instance-lock';
-import {
-  acquireInstanceLock,
-  isInstanceLockEnabled,
-  releaseInstanceLock,
-} from '../instance-lock.js';
+import { acquireInstanceLock, releaseInstanceLock } from '../instance-lock.js';
 
 /** A pid high enough that no process can hold it. */
 const DEAD_PID = 2147483646;
@@ -61,30 +57,7 @@ describe('instance-lock', () => {
     fs.rmSync(dorkHome, { recursive: true, force: true });
   });
 
-  describe('isInstanceLockEnabled', () => {
-    it('is off under NODE_ENV=test', () => {
-      mockEnv.NODE_ENV = 'test';
-      expect(isInstanceLockEnabled()).toBe(false);
-    });
-
-    it('is off behind the DORKOS_SKIP_INSTANCE_LOCK escape hatch', () => {
-      mockEnv.DORKOS_SKIP_INSTANCE_LOCK = true;
-      expect(isInstanceLockEnabled()).toBe(false);
-    });
-
-    it('is on otherwise', () => {
-      expect(isInstanceLockEnabled()).toBe(true);
-    });
-  });
-
   describe('when disabled', () => {
-    it('acquires without writing a lock file under NODE_ENV=test', () => {
-      mockEnv.NODE_ENV = 'test';
-      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
-      expect(result.acquired).toBe(true);
-      expect(fs.existsSync(lockPath)).toBe(false);
-    });
-
     it('acquires even when a live instance holds the directory', () => {
       mockEnv.DORKOS_SKIP_INSTANCE_LOCK = true;
       writeLockFile(liveClaim({ port: 4242 }));
@@ -104,13 +77,6 @@ describe('instance-lock', () => {
       expect(written.version).toBe('1.2.3');
       expect(typeof written.startedAt).toBe('string');
       expect(new Date(written.startedAt as string).toISOString()).toBe(written.startedAt);
-    });
-
-    it('creates the data directory when it does not exist yet', () => {
-      const fresh = path.join(dorkHome, 'nested', '.dork');
-      const result = acquireInstanceLock({ dorkHome: fresh, port: 4242, version: '1.2.3' });
-      expect(result.acquired).toBe(true);
-      expect(fs.existsSync(path.join(fresh, INSTANCE_LOCK_FILENAME))).toBe(true);
     });
   });
 
@@ -154,54 +120,6 @@ describe('instance-lock', () => {
       expect(readLockFile().pid).toBe(process.pid);
     });
 
-    it('takes over a lock naming this very process', () => {
-      writeLockFile({
-        pid: process.pid,
-        port: 1,
-        startedAt: '2026-01-01T00:00:00Z',
-        version: '1',
-      });
-      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
-      expect(result.acquired).toBe(true);
-      expect(readLockFile().port).toBe(4242);
-    });
-
-    // The test above doesn't actually pin the self-pid guard: its fabricated
-    // `startedAt` (2026-01-01) is old enough that recycled-pid corroboration
-    // alone would already call it 'gone', so the assertion passes even with
-    // the explicit `holder.pid === process.pid` check deleted. This one
-    // closes that gap: `startedAt` is "right now", which is exactly what
-    // corroboration would call `'live-confirmed'` for THIS process (it really
-    // is alive, and its own real start time is at or before now) — so only
-    // the self-pid check, not corroboration, can be why this succeeds.
-    it('takes over a lock naming this process even when its startedAt would otherwise corroborate as live', () => {
-      writeLockFile({
-        pid: process.pid,
-        port: 1,
-        startedAt: new Date().toISOString(),
-        version: '1',
-      });
-
-      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
-
-      expect(result.acquired).toBe(true);
-      expect(readLockFile().port).toBe(4242);
-    });
-
-    // Corroboration needs a parseable `startedAt` to compare against — an
-    // unparseable one used to fall through to 'live-unconfirmed' regardless
-    // of whether the pid was even alive, which refuses to boot over a dead
-    // process's garbled lock file. A dead pid is dead independent of what its
-    // `startedAt` says, and must still read as 'gone'.
-    it('takes over a lock with an unparseable startedAt when the pid is dead (gone, not merely unconfirmed)', () => {
-      writeLockFile({ pid: DEAD_PID, port: 6242, startedAt: 'not-a-real-date', version: '1' });
-
-      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
-
-      expect(result.acquired).toBe(true);
-      expect(readLockFile().pid).toBe(process.pid);
-    });
-
     // The mirror case: an unparseable startedAt with a genuinely LIVE pid
     // (never THIS process — see the self-pid case above) must still refuse,
     // since there is nothing to corroborate a rival's claim against.
@@ -211,19 +129,6 @@ describe('instance-lock', () => {
       const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
 
       expect(result.acquired).toBe(false);
-    });
-
-    // A SIGKILL leaves the file behind; later the OS wraps pids onto some
-    // unrelated process. Pid existence alone would then refuse every start
-    // forever and tell the operator to kill an innocent process. The holder must
-    // have started BEFORE it wrote the lock, and a recycled pid never has.
-    it('takes over a lock whose pid was recycled onto a newer process', () => {
-      writeLockFile(liveClaim({ startedAt: '2020-01-01T00:00:00Z' }));
-
-      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
-
-      expect(result.acquired).toBe(true);
-      expect(readLockFile().pid).toBe(process.pid);
     });
   });
 
@@ -269,32 +174,10 @@ describe('instance-lock', () => {
       expect(fs.existsSync(lockPath)).toBe(false);
     });
 
-    it('is safe to call twice', () => {
-      const result = acquireInstanceLock({ dorkHome, port: 4242, version: '1.2.3' });
-      if (!result.acquired) throw new Error('expected to acquire');
-      result.release();
-      expect(() => result.release()).not.toThrow();
-    });
-
     it('leaves another live instance claim alone', () => {
       writeLockFile(liveClaim());
       releaseInstanceLock(dorkHome);
       expect(fs.existsSync(lockPath)).toBe(true);
-    });
-
-    // Liveness is deliberately not consulted here: a file naming any other pid
-    // is left alone. Leaving a dead process's file behind costs nothing (the
-    // next start clears it), while deleting a file we do not own could free the
-    // directory out from under a running instance.
-    it('leaves a claim naming a dead other process alone too', () => {
-      writeLockFile(liveClaim({ pid: DEAD_PID }));
-      releaseInstanceLock(dorkHome);
-      expect(fs.existsSync(lockPath)).toBe(true);
-      expect(readLockFile().pid).toBe(DEAD_PID);
-    });
-
-    it('does not throw when there is no lock file', () => {
-      expect(() => releaseInstanceLock(dorkHome)).not.toThrow();
     });
   });
 

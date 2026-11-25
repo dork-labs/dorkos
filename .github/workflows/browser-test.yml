@@ -290,7 +290,7 @@ jobs:
                 not_text_only 'no test-merge commit to diff'
               fi
               ;;
-            merge_group) not_text_only 'a merge queue build; the queue runs every suite' ;;
+            merge_group) not_text_only 'a merge queue build; the text-only lane is pull-request only' ;;
             *) not_text_only "a $EVENT run" ;;
           esac
           lane=$RUNNER_TEMP/text-only

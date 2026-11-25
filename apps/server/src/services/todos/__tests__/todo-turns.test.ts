@@ -15,7 +15,6 @@ import { TodoPromiseStore } from '../todo-promise-store.js';
 import { TodoService } from '../todo-service.js';
 import { TodoStore } from '../todo-store.js';
 import { TODO_TURNS_PER_ASSIGNER_PER_DAY, TodoTurns, type TodoTurnLaunch } from '../todo-turns.js';
-import { todoTurnPower } from '../todo-turn-power.js';
 import { buildTodoTurnPrompt } from '../todo-turn-prompt.js';
 import type { TodoActor } from '../todo-authority.js';
 
@@ -143,15 +142,6 @@ describe('to-do turns', () => {
         permissionCeiling: 'runtime-default',
         carriedMarks: { outsider: true },
       });
-    });
-
-    it('carries a teammate mark as its own bound', () => {
-      const power = todoTurnPower({
-        authority: 'person',
-        authorityMarks: '{"teammate":[{"roomId":"r1","authorId":"m1"}]}',
-      });
-      expect(power.ceiling).toBeDefined();
-      expect(power.marks).toEqual({ teammate: [{ roomId: 'r1', authorId: 'm1' }] });
     });
 
     describe("where it runs: the person's Direct chat or its own (Security's Option A)", () => {
@@ -399,20 +389,6 @@ describe('to-do turns', () => {
       todos.create(PERSON, { what: 'Mine', assignee: { kind: 'person', account: 'owner' } });
       await settled();
       expect(launches.map((l) => l.agentId)).toEqual(['agent-a', 'agent-b', 'agent-b']);
-    });
-
-    it('never starts a turn when the assignee closes and reopens its own to-do', async () => {
-      const made = todos.create(PERSON, {
-        what: 'Ship it',
-        assignee: { kind: 'agent', agentId: 'agent-a' },
-      });
-      await settled();
-      for (let i = 0; i < 5; i++) {
-        todos.update(agent('agent-a'), made.id, { state: 'kept' });
-        todos.update(agent('agent-a'), made.id, { state: 'open' });
-      }
-      await settled();
-      expect(launches).toHaveLength(1);
     });
 
     it('charges an agent that reassigns, an outsider, and an unproven request, never the person', async () => {

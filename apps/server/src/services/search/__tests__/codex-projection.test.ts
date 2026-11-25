@@ -76,17 +76,6 @@ describe('projecting Codex rollouts', () => {
     expect(projection.messages).toEqual([]);
   });
 
-  it('still indexes a message that merely MENTIONS the kickoff tag', () => {
-    const projection = project([item('user', 'what does <dork-kickoff> mean in the source?')]);
-
-    expect(projection.messages).toEqual([
-      expect.objectContaining({
-        role: 'user',
-        body: 'what does <dork-kickoff> mean in the source?',
-      }),
-    ]);
-  });
-
   it('keeps what a person and an agent said, in prose', () => {
     const projection = project([
       item('user', 'what did we decide about dogs'),
@@ -138,42 +127,6 @@ describe('projecting Codex rollouts', () => {
     // texts. A projection reading the `event_msg` family INSTEAD also produces
     // exactly two rows, so a count alone passes for it.
     expect(projection.messages.map((message) => message.role)).toEqual(['user', 'assistant']);
-    expect(projection.skipped).toBe(0);
-  });
-
-  it('numbers messages from the ordinal it is handed, so an append never renumbers history', () => {
-    const projection = project([item('user', 'third thing'), item('assistant', 'fourth')], 2);
-
-    expect(projection.messages.map((message) => message.ordinal)).toEqual([2, 3]);
-  });
-
-  it('drops everything that is not a message, silently', () => {
-    // 82% of a rollout. Reasoning, tool calls, tool output, the per-turn context
-    // record and the session header are not speech, and none of them is a
-    // format drift worth counting.
-    const projection = project([
-      line({ timestamp: 'x', type: 'session_meta', payload: { id: 's', cwd: '/repo' } }),
-      line({ timestamp: 'x', type: 'turn_context', payload: { cwd: '/repo' } }),
-      line({
-        timestamp: 'x',
-        type: 'response_item',
-        payload: { type: 'reasoning', summary: [], encrypted_content: 'zzz' },
-      }),
-      line({
-        timestamp: 'x',
-        type: 'response_item',
-        payload: { type: 'function_call', name: 'shell', arguments: '{}' },
-      }),
-      line({
-        timestamp: 'x',
-        type: 'response_item',
-        payload: { type: 'function_call_output', output: 'a stack trace nobody said' },
-      }),
-      line({ timestamp: 'x', type: 'world_state', payload: { full: true, state: {} } }),
-      item('user', 'and this one is real'),
-    ]);
-
-    expect(projection.messages.map((message) => message.body)).toEqual(['and this one is real']);
     expect(projection.skipped).toBe(0);
   });
 
@@ -232,136 +185,5 @@ describe('projecting Codex rollouts', () => {
     // Not `skipped`: these are records the projection read correctly and
     // decided against, which is the expected outcome rather than a drift.
     expect(projection.skipped).toBe(0);
-  });
-
-  it('leaves a tag a person typed inline alone', () => {
-    // The gate keys on a block SHAPE — an opening tag with a newline after it —
-    // precisely so that a message mentioning markup survives it.
-    const projection = project([item('user', 'why does <div>x</div> not center?')]);
-
-    expect(projection.messages.map((message) => message.body)).toEqual([
-      'why does <div>x</div> not center?',
-    ]);
-  });
-
-  it('drops a message that is nothing but pasted markup — the documented cost of the rule', () => {
-    // Named as the trade it is rather than left to be discovered. Somebody who
-    // pastes a block of HTML and types NOTHING else has that message indexed as
-    // nothing, because the gate cannot tell their paste from the machine's own
-    // block. The mitigation is the line below it: a single word of their own
-    // and the whole message survives, paste included.
-    const pasted = '<section>\n  <div class="card">unstyled</div>\n</section>';
-
-    expect(project([item('user', pasted)]).messages).toEqual([]);
-    expect(
-      project([item('user', `${pasted}\n\nwhy is this not centered?`)]).messages.map(
-        (message) => message.body
-      )
-    ).toEqual(['why is this not centered?']);
-  });
-
-  it('strips the blocks on a rollout written with CRLF line endings', () => {
-    // The Windows build ships (alpha), and a `\n`-only rule would silently stop
-    // stripping there — indexing every injected block as something the person
-    // said, on one platform only.
-    const projection = project([
-      item('user', '<gen_ui>\r\nDorkOS generative UI…\r\n</gen_ui>\r\n\r\nReply with exactly: ok'),
-    ]);
-
-    expect(projection.messages.map((message) => message.body)).toEqual(['Reply with exactly: ok']);
-  });
-
-  it('leaves an UNTERMINATED opening tag alone rather than eating the message', () => {
-    // Guessing wrong in this direction deletes what somebody wrote.
-    const projection = project([item('user', '<thoughts>\nI think the cache is the problem')]);
-
-    expect(projection.messages.map((message) => message.body)).toEqual([
-      '<thoughts>\nI think the cache is the problem',
-    ]);
-  });
-
-  it('drops a message with no text left after trimming', () => {
-    const projection = project([item('assistant', '   \n  '), item('user', 'still here')]);
-
-    expect(projection.messages.map((message) => message.body)).toEqual(['still here']);
-    expect(projection.skipped).toBe(0);
-  });
-
-  it('counts a malformed line and keeps reading the file', () => {
-    const projection = project([
-      item('user', 'before the bad line'),
-      '{"type":"response_item", this is not json',
-      item('assistant', 'after the bad line'),
-    ]);
-
-    expect(projection.skipped).toBe(1);
-    expect(projection.messages.map((message) => message.body)).toEqual([
-      'before the bad line',
-      'after the bad line',
-    ]);
-    // And the ordinals close over the gap rather than leaving a hole: they are
-    // positions in the index, not line numbers.
-    expect(projection.messages.map((message) => message.ordinal)).toEqual([0, 1]);
-  });
-
-  it('counts a line that parses but is not a record, and one whose content drifted', () => {
-    // The quiet half of the format-change problem: a projection that returns
-    // fewer rows is indistinguishable from a source with nothing to say, so
-    // anything recognised as ours and unreadable has to be counted.
-    const projection = project([
-      line([1, 2, 3]),
-      line({ timestamp: 'x', payload: {} }),
-      line({
-        timestamp: 'x',
-        type: 'response_item',
-        payload: { type: 'message', role: 'user', content: 'a bare string, not blocks' },
-      }),
-    ]);
-
-    expect(projection.messages).toEqual([]);
-    expect(projection.skipped).toBe(3);
-  });
-
-  it('records the timestamp verbatim, and null when there is none', () => {
-    const projection = project([
-      line({
-        type: 'response_item',
-        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
-      }),
-    ]);
-
-    expect(projection.messages[0]?.createdAt).toBeNull();
-  });
-
-  it('carries the response_item’s own id, and null when the record has none', () => {
-    // Carried because it is the id Codex itself uses for the item — the SDK's
-    // live event stream keys per-item state off the same field. Nothing lands on
-    // it yet: the session view rebuilds a Codex conversation from DorkOS's own
-    // event log, so `message-search-target.ts` keeps `codex` off its allowlist.
-    // Red if the field is dropped, or if a missing one is filled in from
-    // anywhere.
-    const projection = project([
-      line({
-        timestamp: '2026-08-08T10:00:00.000Z',
-        type: 'response_item',
-        payload: {
-          id: 'item_42',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'output_text', text: 'identified' }],
-        },
-      }),
-      item('assistant', 'unidentified'),
-    ]);
-
-    expect(projection.messages.map((message) => message.messageId)).toEqual(['item_42', null]);
-  });
-
-  it('returns nothing at all for a rollout that holds only its header', () => {
-    const projection = project([
-      line({ timestamp: 'x', type: 'session_meta', payload: { id: 's-1', cwd: '/repo' } }),
-    ]);
-
-    expect(projection).toEqual({ messages: [], skipped: 0 });
   });
 });

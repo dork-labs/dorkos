@@ -233,6 +233,7 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
   'heartbeat.wakers_off': 'local',
+  'heartbeat.choose_triage_credits': 'local',
   // Folder names, workspaces and the template catalog: what is on this
   // computer, written by the team.
   'directory.browse': 'local',
