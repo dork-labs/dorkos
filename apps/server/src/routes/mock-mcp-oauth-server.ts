@@ -43,6 +43,7 @@
  *
  * @module routes/mock-mcp-oauth-server
  */
+/* eslint-disable problem-only/no-error-body -- a stand-in OAuth server and MCP endpoint: OAuth (RFC 6749) and JSON-RPC bodies, not DorkOS problems. */
 import {
   MCP_SERVER_OPTIONS,
   MCP_MAX_REQUEST_BODY_BYTES,

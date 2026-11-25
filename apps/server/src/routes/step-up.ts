@@ -393,6 +393,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     withBlockedBy: boolean
   ): Response {
     return c.json(
+      // eslint-disable-next-line problem-only/no-error-body -- the 0.140.1 page reads this shape; removed with `fromOlderPage` at 0.143 (DOR-5089).
       { error, code: 'extension-risk', ...(withBlockedBy ? { blockedBy: [] } : {}), stale },
       409
     );

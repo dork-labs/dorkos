@@ -226,6 +226,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
           // Invalid key / unreachable OpenRouter are expected outcomes — return an
           // honest result, not an exception. Never surface the key.
           if (err instanceof OpenRouterError) {
+            // eslint-disable-next-line problem-only/no-error-body -- a 200 with `ok: false` is a result, not an error answer.
             return c.json({ ok: false, error: err.message });
           }
           logger.error('[Runtimes] OpenRouter key store failed unexpectedly');

@@ -1108,6 +1108,7 @@ export function createTestControlRoutes(deps: TestControlDeps = {}): Hono<ApiEnv
     const servers = service.injectableServersForCwd(agentPath);
     const injected = servers[parsed.data.name];
     if (!injected) {
+      // eslint-disable-next-line problem-only/no-error-body -- a 200 with `ok: false` is a result, not an error answer.
       return c.json({
         ok: false,
         error: 'server is not injectable (no manifest, or disabled)',
