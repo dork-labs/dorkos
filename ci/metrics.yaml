@@ -81,6 +81,14 @@ tracked:
       merge (a red codex-sandbox-macos push run on main, a report from a Mac)
       that no pull request or queue run caught. Hand-counted from
       after-merge-alert issues and Linear; not computed by the daily collector.
+  - id: tracked.computer-wall-allowance
+    unit: count
+    definition: >-
+      The computer wall's total allowance: the sum of the space, frontDoor and
+      tables columns in apps/server/eslint-rules/computer-wall.baseline.json on
+      main, read by `pnpm check:computer-wall` (DOR-5158). It only goes down; each
+      seam step lowers it and `--update` locks the drop in. Read by hand from the
+      baseline; not computed by the daily collector.
   - id: tracked.time-to-detect
     unit: minutes
     definition: >-
