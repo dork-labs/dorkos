@@ -47,6 +47,7 @@ export {
 export { createRunFactsSink } from './run-facts-sink.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
+  RUN_ENDS,
   SpaceTurnPort,
   TurnStartRefusedError,
   type RunWatchFilter,

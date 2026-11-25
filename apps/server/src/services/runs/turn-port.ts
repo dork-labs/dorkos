@@ -49,6 +49,14 @@ import type { EffectStore } from './effects/effect-store.js';
 import { startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 
+/** The statuses after which a run never goes back in line, so its words are no longer needed. */
+export const RUN_ENDS: ReadonlySet<TurnRun['status']> = new Set([
+  'ended',
+  'settled',
+  'cancelled',
+  'superseded',
+]);
+
 /** Why the space face refused a start before saving anything. */
 export type SpaceRefusalReason =
   'content_too_long' | 'invalid_input' | 'invalid_agent_path' | 'agent_paused';
@@ -326,11 +334,9 @@ export class SpaceTurnPort {
    * @param run - The run, as stored after the move.
    */
   moved(run: TurnRun): void {
-    // Kept until the runtime has the words (`running`): a pause can cut a turn
-    // between `started` and its first event and put the run back in line.
-    const waiting =
-      run.status === 'queued' || run.status === 'starting' || run.status === 'started';
-    if (!waiting) this.words.delete(run.id);
+    // Kept until the run can no longer come back to `queued`: a pause can cut
+    // its turn even after the runtime's first event (transition 15).
+    if (RUN_ENDS.has(run.status)) this.words.delete(run.id);
     if (this.watchers.size === 0) return;
     // After the synchronous transaction it was called inside: a rolled-back
     // move is then read as it really stands, never as it was asked for.

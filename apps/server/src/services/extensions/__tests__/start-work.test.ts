@@ -189,11 +189,13 @@ describe('a start', () => {
       seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
     });
     expect(launch).not.toHaveProperty('permissionCeiling');
+    // On the runtime the account rule was checked for, by name.
+    expect(launch).toMatchObject({ runtime: 'test-mode' });
     // Saved as a run, waiting for its hand-over: the answer came at acceptance.
     expect(record.store.get(launch!.runId)).toMatchObject({ status: 'queued', sessionId });
-    expect(renamed).toEqual([
-      { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
-    ]);
+    // No title on a chat whose turn has not begun: a start that waits or is
+    // cancelled leaves no titled empty chat.
+    expect(renamed).toEqual([]);
     expect(store.get(sessionId)).toMatchObject({
       kind: 'extension',
       extensionId: 'flow',
@@ -681,13 +683,58 @@ describe('a start through the turn port (DOR-5232)', () => {
       await flush();
       expect(store.get(canonical)?.extensionId).toBe('flow');
       expect(store.get(sessionId)).toBeNull();
+      // Titled once its turn began, under the id it runs under, on its runtime.
       expect(renamed).toEqual([
-        { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
+        { runtime: 'test-mode', sessionId: canonical, title: INPUT.title, cwd: DORKOS.root },
       ]);
       disposeProjector(canonical);
     } finally {
       uninstallRunRecord();
       setMessageQueueStore(undefined);
     }
+  });
+});
+
+describe('a start a pause cuts after its first event (DOR-5232)', () => {
+  it('keeps its words through the cut, runs once on resume, and tells nobody it could not start', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    const { runId } = launches[0]!;
+    const { store: runs } = record;
+    const sink = createRunFactsSink(runs, record.notices, record.starts);
+    const startOnce = (ref: number) => {
+      runs.move(runs.get(runId)!, 'starting', runs.lease());
+      sink.report({
+        kind: 'started',
+        runId,
+        sessionId,
+        openedBy: 'caller',
+        runtime: 'test-mode',
+        runtimeTurnRef: ref,
+      });
+      sink.report({ kind: 'delivered', runId });
+    };
+    holdRun(runId);
+    startOnce(1);
+    // Every watcher hears the run running before the pause lands.
+    await flush();
+    // A pause lands after the runtime's first event, before the agent acted: 15.
+    sink.dispatcher.pauseCut(runId);
+    await flush();
+    expect(runs.get(runId)?.status).toBe('queued');
+    // The words are still there to hand over again: in the row and in memory.
+    expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
+    expect(record.port.wordsOf(runs.get(runId)!)).toBe(INPUT.prompt);
+    // Resumed: it runs once, and ends.
+    startOnce(2);
+    runs.endTurn(runs.get(runId)!, 'completed');
+    releaseRun(runId);
+    await flush();
+    expect(runs.get(runId)?.status).toBe('ended');
+    expect(store.get(sessionId)?.prompt).toBeNull();
+    expect(
+      record.effects
+        .listForRun(runId)
+        .filter((e) => e.kind === 'notify_person' && e.key.endsWith(':not_started'))
+    ).toEqual([]);
   });
 });

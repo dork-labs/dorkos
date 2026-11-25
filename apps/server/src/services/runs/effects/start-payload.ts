@@ -25,6 +25,7 @@ export const StartPayloadSchema = z.strictObject({
   settings: fields.settings,
   seedContext: fields.seedContext,
   accountHint: fields.accountHint,
+  runtime: fields.runtime,
 });
 
 /** A `start_turn` effect's payload. See {@link StartPayloadSchema}. */

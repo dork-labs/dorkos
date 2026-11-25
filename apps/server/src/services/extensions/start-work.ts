@@ -51,7 +51,7 @@ import { logError, logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { ProjectRegistry } from '../projects/project-registry.js';
-import { turnPort, type SpaceTurnPort } from '../runs/index.js';
+import { RUN_ENDS, turnPort, type SpaceTurnPort } from '../runs/index.js';
 import { listProjectorStatuses } from '../session/session-state-projector.js';
 import type {
   SessionStartedByStore,
@@ -182,8 +182,9 @@ export class StartWorkService {
     port.watch((run) => {
       const prefix = `${START_SOURCE}:`;
       if (!run.sourceRef?.startsWith(prefix)) return;
-      // Kept until the runtime has the words, or the start will never run.
-      if (run.status === 'queued' || run.status === 'starting' || run.status === 'started') return;
+      // Kept until the run can no longer come back to `queued` (a pause can
+      // cut its turn even after the runtime's first event), or never runs.
+      if (!RUN_ENDS.has(run.status)) return;
       this.deps.store.clearPrompt(run.sourceRef.slice(prefix.length));
       this.deps.store.clearPrompt(run.sessionId);
     });
@@ -252,6 +253,8 @@ export class StartWorkService {
         content: request.prompt,
         origin: { kind: 'extension-start' },
         tier: 'owner',
+        // The runtime the account rule above was checked for, by name.
+        runtime: runtimeType,
         sourceRef: `${START_SOURCE}:${sessionId}`,
         // One honest line for the model, so it does not take the prompt for
         // the person's own words. It rides the context bag and is never drawn.
@@ -290,10 +293,25 @@ export class StartWorkService {
         .catch((err: unknown) =>
           logger.warn('[start-work] could not record a started chat', logError(err))
         );
-    const title = (id: string, runtime: string) =>
-      this.rename(runtime, id, request.title, project.root).then(() => {
-        titled = true;
-      });
+    let titling = false;
+    const tryTitle = (run: { sessionId: string; runtime: string | null }) => {
+      if (titled || titling) return;
+      titling = true;
+      void this.rename(run.runtime ?? runtimeType, run.sessionId, request.title, project.root)
+        .then(
+          () => {
+            titled = true;
+          },
+          (err: unknown) =>
+            logger.info('[start-work] title not set yet; trying again when the turn ends', {
+              sessionId: run.sessionId,
+              ...logError(err),
+            })
+        )
+        .finally(() => {
+          titling = false;
+        });
+    };
     const stop = door.watch(
       (run) => {
         if (run.status === 'starting' || run.status === 'queued') return;
@@ -303,6 +321,9 @@ export class StartWorkService {
           chatId = run.sessionId;
         }
         if (run.status === 'started' || run.status === 'running') {
+          // Titled once its turn has begun, on the runtime it runs on: a start
+          // that waits or never runs leaves no titled empty chat.
+          tryTitle(run);
           // A warning the launch owes the person rides the start's history
           // until every device shows the run's own (T3).
           if (!warned && run.warnings.length > 0) {
@@ -318,21 +339,10 @@ export class StartWorkService {
           return;
         }
         reservation.settle();
-        if (titled) return;
-        title(run.sessionId, run.runtime ?? runtimeType).catch((err: unknown) =>
-          logger.warn('[start-work] could not set the title of a started chat', {
-            sessionId: run.sessionId,
-            ...logError(err),
-          })
-        );
+        // A runtime whose transcript did not exist at its start takes it now.
+        tryTitle(run);
       },
       { runId }
-    );
-    await title(sessionId, runtimeType).catch((err: unknown) =>
-      logger.info('[start-work] title not set yet; retrying after the first turn', {
-        sessionId,
-        ...logError(err),
-      })
     );
     emit('extension.session_started');
 

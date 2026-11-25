@@ -142,6 +142,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
           ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
           ...(agentPath !== undefined ? { agentPath } : {}),
           ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
+          ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),
           ...(request.accountRef !== undefined ? { account: request.accountRef } : {}),
         },
         clientId: clientIdOf(request.runId, request.origin),

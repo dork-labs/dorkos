@@ -516,6 +516,13 @@ const callerTurnFields = {
   /** Model and effort, when the caller resolved them itself. */
   settings: TurnSettingsSchema.optional(),
   /**
+   * The runtime a chat not bound yet starts on, by its type name (a caller
+   * that checked an account rule for one runtime names it, so the chat runs
+   * on that one). A name, never the `AgentRuntime` object. Ignored once the
+   * chat is bound: the first write wins (ADR-0255).
+   */
+  runtime: z.string().min(1).optional(),
+  /**
    * Background the turn's opener attaches to it (`SendMessageRequest.seedContext`):
    * one honest line so the model does not take the words for a person's own. It
    * rides the neutral context bag, never `content`, and is never drawn.
