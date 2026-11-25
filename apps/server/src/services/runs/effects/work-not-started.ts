@@ -65,8 +65,20 @@ function why(reason: string): string {
       return 'Its runtime isn’t available on this computer.';
     case 'expired':
       return 'It waited too long to start.';
-    default:
+    case 'start_failed':
       return 'It kept failing to start.';
+    case 'start_lost':
+      return 'Its first message was lost before it could start.';
+    case 'removed':
+      return 'Its message was taken off the chat’s queue.';
+    case 'session_gone':
+      return 'Its chat was gone before it could start.';
+    case 'refused_busy':
+    case 'wait_spent':
+      return 'Its chat stayed busy too long.';
+    default:
+      // A refusal this list does not name: true, if less exact.
+      return 'This computer couldn’t start it.';
   }
 }
 

@@ -9,7 +9,7 @@ covers:
 ### Changed
 
 - When too many chats are running, a mini app's "start work" button now opens the chat and waits for room, instead of failing with "too many chats". Its own limits (starts per hour, chats working at once) still refuse at once. (DOR-5232)
-- A chat a mini app starts now runs even if DorkOS restarts before it begins. If it can never run (say no account may work in that project), you get one notice naming the app and why. (DOR-5232)
+- A chat a mini app starts now survives a restart before its turn is handed to the agent. If it can never run (say no account may work in that project), you get one notice naming the app and why. (DOR-5232)
 - When a mini app is stopped, turned off or removed, a message it sent that has not started yet is taken off the chat's queue and never sent. (DOR-5232)
 - For extension authors: `ctx.agent.send` now answers `queued` first, even when the agent is free. `turn.started` tells you it began, and sending again with the same key answers with where the message is now. (DOR-5232)
 

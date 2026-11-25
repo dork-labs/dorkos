@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq, notifications, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { WORK_NOT_STARTED_ENTRIES } from '../effects/work-not-started.js';
 import { NotificationStore } from '../../notifications/notification-store.js';
 import {
   NotificationService,
@@ -410,5 +411,27 @@ describe('a graceful shutdown', () => {
     const b = bootB();
     expect(await b.worker.runOnce()).toBe(1);
     expect(rowsFor(run.id)).toHaveLength(1);
+  });
+});
+
+describe('why a mini app’s start never ran, in the owner’s notice (DOR-5232)', () => {
+  const body = (reason: string) =>
+    WORK_NOT_STARTED_ENTRIES['extension.work_not_started'].body!({
+      runId: '01J0000000000000000000000A',
+      sessionId: 'chat',
+      extensionId: 'flow',
+      name: 'Flow',
+      reason,
+    });
+
+  it.each([
+    ['start_failed', 'It kept failing to start.'],
+    ['start_lost', 'Its first message was lost before it could start.'],
+    ['removed', 'Its message was taken off the chat’s queue.'],
+    ['session_gone', 'Its chat was gone before it could start.'],
+    ['agent_paused', 'Its agent is paused.'],
+    ['transient', 'This computer couldn’t start it.'],
+  ])('says %s plainly', (reason, words) => {
+    expect(body(reason)).toBe(words);
   });
 });
