@@ -34,6 +34,7 @@ import {
   type FolderAllowApprovalGateway,
 } from '../../folder-settings/folder-allow-approval.js';
 import {
+  applyRepoConfigStep,
   applyRepoConfigToLaunch,
   applyRepoMcpServers,
   resolveRepoConfigForLaunch,
@@ -59,6 +60,8 @@ import { pinRepoBaseline } from '../repo-baseline.js';
 import { readLocalSettings } from '../repo-local-settings.js';
 import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
+import { watchFolderAllows } from '../../tool-gate/folder-file-allows.js';
+import { readFolderSettingsEntries } from '../../tool-gate/folder-settings-files.js';
 
 const GUARD_SETTINGS = {
   hooks: {
@@ -201,6 +204,214 @@ describe('settings.local.json', () => {
     const plain = path.join(repo.root, 'plain');
     writeFile(path.join(plain, '.claude/settings.local.json'), SELF_GRANT);
     expect((await resolveRepoConfigForLaunch(turn(plain))).dropLocal).toBe(true);
+  });
+});
+
+describe('settings.local.json in every folder the launch reads', () => {
+  const localAt = (folder: string) => path.join(folder, '.claude/settings.local.json');
+
+  it('drops the local source, with a card and a line', async () => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const sub = path.join(repo.main, 'sub');
+    fs.mkdirSync(sub, { recursive: true });
+    const decision = await resolveRepoConfigForLaunch(turn(sub));
+    const options = launchOptions();
+    applyRepoConfigToLaunch(options, decision);
+    expect(options.settingSources).toEqual(['project', 'user']);
+    await settle();
+    expect(cards).toHaveLength(1);
+    expect(cards[0].capabilityId).toBe('runtime.apply_repo_local_settings');
+    expect(cards[0].summary).toContain('Local settings paused in "repo".');
+    expect(activity).toEqual([
+      expect.objectContaining({
+        state: 'paused',
+        cwd: repo.main,
+        summary: 'Paused local settings in repo: settings.local.json sets hooks.',
+      }),
+    ]);
+  });
+
+  it.each(['wt', 'wt/sub'])('drops the local source wherever a chat starts (%s)', async (at) => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    repo.addWorktree('wt');
+    const cwd = path.join(repo.root, at);
+    fs.mkdirSync(cwd, { recursive: true });
+    const decision = await resolveRepoConfigForLaunch(turn(cwd));
+    expect(decision.dropLocal).toBe(true);
+    expect(decision.pauseHooks).toBe(false);
+    await settle();
+    expect(cards).toHaveLength(1);
+  });
+
+  it('loads it once a person approved that content, and says it runs again', async () => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const wt = repo.addWorktree('wt');
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(true);
+    recordRepoConfigApproval(
+      'local',
+      readLocalSettings(repo.main, '/nonexistent-dork-home')!.digest
+    );
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false);
+    expect(activity.map((a) => [a.state, a.cwd])).toEqual([
+      ['paused', repo.main],
+      ['running', repo.main],
+    ]);
+  });
+
+  it('asks about each file nobody approved', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(localAt(repo.main), SELF_GRANT);
+    writeFile(localAt(path.join(wt, 'sub')), { env: { MADE_UP_FLAG: '1' } });
+    expect((await resolveRepoConfigForLaunch(turn(path.join(wt, 'sub')))).dropLocal).toBe(true);
+    await settle();
+    expect(cards.map((card) => card.summary.split('.')[0])).toEqual([
+      'Local settings paused in "sub"',
+      'Local settings paused in "repo"',
+    ]);
+  });
+
+  it('leaves a file the launch does not load alone', async () => {
+    const wt = repo.addWorktree('wt');
+    writeFile(localAt(wt), SELF_GRANT);
+    fs.mkdirSync(path.join(wt, 'sub'), { recursive: true });
+    expect((await resolveRepoConfigForLaunch(turn(path.join(wt, 'sub')))).dropLocal).toBe(false);
+  });
+
+  it('asks again when a script it names changes where the turn runs', async () => {
+    writeFile(localAt(repo.main), {
+      hooks: {
+        PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: 'sh tools/check.sh' }] }],
+      },
+    });
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, 'tools/check.sh'), 'exit 0\n');
+    const first = await resolveRepoConfigForLaunch(turn(wt));
+    expect(first.dropLocal).toBe(true);
+    await settle();
+    answer.outcome = 'granted';
+    await vi.waitFor(async () =>
+      expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false)
+    );
+    writeFile(path.join(wt, 'tools/check.sh'), 'touch made-up-mark\n');
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(true);
+  });
+
+  it('withdraws the card when that file changes', async () => {
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const wt = repo.addWorktree('wt');
+    await resolveRepoConfigForLaunch(turn(wt));
+    writeFile(localAt(repo.main), { env: { MADE_UP_FLAG: '1' } });
+    await vi.waitFor(() => expect(denied.length).toBeGreaterThan(0), { timeout: 5_000 });
+    expect(denied[0].reason).toBe('The file changed again. Review the new version.');
+  });
+
+  it('checks the files the agent home pin does not cover, with one card and one line', async () => {
+    const home = path.join(repo.main, 'agent');
+    writeFile(localAt(home), SELF_GRANT);
+    expect((await resolveRepoConfigForLaunch(turn(home, { home }))).dropLocal).toBe(false);
+    writeFile(localAt(repo.main), SELF_GRANT);
+    const decision = await resolveRepoConfigForLaunch(turn(home, { home }));
+    expect(decision.dropLocal).toBe(true);
+    expect(decision.pauseHooks).toBe(false);
+    expect(decision.compared).toBeUndefined();
+    await settle();
+    expect(cards).toHaveLength(1);
+    expect(activity).toEqual([expect.objectContaining({ state: 'paused', cwd: repo.main })]);
+  });
+
+  it('reads the person’s home folder from the launch, not this process', async () => {
+    writeFile(localAt(repo.root), SELF_GRANT);
+    git(repo.root, ['init', '-q']);
+    const plain = path.join(repo.root, 'plain');
+    fs.mkdirSync(plain, { recursive: true });
+    const options = { ...launchOptions(), env: { HOME: repo.root } };
+    const decision = await applyRepoConfigStep(options, {
+      agentName: 'Ops',
+      home: undefined,
+      cwd: plain,
+    });
+    expect(decision.dropLocal).toBe(false);
+    expect(options.settingSources).toEqual(['local', 'project', 'user']);
+  });
+
+  it('counts a yes given mid-session on every call, with the scripts it names read where the turn runs', async () => {
+    const hook = { matcher: '', hooks: [{ type: 'command', command: 'sh tools/check.sh' }] };
+    writeFile(localAt(repo.main), {
+      hooks: { PreToolUse: [hook] },
+      permissions: { allow: ['Bash(ls:*)'] },
+    });
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, 'tools/check.sh'), 'exit 0\n');
+    const watch = watchFolderAllows({
+      agentId: undefined,
+      home: undefined,
+      cwd: wt,
+      dorkHome: '/nonexistent-dork-home',
+      launchAllows: [],
+      launchDirs: [],
+      userHome: repo.root,
+    });
+    expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(true);
+    await resolveRepoConfigForLaunch(turn(wt));
+    await settle();
+    answer.outcome = 'granted';
+    await vi.waitFor(async () =>
+      expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(false)
+    );
+  });
+
+  it('one yes holds at launch, on every call, and through a person’s Always allow', async () => {
+    const hook = { matcher: '', hooks: [{ type: 'command', command: 'sh tools/check.sh' }] };
+    const content = (allow: string[]) => ({
+      hooks: { PreToolUse: [hook] },
+      permissions: { allow },
+    });
+    writeFile(localAt(repo.main), content(['Bash(ls:*)']));
+    const wt = repo.addWorktree('wt');
+    writeFile(path.join(wt, 'tools/check.sh'), 'exit 0\n');
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(true);
+    await settle();
+    answer.outcome = 'granted';
+    await vi.waitFor(async () =>
+      expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false)
+    );
+    const watch = watchFolderAllows({
+      agentId: undefined,
+      home: undefined,
+      cwd: wt,
+      dorkHome: '/nonexistent-dork-home',
+      launchAllows: [],
+      launchDirs: [],
+      userHome: repo.root,
+    });
+    expect(await watch.mustAsk('Bash', { command: 'ls -la' })).toBe(false);
+    const updates = [
+      {
+        type: 'addRules' as const,
+        behavior: 'allow' as const,
+        destination: 'localSettings' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'npm test *' }],
+      },
+    ];
+    await watch.rememberPersonAnswers(async () => ({
+      behavior: 'allow' as const,
+      updatedInput: {},
+      updatedPermissions: updates,
+    }))();
+    // Where Claude Code keeps the answer.
+    writeFile(localAt(repo.main), content(['Bash(ls:*)', 'Bash(npm test *)']));
+    answer.outcome = 'pending';
+    expect((await resolveRepoConfigForLaunch(turn(wt))).dropLocal).toBe(false);
+  });
+
+  it('leaves the person’s own home folder to them', async () => {
+    writeFile(localAt(repo.root), SELF_GRANT);
+    git(repo.root, ['init', '-q']);
+    const plain = path.join(repo.root, 'plain');
+    fs.mkdirSync(plain, { recursive: true });
+    expect((await resolveRepoConfigForLaunch(turn(plain, { userHome: repo.root }))).dropLocal).toBe(
+      false
+    );
   });
 });
 
@@ -408,6 +619,26 @@ describe('what the check reports it compared (DOR-5237)', () => {
       rules: [],
       dirs: [],
     });
+  });
+
+  it('reports them exactly as the call-time check reads the same file', async () => {
+    writeFile(path.join(repo.main, '.claude/settings.json'), {
+      ...GUARD_SETTINGS,
+      permissions: { allow: [' Bash(ls:*) ', '', 7], additionalDirectories: [' ../shared ', null] },
+    });
+    repo.commit('settings');
+    // Pinned at this commit, as for a repo DorkOS already knew.
+    store.harness = {};
+    await pinRepoBaseline(repo.main);
+    const wt = repo.addWorktree('wt');
+    const decision = await resolveRepoConfigForLaunch(turn(wt));
+    const live = readFolderSettingsEntries(wt, ['settings.json']);
+    expect(decision.compared).toEqual({
+      folder: fs.realpathSync(wt),
+      rules: live.rules,
+      dirs: live.dirs,
+    });
+    expect(live).toMatchObject({ rules: ['Bash(ls:*)'], dirs: ['../shared'] });
   });
 
   it('reports nothing at Full, in the agent home, or when it paused them', async () => {

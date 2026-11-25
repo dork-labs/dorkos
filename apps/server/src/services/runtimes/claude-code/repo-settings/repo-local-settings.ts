@@ -11,7 +11,8 @@
  *   ({@link CODE_SETTINGS_KEYS}, the same list the agent-home pin uses);
  * - `permissions.allow`, `permissions.additionalDirectories` and
  *   `permissions.defaultMode`;
- * - the bytes of every script those commands name inside the folder.
+ * - the bytes of every script those commands name inside the folder the turn
+ *   launches in, where they run.
  *
  * A file with none of them has nothing to approve. Everything else in it is
  * preference and loads as usual once approved; until then the whole file is
@@ -21,6 +22,7 @@
  *
  * @module services/runtimes/claude-code/repo-settings/repo-local-settings
  */
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import {
   canonicalJson,
@@ -28,7 +30,15 @@ import {
   collectCommands,
 } from '../folder-settings/folder-config-pin.js';
 import { namedTargets } from '../folder-settings/folder-config-scripts.js';
-import { pickKeys, readScript, readSettingsFile, sha256 } from './repo-files.js';
+import { isTheHome, settingsFolders } from '../tool-gate/folder-settings-files.js';
+import {
+  isWithin,
+  pickKeys,
+  readScript,
+  readSettingsFile,
+  sha256,
+  trimmedStrings,
+} from './repo-files.js';
 
 /** The `permissions` keys that widen what runs. */
 const PERMISSION_KEYS = ['allow', 'additionalDirectories', 'defaultMode'] as const;
@@ -66,23 +76,52 @@ export interface LocalSettingsReading {
 /** No allow rules and no folder entries. */
 const NO_WIDENING = { rules: [], dirs: [] };
 
-/** The strings in an array, trimmed, blanks dropped. */
-function trimmedStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) =>
-    typeof entry === 'string' && entry.trim() ? [entry.trim()] : []
-  );
+/** A folder by its real path, or resolved when it can't be. */
+function realFolder(folder: string): string {
+  try {
+    return realpathSync.native(folder);
+  } catch {
+    return path.resolve(folder);
+  }
 }
 
 /**
- * Read `<cwd>/.claude/settings.local.json`. `null` when it is absent or adds
- * nothing that runs code.
+ * The folders whose `.claude/settings.local.json` a launch in `cwd` loads, once each by real path
+ * (`settingsFolders`), less the agent's home when the turn stands in it or below it, whose own
+ * files the agent-home pin covers.
  *
  * @param cwd - The folder the turn launches in.
- * @param dorkHome - DorkOS's data folder, whose `plugins/` scripts are not the folder's.
+ * @param userHome - The person's home folder as the launch's Claude Code sees it.
+ * @param home - The registered agent home the turn resolved to, if any.
  */
-export function readLocalSettings(cwd: string, dorkHome: string): LocalSettingsReading | null {
-  const read = readSettingsFile(path.join(cwd, '.claude', 'settings.local.json'));
+export function localSettingsFolders(cwd: string, userHome: string, home?: string): string[] {
+  const inHome = home !== undefined && isWithin(realFolder(home), realFolder(cwd));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const folder of settingsFolders(cwd, userHome).localFolders) {
+    if (inHome && isTheHome(folder, home)) continue;
+    const real = realFolder(folder);
+    if (seen.has(real)) continue;
+    seen.add(real);
+    out.push(folder);
+  }
+  return out;
+}
+
+/**
+ * Read `<folder>/.claude/settings.local.json`. `null` when it is absent or adds
+ * nothing that runs code.
+ *
+ * @param folder - The folder whose local settings are read.
+ * @param dorkHome - DorkOS's data folder, whose `plugins/` scripts are not the folder's.
+ * @param runsIn - The folder the turn launches in, where the scripts its commands name are read.
+ */
+export function readLocalSettings(
+  folder: string,
+  dorkHome: string,
+  runsIn: string = folder
+): LocalSettingsReading | null {
+  const read = readSettingsFile(path.join(folder, '.claude', 'settings.local.json'));
   if (read.kind === 'absent') return null;
   if (read.kind === 'unverifiable') {
     return {
@@ -104,7 +143,7 @@ export function readLocalSettings(cwd: string, dorkHome: string): LocalSettingsR
       widening: NO_WIDENING,
     };
   }
-  return readingOf(cwd, dorkHome, read.value);
+  return readingOf(runsIn, dorkHome, read.value);
 }
 
 /**
@@ -112,16 +151,18 @@ export function readLocalSettings(cwd: string, dorkHome: string): LocalSettingsR
  * does when a person answers Always allow there: each one not already listed, appended in order
  * (DOR-5237). `undefined` when the file as it stands is one DorkOS can't predict an edit of.
  *
- * @param cwd - The folder the turn launches in.
+ * @param folder - The folder whose local settings are read.
  * @param dorkHome - DorkOS's data folder.
  * @param rules - The allow rules the answer adds.
+ * @param runsIn - The folder the turn launches in, where the scripts its commands name are read.
  */
 export function readLocalSettingsWithAllows(
-  cwd: string,
+  folder: string,
   dorkHome: string,
-  rules: readonly string[]
+  rules: readonly string[],
+  runsIn: string = folder
 ): LocalSettingsReading | null | undefined {
-  const read = readSettingsFile(path.join(cwd, '.claude', 'settings.local.json'));
+  const read = readSettingsFile(path.join(folder, '.claude', 'settings.local.json'));
   if (read.kind === 'unverifiable' || read.kind === 'malformed') return undefined;
   const value = read.kind === 'absent' ? {} : read.value;
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -133,18 +174,21 @@ export function readLocalSettingsWithAllows(
   if (!Array.isArray(allow)) return undefined;
   const next = [...allow];
   for (const rule of rules) if (!next.includes(rule)) next.push(rule);
-  return readingOf(cwd, dorkHome, { ...value, permissions: { ...permissions, allow: next } });
+  return readingOf(runsIn, dorkHome, { ...value, permissions: { ...permissions, allow: next } });
 }
 
-/** The reading of one parsed local settings value; `null` when it adds nothing that runs code. */
-function readingOf(cwd: string, dorkHome: string, value: unknown): LocalSettingsReading | null {
+/**
+ * The reading of one parsed local settings value, with the scripts it names read in `runsIn`;
+ * `null` when it adds nothing that runs code.
+ */
+function readingOf(runsIn: string, dorkHome: string, value: unknown): LocalSettingsReading | null {
   const picked = pickPowerSettings(value);
   if (!picked) return null;
   const pickedPermissions = (picked.permissions ?? null) as Record<string, unknown> | null;
 
   const commands: string[] = [];
   collectCommands(picked, commands);
-  const root = path.resolve(cwd);
+  const root = path.resolve(runsIn);
   const scripts: [string, string][] = [];
   let approvable = true;
   for (const target of namedTargets(root, path.resolve(dorkHome, 'plugins'), commands)) {

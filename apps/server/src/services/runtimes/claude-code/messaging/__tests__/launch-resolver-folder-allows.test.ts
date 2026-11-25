@@ -23,6 +23,13 @@ import {
   setFolderAllowApprovalGateway,
   type FolderAllowApprovalGateway,
 } from '../../folder-settings/folder-allow-approval.js';
+import { pinRepoBaseline } from '../../repo-settings/repo-baseline.js';
+import {
+  isolateGitEnv,
+  makeRepo,
+  writeFile,
+  type RepoFixture,
+} from '../../repo-settings/__tests__/git-fixture.js';
 
 const requiredLaunches = isolatedRequiredLaunchOwner();
 
@@ -45,12 +52,15 @@ vi.mock('../../../../tasks/task-state.js', () => ({
 }));
 const store = vi.hoisted(() => ({
   permissions: { approvedFolderAllows: [] as string[], refusedFolderAllows: [] as string[] },
+  harness: {} as Record<string, unknown>,
 }));
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'permissions' ? store.permissions : undefined),
-    set: (key: string, value: typeof store.permissions) => {
+    get: (key: string) =>
+      key === 'permissions' ? store.permissions : key === 'harness' ? store.harness : undefined,
+    set: (key: string, value: never) => {
       if (key === 'permissions') store.permissions = value;
+      if (key === 'harness') store.harness = value;
     },
   },
 }));
@@ -136,6 +146,7 @@ beforeEach(() => {
     roomsDir: null,
   });
   store.permissions = { approvedFolderAllows: [], refusedFolderAllows: [] };
+  store.harness = {};
   asked = [];
   const gateway: FolderAllowApprovalGateway = {
     request: (input) => {
@@ -373,6 +384,55 @@ describe('folder settings below Full (DOR-5237)', () => {
     // The person lowers the chat while the process keeps running.
     session.permissionMode = 'default';
     expect(await hookAnswers(resolved.sdkOptions)).toContainEqual(folderAsk);
+  });
+
+  describe('in a git worktree', () => {
+    let repo: RepoFixture;
+    let restoreEnv: () => void;
+    let wt: string;
+
+    beforeEach(async () => {
+      restoreEnv = isolateGitEnv();
+      repo = makeRepo({ '.claude/settings.json': { permissions: { allow: ['Bash'] } } });
+      // As the upgrade pins a repo DorkOS already knew.
+      await pinRepoBaseline(repo.main);
+      wt = repo.addWorktree('wt');
+    });
+
+    afterEach(() => {
+      repo.cleanup();
+      restoreEnv();
+    });
+
+    const launchIn = (cwd: string, session: AgentSession) =>
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'hello',
+        session,
+        opts: makeOpts(cwd),
+        effectiveCwd: cwd,
+      });
+
+    it('asks for a shell call after a live drop from Full', async () => {
+      const below = await launchIn(wt, makeSession('default'));
+      expect(await hookAnswers(below.sdkOptions)).not.toContainEqual(folderAsk);
+      const session = makeSession('bypassPermissions');
+      const resolved = await launchIn(wt, session);
+      expect(await hookAnswers(resolved.sdkOptions)).not.toContainEqual(folderAsk);
+      session.permissionMode = 'default';
+      expect(await hookAnswers(resolved.sdkOptions)).toContainEqual(folderAsk);
+    });
+
+    it('leaves out local settings nobody approved, wherever the launch reads them', async () => {
+      writeFile(path.join(repo.main, '.claude/settings.local.json'), {
+        hooks: { PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: 'true' }] }] },
+      });
+      for (const cwd of [wt, path.join(wt, 'sub')]) {
+        mkdirSync(cwd, { recursive: true });
+        const resolved = await launchIn(cwd, makeSession('default'));
+        expect(resolved.sdkOptions.settingSources).not.toContain('local');
+      }
+    });
   });
 
   it('asks nothing at Full', async () => {

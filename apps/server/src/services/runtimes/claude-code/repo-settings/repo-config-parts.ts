@@ -42,6 +42,7 @@ import {
   readSettingsFile,
   repoRelative,
   sha256,
+  trimmedStrings,
   walkScripts,
 } from './repo-files.js';
 import { pickPowerSettings } from './repo-local-settings.js';
@@ -127,11 +128,14 @@ function symlinkTarget(abs: string): string | undefined {
   return real(abs);
 }
 
-/** The `permissions.additionalDirectories` entries of a picked settings object. */
-function folderEntries(picked: Record<string, unknown> | null): string[] {
-  const dirs = (picked?.permissions as { additionalDirectories?: unknown } | undefined)
-    ?.additionalDirectories;
-  return Array.isArray(dirs) ? dirs.filter((dir): dir is string => typeof dir === 'string') : [];
+/** The allow rules and folder entries of a picked settings object, read as the call-time check reads them. */
+function widening(picked: Record<string, unknown> | null): { rules: string[]; dirs: string[] } {
+  const permissions = picked?.permissions as
+    { allow?: unknown; additionalDirectories?: unknown } | undefined;
+  return {
+    rules: trimmedStrings(permissions?.allow),
+    dirs: trimmedStrings(permissions?.additionalDirectories),
+  };
 }
 
 /** The `permissions.allow` rules of a picked settings object. */
@@ -415,8 +419,7 @@ export async function readRepoConfig(
           detail: mcpDiffs.join('\n\n'),
           approvable: mcpApprovable,
         };
-  const working = { rules: allowRules(workingPicked), dirs: folderEntries(workingPicked) };
-  return { hooks, mcpJson, baselineServers, working };
+  return { hooks, mcpJson, baselineServers, working: widening(workingPicked) };
 }
 
 /**
