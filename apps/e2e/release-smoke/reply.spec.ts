@@ -36,7 +36,7 @@ test.beforeAll(async ({ baseURL }) => {
 });
 
 test('a chat on the installed release gets a reply', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/session');
   await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('chat-panel')).toBeVisible({ timeout: 30_000 });
 
@@ -56,5 +56,6 @@ test('a chat on the installed release gets a reply', async ({ page }) => {
     .locator('xpath=following::*[@data-testid="message-item"][@data-role="assistant"]')
     .first();
   await expect(reply).toBeVisible({ timeout: 60_000 });
-  await expect(reply).not.toHaveText('');
+  // The test runtime's default answer: proof the turn ran, not an error in its place.
+  await expect(reply).toContainText(`Echo: ${text}`);
 });
