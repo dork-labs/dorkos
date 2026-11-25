@@ -8208,6 +8208,23 @@
         "packages/db/src/schema/work-graph/work-links.ts",
         "apps/server/src/services/work-graph/**"
       ]
+    },
+    {
+      "id": "261125-113808",
+      "slug": "an-agent-that-runs-in-the-cloud-has-its-home-in-the-cloud",
+      "title": "Each agent has one home; an agent that runs in the cloud has its home in the cloud, and a person may choose that for good",
+      "status": "accepted",
+      "created": "2026-11-25",
+      "extractedFrom": null,
+      "specSlug": "space-computer-contract",
+      "supersedes": null,
+      "amends": ["261124-194115"],
+      "affects": [
+        "apps/server/src/services/communities/local/**",
+        "apps/server/src/services/core/hub/**",
+        "apps/server/src/services/core/session-relay/**",
+        "packages/cloud-api/**"
+      ]
     }
   ]
 }
