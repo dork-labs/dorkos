@@ -247,6 +247,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     state: 'restarting',
     stoppedAt: '2026-11-19T10:00:00.000Z',
   },
+  'extension.work_not_started': {
+    runId: '01KJXYKJYW4N8QGQ5W4GB6YM9J',
+    sessionId: 'sess-1',
+    extensionId: 'flow',
+    name: 'Flow',
+    reason: 'account_not_allowed',
+  },
   'browser.handoff': {
     handoffId: 'h-1',
     sessionId: 'sess-1',
@@ -329,6 +336,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.folder_rules_too_long': 'notable',
   // The fixture is a restart: history only. One that stays off is notable (DOR-4785).
   'extension.stopped': 'quiet',
+  // A start a mini app was answered for never ran: worth a glance (DOR-5232).
+  'extension.work_not_started': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
   'browser.handoff': 'notable',
@@ -431,6 +440,7 @@ describe('notification registry', () => {
       'extension.approval',
       'extension.decision',
       'extension.stopped',
+      'extension.work_not_started',
       'heartbeat.credits-offer',
       'mcp-server.reserved_name',
       'mcp-server.tool_added',

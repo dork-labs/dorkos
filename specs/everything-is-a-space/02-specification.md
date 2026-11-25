@@ -21,6 +21,8 @@ status: specified
 
 > **Changed 2026-11-24 by ADR [`261124-194115`](../../decisions/261124-194115-your-mac-is-the-home-of-your-private-space.md) (your Mac is home).** P4 holds only for a person with no computer of their own. For a person with a Mac, the Mac is the home of their private space and the cloud hub is a way in. Steps B7 and B10 (the sidebar and search) and every step that has the cloud hub own "Private" must be re-read against that record before they are built.
 
+> **Changed 2026-11-25 by ADR [`261125-113808`](../../decisions/261125-113808-an-agent-that-runs-in-the-cloud-has-its-home-in-the-cloud.md) (each agent has one home).** For a person with a Mac, the cloud hub is a way in and is also the home of the agents they run on cloud agent computers, as `design-agent-computers.md` sections 0 and 1 describe. It holds no copy of an agent that lives on the Mac.
+
 ## Overview
 
 _Retired 2026-11-24 (ADR 261124-150515): kept as a record of the old plan. The order of the steps stands; the dates do not._

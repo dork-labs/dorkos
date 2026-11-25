@@ -105,8 +105,12 @@ function dropPlugin(dir: string, marker: string, beat: string): void {
       `process.on('SIGTERM', () => {});\n` +
       `const kid = spawn('sleep', ['600'], { stdio: 'ignore' });\n` +
       `writeFileSync(${JSON.stringify(`${marker}.child`)}, String(kid.pid));\n` +
+      // The first beat before the marker: a restart can SIGKILL the process
+      // before an interval fires, and the test reads the beat once the marker shows.
+      `const beat = () => writeFileSync(${JSON.stringify(beat)}, String(Date.now()));\n` +
+      `beat();\n` +
       `writeFileSync(${JSON.stringify(marker)}, String(process.pid));\n` +
-      `setInterval(() => writeFileSync(${JSON.stringify(beat)}, String(Date.now())), 100);\n` +
+      `setInterval(beat, 100);\n` +
       `export const Marker = async () => ({});\n`
   );
 }

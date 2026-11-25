@@ -9,7 +9,9 @@
  * and executing that block in a throwaway git repository shaped like the
  * checkout each event produces. What it holds still:
  *
- *   - the queue and the canary always run the proof, whatever changed;
+ *   - the push run on main, the canary and a pull request into release/
+ *     always run the proof, whatever changed; a merge queue build never does
+ *     (DOR-5130: it left the queue for the rolling run on main);
  *   - a pull request touching the community slice runs it, one that does not
  *     reports green without it;
  *   - every way the pull-request path can fail to decide (no base commit, no
@@ -183,13 +185,21 @@ describe('community-packaged scope step', () => {
     expect(decide(repo, 'pull_request').run).toBe('false');
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
+  it.each(['push', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
     'always runs the proof on %s, whatever changed',
     (event) => {
       const repo = checkout({ changes: ['docs/x.md'] });
       expect(decide(repo, event)).toMatchObject({ code: 0, run: 'true' });
     }
   );
+
+  it('never runs the proof in the merge queue, whatever changed (DOR-5130)', () => {
+    for (const changes of [['docs/x.md'], [`${spaceDir}/acceptance/driver.spec.ts`]]) {
+      const r = decide(checkout({ changes }), 'merge_group');
+      expect(r).toMatchObject({ code: 0, run: 'false' });
+      expect(r.log).toContain('runs on main after merge');
+    }
+  });
 
   it('runs the proof when there is no base commit to diff against', () => {
     const repo = checkout({ changes: ['docs/x.md'], withBase: false });

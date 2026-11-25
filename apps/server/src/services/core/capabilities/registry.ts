@@ -18,6 +18,7 @@
  * @module services/core/capabilities/registry
  */
 import { assertNarrowDeclarations } from './declarations/narrow-declarations.js';
+import type { CapabilityRequestFacts } from './context/request-facts.js';
 import { assertHttpSurface } from './input-projection.js';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
@@ -196,6 +197,17 @@ export interface CapabilityInvocationContext {
    * that hands back words a stranger may have chosen leaves them out.
    */
   narrowedReads?: true;
+  /**
+   * What the server worked out about the HTTP request this call arrived on
+   * (`capabilityRequestFacts` in `routes/capability-dispatch.ts`): whether the caller clears the owner bar,
+   * proves the owner in person, and is at this computer with no program key.
+   * Never a header, so no cookie or key reaches a handler. Set by the HTTP
+   * dispatcher (`routes/capability-dispatch.ts`), so on a capability's own
+   * REST path, `POST /api/capabilities/{id}/invoke` and `dorkos call`; absent
+   * on MCP, in-session and in-process calls, where a handler that needs it
+   * fails closed. Never logged or returned; the gate never reads it.
+   */
+  request?: CapabilityRequestFacts;
   /** Process-authenticated caller resolved by a server-owned boundary. */
   /**
    * Which MCP server's tool list this call arrived through, set by the MCP
@@ -355,6 +367,8 @@ export interface CapabilityHandlerContext {
   cwd?: string;
   /** See {@link CapabilityInvocationContext.narrowedReads}. */
   narrowedReads?: true;
+  /** See {@link CapabilityInvocationContext.request}. */
+  request?: CapabilityRequestFacts;
   /** Process-authenticated caller resolved by the server boundary. */
   /** See {@link CapabilityInvocationContext.mcpServer}. */
   mcpServer?: McpServerId;
@@ -815,6 +829,7 @@ export function composeRegistry(
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
         ...(supplied.narrowedReads ? { narrowedReads: true as const } : {}),
+        ...(supplied.request ? { request: supplied.request } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
         ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),

@@ -35,6 +35,7 @@ import { sessionLabelFor } from '../../../notifications/notification-copy.js';
 import type { TurnRun } from '../../run-store.js';
 import type { NewEffect } from '../effect-store.js';
 import type { EffectHandler } from '../worker.js';
+import { WorkNotStartedPayloadSchema } from '../work-not-started.js';
 
 /** How long a "finished" notice may still be told (§6.2). */
 export const NOTIFY_PERSON_NOT_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -114,6 +115,20 @@ export interface NotifyPersonDeps {
 export function notifyPersonHandler(deps: NotifyPersonDeps = {}): EffectHandler {
   return {
     async handle(effect, ctx) {
+      const notStarted = WorkNotStartedPayloadSchema.safeParse(effect.payload);
+      if (notStarted.success) {
+        const { notice: _notice, ...payload } = notStarted.data;
+        let told = false;
+        const result = await notify('extension.work_not_started', payload, {
+          onStored: (_tx, notificationId) => {
+            ctx.markDone({ notificationId });
+            told = true;
+          },
+        });
+        if (told) return { kind: 'done' };
+        if (result.deduped) return { kind: 'done', outcome: { alreadyTold: true } };
+        throw new Error('The notification was not stored');
+      }
       const parsed = TurnFinishedPayloadSchema.safeParse(effect.payload);
       if (!parsed.success) return { kind: 'drop', reason: 'unreadable_payload' };
       const notice = parsed.data;

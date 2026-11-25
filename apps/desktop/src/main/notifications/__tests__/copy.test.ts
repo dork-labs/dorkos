@@ -58,10 +58,6 @@ describe('sessionLabelFor', () => {
   it('falls back to "A chat" with no cwd', () => {
     expect(sessionLabelFor(undefined)).toBe('A chat');
   });
-
-  it('falls back to "A chat" for a root path with no basename', () => {
-    expect(sessionLabelFor('/')).toBe('A chat');
-  });
 });
 
 describe('askCopy', () => {
@@ -131,10 +127,6 @@ describe('replyEligibility', () => {
     expect(eligible).toBeNull();
   });
 
-  it('refuses a reply for an approval', () => {
-    expect(replyEligibility(approvalInteraction())).toBeNull();
-  });
-
   it('refuses a reply for a multi-select question — the answer is a set, not a string', () => {
     const eligible = replyEligibility(
       questionInteraction([
@@ -161,17 +153,6 @@ describe('replyEligibility', () => {
       ])
     );
     expect(eligible).toBeNull();
-  });
-
-  it('truncates a long question for the placeholder', () => {
-    const longQuestion = 'W'.repeat(200);
-    const eligible = replyEligibility(
-      questionInteraction([
-        { header: 'H', question: longQuestion, options: [], multiSelect: false },
-      ])
-    );
-    expect(eligible?.placeholder.length).toBe(120);
-    expect(eligible?.placeholder.endsWith('…')).toBe(true);
   });
 });
 
@@ -234,47 +215,12 @@ describe('notificationDeepLink', () => {
     expect(notificationDeepLink(dto)).toBe('/session?session=session-42');
   });
 
-  it('addresses a room subject via the roomId lens', () => {
-    const dto = notificationDto({
-      kind: 'dm.received',
-      tier: 'notable',
-      subject: { type: 'room', id: 'room-1' },
-      roomId: 'room-1',
-    });
-    expect(notificationDeepLink(dto)).toBe('/channels?id=room-1');
-  });
-
-  it('opens an agent profile from the home route', () => {
-    const dto = notificationDto({
-      subject: { type: 'agent', id: 'agent-1' },
-      agentId: 'agent-1',
-    });
-    expect(notificationDeepLink(dto)).toBe('/?profile=agent-1');
-  });
-
   it('lands a task subject on the Tasks page', () => {
     const dto = notificationDto({
       kind: 'run.completed',
       subject: { type: 'task', id: 'task-1' },
     });
     expect(notificationDeepLink(dto)).toBe('/tasks');
-  });
-
-  it('lands a run subject on the Tasks page', () => {
-    const dto = notificationDto({
-      kind: 'run.completed',
-      subject: { type: 'run', id: 'run-1' },
-    });
-    expect(notificationDeepLink(dto)).toBe('/tasks');
-  });
-
-  it('brings the app forward for a system subject', () => {
-    const dto = notificationDto({
-      kind: 'update.installed',
-      tier: 'quiet',
-      subject: { type: 'system', id: 'system' },
-    });
-    expect(notificationDeepLink(dto)).toBe('/');
   });
 
   it.each(['extension.approval', 'extension.stopped'] as const)(

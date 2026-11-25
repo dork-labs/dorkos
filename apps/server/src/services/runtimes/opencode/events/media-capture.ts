@@ -24,6 +24,9 @@
  * steps. Such a part is reported as an image that could not be shown, which is
  * the honest answer and the one thing the old behaviour never gave anybody.
  *
+ * Storing and announcing each picture is `shared/media-capture.ts`, the same
+ * step the Claude Code and Codex adapters take.
+ *
  * @module services/runtimes/opencode/media-capture
  */
 import { readFile, stat } from 'node:fs/promises';
@@ -32,10 +35,14 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
   UnsupportedSessionMediaError,
-  deriveSessionAttachmentId,
   type SessionAttachmentStore,
 } from '../../../session/attachments/index.js';
 import { logger } from '../../../../lib/logger.js';
+import {
+  IMAGE_TOO_LARGE_MESSAGE,
+  exceedsEncodedImageCap,
+  storeCapturedImage,
+} from '../../shared/media-capture.js';
 
 /**
  * One image OpenCode handed over, recorded by the pure mapper and not yet
@@ -111,54 +118,22 @@ export async function* captureOpenCodeMedia(
 ): AsyncGenerator<StreamEvent> {
   while (state.pendingMedia.length > 0) {
     const intent = state.pendingMedia.shift()!;
-    if (!store) {
-      yield mediaError('This agent is not set up to keep images, so one was not saved.');
-      continue;
-    }
-    try {
-      const attachmentId = deriveSessionAttachmentId(intent.identity);
-      const existing = await store.peek(sessionId, attachmentId, intent.mime);
-      const stored =
-        existing ??
-        (await store.put(sessionId, attachmentId, intent.mime, await readMediaBytes(intent)));
-      yield {
-        type: 'image_attachment',
-        data: {
-          attachmentId,
-          url: stored.url,
-          mediaType: stored.mediaType,
-          size: stored.size,
-          ...(intent.filename !== undefined ? { alt: intent.filename } : {}),
-        },
-      };
-    } catch (err) {
-      if (err instanceof UnsupportedSessionMediaError) {
-        yield mediaError(err.message);
-        continue;
-      }
-      logger.warn('[OpenCodeRuntime] could not store an image the turn produced', {
-        err,
-        sessionId,
-      });
-      yield mediaError('An image was produced but could not be saved.');
-    }
+    yield await storeCapturedImage(
+      store,
+      sessionId,
+      {
+        identity: intent.identity,
+        mediaType: intent.mime,
+        ...(intent.filename !== undefined ? { alt: intent.filename } : {}),
+        bytes: () => readMediaBytes(intent),
+      },
+      (err) =>
+        logger.warn('[OpenCodeRuntime] could not store an image the turn produced', {
+          err,
+          sessionId,
+        })
+    );
   }
-}
-
-/**
- * The typed error a reader sees in place of an image that could not be kept.
- *
- * A typed `error` rather than prose, because prose in the transcript reads as
- * something the model said. `execution_error` is the honest category — a step
- * of the turn failed — and the projector deliberately does not settle the
- * lifecycle on one, so a picture that could not be saved reports itself without
- * claiming the turn failed.
- */
-function mediaError(message: string): StreamEvent {
-  return {
-    type: 'error',
-    data: { message, code: 'SESSION_IMAGE_NOT_STORED', category: 'execution_error' },
-  };
 }
 
 /**
@@ -194,9 +169,8 @@ function decodeDataUrl(url: string): Buffer {
   if (!header.includes(';base64')) {
     throw new UnsupportedSessionMediaError('An image arrived in a format that could not be read.');
   }
-  const encoded = url.length - comma - 1;
-  if (encoded > Math.ceil((MAX_SESSION_ATTACHMENT_BYTES * 4) / 3) + 4) {
-    throw new UnsupportedSessionMediaError('An image was too large to keep, so it was not saved.');
+  if (exceedsEncodedImageCap(url.length - comma - 1)) {
+    throw new UnsupportedSessionMediaError(IMAGE_TOO_LARGE_MESSAGE);
   }
   return Buffer.from(url.slice(comma + 1), 'base64');
 }
@@ -223,7 +197,7 @@ async function readLocalFile(url: string): Promise<Buffer> {
     );
   }
   if (info.size > MAX_SESSION_ATTACHMENT_BYTES) {
-    throw new UnsupportedSessionMediaError('An image was too large to keep, so it was not saved.');
+    throw new UnsupportedSessionMediaError(IMAGE_TOO_LARGE_MESSAGE);
   }
   return readFile(file);
 }

@@ -286,6 +286,8 @@ export function assertCallerProofs(
   }
   const personOnly = capability.surfaces.http?.audience === 'person';
   if (personOnly && !isPersonCaller(supplied.person) && !supplied.trusted) {
-    throw new CapabilityToolError({ error: PERSON_ONLY_MESSAGE, code: PERSON_ONLY_CODE });
+    // The surface may name the tool an agent uses instead: a fixed sentence, never free text.
+    const error = capability.surfaces.http?.agentsUse ?? PERSON_ONLY_MESSAGE;
+    throw new CapabilityToolError({ error, code: PERSON_ONLY_CODE });
   }
 }

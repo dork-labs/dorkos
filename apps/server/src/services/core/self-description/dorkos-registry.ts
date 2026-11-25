@@ -43,6 +43,8 @@ import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
 import { todoPromisesDomain } from '../../todos/todo-promise-capabilities.js';
 import { env } from '../../../env.js';
 import { todosDomain } from '../../todos/todo-capabilities.js';
+import { todoPromiseHttpDomain, todoViewDomain } from '../../todos/todo-http-capabilities.js';
+import { todoPromiseWriteDomain, todoWriteDomain } from '../../todos/todo-write-capabilities.js';
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
@@ -91,8 +93,14 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
   if (deps.todoPromiseDeps) domains.push(todoPromisesDomain);
+  // The promise list and a person's "add a promise", on their REST paths (DOR-4978).
+  if (deps.todoPromiseHttpDeps) domains.push(todoPromiseHttpDomain);
   // Behind the flag here as well as at boot, so the docs composer below can match it (DOR-3088).
   if (deps.todoDeps && env.DORKOS_TODOS_ENABLED) domains.push(todosDomain);
+  if (deps.todoViewDeps && env.DORKOS_TODOS_ENABLED) domains.push(todoViewDomain);
+  // A person's to-do writes and promise changes (DOR-4978).
+  if (deps.todoPromiseWriteDeps) domains.push(todoPromiseWriteDomain);
+  if (deps.todoWriteDeps && env.DORKOS_TODOS_ENABLED) domains.push(todoWriteDomain);
   if (deps.workQueueDeps) domains.push(workQueueDomain);
   if (deps.workQueuePersonDeps) domains.push(workQueuePersonDomain);
   if (deps.workClaimDeps) domains.push(workClaimDomain);
@@ -178,9 +186,11 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionDomain,
     chatDomain,
     todoPromisesDomain,
+    todoPromiseHttpDomain,
+    todoPromiseWriteDomain,
     // Left out when `DORKOS_TODOS_ENABLED` is set to false (on by default since DOR-5071), so the
     // generated docs do not describe tools nobody can call.
-    ...(env.DORKOS_TODOS_ENABLED ? [todosDomain] : []),
+    ...(env.DORKOS_TODOS_ENABLED ? [todosDomain, todoViewDomain, todoWriteDomain] : []),
     workQueueDomain,
     workQueuePersonDomain,
     workClaimDomain,
@@ -212,6 +222,10 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
     todoPromiseDeps: {} as CapabilityDeps['todoPromiseDeps'],
     todoDeps: {} as CapabilityDeps['todoDeps'],
+    todoPromiseHttpDeps: {} as CapabilityDeps['todoPromiseHttpDeps'],
+    todoViewDeps: {} as CapabilityDeps['todoViewDeps'],
+    todoPromiseWriteDeps: {} as CapabilityDeps['todoPromiseWriteDeps'],
+    todoWriteDeps: {} as CapabilityDeps['todoWriteDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
     workQueuePersonDeps: {} as CapabilityDeps['workQueuePersonDeps'],
     workClaimDeps: {} as CapabilityDeps['workClaimDeps'],

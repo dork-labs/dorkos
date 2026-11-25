@@ -28,6 +28,7 @@ import type {
   OllamaStatus,
 } from '@dorkos/shared/runtime-connect';
 import { detectOllama, resetOllamaCache } from './ollama.js';
+import { honestInstallError } from '../../shared/program/provision-npm.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -97,16 +98,6 @@ async function runCommandDefault(command: string, args: string[]): Promise<Comma
     const detail = (stderr && String(stderr)) || (err instanceof Error ? err.message : String(err));
     return { ok: false, detail };
   }
-}
-
-/** Condense an installer failure into an honest, non-raw Connect message (mirrors provision.ts). */
-function honestInstallError(detail: string | undefined): string {
-  const firstLine = (detail ?? '')
-    .split(/\r?\n/)
-    .find((l) => l.trim())
-    ?.trim();
-  const suffix = firstLine ? ` (${firstLine})` : '';
-  return `Could not install Ollama${suffix}. Check your network and try again.`;
 }
 
 /**
@@ -219,7 +210,11 @@ async function runProvisionOllama(
   const install = await runCommand(command, args);
   if (!install.ok) {
     onProgress?.({ stage: 'error', message: install.detail ?? 'Install failed' });
-    return { ok: false, installMethod: method, error: honestInstallError(install.detail) };
+    return {
+      ok: false,
+      installMethod: method,
+      error: honestInstallError('Ollama', install.detail),
+    };
   }
 
   // Best-effort start on macOS: failing to start is NOT an install failure — the

@@ -105,8 +105,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'whether a promise was kept is the answer of the person it was made to (DOR-3034)',
     ['POST /api/todo-promises/:id/confirm'],
   ],
+  ["a person's; agents use todo_promise_update", ['PATCH /api/todo-promises/:id']],
   [
-    'an agent makes and changes to-dos with its own tools, which carry its turn’s power; the route refuses an agent’s write (DOR-3088)',
+    "a person's promise for an agent (todos.add_promise_for_agent, person-only); agents use their own tools",
+    ['POST /api/agents/:id/todo-promises'],
+  ],
+  [
+    'an agent makes and changes to-dos with its own tools, which carry its turn’s power; the mount refuses an agent’s write (DOR-3088)',
     ['POST /api/todos', 'PATCH /api/todos/:id'],
   ],
   ['no person signs in or up here', ['ALL /api/auth/*']],

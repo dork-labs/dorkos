@@ -8,15 +8,18 @@ import {
   settle,
   projectorFor,
   personTurn,
+  runOfMessage,
 } from './harness.js';
+import { runtimeMessageIdFor } from '../../../../session/message-dispatcher/pause-hold.js';
 import { describe, expect, it, vi } from 'vitest';
-import { emitLifecycle } from '../../../../session/message-dispatcher/state.js';
 import { renderAppMessage } from '../../agent-send-message.js';
-import { cancelQueuedMessage } from '../../../../session/queued-message-edits.js';
 import { dispatchMessage } from '../../../../session/message-dispatcher.js';
+import { turnFacts } from '../../../../session/turn-port/index.js';
+import { cancelQueuedMessage } from '../../../../session/queued-message-edits.js';
+import { holdRun, releaseRun } from '../../../../session/turn-port/facts.js';
 
 describe('ctx.agent.send — an idle chat', () => {
-  it('runs the message now and acknowledges it by its id', async () => {
+  it('saves the message as a run, answers at once, then runs it and acknowledges it by its id', async () => {
     h.runtime.withScenarios([quickTurn()]);
 
     const receipt = await h.service.send(EXT, {
@@ -24,24 +27,38 @@ describe('ctx.agent.send — an idle chat', () => {
       text: 'hello',
       idempotencyKey: 'k1',
     });
-    await settle();
-
+    // Answered at acceptance: the run is saved, its turn not started yet.
     expect(receipt).toEqual({
       messageId: expect.any(String),
-      status: 'started',
+      status: 'queued',
       sessionId: h.session,
     });
+    expect(runOfMessage(receipt.messageId)).toMatchObject({
+      status: 'queued',
+      origin: { kind: 'extension-message' },
+    });
+    await settle();
+
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    // The id on the receipt is the id the runtime ran.
+    // The id on the receipt is the run's; the runtime ran it under the UUID
+    // derived from it, since a runtime's message ids are UUIDs.
     expect(h.runtime.sendMessage).toHaveBeenCalledWith(
       h.session,
-      expect.any(String),
-      expect.objectContaining({ messageId: receipt.messageId })
+      renderAppMessage('Flow Dashboard', EXT, 'hello', undefined, 'abcd1234'),
+      expect.objectContaining({ messageId: runtimeMessageIdFor(receipt.messageId) })
     );
+    expect(runOfMessage(receipt.messageId)?.id).toBe(receipt.messageId);
+    // A mini app's turn carries the outsider mark (DOR-4594).
+    expect(h.runtime.sendMessage.mock.calls[0]?.[2]).toMatchObject({
+      carriedMarks: { outsider: true },
+    });
     expect(h.events).toEqual([
       { kind: 'turn.started', messageId: receipt.messageId, sessionId: h.session },
       { kind: 'turn.done', messageId: receipt.messageId, sessionId: h.session, outcome: 'ok' },
     ]);
+    // Its words stay in its own row only until its turn starts.
+    expect(h.store.get(receipt.messageId)?.content).toBeNull();
+    expect(runOfMessage(receipt.messageId)?.status).toMatch(/^(ended|settled)$/u);
   });
 });
 
@@ -63,12 +80,21 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
       reason: 'busy',
       sessionId: h.session,
     });
-    // Held, not refused, and not run beside the person's turn.
+    // Held, not refused, and not run beside the person's turn: in the queue,
+    // where the person can see it, under the receipt's own id.
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
+    expect(runOfMessage(receipt.messageId)).toMatchObject({
+      status: 'queued',
+      waitReason: null,
+      queueMessageId: receipt.messageId,
+    });
+    // The queue has the words now; the message's own row let them go.
+    expect(h.store.get(receipt.messageId)?.content).toBeNull();
     expect(h.events).toEqual([]);
     // A message into a busy chat adds no turn beside it, so it takes no cap slot.
-    expect(h.dispatched[0]?.countsTowardLaunchCap).toBe(false);
+    expect(h.dispatched[0]).toMatchObject({ countsTowardLaunchCap: false });
+    expect(h.dispatched[0]).not.toHaveProperty('wordsAtSource');
 
     first.open();
     await settle();
@@ -81,34 +107,6 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
     ]);
   });
 
-  it('waits again, never failed, when a pause cuts its turn before the agent read it (DOR-4353)', async () => {
-    const first = gate();
-    await personTurn(first.wait);
-    const receipt = await h.service.send(EXT, {
-      to: h.session,
-      text: 'later',
-      idempotencyKey: 'k1',
-    });
-    // As the dispatcher reports a turn that started and a pause then held.
-    emitLifecycle({ phase: 'started', messageId: receipt.messageId, sessionId: h.session });
-    emitLifecycle({ phase: 'held', messageId: receipt.messageId, sessionId: h.session });
-
-    expect(h.store.get(receipt.messageId)?.status).toBe('queued');
-    expect(h.events.map((e) => e.kind)).toEqual(['turn.started']);
-
-    // The resume starts it afresh, and it finishes as any turn does.
-    emitLifecycle({ phase: 'started', messageId: receipt.messageId, sessionId: h.session });
-    emitLifecycle({
-      phase: 'settled',
-      messageId: receipt.messageId,
-      sessionId: h.session,
-      outcome: 'ok',
-    });
-    expect(h.events.map((e) => e.kind)).toEqual(['turn.started', 'turn.started', 'turn.done']);
-    first.open();
-    await settle();
-  });
-
   it('tells the extension when a person removes the waiting message', async () => {
     const first = gate();
     await personTurn(first.wait);
@@ -117,6 +115,7 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
       text: 'maybe',
       idempotencyKey: 'k1',
     });
+    await settle();
 
     cancelQueuedMessage(h.session, receipt.messageId);
     first.open();
@@ -133,26 +132,77 @@ describe('ctx.agent.send — a busy chat holds the message', () => {
       },
     ]);
   });
+
+  it('waits again, never failed, when a pause cuts its turn before the agent read it (DOR-4353)', async () => {
+    // The machine is full, so nothing hands it over: the record is driven by hand.
+    h.capFull = true;
+    const receipt = await h.service.send(EXT, {
+      to: h.session,
+      text: 'later',
+      idempotencyKey: 'k1',
+    });
+    const run = runOfMessage(receipt.messageId)!;
+    const facts = turnFacts()!;
+    const startedFact = {
+      kind: 'started' as const,
+      runId: run.id,
+      sessionId: run.sessionId,
+      openedBy: 'caller' as const,
+      runtime: h.runtime.type,
+      runtimeTurnRef: 1,
+    };
+    // This process holds its launch, as the dispatcher does while one is under way.
+    holdRun(run.id);
+    facts.dispatcher.launchBegins(run.id);
+    facts.report(startedFact);
+    await settle();
+    // As the dispatcher writes a turn that started and a pause then held.
+    facts.dispatcher.pauseCut(run.id);
+    await settle();
+
+    expect(h.store.get(receipt.messageId)?.status).toBe('queued');
+    expect(h.events.map((e) => e.kind)).toEqual(['turn.started']);
+
+    // The resume starts it afresh, and it finishes as any turn does.
+    facts.dispatcher.launchBegins(run.id);
+    facts.report({ ...startedFact, runtimeTurnRef: 2 });
+    facts.report({ kind: 'ended', runId: run.id, ending: 'completed' });
+    releaseRun(run.id);
+    await settle();
+    expect(h.events.map((e) => e.kind)).toEqual(['turn.started', 'turn.started', 'turn.done']);
+  });
+
+  it('tells the extension when the chat refuses its run at the door', async () => {
+    // A room took the chat over after the target was checked.
+    h.refuse = { refused: 'ROOM_SESSION_MOVED', message: 'This chat moved to a room.' };
+    const receipt = await h.service.send(EXT, {
+      to: h.session,
+      text: 'maybe',
+      idempotencyKey: 'k1',
+    });
+    await settle();
+
+    expect(h.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(runOfMessage(receipt.messageId)).toMatchObject({
+      status: 'cancelled',
+      endingDetail: { cancelledBecause: 'room_session_moved' },
+    });
+    expect(h.events).toEqual([
+      {
+        kind: 'turn.failed',
+        messageId: receipt.messageId,
+        sessionId: h.session,
+        reason: 'undeliverable',
+        message: expect.any(String),
+      },
+    ]);
+  });
 });
 
 it('has no hold limit: a message queued for 30 minutes still runs', async () => {
-  // The dispatcher's wait budget (`SESSIONS.LOCK_TTL_MS`, five minutes) ends
-  // in a forced launch attempt, not a drop. A running turn's live lock
-  // refuses that attempt, and the message goes back in line — six times over
-  // in half an hour here — until the turn ends. No `turn.failed`, ever.
+  // It waits in the chat's queue behind the turn, and runs when it ends. No
+  // `turn.failed`, ever.
   vi.useFakeTimers();
-  const locks = new Map<string, string>();
-  h.runtime.acquireLock.mockImplementation((sid: string, cid: string) => {
-    if (locks.has(sid) && locks.get(sid) !== cid) return false;
-    locks.set(sid, cid);
-    return true;
-  });
-  h.runtime.releaseLock.mockImplementation((sid: string) => {
-    locks.delete(sid);
-  });
-  h.runtime.isLocked.mockImplementation(
-    (sid: string, cid?: string) => locks.has(sid) && (cid === undefined || locks.get(sid) !== cid)
-  );
   const first = gate();
   h.runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
   await dispatchMessage({
@@ -174,18 +224,26 @@ it('has no hold limit: a message queued for 30 minutes still runs', async () => 
 
   expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
   expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
+  expect(runOfMessage(receipt.messageId)?.status).toBe('queued');
   expect(h.events).toEqual([]);
-  // The budget really did run out, again and again: each time the message
-  // tried the lock as a stranger, was refused, and went back in line.
-  const attempts = h.runtime.acquireLock.mock.calls.filter(([, cid]) => cid === `extension:${EXT}`);
-  expect(attempts.length).toBeGreaterThanOrEqual(5);
 
   first.open();
-  await vi.advanceTimersByTimeAsync(100);
+  await vi.advanceTimersByTimeAsync(2_000);
 
   expect(h.runtime.sendMessage).toHaveBeenCalledTimes(2);
   expect(h.events.map((e) => e.kind)).toEqual(['turn.started', 'turn.done']);
   expect(h.events[0]).toMatchObject({ messageId: receipt.messageId });
+});
+
+describe('ctx.agent.send — a paused agent', () => {
+  it('refuses the message as today, and keeps nothing to run later', async () => {
+    h.pausedAgent = { name: 'Beta' };
+    await expect(
+      h.service.send(EXT, { to: h.session, text: 'later', idempotencyKey: 'p' })
+    ).rejects.toMatchObject({ code: 'unavailable', message: 'Beta is paused.' });
+    expect(h.store.findByKey(EXT, 'p')).toBeNull();
+    expect(h.queue.list(h.session)).toEqual([]);
+  });
 });
 
 describe('ctx.agent.send — idempotency', () => {
@@ -203,8 +261,15 @@ describe('ctx.agent.send — idempotency', () => {
 
     expect(two).toEqual(one);
     expect(four).toEqual(three);
-    expect(h.dispatched).toHaveLength(2);
+    expect(h.store.listByStatus(['queued'])).toHaveLength(2);
+    await settle();
     expect(h.queue.list(h.session)).toHaveLength(2);
+    expect([one, three].map((receipt) => runOfMessage(receipt.messageId)?.status)).toEqual([
+      'queued',
+      'queued',
+    ]);
+    first.open();
+    await settle();
   });
 
   it('keeps one extension’s keys from answering another’s', async () => {
@@ -218,6 +283,7 @@ describe('ctx.agent.send — idempotency', () => {
     });
 
     expect(theirs.messageId).not.toBe(mine.messageId);
+    await settle();
   });
 });
 
@@ -231,6 +297,7 @@ describe('ctx.agent.send — what the agent reads', () => {
       context: 'Thread: review comments',
       idempotencyKey: 'k1',
     });
+    await settle();
 
     const prompt = h.runtime.sendMessage.mock.calls[0]?.[1] as string;
     expect(prompt).toBe(
@@ -279,14 +346,33 @@ describe('ctx.agent.send — it cannot shape the turn', () => {
     }
   );
 
-  it('dispatches as an extension message, with no agent or power of its own', async () => {
+  it('carries the outsider mark on a message that waited in the queue and launched later', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    await h.service.send(EXT, { to: h.session, text: 'behind the person', idempotencyKey: 'q' });
+    await settle();
+    first.open();
+    await vi.waitFor(() =>
+      expect(
+        h.runtime.sendMessage.mock.calls.some((call) =>
+          String(call[1]).includes('behind the person')
+        )
+      ).toBe(true)
+    );
+    const launched = h.runtime.sendMessage.mock.calls.find((call) =>
+      String(call[1]).includes('behind the person')
+    );
+    expect(launched?.[2]).toMatchObject({ carriedMarks: { outsider: true } });
+  });
+
+  it('starts as an extension message, with no agent or power of its own', async () => {
     h.runtime.withScenarios([quickTurn()]);
     await h.service.send(EXT, { to: h.session, text: 'x', idempotencyKey: 'k' });
+    await settle();
 
-    expect(h.dispatched[0]).toMatchObject({
-      origin: { kind: 'extension-message' },
-      clientId: `extension:${EXT}`,
-    });
+    expect(h.dispatched[0]).toMatchObject({ origin: { kind: 'extension-message' } });
+    // An extension's lock identity, so its turn carries the outsider mark (DOR-4594).
+    expect(h.dispatched[0]!.clientId).toMatch(/^extension:/u);
     expect(h.dispatched[0]).not.toHaveProperty('forAgent');
     expect(h.dispatched[0]).not.toHaveProperty('permissionCeiling');
     expect(Object.keys(h.dispatched[0]!.request).sort()).toEqual(['content', 'cwd']);

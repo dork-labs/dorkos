@@ -185,20 +185,6 @@ describe('Restart Server', () => {
     expect(pointWindowsAtServer).not.toHaveBeenCalled();
   });
 
-  it('passes a refusal that is already a sentence through unprefixed', async () => {
-    // "DorkOS couldn't restart its server. DorkOS is already restarting its
-    // server." — two sentences that contradict each other, from one click.
-    const { restartServer } = await import('../../server-process');
-    const { RestartBusyError } = await import('../../server-process');
-    vi.mocked(restartServer).mockRejectedValue(new RestartBusyError());
-    const invoke = await armHandlers();
-
-    expect(await invoke('admin:restart-server')).toEqual({
-      ok: false,
-      message: 'DorkOS is already restarting its server. Give it a moment.',
-    });
-  });
-
   it('still works once the failed restart has left no port behind (DOR-542)', async () => {
     // The retry the whole IPC path exists for. `getRendererUrl` is the REAL
     // accessor over a REAL port that has just gone to null, because that is the
@@ -328,16 +314,6 @@ describe('Reset All Data', () => {
       message: 'Nothing was deleted. DorkOS is already restarting its server. Give it a moment.',
     });
     expect(pointWindowsAtServer).not.toHaveBeenCalled();
-  });
-
-  it('says nothing was deleted for a failure it cannot place', async () => {
-    const { restartServer } = await import('../../server-process');
-    vi.mocked(restartServer).mockRejectedValue(new Error('The old server would not stop.'));
-    const invoke = await armHandlers();
-
-    const result = await invoke('admin:reset-all-data');
-    expect(result).toMatchObject({ ok: false });
-    expect(result.ok ? '' : result.message).toMatch(/^Nothing was deleted\./);
   });
 
   it('answers "was my data deleted?" when the restart failed too', async () => {

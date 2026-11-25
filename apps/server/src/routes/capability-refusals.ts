@@ -18,6 +18,8 @@ import type { Context } from 'hono';
 import { problemBody, sendProblem } from '@dorkos/http-kit';
 import { PROBLEM_CODES, type Problem, type ProblemCode } from '@dorkos/shared/problem';
 import { WORK_QUEUE_MAX_QUEUED } from '@dorkos/shared/work-queue-schemas';
+import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
+import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -29,6 +31,12 @@ import type {
 interface Refusal {
   readonly code: ProblemCode;
   readonly detail: string;
+  /**
+   * Other fixed sentences the capability may refuse with under this code. A
+   * refusal whose own sentence is exactly one of these is sent with it; any
+   * other gets {@link Refusal.detail}. So only sentences written here are sent.
+   */
+  readonly alsoSays?: readonly string[];
 }
 
 /** The sentence each refusal family answers with, when no tool code says more. */
@@ -76,7 +84,13 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'signin_unreachable',
     detail: 'Couldn’t reach the server to start the sign-in. Try again.',
   },
-  // Who is asking.
+  // Who is asking. A person-only capability may name the tool an agent uses instead
+  // (`http.agentsUse`), one of a fixed list.
+  PERSON_ONLY: {
+    code: 'person_only',
+    detail: FAMILY_DETAIL.person_only,
+    alsoSays: PERSON_ONLY_AGENT_HINTS,
+  },
   AGENT_IDENTITY_UNVERIFIED: {
     code: 'agent_identity_unverified',
     detail: 'DorkOS couldn’t confirm which agent sent this, so nothing ran.',
@@ -226,6 +240,19 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     detail: `This queue already has ${WORK_QUEUE_MAX_QUEUED} items waiting.`,
   },
   WORK_ITEM_BAD_CWD: { code: 'invalid_request', detail: 'The folder must be an absolute path.' },
+  // The to-do reads and a person's to-do writes kept the hand routes' codes and
+  // sentences when they moved onto the mount (`services/todos/todo-http-capabilities.ts`,
+  // `services/todos/todo-write-capabilities.ts`).
+  ...TODO_TOOL_REFUSALS,
+  TODO_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  TODO_PROMISE_OWNER_ONLY: {
+    code: 'owner_only',
+    detail: 'Only the owner of this agent can change its to-dos.',
+  },
+  TODO_PROMISE_PAST_DUE: {
+    code: 'past_due',
+    detail: 'That due date has passed. Pick a time ahead.',
+  },
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */
@@ -295,16 +322,17 @@ function sharedCode(code: string): Refusal | undefined {
  * @returns The problem document: a code from the shared list and a fixed sentence.
  */
 export function toolRefusalProblem(payload: unknown): Problem {
-  const raw =
+  const { code: raw, error } =
     typeof payload === 'object' && payload !== null
-      ? (payload as { code?: unknown }).code
-      : undefined;
+      ? (payload as { code?: unknown; error?: unknown })
+      : {};
   const code = typeof raw === 'string' ? raw.toUpperCase().replace(/-/g, '_') : undefined;
   const refusal =
     code === undefined
       ? family('invalid_request')
       : (TOOL_REFUSALS[code] ?? sharedCode(code) ?? familyOf(code));
-  return problemBody(refusal.code, { detail: refusal.detail });
+  const listed = typeof error === 'string' && refusal.alsoSays?.includes(error);
+  return problemBody(refusal.code, { detail: listed ? error : refusal.detail });
 }
 
 /**

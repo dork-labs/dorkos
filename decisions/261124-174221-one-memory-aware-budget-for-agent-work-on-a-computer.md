@@ -1,7 +1,7 @@
 ---
 id: 261124-174221
 title: One memory-aware budget for agent work on a computer; work over it waits, it is never refused
-status: proposed
+status: accepted
 created: 2026-11-24
 spec: null
 superseded-by: null
@@ -12,14 +12,14 @@ amends: [260812-134510, 261009-171114]
 
 ## Status
 
-The operator agreed to this rule in principle on 2026-11-24. It stays Proposed until the turn port's owner confirms the shape (DOR-5192).
+Accepted (2026-11-25). The operator agreed to this rule in principle on 2026-11-24. The turn port's owner confirmed on 2026-11-25 that the shape fits the port's admission step as built, with five notes for the build (see "Notes from the turn port's owner" below). Nothing here is built yet: the work is DOR-5192.
 
-Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5192). Becomes Accepted when the turn port's owner picks up DOR-5192 and confirms the shape.
+Proposed by the architect (2026-11-24), from the review of the problems of 2026-11-23 (`research/20261124_architecture-direction-review.md` and Linear DOR-5192).
 
-**Would amend** (each stays Accepted; only the named clause would be retired):
+**Amends** (each stays Accepted; the named clause is retired when the budget is built, and until then the code still does what the clause says):
 
-- [260812-134510](260812-134510-persistent-streaming-input-sessions.md), in "The warm ceiling is a separate number from the session ceiling, on purpose": "`SESSIONS.MAX_WARM_SESSIONS` (default **12**) counts **processes**" and "a host is only refused when nothing is reclaimable" (already narrowed by [260915-202228](260915-202228-a-warm-process-ends-only-when-it-is-quiet.md); the code has since replaced the fixed 12 with a memory-sized number, DOR-3012). The warm process count stops being its own limit and becomes one input to the budget, and a host with nothing reclaimable waits instead of being refused. Warmth as a cache rationed by least recent use stands, and so does the separate `MAX_SESSIONS` ceiling on session records.
-- [261009-171114](261009-171114-chat-message-origin-and-delivery-rules.md), in "No loop guard and no turn cap": "The machine-load launch cap still applies; a send it refuses is answered with the reason, and the sender tries again." A send over the budget waits in line instead. No loop guard and no turn cap stand.
+- [260812-134510](260812-134510-persistent-streaming-input-sessions.md), in "The warm ceiling is a separate number from the session ceiling, on purpose": "`SESSIONS.MAX_WARM_SESSIONS` (default **12**) counts **processes**" and "a host is only refused when nothing is reclaimable" (already narrowed by [260915-202228](260915-202228-a-warm-process-ends-only-when-it-is-quiet.md); the code has since replaced the fixed 12 with a memory-sized number, DOR-3012). The warm process count will stop being its own limit and become one input to the budget, and a host with nothing reclaimable will wait instead of being refused. Warmth as a cache rationed by least recent use stands, and so does the separate `MAX_SESSIONS` ceiling on session records.
+- [261009-171114](261009-171114-chat-message-origin-and-delivery-rules.md), in "No loop guard and no turn cap": "The machine-load launch cap still applies; a send it refuses is answered with the reason, and the sender tries again." A send over the budget will wait in line instead. No loop guard and no turn cap stand.
 
 **Builds on, and changes nothing in:** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (the budget belongs to the computer side) and [261124-150517](261124-150517-turns-survive-restarts-run-record-outbox-capped-recovery.md) (the turn port, the one door every new turn will pass through, and the run record, which can hold a waiting turn's place).
 
@@ -44,6 +44,16 @@ We will give each computer one budget for agent work, measured in what actually 
 - **The computer reports what each agent uses.** It samples memory for each runtime process and its children, keyed by agent and chat, and reports it in its status, so a person can see which agent is heavy.
 - **The five limits fold in or go.** Each becomes an input to the one budget or is removed. None stays as a separate line that can refuse on its own.
 - **A person can move it.** The budget has a setting to raise or lower it, for a computer that also does other work. A pinned number, the remaining scope of DOR-2098, is one such setting.
+
+## Notes from the turn port's owner
+
+The decision stands as written. These five points say how it has to be built to fit the port's admission step (`apps/server/src/services/runs/admission.ts`), which already has a row for it.
+
+1. **The memory reading is a sample, never a wait.** Admission is one step with no pause between the check and the claim of a slot. So the budget reads a number that a timer refreshes. It never measures memory inside the check.
+2. **A waiting turn needs its own time to look again.** Today a turn that waits for room is woken only when another turn lets go of a slot. Memory also frees in other ways: a warm process is reclaimed, or another program closes. So the budget looks at each waiting turn again every time it takes a fresh memory sample.
+3. **First in, first out has to be built.** Today a freed slot wakes every waiting start, and the first to claim it wins. To keep the order, the freed room goes to the turn that has waited longest.
+4. **Count processes that start, not turns.** A person's message into a process that is already warm starts nothing and passes. A cold start counts, whoever asked for it. Every new turn still passes the check; only a cold start uses up budget.
+5. **The place in line has to be read from the record.** The reason a turn waits is stored today, and its place is not. The line a person sees needs the turn's place among the waiting turns. Helper chats do not pass through the port yet, so they need their own change before the budget can count them.
 
 ## Consequences
 

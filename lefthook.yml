@@ -253,6 +253,15 @@ pre-push:
         own_mocks_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:own-mocks -- --base "$own_mocks_base"
       fail_text: Own-module mock ratchet failed — fix the packages listed above.
+    turn-port:
+      # The turn port's ratchet (DOR-5232), on the same branch point as
+      # max-lines above. The lint rule holds each file to its entry; this
+      # refuses an entry raised or added by hand. Pure file reads, under a second.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push turn-port
+        turn_port_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:turn-port -- --base "$turn_port_base"
+      fail_text: Turn port ratchet failed — fix the files listed above.
     test-ratio:
       # The per-package test budget, on the same branch point as max-lines
       # above. Pure file reads, a few seconds.

@@ -16,7 +16,7 @@
  * | A person must approve first | `202`, the approval payload (not an error) |
  * | A caller that is not a person called a person-only capability (`http.audience: 'person'`) | `403` problem, `person_only` (from `registry.invoke`) |
  * | The gate refused for good | `403` problem, {@link gateRefusalProblem} |
- * | A network sign-in asked for an `act` or `destructive` one without `allowFromWifi` | `403` problem, `not_from_wifi` |
+ * | A network sign-in asked for an `act` or `destructive` one that declares no network mode (`wifi`) | `403` problem, `not_from_wifi` |
  * | The input failed the capability's schema | `400` problem, `invalid_request` |
  * | The capability refused (`CapabilityToolError`) | problem, {@link toolRefusalProblem} |
  * | Unknown id | `404` problem, `unknown_capability` |
@@ -42,6 +42,7 @@ import {
   CapabilityToolError,
   personCaller,
   type CapabilityRegistry,
+  type CapabilityRequestFacts,
 } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
@@ -50,6 +51,10 @@ import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { refuseUnlessAccountOwner, presentsProgramCredential } from '../lib/caller-authority.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { heldWifiOwner, personProof } from '../services/todos/caller.js';
+import type { RequestFacts } from '../http/request-facts.js';
 import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
 
 /** What a request answers while boot has not handed the registry over. */
@@ -106,8 +111,14 @@ export async function dispatchCapability(
   const facts = honoRequestFacts(c);
   // A Wi-Fi sign-in reads through capabilities, but acts at the computer
   // (DOR-2969): an `act` or `destructive` one is refused before it runs,
-  // unless it only lowers an agent's power (`allowFromWifi`, e.g. a pause).
-  if (isFromWifi(facts) && capability.tier !== 'observe' && !capability.allowFromWifi) {
+  // unless it declares a network mode (ADR 261125-114705, decision 3): it only
+  // lowers an agent's power (`lowers-power`, a pause), or it is a person's own
+  // write (`person-held`), which only a person reaches (`audience: 'person'`,
+  // asserted at compose) and which the request facts below hold to the Wi-Fi
+  // hold: a held device never proves the owner, and is named as held. The
+  // person bar does not depend on this line: `registry.invoke` re-checks the
+  // audience on every call, whatever door or network it came through.
+  if (isFromWifi(facts) && capability.tier !== 'observe' && capability.wifi === undefined) {
     return problem(c, 'not_from_wifi', { detail: WIFI_ACTION_REFUSAL });
   }
 
@@ -142,6 +153,7 @@ export async function dispatchCapability(
       ...(user ? { userId: user.userId } : {}),
       ...(approvalToken ? { approvalToken } : {}),
       ...(person ? { person } : {}),
+      request: capabilityRequestFacts(facts),
       retryChannel: 'http-header',
     });
     const success = dispatch.success ?? 200;
@@ -162,4 +174,37 @@ export async function dispatchCapability(
     logger.error('[capabilities] invoke failed', { id, err });
     return problem(c, 'internal_error', { detail: CAPABILITY_FAILED });
   }
+}
+
+/**
+ * The answers about one request a capability handler may see.
+ *
+ * The dispatcher and the hand routes that share a handler's checks both call
+ * this, so the two cannot drift. Each is worked out only when a handler first reads it, and once: the owner
+ * bar records a request it refused for want of the person's session, which
+ * turns the route's refusal into the step-up (`http/person-session-refusal.ts`),
+ * so it must run only for a handler that actually asks, as the hand routes did.
+ *
+ * @param facts - The request's facts.
+ * @returns The derived answers; no header value is in them.
+ */
+export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFacts {
+  let accountOwner: boolean | undefined;
+  let ownerProven: boolean | undefined;
+  let local: boolean | undefined;
+  let held: boolean | undefined;
+  return {
+    get accountOwner() {
+      return (accountOwner ??= refuseUnlessAccountOwner(facts) === undefined);
+    },
+    get ownerProven() {
+      return (ownerProven ??= personProof(facts));
+    },
+    get atThisComputerWithoutProgramKey() {
+      return (local ??= isAtThisComputer(facts) && !presentsProgramCredential(facts));
+    },
+    get heldWifiOwner() {
+      return (held ??= heldWifiOwner(facts));
+    },
+  };
 }

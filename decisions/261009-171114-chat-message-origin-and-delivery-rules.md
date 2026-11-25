@@ -14,6 +14,8 @@ amends: [261006-235240, 0077, 0081]
 
 Accepted (operator decision, 2026-10-08; Linear DOR-2790).
 
+**Amended by** [261124-174221](261124-174221-one-memory-aware-budget-for-agent-work-on-a-computer.md) (accepted 2026-11-25, not built yet: DOR-5192): a send over the computer's budget waits in line instead of being refused with a reason. Until that is built, the code does what this record says.
+
 **Amended by** [261017-211859](261017-211859-a-conversation-is-the-shared-log-a-session-is-private.md) (accepted 2026-11-24): every rule stands; a chat message becomes an entry in the receiving conversation's log, and `chat_messages` folds into it.
 
 **Amends:**

@@ -49,6 +49,7 @@ export function recordTurnStart(plan: DispatchPlan, seq: number): void {
         openedBy: 'caller',
         runtime: plan.runtime.type,
         runtimeTurnRef: seq,
+        ...(plan.turn.launchWarnings?.length ? { warnings: plan.turn.launchWarnings } : {}),
       });
     }
     const receiptId = plan.turn.privateReceiptId;

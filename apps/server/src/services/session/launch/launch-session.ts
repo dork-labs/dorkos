@@ -28,7 +28,6 @@ import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
 import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
-import { configManager } from '../../core/config-manager.js';
 import {
   homeOf,
   isInsideRoomsDir,
@@ -53,6 +52,7 @@ import type {
 } from '../../core/usage/account-eligibility.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { agentLaunchCapMessage, claimCappedLaunch, isAgentLaunchCapFull } from './launch-cap.js';
 import {
   launchedByOf,
   launchPlaceRefusal,
@@ -121,6 +121,13 @@ export interface DispatchSessionMessageOpts {
    */
   messageId?: string;
   /**
+   * The run the turn port saved for this message, and whether its words stay
+   * at their source rather than in the queue. Passed straight through; see
+   * `DispatchMessageOpts.runId` and `DispatchMessageOpts.wordsAtSource`.
+   */
+  runId?: string;
+  wordsAtSource?: true;
+  /**
    * The loosest level this first turn may run at. Passed straight through;
    * `MessageOpts.permissionCeiling` is the authority on what it means. Sent by
    * `session_start` when the calling turn read an outsider's words, so the new
@@ -141,53 +148,13 @@ export interface DispatchSessionMessageOpts {
   launcher?: SessionLauncher;
 }
 
-/**
- * How many sessions nobody typed into (see
- * {@link DispatchSessionMessageOpts.countsTowardLaunchCap}) may have a live turn
- * at once, when `runtimes.maxAgentChats` cannot be read. The 2026-09-25 drain
- * reached a machine load near 500 (spec `claude-account-fleet` D5 "Load cap",
- * D9 "Automatic handoff").
- */
-export const AGENT_LAUNCH_MAX_LIVE = 8;
-
-/** The setting a person raises the cap with, as the refusals name it. */
-export const AGENT_LAUNCH_CAP_SETTING = 'runtimes.maxAgentChats';
-
-/**
- * The cap in force right now: `runtimes.maxAgentChats` (DOR-3413), read at each
- * launch so a change applies to the next one without a restart.
- */
-export function agentLaunchMaxLive(): number {
-  try {
-    const configured = configManager.get('runtimes')?.maxAgentChats;
-    if (typeof configured === 'number' && Number.isInteger(configured) && configured > 0) {
-      return configured;
-    }
-  } catch (err) {
-    logger.debug('[launch-session] config unavailable, using the default chat cap', {
-      err: String(err),
-    });
-  }
-  return AGENT_LAUNCH_MAX_LIVE;
-}
-
-/** The sentence a launch refused by the cap answers with. */
-export function agentLaunchCapMessage(): string {
-  return (
-    `Too many spin-off chats are running (${agentLaunchMaxLive()}). Try again when one finishes. ` +
-    `A person can raise the limit with the ${AGENT_LAUNCH_CAP_SETTING} setting.`
-  );
-}
-
-/** One entry per capped launch whose turn has not settled yet. */
-const liveCappedLaunches = new Set<symbol>();
-
-/**
- * Whether every slot under {@link agentLaunchMaxLive} is taken right now.
- */
-export function isAgentLaunchCapFull(): boolean {
-  return liveCappedLaunches.size >= agentLaunchMaxLive();
-}
+export {
+  AGENT_LAUNCH_CAP_SETTING,
+  AGENT_LAUNCH_MAX_LIVE,
+  agentLaunchCapMessage,
+  agentLaunchMaxLive,
+  isAgentLaunchCapFull,
+} from './launch-cap.js';
 
 /**
  * Why {@link dispatchSessionMessage} started nothing, with the sentence the
@@ -344,11 +311,7 @@ export async function dispatchSessionMessage(
   if (isAgentLaunchCapFull()) {
     return { refused: 'LAUNCH_CAP_FULL', message: agentLaunchCapMessage() };
   }
-  const slot = Symbol('capped-launch');
-  liveCappedLaunches.add(slot);
-  const release = () => {
-    liveCappedLaunches.delete(slot);
-  };
+  const release = claimCappedLaunch();
   try {
     const result = await launchSessionMessage({
       ...opts,
@@ -753,6 +716,9 @@ async function launchSessionMessage(
   // expire at the 202 and correlate nothing; see
   // `routes/__tests__/sessions-dispatch-correlation.test.ts`, which fails if it
   // moves.
+  // Known before the turn starts, so its `started` fact carries them (DOR-5232).
+  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
+  const { warnings } = await sessionToolWarnings(runtimeType, runtime, tools);
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
     dispatchMessage({
       turnStarter: personTyped
@@ -765,6 +731,9 @@ async function launchSessionMessage(
       clientId,
       content,
       messageId,
+      ...(opts.runId !== undefined ? { runId: opts.runId } : {}),
+      ...(opts.wordsAtSource ? { wordsAtSource: true as const } : {}),
+      ...(warnings ? { launchWarnings: warnings } : {}),
       cwd: effectiveCwd,
       context,
       // Background this turn's opener attached to it. It rides the neutral
@@ -818,8 +787,7 @@ async function launchSessionMessage(
     });
   }
 
-  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
-  return { ...result, ...(await sessionToolWarnings(runtimeType, runtime, tools)) };
+  return { ...result, ...(warnings ? { warnings } : {}) };
 }
 
 /** @internal Exported for testing only. */

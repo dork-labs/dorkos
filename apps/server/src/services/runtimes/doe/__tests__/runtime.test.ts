@@ -12,6 +12,10 @@ import {
 } from './runtime-fixture.js';
 import { RUNTIME_STOP_ACK_TIMEOUT_MS } from '../../shared/timing/stop-ack.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { setAgentHomeRegistry } from '../../../core/agent-identity/index.js';
 
 it('constructs and lists metadata without resolving model authentication', async () => {
   const resolveModel = vi.fn();
@@ -410,3 +414,35 @@ it.skipIf(process.platform === 'win32')(
     }
   }
 );
+
+it('lists the folder’s skills in the / menu, and its own outside its home (DOR-5262)', async () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'doe-menu-')));
+  const [home, project] = ['agents/ana', 'work/site'].map((dir) => path.join(root, dir));
+  const skill = (folder: string, name: string) => {
+    fs.mkdirSync(path.join(folder, '.agents', 'skills', name), { recursive: true });
+    fs.writeFileSync(
+      path.join(folder, '.agents', 'skills', name, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: ${name} steps\n---\n\nSteps.\n`
+    );
+  };
+  skill(home!, 'triage');
+  skill(project!, 'deploy');
+  setAgentHomeRegistry({
+    isRegisteredHome: (dir) => dir === home,
+    listRegisteredHomes: () => [home!],
+    managedWorkspaceOwner: () => null,
+    roomsDir: null,
+  });
+  try {
+    const runtime = makeRuntime();
+    const names = async (cwd?: string, agent?: string) =>
+      (await runtime.getCommands(false, cwd, agent)).commands.map((entry) => entry.fullCommand);
+    expect(await names(project, home)).toEqual(['/deploy', '/triage']);
+    expect(await names(home, home)).toEqual(['/triage']);
+    expect(await names(project)).toEqual(['/deploy']);
+    expect(await names()).toEqual([]);
+  } finally {
+    setAgentHomeRegistry(undefined);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

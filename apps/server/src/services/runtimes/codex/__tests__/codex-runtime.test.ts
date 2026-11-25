@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Codex } from '@openai/codex-sdk';
 import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -18,6 +21,7 @@ import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
 import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
 import { scanSkillCommands } from '../scan-skill-commands.js';
+import { setAgentHomeRegistry } from '../../../core/agent-identity/index.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
 import { feedProjector } from '../../../session/session-event-normalizer.js';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -1101,6 +1105,36 @@ describe('CodexRuntime', () => {
       expect(scanSkillCommands).toHaveBeenCalledWith('/projects/demo');
       expect(registry.commands).toEqual(commands);
       expect(typeof registry.lastScanned).toBe('string');
+    });
+  });
+
+  describe('commands outside the agent’s home (DOR-5250)', () => {
+    let root: string;
+    afterEach(() => {
+      setAgentHomeRegistry(undefined);
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('adds the session’s agent’s own skills, and only for a folder outside its home', async () => {
+      root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-commands-')));
+      const [home, project] = [path.join(root, 'ana'), path.join(root, 'site')];
+      for (const dir of [home, project]) fs.mkdirSync(dir);
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === home,
+        listRegisteredHomes: () => [home],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      vi.mocked(scanSkillCommands).mockImplementation((dir) => [
+        { command: dir, fullCommand: dir === home ? '/triage' : '/deploy', description: dir },
+      ]);
+      const { runtime } = makeRuntime();
+      const listed = async (cwd: string, agentPath?: string) =>
+        (await runtime.getCommands(false, cwd, agentPath)).commands.map((c) => c.fullCommand);
+
+      expect(await listed(project, home)).toEqual(['/deploy', '/triage']);
+      expect(await listed(project)).toEqual(['/deploy']);
+      expect(await listed(home, home)).toEqual(['/triage']);
     });
   });
 

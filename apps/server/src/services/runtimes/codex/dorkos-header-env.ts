@@ -1,6 +1,7 @@
 /**
- * The two halves of getting the `dorkos` MCP server's headers to Codex without
- * putting them on the command line (spec `tool-only-room-replies` §D4).
+ * The two halves of getting the `dorkos` MCP server's headers (and the connector
+ * server's, which are the same three) to Codex without putting them on the
+ * command line (spec `tool-only-room-replies` §D4).
  *
  * ## Why this split exists at all
  *
@@ -24,10 +25,18 @@
  *
  * @module services/runtimes/codex/dorkos-header-env
  */
+import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import {
   DORKOS_MCP_HEADER_ENV_VARS,
   type DorkosMcpInjection,
 } from '../shared/dorkos-mcp-injection.js';
+import { redirectHeaders } from './header-env.js';
+
+/**
+ * The env var that carries one header, or `undefined` when none is defined.
+ * The connector server's headers are the same three, so they share the map.
+ */
+const envFor = (header: string): string | undefined => DORKOS_MCP_HEADER_ENV_VARS[header];
 
 /**
  * Header name → env var NAME, for the `env_http_headers` config entry.
@@ -42,17 +51,14 @@ import {
  *   which becomes visible argv.
  */
 export function dorkosHeaderEnvNames(injection: DorkosMcpInjection): Record<string, string> {
-  const names: Record<string, string> = {};
-  for (const header of Object.keys(injection.headers)) {
-    const envVar = DORKOS_MCP_HEADER_ENV_VARS[header];
-    if (envVar === undefined) {
-      throw new Error(
-        `[CodexRuntime] no environment variable is defined for the "${header}" header. ` +
-          'Add one to DORKOS_MCP_HEADER_ENV_VARS — it must not be passed through `config`, ' +
-          'which becomes visible argv.'
-      );
-    }
-    names[header] = envVar;
+  const { names, unmapped } = redirectHeaders(injection.headers, envFor);
+  const header = unmapped[0];
+  if (header !== undefined) {
+    throw new Error(
+      `[CodexRuntime] no environment variable is defined for the "${header}" header. ` +
+        'Add one to DORKOS_MCP_HEADER_ENV_VARS — it must not be passed through `config`, ' +
+        'which becomes visible argv.'
+    );
   }
   return names;
 }
@@ -66,11 +72,36 @@ export function dorkosHeaderEnvNames(injection: DorkosMcpInjection): Record<stri
  * @param injection - The resolved `dorkos` entry, or null when none is injected.
  */
 export function dorkosHeaderEnv(injection?: DorkosMcpInjection | null): Record<string, string> {
-  if (!injection) return {};
-  const values: Record<string, string> = {};
-  for (const [header, value] of Object.entries(injection.headers)) {
-    const envVar = DORKOS_MCP_HEADER_ENV_VARS[header];
-    if (envVar !== undefined) values[envVar] = value;
+  return injection ? redirectHeaders(injection.headers, envFor).values : {};
+}
+
+/**
+ * Map connector header names to environment variable names for Codex config.
+ *
+ * @param injection - Turn-scoped connector MCP configuration.
+ * @returns Header to environment-variable-name mapping.
+ */
+export function connectorHeaderEnvNames(
+  injection: ConnectorRuntimeMcpInjection
+): Record<string, string> {
+  const { names, unmapped } = redirectHeaders(injection.headers, envFor);
+  const header = unmapped[0];
+  if (header !== undefined) {
+    throw new Error(
+      `[CodexRuntime] no environment variable is defined for connector header "${header}".`
+    );
   }
-  return values;
+  return names;
+}
+
+/**
+ * Map connector header values into the Codex subprocess environment.
+ *
+ * @param injection - Turn-scoped connector MCP configuration, when available.
+ * @returns Environment values containing the bearer outside visible argv.
+ */
+export function connectorHeaderEnv(
+  injection?: ConnectorRuntimeMcpInjection | null
+): Record<string, string> {
+  return injection ? redirectHeaders(injection.headers, envFor).values : {};
 }

@@ -90,7 +90,7 @@ Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape:
 - **Two sides, one contract** (ADR `261124-150516`). One program, one release. The space side holds space data; the computer side runs turns. One contract joins them: start, stream and stop a turn, answer an ask, call a DorkOS tool, sync an agent, report status. A Mac runs both; an agent computer runs only the computer side.
 - **Turns survive restarts** (ADR `261124-150517`): a run record, follow-up work saved with the turn, capped recovery.
 - **Every agent can be messaged directly** (ADR `261124-150518`): one send-to-agent capability for the API, CLI, MCP and A2A.
-- **Your Mac is home** (ADR `261124-194115`): a person's own computer holds their private space when they have one; the cloud holds it only for people with no computer.
+- **Your Mac is home** (ADR `261124-194115`): a person's own computer holds their private space when they have one; the cloud holds it for people with no computer. Each agent has one home: an agent that runs on a cloud agent computer has its home in the person's DorkOS in the cloud, with no second copy and no moving back and forth (ADR `261125-113808`).
 - **Playbooks** (ADR `261124-152801`): how agents work together is a setting of a space. DorkOS holds its rules at its own gate and the turn port, never in one runtime's hooks.
 
 Rules today:
@@ -153,7 +153,8 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 - **A red is not a reason to add load.** After a first queue ejection, read the failing job; once it's plainly not yours, re-queue it once with `gh pr merge --auto <n>`. The same check failing again at the same head is real: read the log and push a fix. Don't push empty commits.
 - **Heavy local runs** (full verify, full suites, builds, installs, Playwright, Docker) wait in the load gate: `pnpm heavy <command>` or `bash scripts/heavy-run-lock.sh`. Exit 75 means try again later. Start nothing heavy while free disk is under the floor in `contributing/ci.md`.
 - **Don't print full process command lines** (`ps -ww`, `ps aux`, `pgrep -a`); they can show tokens.
-- **A throwaway test server gets a throwaway home:** a temp `DORK_HOME`, `DORKOS_TEST_RUNTIME=true`, and `HOME` and `CLAUDE_CONFIG_DIR` pointed inside the temp folder.
+- **A throwaway test server gets a throwaway home:** a temp `DORK_HOME`, `DORKOS_TEST_RUNTIME=true`, and `HOME` and `CLAUDE_CONFIG_DIR` pointed inside the temp folder. Keep that folder outside the repo. The temp `HOME` is only for a server or a `claude` binary you start directly.
+- **Never run `pnpm`, `npx`, `yarn` or `corepack` with `HOME`, `XDG_*` or `PNPM_HOME` overridden**, not even through `pnpm heavy`. Under a fake home the package manager cannot find its pinned version and installs itself there; when that home is inside the repo it does so again without end, which took the Mac down twice on 2026-11-25. Inside a test, set a fake home with `vi.stubEnv`.
 - **Test data uses made-up names only**, not a real person, account or email.
 - **A release goes first.** The `release-window` check holds other merges until the new version is on npm; you add no `hold`. Heavy runs the release doesn't name wait too.
 

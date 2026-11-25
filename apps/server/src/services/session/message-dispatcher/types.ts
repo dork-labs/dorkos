@@ -21,6 +21,7 @@ import type {
 } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { TurnOrigin } from '@dorkos/shared/turn-port';
+import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 import type { SessionStateProjector } from '../session-state-projector.js';
 import type { TriggerTurnOpts, TriggerTurnResult } from '../trigger-turn.js';
 import type { CompactionBoundaryTag } from '../trigger-command-intent.js';
@@ -181,6 +182,25 @@ export interface DispatchMessageOpts {
    * `turns-survive-restarts` §4.1), so every caller says which surface it is.
    */
   origin: TurnOrigin;
+  /**
+   * The run the turn port already saved for this message (spec
+   * `turns-survive-restarts` §4.7, write 1): its queue row, when it gets one,
+   * is recorded on that run rather than a new run being written.
+   */
+  runId?: string;
+  /**
+   * The words stay at their source, not in the queue (a turn-port run whose
+   * words are not a composer's, §3.5): no queue row is written, the wait bound
+   * never forces its launch, and a launch that starts no turn hands it back to
+   * the space side (transition 8, its `start_turn` back to `pending`).
+   * Otherwise it waits as a queued message does.
+   */
+  wordsAtSource?: true;
+  /**
+   * What the launch path found a person is owed to know about this chat
+   * (`sessionToolWarnings`), reported on the run's `started` fact.
+   */
+  launchWarnings?: SessionLaunchWarning[];
   /** Lock identity of whoever is sending; a message waits only behind its own client. */
   clientId: string;
   /** The person's words, passed through pristine. */
@@ -411,6 +431,8 @@ export interface DispatchPlan {
    * §4.7). Absent when no run record is wired.
    */
   runId?: string;
+  /** Its words stay at their source; see {@link DispatchMessageOpts.wordsAtSource}. */
+  wordsAtSource?: true;
   projector: SessionStateProjector;
   runtime: AgentRuntime;
   /** The whole budget this message may spend waiting for the turns ahead of it. */
@@ -518,6 +540,7 @@ export interface DispatchPlan {
     | 'privateReceiptId'
     | 'privateDispatchSignal'
     | 'unattended'
+    | 'launchWarnings'
   > & {
     /** What started it; absent for a row adopted after a restart, whose run already has it. */
     origin?: TurnOrigin;

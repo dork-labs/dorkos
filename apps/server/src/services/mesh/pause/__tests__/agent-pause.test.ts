@@ -141,6 +141,20 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     setAgentHomeRegistry(undefined);
   });
 
+  it('finds the paused agent a start is for by its chat when it names no agent or folder (DOR-5232)', async () => {
+    await service.pause(SCOUT.id, PERSON);
+    // A send to a chat by id after a restart: only the chat's stored folder says whose it is.
+    expect(service.pausedAgentOfStart(null, undefined, 'chat-1', () => SCOUT.home)).toMatchObject({
+      id: SCOUT.id,
+    });
+    expect(service.pausedAgentOfStart(null, undefined, 'chat-2', () => ANA.home)).toBeUndefined();
+    expect(service.pausedAgentOfStart(SCOUT.id, undefined, 'chat-2', () => ANA.home)).toMatchObject(
+      {
+        id: SCOUT.id,
+      }
+    );
+  });
+
   it('records agent.paused with who did it and why', async () => {
     const result = await service.pause(SCOUT.id, PERSON, 'posting the same thing');
     expect(result).toMatchObject({ agentId: SCOUT.id, paused: true, changed: true });

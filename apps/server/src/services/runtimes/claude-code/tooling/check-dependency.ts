@@ -52,7 +52,7 @@ import {
  */
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { logProbeFailure, runBinaryProbe } from '../../shared/run-probe.js';
+import { checkCliBinary } from '../../shared/program/cli-binary-check.js';
 import { configManager } from '../../../core/config-manager.js';
 import { credentialProvider, type CredentialProvider } from '../../../core/credential-provider.js';
 import { ANTHROPIC_PROVIDER_ID } from '../../../core/credential-env.js';
@@ -107,33 +107,6 @@ export interface ClaudeDependencyDeps {
   config?: ConfigReader;
   /** Credential read port used to resolve a stored Anthropic reference (defaults to the singleton). */
   credentialProvider?: CredentialProvider;
-}
-
-/** Check that a usable Claude Code binary resolves and answers `--version`. */
-async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
-  const name = CLI_CHECK_NAME;
-  const description = 'The Claude Code CLI powers agent chats in DorkOS.';
-
-  if (binary) {
-    try {
-      const version = await runBinaryProbe(binary, ['--version'], PROBE_TIMEOUT_MS);
-      return { name, description, status: 'satisfied', version };
-    } catch (err) {
-      // Binary resolved but failed to launch (or the probe timed out) — fall
-      // through to "missing", but say so in the log: a resolvable binary that
-      // will not run is exactly the case a person cannot diagnose from the
-      // requirements payload alone (DOR-1334 / F3).
-      logProbeFailure(name, binary, err);
-    }
-  }
-
-  return {
-    name,
-    description,
-    status: 'missing',
-    installHint: getInstallHint(),
-    infoUrl: CLAUDE_INFO_URL,
-  };
 }
 
 /**
@@ -360,5 +333,15 @@ export async function checkClaudeDependencies(
   deps: ClaudeDependencyDeps = {}
 ): Promise<DependencyCheck[]> {
   const binary = await resolveClaudeBinaryPath();
-  return Promise.all([checkCliBinary(binary), checkAuthState(binary, deps)]);
+  return Promise.all([
+    checkCliBinary(binary, {
+      name: CLI_CHECK_NAME,
+      description: 'The Claude Code CLI powers agent chats in DorkOS.',
+      installHint: getInstallHint(),
+      infoUrl: CLAUDE_INFO_URL,
+      runtime: 'claude-code',
+      timeoutMs: PROBE_TIMEOUT_MS,
+    }),
+    checkAuthState(binary, deps),
+  ]);
 }

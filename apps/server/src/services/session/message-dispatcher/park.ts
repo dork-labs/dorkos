@@ -21,7 +21,7 @@ import { launchDispatch } from './launch.js';
 import { schedulePump } from './pump.js';
 import { projectorFor } from '../resolution/session-key-registry.js';
 import { SESSIONS } from '../../../config/constants.js';
-import { feedRun } from './run-feed.js';
+import { feedRun, handBackRun } from './run-feed.js';
 import type { DispatchPlan, PendingDispatch } from './types.js';
 
 /**
@@ -121,6 +121,16 @@ export function returnToQueue(plan: DispatchPlan): void {
     dropTransient(plan, 'the launch could not start it');
     return;
   }
+  // Its words are at their source: the space side hands it over again for a
+  // new launch, rather than this process keeping a copy (§6.2).
+  if (plan.wordsAtSource) {
+    pending.delete(plan.messageId);
+    handBackRun(plan);
+    // The launch path's settle is the only release of the launch slot this
+    // hand-over claimed (`countsTowardLaunchCap`); the next hand-over claims its own.
+    plan.turn.onSettled?.('failed');
+    return;
+  }
   if (plan.whenBusy !== 'queue') {
     // No row was ever written for a refusing plan (see the module doc), so
     // giving up on one is simply declining to re-park it.
@@ -192,7 +202,7 @@ export function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): voi
   // finds nothing armed to cancel then): it is dropped, exactly as
   // {@link returnToQueue} drops a refused launch whose row is gone.
   const store = getMessageQueueStore();
-  if (store && !store.get(plan.messageId)) {
+  if (!plan.wordsAtSource && store && !store.get(plan.messageId)) {
     setQueuedWaitingOn(plan.messageId, undefined);
     cancelRun(plan, 'removed');
     emitLifecycle({
@@ -203,7 +213,9 @@ export function holdInQueue(plan: DispatchPlan, waitingOn: QueuedWaitingOn): voi
     plan.turn.onSettled?.('failed');
     return;
   }
-  if (setQueuedWaitingOn(plan.messageId, waitingOn)) emitQueueUpdate(plan.sessionKey);
+  if (!plan.wordsAtSource && setQueuedWaitingOn(plan.messageId, waitingOn)) {
+    emitQueueUpdate(plan.sessionKey);
+  }
   parkDispatch(plan, unwatchedSettle(plan), { held: waitingOn });
 }
 
@@ -493,6 +505,15 @@ export function parkDispatch(
     if (opts?.held !== undefined) {
       if (pending.get(plan.messageId) !== entry) return;
       entry.held = undefined;
+      schedulePump(entry.sessionKey);
+      return;
+    }
+    // Words at their source are never forced at the bound: it wakes the pump
+    // and waits again, and the run's own deadline is the space side's (§4.7).
+    if (plan.wordsAtSource) {
+      if (pending.get(plan.messageId) !== entry) return;
+      entry.timer = setTimeout(onBudgetSpent, plan.budgetMs);
+      entry.timer.unref?.();
       schedulePump(entry.sessionKey);
       return;
     }

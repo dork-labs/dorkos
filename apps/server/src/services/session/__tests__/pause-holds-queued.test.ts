@@ -19,6 +19,7 @@ import { setAgentHomeRegistry } from '../../core/agent-identity/agent-home.js';
 import {
   resetChatQueueResumeWarnings,
   resumeChatQueue,
+  resumeStrandedChatQueues,
 } from '../../extensions/agent-send/agent-send-defaults.js';
 import {
   AgentPauseService,
@@ -219,6 +220,57 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     await settle();
 
     expect(ran()).toEqual(['start the census', 'from A: add the totals']);
+  });
+
+  it('runs a mini app’s held message once the pause is lifted, with nobody else sending (DOR-5232)', async () => {
+    const runtime = runtimeRegistry.get(inner.type);
+    const projector = getOrCreateProjector(sessionId, BETA.home);
+    await dispatchMessage({
+      origin: { kind: 'interactive' },
+      sessionId,
+      clientId: 'person-window',
+      content: 'start the census',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
+    // A mini app's message, queued behind the turn under its lock identity.
+    await dispatchMessage({
+      origin: { kind: 'extension-message' },
+      sessionId,
+      clientId: 'extension:01J0000000000000000000000Z',
+      content: 'from the app: tally the votes',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    expect(listQueuedMessages(sessionId).map((row) => row.content)).toEqual([
+      'from the app: tally the votes',
+    ]);
+    await pauses.pause(BETA.id, PERSON, 'demo pause');
+    await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
+    await settle();
+    expect(ran()).toEqual(['start the census']);
+
+    // As the server wires it: lifting a pause runs the sweep at once.
+    pauses.onResumed(
+      () =>
+        void resumeStrandedChatQueues({
+          meshCore: () => ({ listWithPaths: () => [{ projectPath: BETA.home }] }) as never,
+          cwdOf: async () => BETA.home,
+          placeDeps: {
+            resolveWithRoom: async (request) => ({
+              cwd: request.cwd ?? BETA.home,
+              rung: 'explicit',
+            }),
+          },
+        })
+    );
+    pauses.resume(BETA.id, PERSON);
+    await vi.waitFor(() => expect(ran()).toHaveLength(2), { timeout: 2000 });
+    expect(ran()).toEqual(['start the census', 'from the app: tally the votes']);
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
   });
 
   it('a second resume does not run it twice', async () => {

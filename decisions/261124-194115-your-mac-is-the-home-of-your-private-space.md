@@ -23,6 +23,8 @@ Accepted (operator decision, 2026-11-24: asked which holds a person's private sp
 
 Everything else in it stands: everything is a space, the private space is locked by structure, servers connect only by pairing, and a shared host never holds a member's credentials or a key to a member's computer.
 
+**Amended by** [261125-113808](261125-113808-an-agent-that-runs-in-the-cloud-has-its-home-in-the-cloud.md) (accepted 2026-11-25): each agent has one home, and an agent that runs on a cloud agent computer has its home in the person's DorkOS in the cloud. That settles the open point below about cloud agents, and "when the home is off, the space is away" now means the agents that live on that home.
+
 **Builds on:** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (a Mac can be the home that other computers attach to, with no cloud) and [261122-173853](261122-173853-one-space-model.md) (a space holds its members' data).
 
 ## Context
@@ -44,13 +46,13 @@ We will have one home for a private space, and it is the person's own computer w
 ### Positive
 
 - One answer to "where is my private space", and no sync between two copies to build or to get wrong.
-- A founder's own data sits on a machine they own, by default. The cloud never has to hold it for someone who has a computer.
+- A founder's own data sits on a machine they own, by default. The cloud never has to hold it for someone who has a computer. (Since ADR `261125-113808`, it holds the agents such a person chooses to run in the cloud, and nothing else.)
 - A person with a Mac can use DorkOS fully with no cloud at all, and add the cloud later without moving anything.
 
 ### Negative
 
-- A private space on a Mac is only as available as the Mac. When the Mac sleeps, its agents and schedules stop, and the web shows the space as away.
-- **Open, and not settled here:** what a cloud agent computer does for a person whose home is a Mac. Its agent's rules and tools are on the home, so while the Mac is off it cannot call a DorkOS tool or fire a schedule. Either its work waits for the Mac, or such agents get a home in the cloud. The design of the contract over the wire (roadmap item 8, DOR-5163 to DOR-5170) must choose.
+- A private space on a Mac is only as available as the Mac. When the Mac sleeps, its agents and schedules stop, and the web shows the space as away. (An agent that lives in the cloud keeps working: ADR `261125-113808`.)
+- **Settled since by ADR `261125-113808`:** what a cloud agent computer does for a person whose home is a Mac. Its agent's rules and tools would be on the home, so while the Mac is off it could not call a DorkOS tool or fire a schedule. The choice was between its work waiting for the Mac and such agents getting a home in the cloud. They get a home in the cloud.
 - A person who starts on the web and later installs DorkOS on a Mac has to be offered a move of their home, and that move has to be safe to run once and never half done.
 - Some of the work already planned assumed the cloud holds the private space for everyone: decision P4 and steps B7 and B10 of `specs/everything-is-a-space/02-specification.md`, and roadmap item 13. Each has to be re-read against this record before it is built.
 - **Also open** for a person whose home is a Mac: where the list of their computers and their one inbox live; what the web shows, and what search across spaces can reach, while the Mac is off; and how a cloud way in that sleeps when idle wakes for them. The move of the private space onto the space store (ADR `261122-173853`) happens on the Mac for these people.

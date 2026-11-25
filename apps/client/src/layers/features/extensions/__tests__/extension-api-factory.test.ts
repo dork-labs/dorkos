@@ -825,11 +825,10 @@ describe('createExtensionAPI', () => {
   });
 
   describe('startWork (spec flow-multiproject §7.7)', () => {
-    it('preserves the no-tools warning from an agentless Codex start', async () => {
-      const response = {
-        sessionId: 'chat-new',
-        warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
-      };
+    it('answers the new chat’s id, as the server saved the start', async () => {
+      // A launch warning is known only once the turn starts, so it is not on
+      // this answer: it rides the chat's run and the start's history (DOR-5232).
+      const response = { sessionId: 'chat-new' };
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue({

@@ -8145,7 +8145,7 @@
       "id": "261124-174221",
       "slug": "one-memory-aware-budget-for-agent-work-on-a-computer",
       "title": "One memory-aware budget for agent work on a computer; work over it waits, it is never refused",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-11-24",
       "extractedFrom": null,
       "specSlug": null,
@@ -8198,7 +8198,7 @@
       "id": "261124-131941",
       "slug": "one-append-only-work-link-store",
       "title": "One append-only edge store for the work graph, keyed by entity references and written at the moment of action",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-11-24",
       "extractedFrom": null,
       "specSlug": null,
@@ -8207,6 +8207,41 @@
       "affects": [
         "packages/db/src/schema/work-graph/work-links.ts",
         "apps/server/src/services/work-graph/**"
+      ]
+    },
+    {
+      "id": "261125-113808",
+      "slug": "an-agent-that-runs-in-the-cloud-has-its-home-in-the-cloud",
+      "title": "Each agent has one home; an agent that runs in the cloud has its home in the cloud, and a person may choose that for good",
+      "status": "accepted",
+      "created": "2026-11-25",
+      "extractedFrom": null,
+      "specSlug": "space-computer-contract",
+      "supersedes": null,
+      "amends": ["261124-194115"],
+      "affects": [
+        "apps/server/src/services/communities/local/**",
+        "apps/server/src/services/core/hub/**",
+        "apps/server/src/services/core/session-relay/**",
+        "packages/cloud-api/**"
+      ]
+    },
+    {
+      "id": "261125-114705",
+      "slug": "capability-http-surface-rules",
+      "title": "Capability HTTP surfaces carry an audience, a network mode and request facts; a reasoned allowlist holds the routes that stay by hand",
+      "status": "accepted",
+      "created": "2026-11-25",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["261123-170830"],
+      "affects": [
+        "apps/server/src/routes/capability-http.ts",
+        "apps/server/src/routes/capability-dispatch.ts",
+        "apps/server/src/services/core/capabilities/registry.ts",
+        "apps/server/src/http/hand-routes/**",
+        "packages/shared/src/capabilities.ts"
       ]
     }
   ]
