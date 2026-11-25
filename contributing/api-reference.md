@@ -151,6 +151,7 @@ Relay (`/api/relay/*`: messages, mailboxes, chat connections, chat routes, deliv
   - `unsupported_media_type` (415), `request_too_large` (413) and `malformed_request` (400): the signed event receiver's `UNSUPPORTED_EVENT_ENCODING`, `EVENT_TOO_LARGE` and `INVALID_EVENT_REQUEST`.
 - **The webhook receiver** (`POST /api/relay/webhooks/:id`) answers every refusal before a verified signature with the one flat `401 invalid_signature`: an unknown or stopped connection, one aimed at an address DorkOS keeps, a request with no content type (it was 400) and a bad signature all look the same. After the signature checks out, a body that isn't JSON is `400 malformed_request` (it was the flat 401), a connection that isn't running or a refused delivery is `503 temporarily_unavailable`, and a failed delivery is `500 internal_error`.
 - **Kept as they were:** the `401` `AUTH_REQUIRED` body a delivery-status read or send gets before it is signed in (the same one the login gate sends), the `428` "Confirm it's you" body, and the capability gate's answers on `POST /api/connectors/executions` (moved with the capability doors).
+
 ### Codes that changed: sign-in, step-up and devices
 
 The routes for confirming it's you, signed-in devices, sign-in checks, network and remote access, the sign-in landing page and the sign-in wrappers moved to problem documents together (DOR-4979). For a script written against the old answers:
