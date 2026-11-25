@@ -52,7 +52,8 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultFields: topDefaults.reduce((a, b) => a + b, 0),
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
-        total: 144,
+        // +7 total for the person work-queue controls (no MCP surface, DOR-4978).
+        total: 151,
         relevant: 132,
         ordinary: 120,
         inSession: 119,

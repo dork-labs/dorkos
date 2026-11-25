@@ -154,6 +154,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     name: 'Agents',
     can: 'find, create, change, pause, resume agents and work queues.',
     covers: [
+      // Also a person's own queue doors (`work-queue.view_queue` and the rest, DOR-4978).
       'work-queue.',
       'mesh_',
       'create_agent',

@@ -127,6 +127,7 @@ const { registerCapabilitiesAsMcpTools } =
 const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-security.js');
 const { createDorkLinkLookups } = await import('../../links/link-lookups.js');
 const { callerAuthor } = await import('../../../rooms/service/room-caller-author.js');
+import type { CapabilityDeps } from '../capability-definition.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
@@ -377,6 +378,25 @@ const registry = composeDorkOsCapabilityRegistry({
       list: () => [],
     },
   },
+  // The person's work queue domain serves its doors (`/api/agents/{id}/work-queue/*`,
+  // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
+  // The agents' own work queue tools (`work-queue.*`, DOR-3462), checked
+  // beside the person's doors. The prober is the one agent on this team, with
+  // an empty queue and one ended item, so its destructive calls reach the gate
+  // (and an anonymous call meets the tool's own NO_AGENT first).
+  workQueueDeps: {
+    service: {
+      read: () => ({ enabled: false, target: 1, dailyStartCap: 1, items: [] }),
+      item: () => ({ agentId: 'prober', title: 'Probe', prompt: 'A probe.', state: 'done' }),
+    } as unknown as NonNullable<CapabilityDeps['workQueueDeps']>['service'],
+    agentIdForPath: () => 'prober',
+    agentName: (id: string) => (id === 'prober' ? 'Prober' : undefined),
+  },
+  workQueuePersonDeps: {
+    service: {} as NonNullable<CapabilityDeps['workQueuePersonDeps']>['service'],
+    agentExists: () => false,
+    isOwner: () => true,
+  },
   // The link domain serves `GET /api/links/target` (DOR-5046), over the
   // harness's real rooms; it holds no chats and no agents.
   linkDeps: {
@@ -621,6 +641,13 @@ capabilityConformance(registry, {
     'workspaces.list': (error) => error.message === 'WorkspaceManager not initialized',
     'workspaces.scan': (error) => error.message === 'Workspace root not initialized',
   },
+  // The agents' destructive queue tools refuse an unidentified caller before
+  // the gate (NO_AGENT, no card), so the gate probe calls them as an agent.
+  sampleContexts: {
+    'work-queue.add': { identity: PROBE_IDENTITY },
+    'work-queue.configure': { identity: PROBE_IDENTITY },
+    'work-queue.requeue': { identity: PROBE_IDENTITY },
+  },
   sampleInputs: {
     'operator.update_agent': { cwd: SANDBOX_CWD, displayName: 'Conformance' },
     // Destructive, and `nopeContent` is REQUIRED — a fixture without it fails the
@@ -683,6 +710,17 @@ capabilityConformance(registry, {
     'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
     'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
     'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    // The agents' queue tools, parseable so the gate or the handler answers:
+    // with no identity each refuses `NO_AGENT`; the destructive ones meet the gate.
+    'work-queue.add': { title: 'Conformance', prompt: 'A conformance probe.' },
+    'work-queue.remove': { id: 'conformance-item' },
+    'work-queue.read_agent': { agentId: 'conformance-agent' },
+    'work-queue.configure': {
+      before: { enabled: false, target: 1, dailyStartCap: 1 },
+      changes: { enabled: true },
+    },
+    'work-queue.reorder': { itemIds: ['conformance-item'] },
+    'work-queue.requeue': { id: 'conformance-item' },
     // No workspace subsystem here, so the pin answers its own `WORKSPACE_NOT_FOUND`.
     'workspaces.pin': { id: 'conformance-workspace', pinned: true },
     // Outside a beat, so the handler answers its own `NOT_A_BEAT` refusal.
