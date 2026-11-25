@@ -21,12 +21,18 @@ cat >"$tmp/gh" <<'EOF'
 printf '%s\n' "$*" >>"$GH_LOG"
 [ "$1" = api ] || { echo "stub gh: unexpected $*" >&2; exit 1; }
 [ -n "${FAKE_FAIL:-}" ] && exit 1
-filter=
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
+filter=.
 while [ $# -gt 0 ]; do
   [ "$1" = --jq ] && { filter=$2; break; }
   shift
 done
-jq -r "$filter" <<<"${FAKE_COMMENTS:-[]}"
+gh_jq "$filter" <<<"${FAKE_COMMENTS:-[]}"
 EOF
 chmod +x "$tmp/gh"
 export GH="$tmp/gh" GH_LOG="$tmp/gh.log" REPO=made-up/repo

@@ -157,6 +157,12 @@ check 'no suites read refuses' "REFUSE required check typecheck has no merge-que
 cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=.
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --jq ] && filter=${args[$((i + 1))]}; done
@@ -173,7 +179,7 @@ case "$*" in
   *) exit 1 ;;
 esac
 [ -f "$FX/$f" ] || exit 1
-jq -r "$filter" "$FX/$f"
+gh_jq "$filter" "$FX/$f"
 EOF
 chmod +x "$tmp/gh"
 fx=$tmp/fx

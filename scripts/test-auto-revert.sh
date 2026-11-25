@@ -99,6 +99,12 @@ check 'unreadable facts: exit 2' 2 "$rc"
 cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$GH_LOG"
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=.
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --jq ] && filter=${args[$((i + 1))]}; done
@@ -111,7 +117,7 @@ case "$*" in
   *"/pulls?"*) f=open ;;
   *) exit 1 ;;
 esac
-jq -r "$filter" "$FX/$f"
+gh_jq "$filter" "$FX/$f"
 EOF
 chmod +x "$tmp/gh"
 mkdir -p "$tmp/fx"

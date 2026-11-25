@@ -21,13 +21,19 @@ fail=0
 cat >"$tmp/gh" <<'EOF'
 #!/usr/bin/env bash
 printf 'gh %s\n' "$*" >>"$LOG"
+# Print a --jq result the way gh does: a string raw, a null as an empty line
+# (`jq -r` alone prints "null"), anything else as compact JSON.
+gh_jq() {
+  jq -rc "($1
+) | if . == null then \"\" else . end" "${@:2}"
+}
 filter=.
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   [ "${args[$i]}" = --jq ] && filter=${args[$((i + 1))]}
 done
 case "$*" in
-  *"--method"*) echo '{"number":900}' | jq -r "$filter"; exit 0 ;;
+  *"--method"*) echo '{"number":900}' | gh_jq "$filter"; exit 0 ;;
   *"/actions/artifacts?"*) f=artifacts ;;
   *"/actions/runs/"*) f=run-$(sed -n 's#.*/actions/runs/\([0-9]*\).*#\1#p' <<<"$*") ;;
   *"/releases/tags/"*) f=release ;;
@@ -37,7 +43,7 @@ case "$*" in
   *) echo "stub gh: unexpected $*" >&2; exit 1 ;;
 esac
 [ -f "$FX/$f" ] || exit 1
-jq -r "$filter" "$FX/$f"
+gh_jq "$filter" "$FX/$f"
 EOF
 # npm: `view dorkos dist-tags.latest`, `view dorkos time --json`, `view <pkg>@<v> version`.
 cat >"$tmp/npm" <<'EOF'
