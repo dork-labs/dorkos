@@ -220,16 +220,14 @@ describe('runInstall', () => {
     const refusal =
       "That address isn't one DorkOS can install a package from. Use an https://, ssh:// or " +
       'git@host:path address for a git repository, or a file:// path to a folder on this machine.';
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        mockResponse(400, {
-          title: 'Refused.',
-          status: 400,
-          code: 'invalid_request',
-          detail: refusal,
-        })
-      );
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(400, {
+        title: 'Refused.',
+        status: 400,
+        code: 'invalid_request',
+        detail: refusal,
+      })
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const code = await runInstall({ name: 'x', marketplace: "ext::sh -c 'id'", yes: true });

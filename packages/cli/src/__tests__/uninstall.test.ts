@@ -170,16 +170,14 @@ describe('runUninstall', () => {
   });
 
   it('returns 1 and prints an error on HTTP 404', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        mockResponse(404, {
-          title: 'Refused.',
-          status: 404,
-          code: 'not_found',
-          detail: 'Package not installed: demo-pkg',
-        })
-      );
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(404, {
+        title: 'Refused.',
+        status: 404,
+        code: 'not_found',
+        detail: 'Package not installed: demo-pkg',
+      })
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const code = await runUninstall({ name: 'demo-pkg' });
