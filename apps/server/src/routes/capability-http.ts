@@ -82,6 +82,10 @@ export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.fre
     'The session read guard acts only on a session id, and `running` is not one.',
   'GET /api/sessions/:id/runs skips ALL /api/sessions/:id/*':
     '`runs.chat_runs` folds the session read guard in: an agent gets 404 for a chat it may not read.',
+  'GET /api/sessions/:id/tree skips ALL /api/sessions/:id/*':
+    '`work-graph.chat_tree` folds the session read guard in: an agent gets 404 for a chat it may not read.',
+  'GET /api/sessions/:id/work skips ALL /api/sessions/:id/*':
+    '`work-graph.chat_work` folds the session read guard in: an agent gets 404 for a chat it may not read.',
   // `askForPersonBeforeTaskWrite` asks for the step-up only before a write; these are reads.
   'GET /api/tasks skips ALL /api/tasks': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,

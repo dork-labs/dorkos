@@ -41,6 +41,10 @@
  *   and is the one place that decides which started chats a reader is shown
  *   (`./chat-lineage.ts`).
  *
+ * The read tools (W4, DOR-4970: an agent's chats, a chat's tree and the work
+ * linked to either) are in `./reads/`, and read chat bindings only through
+ * `./reads/chat-bindings.ts`.
+ *
  * The store lives in this computer's SQLite store for now; its move to the
  * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
  * code reaches it only through hooks or events, so DOR-5139 is a store move,
@@ -137,6 +141,14 @@ export function uninstallWorkLinkStore(): void {
 /** The installed store, or `null` before startup installs it. */
 export function getWorkLinkStore(): WorkLinkStore | null {
   return store;
+}
+
+/**
+ * The database the store was installed over, or `null` before startup
+ * installs it: what the read tools hand `./reads/chat-bindings.ts`.
+ */
+export function getWorkGraphDb(): Db | null {
+  return installedDb;
 }
 
 /**

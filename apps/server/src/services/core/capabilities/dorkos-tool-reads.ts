@@ -112,6 +112,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'chat.read': 'self',
   // A listed chat that holds outside words, whose title may quote them.
   'audit.running_chats': 'self',
+  // The same for an agent's chats, ended ones too (DOR-4970).
+  'work-graph.agent_chats': 'self',
   // An opened note marks when a line of it was saved while reading outside words.
   'memory.read': 'self',
   // Every to-do tool marks when a to-do it hands back carries a stranger's words, never for the
@@ -251,6 +253,11 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // A chat's run records: statuses, ids, endings and fixed DorkOS lines. A
   // turn's words stay in its queue row and its runtime's transcript (§4.1).
   'runs.chat_runs': 'local',
+  // The work graph's tree and work reads (DOR-4970): ids, states, relations, PR and ticket
+  // references and dates, never a title or a chat's words.
+  'work-graph.chat_tree': 'local',
+  'work-graph.agent_work': 'local',
+  'work-graph.chat_work': 'local',
   // The rest of the registry's doors: ids, health, counts, folders and a person's changes.
   'mesh.status': 'local',
   'mesh.topology': 'local',

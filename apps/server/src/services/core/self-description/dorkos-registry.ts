@@ -58,6 +58,7 @@ import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
+import { workGraphReadDomain } from '../../work-graph/reads/work-graph-read-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
 import { linkDomain } from '../links/link-capabilities.js';
@@ -113,6 +114,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.meshDeps) domains.push(meshDomain);
   if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.auditDeps) domains.push(auditDomain);
+  // The work graph's reads take their reader and roster from the audit deps (DOR-4970).
+  if (deps.auditDeps) domains.push(workGraphReadDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.approvalWithdrawDeps) domains.push(approvalsDomain);
   if (deps.linkDeps) domains.push(linkDomain);
@@ -210,6 +213,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     meshDomain,
     workClaimDomain,
     auditDomain,
+    workGraphReadDomain,
     agentPauseDomain,
     approvalsDomain,
     linkDomain,
