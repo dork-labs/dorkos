@@ -497,6 +497,12 @@ jobs:
             echo "not a bisect run; nothing to check."
             exit 0
           fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
             exit 1
@@ -643,6 +649,12 @@ jobs:
           if [ -z "$SHA" ]; then
             echo "not a bisect run; nothing to check."
             exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
           fi
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
@@ -852,6 +864,12 @@ jobs:
           if [ -z "$SHA" ]; then
             echo "not a bisect run; nothing to check."
             exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
           fi
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
@@ -1254,6 +1272,12 @@ jobs:
           if [ -z "$SHA" ]; then
             echo "not a bisect run; nothing to check."
             exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
           fi
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
@@ -2013,6 +2037,12 @@ jobs:
             echo "not a bisect run; nothing to check."
             exit 0
           fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
             exit 1
@@ -2321,6 +2351,12 @@ jobs:
             echo "not a bisect run; nothing to check."
             exit 0
           fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
           if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
             exit 1
@@ -2575,6 +2611,36 @@ jobs:
       # Shallow: this job reads scripts/ and the package manifests, nothing
       # that needs history or tags. (The DOR-884/DOR-339 tag reasoning lives on
       # the shard job's checkout, which is where the suites run.)
+      # The fan-in runs scripts from the tree it checks out, so it validates a
+      # bisect sha itself rather than trusting the legs (Security, #4442).
+      - name: A bisect run tests a merge on main
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          # Only main's own copy of this workflow runs a bisect (a dispatch from
+          # another branch's YAML never does).
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Not a bisect of main::a bisect run must be dispatched on main, not $GITHUB_REF."
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v7
         if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         with:

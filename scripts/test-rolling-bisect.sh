@@ -400,5 +400,14 @@ check 'no arguments is a usage error' 2 "$?"
 "$SCRIPT" facts x >/dev/null 2>&1
 check 'a bad run id is a usage error' 2 "$?"
 
+# Every job of test.yml that checks out a bisect sha validates it first, on main only (#4442).
+testyml="$repo_root/.github/workflows/test.yml"
+# shellcheck disable=SC2016 # a literal GitHub expression
+checkouts=$(grep -c 'ref: \${{ inputs.bisect_sha }}' "$testyml")
+guards=$(grep -c 'a bisect run must be dispatched on main' "$testyml")
+check 'test.yml: each bisect checkout has a main-only validation step' "$checkouts" "$guards"
+check 'test.yml: the fan-in validates a bisect sha too' yes \
+  "$(awk '/^  test:$/{f=1} f && /A bisect run tests a merge on main/{print "yes"; exit}' "$testyml")"
+
 echo "rolling-bisect fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
