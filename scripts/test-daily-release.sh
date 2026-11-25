@@ -164,7 +164,9 @@ case "$*" in
   *) exit 1 ;;
 esac
 [ -f "$FX/$f" ] || exit 1
-jq -r "$filter" "$FX/$f"
+# Like the real gh: a --jq result of null prints nothing at all (Nov 25: the
+# hold lookup read that empty answer as unreadable and refused every day).
+jq -r "$filter" "$FX/$f" | { grep -vx null || true; }
 EOF
 cat >"$tmp/npm" <<'EOF'
 #!/usr/bin/env bash
