@@ -420,6 +420,19 @@ describe('without an advisor', () => {
     );
   });
 
+  it('carries a Wi-Fi continue’s ceiling on the same-session model switch too (DOR-3037)', async () => {
+    installUsageStore([{ id: 'main', weekly: 60 }]);
+    await limitedSession('src-1', { window: 'seven_day_opus', scope: 'model', origin: 'room' });
+    await continueSession(
+      'src-1',
+      { model: 'sonnet' },
+      { ...deps, permissionCeiling: 'runtime-default' }
+    );
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].permissionCeiling).toBe(
+      'runtime-default'
+    );
+  });
+
   it('still points the old session at the new one when a plan write lands during the launch', async () => {
     await limitedSession('src-1');
     vi.mocked(dispatchSessionMessage).mockImplementationOnce(async () => {
