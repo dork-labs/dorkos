@@ -916,6 +916,74 @@ describe('shell writes to the protected-files list', () => {
   });
 });
 
+// DOR-5249: a whole-folder removal or move is refused when a protected entry that can sit at any
+// depth (a project's `.dork/plugins`) is the folder itself or sits below it.
+describe('removing or moving a folder that holds a protected entry', () => {
+  let base: string;
+  let projects: string;
+  let site: string;
+  let fresh: string;
+  const at = (cwd: string, full: boolean) => ({ ...roots, cwd, full, protectedWrites: true });
+
+  beforeAll(() => {
+    base = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'shell-guard-whole-')));
+    projects = path.join(base, 'projects');
+    site = path.join(projects, 'site');
+    fresh = path.join(base, 'fresh');
+    touch(path.join(site, '.dork', 'plugins', 'acme', 'hooks.json'));
+    touch(path.join(fresh, '.dork', 'agent.json'));
+    touch(path.join(base, 'plain', 'build', 'out.js'));
+    // Past the walk's limit of 50,000 entries, with nothing protected in it:
+    // once as a plain tree, once as a project's dependencies and git history.
+    const pastLimit = (folder: string) => {
+      for (let i = 0; i < 100; i++) {
+        mkdirSync(path.join(folder, `d${i}`), { recursive: true });
+        for (let j = 0; j < 500; j++) writeFileSync(path.join(folder, `d${i}`, `f${j}`), '');
+      }
+    };
+    pastLimit(path.join(base, 'big'));
+    pastLimit(path.join(base, 'app', 'node_modules'));
+    touch(path.join(base, 'app', '.git', 'HEAD'));
+  }, 120_000);
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  }, 60_000);
+
+  it.each([
+    ['the working folder’s `.dork`', () => [site, 'rm -rf .dork']],
+    ['a `.dork` with nothing protected in it yet', () => [fresh, 'rm -r .dork']],
+    ['a folder holding a project’s plugins', () => [base, `rm -rf ${projects}`]],
+    ['the working folder itself', () => [site, 'rm -rf .']],
+    ['a move of that folder', () => [base, `mv ${projects} ${base}/moved`]],
+    ['a move of `.dork`', () => [site, 'mv .dork .dork-old']],
+    ['a move into a named folder', () => [base, `mv -t ${base}/plain ${projects}`]],
+    ['a git move of that folder', () => [base, `git mv ${projects} ${base}/moved`]],
+    ['a git removal of that folder', () => [base, `git rm -r ${projects}`]],
+    ['a tree too big to finish walking', () => [base, `rm -rf ${base}/big`]],
+  ])('refuses %s, at every level', (_label, call) => {
+    const [cwd, command] = call();
+    expect(shellWriteVerdict(command!, at(cwd!, false))).toBe('writes');
+    expect(shellWriteVerdict(command!, at(cwd!, true))).toBe('writes');
+  });
+
+  it.each([
+    ['removing a folder with nothing protected in it', () => `rm -rf ${base}/plain/build`],
+    ['moving one', () => `mv ${base}/plain/build ${base}/plain/dist`],
+    ['removing a folder that isn’t there', () => `rm -rf ${base}/plain/gone`],
+    ['removing a project’s dependencies', () => `rm -rf ${base}/app/node_modules`],
+    ['removing a project with big dependencies and git history', () => `rm -rf ${base}/app`],
+    ['moving a file into a project', () => `mv ${base}/plain/build/out.js ${site}`],
+  ])('still runs %s at Full', (_label, command) => {
+    expect(shellWriteVerdict(command(), at(base, true))).toBe('none');
+  });
+
+  it('leaves Claude Code’s own reading unchanged', () => {
+    expect(shellWriteVerdict('rm -rf .dork', { ...roots, cwd: site })).toBe('none');
+    expect(shellWriteVerdict(`mv ${projects} ${base}/moved`, roots)).toBe('none');
+  });
+});
+
 describe('commandWritesAgentSetup', () => {
   it.each([
     ['a redirect', () => `echo '{}' > ${agent}/.claude/settings.json`],

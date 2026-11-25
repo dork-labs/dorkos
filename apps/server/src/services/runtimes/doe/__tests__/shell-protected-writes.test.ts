@@ -15,7 +15,14 @@ const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'doe-shell-protecte
 const project = path.join(root, 'project');
 const data = path.join(root, 'data');
 const installed = path.join(data, 'plugins', 'acme');
-for (const folder of [project, installed, path.join(root, 'home')])
+const projectPlugin = path.join(project, '.dork', 'plugins', 'acme');
+for (const folder of [
+  project,
+  installed,
+  projectPlugin,
+  path.join(project, 'build'),
+  path.join(root, 'home'),
+])
   mkdirSync(folder, { recursive: true });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -81,5 +88,29 @@ describe('Dork runtime: shell writes to an installed package', () => {
 
   it('still lets an ordinary write run at Full', async () => {
     expect((await ask('bypassPermissions', `touch ${project}/notes.txt`)).decision).toBe('allow');
+  }, 30_000);
+});
+
+// DOR-5249: removing or moving a folder refuses when a project's plugins are in it.
+describe('Dork runtime: shell removals and moves of a folder holding a project’s plugins', () => {
+  it.each([
+    ['removing the project’s `.dork`', 'default', 'rm -rf .dork'],
+    ['removing the project’s `.dork`', 'bypassPermissions', 'rm -rf .dork'],
+    ['moving the project', 'bypassPermissions', `mv ${project} ${root}/moved`],
+  ])(
+    'refuses %s in %s mode, with no card',
+    async (_label, mode, command) => {
+      const { decision, events } = await ask(mode, command);
+      expect(decision).toEqual({
+        decision: 'deny',
+        reason: expect.stringMatching(/protected file/),
+      });
+      expect(events).toEqual([]);
+    },
+    30_000
+  );
+
+  it('still lets an ordinary removal run at Full', async () => {
+    expect((await ask('bypassPermissions', `rm -rf ${project}/build`)).decision).toBe('allow');
   }, 30_000);
 });

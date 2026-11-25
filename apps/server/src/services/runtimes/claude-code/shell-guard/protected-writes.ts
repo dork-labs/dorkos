@@ -7,6 +7,10 @@
  * against the same list the file tools refuse (`PROTECTED_PATHS`, through `isProtectedPath`):
  * installed packages, the Terminal command, the config and the rest, at every level the list says.
  *
+ * Removing or moving a whole folder counts for what is below it: a fixed entry by where it sits,
+ * and an entry at any depth (a project's `.dork/plugins`) by the folder it starts with or a
+ * bounded walk below (`wholeTakesProtectedWrite`, DOR-5249).
+ *
  * It runs in the guard's own process, like the rest of the check, and only when the launch asks
  * for it (`ShellGuardRoots.protectedWrites`).
  *
@@ -14,14 +18,17 @@
  */
 import path from 'node:path';
 import { protectedPathsAt } from '../../../core/protected-paths/protected-paths.js';
-import { protectedPathTest } from '../../../core/protected-paths/protected-path-check.js';
+import {
+  protectedPathTest,
+  wholeTakesProtectedWrite,
+} from '../../../core/protected-paths/protected-path-check.js';
 import type { ShellGuardRoots } from './shell-check.js';
 
 /** What a command's writes may not reach. */
 interface ProtectedWrites {
   /**
-   * Whether writing `target` changes a protected path, or, for a whole-folder removal, takes one
-   * with it.
+   * Whether writing `target` changes a protected path, or, for a whole-folder removal or move,
+   * takes one with it.
    */
   reaches(target: string, whole: boolean): boolean;
   /**
@@ -91,8 +98,15 @@ export function protectedWrites(
       )
     ),
   ];
+  // A target is checked as named and where it really is, most often one path: walk it once.
+  const walked = new Map<string, boolean>();
+  const takes = (target: string): boolean => {
+    let found = walked.get(target);
+    if (found === undefined) walked.set(target, (found = wholeTakesProtectedWrite(target, full)));
+    return found;
+  };
   const reaches = (target: string, whole: boolean): boolean =>
-    test(target) || (whole && fixed.some((one) => within(target, one)));
+    test(target) || (whole && (fixed.some((one) => within(target, one)) || takes(target)));
   return {
     reaches,
     mayName: (word, cwd) => {

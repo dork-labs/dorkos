@@ -396,6 +396,11 @@ interface WrittenWord {
   pieces: boolean;
   /** For a copy or a move: what lands in the word, when it is a folder. */
   sources?: readonly string[];
+  /**
+   * Whether the command takes the whole of it away, as a move does its source and `git rm -r`
+   * what it names: with the protected-files list on, it counts as a whole removal (DOR-5249).
+   */
+  takes?: boolean;
 }
 
 /** The words of a `find` that would change files: its starting folders and what it looks for. */
@@ -407,6 +412,20 @@ function findTargets(args: readonly string[]): string[] {
   const starts = args.slice(0, firstFlag === -1 ? args.length : firstFlag);
   const names = args.filter((_, i) => /^-i?name$/.test(args[i - 1] ?? ''));
   return [...starts, ...starts.flatMap((start) => names.map((name) => `${start}/${name}`))];
+}
+
+/** What a `mv` takes from where it is: every operand but where it lands, the last or `-t`'s. */
+function moveSources(args: readonly string[]): string[] {
+  const operands: string[] = [];
+  let into: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    const short = /^-[A-Za-z]*t(.*)$/.exec(arg);
+    if (short || arg === '--target-directory') into = (short?.[1] || args[++i]) ?? '';
+    else if (arg.startsWith('--target-directory=')) into = arg.slice('--target-directory='.length);
+    else if (!arg.startsWith('-')) operands.push(arg);
+  }
+  return into === undefined ? operands.slice(0, -1) : operands;
 }
 
 /** The words of a command that it would write to. */
@@ -425,7 +444,12 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
     const last = operands.at(-1);
     if (last !== undefined) written.push({ ...plain(last), sources: operands.slice(0, -1) });
   }
-  if (verb === 'mv') written.push(...operands.slice(0, -1).map((word) => plain(word)));
+  if (verb === 'mv') {
+    const moved = moveSources(args);
+    for (const word of new Set([...operands.slice(0, -1), ...moved])) {
+      written.push({ ...plain(word), takes: moved.includes(word) });
+    }
+  }
   if (verb === 'find') written.push(...findTargets(args).map((word) => plain(word)));
   const inPlace = /^(-[A-Za-z]*i[A-Za-z]*|--in-place(=.*)?)$/;
   if ((verb === 'sed' || verb === 'perl') && args.some((arg) => inPlace.test(arg))) {
@@ -445,7 +469,10 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
       rest.some((arg) => /^(--staged|-S|--cached)$/.test(arg)) &&
       !rest.some((arg) => /^(--worktree|-W)$/.test(arg));
     if (sub !== undefined && GIT_WRITERS.has(sub) && !indexOnly) {
-      written.push(...rest.filter((arg) => !arg.startsWith('-')).map((word) => plain(word)));
+      const words = rest.filter((arg) => !arg.startsWith('-'));
+      const taken =
+        sub === 'mv' ? words.slice(1, -1) : sub === 'rm' && recursive ? words.slice(1) : [];
+      written.push(...words.map((word) => ({ ...plain(word), takes: taken.includes(word) })));
     }
   }
   const outputFlags = OUTPUT_FLAGS[verb] ?? [];
@@ -529,7 +556,9 @@ export function shellWriteVerdict(
     // `dorkos browser login` saves the session every agent browser starts from, and `forget`
     // rewrites it: a person's commands, and a Full agent's, never one below Full (DOR-4136).
     if (!full && savesBrowserSession(segment)) return 'writes';
-    for (const { word, whole, pieces, sources } of written) {
+    for (const { word, whole: removes, pieces, sources, takes } of written) {
+      // With the list on, what a move or `git rm -r` takes counts as a whole removal (DOR-5249).
+      const whole = removes || (takes === true && listed !== null);
       // Removing a whole folder can reach a home by any name, so nothing narrows that one.
       const keep = (name: string) => guarded(name) || listed?.mayName(name, cwd) === true;
       const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep }) };
