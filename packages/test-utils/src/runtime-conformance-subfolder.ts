@@ -12,6 +12,13 @@ import { expect } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 
 /**
+ * Runtimes confined to one root folder, which refuse to start a session
+ * outside it: computer-local reaches only folders under its anchor. Only these
+ * may refuse the sibling; any other runtime must start there and leave it out.
+ */
+const ROOT_CONFINED_RUNTIMES: readonly string[] = ['computer-local'];
+
+/**
  * Run RT-SES-02 against one runtime.
  *
  * @param runtime - A fresh runtime.
@@ -28,9 +35,11 @@ export async function assertSubfolderListing(
   // `<project>-2` shares a character prefix with the project and no path
   // SEGMENT: the trap a `startsWith` check falls into, and the control that
   // keeps the case above from passing by listing everything on the machine.
-  // A runtime that reaches only folders inside the project (computer-local,
-  // under its anchor) refuses to start there at all, which is just as good.
-  const sibling = await seed(runtime, `${projectDir}-2`).catch(() => undefined);
+  // A root-confined runtime refuses to start there at all, which is just as good.
+  const confined = ROOT_CONFINED_RUNTIMES.includes(runtime.getCapabilities().type);
+  const sibling = confined
+    ? await seed(runtime, `${projectDir}-2`).catch(() => undefined)
+    : await seed(runtime, `${projectDir}-2`);
   // The project's own folder, so a wiring that seeds nothing listable fails here.
   const own = await seed(runtime, projectDir);
 
