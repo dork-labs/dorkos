@@ -27,13 +27,13 @@ const publish = jobs.publish ?? '';
 
 describe('release-publish.yml gates npm on release-gate.sh', () => {
   it('reads the job graph (a silent no-op would pass everything)', () => {
-    expect(Object.keys(jobs)).toEqual(['prove', 'prepare', 'gate', 'publish']);
+    expect(Object.keys(jobs)).toEqual(['prove', 'prepare', 'gate', 'smoke', 'publish']);
   });
 
   it('runs gate after prove and prepare, on main only, and publish only after gate', () => {
     expect(gate).toMatch(/^ {4}needs: \[prove, prepare\]$/m);
     expect(gate).toMatch(/^ {4}if: github\.ref == 'refs\/heads\/main'$/m);
-    expect(publish).toMatch(/^ {4}needs: \[prepare, gate(, smoke)?\]$/m);
+    expect(publish).toMatch(/^ {4}needs: \[prepare, gate, smoke\]$/m);
     // A condition that runs publish after a failed or skipped gate would undo it.
     expect(publish).not.toMatch(/always\(\)|failure\(\)|cancelled\(\)|continue-on-error/);
     expect(gate).not.toMatch(/continue-on-error/);
