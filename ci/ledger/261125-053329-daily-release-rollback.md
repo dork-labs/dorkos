@@ -6,7 +6,7 @@ status: proposed
 actor: agent
 gates:
   - wf.daily-release.hold
-prs: []
+prs: [4372]
 ratchet-release: []
 field-changes: []
 ---
