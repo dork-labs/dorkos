@@ -13,16 +13,6 @@ import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from './b
 const uuidSchema = z.string().uuid();
 
 /**
- * Extract a human-readable error message from an unknown caught value.
- *
- * @param err - Caught error value
- * @param fallback - Default message when err is not an Error instance
- */
-export function toErrorMessage(err: unknown, fallback = 'Internal server error'): string {
-  return err instanceof Error ? err.message : fallback;
-}
-
-/**
  * Validate that a raw route param is a valid UUID.
  *
  * Accepts `unknown` so any raw value flows straight in — a non-string is
@@ -34,17 +24,6 @@ export function toErrorMessage(err: unknown, fallback = 'Internal server error')
 export function parseSessionId(id: unknown): string | null {
   const result = uuidSchema.safeParse(id);
   return result.success ? result.data : null;
-}
-
-/**
- * The repo's error body: a route returns `c.json(errorBody(message, code), status)`.
- *
- * @param message - Human-readable error message
- * @param code - Machine-readable error code
- * @returns The body.
- */
-export function errorBody(message: string, code: string): { error: string; code: string } {
-  return { error: message, code };
 }
 
 /**

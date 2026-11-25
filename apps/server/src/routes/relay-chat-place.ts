@@ -35,17 +35,37 @@
  * Both this rule and {@link chatPlaceRefusal} read a chat's folder through one
  * reader, {@link chatFolderOf}, so they cannot disagree about where it stands.
  *
+ * A message from anyone but the person that starts a new chat (an id nothing
+ * holds and Mesh does not know as an agent) opens it where the sessions route
+ * would open it ({@link relayNewChatPlace}, DOR-5209): a verified, registered
+ * agent's in its own home, run as itself, and a place that route refuses is
+ * refused the same way.
+ *
  * @module routes/relay-chat-place
  */
-import { resolveAgentTurnIdentity, type AgentSessionStoreLike } from '@dorkos/relay';
+import {
+  resolveAgentTurnIdentity,
+  type AgentSessionStoreLike,
+  type NewChatPlace,
+} from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { RequestFacts } from '../http/request-facts.js';
-import { errorBody } from '../lib/route-utils.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { homeOf, resolveAgentHome } from '../services/core/agent-identity/agent-home.js';
-import { realOr } from '../services/session/launch/launch-caller.js';
-import { SESSION_LAUNCH_ACTION } from '../services/session/launch/launch-audit.js';
+import {
+  launchedByOf,
+  launchPlaceRefusal,
+  realOr,
+} from '../services/session/launch/launch-caller.js';
+import {
+  auditRefusedLaunch,
+  SESSION_LAUNCH_ACTION,
+} from '../services/session/launch/launch-audit.js';
+import type { SessionLaunchRefusal } from '../services/session/launch/launch-session.js';
+import { resolveChatPlace } from '../services/session/launch/resolve-chat-place.js';
+import { registeredChatAgentPath } from '../services/session/launch/verify-chat-agent.js';
 import { chatFolderOf, chatPlaceRefusal, sessionLauncherOf } from './session-launcher.js';
 
 /** What the place rule reads from Mesh: the registered homes, and whether an id is an agent's. */
@@ -60,18 +80,38 @@ export interface RelayChatPlaceSources {
 }
 
 /**
- * Whether something holds a chat under this id: a runtime running it now, a
- * binding row, or a runtime's own store (`resolveSessionRuntime`, asked
- * without leave to guess). A lookup that fails counts as held.
+ * Whether something holds a chat under an id: `held` (a runtime running it
+ * now, a binding row, or a runtime's own store), `free` (nothing does), or
+ * `unknown` (a runtime's store could not be read, and no other source holds
+ * it). With the runtime the registry would start a free or unknown id on.
+ */
+interface ChatHold {
+  /** What the sources say. */
+  hold: 'held' | 'free' | 'unknown';
+  /** The runtime a new chat under this id resolves to, when that could be read. */
+  runtime?: string;
+}
+
+/**
+ * Read whether something holds a chat under this id ({@link ChatHold}): asked
+ * strictly first, then, when a runtime's store fails, again without it, as the
+ * sessions route asks of a new chat (`resolveChatPlace`). A read that fails
+ * outright is `unknown`.
  *
  * @param sessionId - The id.
  */
-async function isHeldChat(sessionId: string): Promise<boolean> {
+async function chatHoldOf(sessionId: string): Promise<ChatHold> {
   try {
-    if (chatFolderOf(sessionId) !== undefined) return true;
-    return (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound;
+    if (chatFolderOf(sessionId) !== undefined) return { hold: 'held' };
+    const strict = await runtimeRegistry.resolveSessionRuntime(sessionId);
+    return strict.bound ? { hold: 'held' } : { hold: 'free', runtime: strict.type };
   } catch {
-    return true;
+    try {
+      const loose = await runtimeRegistry.resolveSessionRuntime(sessionId, { allowUnbound: true });
+      return loose.bound ? { hold: 'held' } : { hold: 'unknown', runtime: loose.type };
+    } catch {
+      return { hold: 'unknown' };
+    }
   }
 }
 
@@ -100,52 +140,150 @@ async function heldChatOwner(id: string): Promise<string | undefined> {
  * to it). A chat that cannot be named is not an address.
  *
  * @param id - The id the subject ends in.
+ * @param hold - Whether something holds a chat under it.
  * @param mesh - Mesh.
  */
-async function isAgentAddress(id: string, mesh: RelayChatMesh | undefined): Promise<boolean> {
+async function isAgentAddress(
+  id: string,
+  hold: ChatHold,
+  mesh: RelayChatMesh | undefined
+): Promise<boolean> {
   const home = mesh?.getProjectPath(id);
   if (home === undefined) return false;
-  if (!(await isHeldChat(id))) return true;
+  if (hold.hold === 'free') return true;
   const owner = await heldChatOwner(id);
   return owner !== undefined && realOr(owner) === realOr(home);
 }
 
-/**
- * The chats this message would reach: the subject's own id and the key the
- * adapter would run its turn under, each only when something holds it.
- *
- * @param message - The subject and payload, as sent.
- * @param sources - Mesh and the adapter's conversation map.
- */
-async function chatsReached(
-  message: { subject: string; payload: unknown },
-  sources: RelayChatPlaceSources
-): Promise<string[]> {
-  const envelope = { payload: message.payload } as RelayEnvelope;
-  const identity = resolveAgentTurnIdentity(message.subject, envelope, sources.agentSessions);
-  if (!identity || (await isAgentAddress(identity.agentId, sources.mesh))) return [];
-  const ids = [...new Set([identity.agentId, identity.key])];
-  const held = await Promise.all(ids.map(isHeldChat));
-  return ids.filter((_, i) => held[i]);
+/** What one message reaches, read once: who it is for, and who holds each chat it names. */
+export interface RelayChatReach {
+  /** The subject's id and the key the adapter would run its turn under. */
+  identity: NonNullable<ReturnType<typeof resolveAgentTurnIdentity>>;
+  /** Whether the subject's id is an agent's own address. */
+  agentAddress: boolean;
+  /** Who holds a chat under the subject's id and under the turn's key. */
+  holds: ReadonlyMap<string, ChatHold>;
 }
 
 /**
- * Why this caller may not send this message into the chat it reaches, as the
- * `403` body the sessions route answers with, or `null` when it may.
+ * What this message reaches, for a caller other than the person, or `null`
+ * when the caller is the person or the subject names no agent. Each id is
+ * asked once, and both rules below read the answer.
  *
  * @param facts - The request's facts.
  * @param message - The subject and payload, as sent.
  * @param sources - Mesh and the adapter's conversation map.
  */
-export async function relayChatPlaceRefusal(
+export async function relayChatReach(
   facts: RequestFacts,
   message: { subject: string; payload: unknown },
   sources: RelayChatPlaceSources
-): Promise<{ error: string; code: string } | null> {
-  if (sessionLauncherOf(facts).kind !== 'agent') return null;
-  for (const sessionId of await chatsReached(message, sources)) {
+): Promise<RelayChatReach | null> {
+  if (sessionLauncherOf(facts).kind === 'person') return null;
+  const envelope = { payload: message.payload } as RelayEnvelope;
+  const identity = resolveAgentTurnIdentity(message.subject, envelope, sources.agentSessions);
+  if (!identity) return null;
+  const ids = [...new Set([identity.agentId, identity.key])];
+  const holds = new Map(
+    await Promise.all(ids.map(async (id) => [id, await chatHoldOf(id)] as const))
+  );
+  const agentAddress = await isAgentAddress(
+    identity.agentId,
+    holds.get(identity.agentId)!,
+    sources.mesh
+  );
+  return { identity, agentAddress, holds };
+}
+
+/** Why a verified agent's message is refused when no store can say whose the chat is. */
+export const CHAT_UNCHECKED_MESSAGE =
+  "DorkOS can't check whose chat that is right now. Try again in a moment.";
+
+/**
+ * Why this caller may not send this message into the chat it reaches, as the
+ * sentence of the `403` `desk_not_own` problem the route answers with, or `null` when it may. A chat
+ * whose hold is `unknown` counts as held, so the place rule refuses it, with a
+ * sentence that says the check could not be made.
+ *
+ * @param facts - The request's facts.
+ * @param reach - What the message reaches ({@link relayChatReach}).
+ * @param sources - Mesh and the adapter's conversation map.
+ */
+export async function relayChatPlaceRefusal(
+  facts: RequestFacts,
+  reach: RelayChatReach | null,
+  sources: RelayChatPlaceSources
+): Promise<string | null> {
+  if (!reach || reach.agentAddress || sessionLauncherOf(facts).kind !== 'agent') return null;
+  for (const [sessionId, { hold }] of reach.holds) {
+    if (hold === 'free') continue;
     const refusal = await chatPlaceRefusal(facts, sources.mesh, sessionId, SESSION_LAUNCH_ACTION);
-    if (refusal) return errorBody(refusal.message, 'DESK_NOT_OWN');
+    if (refusal) {
+      return hold === 'unknown' ? CHAT_UNCHECKED_MESSAGE : refusal.message;
+    }
   }
   return null;
+}
+
+/** A new chat's place as the message carries it, or why the chat may not start. */
+export type RelayNewChatPlace = { refused: SessionLaunchRefusal } | { place?: NewChatPlace };
+
+/**
+ * Where a new chat this message starts opens, asked as
+ * `POST /api/sessions/:id/messages` asks it of a new chat that names no folder
+ * (`launchSessionMessage`): a verified agent Mesh lists is the chat's agent, so
+ * the chat resolves to its home ({@link resolveChatPlace}); anyone else gets the
+ * server's default folder; and the place rule then decides, so a protected
+ * default is refused with `PROTECTED_FOLDER`. A chat whose hold is `unknown`
+ * is asked as a new chat, as the sessions route asks it. The person, a message
+ * to an agent's own address and a chat something holds are not asked: they
+ * carry no place.
+ *
+ * @param facts - The request's facts.
+ * @param reach - What the message reaches ({@link relayChatReach}).
+ * @param sources - Mesh and the adapter's conversation map.
+ */
+export async function relayNewChatPlace(
+  facts: RequestFacts,
+  reach: RelayChatReach | null,
+  sources: RelayChatPlaceSources
+): Promise<RelayNewChatPlace> {
+  const launcher = sessionLauncherOf(facts);
+  if (!reach || reach.agentAddress || launcher.kind === 'person') return {};
+  const sessionKey = reach.identity.key;
+  const { hold, runtime } = reach.holds.get(sessionKey)!;
+  if (hold === 'held') return {};
+  const registered = {
+    registeredAgentPaths: () => sources.mesh?.listWithPaths().map((a) => a.projectPath),
+  };
+  // The registered spelling, as the sessions route records an agent's own chat.
+  const own =
+    launcher.kind === 'agent' ? registeredChatAgentPath(launcher.agentPath, registered) : undefined;
+  // Who holds the chat was read above; a new chat is not asked again.
+  const unbound = runtime
+    ? { resolveSession: async () => ({ runtime: runtimeRegistry.get(runtime), bound: false }) }
+    : {};
+  const resolved = await resolveChatPlace(
+    { sessionId: sessionKey, ...(own !== undefined ? { agentPath: own } : {}) },
+    unbound
+  );
+  if ('refusal' in resolved) {
+    return { refused: { refused: resolved.refusal.code, message: resolved.refusal.message } };
+  }
+  const place = { cwd: resolved.cwd ?? DEFAULT_CWD, defaulted: resolved.cwd === undefined };
+  const refusal = launchPlaceRefusal(sources.mesh, launcher, place);
+  if (refusal) {
+    auditRefusedLaunch(sessionKey, refusal, launchedByOf(sources.mesh, launcher), place);
+    const { code, message: sentence } = refusal;
+    return { refused: { refused: 'DESK_NOT_OWN', message: sentence, launcherRefused: code } };
+  }
+  const forAgent = resolved.forAgent ?? own;
+  if (resolved.cwd === undefined && forAgent === undefined) return {};
+  return {
+    place: {
+      sessionKey,
+      ...(resolved.cwd !== undefined ? { cwd: resolved.cwd } : {}),
+      ...(forAgent !== undefined ? { forAgent } : {}),
+    },
+  };
 }

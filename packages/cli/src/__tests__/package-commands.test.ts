@@ -89,7 +89,14 @@ describe('isOlderServer', () => {
   it('does not mistake a route that answered 404 for its own reason', () => {
     // Purpose: "package not installed" is a real answer, not an old server.
     expect(
-      isOlderServer(new ApiError(404, { error: 'Package not installed: x', code: 'NOT_INSTALLED' }))
+      isOlderServer(
+        new ApiError(404, {
+          title: 'Refused.',
+          status: 404,
+          code: 'agent_not_found',
+          detail: 'Package not installed: x',
+        })
+      )
     ).toBe(false);
   });
 

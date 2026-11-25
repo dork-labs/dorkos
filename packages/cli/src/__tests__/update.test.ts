@@ -151,7 +151,14 @@ describe('runUpdate', () => {
     // before the per-target isolation turned the 404 into a printed line.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(mockResponse(404, { error: 'Package not installed: flwo' }))
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(404, {
+          title: 'Refused.',
+          status: 404,
+          code: 'not_found',
+          detail: 'Package not installed: flwo',
+        })
+      )
     );
 
     const code = await runUpdate({ name: 'flwo' });
@@ -530,11 +537,14 @@ describe('runUpdate', () => {
     it('exits 1 with the server’s reason when the request itself fails', async () => {
       vi.stubGlobal(
         'fetch',
-        vi
-          .fn()
-          .mockResolvedValueOnce(
-            mockResponse(403, { error: 'Access denied: projectPath outside boundary' })
-          )
+        vi.fn().mockResolvedValueOnce(
+          mockResponse(403, {
+            title: 'Refused.',
+            status: 403,
+            code: 'outside_boundary',
+            detail: 'Access denied: projectPath outside boundary',
+          })
+        )
       );
 
       const code = await runUpdate({ projectPath: '/etc' });

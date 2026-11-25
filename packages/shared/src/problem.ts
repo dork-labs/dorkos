@@ -463,6 +463,8 @@ export const PROBLEM_CODE_LIST = [
   /** One of the space's caps: agents, members or storage. */
   { code: 'space_limit_reached', status: 409, title: 'This space’s limit was reached.' },
   { code: 'space_unsupported', status: 409, title: 'This space doesn’t support that.' },
+  /** The spaces experiment is off on this computer, so no space route answers. */
+  { code: 'spaces_disabled', status: 404, title: 'Spaces are switched off.' },
   { code: 'space_name_taken', status: 409, title: 'That name is taken in this space.' },
   { code: 'report_not_allowed', status: 409, title: 'You can’t report this message.' },
   {
@@ -661,17 +663,25 @@ export interface ErrorBodyReading {
   retryAfterMs?: number;
 }
 
-/** Whether a value is a validation failure in Zod's flattened form. */
-function isFlattenedIssues(value: unknown): value is ProblemIssues {
-  return ProblemIssuesSchema.safeParse(value).success;
-}
+/**
+ * The codes of the few failed answers that are not problem documents on
+ * purpose, and that every client still reads (ADR 261123-170831): the login
+ * gate's `401` (`AUTH_REQUIRED`), and the `428`s that hold an action for a
+ * person, a step-up (`step_up_required`, `./step-up.ts`) and a passkey check
+ * (`PASSKEY_CHECK_REQUIRED`, `./signed-in-devices.ts`). Each says its sentence
+ * in `error` and names itself in `code`.
+ */
+const HELD_AND_GATE_CODES: ReadonlySet<string> = new Set([
+  'AUTH_REQUIRED',
+  'step_up_required',
+  'PASSKEY_CHECK_REQUIRED',
+]);
 
 /**
- * Read a failed response's parsed JSON body: a problem document first
- * (`detail`, else `title`), then the old `{ error, code, details }` shape.
- *
- * The old shape is read only while DOR-4979 moves the routes over, folder by
- * folder; the series' last change removes that branch.
+ * Read a failed response's parsed JSON body: a problem document (`detail`,
+ * else `title`), or one of the few answers that are not problems on purpose
+ * (the login gate, a held step-up or passkey check). Any other body says
+ * nothing a client may rely on, so it reads as the fallback.
  *
  * @param body - The parsed body, of unknown shape (or nothing, when it was not JSON).
  * @param fallbackMessage - The message when the body says none, such as `HTTP 500`.
@@ -687,17 +697,10 @@ export function readErrorBody(body: unknown, fallbackMessage: string): ErrorBody
       ...(body.retryAfterMs === undefined ? {} : { retryAfterMs: body.retryAfterMs }),
     };
   }
-  if (typeof body !== 'object' || body === null) return { message: fallbackMessage };
-  const old = body as { error?: unknown; message?: unknown; code?: unknown; details?: unknown };
-  const message =
-    typeof old.error === 'string' && old.error !== ''
-      ? old.error
-      : typeof old.message === 'string' && old.message !== ''
-        ? old.message
-        : fallbackMessage;
-  return {
-    message,
-    ...(typeof old.code === 'string' ? { code: old.code } : {}),
-    ...(isFlattenedIssues(old.details) ? { issues: old.details } : {}),
-  };
+  const held = body as { error?: unknown; code?: unknown } | null | undefined;
+  if (typeof held?.code !== 'string' || !HELD_AND_GATE_CODES.has(held.code)) {
+    return { message: fallbackMessage };
+  }
+  const said = typeof held.error === 'string' && held.error !== '' ? held.error : fallbackMessage;
+  return { message: said, code: held.code };
 }

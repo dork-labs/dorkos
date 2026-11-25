@@ -43,7 +43,7 @@ describe('committing an agent-raise card', () => {
       }
     );
     expect(card.status).toBe(428);
-    const approvalId = card.body.approvalId as string;
+    const approvalId = (card.body as Record<string, unknown>).approvalId as string;
 
     expect(await commitAgentRaise(approvalId, 'Dorian')).toEqual({
       status: 200,

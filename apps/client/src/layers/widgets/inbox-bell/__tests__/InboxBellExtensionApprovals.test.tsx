@@ -104,7 +104,17 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         // hands back the server's refusal, and the copy still waits.
         return json({ error: 'Confirm it’s you.', code: STEP_UP_REQUIRED_CODE }, 428);
       }
-      if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
+      if (approveStatus !== 200) {
+        return json(
+          {
+            title: 'DorkOS hit an error on its side.',
+            status: approveStatus,
+            code: 'internal_error',
+            detail: 'Nope',
+          },
+          approveStatus
+        );
+      }
       if (approvalGate) await approvalGate;
       waiting = [];
       return json({ extension: { id: 'flow' } });

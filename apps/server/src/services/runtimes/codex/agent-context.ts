@@ -36,8 +36,21 @@ A preview DorkOS serves: ${prefix}browser_read_page, then ${prefix}browser_click
 }
 
 /**
- * Join the gated neutral context with the room verbs, the browser pointer and
- * the Blocked-area lines.
+ * Why `gh` can't sign in on a Codex turn (DOR-4028). DorkOS keeps GitHub's
+ * sign-in on the protected-files list, and Codex's sandbox enforces that list
+ * for every program the agent starts, so `gh` fails there. The agent is told
+ * so, never how to sign in another way, and never to set a token itself.
+ * It never changes, so it rides with the stable half, once per thread, DorkOS
+ * tools or not.
+ */
+const GITHUB_CLI_BLOCK = `<github_cli>
+The gh command can’t sign in to GitHub in this chat: DorkOS keeps GitHub’s sign-in out of reach here. Don’t try to sign gh in, and don’t set a GitHub token yourself (GH_TOKEN, GITHUB_TOKEN).
+If you need GitHub, use the GitHub tools DorkOS gives you when the person has connected GitHub in Connections. Otherwise, tell the person what you need.
+</github_cli>`;
+
+/**
+ * Join the gated neutral context with the GitHub CLI notice, the room verbs,
+ * the browser pointer and the Blocked-area lines.
  *
  * The room verbs ride ONLY when this turn actually carries them — gated on
  * the resolved injection itself, not on a second guess at it, so the prose
@@ -52,18 +65,24 @@ A preview DorkOS serves: ${prefix}browser_read_page, then ${prefix}browser_click
  * like the menu, read where the agent's manifest lives — the listener hides
  * the same areas keyed on the same anchor.
  *
- * @param neutralText - What the context gate selected of the neutral append.
+ * @param selection - What the context gate selected of the neutral append, and
+ *   whether it carries the stable half, which the GitHub CLI notice rides with;
+ *   a plain string (the context viewer's template) counts as carrying it.
  * @param dorkosTools - Whether this turn carries the DorkOS tools.
  * @param agentPath - The agent's home, or `undefined`.
  */
 export async function buildCodexAgentContext(
-  neutralText: string,
+  selection: string | { text: string; carriesStable: boolean },
   dorkosTools: boolean,
   agentPath: AgentHome | undefined
 ): Promise<string> {
-  if (!dorkosTools) return neutralText;
+  const { text: neutralText, carriesStable } =
+    typeof selection === 'string' ? { text: selection, carriesStable: true } : selection;
+  const github = carriesStable ? GITHUB_CLI_BLOCK : '';
+  if (!dorkosTools) return [neutralText, github].filter(Boolean).join('\n\n');
   return [
     neutralText,
+    github,
     buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
     buildBrowserToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
     renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas),

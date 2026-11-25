@@ -14,7 +14,7 @@ import {
   UpdateTodoPromiseRequestSchema,
   ConfirmTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
-import { problemResponse } from '../core/openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
  * Register the to-do routes.
@@ -32,6 +32,7 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
       'first), then kept, missed and dropped, newest first. `overdue` is computed on read.',
     request: { query: ListTodoPromisesQuerySchema },
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'The promises',
         content: { 'application/json': { schema: ListTodoPromisesResponseSchema } },

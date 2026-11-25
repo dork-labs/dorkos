@@ -78,7 +78,7 @@
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 724,
     "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 539,
     "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 533,
-    "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1054,
+    "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1050,
     "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1130,
     "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 820,
     "apps/server/src/services/session/devtools-capture-store.ts": 666,
@@ -117,7 +117,7 @@
     "packages/evals/src/suite/rooms-recall.ts": 520,
     "packages/evals/src/suite/rooms.ts": 503,
     "packages/marketplace/src/package-validator.ts": 664,
-    "packages/relay/src/adapters/claude-code/agent-handler.ts": 526,
+    "packages/relay/src/adapters/claude-code/agent-handler.ts": 505,
     "packages/relay/src/adapters/telegram/telegram-adapter.ts": 509,
     "packages/relay/src/relay-publish.ts": 649,
     "packages/shared/src/account-usage.ts": 541,
@@ -130,6 +130,6 @@
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1223,
     "packages/test-utils/src/runtime-capability-matrix.ts": 700,
-    "packages/test-utils/src/runtime-conformance.ts": 2310
+    "packages/test-utils/src/runtime-conformance.ts": 2304
   }
 }

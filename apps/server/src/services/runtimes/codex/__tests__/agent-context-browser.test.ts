@@ -40,6 +40,29 @@ describe('the browser a Codex turn is pointed at (DOR-4357)', () => {
   it('says nothing about them on a turn that carries no DorkOS tools', async () => {
     const text = await buildCodexAgentContext('neutral', false, undefined);
 
-    expect(text).toBe('neutral');
+    expect(text.startsWith('neutral')).toBe(true);
+    expect(text).not.toContain('<browser_tools>');
+  });
+});
+
+describe('why gh can’t sign in on a Codex turn (DOR-4028)', () => {
+  it.each([true, false])('says so on every turn, DorkOS tools or not (%s)', async (tools) => {
+    const text = await buildCodexAgentContext('', tools, undefined);
+
+    expect(text).toContain('The gh command can’t sign in to GitHub in this chat');
+    expect(text).toContain('don’t set a GitHub token yourself (GH_TOKEN, GITHUB_TOKEN)');
+  });
+
+  it('rides with the stable half only, so a thread hears it once', async () => {
+    const later = await buildCodexAgentContext({ text: '', carriesStable: false }, true, undefined);
+
+    expect(later).not.toContain('<github_cli>');
+  });
+
+  it('names no file and no other way to sign in', async () => {
+    const text = await buildCodexAgentContext('', true, undefined);
+    const notice = text.slice(text.indexOf('<github_cli>'), text.indexOf('</github_cli>'));
+
+    expect(notice).not.toMatch(/hosts\.yml|\.config|auth login|paste/i);
   });
 });

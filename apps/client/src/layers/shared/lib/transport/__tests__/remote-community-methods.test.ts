@@ -220,10 +220,18 @@ describe('qualified remote community transport', () => {
   });
 
   it('preserves authorization failures and consumes no-content membership responses', async () => {
-    answer({ error: 'Membership removed.', code: 'MEMBERSHIP_REMOVED' }, 403);
+    answer(
+      {
+        title: 'This account isn’t allowed to do that.',
+        status: 403,
+        code: 'forbidden',
+        detail: 'The space didn’t allow that.',
+      },
+      403
+    );
     await expect(methods().getRemoteCommunityRoom('community-a', 'same-id')).rejects.toMatchObject({
       status: 403,
-      code: 'MEMBERSHIP_REMOVED',
+      code: 'forbidden',
     });
     answer(null, 204);
     await expect(

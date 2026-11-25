@@ -235,8 +235,10 @@ describe('apiCall 401 guidance', () => {
         async () =>
           new Response(
             JSON.stringify({
-              error: 'That agent identity could not be verified.',
-              code: 'AGENT_IDENTITY_UNVERIFIED',
+              title: 'DorkOS couldn’t confirm which agent sent this.',
+              status: 401,
+              code: 'agent_identity_unverified',
+              detail: 'That agent identity could not be verified.',
             }),
             { status: 401 }
           )
@@ -248,7 +250,7 @@ describe('apiCall 401 guidance', () => {
     expect(err.status).toBe(401);
     expect(err.message).toBe('That agent identity could not be verified.');
     expect(err.message).not.toContain('API key');
-    expect(err.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+    expect(err.body.code).toBe('agent_identity_unverified');
   });
 
   it('still guides a 401 that carries no code at all', async () => {
@@ -329,9 +331,18 @@ describe('apiCall 401 guidance', () => {
       'fetch',
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ error: 'Validation failed', errors: ['bad name'] }), {
-            status: 400,
-          })
+          new Response(
+            JSON.stringify({
+              title: 'Refused.',
+              status: 400,
+              code: 'invalid_request',
+              detail: 'Validation failed',
+              errors: ['bad name'],
+            }),
+            {
+              status: 400,
+            }
+          )
       )
     );
 

@@ -75,9 +75,7 @@ class AnswerRefused extends Error {
 
 /** A failed request's own sentence, or the status when it sent none. */
 async function failureOf(res: Response): Promise<AnswerRefused> {
-  const body = await readResponseError(res, `The server answered ${res.status}`, {
-    oldMessageFirst: true,
-  });
+  const body = await readResponseError(res, `The server answered ${res.status}`);
   return new AnswerRefused(body.message, body.code);
 }
 

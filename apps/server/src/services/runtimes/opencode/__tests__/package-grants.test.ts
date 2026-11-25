@@ -119,6 +119,7 @@ describe('enforceApprovals with installed packages (DOR-4386)', () => {
         sessionId: 's1',
         ocSessionId: 'oc-1',
         cwd,
+        directory: cwd,
         permissions: { pendingPermissionSessions: new Map() } as never,
         protectedRoots: {
           cwd,

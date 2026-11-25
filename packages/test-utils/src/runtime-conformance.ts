@@ -565,12 +565,6 @@ export interface RuntimeConformanceOpts extends RestartCaseOpts {
    */
   userLastMessageAtOmittedReason?: string;
   /**
-   * Why this runtime can't run a session in a project subfolder yet, naming its
-   * follow-up ticket. Only RT-SES-02 reads it, and only computer-local may claim it
-   * (`runtime-conformance-subfolder.ts`).
-   */
-  singleFolderRuntimeReason?: string;
-  /**
    * Drives TWO turns on ONE session with two DIFFERENT
    * {@link MessageOpts.systemPromptAppend} values, and reports what the backend
    * was handed each time — the gate behind `project-rooms` §3.3.
@@ -1474,12 +1468,7 @@ export function runtimeConformance(
       });
 
       it('RT-SES-02: lists a session started INSIDE the project, and never a lookalike sibling (DOR-1550)', async () => {
-        await assertSubfolderListing(
-          makeRuntime(),
-          projectDir,
-          seedListableSession,
-          opts.singleFolderRuntimeReason
-        );
+        await assertSubfolderListing(makeRuntime(), projectDir, seedListableSession);
       });
 
       it('RT-SES-01: getSession resolves session metadata or null — and null for an unknown id', async () => {

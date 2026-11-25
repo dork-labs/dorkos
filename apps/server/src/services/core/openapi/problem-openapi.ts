@@ -69,3 +69,11 @@ export function problemResponse(description: string): {
 } {
   return { description, content: PROBLEM_CONTENT };
 }
+
+/**
+ * The chain's own `500` (`internal_error`), for a route that can only fail
+ * inside the server: a read with no refusal of its own still declares it.
+ */
+export const INTERNAL_ERROR_RESPONSE = {
+  $ref: '#/components/responses/InternalErrorProblem',
+} as const;

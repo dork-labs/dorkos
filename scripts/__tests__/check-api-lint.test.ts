@@ -46,7 +46,7 @@ const CLI = join(ROOT, 'scripts', 'api-lint', 'check-api-lint.ts');
 /** The repo-wide test reads the whole spec, census and registry; see check-own-mocks. */
 const SCAN_TIMEOUT_MS = 30_000;
 
-const ERROR_REF = { $ref: '#/components/schemas/ErrorResponse' };
+const ERROR_REF = { $ref: '#/components/schemas/Problem' };
 
 /** A clean operation: an id, a shared-shape 404 and a plain 200. */
 function op(extra: Partial<OperationNode> = {}): OperationNode {
@@ -214,6 +214,32 @@ describe('error-shape', () => {
       '/api/x': { get: op({ responses: { '409': plain, '412': extended, '500': inline } }) },
     });
     expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 500'] });
+  });
+
+  it('passes a named problem extension and a choice between problems, never the old `ErrorResponse`', () => {
+    const problem = { $ref: '#/components/schemas/Problem' };
+    const named = { $ref: '#/components/schemas/Conflict' };
+    const body = (schema: object) => ({
+      content: { 'application/problem+json': { schema } },
+    });
+    const d: OpenApiDocument = {
+      paths: {
+        '/api/x': {
+          get: op({
+            responses: {
+              '409': body({ anyOf: [named, problem] }),
+              '412': body(named),
+              '400': body({ anyOf: [problem, { type: 'object' }] }),
+              '500': body({ $ref: '#/components/schemas/ErrorResponse' }),
+            },
+          }),
+        },
+      },
+      components: {
+        schemas: { Conflict: { allOf: [problem, { type: 'object' }] }, ErrorResponse: {} },
+      },
+    };
+    expect(errorShapeItems(d)).toEqual({ x: ['GET /api/x 400', 'GET /api/x 500'] });
   });
 
   it('passes a $ref to the step-up 428 component but still counts an inline copy of it', () => {

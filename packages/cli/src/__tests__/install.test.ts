@@ -220,7 +220,14 @@ describe('runInstall', () => {
     const refusal =
       "That address isn't one DorkOS can install a package from. Use an https://, ssh:// or " +
       'git@host:path address for a git repository, or a file:// path to a folder on this machine.';
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(400, { error: refusal }));
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(400, {
+        title: 'Refused.',
+        status: 400,
+        code: 'invalid_request',
+        detail: refusal,
+      })
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const code = await runInstall({ name: 'x', marketplace: "ext::sh -c 'id'", yes: true });
@@ -291,7 +298,10 @@ describe('runInstall', () => {
       .mockResolvedValueOnce(mockResponse(200, PREVIEW_BODY))
       .mockResolvedValueOnce(
         mockResponse(409, {
-          error: 'Conflict detected',
+          title: 'Refused.',
+          status: 409,
+          code: 'conflict',
+          detail: 'Conflict detected',
           conflicts: [{ description: 'slot already bound to other-pkg' }],
         })
       );

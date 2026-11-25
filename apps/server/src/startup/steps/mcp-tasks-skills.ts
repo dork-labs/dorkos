@@ -17,6 +17,10 @@ import {
   createProjectConfigActivityWriter,
   setProjectConfigActivity,
 } from '../../services/runtimes/codex/app-server/project-config-activity.js';
+import {
+  createPluginRestartActivityWriter,
+  setPluginRestartActivity,
+} from '../../services/runtimes/opencode/messaging/project-plugin-recheck.js';
 import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
 import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../../env.js';
@@ -150,6 +154,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   setRepoConfigActivity(createRepoConfigActivityWriter(activityService));
   // A folder's own Codex settings that loaded at Full, by name (DOR-4408).
   setProjectConfigActivity(createProjectConfigActivityWriter(activityService));
+  // OpenCode restarted because a folder gained its own plugins in a turn (DOR-4412).
+  setPluginRestartActivity(createPluginRestartActivityWriter(activityService));
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and

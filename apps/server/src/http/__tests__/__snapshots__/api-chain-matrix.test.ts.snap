@@ -47,8 +47,11 @@ exports[`a stopping server > refuses every request alike once the server is stop
 {
   "audit": [],
   "body": {
-    "code": "SERVER_STOPPING",
-    "error": "The server is stopping. Try again after it restarts.",
+    "code": "temporarily_unavailable",
+    "detail": "The server is stopping. Try again after it restarts.",
+    "status": 503,
+    "title": "That’s not available right now. Try again soon.",
+    "type": "urn:dorkos:problem:temporarily_unavailable",
   },
   "complete": true,
   "headers": {
@@ -57,7 +60,7 @@ exports[`a stopping server > refuses every request alike once the server is stop
     "access-control-allow-methods": null,
     "access-control-allow-origin": null,
     "cache-control": "no-store",
-    "content-type": "application/json",
+    "content-type": "application/problem+json",
     "vary": null,
     "x-content-type-options": "nosniff",
   },

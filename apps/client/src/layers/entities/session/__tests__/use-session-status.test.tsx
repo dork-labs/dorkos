@@ -106,7 +106,7 @@ describe('useSessionStatus', () => {
   it('says a Wi-Fi refusal calmly, and reverts the mode (DOR-3037)', async () => {
     const refusal = Object.assign(new Error('Raising permissions works only at this computer.'), {
       status: 403,
-      code: 'NOT_FROM_WIFI',
+      code: 'not_from_wifi',
     });
     const transport = createMockTransport({
       getSession: vi

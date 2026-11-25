@@ -12,7 +12,8 @@
  * 2. It writes over that skill: refused with no card, and the file is unchanged.
  * 3. A shell `touch` inside the package, in Default mode and at Full: the read
  *    grant does not answer it, and the shell's check refuses it with no card,
- *    so no file appears (Security's Should on #3793, DOR-4522).
+ *    so no file appears (Security's Should on #3793, DOR-4522). The first such
+ *    refusal answers within a second and the model reads DorkOS's reason (DOR-5248).
  * 4. It reads a backup an install left beside the package: no grant, so the ask
  *    reaches the person (denied here), and the file's words never reach the model.
  * 5. A shell `touch` in the project at Full still runs.
@@ -46,6 +47,9 @@ function chunk(delta: object, finish: string | null = null): string {
 
 /** The tool call the fake model makes on the next turn, once. */
 let nextTool: { name: string; args: Record<string, string> } | undefined;
+
+/** When the fake model last served the planned tool call. */
+let toolServedAt = 0;
 
 /**
  * A fake model. A request with tools that ends on the person's message gets the
@@ -82,6 +86,7 @@ function fakeModel(bodies: string[]): Promise<{ url: string; close: () => Promis
             })
           );
           res.write(chunk({}, 'tool_calls'));
+          toolServedAt = Date.now();
         } else {
           res.write(chunk({ role: 'assistant', content: 'done' }));
           res.write(chunk({}, 'stop'));
@@ -122,6 +127,8 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
   let manager: { shutdown: () => Promise<void> } | undefined;
   let custody: ReturnType<typeof createPinnedManagerCustody> | undefined;
   const suite = new AbortController();
+  /** When the last turn's refusal was answered on the sidecar. */
+  let deniedAt = 0;
   let runtime: InstanceType<typeof import('../opencode-runtime.js').OpenCodeRuntime>;
 
   /** Run one turn to its end, denying any card it raises, and return its events. */
@@ -133,6 +140,7 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
     const events: StreamEvent[] = [];
     for await (const event of runtime.sendMessage(sessionId, 'go', { cwd: project })) {
       events.push(event);
+      if (event.type === 'permission_denied') deniedAt = Date.now();
       if (event.type === 'approval_required') {
         runtime.approveTool(sessionId, (event.data as { toolCallId: string }).toolCallId, false);
       }
@@ -252,6 +260,26 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
     expect(nextTool).toBeUndefined();
     expect(events.filter((event) => event.type === 'approval_required')).toEqual([]);
     expect(fs.readFileSync(packageSkill, 'utf8')).toBe(original);
+  }, 150_000);
+
+  it("answers the first shell refusal within a second, and the model reads DorkOS's reason", async () => {
+    // The first refusal with a reason in a run (DOR-5248). Its reply once went to
+    // an OpenCode folder the ask was not in: a minute to boot that folder, then
+    // "not found", then OpenCode's generic words instead of DorkOS's reason.
+    const created = path.join(path.dirname(packageSkill), 'touched-first');
+    nextTool = { name: 'bash', args: { command: `touch ${created}`, description: 'touch' } };
+    const before = bodies.length;
+
+    const events = await turn('touch-package-first');
+
+    const denied = events.find((event) => event.type === 'permission_denied');
+    const reason = (denied?.data as { reason?: string } | undefined)?.reason ?? '';
+    expect(reason).not.toBe('');
+    expect(deniedAt - toolServedAt).toBeLessThan(1000);
+    // A bare reject ends OpenCode's loop; a reason goes back to the model as the tool's error.
+    const quoted = JSON.stringify(reason).slice(1, -1);
+    expect(bodies.slice(before).some((body) => body.includes(quoted))).toBe(true);
+    expect(fs.existsSync(created)).toBe(false);
   }, 150_000);
 
   it.each(['default', 'bypassPermissions'] as const)(

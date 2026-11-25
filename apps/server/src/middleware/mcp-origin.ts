@@ -80,6 +80,7 @@ export const validateMcpOrigin: MiddlewareHandler<RequestFactsEnv> = async (c, n
     return;
   }
   return c.json(
+    // eslint-disable-next-line problem-only/no-error-body -- MCP answers in JSON-RPC, not problem documents.
     {
       jsonrpc: '2.0',
       error: { code: -32002, message: `Origin ${facts.origin} not allowed` },

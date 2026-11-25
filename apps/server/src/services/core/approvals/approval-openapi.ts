@@ -1,7 +1,7 @@
 /** Approval route contracts, including individual person-requested hook reviews. */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { problemResponse } from '../openapi/problem-openapi.js';
+import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../openapi/problem-openapi.js';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 import {
   PendingApprovalsResponseSchema,
@@ -23,6 +23,7 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
       'Approvals an agent has requested and nobody has decided yet, oldest first. Expired requests ' +
       'are excluded, and no response here ever carries token material.',
     responses: {
+      500: INTERNAL_ERROR_RESPONSE,
       200: {
         description: 'Pending approvals',
         content: { 'application/json': { schema: PendingApprovalsResponseSchema } },

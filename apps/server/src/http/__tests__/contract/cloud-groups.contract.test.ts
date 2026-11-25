@@ -61,10 +61,9 @@ const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose(
 const UNAVAILABLE = { available: false };
 const NOT_LINKED = { ok: false, message: 'This instance is not linked to a DorkOS account.' };
 const SPACE_NOT_LINKED = { ok: false, message: 'This DorkOS is not linked to a DorkOS account.' };
-const SPACES_DISABLED = {
-  error: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
-  code: 'SPACES_DISABLED',
-};
+const SPACES_DISABLED = problemBody('spaces_disabled', {
+  detail: 'Spaces are switched off. Turn them on in Settings → Advanced → Experiments.',
+});
 const OPERATOR_ONLY = z
   .object({ code: z.literal('operator_only_config'), error: z.string() })
   .strict();

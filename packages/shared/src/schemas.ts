@@ -5726,16 +5726,23 @@ export const GitStatusErrorSchema = z
 
 export type GitStatusError = z.infer<typeof GitStatusErrorSchema>;
 
-// === Error Response ===
+// === The login gate's answer ===
 
-export const ErrorResponseSchema = z
+/**
+ * The login gate's `401` (`AUTH_REQUIRED`): the one error answer that is not a
+ * problem document, on purpose (ADR 261123-170831). Every client reads its
+ * `code` to show the sign-in screen, and `signInWith` to say which kind.
+ */
+export const AuthRequiredBodySchema = z
   .object({
     error: z.string(),
-    details: z.any().optional(),
+    code: z.literal('AUTH_REQUIRED'),
+    signInWith: z.enum(['dorkos', 'wifi-code']).optional(),
   })
-  .openapi('ErrorResponse');
+  .openapi('AuthRequired');
 
-export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
+/** See {@link AuthRequiredBodySchema}. */
+export type AuthRequiredBody = z.infer<typeof AuthRequiredBodySchema>;
 
 // === Tasks Scheduler Types ===
 

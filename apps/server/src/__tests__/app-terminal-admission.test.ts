@@ -113,8 +113,11 @@ function expectTerminal(response: {
 }) {
   expect(response.status).toBe(503);
   expect(response.body).toEqual({
-    code: 'SERVER_STOPPING',
-    error: 'The server is stopping. Try again after it restarts.',
+    type: 'urn:dorkos:problem:temporarily_unavailable',
+    title: 'That’s not available right now. Try again soon.',
+    status: 503,
+    code: 'temporarily_unavailable',
+    detail: 'The server is stopping. Try again after it restarts.',
   });
   expect(response.headers).toMatchObject({
     'cache-control': 'no-store',
@@ -222,7 +225,7 @@ describe('main HTTP admission through the real app', () => {
       const second = await rawGet('/admission-late', agent);
       expect(second.socket).toBe(socket);
       expect(second.statusCode).toBe(503);
-      expect(JSON.parse(await body(second))).toMatchObject({ code: 'SERVER_STOPPING' });
+      expect(JSON.parse(await body(second))).toMatchObject({ code: 'temporarily_unavailable' });
       expect(entered).toHaveBeenCalledTimes(1);
     } finally {
       agent.destroy();

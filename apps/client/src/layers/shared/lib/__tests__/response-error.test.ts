@@ -37,11 +37,19 @@ describe('responseError', () => {
     expect(error.retryAfterMs).toBe(2000);
   });
 
-  it('reads the old `{ error, code }` shape, keeping the body', async () => {
+  it('reads the login gate, which is not a problem on purpose, keeping the body', async () => {
+    const body = { error: 'Unauthorized', code: 'AUTH_REQUIRED', signInWith: 'wifi-code' };
+    const error = await responseError(json(body, 401));
+    expect(error.message).toBe('Unauthorized');
+    expect(error.code).toBe('AUTH_REQUIRED');
+    expect(error.body).toEqual(body);
+  });
+
+  it('reads nothing from the old `{ error, code }` shape but the body', async () => {
     const body = { error: 'Already bound', code: 'CHAT_ALREADY_BOUND', bindingId: 'b1' };
-    const error = await responseError(json(body, 409));
-    expect(error.message).toBe('Already bound');
-    expect(error.code).toBe('CHAT_ALREADY_BOUND');
+    const error = await responseError(json(body, 409, 'Conflict'));
+    expect(error.message).toBe('Conflict');
+    expect(error.code).toBeUndefined();
     expect(error.body).toEqual(body);
   });
 
@@ -50,15 +58,5 @@ describe('responseError', () => {
     expect((await readResponseError(notJson(), 'Couldn’t save.')).message).toBe('Couldn’t save.');
     expect((await readResponseError(notJson())).message).toBe('Bad Gateway');
     expect((await readResponseError(new Response('', { status: 500 }))).message).toBe('HTTP 500');
-  });
-
-  it('reads an older body’s per-refusal `message` first when asked', async () => {
-    const body = { error: 'Only a person can change this', message: 'Ask a person.' };
-    expect((await readResponseError(json(body, 403))).message).toBe(
-      'Only a person can change this'
-    );
-    expect(
-      (await readResponseError(json(body, 403), undefined, { oldMessageFirst: true })).message
-    ).toBe('Ask a person.');
   });
 });

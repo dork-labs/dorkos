@@ -72,8 +72,11 @@ it('ordinary send results and central full mock stay compatible without fabricat
 
 it('existing fetchJSON preserves a locator-bearing POST503 under error.body', async () => {
   const body = {
-    error: 'Delivery receipt response is unavailable.',
-    code: 'RELAY_RECEIPT_RESPONSE_UNAVAILABLE',
+    type: 'urn:dorkos:problem:temporarily_unavailable',
+    title: 'That’s not available right now. Try again soon.',
+    status: 503,
+    code: 'temporarily_unavailable',
+    detail: 'Delivery receipt response is unavailable.',
     messageId: ID,
     statusUrl: url,
   };
@@ -88,10 +91,10 @@ it('existing fetchJSON preserves a locator-bearing POST503 under error.body', as
 });
 
 it.each([
-  [404, 'RELAY_RECEIPT_NOT_FOUND'],
-  [503, 'RELAY_RECEIPT_STORAGE_UNAVAILABLE'],
+  [404, 'not_found'],
+  [503, 'temporarily_unavailable'],
 ] as const)('status HTTP%s remains distinct with parsed error data', async (status, code) => {
-  const body = { error: 'Safe status error.', code };
+  const body = { title: 'Safe status error.', status, code, detail: 'Safe status error.' };
   respond(body, status);
   await expect(methods.getRelayDeliveryReceipt(ID)).rejects.toMatchObject({ status, code, body });
 });

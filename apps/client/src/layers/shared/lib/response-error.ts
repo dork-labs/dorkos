@@ -2,14 +2,14 @@
  * The app's one reader of a failed API response.
  *
  * Every failed answer is read the same way: a problem document
- * (`application/problem+json`) first, then the older `{ error, code, details }`
- * shape the routes still send until DOR-4979 moves them over
- * (`readErrorBody` in `@dorkos/shared/problem` holds the rule). A caller gets a
- * sentence for a person and, when the server gave one, a code to branch on.
+ * (`application/problem+json`), or one of the few answers that are not problems
+ * on purpose, the login gate and a held action (`readErrorBody` in
+ * `@dorkos/shared/problem` holds the rule). A caller gets a sentence for a
+ * person and, when the server gave one, a code to branch on.
  *
  * @module shared/lib/response-error
  */
-import { isProblem, readErrorBody, type ErrorBodyReading } from '@dorkos/shared/problem';
+import { readErrorBody, type ErrorBodyReading } from '@dorkos/shared/problem';
 
 /** What a failed response said, plus the parsed body as it came. */
 export interface ResponseErrorReading extends ErrorBodyReading {
@@ -39,32 +39,15 @@ export type ResponseError = Error & {
  * @param res - The response; its body is consumed.
  * @param fallbackMessage - The message when the body says none. Defaults to
  *   the status text, then `HTTP <status>`.
- * @param options - See {@link ReadResponseErrorOptions}.
  * @returns The reading.
  */
 export async function readResponseError(
   res: Response,
-  fallbackMessage?: string,
-  options: ReadResponseErrorOptions = {}
+  fallbackMessage?: string
 ): Promise<ResponseErrorReading> {
   const body: unknown = await res.json().catch(() => undefined);
   const fallback = fallbackMessage ?? (res.statusText || `HTTP ${res.status}`);
-  const reading = readErrorBody(body, fallback);
-  const said = (body as { message?: unknown } | undefined)?.message;
-  if (options.oldMessageFirst && !isProblem(body) && typeof said === 'string' && said !== '') {
-    reading.message = said;
-  }
-  return { ...reading, status: res.status, body };
-}
-
-/** Options for {@link readResponseError}. */
-export interface ReadResponseErrorOptions {
-  /**
-   * For a route whose older body pairs a shared `error` with a per-refusal
-   * `message` (the person bar's refusals): read `message` first. A problem
-   * document is read as always.
-   */
-  oldMessageFirst?: boolean;
+  return { ...readErrorBody(body, fallback), status: res.status, body };
 }
 
 /**

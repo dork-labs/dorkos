@@ -129,7 +129,10 @@ describe('runMarketplaceHeldBack', () => {
         .mockResolvedValueOnce(mockResponse(200, { packages: [HELD] }))
         .mockResolvedValueOnce(
           mockResponse(409, {
-            error: 'fmt changed since it was shown to you, so nothing was recorded.',
+            title: 'Refused.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'fmt changed since it was shown to you, so nothing was recorded.',
           })
         )
     );
