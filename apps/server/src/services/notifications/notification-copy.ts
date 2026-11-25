@@ -1,9 +1,12 @@
 /**
  * Small pieces of notification copy the registry's titles and bodies share:
- * dates and limit names, in the words a person reads.
+ * dates, limit names and what to call a chat, in the words a person reads;
+ * and the "finished" row's payload and identity, which the run record's
+ * outbox writes too.
  *
  * @module services/notifications/notification-copy
  */
+import path from 'node:path';
 import { windowLabel } from '@dorkos/shared/account-usage';
 import type { NotificationPayload, NotificationRegistryEntry } from './notification-registry.js';
 
@@ -88,3 +91,40 @@ export const APPROVAL_PENDING_COPY: Pick<
           `${p.capabilityTitle} spends money. Answer in DorkOS.`
         : `${p.capabilityTitle} cannot be undone, so it will not run until you decide.`,
 };
+
+/**
+ * What to call a session in a sentence.
+ *
+ * The working directory's last segment, which is the identity fallback every
+ * other session surface uses. A notification title has to stand on its own in a
+ * desktop banner or a chat message, so it cannot be an id.
+ *
+ * @param cwd - The session's working directory, when the projector knew one.
+ */
+export function sessionLabelFor(cwd: string | undefined): string {
+  if (!cwd) return 'A chat';
+  return path.basename(cwd) || 'A chat';
+}
+
+/** A turn finished. */
+export interface TurnCompletedPayload {
+  sessionId: string;
+  agentId?: string;
+  /** What to call the session in a sentence. See `ask.pending`. */
+  sessionLabel: string;
+  /** When it finished. ISO 8601 UTC — also what keeps two turns distinct. */
+  completedAt: string;
+  /** The turn's run, when the outbox told it (spec `turns-survive-restarts` §6.4). */
+  runId?: string;
+}
+
+/**
+ * What makes two "finished" rows the same. A run's is the outbox's own key,
+ * unique for good (`notify:<runId>:completed`, §6.4); a turn with no run (a
+ * task's or a relay's, until they reach the dispatcher) keeps its time.
+ *
+ * @param p - The payload.
+ */
+export function turnCompletedDedupeKey(p: TurnCompletedPayload): string {
+  return p.runId ? `notify:${p.runId}:completed` : `turn:${p.sessionId}:${p.completedAt}`;
+}

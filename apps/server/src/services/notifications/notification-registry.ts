@@ -38,6 +38,7 @@ import {
   type NotificationTier,
 } from '@dorkos/shared/notification-schemas';
 import { APPROVAL_PENDING_COPY, formatResetTime, limitWindowPhrase } from './notification-copy.js';
+import { turnCompletedDedupeKey, type TurnCompletedPayload } from './notification-copy.js';
 import {
   EXTENSION_DECISION_PUSH_WINDOW_MS,
   extensionDecisionEscalation,
@@ -134,14 +135,7 @@ export interface NotificationPayloads extends DeclaredPayloads {
     detail?: string;
   };
   /** A turn finished. */
-  'turn.completed': {
-    sessionId: string;
-    agentId?: string;
-    /** What to call the session in a sentence. See `ask.pending`. */
-    sessionLabel: string;
-    /** When it finished. ISO 8601 UTC — also what keeps two turns distinct. */
-    completedAt: string;
-  };
+  'turn.completed': TurnCompletedPayload;
   /** A scheduled task run reached a terminal status. */
   'run.completed': RunCompletedPayload;
   /** A direct message arrived. */
@@ -741,7 +735,7 @@ const ENTRIES: NotificationRegistryMap = {
     subjectType: 'session',
     locate: (p) => ({ subjectId: p.sessionId, sessionId: p.sessionId, agentId: p.agentId }),
     title: (p) => `${p.sessionLabel} finished`,
-    dedupeKey: (p) => `turn:${p.sessionId}:${p.completedAt}`,
+    dedupeKey: turnCompletedDedupeKey,
     relay: 'never',
   },
 

@@ -31,7 +31,7 @@ import type { NotificationOutcome } from '@dorkos/shared/notification-schemas';
 import { resolveStanding } from '../notification-service.js';
 import { armEscalation } from '../escalation-service.js';
 import type { NotificationPayload } from '../notification-registry.js';
-import { sessionLabelFor } from './session-lifecycle.js';
+import { sessionLabelFor } from '../notification-copy.js';
 
 /** What a parked Ask looked like, kept until it resolves. */
 interface RememberedAsk {
