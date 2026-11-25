@@ -14,31 +14,33 @@
 #                         so a flake never reverts anyone's work;
 #   revert <sha> <pr>     it failed again, and the same workflow was green on the
 #                         parent commit, so this merge broke it;
-#   skip <reason>         anything else (release or revert commit, red before
-#                         this merge, main moved on, no PR, already reverting).
+#   skip <reason>         anything else (a rolling workflow, release or revert
+#                         commit, red before this merge, main moved on, no PR,
+#                         already reverting).
 #
-# THE ORDER (Nov 25 fix). A failed push run on main is checked, in order:
+# THE ORDER. A failed push run on main is checked, in order:
 #   1. a push to main, a failure, a real sha; else skip.
-#   2. ROLLING workflow (ROLLING_WORKFLOWS below), attempt 1: rerun, before
-#      anything about the commit. One rolling run covers several merges, so
-#      its head commit's subject, PR and parent say nothing about who broke
-#      it, and its parent almost never has a run of its own. rolling-bisect.yml
-#      starts only on a rolling run that failed at attempt >= 2, so skipping
-#      the re-run here (as `red-before-this-merge` did on Nov 25 at 7878dda)
-#      meant no bisect and nobody named.
+#   2. a ROLLING workflow (ROLLING_WORKFLOWS below): skip rolling, at any
+#      attempt. rolling-bisect.yml owns it from its first failure.
 #   3. release commit, revert commit, no merged PR: skip.
 #   4. parent not green (failure, or no run of its own): skip.
-#   5. attempt 1: rerun. (A non-rolling run is re-run only when its parent was
-#      green, so a re-run is spent only where a revert could follow.)
+#   5. attempt 1: rerun.
 #   6. revert already open, main moved on: skip; else revert.
-# After a rolling run's re-run fails, steps 3-6 decide as for any run, which
-# mostly skips (no green parent); finding the culprit is rolling-bisect.yml's
-# job, and it reverts through `revert` below.
 #
-# ROLLING_WORKFLOWS must match rolling-bisect.yml's `workflows:`, and each one
-# must be in auto-revert.yml's `workflows:` (or it is never re-run) and be the
-# workflow after-merge-alert.yml sets ROLLING=1 for. test-auto-revert.sh reads
-# all three files and fails on any drift.
+# WHY ROLLING RUNS ARE NEVER RE-RUN HERE (Nov 25). One rolling run covers
+# several merges, so its head commit's parent rule says nothing (its parent
+# almost never has a run of its own: at 7878dda step 4 answered
+# `red-before-this-merge`, nothing was re-run, and the bisect, which then
+# waited for attempt 2, never started). Re-running it is no fix either: a
+# re-run of an old push run joins browser-test's `gate` concurrency group
+# (same event and ref as a new push run), where it would cancel the pending
+# newest-main run or be cancelled by the next merge. So rolling-bisect.yml
+# starts on the first failure and re-tests the failing head itself in a
+# dispatched bisect run, which has a concurrency group of its own.
+#
+# ROLLING_WORKFLOWS must match rolling-bisect.yml's `workflows:` and be the
+# workflows after-merge-alert.yml sets ROLLING=1 for. test-auto-revert.sh reads
+# both files and fails on any drift.
 #
 # facts.json: {attempt, conclusion, event, branch, sha, subject, pr,
 #              parentConclusion, mainHead, revertOpen, workflow, rolling}
@@ -62,8 +64,8 @@ set -uo pipefail
 GH=${GH:-gh}
 REPO=${REPO:-${GITHUB_REPOSITORY:-dork-labs/dorkos}}
 # Workflow names whose push run on main is rolling (one run for several
-# merges), as a JSON array. Kept equal to rolling-bisect.yml's `workflows:` by
-# scripts/test-auto-revert.sh.
+# merges), as a JSON array: never re-run or reverted from here. Kept equal to
+# rolling-bisect.yml's `workflows:` by scripts/test-auto-revert.sh.
 ROLLING_WORKFLOWS='["browser-test"]'
 
 usage() {
@@ -83,7 +85,7 @@ decide() {
     if .event != "push" or .branch != "main" then skip("not-a-push-to-main")
     elif (.conclusion != "failure" and .conclusion != "timed_out") then skip("not-a-failure")
     elif ((.sha // "") | test("^[0-9a-f]{40}$") | not) then skip("bad-sha")
-    elif .rolling == true and (.attempt // 1) < 2 then "rerun"
+    elif .rolling == true then skip("rolling")
     elif ((.subject // "") | test("^chore\\(release\\)"; "i")) then skip("release-commit")
     elif ((.subject // "") | test("^(revert|Revert)\\b")) then skip("revert-commit")
     elif ((.pr // 0) | type != "number" or . < 1) then skip("no-merged-pr")

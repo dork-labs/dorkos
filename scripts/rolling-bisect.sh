@@ -9,33 +9,34 @@
 #
 # A ROLLING workflow (browser-test's push run, DOR-5130) keeps one run in
 # flight on main, so one run covers every merge since the previous one. When it
-# fails at H, auto-revert.sh can blame H only if H's parent had its own green
-# run, which it almost never has. This finds the first bad merge between the
-# last green push run (G) and H by binary search: the same workflow is
-# dispatched on main with `bisect_sha=<merge>`, which checks that merge out and
-# runs the full suite on it. Each dispatch halves the range, so a range of N
-# merges costs at most ceil(log2(N)) runs (N <= 16, so at most 4), plus at most
-# one re-run of the failed jobs of each run that fails, so a flake never blames
-# anyone.
+# fails at H, auto-revert.sh leaves it alone (it never re-runs or reverts a
+# rolling workflow: see "WHY ROLLING RUNS ARE NEVER RE-RUN HERE" there), and
+# this takes it from the FIRST failure. The first probe re-tests H itself: the
+# same workflow is dispatched on main with `bisect_sha=<sha>`, which checks
+# that merge out and runs the full suite on it in a concurrency group of its
+# own, so it never cancels or waits behind a rolling push run. H passing on
+# that probe is a flake: said once, no culprit. H failing again (its second
+# failure) starts the binary search for the first bad merge between the last
+# green push run (G) and H. Each dispatch halves the range, so a range of N
+# merges costs one probe of H plus at most ceil(log2(N)) runs (N <= 16, so at
+# most 5 in all), plus at most one re-run of the failed jobs of each other run
+# that fails, so a flake never blames anyone. A range of one merge is H: the
+# probe alone names it.
 #
 # `decide` prints one line:
-#   dispatch <sha>          test this merge next;
-#   rerun <run-id>          a bisect run failed once: re-run its failed jobs, so
-#                           a flake never counts as a bad merge;
+#   dispatch <sha>          test this merge next (H itself first);
+#   rerun <run-id>          a bisect run below H failed once: re-run its failed
+#                           jobs, so a flake never counts as a bad merge (the
+#                           probe of H is never re-run: it is H's second try);
 #   wait                    a bisect run is still in flight;
 #   culprit <sha> <pr>      the first bad merge: it failed twice, in the same
 #                           job as H, and the merge before it passed;
 #   inconclusive <reason>   stop and say so on the failure-group issue; never
-#                           revert on doubt (flaky, budget-exhausted,
-#                           too-many-merges, workflow-changed, ...);
-#   skip <reason>           nothing to bisect (not a rolling failure, not yet
-#                           re-run, main recovered, a single merge, which
-#                           auto-revert.sh already decides).
-#
-# The re-run that makes attempt 2 is auto-revert.sh's: it re-runs a rolling
-# workflow's first failure before its green-parent rule (ROLLING_WORKFLOWS
-# there must equal rolling-bisect.yml's `workflows:`; test-auto-revert.sh
-# checks it). Without it, `not-yet-re-run` would be the answer forever.
+#                           revert on doubt (head-passed-on-re-test: H was a
+#                           flake; flaky, budget-exhausted, too-many-merges,
+#                           workflow-changed, ...);
+#   skip <reason>           nothing to bisect (not a rolling failure, main
+#                           recovered).
 #
 # facts.json: {origin, workflow, workflowFile, url, event, branch, sha,
 #              conclusion, attempt, good, newerGreen, workflowChanged,
@@ -78,24 +79,25 @@ decide() {
     def out(r): "inconclusive " + r;
     def skip(r): "skip " + r;
     def failed: .conclusion == "failure" or .conclusion == "timed_out";
-    # One point: pending | good | bad | rerun | other | void | ignore.
-    def state($fam):
+    # One point: pending | good | bad | rerun | other | void | ignore. A
+    # failure counts once it has happened twice: a run re-run once, or the
+    # probe of H, which is the second failure of H (its push run was the first).
+    def state($fam; $isH):
       if .status != "completed" then "pending"
       elif .conclusion == "success" then "good"
       elif failed then
-        if (.attempt // 1) < 2 then (if .kind == "bisect" then "rerun" else "ignore" end)
+        if (.attempt // 1) < 2 and ((.kind == "bisect" and $isH) | not) then
+          (if .kind == "bisect" then "rerun" else "ignore" end)
         elif any((.families // [])[]; . as $x | $fam | index($x) != null) then "bad"
         else "other" end
       else "void" end;
     . as $f
     | if .event != "push" or .branch != "main" then skip("not-a-push-to-main")
       elif (failed | not) then skip("not-a-failure")
-      elif (.attempt // 1) < 2 then skip("not-yet-re-run")
       elif .newerGreen == true then skip("main-recovered")
       elif ((.good // "") | test("^[0-9a-f]{40}$") | not) then out("no-green-run-before")
       elif (.range | type) != "array" or (.range | length) == 0 or (.range | last | .sha) != .sha
         then out("range-unreadable")
-      elif (.range | length) == 1 then skip("single-merge")
       elif (.range | length) > $max then out("too-many-merges")
       elif .workflowChanged != false then out("workflow-changed")
       else
@@ -103,13 +105,17 @@ decide() {
         | ($shas | length) as $n
         | ($f.originFamilies // []) as $fam
         | [ $f.points[]? | . as $p | ($shas | index($p.sha)) as $i | select($i != null)
-            | {i: $i, id, kind, st: state($fam)} ] as $pts
+            | {i: $i, id, kind, st: state($fam; $i == $n - 1)} ] as $pts
+        | [$pts[] | select(.i == $n - 1) | .st] as $h
         | ([$pts[] | select(.st == "bad") | .i] + [$n - 1] | min) as $hi
         | ([$pts[] | select(.st == "good") | .i] + [-1] | max) as $lo
-        | ([$pts[] | select(.kind == "bisect") | .i] | unique | length) as $used
+        | ([$pts[] | select(.kind == "bisect" and .i < $n - 1) | .i] | unique | length) as $used
         | (($n | log2 | ceil)) as $budget
         | if any($pts[]; .st == "other") then out("different-failure")
           elif any($pts[]; .st == "void") then out("bisect-run-cancelled")
+          elif any($h[]; . == "good") then out("head-passed-on-re-test")
+          elif any($h[]; . == "bad") | not then
+            (if any($h[]; . == "pending") then "wait" else "dispatch \($f.sha)" end)
           elif $lo >= $hi then out("flaky")
           elif any($pts[]; .st == "rerun") then "rerun \([$pts[] | select(.st == "rerun") | .id] | first)"
           elif any($pts[]; .st == "pending") then "wait"
@@ -197,12 +203,14 @@ facts() {
 
   fam=$(families "$origin" "$wf") || err "could not read the jobs of run $origin"
   # Every completed push run and every bisect run, with its families when it
-  # failed after a re-run (the only failures that count).
+  # failed after a re-run, or when it is a probe of H (H's second failure):
+  # the only failures that count.
   pts='[]'
   local p id
   while IFS= read -r p; do
     [ -n "$p" ] || continue
-    if jq -e '.status == "completed" and (.conclusion == "failure" or .conclusion == "timed_out") and .attempt >= 2' <<<"$p" >/dev/null; then
+    if jq -e --arg h "$h" '.status == "completed" and (.conclusion == "failure" or .conclusion == "timed_out")
+      and (.attempt >= 2 or (.kind == "bisect" and .sha == $h))' <<<"$p" >/dev/null; then
       id=$(jq -r .id <<<"$p")
       if [ "$id" = "$origin" ]; then
         p=$(jq --argjson f "$fam" '. + {families: $f}' <<<"$p")

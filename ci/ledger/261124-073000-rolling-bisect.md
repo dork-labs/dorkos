@@ -32,11 +32,15 @@ changed since G) stops with one note on the failure-group issues and no revert. 
 narrowed to the failed specs: the balanced-shard reporter and the fan-in's every-spec-ran check need
 the whole spec set. The canary collector leaves bisect runs out.
 
-Nov 25 fix: the bisect never started on its first real failure (browser-test at 7878dda), because
-`auto-revert.sh` skipped the one re-run (`red-before-this-merge`: the rolling run's parent had no run
-of its own), so no attempt 2 ever came. `auto-revert.sh` now re-runs a rolling workflow's first
-failure before any other rule; its rolling list is pinned to this workflow's `workflows:` by
-`test-auto-revert.sh`.
+Nov 25 fix: the bisect never started on its first real failure (browser-test at 7878dda). It waited
+for attempt 2 after auto-revert's re-run, and `auto-revert.sh` skipped the re-run
+(`red-before-this-merge`: a rolling run's parent has no run of its own). A re-run would also have
+joined browser-test's `gate` concurrency group, where it cancels or is cancelled by a newer push run.
+Now auto-revert never re-runs a rolling workflow, and this starts on the first failure: its first
+probe re-tests H itself in a dispatched bisect run (its own concurrency group). H passing is a flake
+(`inconclusive head-passed-on-re-test`, said once, no culprit); H failing again is its second failure
+and the binary search proceeds as above, so the budget is one probe of H plus ceil(log2 N), at most 5.
+A range of one merge is now decided here too (auto-revert no longer reverts rolling runs).
 
 Baseline (Nov 24): 0 of the rolling browser-test failures on main name a merge; every one lists the
 whole range.
