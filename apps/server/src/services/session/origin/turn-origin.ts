@@ -16,7 +16,8 @@
  * to be rather than a decision somebody made. Three of the seven call sites
  * passed nothing at all.
  *
- * So the argument is REQUIRED and it is this union. A new surface cannot reach
+ * So the argument is REQUIRED and it is a union, {@link TurnOrigin} (declared in
+ * `@dorkos/shared/turn-port`, re-exported here). A new surface cannot reach
  * the seeding write without naming itself, {@link permissionSeedForOrigin}
  * switches exhaustively over the names, and the `never` at the bottom of that
  * switch means adding a member breaks the build until somebody decides what
@@ -38,161 +39,19 @@
  *
  * @module services/session/origin/turn-origin
  */
+import type { TurnOrigin } from '@dorkos/shared/turn-port';
+
 /**
- * What is starting this session, as the thing that knows describes itself.
+ * What is starting this session. The union and its per-member docs live in
+ * `@dorkos/shared/turn-port`, because the turn port carries an origin as data
+ * (spec `turns-survive-restarts` §3.2); it is re-exported here so every
+ * caller keeps importing it from this path.
  *
- * One member per turn-starting surface in the server. None of them names a
- * permission mode: mapping a surface onto a power level is
- * {@link permissionSeedForOrigin}'s job.
+ * Temporary. A space-side file importing it from here imports turn code, so
+ * each such import counts against the turn port ratchet's baseline (T5,
+ * spec §3.4) and moves to `@dorkos/shared/turn-port` as its caller moves.
  */
-export type TurnOrigin =
-  /**
-   * A person is here, watching. `POST /api/sessions/:id/messages` is the only
-   * caller: a message posted there came from somebody holding that session's
-   * event stream open, so a stop they configured is a stop they can answer.
-   */
-  | { readonly kind: 'interactive' }
-  /**
-   * The owner sent this from their own DorkOS on the web, through the session
-   * relay (`services/core/session-relay/`): a viewer holds the chat's stream
-   * open through the relay, the way `interactive`'s person holds it open here.
-   * The relay is the owner, never an outsider, so the words are the owner's
-   * own typing.
-   */
-  | { readonly kind: 'session-relay' }
-  /**
-   * A room turn — unattended, because a room triggers a turn into the dark.
-   *
-   * `externalAuthor` says whether the message that triggered it came from
-   * somebody off this machine (a bridged Telegram or Slack chat). A bridged
-   * chat is a projection of a relay binding into a room, and a binding carries
-   * its own grant precisely because nobody picked a level for strangers
-   * (DOR-604), so that is the one fact which changes a room's answer.
-   */
-  | { readonly kind: 'room'; readonly externalAuthor: boolean }
-  /**
-   * A scheduled task's run, whether the timer fired it or a person pressed
-   * "Run now".
-   *
-   * Seeded with no mode: a run's power comes off
-   * `pulse_schedules.permission_mode`, decided once at CREATE, and it reaches
-   * the runtime through `ensureSession`/`sendMessage` rather than through this
-   * row. Whether it should also reach the row is DOR-2100, which will add
-   * whatever it needs to read here.
-   */
-  | { readonly kind: 'schedule' }
-  /**
-   * A chat binding created a session for an inbound message — Telegram, Slack,
-   * a webhook. The binding carries the grant a person set on it, and an absent
-   * grant there is NOT consent (DOR-604), so nothing about the operator's own
-   * level may be seeded onto the row.
-   */
-  | { readonly kind: 'relay-binding' }
-  /**
-   * One agent addressed another directly over the relay (a publish to a mesh
-   * endpoint stamped as one of our agents; agents' own send tool for this
-   * retired with spec `spin-off-chats`, which routes them through chats). Nobody created a session for it and nobody is watching it;
-   * like a binding, it carries its own grant and seeds no operator stop.
-   */
-  | { readonly kind: 'agent-dm' }
-  /**
-   * A message on the relay addressed to an agent, from a sender that is NOT one
-   * of our agents: the A2A gateway (another company's agent), an external MCP
-   * client, or a hand-built publish. It arrives on the same agent subject an
-   * agent's own publish does, so the stamped sender is the only fact that
-   * tells it apart, and it gets its own member so that a later change letting
-   * our own agents' DMs follow a configured level can never carry it along
-   * (spec `trusted-by-default-flip` §4).
-   */
-  | { readonly kind: 'outside-sender' }
-  /**
-   * A connector event woke an agent up (`services/connectors/events/`). Same
-   * rule as a binding: the subscription a person approved is the grant, so the
-   * row seeds no operator stop.
-   */
-  | { readonly kind: 'connector-event' }
-  /**
-   * An agent started this session through the `session_start` tool, or by
-   * posting to `POST /api/sessions/:id/messages` with its identity. Nobody
-   * chose a trust stop for it: the operator's stop is a promise about a person
-   * who can answer, and the agent that asked for the session is not that
-   * person. So the row seeds no operator stop. Its power is the mode the tool
-   * grants: the calling chat's own live level or lower, checked against that
-   * ceiling and always written to the row (spec `inherited-start-permission`).
-   *
-   * `launchedBy` names who chose where it runs (DOR-3644): the agent's Mesh id,
-   * its home, or `unidentified`. The binding row keeps it.
-   */
-  | { readonly kind: 'agent-launch'; readonly launchedBy?: string }
-  /**
-   * An extension started work in a new chat (spec `flow-multiproject` §7.7):
-   * a person's click on an outcome button (`api.startWork`), or the
-   * extension's own rules deciding it (`ctx.sessions.start`). Either way the
-   * chat is a new one in the person's own project, doing the person's work, so
-   * it is born with the new-session defaults a person's chat gets: the seam
-   * must not change the permission mode, in either direction.
-   */
-  | { readonly kind: 'extension-start' }
-  /**
-   * An extension's server half sent one of the person's agents a message
-   * (`ctx.agent.send`, DOR-2683), opening the chat it keeps with that agent
-   * on the first one. The words are app data, not a person's request, and
-   * the extension is not the person the operator's stop was set for, so the
-   * row seeds no operator stop — like a connector event waking an agent.
-   * Sent into a chat that already exists, it changes nothing: that row was
-   * bound first and keeps its power.
-   */
-  | { readonly kind: 'extension-message' }
-  /**
-   * Another chat sent this one a message (`chat_send`, a spin-off's report,
-   * spec `spin-off-chats`), or opened an agent's DM chat to send the first.
-   * A chat it OPENS is born at the operator's configured stop, the same as a
-   * room turn by a local author, and every turn a message starts is held to
-   * the sending chat's level by a ceiling the dispatcher reads at launch. So a
-   * message runs at the stricter of the two, and never carries more power than
-   * the chat that sent it. Seeding nothing here used to mean the runtime's
-   * Default, which made that stricter of the two always Default: two Full
-   * autonomy agents talking held each other to asking, and every reply after
-   * the first kept it that way.
-   */
-  | { readonly kind: 'chat-message' }
-  /**
-   * A limited session's work carried over to a new session on another account
-   * (spec `claude-account-fleet` D9), by a person or by the account advisor.
-   * The new session's settings row is copied from the source session before
-   * the send, and that copy is the power: this origin adds none.
-   */
-  | { readonly kind: 'account-handoff' }
-  /**
-   * A limited session's account reset and core resumed the SAME session by
-   * itself (spec `claude-account-fleet` D9 "Wait, then resume by itself"). The
-   * session is already bound, so its settings row decides its power: this
-   * origin adds none.
-   */
-  | { readonly kind: 'account-resume' }
-  /**
-   * An agent's own heartbeat (spec `heartbeats` §7.2): a turn the beat runner
-   * starts in the agent's beat chat for the day, when a beat found work.
-   * Nobody started it by typing, and nobody is waiting on it, the same as a
-   * room turn by a local author: trusted by default, at the operator's
-   * configured stop. The origin seeds the chat's row once; whether a LATER turn
-   * in that chat is a beat is the live registry's question
-   * (`services/heartbeats/beat-turns.ts`), so a person typing in the beat chat
-   * is an ordinary turn.
-   */
-  | { readonly kind: 'heartbeat' }
-  /**
-   * The in-process end-to-end harness, reachable only on a server started with
-   * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
-   * itself.
-   *
-   * It is a named member rather than a borrowed one so no production surface's
-   * power decision has to describe a test. Exactly one production file uses
-   * it, and `__tests__/turn-origin-call-sites.test.ts` is what keeps that
-   * true — a unit test that just needs a session bound names the surface it is
-   * standing in for instead.
-   */
-  | { readonly kind: 'test-harness' };
+export type { TurnOrigin };
 
 /**
  * How much power a new session row gets, and WHEN, given what is starting it.
