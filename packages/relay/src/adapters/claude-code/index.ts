@@ -15,6 +15,8 @@ export type {
   TurnDeskCheck,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
+  ChatPlaceRecall,
+  RecalledChatPlace,
   TurnStartNote,
   TurnExecutionSettings,
   LateFollowEnd,

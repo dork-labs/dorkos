@@ -54,6 +54,7 @@ import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime
 import { AdapterError } from './adapter-error.js';
 import { env } from '../../env.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
+import { heldChatPlace } from '../session/launch/resolve-chat-place.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
@@ -407,6 +408,10 @@ export async function createAdapter(
             agentDirectory
           );
         },
+        // A relay chat that has already run keeps its recorded folder and agent
+        // on every turn, after a restart too (DOR-5245). A room-bound chat's
+        // room folders are not read here.
+        recallChatPlace: ({ sessionKey }) => heldChatPlace(sessionKey),
         // Every approval that arrives on the relay bus is checked here, before
         // the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,

@@ -15,6 +15,7 @@ import {
   type SessionBirthWriteContext,
 } from '../../core/runtime-seam/session-birth-write.js';
 import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
+import { recordedAgentOf } from './session-tool-warnings.js';
 import {
   resolveSessionCwdWithRoom,
   type ResolvedSessionPlace,
@@ -160,6 +161,46 @@ export async function resolveChatPlace(
     forAgent: resolved.forAgent,
     additionalDirectories: resolved.additionalDirectories,
     session,
+  };
+}
+
+/** Where a chat that has run before stands and as whom. */
+export interface HeldChatPlace {
+  /** The chat's recorded folder; absent leaves it to the runtime. */
+  cwd?: string;
+  /** The agent recorded when the chat began, when there is one. */
+  forAgent?: string;
+}
+
+/**
+ * Where a chat something already holds stands, and as whom: the folder its
+ * runtime records ({@link resolveChatPlace}), else its recorded agent's home,
+ * and the agent recorded when it began. `null` when nothing holds the chat yet,
+ * so it is a new chat. No room binding is read, so a room-bound chat gets no
+ * room folders here. A failed agent read keeps the folder. A relay turn that
+ * names no folder of its own reads its chat's place here (DOR-5245).
+ *
+ * @param sessionId - The chat.
+ * @param overrides - Seams for place resolution, for a test.
+ */
+export async function heldChatPlace(
+  sessionId: string,
+  overrides: Partial<ResolveChatPlaceDeps> = {}
+): Promise<HeldChatPlace | null> {
+  const deps = chatPlaceDeps(overrides);
+  const session = await deps.resolveSession(sessionId);
+  if (!session.bound) return null;
+  const recorded = (await recordedAgentOf(sessionId)) ?? undefined;
+  const resolved = await resolveChatPlace(
+    { sessionId, ...(recorded !== undefined ? { agentPath: recorded } : {}) },
+    { ...overrides, resolveSession: async () => session }
+  );
+  // Only a room binding refuses a place, and none is passed here; the chat is still held.
+  if ('refusal' in resolved) return {};
+  const forAgent = resolved.forAgent ?? recorded;
+  return {
+    ...(resolved.cwd !== undefined ? { cwd: resolved.cwd } : {}),
+    ...(forAgent !== undefined ? { forAgent } : {}),
   };
 }
 

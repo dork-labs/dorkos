@@ -28,14 +28,15 @@ import { formatPromptWithContext } from './relay-context-block.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { buildResponseFormatBlock, type ResponseContext } from './response-format.js';
 import { relayMessageStarter } from './turn-starter.js';
+import { followLateResults, QUERY_INBOX_PREFIX } from './late-results.js';
 import { isTurnShapingSender, turnPowerOptions } from './turn-shaping-sender.js';
-import { turnPlaceOf } from './turn-place.js';
+import { resolveTurnPlace } from './turn-place.js';
 import { requestedAccountOf, resolveTurnSettings } from './turn-settings.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
+  ChatPlaceRecall,
   ExecutionSettingsResolver,
-  LateFollowEnd,
   LateTurnSource,
   SessionRuntimeBinder,
   TurnStartNote,
@@ -103,6 +104,10 @@ export interface AgentHandlerDeps {
    * session the cockpit binds.
    */
   bindSessionRuntime?: SessionRuntimeBinder;
+  /** Where a new chat the server placed records its runtime and agent, on any subject. */
+  bindNewChat?: SessionRuntimeBinder;
+  /** Where a relay chat that has run before stands — see {@link ChatPlaceRecall}. */
+  recallChatPlace?: ChatPlaceRecall;
   /** Told before the turn starts — see {@link TurnStartNote}. */
   noteTurnStart?: TurnStartNote;
   /** Whether a bound chat's unproven sender marks the turn (DOR-3858's boot flag). */
@@ -252,76 +257,6 @@ function abortText(signal: AbortSignal, started: boolean): string | undefined {
     : 'The message expired before the agent could start';
 }
 
-/** The inbox `relay_send_and_wait` reads, which it takes down once answered. */
-const QUERY_INBOX_PREFIX = 'relay.inbox.query.';
-
-/**
- * Publish each turn the agent starts on its own, after this message's turn
- * ended, to the same inbox as a result marked `late` (DOR-2717).
- *
- * Registered in `lateFollowers` under the conversation's stable scope — not the
- * session key, which a first turn renames — so the next message to that
- * conversation ends it. The host also ends it: after a turn the agent finishes
- * holding no more work (`final`), when its window passes, or when anyone gives
- * the session new work. Every ending but `final` publishes one closing result
- * marked `ended` — never `error`, which keeps meaning "the turn failed" — so a
- * caller told `continuing` is never left polling for something that will not
- * come. Publishes are chained, so the inbox reads them in the order they
- * happened.
- *
- * @param deps - The handler's dependencies, for the follower map and runtime type
- * @param lateTurns - Where the later turns come from
- * @param envelope - The message whose inbox hears the later turns
- * @param follow - The session the turn ran under, the conversation's scope, and
- *   the dispatch mark read when the turn ended
- * @param relay - The publisher
- * @param log - Where a failed publish is reported
- */
-function followLateResults(
-  deps: AgentHandlerDeps,
-  lateTurns: LateTurnSource,
-  envelope: RelayEnvelope,
-  follow: { sessionKey: string; scope: string; sinceMark: number | undefined },
-  relay: RelayPublisher,
-  log: Pick<Console, 'warn'>
-): void {
-  const { sessionKey, scope, sinceMark } = follow;
-  const followers = deps.lateFollowers;
-  let published: Promise<void> = Promise.resolve();
-  const publishInOrder = (
-    text: string,
-    error: string | undefined,
-    marks: { continuing?: boolean; ended?: Exclude<LateFollowEnd, 'final'> }
-  ): void => {
-    published = published
-      .then(() =>
-        publishAgentResult(envelope, text, sessionKey, relay, error, { late: true, ...marks })
-      )
-      .catch((err: unknown) => {
-        log.warn(`[CCA] could not publish a late result for ${sessionKey}:`, describeError(err));
-      });
-  };
-  // Assigned once `follow` has returned. `onEnd` CAN run inside `follow` — a
-  // stale mark ends the follow at once — which is what `ended` records.
-  let stopFollowing: () => void = () => {};
-  let ended = false;
-  const unfollow = lateTurns.follow({
-    runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
-    sessionKey,
-    ...(sinceMark !== undefined ? { sinceMark } : {}),
-    onTurn: (turn) => publishInOrder(turn.text, turn.error, { continuing: turn.continuing }),
-    onEnd: (reason) => {
-      ended = true;
-      if (followers?.get(scope) === stopFollowing) followers.delete(scope);
-      if (reason !== 'final') publishInOrder('', undefined, { ended: reason });
-    },
-  });
-  stopFollowing = unfollow;
-  // A follow the host ended inside `follow` itself (work already reached the
-  // session) is over; registering it would leave a dead entry behind.
-  if (!ended) followers?.set(scope, stopFollowing);
-}
-
 /** Why a turn was stopped before it started: its folder is not its agent's desk. */
 class DeskRefusal extends Error {
   constructor(message: string) {
@@ -441,18 +376,23 @@ export async function handleAgentMessage(
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
   // Where the turn stands and as whom (`turn-place.ts`): the sender's folder >
-  // the Mesh agent's home > the server's place for a new chat > deferred. The
+  // the Mesh agent's home > the server's place for a new chat > the chat's own
+  // recorded place > deferred. The
   // agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2 row
   // 12) rides the same payload as `cwd`, so it can only NARROW what a forged
   // payload could claim: a `cwd` resolving to another agent's home is refused.
-  const place = turnPlaceOf({
-    shaping,
-    payload: envelope.payload,
-    from: envelope.from,
-    sessionKey: identity.key,
-    started: persistedSdkSessionId !== undefined,
-    contextDirectory: context?.agent?.directory,
-  });
+  const place = await resolveTurnPlace(
+    {
+      shaping,
+      payload: envelope.payload,
+      from: envelope.from,
+      sessionKey: identity.key,
+      persisted: persistedSdkSessionId !== undefined,
+      contextDirectory: context?.agent?.directory,
+    },
+    deps,
+    log
+  );
   const { senderCwd: payloadCwd, cwd: effectiveCwd, forAgent: turnForAgent } = place;
   // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
   // off the relay bus, so the field can be absent for reasons the binding never
@@ -534,6 +474,11 @@ export async function handleAgentMessage(
   // folder. Refused through the same door as an expired message: nothing starts,
   // and the reply reader still gets its terminal error. A check that throws
   // refuses too — a folder nobody could vouch for is not a desk.
+  // A place the turn may not take (`turn-place.ts`) is refused through the same door.
+  if (place.refusal !== undefined && !controller.signal.aborted) {
+    log.warn(`[CCA] refusing ${envelope.id} for ${agentId}: ${place.refusal}`);
+    controller.abort(new DeskRefusal(place.refusal));
+  }
   if (payloadCwd !== undefined && deps.checkTurnDesk && !controller.signal.aborted) {
     const refusal = await deps
       .checkTurnDesk({
@@ -897,10 +842,13 @@ export async function handleAgentMessage(
   //   out. A `SQLITE_BUSY` here must not turn an answered turn into a failed
   //   delivery — what is lost is one attribution row, which the next turn on
   //   this conversation writes again.
-  // With no agent the relay resolved, there is nobody to record (DOR-5057).
-  if (deps.bindSessionRuntime && contentEventCount > 0 && agentManifestDir) {
+  // With no agent the relay resolved, there is nobody to record (DOR-5057). A
+  // new chat the server placed records its agent whatever the subject's shape,
+  // so its later turns find their folder and agent again (DOR-5245).
+  const bind = (place.newChat ? deps.bindNewChat : undefined) ?? deps.bindSessionRuntime;
+  if (bind && contentEventCount > 0 && agentManifestDir) {
     try {
-      await deps.bindSessionRuntime({
+      await bind({
         sessionId: durableSessionKey,
         runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
         agentDirectory: agentManifestDir,
