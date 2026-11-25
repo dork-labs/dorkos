@@ -646,6 +646,7 @@ contractSuite('mesh, agent and discovery groups', [
     expect: {
       status: 403,
       headers: PROBLEM_TYPE,
+      // The capability mount's person bar answers it, with the tool agents use (DOR-4978).
       body: problemBody('person_only', {
         detail: 'Agents change their own promises with todo_promise_update.',
       }),

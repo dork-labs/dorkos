@@ -211,9 +211,14 @@ export const todoViewDomain: CapabilityDomain = {
   ],
 };
 
-/** Whether the caller owns this install; an agent, or a call with no HTTP request, never does. */
-function callerIsOwner(
-  deps: NonNullable<CapabilityDeps['todoPromiseHttpDeps']>,
+/**
+ * Whether the caller owns this install; an agent, or a call with no HTTP request, never does.
+ *
+ * @param deps - The owner checks.
+ * @param context - The call.
+ */
+export function callerIsOwner(
+  deps: Pick<TodoPromiseOwnerChecks, 'isOwner'>,
   context: CapabilityHandlerContext
 ): context is CapabilityHandlerContext & { request: CapabilityRequestFacts } {
   if (context.agentIdentityPresented || context.identity) return false;
@@ -223,8 +228,12 @@ function callerIsOwner(
 /**
  * Mark a calling agent's turn when what it gets back holds a stranger's words (DOR-4666), only
  * when there is a turn to mark: a call with neither a session nor a server principal has none.
+ *
+ * @param context - The call.
+ * @param ids - The to-dos handed back.
+ * @param carriesOutsideWords - Whether a to-do's stored words came from outside the team.
  */
-function markIfInTurn(
+export function markIfInTurn(
   context: CapabilityHandlerContext,
   ids: readonly string[],
   carriesOutsideWords: ((id: string) => boolean) | undefined

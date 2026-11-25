@@ -178,7 +178,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'To-dos',
     can: "promises and to-dos: add, assign, read the team's, mark kept or dropped.",
-    // Also the app's to-do reads and a person's "add a promise" (DOR-4978).
+    // Also the app's to-do reads and a person's to-do writes, "add a promise" among them
+    // (DOR-4978): the writes are person-only, so no agent can call them.
     covers: ['todo_promises.', 'todos.'],
     areas: ['todos'],
   },

@@ -66,8 +66,6 @@ import { createCommunityConnectionsRoutes } from '../routes/community-connection
 import configRoutes from '../routes/config.js';
 import { createConfigBackupsRoutes } from '../routes/config-backups.js';
 import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
-import { createTodoPromisesRoutes, type TodoPromiseRouterDeps } from '../routes/todo-promises.js';
-import { createTodosRoutes, type TodoRouterDeps } from '../routes/todos.js';
 import { createDebugRoutes, type DebugDeps } from '../routes/debug.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
@@ -241,10 +239,6 @@ export interface ComposedGroupDeps {
   discovery?: MeshCore;
   /** Where a managed MCP server's sign-in lands (`/api/agents/mcp-oauth`). */
   mcpOAuth?: AgentMcpOAuthService;
-  /** A person changing what agents promised (`PATCH` and `confirm` under `/api/todo-promises`). */
-  todoPromises?: TodoPromiseRouterDeps;
-  /** To-dos (`/api/todos`), present only behind `DORKOS_TODOS_ENABLED` (DOR-3088). */
-  todos?: TodoRouterDeps;
   /**
    * Scheduled tasks and their runs (`/api/tasks`). Only handed over when Tasks
    * started (`startup/tasks.ts`).
@@ -547,9 +541,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
   // What the app's `/signed-in` page reads after any sign-in's callback.
   app.route('/api/sign-in-landings', createSignInLandingRoutes());
-  if (deps.todos) app.route('/api/todos', createTodosRoutes(deps.todos));
-  if (deps.todoPromises)
-    app.route('/api/todo-promises', createTodoPromisesRoutes(deps.todoPromises));
   if (deps.heartbeat) {
     app.route('/api/agents/:id/heartbeat', createHeartbeatRoutes(deps.heartbeat));
   }

@@ -63,6 +63,23 @@ export interface CapabilityDeps {
 }
 
 /**
+ * How a capability may run from a sign-in on the network (ADR 261125-114705,
+ * decision 3):
+ *
+ * - `lowers-power`: the action only lowers an agent's power, like stopping it,
+ *   so the stop button works from any device. Never on one that raises it:
+ *   `agent.resume` stays refused.
+ * - `person-held`: a person's own action they may take from another device on
+ *   purpose. Only a person-only capability (`surfaces.http.audience: 'person'`)
+ *   may declare it, and the mount holds it to the Wi-Fi hold: from a device
+ *   the owner did not let run agents, the request never proves the owner
+ *   (`context.request.ownerProven` is false) and says so
+ *   (`context.request.heldWifiOwner`), so the handler can give no more than its
+ *   no-owner allowance.
+ */
+export type CapabilityWifiMode = 'lowers-power' | 'person-held';
+
+/**
  * A capability declared by a service domain: the single source of truth every
  * agent-facing surface is generated from.
  *
@@ -335,14 +352,14 @@ export interface CapabilityDefinition<
     context: CapabilityInvocationContext
   ) => Promise<CapabilityPreflightResult>;
   /**
-   * Whether a person signed in over Wi-Fi may run this `act` or `destructive`
-   * capability over HTTP. A Wi-Fi sign-in reads, and acts at the computer
-   * (DOR-2969); set this only on an action that lowers an agent's power, like
-   * stopping it, so the stop button works from any device. Never on one that
-   * raises it: `agent.resume` stays refused. The registry allows it only on
-   * the ids in `WIFI_ALLOWED_CAPABILITY_IDS`.
+   * Whether a sign-in on the network (Wi-Fi) may run this `act` or
+   * `destructive` capability over HTTP, and on what terms. A Wi-Fi sign-in
+   * reads, and acts at the computer (DOR-2969), unless the capability declares
+   * a mode (ADR 261125-114705, decision 3); see {@link CapabilityWifiMode}.
+   * The registry allows each mode only on the ids `WIFI_MODE_CAPABILITY_IDS`
+   * lists for it.
    */
-  allowFromWifi?: true;
+  wifi?: CapabilityWifiMode;
   /**
    * A cancel window this call may wait out INSTEAD of the approval card (spec
    * `trusted-by-default-flip` §5.6). Only `connectors.execute_destructive`
