@@ -141,6 +141,19 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     detail: 'This agent isn’t given that action. A person gives it on the Connections page.',
   },
   CONNECTOR_AGENT_NOT_OWNED: { code: 'forbidden', detail: 'That agent isn’t one of yours.' },
+  // The account is paused, signed out or waiting on its owner: not the caller's input.
+  CONNECTOR_NOT_EXECUTABLE: {
+    code: 'connection_not_ready',
+    detail: 'This connection isn’t ready. Check it on the Connections page.',
+  },
+  CONNECTOR_SIGN_IN_ENDED: {
+    code: 'connection_not_ready',
+    detail: 'This connection’s sign-in ended. Reconnect it on the Connections page.',
+  },
+  CONNECTOR_MANAGED_AUTHORITY_PENDING: {
+    code: 'connection_not_ready',
+    detail: 'This connection is waiting on its owner. Nothing ran.',
+  },
   CONNECTOR_OWNER_MISMATCH: {
     code: 'not_found',
     detail: 'That connected app wasn’t found. Choose one this agent can use.',
@@ -290,8 +303,13 @@ const GATE_REFUSALS: Readonly<Record<TierDeniedReason, Refusal>> = {
  */
 export function gateRefusalProblem(payload: TierDeniedPayload): Problem {
   const refusal = GATE_REFUSALS[payload.reason];
+  // A block a person can lift says how to ask: the agent's next step (DOR-4355).
+  const detail =
+    payload.reason === 'permission_blocked' && payload.approvable
+      ? 'Blocked here. Ask a person for it with the request_permission tool.'
+      : refusal.detail;
   return problemBody(refusal.code, {
-    detail: refusal.detail,
+    detail,
     status: 403,
     extensions: {
       capabilityId: payload.capabilityId,

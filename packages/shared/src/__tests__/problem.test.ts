@@ -64,6 +64,7 @@ describe('PROBLEM_CODE_LIST', () => {
   it('holds the codes chats, agents, rooms and work branch on, at their statuses', () => {
     const expected: ReadonlyArray<readonly [string, number]> = [
       ['agent_paused', 409],
+      ['connection_not_ready', 409],
       ['room_session_moved', 409],
       ['desk_not_own', 409],
       ['protected_folder', 403],
