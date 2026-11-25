@@ -96,6 +96,8 @@ export const REPO_WIDE_SUITES = [
   'release/__tests__/release-commit-cli.test.ts',
   'release/__tests__/release-commit-git-data.test.ts',
   'release/__tests__/release-commit.test.ts',
+  // Reads the server's agent-release-notes.ts: a change to its shape can turn it red.
+  'release/__tests__/stamp-release-notes.test.ts',
 ] as const;
 
 /**

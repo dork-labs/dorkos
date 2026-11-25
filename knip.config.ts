@@ -51,6 +51,8 @@ const config: KnipConfig = {
         // The daily release builds its release commit with this (DOR-5123); ci-steward's
         // daily-release.yml will run it, and until then it is run by hand.
         'scripts/release/release-commit.ts',
+        // The back-merge stamps the shipped agent release notes with this (DOR-5123).
+        'scripts/release/stamp-release-notes.ts',
       ],
     },
     'apps/client': {

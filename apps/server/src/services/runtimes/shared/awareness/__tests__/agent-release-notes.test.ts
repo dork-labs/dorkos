@@ -28,6 +28,17 @@ describe('release selection', () => {
     expect(notesSince('invalid', '0.10.0', notes)).toEqual([]);
   });
 
+  // DOR-5123: a daily release can't edit code, so `next` takes the version
+  // the build was made as, and stays silent in a build that has none.
+  it('reads next as the version the build was made as', () => {
+    const notes = ['0.10.0', 'next'].map(note);
+    expect(notesSince('0.10.0', '0.11.0', notes, '0.11.0')).toEqual([notes[1]]);
+    expect(notesSince('0.9.0', '0.11.0', notes, '0.11.0')).toEqual(notes);
+    expect(notesSince('0.11.0', '0.12.0', notes, '0.11.0')).toEqual([]);
+    expect(notesSince('0.10.0', '0.11.0', notes, null)).toEqual([]);
+    expect(notesSince('0.10.0', '0.11.0', notes, 'not-a-version')).toEqual([]);
+  });
+
   it('formats permission names and static gates without claiming a live level', () => {
     expect(
       releaseNoteLine({ ...note('next'), areas: ['packages'], gate: 'adding always asks' })
