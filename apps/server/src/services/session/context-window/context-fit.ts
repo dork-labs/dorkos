@@ -35,7 +35,7 @@
  * Token counts here are estimates at {@link CHARS_PER_TOKEN} characters each,
  * the same heuristic Doe's own compaction uses, so the two agree on what fits.
  *
- * @module services/runtimes/shared/context-fit
+ * @module services/session/context-window/context-fit
  */
 
 /**

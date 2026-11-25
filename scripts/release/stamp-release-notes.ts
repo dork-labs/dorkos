@@ -10,7 +10,7 @@
  *
  *   node scripts/release/stamp-release-notes.ts --version 0.142.0 \
  *     --released <the notes file as it was at the release point> \
- *     --file apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts
+ *     --file apps/server/src/services/session/new-since/agent-release-notes.ts
  *
  * It reads both files as text and runs nothing from either. `--file` is
  * rewritten in place. Notes are matched by `name`.

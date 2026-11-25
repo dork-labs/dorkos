@@ -17,7 +17,7 @@ import {
   sessionScope,
 } from '../../canvas/index.js';
 import { registerPreGateRefusal } from '../../core/capabilities/pre-gate-refusals.js';
-import { protectedSourceRefusal } from '../../runtimes/shared/policy/protected-file-guard.js';
+import { protectedSourceRefusal } from '../../core/protected-paths/protected-file-guard.js';
 import { uiTurnFacts } from './ui-turn-facts.js';
 
 /** Register the window seat's early checks. Idempotent. */

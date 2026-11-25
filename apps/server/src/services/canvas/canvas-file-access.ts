@@ -30,7 +30,7 @@ import {
   protectedPathRefusal,
   protectedSourceRefusal,
   type ProtectedFileRefusal,
-} from '../runtimes/shared/policy/protected-file-guard.js';
+} from '../core/protected-paths/protected-file-guard.js';
 import { contentFor } from './canvas-service.js';
 import { canvasSourcePath } from './document-key.js';
 

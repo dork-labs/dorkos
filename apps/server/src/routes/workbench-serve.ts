@@ -40,7 +40,7 @@ import {
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { logger } from '../lib/logger.js';
-import { protectedPathRefusal } from '../services/runtimes/shared/policy/protected-file-guard.js';
+import { protectedPathRefusal } from '../services/core/protected-paths/protected-file-guard.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
 import { WORKBENCH } from '../config/constants.js';
 import { injectFrameScripts } from '../services/workbench-serve/frame-inject.js';

@@ -24,19 +24,22 @@ const EVERY_FORM = [
   "import type { WorkLink } from '../../work-graph/work-link-store.js';",
   "export { recordChatFork } from '../../work-graph';",
   "export const later = () => import('../../work-graph/index.js');",
+  "export type Inline = import('../../work-graph/work-link-store.js').WorkLink;",
+  "import required = require('../../work-graph/index.js');",
   'export type { WorkLink };',
   'void recordChatRekey;',
+  'void required;',
 ].join('\n');
 
 describe('the work graph boundary', () => {
   it('refuses every import form from session code, its tests included', async () => {
     // Purpose: fails if turn code could reach the work graph by a side-effect, named,
-    // type-only, re-export or dynamic import.
+    // type-only, re-export, dynamic, inline type or `import = require` import.
     for (const path of [
       'src/services/session/turn-identity/example.ts',
       'src/services/session/__tests__/example.test.ts',
     ])
-      expect(await boundary(path, EVERY_FORM)).toHaveLength(5);
+      expect(await boundary(path, EVERY_FORM)).toHaveLength(7);
   });
 
   it('refuses it from runtime code', async () => {

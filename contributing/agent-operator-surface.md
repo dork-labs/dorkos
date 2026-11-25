@@ -297,7 +297,7 @@ Redaction, confirmation-token flows, and identity guards live inside `invoke` (o
 
 ## The awareness surface
 
-**Upgrade facts.** Add agent-facing changes to `runtimes/shared/awareness/agent-release-notes.ts`
+**Upgrade facts.** Add agent-facing changes to `session/new-since/agent-release-notes.ts`
 with `version: 'next'`, capability/tool ids in `covers`, and their permission areas or a static gate.
 Keep the rendered line under 160 characters. Release stamps the version; unstamped entries never render.
 The first ordinary agent turn after an upgrade takes at most eight facts in `<new_since_last_run>`,

@@ -949,7 +949,7 @@ export type RuntimeMediaOutput = 'none' | 'attachments';
  * Each is a promise about every turn the runtime runs:
  *
  * - `protectedPaths` — the agent's file tools refuse the shared protected list
- *   (`runtimes/shared/policy/protected-paths.ts`): its protected reads at every
+ *   (`core/protected-paths/protected-paths.ts`): its protected reads at every
  *   level, its protected writes below Full. And below Full, a shell command that
  *   reads a protected file goes to a person first. A runtime whose shell reads
  *   them unasked below Full does not have this guard.

@@ -17,12 +17,10 @@
  *
  * @module services/session/fleet/carry-over-summary
  */
-import path from 'node:path';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
-import { projectSlug } from '../../runtimes/claude-code/sessions/project-slug.js';
 
 /** How many recent user and assistant messages the summary keeps. */
 export const RECENT_MESSAGE_COUNT = 6;
@@ -247,22 +245,6 @@ export async function runGitForSummary(cwd: string, args: string[]): Promise<str
   } catch {
     return undefined;
   }
-}
-
-/**
- * Where a Claude Code session's transcript lives: `<account>/projects/<slug>/<id>.jsonl`.
- *
- * @param accountPath - The account folder the session ran in, or `null`.
- * @param cwd - The session's folder.
- * @param sessionId - The session's id.
- */
-export function claudeTranscriptPath(
-  accountPath: string | null,
-  cwd: string,
-  sessionId: string
-): string | null {
-  if (!accountPath) return null;
-  return path.join(accountPath, 'projects', projectSlug(cwd), `${sessionId}.jsonl`);
 }
 
 /**

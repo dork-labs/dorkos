@@ -7,7 +7,7 @@ import { statSync } from 'node:fs';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { getSessionEventStore, peekProjector } from '../../session/session-state-projector.js';
 import { latestClaudeRoomServerFailure } from '../../session/history/latest-room-failure.js';
-import { claudeTranscriptPath } from '../../session/fleet/carry-over-summary.js';
+import { claudeTranscriptPath } from '../../runtimes/claude-code/sessions/project-slug.js';
 import { isTurnInFlight } from '../../session/message-dispatcher/turn-probes.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';

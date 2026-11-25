@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { projectClaudeCodeLines } from '../projections/claude-code.js';
-import { parseTranscript } from '../../runtimes/claude-code/sessions/transcript-parser.js';
+import { parseTranscript } from '../../runtimes/claude-code/sessions/__tests__/parse-transcript.js';
 
 /**
  * The one property a wrong landing would break, checked against the real

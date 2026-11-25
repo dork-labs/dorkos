@@ -66,6 +66,7 @@ import {
   projectRefFor,
   readEligibilityRules,
   refusalFor,
+  type LaunchAccountResolution,
 } from '../../core/usage/account-eligibility.js';
 import { launchFallbackOrder, mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
@@ -368,17 +369,6 @@ export function machineDefaultClaudeRoot(config: ConfigReader = configManager): 
   }
   return claudeDefaultAccountFolder({ runtimes: { claudeCode } }).path;
 }
-
-/** The answer to {@link resolveLaunchAccountRoot}. */
-export type LaunchAccountResolution =
-  | {
-      ok: true;
-      /** The absolute Claude config directory this launch runs and bills on. */
-      root: string;
-      /** The account that folder is: a registry id, or `default` for Main. */
-      accountId: string;
-    }
-  | { ok: false; error: AccountNotAllowedError };
 
 /**
  * Resolve the Claude root ONE launch runs and bills on, through the full ladder

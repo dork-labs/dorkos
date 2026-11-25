@@ -23,7 +23,7 @@ import {
   type ChatMessageKind,
 } from '@dorkos/shared/chat-messages';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { fenceUntrustedBlock, mintFenceNonce } from '../../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock, mintFenceNonce } from '../../core/untrusted-text/untrusted-fence.js';
 
 /** Who a message is from, as the fence names them. */
 export interface ChatMessageFenceSender {

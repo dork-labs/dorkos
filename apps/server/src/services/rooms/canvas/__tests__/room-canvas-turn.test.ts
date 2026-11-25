@@ -33,6 +33,11 @@ import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomTurnRequest } from '../../room-trigger.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /** The runtime capabilities the stub registry declares. Enough to take a turn. */
 const DECLARED_CAPABILITIES = {

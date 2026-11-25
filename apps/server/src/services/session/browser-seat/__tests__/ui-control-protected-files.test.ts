@@ -32,6 +32,11 @@ import { initBoundary } from '../../../../lib/boundary.js';
 import { controlUi, type UiCallerContext } from '../ui-control.js';
 import { readSessionCanvasDocument } from '../read-canvas-document.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const reach = vi.hoisted(() => ({ emitted: [] as RawSessionEvent[] }));
 vi.mock('../session-reach.js', () => ({

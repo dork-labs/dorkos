@@ -42,7 +42,7 @@
  * belongs outside, in the caller's own region, where this function cannot put
  * it.
  *
- * @module server/services/runtimes/shared/untrusted-fence
+ * @module server/services/core/untrusted-text/untrusted-fence
  */
 import { randomBytes } from 'node:crypto';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';

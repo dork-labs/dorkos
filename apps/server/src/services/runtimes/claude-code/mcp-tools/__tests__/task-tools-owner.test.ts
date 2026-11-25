@@ -26,6 +26,11 @@ import type { AgentIdentity } from '../../../../core/agent-identity/agent-identi
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { McpToolDeps } from '../types.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 interface SessionTool {
   name: string;

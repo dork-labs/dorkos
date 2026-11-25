@@ -41,7 +41,7 @@ import {
   codexProtectedConfig,
 } from '../../runtimes/codex/policy/protected-profile.js';
 import { refuseMissingWritableTargets } from '../../runtimes/codex/policy/writable-missing-targets.js';
-import { isProtectedPath } from '../../runtimes/shared/policy/protected-path-check.js';
+import { isProtectedPath } from '../protected-paths/protected-path-check.js';
 import { initBoundary } from '../../../lib/boundary.js';
 import { resolveAgentsDirectory, resolveAgentsHome } from '../../../lib/agents-home.js';
 

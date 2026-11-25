@@ -11,7 +11,7 @@ import {
 
 const REAL = path.resolve(
   import.meta.dirname,
-  '../../../apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts'
+  '../../../apps/server/src/services/session/new-since/agent-release-notes.ts'
 );
 
 /** A notes file with one note per `[name, version]`. */

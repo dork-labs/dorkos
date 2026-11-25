@@ -370,7 +370,7 @@ known_reference() {
     apps/e2e/capture/*'|apps/site') return 0 ;;
     # '@dorkos/desktop' here is the name of a user-data folder the server
     # protects, not an import.
-    'apps/server/src/services/runtimes/shared/policy/protected-paths.ts|apps/desktop') return 0 ;;
+    'apps/server/src/services/core/protected-paths/protected-paths.ts|apps/desktop') return 0 ;;
   esac
   return 1
 }

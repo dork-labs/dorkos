@@ -431,7 +431,7 @@ describe('the release-branch-contents self-check', () => {
     const tampered = [
       ...plan.changes,
       {
-        path: 'apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts',
+        path: 'apps/server/src/services/session/new-since/agent-release-notes.ts',
         status: 'M' as const,
         before: "version: 'next'",
         after: `version: '${plan.version}'`,

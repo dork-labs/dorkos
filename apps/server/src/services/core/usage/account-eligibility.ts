@@ -465,6 +465,21 @@ export function accountDisplayName(config: EligibilityConfigReader, accountId: s
 }
 
 /**
+ * Which account ONE launch runs and bills on, or why none may: the answer of
+ * Claude Code's account ladder (`resolveLaunchAccountRoot`). Here, beside the
+ * refusal it carries, so turn code can name it without importing a runtime.
+ */
+export type LaunchAccountResolution =
+  | {
+      ok: true;
+      /** The absolute account folder this launch runs and bills on. */
+      root: string;
+      /** The account that folder is: a registry id, or `default` for Main. */
+      accountId: string;
+    }
+  | { ok: false; error: AccountNotAllowedError };
+
+/**
  * A launch refused because the account may not work in the project, with the
  * sentence to show (spec `flow-multiproject` §8.3). Routes answer `409` with
  * {@link AccountNotAllowedError.toBody}.

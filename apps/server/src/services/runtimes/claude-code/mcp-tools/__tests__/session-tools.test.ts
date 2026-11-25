@@ -210,6 +210,11 @@ import {
   UNKNOWN_CALLER_MESSAGE,
   createSessionStartHandler,
 } from '../session-tools.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /**
  * The ladder's folder for a launch in no project (where no account rule

@@ -59,6 +59,8 @@ interface BootOptions {
 /** Boot one server process over the database file; nothing in memory survives from the last. */
 async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
   vi.resetModules();
+  // What the server's startup registers (DOR-4928), in this fresh module graph.
+  (await import('../../../../startup/register-claude-code-facts.js')).registerClaudeCodeFacts();
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
   const { sdkSimpleText, wrapSdkQuery } = await import('./sdk-scenarios.js');
   const db = await import('@dorkos/db');
@@ -91,7 +93,7 @@ async function boot(p: Paths, ids: Ids, options: BootOptions = {}) {
     await import('../../../session/session-state-projector.js');
   const { setRoomSeatReports, disposeRoomSeatMessages } =
     await import('../../../session/chat-messages/chat-message-current.js');
-  const { claudeTranscriptPath } = await import('../../../session/fleet/carry-over-summary.js');
+  const { claudeTranscriptPath } = await import('../sessions/project-slug.js');
   const { HandoffTerminalSource } =
     await import('../../../rooms/handoff/handoff-terminal-source.js');
   const { HandoffTerminalNotices } =

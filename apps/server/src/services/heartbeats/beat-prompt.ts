@@ -19,7 +19,7 @@ import type { BeatKind } from '@dorkos/shared/heartbeat-schemas';
 import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { Change } from './gatherers/index.js';
 import { END_BEAT_TOOL } from './heartbeat-capabilities.js';
-import { fenceUntrustedBlock } from '../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock } from '../core/untrusted-text/untrusted-fence.js';
 
 /** Canon §5.4: what an agent checks on each beat, in order. */
 export const BUILT_IN_CHECKLIST = [

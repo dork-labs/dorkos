@@ -5,7 +5,7 @@ import {
   AdditionalContextEntrySchema,
 } from '@dorkos/shared/additional-context';
 import { formatNewSince } from '../new-since-block.js';
-import { defuseUntrustedText } from '../../untrusted-fence.js';
+import { defuseUntrustedText } from '../../../../core/untrusted-text/untrusted-fence.js';
 import { renderContextEntry } from '../../../claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../../codex/turn-input.js';
 import { buildOpenCodeParts } from '../../../opencode/messaging/turn-input.js';

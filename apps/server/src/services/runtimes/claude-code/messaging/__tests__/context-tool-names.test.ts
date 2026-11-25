@@ -76,7 +76,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -746,12 +746,17 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'runtime-environment.ts',
       'seed-context-block.ts',
       'staged-context-block.ts',
-      'ui-tool-contract.ts',
-      'untrusted-fence.ts',
     ]);
+    // Read by every runtime too, from outside this directory (DOR-4928): the `control_ui`
+    // contract beside the capability that serves it, and the fence every block uses.
+    const elsewhere = [
+      '../../../../session/browser-seat/ui-tool-contract.ts',
+      '../../../../core/untrusted-text/untrusted-fence.ts',
+    ].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 
     const offenders: string[] = [];
-    for (const name of modules) {
+    for (const file of [...modules.map((name) => join(dir, name)), ...elsewhere]) {
+      const name = basename(file);
       // `room-tools-context.ts` is the one module here whose JOB is to name
       // tools, and it is exempt from the source scan for a reason that is not a
       // weakening: its body is a TEMPLATE, `${t}post_to_room`, which is neither
@@ -772,7 +777,6 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       // name each one actually emits, which also proves each adapter passes its
       // own prefix rather than defaulting to none.
       if (name === 'room-context-block.ts') continue;
-      const file = join(dir, name);
       const source = stripComments(await readFile(file, 'utf8'), file);
       if (source.includes(IN_SESSION_TOOL_PREFIX)) {
         offenders.push(`${name}: spells ${IN_SESSION_TOOL_PREFIX}`);

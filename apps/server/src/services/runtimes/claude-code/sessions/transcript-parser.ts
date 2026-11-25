@@ -33,7 +33,7 @@ export type { TranscriptLine, ContentBlock };
  * sibling that reads those. Filtering them away here used to be the whole story
  * — a `Read` of a PNG produced the empty string and the picture was gone.
  */
-export function extractToolResultContent(content: string | ContentBlock[] | undefined): string {
+function extractToolResultContent(content: string | ContentBlock[] | undefined): string {
   if (!content) return '';
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -65,9 +65,7 @@ export function extractTextContent(content: string | ContentBlock[]): string {
  * @param text - Raw command-metadata record content.
  * @returns The command name and its trimmed args, or null when there is no name.
  */
-export function extractCommandMeta(
-  text: string
-): { commandName: string; commandArgs: string } | null {
+function extractCommandMeta(text: string): { commandName: string; commandArgs: string } | null {
   const nameMatch = text.match(/<command-name>\/?([^<]+)<\/command-name>/);
   if (!nameMatch) return null;
   const commandName = '/' + nameMatch[1].replace(/^\//, '');
@@ -252,7 +250,7 @@ function personAuthoredText(text: string): string | null {
  * counted any of them would move whenever a MACHINE acted, which is precisely
  * the reordering BC-16 exists to prevent.
  *
- * The rules are the ones {@link parseTranscript} already applies when it decides
+ * The rules are the ones {@link createTranscriptParser} already applies when it decides
  * to render a `user` bubble, plus the authorship questions a renderer never has
  * to ask:
  *
@@ -863,22 +861,6 @@ export function createTranscriptParser(context: AssistantErrorContext = {}): Tra
     unmerged: () => messages,
     result: () => mergeConsecutiveAssistantMessages(messages),
   };
-}
-
-/**
- * Parse an array of JSONL lines into HistoryMessage objects in one pass.
- *
- * The whole-file form of {@link createTranscriptParser}; see it for the
- * state machine.
- *
- * @param lines - The transcript's JSONL lines.
- * @param images - Collects every image a tool result carried, in transcript
- *   order, for the caller to resolve. Omit it and images are not read.
- */
-export function parseTranscript(lines: string[], images?: TranscriptImageRef[]): HistoryMessage[] {
-  const parser = createTranscriptParser();
-  for (const line of lines) parser.push(line, images);
-  return parser.result();
 }
 
 /**

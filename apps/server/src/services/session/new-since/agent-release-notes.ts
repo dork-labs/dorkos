@@ -2,7 +2,7 @@
  * Compiled, reviewed facts about new agent-facing features. Never load prose
  * from fragments, files or the network at runtime. A build reads `next` as its
  * own version; the back-merge after a release stamps it.
- * @module runtimes/shared/awareness/agent-release-notes
+ * @module services/session/new-since/agent-release-notes
  */
 import { gt, lte, valid } from 'semver';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';

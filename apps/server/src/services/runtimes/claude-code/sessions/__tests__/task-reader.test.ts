@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseTasks } from '../task-reader.js';
+import { createTaskParser } from '../task-reader.js';
 
 const { mockWarn } = vi.hoisted(() => ({ mockWarn: vi.fn() }));
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: mockWarn, error: vi.fn() },
 }));
+
+/** Fold JSONL lines through one parser, the way the transcript history cache feeds it. */
+function parseTasks(lines: string[]) {
+  const parser = createTaskParser();
+  for (const line of lines) parser.pushRecord(JSON.parse(line));
+  return parser.result();
+}
 
 /** Build a JSONL `assistant` line with a single tool_use block. */
 function toolUseLine(name: string, id: string, input: Record<string, unknown>): string {
@@ -47,7 +54,7 @@ function toolResultBlocksLine(toolUseId: string, texts: string[]): string {
   });
 }
 
-describe('parseTasks', () => {
+describe('createTaskParser', () => {
   beforeEach(() => {
     mockWarn.mockClear();
   });

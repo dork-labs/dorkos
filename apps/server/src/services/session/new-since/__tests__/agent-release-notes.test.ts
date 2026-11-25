@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { valid } from 'semver';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
-import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
+import { composeCapabilityRegistryForDocs } from '../../../core/self-description/dorkos-registry.js';
+import { MCP_TOOL_TIERS } from '../../../core/mcp-tool-tiers.js';
 import {
   AGENT_RELEASE_NOTES,
   notesSince,

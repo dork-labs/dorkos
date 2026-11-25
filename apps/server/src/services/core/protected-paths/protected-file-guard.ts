@@ -12,7 +12,7 @@
  * the same file under a second name, so its path cannot say what it is; the
  * only tell is the link count, read off the descriptor that is then read.
  *
- * @module services/runtimes/shared/policy/protected-file-guard
+ * @module services/core/protected-paths/protected-file-guard
  */
 import { statSync, type Stats } from 'node:fs';
 import path from 'node:path';

@@ -121,6 +121,11 @@ import {
 } from '../../../../notifications/notification-registry.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());

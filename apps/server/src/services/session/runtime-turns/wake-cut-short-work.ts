@@ -47,7 +47,6 @@
  *
  * @module services/session/runtime-turns/wake-cut-short-work
  */
-import type { BackgroundWorkRecord } from '../../runtimes/claude-code/messaging/background-work-ledger.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { dispatchMessage } from '../message-dispatcher.js';
@@ -70,13 +69,29 @@ export const CUT_SHORT_WAKE_MESSAGE =
  */
 export const STALE_BACKGROUND_WORK_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * One chat a restart cut short, as the runtime that held its background work
+ * recorded it (Claude Code's `background-work-ledger.ts` writes these). Declared
+ * here, by what a wake reads, so turn code never imports a runtime's ledger.
+ */
+interface CutShortWork {
+  /** The key the chat's process was filed under in the server that stopped. */
+  key: string;
+  /** The id to wake the chat under. */
+  sessionId: string;
+  /** The directory the chat runs in. */
+  cwd: string;
+  /** When the process started holding the work, as epoch ms. */
+  since: number;
+}
+
 /** How one wake ended. Every outcome but `failed` settles the record. */
 export type WakeOutcome = 'woken' | 'busy' | 'gone' | 'failed';
 
 /** What {@link wakeChatsCutShort} needs beyond the records. */
 export interface WakeChatsCutShortOptions {
   /** Remove a settled record, so the next boot does not wake its chat again. */
-  release: (record: BackgroundWorkRecord) => void;
+  release: (record: CutShortWork) => void;
   /**
    * The ids, of those asked about, that belong to a room or a scheduled task
    * and so have no person waiting on them. Absent when neither is known.
@@ -94,7 +109,7 @@ export interface WakeChatsCutShortOptions {
  * @returns How it ended
  */
 export async function wakeCutShortChat(
-  chat: Pick<BackgroundWorkRecord, 'sessionId' | 'cwd'>
+  chat: Pick<CutShortWork, 'sessionId' | 'cwd'>
 ): Promise<WakeOutcome> {
   const { sessionId, cwd } = chat;
   try {
@@ -154,7 +169,7 @@ export async function wakeCutShortChat(
  * @param opts - How to remove a record, and which chats are not a person's
  */
 export async function wakeChatsCutShort(
-  records: readonly BackgroundWorkRecord[],
+  records: readonly CutShortWork[],
   opts: WakeChatsCutShortOptions
 ): Promise<void> {
   let elsewhere: ReadonlySet<string> = new Set();

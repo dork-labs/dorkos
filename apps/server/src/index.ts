@@ -62,6 +62,7 @@ import * as heartbeats from './services/heartbeats/index.js';
 import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { env } from './env.js';
 import { claimDataDirectory } from './startup/steps/data-directory.js';
+import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
 import { openConfigAndDatabase } from './startup/steps/config-and-database.js';
 import { raiseExistingChatsOnBoot } from './startup/steps/raise-existing-chats.js';
 import { recordKeptFromAutoMovesOnBoot } from './startup/steps/record-kept-from-auto-moves.js';
@@ -168,6 +169,10 @@ async function start() {
   // code ran. Each step returns what it built; every `upTo…` object carries all of
   // it into the next step, and `refs` holds what shutdown needs.
   const fromIndex = { PORT, logInstallSweep, shutdownServices, legacyRecordSweep, mountedRouters };
+  // First, before any step that could check a path or start a turn (DOR-4928): until these
+  // are registered the protected-path policy refuses every path and turn code honours no
+  // agent file's runtime.
+  registerClaudeCodeFacts();
   const upToDataDirectory = { ...fromIndex, ...(await claimDataDirectory(refs, fromIndex)) };
   const { dorkHome } = upToDataDirectory;
 

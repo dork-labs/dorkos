@@ -92,6 +92,11 @@ import type { TaskFileSync } from '../../services/tasks/sync/task-file-sync.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import type { MeshCore } from '@dorkos/mesh';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;

@@ -18,7 +18,7 @@ import {
 } from '@dorkos/shared/convention-files';
 import type { MemoryNoteList } from '@dorkos/shared/memory-provider';
 
-import { fenceUntrustedBlock } from '../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock } from '../core/untrusted-text/untrusted-fence.js';
 
 /** How long the list of latest names may run before it stops adding names. */
 const LATEST_NAMES_MAX_CHARS = 200;

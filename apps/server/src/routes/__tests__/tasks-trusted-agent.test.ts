@@ -41,6 +41,11 @@ import {
 
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../services/runtimes/codex/runtime-constants.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
