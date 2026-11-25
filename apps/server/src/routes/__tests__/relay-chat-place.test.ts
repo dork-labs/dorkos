@@ -27,7 +27,10 @@ import {
   registerTestHomes,
 } from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
 import { setSessionAgentSources } from '../../services/core/agent-identity/session-agent.js';
-import { OTHER_AGENTS_CHAT_MESSAGE } from '../../services/session/launch/launch-caller.js';
+import {
+  OTHER_AGENTS_CHAT_MESSAGE,
+  PROTECTED_CHAT_MESSAGE,
+} from '../../services/session/launch/launch-caller.js';
 import { createRelayRoutes } from '../relay.js';
 import { relayWebhookBodyRule } from '../relay-webhooks.js';
 import { registerSessionQueueRoutes } from '../session-queue-handler.js';
@@ -399,20 +402,76 @@ describe('which chat a message reaches', () => {
       expect(relay.body.detail).toEqual(expect.any(String));
       expect(relay.body.detail).toBe(sessions.body.detail);
     });
+  });
 
-    it('is delivered when the store finds it with no recorded agent, on both routes alike', async () => {
-      // A chat the runtime's own store finds is bound, so it is asked as a bound chat with no
-      // agent: its folder is not asked the new-chat rule, even a protected one. Pins today's
-      // shared answer.
-      storeFound[RUNTIME_ONLY_CHAT] = os.homedir();
-      runtimeHeld[RUNTIME_ONLY_CHAT] = os.homedir();
-      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
-      const sessions = await request(target.server)
+  describe('a chat the runtime’s own store finds, with no recorded agent (DOR-5235)', () => {
+    /** Put a chat in the runtime's own store, standing in this folder. */
+    const found = (cwd: string) => {
+      storeFound[RUNTIME_ONLY_CHAT] = cwd;
+      runtimeHeld[RUNTIME_ONLY_CHAT] = cwd;
+    };
+    /** Post into that chat on the sessions route, as this caller. */
+    const postInto = (headers: Record<string, string>) =>
+      request(target.server)
         .post(`/api/sessions/${RUNTIME_ONLY_CHAT}/messages`)
-        .set(asRio)
+        .set(headers)
         .send({ content: 'hello' });
+
+    it('is refused in a protected folder, with the same sentence on both routes', async () => {
+      found(os.homedir());
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+      const sessions = await postInto(asRio);
+      const queue = await request(target.server)
+        .delete(`/api/sessions/${RUNTIME_ONLY_CHAT}/queue/waiting-1`)
+        .set(asRio);
+      expect(relay.status).toBe(403);
+      expect(relay.body.code).toBe('desk_not_own');
+      expect(relay.body.detail).toBe(PROTECTED_CHAT_MESSAGE);
+      expect(sessions.status).toBe(403);
+      expect(sessions.body.code).toBe('protected_folder');
+      expect(sessions.body.detail).toBe(relay.body.detail);
+      expect(queue.status).toBe(403);
+      expect(queue.body).toEqual(relay.body);
+      expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+    });
+
+    it('is refused in a protected folder for a caller DorkOS cannot name, on the sessions routes', async () => {
+      found(os.homedir());
+      const unnamed = { ...asRio, [INACTIVE_HEADER]: '1' };
+      const sessions = await postInto(unnamed);
+      const queue = await request(target.server)
+        .delete(`/api/sessions/${RUNTIME_ONLY_CHAT}/queue/waiting-1`)
+        .set(unnamed);
+      expect(sessions.status).toBe(403);
+      expect(sessions.body.detail).toBe(PROTECTED_CHAT_MESSAGE);
+      expect(queue.status).toBe(403);
+      expect(queue.body.detail).toBe(PROTECTED_CHAT_MESSAGE);
+    });
+
+    it('is delivered in a folder no agent owns, on both routes alike', async () => {
+      found('/made-up/projects/plain');
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+      const sessions = await postInto(asRio);
       expect(relay.status).toBe(200);
       expect(sessions.status).toBe(202);
+    });
+
+    it('is delivered in the agent’s own folder, on both routes alike', async () => {
+      found(RIO);
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`, asRio);
+      const sessions = await postInto(asRio);
+      expect(relay.status).toBe(200);
+      expect(sessions.status).toBe(202);
+    });
+
+    it('lets the person in, in a protected folder, on both routes', async () => {
+      found(os.homedir());
+      const relay = await send(`relay.agent.claude-code.${RUNTIME_ONLY_CHAT}`);
+      const queue = await request(target.server).delete(
+        `/api/sessions/${RUNTIME_ONLY_CHAT}/queue/waiting-1`
+      );
+      expect(relay.status).toBe(200);
+      expect(queue.status).toBe(404); // past the place rule, to a message that is not waiting
     });
   });
 
