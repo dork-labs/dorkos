@@ -49,7 +49,6 @@ describe('PROBLEM_CODE_LIST', () => {
     ['signin_no_signin_support', 409],
     ['signin_unreachable', 502],
     ['spend_limit_reached', 409],
-    ['spend_limit_reached', 409],
     ['always_not_offered', 409],
     ['managed_by_desktop', 409],
     ['agent_not_found', 404],
