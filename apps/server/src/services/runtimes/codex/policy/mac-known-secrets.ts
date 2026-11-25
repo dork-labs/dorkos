@@ -23,6 +23,7 @@
 import path from 'node:path';
 import { resolveOpenCodeDataDir } from '../../opencode/opencode-data-dir.js';
 import { resolveCodexHome } from '../codex-home.js';
+import { explicitDenyKeys } from './expand-deep-globs.js';
 
 type Access = 'read' | 'deny';
 
@@ -51,7 +52,10 @@ export function withMacKnownSecrets(
     path.join(places.data, 'runtimes', 'codex', 'credits', 'auth.json'),
     path.join(resolveOpenCodeDataDir(), 'auth.json'),
   ];
-  for (const file of signIns) entries[slashed(file)] = 'deny';
+  // Each refusal stated as its own rule, unlink included (`explicitDenyKeys`).
+  for (const file of signIns)
+    for (const key of [slashed(file), ...(explicitDenyKeys(slashed(file), false) ?? [])])
+      entries[key] = 'deny';
   for (const home of places.homes) {
     const ssh = `${slashed(home)}/.ssh`;
     if (entries[ssh] === 'deny') entries[`${ssh}/known_hosts`] = 'read';

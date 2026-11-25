@@ -419,7 +419,7 @@ describe('review fixes: fingerprint and identity', () => {
         expect(files(next.threadId)[path.join(data, 'host.key')]).toBe('deny');
         // On macOS a working folder's deep globs become exact paths (DOR-4358).
         const ownSecret =
-          process.platform === 'darwin' ? path.join(own, '.env') : path.join(own, '**', '.env');
+          process.platform === 'darwin' ? path.join(own, '[.]env') : path.join(own, '**', '.env');
         expect(files(next.threadId)[ownSecret]).toBe('deny');
         // On macOS the home scan from before `.claude` appeared never looked inside
         // it, so a fresh scan runs, and its landing may reload the thread once more.

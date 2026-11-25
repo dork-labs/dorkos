@@ -89,10 +89,10 @@ export interface ExpandDeepGlobsOptions {
   /** The clock; tests pass their own. */
   now?: () => number;
   /**
-   * Told each base whose globs became exact rules, with those rules.
+   * Told each base whose globs became exact rules, with the paths they name.
    *
    * @param base - The base folder.
-   * @param keys - Its exact deny keys.
+   * @param keys - The paths, as written (not as spelled for the profile).
    */
   onExact?: (base: string, keys: ReadonlySet<string>) => void;
 }
@@ -165,14 +165,33 @@ function neverScanned(relative: string): boolean {
 }
 
 /**
- * A literal path spelled for a glob-free reading: each `*`, `?`, `[`, `{` and
- * `}` becomes a one-character class, which Seatbelt matches as the character
- * itself (checked on the binary, DOR-4542). A lone `]` stays plain. A
- * backslash, which Codex reads as an escape, can't be spelled: `undefined`.
+ * The profile keys that refuse exactly one path, with every refusal stated as
+ * a rule of its own: `undefined` when the path can't be spelled.
+ *
+ * Codex 0.163 renders a plain path key on macOS only as a gap in what the
+ * profile allows (codex-rs `build_seatbelt_access_policy`), so whether the
+ * file can be unlinked is left to how the system treats an operation nothing
+ * allows. A glob key is rendered as `(deny file-read* …)` and
+ * `(deny file-write* …)` rules, unlink included, plus an unlink deny on each
+ * folder above it (`build_seatbelt_unreadable_glob_policy`). So the path is
+ * written as a glob that matches only itself: each `*`, `?`, `[`, `{` and `}`
+ * becomes a one-character class, which Seatbelt matches as the character
+ * itself (DOR-4542), and so does the first letter, digit, `.` or `_` of its
+ * last name. A lone `]` stays plain. A folder also gets its contents key. A
+ * backslash, which Codex reads as an escape, can't be spelled.
+ *
+ * @param literal - An absolute path in Codex's slash spelling.
+ * @param folder - Whether the path is a folder refused whole.
  */
-function exactSpelling(literal: string): string | undefined {
+export function explicitDenyKeys(literal: string, folder: boolean): string[] | undefined {
   if (literal.includes('\\')) return undefined;
-  return literal.replace(/[*?[{}]/g, (char) => `[${char}]`);
+  const escaped = literal.replace(/[*?[{}]/g, (char) => `[${char}]`);
+  const cut = escaped.lastIndexOf('/') + 1;
+  const name = escaped.slice(cut);
+  const at = name.search(/[A-Za-z0-9._]/);
+  if (at < 0) return undefined;
+  const key = `${escaped.slice(0, cut)}${name.slice(0, at)}[${name[at]}]${name.slice(at + 1)}`;
+  return folder ? [key, `${key}/**`] : [key];
 }
 
 /** Group the deep deny keys by base folder, merging a folder rule with its contents key. */
@@ -351,8 +370,9 @@ function backgroundFiles(
 }
 
 /**
- * The exact keys a base's matching files become, or `null` when one can't be
- * spelled exactly (the base then keeps its globs).
+ * The paths a base's matching files name, each with whether it is a folder
+ * refused whole, or `null` when one can't be spelled (the base then keeps its
+ * globs).
  *
  * @param base - The scanned base folder.
  * @param files - The base's matching files.
@@ -364,8 +384,8 @@ function exactKeys(
   files: readonly string[],
   patterns: readonly DeepPattern[],
   tracked: ReadonlySet<string>
-): Set<string> | null {
-  const keys = new Set<string>();
+): Map<string, string[]> | null {
+  const keys = new Map<string, string[]>();
   for (const file of files) {
     const relative = path.relative(base, file).split(path.sep).join('/');
     if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
@@ -374,9 +394,9 @@ function exactKeys(
       if (match === undefined) continue;
       const literal = `${base}/${match}`;
       if (pattern.tail === TRACKED_READABLE_NAME && tracked.has(literal)) continue;
-      const spelled = exactSpelling(literal);
+      const spelled = explicitDenyKeys(literal, pattern.folder);
       if (spelled === undefined) return null;
-      keys.add(spelled);
+      keys.set(literal, spelled);
     }
   }
   return keys;
@@ -415,8 +435,8 @@ export function expandDeepGlobs(
     if (keys === null || keys.size > budget) continue;
     budget -= keys.size;
     for (const pattern of patterns) for (const key of pattern.keys) delete result[key];
-    for (const key of keys) result[key] = 'deny';
-    options.onExact?.(base, keys);
+    for (const spelled of keys.values()) for (const key of spelled) result[key] = 'deny';
+    options.onExact?.(base, new Set(keys.keys()));
   }
   return result;
 }

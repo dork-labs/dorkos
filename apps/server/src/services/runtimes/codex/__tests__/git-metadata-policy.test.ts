@@ -106,7 +106,7 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
         files[
           key(
             process.platform === 'darwin'
-              ? path.join(dir, '.git', 'x', '.credentials.json')
+              ? path.join(dir, '.git', 'x', '[.]credentials.json')
               : path.join(dir, '.git', '**', '.credentials*')
           )
         ]

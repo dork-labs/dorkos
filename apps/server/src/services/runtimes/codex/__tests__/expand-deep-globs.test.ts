@@ -18,6 +18,7 @@ import {
   MAX_EXACT_RULES,
   MAX_FOLDER_WALK,
   expandDeepGlobs,
+  explicitDenyKeys,
   resetBackgroundScans,
   settleBackgroundScans,
 } from '../policy/expand-deep-globs.js';
@@ -27,6 +28,13 @@ import {
   type DeepGlobWatchListener,
 } from '../policy/deep-glob-rg.js';
 import { codexVendoredRg } from '../policy/hidden-folder-scans.js';
+
+/** The profile keys that refuse exactly `file`, each refusal its own rule (a folder also its contents). */
+const denied = Object.assign(
+  (file: string, folder = false) =>
+    Object.fromEntries(explicitDenyKeys(file, folder)!.map((key) => [key, 'deny' as const])),
+  { key: (file: string) => explicitDenyKeys(file, false)![0]! }
+);
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 
 const SECRET = '.env';
@@ -101,8 +109,8 @@ describe('expandDeepGlobs in a working folder (DOR-4358)', () => {
       darwin(scanner)
     );
     expect(out).toEqual({
-      [`${base}/${SECRET}`]: 'deny',
-      [`${base}/a/b/${SECRET}`]: 'deny',
+      ...denied(`${base}/${SECRET}`),
+      ...denied(`${base}/a/b/${SECRET}`),
       [`${root}/other`]: 'read',
     });
   });
@@ -119,8 +127,8 @@ describe('expandDeepGlobs in a working folder (DOR-4358)', () => {
       darwin(scanner)
     );
     expect(out).toEqual({
-      [`${base}/a/site.pem`]: 'deny',
-      [`${base}/app/.env.staging.local`]: 'deny',
+      ...denied(`${base}/a/site.pem`),
+      ...denied(`${base}/app/.env.staging.local`),
     });
   });
 
@@ -130,7 +138,7 @@ describe('expandDeepGlobs in a working folder (DOR-4358)', () => {
       { [`${base}/**/.dork/plugins`]: 'deny', [`${base}/**/.dork/plugins/**`]: 'deny' },
       darwin(scanner)
     );
-    expect(out).toEqual({ [`${base}/x/.dork/plugins`]: 'deny' });
+    expect(out).toEqual(denied(`${base}/x/.dork/plugins`, true));
   });
 
   it('keeps the glob when the scan cannot finish, so the secret stays protected', () => {
@@ -172,14 +180,25 @@ describe('expandDeepGlobs in a working folder (DOR-4358)', () => {
       tracked: [`${base}/.npmrc`],
     });
     const out = expandDeepGlobs({ [`${base}/**/.npmrc`]: 'deny' }, darwin(scanner));
-    expect(out).toEqual({ [`${base}/pkg/.npmrc`]: 'deny' });
+    expect(out).toEqual(denied(`${base}/pkg/.npmrc`));
+  });
+
+  it('writes each match as a glob for that path alone, so every refusal is its own rule', () => {
+    // Codex states a glob key's refusals outright; a plain path is only a gap
+    // in what the profile allows.
+    expect(explicitDenyKeys('/w/key.pem', false)).toEqual(['/w/[k]ey.pem']);
+    expect(explicitDenyKeys('/w/x/.dork/plugins', true)).toEqual([
+      '/w/x/.dork/[p]lugins',
+      '/w/x/.dork/[p]lugins/**',
+    ]);
+    expect(explicitDenyKeys('/w/--', false)).toBeUndefined();
   });
 
   it('spells a match under a folder with glob characters as written, and refuses a backslash', () => {
     const entries = { [`${base}/**/${SECRET}`]: 'deny' } as const;
     const bracketed = fakeScanner([`${base}/site [old]/{a}/${SECRET}`]).scanner;
     expect(expandDeepGlobs(entries, darwin(bracketed))).toEqual({
-      [`${base}/site [[]old]/[{]a[}]/${SECRET}`]: 'deny',
+      [`${base}/site [[]old]/[{]a[}]/[.]env`]: 'deny',
     });
     const slashed = fakeScanner([`${base}/a\\b/${SECRET}`]).scanner;
     expect(expandDeepGlobs(entries, darwin(slashed))).toEqual(entries);
@@ -205,7 +224,7 @@ describe('expandDeepGlobs outside the working folders: the background scan (DOR-
     const fake = fakeScanner([`${home()}/acct/.credentials.json`]);
     expect(render(fake.scanner, 0)).toEqual(entries());
     await settleBackgroundScans();
-    expect(render(fake.scanner, 1)).toEqual({ [`${home()}/acct/.credentials.json`]: 'deny' });
+    expect(render(fake.scanner, 1)).toEqual(denied(`${home()}/acct/.credentials.json`));
     expect(fake.laterCalls()).toBe(1);
   });
 
@@ -287,7 +306,7 @@ describe('expandDeepGlobs outside the working folders: the background scan (DOR-
     expect(render(fake.scanner, 1)).toEqual({});
     const file = plant('acct/.credentials.json');
     fake.watch()!.change('acct/.credentials.json');
-    expect(render(fake.scanner, 2)).toEqual({ [file]: 'deny' });
+    expect(render(fake.scanner, 2)).toEqual(denied(file));
     expect(fake.laterCalls()).toBe(1);
     // Gone again: no rule is left for it.
     fs.rmSync(file);
@@ -301,7 +320,7 @@ describe('expandDeepGlobs outside the working folders: the background scan (DOR-
     await settleBackgroundScans();
     const file = plant('moved/in/deep/.credentials.json');
     fake.watch()!.change('moved');
-    expect(render(fake.scanner, 1)).toEqual({ [file]: 'deny' });
+    expect(render(fake.scanner, 1)).toEqual(denied(file));
     fs.rmSync(path.join(home(), 'moved'), { recursive: true });
     fake.watch()!.change('moved');
     expect(render(fake.scanner, 2)).toEqual({});
@@ -346,7 +365,7 @@ describe('expandDeepGlobs outside the working folders: the background scan (DOR-
     fake.watch()!.change('late/.credentials.json');
     land([]);
     await settleBackgroundScans();
-    expect(render(fake.scanner, 1)).toEqual({ [file]: 'deny' });
+    expect(render(fake.scanner, 1)).toEqual(denied(file));
   });
 
   it('keeps the glob and never scans when no watch can start', async () => {
@@ -392,15 +411,15 @@ describe.skipIf(!codexVendoredRg())('the real rg and git (DOR-4358)', () => {
     } as const;
     const render = () => expandDeepGlobs(entries, { platform: 'darwin', working: [base] });
     // Before git's answer (looked up off the turn's path), every .npmrc stays denied.
-    expect(render()[`${base}/.npmrc`]).toBe('deny');
+    expect(render()[denied.key(`${base}/.npmrc`)]).toBe('deny');
     await settleBackgroundScans(base);
     const out = render();
     expect(out).toEqual({
-      [`${base}/${SECRET}`]: 'deny',
-      [`${base}/apps/client/${SECRET}`]: 'deny',
+      ...denied(`${base}/${SECRET}`),
+      ...denied(`${base}/apps/client/${SECRET}`),
       // Tracked but changed since: a token could have been added, so it stays denied.
-      [`${base}/packages/a/.npmrc`]: 'deny',
-      [`${base}/packages/b/.npmrc`]: 'deny',
+      ...denied(`${base}/packages/a/.npmrc`),
+      ...denied(`${base}/packages/b/.npmrc`),
     });
   });
 
@@ -435,7 +454,7 @@ describe.skipIf(!codexVendoredRg())('the real rg and git (DOR-4358)', () => {
       { [`${base}/**/${SECRET}`]: 'deny' },
       { platform: 'darwin', working: [base] }
     );
-    expect(out).toEqual({ [`${base}/odd\nname/${SECRET}`]: 'deny' });
+    expect(out).toEqual(denied(`${base}/odd\nname/${SECRET}`));
   });
 });
 
@@ -478,7 +497,7 @@ describe.skipIf(!codexVendoredRg())('the macOS profile (DOR-4358)', () => {
         Object.keys(files).filter((key) => key.includes('/**/'));
       // The working folder is scanned now: no deep rule under it, its secret named exactly.
       expect(deep(first).filter((key) => key.startsWith(`${base}/`))).toEqual([]);
-      expect(first[`${base}/apps/${SECRET}`]).toBe('deny');
+      expect(first[denied.key(`${base}/apps/${SECRET}`)]).toBe('deny');
       // The home folder keeps its globs until its scan has finished...
       expect(deep(first).some((key) => key.startsWith(`${root}/home/`))).toBe(true);
       await settleBackgroundScans();

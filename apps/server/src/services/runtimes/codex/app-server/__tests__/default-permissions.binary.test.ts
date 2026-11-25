@@ -438,7 +438,9 @@ nativeSuite('the protected profile without the request’s selection', { timeout
   // DOR-4358, macOS only: the profile names each secret file exactly, so
   // folders without one can be removed and renamed, while the named files stay
   // shut. Made-up files, no network, no spend.
-  describe.skipIf(process.platform !== 'darwin')(
+  // Registered only on macOS: the Linux job requires every row it runs to pass,
+  // and counts a skipped one against that.
+  (process.platform === 'darwin' ? describe : () => undefined)(
     'on macOS, secret files are named exactly (DOR-4358)',
     () => {
       const realPlatform = process.platform;
@@ -677,7 +679,9 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           ])
             expect(out, marker).toContain(marker);
           expect(out).toContain('LINK-REFUSED');
-          expect(fs.readFileSync(secret, 'utf8')).toBe('CANARY-secret');
+          // Still there, as planted: a refused command alone doesn't prove that.
+          for (const file of [secret, bracketed, p('a/b/c/key.pem')])
+            expect(fs.readFileSync(file, 'utf8'), file).toBe('CANARY-secret');
           expect(fs.readFileSync(hosts, 'utf8')).not.toContain('x\n');
         }
       );
@@ -696,6 +700,59 @@ nativeSuite('the protected profile without the request’s selection', { timeout
           'TEARDOWN-OK'
         );
       });
+
+      it.for(['acceptEdits', 'bypassPermissions'])(
+        'at %s, the previous profile and this one both keep protected files in place',
+        async (mode, { annotate }) => {
+          const fx = macFixture();
+          const targets = {
+            // Matched by a deep rule in the previous profile, named exactly in this one.
+            deep: path.join(fx.project, 'deep', 'parent', '.env'),
+            // An exact rule in both.
+            homeFile: path.join(fx.home, '.netrc'),
+            // Inside a folder ruled whole in both.
+            inFolder: path.join(fx.home, '.aws', 'credentials'),
+          };
+          const plant = () => {
+            for (const [name, file] of Object.entries(targets)) {
+              fs.mkdirSync(path.dirname(file), { recursive: true });
+              fs.writeFileSync(file, `CANARY-matrix-${name}`);
+            }
+          };
+          plant();
+          const codex = await macCodex(fx);
+          const probe = Object.entries(targets)
+            .map(
+              ([name, file]) =>
+                `unlink ${quote(file)} 2>/dev/null; [ -e ${quote(file)} ] && echo ${name}:KEPT || echo ${name}:GONE`
+            )
+            .join('; ');
+          const matrix: Record<string, Record<string, string>> = {};
+          for (const [profile, platform] of [
+            ['previous', 'linux'],
+            ['current', 'darwin'],
+          ] as const) {
+            const out = await codex.run(await threadConfig(fx, mode, 'mac-chat', platform), probe);
+            matrix[profile] = Object.fromEntries(
+              Object.entries(targets).map(([name, file]) => [
+                name,
+                `${/:(KEPT|GONE)/.exec(out.slice(out.indexOf(`${name}:`)))?.[1] ?? 'NONE'}/${
+                  fs.existsSync(file) && fs.readFileSync(file, 'utf8') === `CANARY-matrix-${name}`
+                    ? 'intact'
+                    : 'changed'
+                }`,
+              ])
+            );
+            plant();
+          }
+          const summary = `${mode} on macOS ${os.release()}: ${JSON.stringify(matrix)}`;
+          await annotate(summary);
+          console.info('DOR-4358 unlink matrix', summary);
+          for (const profile of Object.values(matrix))
+            for (const result of Object.values(profile))
+              expect(result, summary).toBe('KEPT/intact');
+        }
+      );
 
       /** A repo-like folder whose one dependency is a local tarball: nothing reaches a registry. */
       function repoFixture(name: string, extraPath: string[] = []) {
