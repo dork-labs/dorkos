@@ -557,7 +557,8 @@ pull_json someone/fork 150
 files_json "${many[@]}"
 run run 12
 check 'another repo, 150 docs files, the cloud verdict: passes' 0 "$rc"
-check 'the file list is read with --paginate' yes "$(grep -E 'pulls/12/files' "$GH_LOG" | grep -q -- '--paginate' && echo yes || echo no)"
+files_calls=$(grep -E 'pulls/12/files' "$GH_LOG" || true)
+check 'the file list is read with --paginate' yes "$(grep -q -- '--paginate' <<<"$files_calls" && echo yes || echo no)"
 many[139]=.github/workflows/late.yml
 reset_fixtures
 comments
