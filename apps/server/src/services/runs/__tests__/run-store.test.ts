@@ -26,7 +26,7 @@ import {
   type RunStatus,
 } from '@dorkos/shared/turn-port';
 import { IllegalRunTransitionError, RUN_LEASE_MS, RunStore, type TurnRun } from '../run-store.js';
-import { createRunFactsSink, retireDeadRuns } from '../run-facts-sink.js';
+import { createRunFactsSink } from '../run-facts-sink.js';
 
 const CHAT = 'chat-demo-1';
 const EPOCH = '01BOOTEPOCH000000000000000';
@@ -193,7 +193,7 @@ describe('the boot epoch', () => {
       .set({ leaseUntil: now - 1 })
       .where(eq(turnRuns.id, own.id))
       .run();
-    retireDeadRuns(store);
+    store.retireDeadRuns();
     // A lease this boot let lapse (a laptop asleep) is still its own.
     expect(store.get(notYet.id)?.status).toBe('running');
     expect(store.get(own.id)?.status).toBe('running');

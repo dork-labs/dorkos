@@ -13,7 +13,7 @@
 import type { Db } from '@dorkos/db';
 import { chatKeyOf, setTurnFactsSink } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
-import { createRunFactsSink, endLiveTurn } from './run-facts-sink.js';
+import { createRunFactsSink } from './run-facts-sink.js';
 import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
 import { writeStopReceipt, writeStopRequest } from './run-stops.js';
 
@@ -132,7 +132,7 @@ export function markRunsShutdown(): number {
   try {
     store.transaction(() => {
       for (const run of store.ownTurnsRunning()) {
-        endLiveTurn(store, run, 'shutdown');
+        store.endTurn(run, 'shutdown');
         ended += 1;
       }
     });

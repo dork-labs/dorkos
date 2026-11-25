@@ -43,7 +43,11 @@ import { subscribeRuntimeTurns } from '../../session/runtime-turns/runtime-turn.
 import { chatClientId } from '../../session/chat-messages/chat-client-id.js';
 import { cancelQueuedMessage, clearQueuedMessages } from '../../session/queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
-import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+  rekeyProjector,
+} from '../../session/session-state-projector.js';
 import { logger } from '../../../lib/logger.js';
 import {
   installRunRecord,
@@ -53,7 +57,6 @@ import {
   uninstallRunRecord,
 } from '../index.js';
 import { RunStore, RUN_LEASE_MS, type TurnRun } from '../run-store.js';
-import { retireDeadRuns } from '../run-facts-sink.js';
 
 /** A made-up agent, the one being paused. */
 const BETA = { id: '01BETAAGENTULID00000000000', home: '/demo/agents/beta' } as const;
@@ -667,7 +670,7 @@ describe('the ending at turn_end, the status at settle (F9)', () => {
       epoch: '01LATERBOOT000000000000000',
       now: () => Date.now() + RUN_LEASE_MS + 1,
     });
-    retireDeadRuns(later, sessionId);
+    later.retireDeadRuns(sessionId);
     expect(later.get(run!.id)).toMatchObject({ status: 'ended', ending: 'completed' });
 
     // The settle that would have come writes nothing on a run already ended.
@@ -823,5 +826,80 @@ describe('what this step adds to the map (§4.7, F10 to F12)', () => {
     expect(listQueuedMessages(canonical)).toHaveLength(1);
     // Put back, so the turn and its queue settle under the id the test holds.
     queue.rekeySession(canonical, sessionId);
+  });
+
+  it('F10b: retiring a dead boot’s started run keeps its in_turn row, for recovery to hand back', async () => {
+    const caught = queue.enqueue({
+      sessionId,
+      content: 'words a crash caught mid-turn',
+      clientId: 'person-window',
+      disposition: 'queue',
+      context: null,
+    });
+    queue.markInTurn(caught.id);
+    const gone = new RunStore(db, { epoch: '01DEADBOOT0000000000000000', now: () => 0 });
+    const queued = gone.create({
+      chatKey: sessionId,
+      status: 'queued',
+      openedBy: 'caller',
+      origin: null,
+      queueMessageId: caught.id,
+    });
+    const starting = gone.move(queued, 'starting', gone.lease());
+    const dead = gone.move(starting, 'started', { ...gone.lease(), startedAt: gone.stamp() });
+    inner.withScenarios([quick]);
+
+    await send('person-window', 'after the crash');
+    const mine = runs.listForChat(sessionId).find((run) => run.id !== dead.id)!;
+    await vi.waitFor(() => expect(runs.get(mine.id)?.status).toBe('ended'));
+
+    expect(runs.get(dead.id)).toMatchObject({
+      status: 'ended',
+      ending: 'process_died',
+      endingDetail: { delivery: 'unknown' },
+      recoveryDecidedAt: null,
+    });
+    // Only a settle deletes a kept row; this one waits for T15 to restore it.
+    expect(queue.get(caught.id)).toMatchObject({
+      inTurn: true,
+      content: 'words a crash caught mid-turn',
+    });
+    expect(listQueuedMessages(sessionId)).toEqual([]);
+  });
+
+  it('a refusal before acceptance writes no run', async () => {
+    await send('person-window', 'a long turn');
+    const [first] = runs.listForChat(sessionId);
+    await vi.waitFor(() => expect(runs.get(first!.id)?.status).toBe('running'));
+
+    const result = await send('ui-action-window', 'a widget click', { whenBusy: 'refuse' });
+
+    expect(result.accepted).toBe(false);
+    expect(runs.listForChat(sessionId).map((run) => run.id)).toEqual([first!.id]);
+  });
+
+  it('a chat with runs and no queue rows takes its runs along when it gains its canonical id', () => {
+    const chat = crypto.randomUUID();
+    const canonical = crypto.randomUUID();
+    const waiting = runs.create({
+      chatKey: chat,
+      status: 'queued',
+      openedBy: 'caller',
+      origin: null,
+    });
+    const own = runs.create({
+      chatKey: chat,
+      status: 'running',
+      openedBy: 'runtime',
+      origin: null,
+    });
+    getOrCreateProjector(chat, BETA.home);
+    expect(queue.list(chat)).toEqual([]);
+
+    rekeyProjector(chat, canonical);
+
+    expect(runs.listForChat(chat)).toEqual([]);
+    expect(runs.listForChat(canonical).map((run) => run.id)).toEqual([waiting.id, own.id]);
+    disposeProjector(canonical);
   });
 });

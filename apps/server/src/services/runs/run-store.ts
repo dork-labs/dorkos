@@ -104,6 +104,8 @@ export interface TurnRun {
   startedAt: string | null;
   deliveredAt: string | null;
   endedAt: string | null;
+  /** When recovery decided what follows this run; empty until it has. */
+  recoveryDecidedAt: string | null;
 }
 
 /** Thrown for a status change the transition table does not hold. */
@@ -225,6 +227,7 @@ function toRun(row: TurnRunRow): TurnRun {
     startedAt: row.startedAt,
     deliveredAt: row.deliveredAt,
     endedAt: row.endedAt,
+    recoveryDecidedAt: row.recoveryDecidedAt,
   };
 }
 
@@ -306,17 +309,83 @@ export class RunStore {
   /**
    * The chat's live run (`starting`, `started` or `running`), if it has one.
    *
+   * Every read of a chat's live run comes through here, and each one retires
+   * first whatever a gone boot left live in that chat ({@link retireDeadRuns}),
+   * so no reader can ever be held behind a turn nobody runs.
+   *
    * @param chatKey - The chat.
    */
   liveRunOf(chatKey: string): TurnRun | undefined {
-    const row = this.db
-      .select()
-      .from(turnRuns)
-      .where(
-        and(eq(turnRuns.sessionId, chatKey), inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES]))
-      )
-      .get();
-    return row ? toRun(row) : undefined;
+    return this.transaction(() => {
+      this.retireDeadRuns(chatKey);
+      const row = this.db
+        .select()
+        .from(turnRuns)
+        .where(
+          and(
+            eq(turnRuns.sessionId, chatKey),
+            inArray(turnRuns.status, [...LIVE_TURN_RUN_STATUSES])
+          )
+        )
+        .get();
+      return row ? toRun(row) : undefined;
+    });
+  }
+
+  /**
+   * Retire every live run of a chat (or of every chat) whose owner is gone:
+   * another boot owned it and its lease ran out (§7.1). An owner whose lease
+   * ran out is an observation, so this writes only what was observed:
+   *
+   * - `starting`: its launch never reached `turn_start` in a live process, so
+   *   the runtime never saw its words. Back to `queued` (transition 8).
+   * - `started`: ended (11) with the ending a `turn_end` recorded, else
+   *   `process_died`, and `delivery: unknown`. Its `in_turn` queue row is
+   *   left as it is: only a settle deletes one, so recovery (T15) can still
+   *   hand the words back as a draft.
+   * - `running`: ended (12) the same way.
+   *
+   * What follows a dead run is recovery's to decide at boot (T15), so
+   * `recovery_decided_at` stays empty. The one place this rule lives.
+   *
+   * @param chatKey - Only this chat's runs, when given.
+   */
+  retireDeadRuns(chatKey?: string): void {
+    this.transaction(() => {
+      for (const run of this.deadLiveRuns(chatKey)) {
+        if (run.status === 'starting') {
+          this.move(run, 'queued', { ownerEpoch: null, leaseUntil: null });
+        } else {
+          this.endTurn(run, 'process_died');
+        }
+      }
+    });
+  }
+
+  /**
+   * End a `started` or `running` run (transitions 11, 12) with the ending it
+   * already recorded at `turn_end`, else `fallback`. A run ended from
+   * `started` records `delivery: unknown`.
+   *
+   * @param run - The run, `started` or `running`.
+   * @param fallback - The ending when none was recorded.
+   * @param detail - What to add to `ending_detail`.
+   */
+  endTurn(
+    run: TurnRun,
+    fallback: NonNullable<TurnRun['ending']>,
+    detail: RunEndingDetail = {}
+  ): void {
+    this.move(run, 'ended', {
+      ending: run.ending ?? fallback,
+      leaseUntil: null,
+      endedAt: this.stamp(),
+      endingDetail: {
+        ...run.endingDetail,
+        ...detail,
+        ...(run.status === 'started' ? { delivery: 'unknown' } : {}),
+      },
+    });
   }
 
   /**

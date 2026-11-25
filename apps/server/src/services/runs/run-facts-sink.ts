@@ -17,7 +17,7 @@
  *    logged as the bug it is, and the run stays `queued`.
  * 3. **Nothing stays leased forever.** A live run whose owner is another boot
  *    and whose lease ran out is retired before anything reads the chat's live
- *    run (see {@link retireDeadRuns}); without it, one crash would hold its
+ *    run (`RunStore.retireDeadRuns`, inside every `liveRunOf`); without it, one crash would hold its
  *    chat's every launch behind a turn nobody is running.
  * 4. **No words lost or doubled.** Queue rows are this file's business only
  *    through the dispatcher's moments: a row's run is cancelled in the
@@ -41,68 +41,6 @@ import {
   type RunStore,
   type TurnRun,
 } from './run-store.js';
-
-/**
- * End or re-queue every live run of a chat (or of every chat) whose owner is
- * gone: another boot owned it and its lease ran out (§7.1). An owner whose
- * lease ran out is an observation, so this writes only what was observed:
- *
- * - `starting`: its launch never reached `turn_start` in a live process, so
- *   the runtime never saw its words. Back to `queued` (transition 8).
- * - `started`: ended (11) with the ending a `turn_end` recorded, else
- *   `process_died`, and `delivery: unknown`: nobody knows whether the runtime
- *   read the words, so they are never replayed.
- * - `running`: ended (12) the same way.
- *
- * What follows a dead run (a continuation, a person's line) is recovery's to
- * decide at boot (T15), so `recovery_decided_at` stays empty.
- *
- * @param store - The run store.
- * @param chatKey - Only this chat's runs, when given.
- */
-export function retireDeadRuns(store: RunStore, chatKey?: string): void {
-  for (const run of store.deadLiveRuns(chatKey)) {
-    if (run.status === 'starting') {
-      store.move(run, 'queued', { ownerEpoch: null, leaseUntil: null });
-      continue;
-    }
-    store.move(run, 'ended', {
-      ending: run.ending ?? 'process_died',
-      leaseUntil: null,
-      endedAt: store.stamp(),
-      endingDetail:
-        run.status === 'started' ? { ...run.endingDetail, delivery: 'unknown' } : run.endingDetail,
-    });
-  }
-}
-
-/**
- * End a `started` or `running` run (transitions 11, 12) with the ending it
- * already recorded, else `fallback`. A run ended from `started` records
- * `delivery: unknown`.
- *
- * @param store - The run store.
- * @param run - The run, `started` or `running`.
- * @param fallback - The ending when none was recorded at `turn_end`.
- * @param detail - What to add to `ending_detail`.
- */
-export function endLiveTurn(
-  store: RunStore,
-  run: TurnRun,
-  fallback: NonNullable<TurnRun['ending']>,
-  detail: RunEndingDetail = {}
-): void {
-  store.move(run, 'ended', {
-    ending: run.ending ?? fallback,
-    leaseUntil: null,
-    endedAt: store.stamp(),
-    endingDetail: {
-      ...run.endingDetail,
-      ...detail,
-      ...(run.status === 'started' ? { delivery: 'unknown' } : {}),
-    },
-  });
-}
 
 /**
  * Cancel a run that never started: from `queued` (5) or `starting` (9).
@@ -135,7 +73,6 @@ function recordStarted(store: RunStore, fact: Extract<RunFact, { kind: 'started'
   store.transaction(() => {
     let run = store.get(fact.runId);
     if (!run || (run.status !== 'queued' && run.status !== 'starting')) return;
-    retireDeadRuns(store, run.sessionId);
     requeueOtherStarting(store, run.sessionId, run.id);
     if (run.status === 'queued') {
       try {
@@ -178,7 +115,6 @@ function recordRuntimeTurn(store: RunStore, fact: Extract<RunFact, { kind: 'star
       }
       return;
     }
-    retireDeadRuns(store, fact.sessionId);
     const live = store.liveRunOf(fact.sessionId);
     if (live && live.status !== 'starting') return;
     requeueOtherStarting(store, fact.sessionId);
@@ -203,7 +139,7 @@ function recordEnded(store: RunStore, fact: Extract<RunFact, { kind: 'ended' }>)
     // The runtime's refusal is observed at settle, after any `turn_end`, and
     // it is the truer reading of how the turn ended (DOR-2994).
     const refused = fact.ending === 'refused';
-    endLiveTurn(store, refused ? { ...run, ending: null } : run, fact.ending, {
+    store.endTurn(refused ? { ...run, ending: null } : run, fact.ending, {
       ...(fact.refusal !== undefined ? { refusal: fact.refusal } : {}),
     });
   });
@@ -279,7 +215,9 @@ function dispatcherFeed(store: RunStore): DispatcherRunFeed {
 
     runOfQueueRow: ({ chatKey, queueMessageId }) =>
       store.transaction(() => {
-        retireDeadRuns(store, chatKey);
+        // Read the chat's live run first, so a dead boot's `starting` run of
+        // this row is back in line before it is looked up.
+        store.liveRunOf(chatKey);
         const run = store.findByQueueMessage(queueMessageId);
         if (run?.status === 'queued') {
           // A re-arm is what lifts a pause's hold (transition 3).
@@ -309,7 +247,6 @@ function dispatcherFeed(store: RunStore): DispatcherRunFeed {
       store.transaction(() => {
         const run = store.get(runId);
         if (!run || run.status !== 'queued') return 'starting';
-        retireDeadRuns(store, run.sessionId);
         const live = store.liveRunOf(run.sessionId);
         if (live && live.id !== run.id) return live.status === 'starting' ? 'queued' : 'busy';
         try {
@@ -403,7 +340,7 @@ function rowLeaving(store: RunStore, queueMessageId: string, why: QueueRowExit):
   } else if (run.status === 'started' && why === 'outcome_unknown') {
     // An earlier boot's private message reached `turn_start` and nobody saw
     // more (§4.7): it ended with its process, and is never replayed.
-    endLiveTurn(store, run, 'process_died', { outcomeUnknown: true });
+    store.endTurn(run, 'process_died', { outcomeUnknown: true });
   }
   // `removed` or `session_gone` while a launch is under way: that launch ends
   // the run, as 7 or 9 (§4.7). A `started` or `running` run's row leaves by
