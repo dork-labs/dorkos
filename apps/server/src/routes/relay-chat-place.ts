@@ -25,6 +25,16 @@
  * caller DorkOS cannot name is not asked here either; how far it may reach is
  * decided apart from this rule.
  *
+ * By design, a message to another agent's own address with a `conversationId`
+ * in its payload goes on in the relay conversation that id names, which is
+ * that agent's own, and never the person's chat. The conversation id is what
+ * keeps such a conversation apart, so a sender that knows one may write into it,
+ * as the relay always allowed. The sessions route has no such way in; a rule
+ * that held each conversation to the agents in it would be new work.
+ *
+ * Both this rule and {@link chatPlaceRefusal} read a chat's folder through one
+ * reader, {@link chatFolderOf}, so they cannot disagree about where it stands.
+ *
  * @module routes/relay-chat-place
  */
 import { resolveAgentTurnIdentity, type AgentSessionStoreLike } from '@dorkos/relay';
@@ -33,11 +43,10 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { RequestFacts } from '../http/request-facts.js';
 import { errorBody } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { liveSessionCwd } from '../services/core/agent-identity/session-agent.js';
 import { homeOf, resolveAgentHome } from '../services/core/agent-identity/agent-home.js';
 import { realOr } from '../services/session/launch/launch-caller.js';
 import { SESSION_LAUNCH_ACTION } from '../services/session/launch/launch-audit.js';
-import { chatPlaceRefusal, sessionLauncherOf } from './session-launcher.js';
+import { chatFolderOf, chatPlaceRefusal, sessionLauncherOf } from './session-launcher.js';
 
 /** What the place rule reads from Mesh: the registered homes, and whether an id is an agent's. */
 export type RelayChatMesh = Pick<MeshCore, 'listWithPaths' | 'getProjectPath'>;
@@ -51,21 +60,6 @@ export interface RelayChatPlaceSources {
 }
 
 /**
- * The folder a registered runtime's own store answers for this id, which it
- * also does for an id a chat no longer goes by (a renamed chat's old id, or the
- * Mesh id a relay turn first ran under).
- *
- * @param sessionId - The id.
- */
-function runtimeCwdOf(sessionId: string): string | undefined {
-  for (const runtime of runtimeRegistry.listRuntimes()) {
-    const cwd = runtime.getSessionCwd?.(sessionId);
-    if (cwd !== undefined) return cwd;
-  }
-  return undefined;
-}
-
-/**
  * Whether something holds a chat under this id: a runtime running it now, a
  * binding row, or a runtime's own store (`resolveSessionRuntime`, asked
  * without leave to guess). A lookup that fails counts as held.
@@ -74,9 +68,7 @@ function runtimeCwdOf(sessionId: string): string | undefined {
  */
 async function isHeldChat(sessionId: string): Promise<boolean> {
   try {
-    if (liveSessionCwd(sessionId) !== undefined || runtimeCwdOf(sessionId) !== undefined) {
-      return true;
-    }
+    if (chatFolderOf(sessionId) !== undefined) return true;
     return (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound;
   } catch {
     return true;
@@ -94,7 +86,7 @@ async function heldChatOwner(id: string): Promise<string | undefined> {
   try {
     const recorded = await runtimeRegistry.getSessionAgentPath(id);
     if (recorded) return recorded;
-    const cwd = runtimeRegistry.getNativeSessionCwd(id) ?? liveSessionCwd(id) ?? runtimeCwdOf(id);
+    const cwd = chatFolderOf(id);
     return cwd ? homeOf(resolveAgentHome(cwd)) : undefined;
   } catch {
     return undefined;
