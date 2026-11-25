@@ -77,11 +77,9 @@ function startTurn(chatId: string, agentPath = ANA) {
 
 /** The identity the HTTP chain resolves from a token minted for `chatId`'s process. */
 async function tokenFor(chatId: string | undefined, agentPath = ANA) {
-  const token = await identities.mint({
-    agentPath,
-    displayName: agentPath.split('/').pop()!,
-    ...(chatId ? { chatId } : {}),
-  });
+  const token = await identities.mint({ agentPath, displayName: agentPath.split('/').pop()! });
+  // A process holding it started for `chatId` (the process token port's provider).
+  if (chatId) identities.chats.hold(createHash('sha256').update(token).digest('hex'), chatId);
   return { token, identity: async () => identities.resolve(token) };
 }
 

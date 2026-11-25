@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
 import {
@@ -6,6 +6,8 @@ import {
   resetAgentIdentityService,
 } from '../../../../core/agent-identity/agent-identity-service.js';
 import { resolveAgentTokenEnv } from '../../../../core/agent-identity/agent-token-env.js';
+import { setProcessTokenPort } from '../../../shared/references/process-token-port.js';
+import { wireProcessTokenPort } from '../../../../../startup/steps/process-tokens.js';
 import { FakeAppServerHost } from '../../__tests__/fake-app-server.js';
 import { CodexAppServerPool } from '../process-pool.js';
 import {
@@ -380,7 +382,11 @@ describe('thread key lifecycle', () => {
 });
 
 describe('DOR-5264: the token a load mints names its chat until the thread goes', () => {
-  afterEach(() => resetAgentIdentityService());
+  beforeEach(() => wireProcessTokenPort());
+  afterEach(() => {
+    setProcessTokenPort(undefined);
+    resetAgentIdentityService();
+  });
 
   it.each(['the thread unloads', 'its process exits'] as const)(
     'names the chat, then forgets it when %s',
@@ -390,8 +396,8 @@ describe('DOR-5264: the token a load mints names its chat until the thread goes'
       const minted: string[] = [];
       const tools: CodexTurnTools = {
         ...NO_TOOLS,
-        mintAgentToken: async (chatId) => {
-          const env = await resolveAgentTokenEnv('/agents/ana', 'Ana', chatId);
+        mintAgentToken: async () => {
+          const env = await resolveAgentTokenEnv('/agents/ana', 'Ana');
           minted.push(env.DORKOS_AGENT_TOKEN!);
           return env;
         },
@@ -412,8 +418,8 @@ describe('DOR-5264: the token a load mints names its chat until the thread goes'
     const minted: string[] = [];
     const tools: CodexTurnTools = {
       ...NO_TOOLS,
-      mintAgentToken: async (chatId) => {
-        const env = await resolveAgentTokenEnv('/agents/ana', 'Ana', chatId);
+      mintAgentToken: async () => {
+        const env = await resolveAgentTokenEnv('/agents/ana', 'Ana');
         minted.push(env.DORKOS_AGENT_TOKEN!);
         return env;
       },
@@ -431,8 +437,8 @@ describe('DOR-5264: the token a load mints names its chat until the thread goes'
     const minted: string[] = [];
     const tools: CodexTurnTools = {
       ...NO_TOOLS,
-      mintAgentToken: async (chatId) => {
-        const env = await resolveAgentTokenEnv('/agents/ana', 'Ana', chatId);
+      mintAgentToken: async () => {
+        const env = await resolveAgentTokenEnv('/agents/ana', 'Ana');
         minted.push(env.DORKOS_AGENT_TOKEN!);
         return env;
       },

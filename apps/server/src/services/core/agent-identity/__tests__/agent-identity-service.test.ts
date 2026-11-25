@@ -21,13 +21,16 @@ describe('AgentIdentityService', () => {
     service = new AgentIdentityService(db);
   });
 
-  describe('the chat a token was minted for (DOR-5264)', () => {
-    it('names it on a live token, and only for that token', async () => {
-      const bound = await service.mint({
-        agentPath: AGENT_PATH,
-        displayName: 'R',
-        chatId: 'chat-a',
-      });
+  describe('the chat a held token names (DOR-5264)', () => {
+    /** Mint a token, and say a process holding it started for `chatId`. */
+    const heldFor = async (chatId: string) => {
+      const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'R' });
+      service.chats.hold(createHash('sha256').update(token, 'utf8').digest('hex'), chatId);
+      return token;
+    };
+
+    it('names it on a live token a process holds, and only for that token', async () => {
+      const bound = await heldFor('chat-a');
       const unbound = await service.mint({ agentPath: AGENT_PATH, displayName: 'R' });
       expect((await service.resolve(bound))?.chatId).toBe('chat-a');
       expect((await service.resolve(unbound))?.chatId).toBeUndefined();
@@ -36,11 +39,7 @@ describe('AgentIdentityService', () => {
     });
 
     it('forgets it when the agent is revoked, and never names it on a revoked token', async () => {
-      const token = await service.mint({
-        agentPath: AGENT_PATH,
-        displayName: 'R',
-        chatId: 'chat-a',
-      });
+      const token = await heldFor('chat-a');
       await service.revoke(AGENT_PATH);
       expect(await service.resolve(token)).toMatchObject({ inactive: 'revoked' });
       expect((await service.resolve(token))?.chatId).toBeUndefined();
@@ -60,11 +59,7 @@ describe('AgentIdentityService', () => {
     });
 
     it('is gone in a fresh process', async () => {
-      const token = await service.mint({
-        agentPath: AGENT_PATH,
-        displayName: 'R',
-        chatId: 'chat-a',
-      });
+      const token = await heldFor('chat-a');
       expect((await new AgentIdentityService(db).resolve(token))?.chatId).toBeUndefined();
     });
   });

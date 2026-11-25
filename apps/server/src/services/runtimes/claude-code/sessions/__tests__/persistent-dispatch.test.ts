@@ -215,6 +215,8 @@ import { shutdownSessionPumps } from '../session-pump-registry.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { resolveAgentTokenEnv } from '../../../../core/agent-identity/index.js';
 import { resolveAgentTokenEnv as realTokenEnv } from '../../../../core/agent-identity/agent-token-env.js';
+import { setProcessTokenPort } from '../../../shared/references/process-token-port.js';
+import { wireProcessTokenPort } from '../../../../../startup/steps/process-tokens.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -3212,6 +3214,7 @@ describe('the chat a process\u2019s identity token names (DOR-5264)', () => {
 
   beforeEach(() => {
     identities = initAgentIdentityService(createTestDb());
+    wireProcessTokenPort();
     // The real mint, which names no chat: a token names one once a process holds it.
     vi.mocked(resolveAgentTokenEnv).mockImplementation((_path, name) =>
       realTokenEnv('/agents/pump', name ?? 'Pump')
@@ -3239,6 +3242,7 @@ describe('the chat a process\u2019s identity token names (DOR-5264)', () => {
     for (const child of children.splice(0))
       if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
     vi.mocked(resolveAgentTokenEnv).mockResolvedValue({});
+    setProcessTokenPort(undefined);
     resetAgentIdentityService();
   });
 

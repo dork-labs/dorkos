@@ -25,6 +25,7 @@ import type { AgentIdentity } from '../../services/core/agent-identity/index.js'
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
 import {
   getAgentIdentityService,
+  holdTokenChat,
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
@@ -627,8 +628,8 @@ describe('work-graph.record-pr over HTTP (DOR-5264): the chat is the token’s',
     token = await initAgentIdentityService(db).mint({
       agentPath: '/agents/ana',
       displayName: 'Ana',
-      chatId: CHAT,
     });
+    holdTokenChat(token, CHAT);
     const registry = composeRegistry([workGraphDomain], {
       logger: noopLogger,
       workGraphDeps: {
@@ -687,8 +688,8 @@ describe('work-graph.record-pr over HTTP (DOR-5264): the chat is the token’s',
     const idle = await getAgentIdentityService()!.mint({
       agentPath: '/agents/ana',
       displayName: 'Ana',
-      chatId: '0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b',
     });
+    holdTokenChat(idle, '0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b');
     const res = await invoke().set('X-DorkOS-Agent', idle).send({ pr });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: 'forbidden' });

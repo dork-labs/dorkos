@@ -50,14 +50,11 @@ export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
  * @param agentPath - Absolute path to the agent's project directory, or
  *   `undefined` when the session's working directory hosts no registered agent.
  * @param displayName - Human-readable agent name for attribution labels.
- * @param chatId - The chat of the process the token goes to now, when it goes
- *   straight to one (Codex at thread load); see `MintAgentTokenInput.chatId`.
  * @returns `{ DORKOS_AGENT_TOKEN }`, or `{}` when no identity applies.
  */
 export async function resolveAgentTokenEnv(
   agentPath: string | undefined,
-  displayName: string | undefined,
-  chatId?: string
+  displayName: string | undefined
 ): Promise<Record<string, string>> {
   if (!agentPath) return {};
 
@@ -68,7 +65,6 @@ export async function resolveAgentTokenEnv(
     const token = await service.mint({
       agentPath,
       displayName: displayName?.trim() || agentPath,
-      ...(chatId ? { chatId } : {}),
     });
     // The token's lifecycle in the audit log (spec `audit-trail` PR2): DorkOS
     // minted it, for this agent. Named by a short one-way hash, never itself.
@@ -98,7 +94,9 @@ export async function resolveAgentTokenEnv(
 
 /**
  * A process launched with `env` has started for `chatId`: its token names that
- * chat until the process ends (DOR-5264). Pair it with {@link forgetTokenChatOf}.
+ * chat until the process ends (DOR-5264). The space side's half of the process
+ * token port (`runtimes/shared/references/process-token-port.ts`), which
+ * `startup/steps/process-tokens.ts` wires; pair it with {@link forgetTokenChatOf}.
  * Never throws.
  *
  * @param env - The environment the process is launched with.

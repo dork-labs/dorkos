@@ -27,8 +27,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
-import { forgetAgentTokens } from '../../../core/agent-identity/agent-identity-service.js';
-import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/agent-token-env.js';
+import { processEnded, processStarted } from '../../shared/references/process-token-port.js';
 import type { ConnectorThreadKeyPort } from '../../../connectors/runtime-principal-port.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
@@ -119,21 +118,21 @@ interface LoadedRecord {
   /** Digest of the credential VALUES it loaded with (see `credentialsOf`). */
   readonly credentials: string;
   readonly keyId: string | undefined;
-  /** The identity token this load minted: it names its chat while this thread is loaded (DOR-5264). */
-  readonly agentToken?: string;
+  /** The identity token env this load minted: its process holds it while this thread is loaded (DOR-5264). */
+  readonly agentTokenEnv?: Record<string, string>;
   /** Not yet persisted (no turn has started on it). */
   unbound: boolean;
   replaces: string | undefined;
 }
 
-/** The identity token one load minted, once it has (DOR-5264). */
+/** The identity token env one load minted, once it has (DOR-5264). */
 interface LoadToken {
-  token?: string;
+  env?: Record<string, string>;
 }
 
-/** A load that failed never reached a thread: its token names no chat. */
+/** A load that failed never reached a thread: its process holds no token. */
 function forgetLoadToken(load: LoadToken): void {
-  if (load.token) forgetAgentTokens(load.token);
+  if (load.env) processEnded(load.env);
 }
 
 /** Dependencies of {@link CodexThreadLoader}. */
@@ -277,7 +276,7 @@ export class CodexThreadLoader {
       compactionOnly: true,
       credentials: credentialsOf(input.tools),
       keyId: undefined,
-      agentToken: load.token,
+      agentTokenEnv: load.env,
       unbound: false,
       replaces: undefined,
     });
@@ -379,7 +378,7 @@ export class CodexThreadLoader {
       fingerprint: this.fingerprintOf(input),
       credentials: credentialsOf(input.tools),
       keyId: key?.keyId,
-      agentToken: load.token,
+      agentTokenEnv: load.env,
       unbound: true,
       replaces,
     });
@@ -451,7 +450,7 @@ export class CodexThreadLoader {
       fingerprint,
       credentials,
       keyId: key?.keyId,
-      agentToken: load.token,
+      agentTokenEnv: load.env,
       unbound: false,
       replaces: undefined,
     });
@@ -494,7 +493,7 @@ export class CodexThreadLoader {
       fingerprint,
       credentials,
       keyId: key?.keyId,
-      agentToken: load.token,
+      agentTokenEnv: load.env,
       unbound: true,
       replaces,
     });
@@ -547,7 +546,7 @@ export class CodexThreadLoader {
     if (!record) return;
     records!.delete(threadId);
     if (record.keyId) this.options.threadKeys()?.revoke(record.keyId, 'thread_unloaded');
-    if (record.agentToken) forgetAgentTokens(record.agentToken);
+    processEnded(record.agentTokenEnv);
   }
 
   /**
@@ -608,7 +607,7 @@ export class CodexThreadLoader {
       process.onExit(() => {
         if (this.byProcess.get(process.key) === created) this.byProcess.delete(process.key);
         this.options.threadKeys()?.revokeProcess(process.key, 'process_exited');
-        forgetAgentTokens(...[...created.values()].flatMap((r) => r.agentToken ?? []));
+        for (const record of created.values()) processEnded(record.agentTokenEnv);
       });
     }
     return records;
@@ -638,14 +637,16 @@ export class CodexThreadLoader {
     const { trust, modelNote } = await trustForLoad(input, realCwd);
     // The identity token is minted here, when a thread actually loads, not on
     // every turn: a loaded thread keeps the one it loaded with (spec §9).
-    // It names this chat from the mint (DOR-5264); `load` carries it to the
-    // thread's record, or to a failed load's catch, which forgets it.
+    // Its process holds it from this load (DOR-5264); `load` carries it to the
+    // thread's record, or to a failed load's catch, which gives it back.
     const agentTokenEnv =
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
-        ? await input.tools.mintAgentToken(input.sessionId)
+        ? await input.tools.mintAgentToken()
         : input.tools.agentTokenEnv;
-    if (agentTokenEnv !== input.tools.agentTokenEnv)
-      load.token = agentTokenEnv[AGENT_TOKEN_ENV_VAR];
+    if (agentTokenEnv !== input.tools.agentTokenEnv) {
+      load.env = agentTokenEnv;
+      processStarted(agentTokenEnv, input.sessionId);
+    }
     const params = buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {

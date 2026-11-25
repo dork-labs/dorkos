@@ -389,9 +389,9 @@ export async function resolveCodexLaunchTools(
 ): Promise<CodexTurnTools> {
   const agent = home ? mesh?.getByPath(home) : undefined;
   // App-server mints only when a thread loads. Tokens use the display name,
-  // never the slug that is only an address. A load names its chat (DOR-5264).
-  const mintAgentToken = (chatId?: string) =>
-    resolveAgentTokenEnv(agent ? home : undefined, agent?.displayName ?? agent?.name, chatId);
+  // never the slug that is only an address.
+  const mintAgentToken = () =>
+    resolveAgentTokenEnv(agent ? home : undefined, agent?.displayName ?? agent?.name);
   const mintsOnLoad = transport === 'app-server' && agent !== undefined;
   const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
   const dorkosTools = await resolveDorkosMcpInjection(

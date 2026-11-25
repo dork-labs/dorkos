@@ -134,13 +134,6 @@ export interface MintAgentTokenInput {
   agentPath: string;
   /** Human-readable agent name. */
   displayName: string;
-  /**
-   * The chat of the process this token goes to now, when the minter hands it
-   * straight to one (Codex at thread load). It counts as that process holding
-   * it (`token-chats.ts`); a minter that may never use the token leaves it out
-   * and calls {@link holdTokenChat} when a process starts with it.
-   */
-  chatId?: string;
 }
 
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
@@ -216,16 +209,14 @@ export class AgentIdentityService {
    */
   async mint(input: MintAgentTokenInput): Promise<string> {
     const token = randomBytes(TOKEN_BYTES).toString('hex');
-    const tokenHash = hashToken(token);
     await this.db.insert(agentIdentityTokens).values({
-      tokenHash,
+      tokenHash: hashToken(token),
       agentPath: input.agentPath,
       displayName: input.displayName,
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
       revokedAt: null,
     });
-    if (input.chatId) this.chats.hold(tokenHash, input.chatId);
     return token;
   }
 

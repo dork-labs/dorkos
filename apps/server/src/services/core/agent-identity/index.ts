@@ -7,8 +7,6 @@
 export {
   AgentIdentityService,
   agentTokenDigestPrefix,
-  forgetAgentTokens,
-  holdTokenChat,
   initAgentIdentityService,
   getAgentIdentityService,
   resetAgentIdentityService,
@@ -19,8 +17,6 @@ export {
 } from './agent-identity-service.js';
 export {
   resolveAgentTokenEnv,
-  forgetTokenChatOf,
-  holdTokenChatOf,
   ensureInSessionAgentIdentity,
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,

@@ -40,10 +40,7 @@ import { fireLaunchProbes } from '../messaging/launch-probes.js';
 import { noteLaunchedAppend } from '../messaging/turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
 import { startHeavyJobsProcess } from '../tool-gate/load-gate-hook.js';
-import {
-  forgetTokenChatOf,
-  holdTokenChatOf,
-} from '../../../core/agent-identity/agent-token-env.js';
+import { processEnded, processStarted } from '../../shared/references/process-token-port.js';
 import type { MessageSenderOpts, ResolvedLaunch } from '../messaging/message-sender-shared.js';
 import { captureLaunchFingerprint } from './launch-fingerprint.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
@@ -170,10 +167,10 @@ export function startLaunchedProcess(
   chatId: string
 ): () => void {
   const releaseHeavyJobs = startHeavyJobsProcess(options);
-  holdTokenChatOf(options.env, chatId);
+  processStarted(options.env, chatId);
   return () => {
     releaseHeavyJobs();
-    forgetTokenChatOf(options.env);
+    processEnded(options.env);
   };
 }
 

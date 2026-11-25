@@ -45,10 +45,9 @@ export interface CodexTurnTools {
   /**
    * Mint the identity token on demand instead (app-server): called only when a
    * thread actually loads, since a loaded thread keeps the token it loaded
-   * with, and it names the chat it loads for (DOR-5264). Absent when the turn
-   * is unattributed.
+   * with. Absent when the turn is unattributed.
    */
-  readonly mintAgentToken?: (chatId?: string) => Promise<Record<string, string>>;
+  readonly mintAgentToken?: () => Promise<Record<string, string>>;
   /** The chat's agent and space references for the shell (`turn-reference-env.ts`). */
   readonly referenceEnv?: TurnReferenceEnv;
   /** The agent's enabled managed MCP servers, in Codex config shape. */

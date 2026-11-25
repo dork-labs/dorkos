@@ -16,6 +16,8 @@ import {
   resetAgentIdentityService,
   type AgentIdentityService,
 } from '../../../../core/agent-identity/agent-identity-service.js';
+import { setProcessTokenPort } from '../../../shared/references/process-token-port.js';
+import { wireProcessTokenPort } from '../../../../../startup/steps/process-tokens.js';
 import { startLaunchedProcess } from '../pump-launch.js';
 import { createTrackedSpawn } from '../tracked-spawn.js';
 import { WarmProcessLedger } from '../warm-process-ledger.js';
@@ -29,12 +31,14 @@ const children: SpawnedProcess[] = [];
 beforeEach(() => {
   dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'launched-token-'));
   identities = initAgentIdentityService(createTestDb());
+  wireProcessTokenPort();
 });
 
 afterEach(() => {
   // Only ever the children this test started, only ever through their own handles.
   for (const child of children.splice(0))
     if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
+  setProcessTokenPort(undefined);
   resetAgentIdentityService();
   fs.rmSync(dorkHome, { recursive: true, force: true });
 });
