@@ -18,7 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { requestInbox } from '@/layers/entities/notifications';
-import { extensionPageHref, resolveApiBaseUrl } from '@/layers/shared/lib';
+import { extensionPageHref, readResponseError, resolveApiBaseUrl } from '@/layers/shared/lib';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import { appState, type AppEntry } from '../lib/app-catalog';
 import { useRetryApps } from './use-app-catalog';
@@ -141,12 +141,11 @@ export function useAppActions(): AppActions {
         { method: 'POST' }
       ).catch(() => null);
       if (res === null || !res.ok) {
-        // The server's own sentence says who can do it when a person bar refused it.
-        const body = (await res?.json().catch(() => ({}))) as { message?: string } | undefined;
-        toast(
-          body?.message ??
-            (on ? 'Couldn’t turn it on. Try again.' : 'Couldn’t turn it off. Try again.')
-        );
+        // The server's own sentence (`detail`) says who can do it when a person bar refused it.
+        const fallback = on
+          ? 'Couldn’t turn it on. Try again.'
+          : 'Couldn’t turn it off. Try again.';
+        toast(res === null ? fallback : (await readResponseError(res, fallback)).message);
         return;
       }
       await queryClient.invalidateQueries({ queryKey: extensionQueryKeys.list() });

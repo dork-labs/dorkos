@@ -49,21 +49,25 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const UNVERIFIED = {
-  error:
+const UNVERIFIED = problemBody('agent_identity_unverified', {
+  detail:
     'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
-  code: 'AGENT_IDENTITY_UNVERIFIED',
-};
-const NO_SUCH_ROOM = z.object({ code: z.literal('ROOM_NOT_FOUND') }).loose();
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed'), details: z.unknown() });
+});
+const NO_SUCH_ROOM = z.object({ code: z.literal('room_not_found') }).loose();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
-const INTERNAL_ERROR = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** A ULID nobody minted: a well-formed room id for a room that does not exist. */
 const NO_ROOM = '01HZZZZZZZZZZZZZZZZZZZZZZZ';
@@ -165,12 +169,12 @@ function expectAnswer(
   else if (body !== undefined) expect(answer.json).toEqual(body);
 }
 
-/** A refusal: its status and its code, and the JSON type. */
+/** A refusal: its status and its code, and the problem type. */
 function expectRefusal(answer: Answer, status: number, code: string): void {
   expectAnswer(answer, status);
-  expect(answer.headers['content-type']).toMatch(/^application\/json\b/);
+  expect(answer.headers['content-type']).toMatch(/^application\/problem\+json/);
   expect(answer.json.code, answer.text).toBe(code);
-  expect(typeof answer.json.error).toBe('string');
+  expect(typeof answer.json.detail).toBe('string');
 }
 
 /** Send one setup request, failing loudly when the server refuses it. */
@@ -299,19 +303,19 @@ contractSuite('the room routes, login off, the refusals', [
     name: 'GET /api/rooms with an unverifiable agent is refused 401',
     path: '/api/rooms',
     headers: AGENT,
-    expect: { status: 401, headers: JSON_TYPE, body: UNVERIFIED },
+    expect: { status: 401, headers: PROBLEM_TYPE, body: UNVERIFIED },
   },
   {
     name: 'GET /api/rooms/:id with an unverifiable agent is refused 401 before any lookup',
     path: `/api/rooms/${NO_ROOM}`,
     headers: AGENT,
-    expect: { status: 401, headers: JSON_TYPE, body: UNVERIFIED },
+    expect: { status: 401, headers: PROBLEM_TYPE, body: UNVERIFIED },
   },
   {
     name: 'GET /api/rooms/:id/events with an unverifiable agent is refused 401',
     path: `/api/rooms/${NO_ROOM}/events`,
     headers: AGENT,
-    expect: { status: 401, headers: JSON_TYPE, body: UNVERIFIED },
+    expect: { status: 401, headers: PROBLEM_TYPE, body: UNVERIFIED },
   },
   {
     name: 'POST /api/rooms/:id/attachments with an unverifiable agent is refused 401',
@@ -319,15 +323,15 @@ contractSuite('the room routes, login off, the refusals', [
     path: `/api/rooms/${NO_ROOM}/attachments`,
     headers: { ...AGENT, ...MULTIPART },
     body: multipart([{ field: 'files', filename: 'a.txt', type: 'text/plain', content: 'a' }]),
-    expect: { status: 401, headers: JSON_TYPE, body: UNVERIFIED },
+    expect: { status: 401, headers: PROBLEM_TYPE, body: UNVERIFIED },
   },
   {
     name: 'GET /api/rooms/:id answers 404 for a room that does not exist',
     path: `/api/rooms/${NO_ROOM}`,
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such room', code: 'ROOM_NOT_FOUND' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('room_not_found', { detail: 'No such room.' }),
     },
   },
   {
@@ -335,43 +339,46 @@ contractSuite('the room routes, login off, the refusals', [
     path: `/api/rooms/${NO_ROOM}/events`,
     expect: {
       status: 404,
-      headers: JSON_TYPE,
-      body: { error: 'No such room', code: 'ROOM_NOT_FOUND' },
+      headers: PROBLEM_TYPE,
+      body: problemBody('room_not_found', { detail: 'No such room.' }),
     },
   },
   {
     name: 'GET /api/rooms/:id/export answers 404 for a room that does not exist',
     path: `/api/rooms/${NO_ROOM}/export`,
-    expect: { status: 404, headers: JSON_TYPE, schema: NO_SUCH_ROOM },
+    expect: { status: 404, headers: PROBLEM_TYPE, schema: NO_SUCH_ROOM },
   },
   {
     name: 'GET /api/rooms/:id/canvas answers 404 for a room that does not exist',
     path: `/api/rooms/${NO_ROOM}/canvas`,
-    expect: { status: 404, headers: JSON_TYPE, schema: NO_SUCH_ROOM },
+    expect: { status: 404, headers: PROBLEM_TYPE, schema: NO_SUCH_ROOM },
   },
   {
     name: 'GET /api/rooms?kind=bogus is refused 400',
     path: '/api/rooms?kind=bogus',
-    expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
   },
   {
     name: 'GET /api/rooms/threads?limit=0 is refused 400',
     path: '/api/rooms/threads?limit=0',
-    expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
   },
   {
     name: 'POST /api/rooms with no body is refused 400',
     method: 'POST',
     path: '/api/rooms',
-    expect: { status: 400, headers: JSON_TYPE, schema: VALIDATION_FAILED },
+    expect: { status: 400, headers: PROBLEM_TYPE, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/rooms with malformed JSON is the chain’s 500',
+    name: 'POST /api/rooms with malformed JSON is the chain’s 400',
     method: 'POST',
     path: '/api/rooms',
     headers: { 'content-type': 'application/json' },
     body: '{"kind":',
-    expect: { status: 500, schema: INTERNAL_ERROR },
+    expect: {
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
+    },
   },
   {
     name: 'POST /api/rooms over the JSON limit is refused 413',
@@ -379,25 +386,25 @@ contractSuite('the room routes, login off, the refusals', [
     path: '/api/rooms',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ kind: 'channel', topic: 'x'.repeat(1024 * 1024 + 10) }),
-    expect: { status: 413, schema: z.object({ code: z.literal('REQUEST_TOO_LARGE') }).loose() },
+    expect: { status: 413, schema: z.object({ code: z.literal('request_too_large') }).loose() },
   },
   {
     name: 'DELETE /api/rooms/:id does not exist',
     method: 'DELETE',
     path: `/api/rooms/${NO_ROOM}`,
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'GET /api/rooms/:id/nothing does not exist',
     path: `/api/rooms/${NO_ROOM}/nothing`,
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'PUT /api/rooms/:id/read-cursor is gone',
     method: 'PUT',
     path: `/api/rooms/${NO_ROOM}/read-cursor`,
     body: { lastReadSeq: 1 },
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
 ]);
 
@@ -457,7 +464,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expect(created.json.title).toBe('Contract room');
     expect(created.json.viewerIsOperator).toBe(true);
     roomId = created.json.id as string;
-    expectRefusal(await call(server, 'GET', rooms('/files')), 409, 'ROOM_HAS_NO_REPO');
+    expectRefusal(await call(server, 'GET', rooms('/files')), 409, 'room_has_no_repo');
   });
 
   it('POST /api/rooms starts a channel with its own files, ROOM.md pinned on its canvas (DOR-2112)', async () => {
@@ -475,7 +482,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectAnswer(canvas, 200, CanvasDocumentListResponseSchema);
     expect(JSON.stringify(canvas.json)).toContain('ROOM.md');
     // Already set up, so the button has nothing left to do.
-    expectRefusal(await call(server, 'POST', `/api/rooms/${id}/repo`), 409, 'ROOM_REPO_EXISTS');
+    expectRefusal(await call(server, 'POST', `/api/rooms/${id}/repo`), 409, 'room_repo_exists');
   });
 
   it('POST /api/rooms refuses a malformed slug 400', async () => {
@@ -535,10 +542,11 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       { agentPath: stranger.agentDir },
       member.header
     );
-    expectAnswer(answer, 403, {
-      error: 'Only you can change who is in a room',
-      code: 'OPERATOR_ONLY',
-    });
+    expectAnswer(
+      answer,
+      403,
+      problemBody('operator_only', { detail: 'Only you can change who is in a room' })
+    );
   });
 
   it('PATCH /api/rooms/:id/members/:authorId changes a response mode', async () => {
@@ -551,7 +559,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'PATCH', rooms('/members/nobody-at-all'), { responseMode: 'silent' }),
       404,
-      'MEMBER_NOT_FOUND'
+      'not_found'
     );
     expectAnswer(
       await call(server, 'PATCH', rooms(`/members/${memberAuthorId}`), { responseMode: 'loud' }),
@@ -572,10 +580,10 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     ]) {
       const answer = await call(server, 'GET', rooms(rest), undefined, stranger.header);
       expect(answer.status, `${rest}: ${answer.text}`).toBe(404);
-      expect(answer.json.code, rest).toBe('ROOM_NOT_FOUND');
+      expect(answer.json.code, rest).toBe('room_not_found');
     }
     const stream = await call(server, 'GET', rooms('/events'), undefined, stranger.header);
-    expectAnswer(stream, 404, { error: 'No such room', code: 'ROOM_NOT_FOUND' });
+    expectAnswer(stream, 404, problemBody('room_not_found', { detail: 'No such room.' }));
   });
 
   it('POST /api/rooms/:id/entries posts as the person: 202 with its identity', async () => {
@@ -601,12 +609,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/entries'), { text: 'x' }, stranger.header),
       404,
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
     expectRefusal(
       await call(server, 'POST', rooms('/entries'), { text: 'x' }, AGENT),
       401,
-      'AGENT_IDENTITY_UNVERIFIED'
+      'agent_identity_unverified'
     );
   });
 
@@ -620,7 +628,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', `/api/rooms/${NO_ROOM}/entries`, { text: 'x' }),
       404,
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
   });
 
@@ -650,12 +658,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         text: 'Too deep',
       }),
       400,
-      'NESTED_THREAD'
+      'invalid_request'
     );
     expectRefusal(
       await call(server, 'POST', rooms('/threads'), { rootEntryId: 'nope', text: 'x' }),
       404,
-      'ENTRY_NOT_FOUND'
+      'not_found'
     );
     expectAnswer(
       await call(server, 'POST', rooms('/threads'), { text: 'x' }),
@@ -696,7 +704,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/entries/nope/reactions'), { emoji: '👍' }),
       404,
-      'ENTRY_NOT_FOUND'
+      'not_found'
     );
   });
 
@@ -794,12 +802,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/attachments'), body, { ...MULTIPART, ...member.header }),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     expectRefusal(
       await call(server, 'POST', `/api/rooms/${NO_ROOM}/attachments`, body, MULTIPART),
       404,
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
     expectAnswer(
       await call(
@@ -810,12 +818,13 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       400,
-      { error: "Attach the files as the 'files' field.", code: 'ATTACHMENT_MISSING' }
+      problemBody('invalid_request', { detail: "Attach the files as the 'files' field." })
     );
-    expectAnswer(await call(server, 'POST', rooms('/attachments')), 400, {
-      error: "Attach the files as the 'files' field.",
-      code: 'ATTACHMENT_MISSING',
-    });
+    expectAnswer(
+      await call(server, 'POST', rooms('/attachments')),
+      400,
+      problemBody('invalid_request', { detail: "Attach the files as the 'files' field." })
+    );
     expectAnswer(
       await call(
         server,
@@ -825,7 +834,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       400,
-      { error: 'Unexpected file field', code: 'LIMIT_UNEXPECTED_FILE' }
+      problemBody('malformed_request', { detail: 'Unexpected file field' })
     );
   });
 
@@ -843,7 +852,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       413,
-      { error: 'File too large (max 1MB)', code: 'LIMIT_FILE_SIZE' }
+      problemBody('request_too_large', { detail: 'File too large (max 1MB)' })
     );
     const exact = await call(
       server,
@@ -868,7 +877,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       400,
-      { error: 'Too many files', code: 'LIMIT_FILE_COUNT' }
+      problemBody('malformed_request', { detail: 'Too many files' })
     );
     expectAnswer(
       await call(
@@ -879,14 +888,18 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       415,
-      { error: 'File type not allowed: text/html', code: 'ATTACHMENT_TYPE_NOT_ALLOWED' }
+      problemBody('unsupported_media_type', {
+        detail: 'That type of file isn’t allowed in uploads.',
+      })
     );
     expectAnswer(
       await call(server, 'POST', rooms('/attachments'), 'nothing', {
         'content-type': 'multipart/form-data',
       }),
-      415,
-      { error: 'Multipart: Boundary not found', code: 'ATTACHMENT_TYPE_NOT_ALLOWED' }
+      400,
+      problemBody('malformed_request', {
+        detail: 'That upload couldn’t be read. Send it again as one complete form.',
+      })
     );
     await setup(server, 'PATCH', '/api/config', {
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
@@ -925,10 +938,11 @@ describe('contract: the room routes, driven by hand (login off)', () => {
   });
 
   it('GET /api/rooms/:id/attachments/:id refuses with 404, or 400 for an unusable id', async () => {
-    expectAnswer(await call(server, 'GET', rooms('/attachments/01HZZZZZZZZZZZZZZZZZZZZZZZ')), 404, {
-      error: 'No such file.',
-      code: 'ATTACHMENT_NOT_FOUND',
-    });
+    expectAnswer(
+      await call(server, 'GET', rooms('/attachments/01HZZZZZZZZZZZZZZZZZZZZZZZ')),
+      404,
+      problemBody('attachment_not_found', { detail: 'No such file.' })
+    );
     expectAnswer(
       await call(
         server,
@@ -938,13 +952,13 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         stranger.header
       ),
       404,
-      { error: 'No such file.', code: 'ATTACHMENT_NOT_FOUND' }
+      problemBody('attachment_not_found', { detail: 'No such file.' })
     );
     // Not posted yet, so only its uploader reads it.
     expectAnswer(
       await call(server, 'GET', rooms(`/attachments/${imageAttachment}`), undefined, member.header),
       404,
-      { error: 'No such file.', code: 'ATTACHMENT_NOT_FOUND' }
+      problemBody('attachment_not_found', { detail: 'No such file.' })
     );
   });
 
@@ -964,7 +978,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         attachmentIds: [imageAttachment],
       }),
       409,
-      'ATTACHMENT_ALREADY_POSTED'
+      'conflict'
     );
   });
 
@@ -985,10 +999,11 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     const sessions = await call(server, 'GET', rooms('/sessions'));
     expectAnswer(sessions, 200);
     expect(Array.isArray(sessions.json.bindings)).toBe(true);
-    expectAnswer(await call(server, 'GET', rooms('/sessions'), undefined, member.header), 403, {
-      error: "Only a person can see where a room's work runs.",
-      code: 'PEOPLE_ONLY',
-    });
+    expectAnswer(
+      await call(server, 'GET', rooms('/sessions'), undefined, member.header),
+      403,
+      problemBody('person_only', { detail: "Only a person can see where a room's work runs." })
+    );
   });
 
   it('PATCH /api/rooms/:id changes the room for its operator and refuses an agent', async () => {
@@ -1001,18 +1016,14 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'PATCH', rooms(), { title: 'Mine now' }, member.header),
       403,
-      'OPERATOR_ONLY'
+      'operator_only'
     );
     expectRefusal(
       await call(server, 'PATCH', rooms(), { title: 'Mine now' }, stranger.header),
       404,
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
-    expectRefusal(
-      await call(server, 'PATCH', rooms(), { deliverNotices: true }),
-      409,
-      'NOT_A_BRIDGED_ROOM'
-    );
+    expectRefusal(await call(server, 'PATCH', rooms(), { deliverNotices: true }), 409, 'conflict');
     expectAnswer(await call(server, 'PATCH', rooms(), { title: '' }), 400, VALIDATION_FAILED);
   });
 
@@ -1026,7 +1037,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         member.header
       ),
       403,
-      'OPERATOR_ONLY'
+      'operator_only'
     );
     const handle = `contract-${randomUUID().slice(0, 6)}`;
     const set = await call(server, 'PATCH', `/api/rooms/authors/${memberAuthorId}/handle`, {
@@ -1058,11 +1069,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     const one = await call(server, 'POST', rooms(`/halt/${memberAuthorId}`));
     expectAnswer(one, 200);
     expect(one.json).toEqual({ stopped: 0 });
-    expectAnswer(await call(server, 'POST', rooms('/halt'), undefined, member.header), 403, {
-      error: 'Only people stop a room',
-      code: 'PEOPLE_ONLY',
-    });
-    expectRefusal(await call(server, 'POST', `/api/rooms/${NO_ROOM}/halt`), 404, 'ROOM_NOT_FOUND');
+    expectAnswer(
+      await call(server, 'POST', rooms('/halt'), undefined, member.header),
+      403,
+      problemBody('person_only', { detail: 'Only people stop a room' })
+    );
+    expectRefusal(await call(server, 'POST', `/api/rooms/${NO_ROOM}/halt`), 404, 'room_not_found');
   });
 
   it('POST /api/rooms/:id/holds/:authorId/promote answers false with nothing waiting', async () => {
@@ -1072,7 +1084,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', `/api/rooms/${NO_ROOM}/holds/x/promote`),
       404,
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
   });
 
@@ -1080,14 +1092,14 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'PUT', rooms('/follow'), { memberId: memberAuthorId }, member.header),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     const self = await call(server, 'GET', rooms());
     const viewer = self.json.viewerAuthorId as string;
     expectRefusal(
       await call(server, 'PUT', rooms('/follow'), { memberId: viewer }),
       400,
-      'CANNOT_FOLLOW_YOURSELF'
+      'invalid_request'
     );
     expectAnswer(await call(server, 'PUT', rooms('/follow'), {}), 400, VALIDATION_FAILED);
     expectAnswer(
@@ -1105,12 +1117,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/follow/view'), { documentId: 'doc-1' }, member.header),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     expectRefusal(
       await call(server, 'DELETE', rooms('/follow'), undefined, stranger.header),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     const gone = await call(server, 'DELETE', rooms('/follow'));
     expectAnswer(gone, 204);
@@ -1144,10 +1156,11 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     const read = await call(server, 'GET', rooms(`/canvas/${documentId}`));
     expectAnswer(read, 200);
     expect(read.json.id).toBe(documentId);
-    expectAnswer(await call(server, 'GET', rooms('/canvas/nope')), 404, {
-      error: 'No such document on this room’s canvas',
-      code: 'CANVAS_DOCUMENT_NOT_FOUND',
-    });
+    expectAnswer(
+      await call(server, 'GET', rooms('/canvas/nope')),
+      404,
+      problemBody('not_found', { detail: 'No such document on this room’s canvas.' })
+    );
 
     const patched = await call(server, 'PATCH', rooms(`/canvas/${documentId}`), {
       content: { type: 'markdown', content: '# Notes, changed' },
@@ -1155,18 +1168,14 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     });
     expectAnswer(patched, 200);
     expect(patched.json).toMatchObject({ content: { content: '# Notes, changed' }, rev: 3 });
-    expectRefusal(
-      await call(server, 'PATCH', rooms('/canvas/nope'), {}),
-      404,
-      'CANVAS_DOCUMENT_NOT_FOUND'
-    );
+    expectRefusal(await call(server, 'PATCH', rooms('/canvas/nope'), {}), 404, 'not_found');
 
     const viewing = await call(server, 'POST', rooms('/canvas/viewing'), { documentId });
     expectAnswer(viewing, 204);
     expectRefusal(
       await call(server, 'POST', rooms('/canvas/viewing'), { documentId }, member.header),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
 
     const editing = await call(server, 'POST', rooms(`/canvas/${documentId}/editing`), {
@@ -1191,13 +1200,16 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'GET', rooms(`/canvas/${documentId}/diff`), undefined, member.header),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
-    expectAnswer(await call(server, 'GET', rooms(`/canvas/${documentId}/diff`)), 400, {
-      error:
-        'That document is not a review of somebody’s working copy, so there is nothing to compare.',
-      code: 'CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM',
-    });
+    expectAnswer(
+      await call(server, 'GET', rooms(`/canvas/${documentId}/diff`)),
+      400,
+      problemBody('invalid_request', {
+        detail:
+          'That document is not a review of somebody’s working copy, so there is nothing to compare.',
+      })
+    );
     expectAnswer(
       await call(server, 'PUT', rooms(`/canvas/${documentId}/diff`), {}),
       400,
@@ -1206,19 +1218,15 @@ describe('contract: the room routes, driven by hand (login off)', () => {
 
     const closed = await call(server, 'DELETE', rooms(`/canvas/${documentId}`));
     expectAnswer(closed, 204);
-    expectRefusal(
-      await call(server, 'DELETE', rooms(`/canvas/${documentId}`)),
-      404,
-      'CANVAS_DOCUMENT_NOT_FOUND'
-    );
+    expectRefusal(await call(server, 'DELETE', rooms(`/canvas/${documentId}`)), 404, 'not_found');
   });
 
   it('GET /api/rooms/:id/files refuses a room with no files 409', async () => {
-    expectRefusal(await call(server, 'GET', rooms('/files')), 409, 'ROOM_HAS_NO_REPO');
+    expectRefusal(await call(server, 'GET', rooms('/files')), 409, 'room_has_no_repo');
     expectRefusal(
       await call(server, 'GET', rooms('/files/content?path=ROOM.md')),
       409,
-      'ROOM_HAS_NO_REPO'
+      'room_has_no_repo'
     );
   });
 
@@ -1228,10 +1236,9 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expect(enabled.json.repo).toMatchObject({ roomId, mode: 'owned', defaultBranch: 'main' });
     const again = await call(server, 'POST', rooms('/repo'));
     expectAnswer(again, 409);
-    expect(again.json).toMatchObject({
-      error: 'This room already has files of its own.',
-      code: 'ROOM_REPO_EXISTS',
-    });
+    expect(again.json).toMatchObject(
+      problemBody('room_repo_exists', { detail: 'This room already has files of its own.' })
+    );
     expect(again.json).toHaveProperty('repo');
   });
 
@@ -1251,7 +1258,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'GET', rooms('/files/content?path=nope.md')),
       404,
-      'ROOM_FILE_NOT_FOUND'
+      'room_file_not_found'
     );
     const status = await call(server, 'GET', rooms('/repo/status'));
     expectAnswer(status, 200);
@@ -1271,7 +1278,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         member.header
       ),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     const saved = await call(server, 'PUT', rooms('/files/content'), {
       path: 'ROOM.md',
@@ -1290,7 +1297,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       text: 'mine\n',
     });
     expectAnswer(stale, 409);
-    expect(stale.json).toMatchObject({ code: 'FILE_CHANGED' });
+    expect(stale.json).toMatchObject({ code: 'file_changed' });
     expect(stale.json).toHaveProperty('conflict');
     expectAnswer(await call(server, 'PUT', rooms('/files/content'), {}), 400, VALIDATION_FAILED);
     const listed = await call(server, 'GET', rooms('/files'));
@@ -1329,7 +1336,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/files/upload'), one, { ...MULTIPART, ...member.header }),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     expectRefusal(
       await call(
@@ -1343,7 +1350,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       409,
-      'ROOM_FILE_EXISTS'
+      'room_file_exists'
     );
     const many = Array.from({ length: 21 }, (_, i) => ({
       field: 'files',
@@ -1354,10 +1361,9 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectAnswer(
       await call(server, 'POST', rooms('/files/upload'), multipart(many), MULTIPART),
       400,
-      {
-        error: 'One upload can carry at most 20 files.',
-        code: 'ROOM_UPLOAD_TOO_MANY_FILES',
-      }
+      problemBody('room_upload_too_many_files', {
+        detail: 'One upload can carry at most 20 files.',
+      })
     );
     expectRefusal(
       await call(
@@ -1368,7 +1374,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       400,
-      'ROOM_FILE_PATH_INVALID'
+      'room_file_path_invalid'
     );
     expectAnswer(
       await call(
@@ -1400,10 +1406,9 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       409,
-      {
-        error: 'A file in that upload is larger than this room’s limit for one file, 5.0 MB.',
-        code: 'FILE_TOO_LARGE',
-      }
+      problemBody('file_too_large', {
+        detail: 'A file in that upload is larger than this room’s limit for one file, 5.0 MB.',
+      })
     );
     expectAnswer(
       await call(server, 'PUT', rooms('/files/content'), {
@@ -1413,10 +1418,9 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       }),
       413
     );
-    const noFiles = {
-      error: 'There were no files in that upload.',
-      code: 'ROOM_FILE_PATH_INVALID',
-    };
+    const noFiles = problemBody('room_file_path_invalid', {
+      detail: 'There were no files in that upload.',
+    });
     expectAnswer(
       await call(server, 'POST', rooms('/files/upload'), multipart([]), MULTIPART),
       400,
@@ -1458,7 +1462,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         member.header
       ),
       403,
-      'PEOPLE_ONLY'
+      'person_only'
     );
     commit = (await call(server, 'GET', rooms('/files'))).json.commit as string;
   });
@@ -1481,7 +1485,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         baseCommit: null,
       }),
       404,
-      { error: 'No such file.', code: 'ATTACHMENT_NOT_FOUND' }
+      problemBody('attachment_not_found', { detail: 'No such file.' })
     );
   });
 
@@ -1499,18 +1503,21 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/repo/main/repair'), { action: 'commit' }, member.header),
       403,
-      'OPERATOR_ONLY'
+      'operator_only'
     );
     expectAnswer(
       await call(server, 'POST', rooms('/repo/main/repair'), {}),
       400,
       VALIDATION_FAILED
     );
-    expectAnswer(await call(server, 'POST', rooms('/repo/merge'), { summary: 'Nothing' }), 409, {
-      error:
-        'You have no working copy in this room to merge. Only an agent that has worked in the room has one.',
-      code: 'NOTHING_TO_MERGE',
-    });
+    expectAnswer(
+      await call(server, 'POST', rooms('/repo/merge'), { summary: 'Nothing' }),
+      409,
+      problemBody('conflict', {
+        detail:
+          'You have no working copy in this room to merge. Only an agent that has worked in the room has one.',
+      })
+    );
     expectRefusal(
       await call(
         server,
@@ -1520,7 +1527,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         member.header
       ),
       403,
-      'OPERATOR_ONLY'
+      'operator_only'
     );
     expectAnswer(await call(server, 'POST', rooms('/repo/merge'), {}), 400, VALIDATION_FAILED);
   });
@@ -1604,12 +1611,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'GET', rooms(), undefined, member.header),
       404,
-      'ROOM_NOT_FOUND'
+      'room_not_found'
     );
     expectRefusal(
       await call(server, 'DELETE', rooms(`/members/${memberAuthorId}`)),
       404,
-      'MEMBER_NOT_FOUND'
+      'not_found'
     );
   });
 
@@ -1620,7 +1627,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expectRefusal(
       await call(server, 'POST', rooms('/entries'), { text: 'Too late' }),
       409,
-      'ROOM_ARCHIVED'
+      'room_archived'
     );
     expectRefusal(
       await call(
@@ -1631,12 +1638,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
         MULTIPART
       ),
       409,
-      'ROOM_ARCHIVED'
+      'room_archived'
     );
     expectRefusal(
       await call(server, 'POST', rooms('/canvas'), { content: { type: 'markdown', content: 'x' } }),
       409,
-      'ROOM_ARCHIVED'
+      'room_archived'
     );
     const listed = await call(server, 'GET', '/api/rooms?includeArchived=true');
     expect((listed.json.rooms as Array<{ id: string }>).map((room) => room.id)).toContain(roomId);

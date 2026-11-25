@@ -13,7 +13,7 @@ export interface TaskModeUndoTransport {
    * Put back exactly what the agent's change a notice named replaced: its
    * mode, its prompt, or both (`POST /api/tasks/:id/undo-agent-mode`). A
    * person's action only: the server refuses any agent. Refused with
-   * `nothing_to_undo`, and a sentence saying what the task runs as now, once
+   * `conflict`, and a sentence (`message`) saying what the task runs as now, once
    * the task changed since the notice.
    *
    * @param taskId - The schedule.
@@ -23,7 +23,7 @@ export interface TaskModeUndoTransport {
   /**
    * Approve a task's SKILL file as it is now, lifting the cap a change outside
    * the task tools put on its runs (`POST /api/tasks/:id/approve-file`, M4). A
-   * person's action only. Refused with `file_changed_since` once the file
+   * person's action only. Refused with `conflict` once the file
    * changed since the diff the person saw.
    *
    * @param taskId - The schedule.

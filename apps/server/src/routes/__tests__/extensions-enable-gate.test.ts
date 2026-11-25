@@ -78,10 +78,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
-import {
-  findOperatorOnlyPaths,
-  OPERATOR_ONLY_CONFIG_CODE,
-} from '../../services/core/operator/config-write-policy.js';
+import { findOperatorOnlyPaths } from '../../services/core/operator/config-write-policy.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -229,7 +226,8 @@ describe('who may turn an extension on or off', () => {
         .send({});
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(OPERATOR_ONLY_CONFIG_CODE);
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('person_only');
       expect(manager.enable).not.toHaveBeenCalled();
       expect(state.extensions.enabled).toEqual([]);
       // And the feed is told NOTHING — a refused attempt must not leave a line
@@ -309,7 +307,7 @@ describe('who may turn an extension on or off', () => {
       // can change this", which is true of an unauthenticated caller and of one
       // authenticated by some other means alike.
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
       expect(manager.enable).not.toHaveBeenCalled();
       expect(state.extensions.enabled).toEqual([]);
     });

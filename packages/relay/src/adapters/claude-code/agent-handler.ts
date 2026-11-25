@@ -641,11 +641,8 @@ export async function handleAgentMessage(
     ? NO_EVENTS
     : deps.agentManager.sendMessage(ccaSessionKey, prompt, {
         permissionMode: effectivePermissionMode,
-        // The sender bounds the turn, or marks it, never both ways at once (`turnPowerOptions`).
-        ...turnPowerOptions(
-          trustedShaper,
-          deps.markStrangerTurns === true && shaping?.__untrustedWords === true
-        ),
+        // The sender bounds or marks the turn, plus what its own turns carry (`turnPowerOptions`).
+        ...turnPowerOptions(trustedShaper, deps.markStrangerTurns === true, payloadObj),
         ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
         ...(payloadForAgent ? { forAgent: payloadForAgent } : {}),
         ...(formatBlock ? { systemPromptAppend: formatBlock } : {}),

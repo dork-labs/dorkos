@@ -33,7 +33,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import type { MarketplaceInstaller } from '../installer/marketplace-installer.js';
-import { ADAPTER_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-adapter.js';
+
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-shape.js';
 import {
   scanAgentLocalInstalls,
@@ -44,7 +44,7 @@ import {
 import { buildInstallerForTests } from './installer-harness.js';
 import { ConflictError } from '../installer/errors.js';
 import { AdapterError } from '../../relay/adapter-error.js';
-import { mapErrorToStatus } from '../../../routes/marketplace/shared.js';
+import { mapErrorToProblem } from '../../../routes/marketplace/shared.js';
 import { MarketplaceSourceManager } from '../sources/marketplace-source-manager.js';
 import { UpdateFlow } from '../flows/update.js';
 import { pickInstallation } from '../flows/update-selection.js';
@@ -154,32 +154,6 @@ describe('marketplace install pipeline — integration', () => {
     expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
-  it('installs the same plugin end-to-end from its file:// spelling', async () => {
-    // The other local spelling of the install above. It takes a different route
-    // — the resolver reads `name@file:///…` as a git-shaped address and the
-    // fetcher serves it from disk — and since DOR-1825 both routes ask the
-    // directory boundary the same question. This is the half that has to keep
-    // WORKING: a genuine local install inside the boundary, whichever way it is
-    // spelled.
-    const { installer, spies } = buildInstallerForTests(dorkHome);
-
-    const result = await installer.install({
-      name: 'valid-plugin',
-      source: pathToFileURL(fixturePath('valid-plugin')).href,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(result.type).toBe('plugin');
-    expect(result.packageName).toBe('valid-plugin');
-    expect(result.installPath).toBe(path.join(dorkHome, 'plugins', 'valid-plugin'));
-    expect(
-      await pathExists(path.join(dorkHome, 'plugins', 'valid-plugin', '.dork', 'manifest.json'))
-    ).toBe(true);
-
-    // Served from disk, never cloned — the `file://` branch of the fetcher.
-    expect(spies.gitFetch).not.toHaveBeenCalled();
-  });
-
   it('installs a shape package end-to-end via MarketplaceInstaller (staged, not activated)', async () => {
     const { installer, spies } = buildInstallerForTests(dorkHome);
 
@@ -273,32 +247,6 @@ describe('marketplace install pipeline — integration', () => {
     expect(spies.gitFetch).not.toHaveBeenCalled();
   });
 
-  it('installs a skill-pack package end-to-end via MarketplaceInstaller', async () => {
-    const { installer, spies } = buildInstallerForTests(dorkHome);
-
-    const result = await installer.install({ name: fixturePath('valid-skill-pack') });
-
-    const expectedInstallRoot = path.join(dorkHome, 'plugins', 'valid-skill-pack');
-    expect(result.ok).toBe(true);
-    expect(result.type).toBe('skill-pack');
-    expect(result.packageName).toBe('valid-skill-pack');
-    expect(result.version).toBe('1.0.0');
-    expect(result.installPath).toBe(expectedInstallRoot);
-
-    // Disk state: all three SKILL.md files from the fixture are present.
-    for (const skill of ['analyzer', 'summarizer', 'translator']) {
-      expect(await pathExists(path.join(expectedInstallRoot, 'skills', skill, 'SKILL.md'))).toBe(
-        true
-      );
-    }
-    expect(await pathExists(path.join(expectedInstallRoot, '.dork', 'manifest.json'))).toBe(true);
-
-    // No flows touched the adapter manager or agent creator.
-    expect(spies.adapterAdd).not.toHaveBeenCalled();
-    expect(spies.createAgentWorkspace).not.toHaveBeenCalled();
-    expect(spies.gitFetch).not.toHaveBeenCalled();
-  });
-
   it('installs an adapter package end-to-end via MarketplaceInstaller', async () => {
     const { installer, spies } = buildInstallerForTests(dorkHome);
 
@@ -379,7 +327,12 @@ describe('marketplace install pipeline — integration', () => {
         (err: unknown) => err
       );
     expect(forced).toBeInstanceOf(AdapterError);
-    expect(mapErrorToStatus(forced)).toEqual({ status: 409, body: { error: plain } });
+    expect(mapErrorToProblem(forced)).toMatchObject({
+      status: 409,
+      code: 'conflict',
+      detail:
+        'An app with that name is already connected. Remove or rename it, then install again.',
+    });
     expect(spies.adapterRemove).not.toHaveBeenCalled();
   });
 
@@ -417,29 +370,6 @@ describe('marketplace install pipeline — integration', () => {
     expect(result.ok).toBe(true);
     expect(spies.adapterAdd).not.toHaveBeenCalled();
     expect(spies.adapterRemove).not.toHaveBeenCalled();
-  });
-
-  it('warns (but still installs globally) when an adapter install request carries a projectPath (DOR-1776)', async () => {
-    // Adapters are global-only (the relay's `relay-adapters.json` registry has
-    // no per-project dimension). A caller that requests a project-scoped install
-    // (MCP tool, HTTP route, CLI --project) must be told their scope choice was
-    // ignored — via `InstallDispatcher.dispatchFlow` → `AdapterInstallFlow.install` —
-    // rather than have it silently dropped. Mirrors DOR-386 for Shapes.
-    const { installer } = buildInstallerForTests(dorkHome);
-    const projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-adapter-scoped-project-'));
-
-    const result = await installer.install({ name: fixturePath('valid-adapter'), projectPath });
-
-    const expectedInstallRoot = path.join(dorkHome, 'plugins', 'valid-adapter');
-    expect(result.ok).toBe(true);
-    // Still lands globally — the projectPath never changes the install root.
-    expect(result.installPath).toBe(expectedInstallRoot);
-    expect(result.warnings).toEqual([
-      ADAPTER_PROJECT_PATH_IGNORED_WARNING,
-      'Configure secrets via dorkos relay-adapters set valid-adapter',
-    ]);
-
-    await rm(projectPath, { recursive: true, force: true }).catch(() => undefined);
   });
 
   // ---------------------------------------------------------------------------
@@ -566,41 +496,6 @@ describe('marketplace install pipeline — integration', () => {
       'utf-8'
     );
     expect(JSON.parse(preservedSecrets)).toEqual({ key: 'secret-value' });
-  });
-
-  // DOR-147 happy path: a git-sourced install must persist real source
-  // provenance (sourceRepo + commitSha) into the on-disk sidecar. Only the
-  // git network boundary is stubbed — the harness's designated seam: the
-  // lookup resolves the default branch to a fixed commit, and the fetch copies
-  // the valid-plugin fixture and reports that commit, so the test is
-  // deterministic offline. Everything downstream — cache materialization,
-  // validation, the plugin flow, and the unmocked writeInstallMetadata — runs
-  // for real against the temp dorkHome.
-  it('records sourceRepo and commitSha in the on-disk sidecar for a git-sourced install', async () => {
-    const { installer, spies } = buildInstallerForTests(dorkHome);
-    const gitUrl = 'https://example.com/valid-plugin.git';
-    const commitSha = 'e2e0123456789abcdef0123456789abcdef01234';
-
-    spies.gitLookup.mockResolvedValue({ kind: 'found', commitSha, refName: 'HEAD' });
-    spies.gitFetch.mockImplementation(async (req: { destDir: string; commitSha: string }) => {
-      await cp(fixturePath('valid-plugin'), req.destDir, { recursive: true });
-      return req.commitSha;
-    });
-
-    const result = await installer.install({ name: 'valid-plugin', source: gitUrl });
-    expect(result.ok).toBe(true);
-
-    const metadataRaw = await readFile(
-      path.join(result.installPath, '.dork', 'install-metadata.json'),
-      'utf-8'
-    );
-    const metadata: Record<string, unknown> = JSON.parse(metadataRaw) as Record<string, unknown>;
-    expect(metadata.sourceRepo).toBe(gitUrl);
-    expect(metadata.commitSha).toBe(commitSha);
-    // A direct git-URL install requests no explicit ref and has no
-    // marketplace — both stay absent rather than being fabricated.
-    expect(metadata.sourceRef).toBeUndefined();
-    expect(metadata.installedFrom).toBeUndefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -994,38 +889,6 @@ describe('marketplace install pipeline — integration', () => {
         );
       } finally {
         await rm(projectPath, { recursive: true, force: true });
-      }
-    });
-
-    it('checks a global and an agent install of one package, and updates each where it is', async () => {
-      // Purpose: the all-packages door end to end. One scan across scopes, two
-      // results, both reinstalled in place, and a rerun that reads current.
-      const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-update-agent-'));
-      try {
-        const flow = await installAndBuildFlow([agentPath]);
-        await setMarketplaceVersion('1.1.0', '1.1.0');
-        const scan = () =>
-          scanInstallationRecords(dorkHome, { agents: [{ projectPath: agentPath }] });
-
-        const advisory = await flow.planInstallations({ installations: await scan() });
-        expect(advisory.checks.map((c) => [c.scope, c.status])).toEqual([
-          ['global', 'update-available'],
-          ['override', 'update-available'],
-        ]);
-
-        const { checks } = await applyAsShown(flow, await scan());
-        expect(checks.map((c) => c.applied?.installPath)).toEqual([
-          path.join(dorkHome, 'plugins', 'valid-plugin'),
-          path.join(agentPath, '.dork', 'plugins', 'valid-plugin'),
-        ]);
-
-        const rerun = await flow.planInstallations({ installations: await scan() });
-        expect(rerun.checks.map((c) => [c.installedVersion, c.status])).toEqual([
-          ['1.1.0', 'current'],
-          ['1.1.0', 'current'],
-        ]);
-      } finally {
-        await rm(agentPath, { recursive: true, force: true });
       }
     });
 

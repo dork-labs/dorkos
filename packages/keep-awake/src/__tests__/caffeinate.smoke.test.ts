@@ -141,10 +141,12 @@ describe.skipIf(!ARMED)('caffeinate on this Mac (DORKOS_KEEP_AWAKE_SMOKE=1)', ()
     console.info(`[smoke] release → assertion gone in ${releaseMs} ms`);
 
     // 3. Hold again, then kill the owner: caffeinate -w ends the assertion.
-    // A dead owner makes every new caffeinate exit 0 at once. Until DOR-2919's
-    // engine fix lands, the engine reads that as its -t running out and
-    // respawns until dispose; after it, the count printed below should be 0.
-    // Unreachable in DorkOS either way: the server watches its own pid.
+    // A dead owner makes every new caffeinate exit 0 at once. Since DOR-2919
+    // the engine reads an exit 0 in the first half of -t as a refusal and
+    // retries on a backoff (RETRY_BACKOFF_MS, 30 s first) instead of
+    // respawning at once, so the count printed below should be 0; above 0
+    // means that check has regressed. Unreachable in DorkOS either way: the
+    // server watches its own pid.
     keepAwake.hold('smoke again');
     await waitFor('the second assertion to appear', () => heldFor(ownerPid).length > 0);
     const [second] = heldFor(ownerPid);

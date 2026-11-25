@@ -109,7 +109,7 @@ describe('connector resource routes', () => {
     ] as const)('refuses a signed-in non-owner trying to %s', async (_name, method, url) => {
       const res = await signedInAs('user-member')[method](url).send({}).expect(403);
       expect(res.body.code).toBe('owner_only');
-      expect(res.body.error).toBe(
+      expect(res.body.detail).toBe(
         'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
       );
       expect(deps.authentication.start).not.toHaveBeenCalled();
@@ -153,7 +153,9 @@ describe('connector resource routes', () => {
 
     expect(resolveOwner).not.toHaveBeenCalled();
 
-    expect(response.body).toEqual({ error: 'This app has no logo.' });
+    expect(response.headers['content-type']).toContain('application/problem+json');
+    expect(response.body).toMatchObject({ code: 'not_found', detail: 'This app has no logo.' });
+    expect(response.body).not.toHaveProperty('error');
     expect(response.headers['cache-control']).toBe('private, max-age=300');
   });
 
@@ -168,8 +170,9 @@ describe('connector resource routes', () => {
 
     const invalid = await api().get('/api/connectors/catalog?unknown=private').expect(400);
     expect(invalid.body).toMatchObject({
-      error: 'This connection request is invalid. Check the request and try again.',
-      details: expect.any(Array),
+      code: 'invalid_request',
+      detail: 'Unrecognized key: "unknown".',
+      issues: expect.any(Object),
     });
     expect(deps.query.catalog).toHaveBeenCalledTimes(1);
   });
@@ -226,7 +229,7 @@ describe('connector resource routes', () => {
       .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
       .set('X-DorkOS-Agent', 'agent-a')
       .expect(403);
-    expect(refused.body).toMatchObject({ code: 'connector_owner_required' });
+    expect(refused.body).toMatchObject({ code: 'person_only' });
     expect(deps.actions.list).not.toHaveBeenCalled();
   });
 
@@ -236,10 +239,14 @@ describe('connector resource routes', () => {
       .mockRejectedValueOnce(new ConnectorAppActionsError('actions_unavailable', 'Try again.'));
     await api()
       .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
-      .expect(404, { error: 'Not set up.', code: 'provider_not_found' });
+      .expect(404)
+      .expect((res) => expect(res.body.code).toBe('app_not_set_up'));
     await api()
       .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
-      .expect(502, { error: 'Try again.', code: 'actions_unavailable' });
+      .expect(502)
+      .expect((res) => {
+        expect(res.body.code).toBe('upstream_unavailable');
+      });
   });
 
   it('passes a known cloud refusal behind a failed listing through the honest mapping', async () => {
@@ -258,9 +265,11 @@ describe('connector resource routes', () => {
       );
     const url = '/api/connectors/apps/gmail/actions?providerInstanceId=provider-a';
     expect((await api().get(url).expect(401)).body.code).toBe('cloud_link_required');
-    expect((await api().get(url).expect(409)).body.code).toBe('cloud_link_needs_update');
+    expect((await api().get(url).expect(401)).body.code).toBe('cloud_link_required');
     expect((await api().get(url).expect(503)).body.code).toBe('cloud_unavailable');
-    await api().get(url).expect(502, { error: 'Try again.', code: 'actions_unavailable' });
+    const outage = await api().get(url).expect(502);
+    expect(outage.body.code).toBe('upstream_unavailable');
+    expect(JSON.stringify(outage.body)).not.toContain('composio outage');
   });
 
   it('answers a cloud refusal from any resource route honestly, not as a generic 500', async () => {
@@ -277,9 +286,12 @@ describe('connector resource routes', () => {
     });
 
     const logged = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-    await api().get('/api/connectors/connections').expect(500, {
-      error: 'DorkOS could not complete this connection request. Try again.',
+    const failed = await api().get('/api/connectors/connections').expect(500);
+    expect(failed.body).toMatchObject({
+      code: 'internal_error',
+      detail: 'DorkOS couldn’t finish that for this app. Try again.',
     });
+    expect(JSON.stringify(failed.body)).not.toContain('private upstream detail');
     // The failure the body hides is the one the log must name, once.
     expect(logged).toHaveBeenCalledTimes(1);
     expect(logged).toHaveBeenCalledWith(
@@ -316,7 +328,7 @@ describe('connector resource routes', () => {
       .set('X-DorkOS-Agent', 'agent-a')
       .expect(403);
 
-    expect(response.body).toMatchObject({ code: 'connector_owner_required' });
+    expect(response.body).toMatchObject({ code: 'person_only' });
     expect(deps.query.listConnections).not.toHaveBeenCalled();
     expect(deps.signIns.refreshOnDemand).not.toHaveBeenCalled();
   });
@@ -444,7 +456,7 @@ describe('connector resource routes', () => {
       .set('X-DorkOS-Agent', 'agent-a')
       .send({ on: true })
       .expect(403);
-    expect(refused.body).toMatchObject({ code: 'connector_owner_required' });
+    expect(refused.body).toMatchObject({ code: 'person_only' });
     await api()
       .put('/api/connectors/sessions/session-a/connections/connection-a')
       .set('Authorization', 'Bearer program-key')
@@ -468,7 +480,11 @@ describe('connector resource routes', () => {
     await api()
       .put('/api/connectors/sessions/session-a/connections/connection-b')
       .send({ on: true })
-      .expect(404, { error: 'Nothing to switch.', code: 'connection_not_found' });
+      .expect(404)
+      .expect((res) => {
+        expect(res.body.code).toBe('not_found');
+        expect(JSON.stringify(res.body)).not.toContain('Nothing to switch.');
+      });
   });
 
   it('answers 409 with the owner’s words when turning on would drop another agent’s limit', async () => {
@@ -478,7 +494,8 @@ describe('connector resource routes', () => {
     await api()
       .put('/api/connectors/sessions/session-a/connections/connection-a')
       .send({ on: true })
-      .expect(409, { error: 'Limited for another agent.', code: 'session_access_other_agent' });
+      .expect(409)
+      .expect((res) => expect(res.body.code).toBe('other_agent_chat'));
   });
 
   it('passes an owned reconnect identity unchanged and keeps foreign accounts hidden', async () => {
@@ -499,6 +516,7 @@ describe('connector resource routes', () => {
     await api()
       .post('/api/connectors/connections/another-owner/reconnect')
       .send({ idempotencyKey: 'reconnect-foreign' })
-      .expect(404, { error: 'Connection not found.', code: 'connection_not_found' });
+      .expect(404)
+      .expect((res) => expect(res.body.code).toBe('not_found'));
   });
 });

@@ -8,6 +8,7 @@
  * @module startup/steps/core-stores
  */
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
+import { loadLocalSpaceId } from '../../lib/identity/space-id.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorCatalogCache } from '../../services/connectors/resources/catalog-cache.js';
 import path from 'path';
@@ -29,6 +30,7 @@ import {
   setSessionLimitStore,
 } from '../../services/session/index.js';
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
+import { installWorkLinkStore } from '../../services/work-graph/index.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
 import { accountRuleRoots } from '../../services/core/usage/account-eligibility.js';
@@ -46,6 +48,7 @@ import {
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { chatFolderById } from '../../services/core/agent-identity/session-agent.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from '../../services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -99,6 +102,9 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // as MeshCore exists below, before its first startup pass. Provider bootstrap
   // and connector routes remain later in startup, after their other dependencies.
   const connectorInstallationId = await getOrCreateInstanceId(dorkHome);
+  // Beside the install id, the local space's id: read, or minted on the first
+  // boot, then held for every turn's signature references (ADR 261122-124821).
+  await loadLocalSpaceId(dorkHome);
   const connectorOwner = {
     kind: 'local_install',
     installationId: connectorInstallationId,
@@ -159,6 +165,10 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // and on the hourly tick.
   installTurnContextStore(db);
 
+  // The work graph's edges (DOR-4968), on the same beat: a first turn's re-key
+  // is recorded as it happens, so the first turn must find the store in place.
+  installWorkLinkStore(db);
+
   // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
   // here, before extensions start, because a name handed out earlier could
   // belong to a saved project and would change on the next read.
@@ -208,6 +218,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   runtimeRegistry.setDb(db);
   // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 

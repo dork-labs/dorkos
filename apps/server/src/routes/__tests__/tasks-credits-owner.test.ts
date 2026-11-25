@@ -51,7 +51,7 @@ const target = swappableServer();
 const server = target.server;
 
 const NOT_THE_OWNER = {
-  error: 'Only the owner of this DorkOS can run a scheduled task on DorkOS credits.',
+  detail: 'Only the owner of this DorkOS can run a scheduled task on DorkOS credits.',
   code: 'owner_only',
 };
 
@@ -114,8 +114,8 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ name: 'x', prompt: 'p', cron: '0 3 * * *', account: 'dorkos-credits' })
       .expect(403);
-    expect(res.body).toEqual({
-      error: 'Only you can run a scheduled task on your DorkOS credits, from the DorkOS app.',
+    expect(res.body).toMatchObject({
+      detail: 'Only you can run a scheduled task on your DorkOS credits, from the DorkOS app.',
       code: 'person_only',
     });
     expect(store.getTasks()).toHaveLength(1);
@@ -151,13 +151,13 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
           status: 'active',
         })
         .expect(403);
-      expect(res.body).toEqual(NOT_THE_OWNER);
+      expect(res.body).toMatchObject(NOT_THE_OWNER);
     });
 
     it('refuses them running it now, and runs nothing', async () => {
       signedInUser = { userId: 'user_member', credential: 'cookie' };
       const res = await request(server).post(`/api/tasks/${onCredits.id}/trigger`).expect(403);
-      expect(res.body).toEqual(NOT_THE_OWNER);
+      expect(res.body).toMatchObject(NOT_THE_OWNER);
       expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
     });
 

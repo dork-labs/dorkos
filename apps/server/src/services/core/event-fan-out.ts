@@ -95,7 +95,7 @@ export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
 /**
  * A listener on the in-process half of the global event stream.
  *
- * Deliberately not exported: the one subscriber passes an inline arrow, and an
+ * Deliberately not exported: every subscriber passes an inline arrow, and an
  * exported alias nothing imports is a name to keep in sync for no reader.
  *
  * @param eventName - The event name, e.g. `'room_created'`.
@@ -111,7 +111,9 @@ export const ROOM_EVENT_PREFIX = 'room_';
 /**
  * The other event names that must name an audience, as keys. The one list both
  * halves read: {@link ScopedEventLiteral} for typed calls, and
- * {@link requiresAudience} for calls the types cannot see.
+ * {@link requiresAudience} for calls the types cannot see. An in-process
+ * listener hears these whatever their audience, so it must never forward one
+ * ({@link EventFanOut.subscribe}, contract 3).
  */
 export const SCOPED_EXACT_EVENTS = { read_cursor: true } as const;
 
@@ -201,9 +203,11 @@ class EventFanOut {
    * The fan-out has only ever had one kind of consumer — a browser holding a
    * `GET /api/events` connection — so "broadcast" meant "write to a client". A
    * server-side reader now needs the same events: the local `CommunityAdapter`
-   * learns that a room was created, renamed or archived from here, and polling
-   * the room table for a fact this bus already carries would be inventing
-   * latency the process does not have.
+   * learns that a room was created, renamed or archived from here, approvals
+   * hear their verdicts, and the shift report hears notifications. Polling a
+   * table for a fact this bus already carries would be inventing latency the
+   * process does not have. `room-event-audiences.test.ts` pins every subscriber,
+   * so a new one is read before it lands.
    *
    * A listener that throws is logged and skipped rather than allowed to break
    * the broadcast: a room write must never fail because something downstream of
@@ -214,7 +218,7 @@ class EventFanOut {
    * only: these consumers are the server itself, not callers, so there is no
    * principal to ask about and nothing an audience could mean here.
    *
-   * **Two contracts a listener owes, both easy to violate by accident:**
+   * **Three contracts a listener owes, all easy to violate by accident:**
    *
    * 1. **Treat `data` as read-only.** Listeners run BEFORE the HTTP fan-out and
    *    are handed the caller's own object, not a copy and not the JSON. A
@@ -222,13 +226,20 @@ class EventFanOut {
    *    browser then receives, with nothing between the two to notice.
    * 2. **Do little, and do it fast.** This runs synchronously on the write path
    *    ahead of every connected client, so whatever a listener costs is added to the
-   *    latency of the broadcast for everyone. Today's one subscriber (the local
-   *    community adapter) spends four indexed SQLite reads on a room lifecycle
-   *    event — the room, the identity, the membership and the unread count —
-   *    and it spends them **once per event, not once per subscriber**, because
-   *    it projects the room before fanning out. That is fine at this size, and
-   *    it is written down so the second subscriber has to decide rather than
-   *    discover. Work that is not cheap belongs on a queue the listener owns.
+   *    latency of the broadcast for everyone. The costliest subscriber (the
+   *    local community adapter) spends four indexed SQLite reads on a room
+   *    lifecycle event — the room, the identity, the membership and the unread
+   *    count — and it spends them **once per event, not once per subscriber**,
+   *    because it projects the room before fanning out. The others match one
+   *    event name and return. That is fine at this size, and it is written down
+   *    so the next subscriber has to decide rather than discover. Work that is
+   *    not cheap belongs on a queue the listener owns (the verdict delivery
+   *    detaches its own).
+   * 3. **Never forward an event of {@link SCOPED_EXACT_EVENTS} outward.** A
+   *    listener hears a `read_cursor` whatever its audience, so passing one on
+   *    to any reader (a stream, a bridge, another process) skips the audience
+   *    that scoped it. `room-event-audiences.test.ts` fails when a listener's
+   *    file names one, and when a listener is added that nobody has read.
    *
    * @param listener - Called synchronously for every broadcast.
    * @returns An unsubscribe function. Idempotent.

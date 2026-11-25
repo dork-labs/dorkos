@@ -319,7 +319,7 @@ function builtByCiStep(packages: string[]): boolean {
 }
 
 /**
- * The command that boots an Express API leg, for every leg that needs one.
+ * The command that boots an API server leg, for every leg that needs one.
  *
  * Deliberately NOT `turbo dev` (`tsx watch`). On boot the server compiles each
  * core extension into `DORK_HOME/cache/extensions/server/_run/<id>.js` and
@@ -633,7 +633,7 @@ export default defineConfig({
         resetThrowawayHome(COCKPIT_DORK_HOME)
       ),
       url: `http://localhost:${PORT}/api/health`,
-      name: 'Express API',
+      name: 'API server',
       // Every leg below carries a DISTINCT timeout, on purpose (DOR-1243).
       // Playwright's own readiness-timeout error names only the millisecond
       // number — `Timed out waiting 180000ms from config.webServer.` — never
@@ -726,7 +726,7 @@ export default defineConfig({
         resetThrowawayHome(MOCK_DORK_HOME)
       ),
       url: `http://localhost:${MOCK_PORT}/api/health`,
-      name: 'Express API (test-mode)',
+      name: 'API server (test-mode)',
       // Same boot path and the same 240s budget as the cockpit Express leg
       // above — offset by +1s so the two are still distinct timeout VALUES
       // (see that leg's comment for why a distinct number matters).
@@ -858,7 +858,7 @@ export default defineConfig({
               ['@dorkos/client']
             ),
             url: `http://localhost:${PROD_PORT}/api/health`,
-            name: 'Express API (production)',
+            name: 'API server (production)',
             // The same ≈240s family as every other Express leg, +3s so this
             // array's timeout VALUES stay distinct (see the cockpit Express
             // leg's comment for why that matters). It builds the client on top

@@ -22,7 +22,7 @@ import {
 import { marksForShown } from '../limits/context-entries.js';
 import { env } from '../../../env.js';
 import { teammateOf } from '../limits/space-teammates.js';
-import { turnRefusalOf } from '../turn-guards/paused-turn.js';
+import { pausedDuringTurnOf, turnRefusalOf } from '../turn-guards/paused-turn.js';
 import { buildRoomContext } from '../room-context.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import { type LateRoomReply, type RoomTurnReply } from '../room-turn-port.js';
@@ -299,7 +299,9 @@ export async function runOneInDispatch(
     // `runtime_gone` line is written out of.
     // A paused agent is not a failure either: somebody chose it, and the
     // room says so once per pause (spec `audit-trail` PR5).
-    const refused = turnRefusalOf(err);
+    // A turn a pause stopped mid-way throws whatever its runtime said; the
+    // pause, not that, is what the room reports (DOR-3178).
+    const refused = turnRefusalOf(err) ?? pausedDuringTurnOf(target.agentPath);
     // A turn that threw because somebody stopped it did what it was told. The
     // `halted` notice is already on the log and is the whole story; an
     // apology under it would be the room reporting the person's own control

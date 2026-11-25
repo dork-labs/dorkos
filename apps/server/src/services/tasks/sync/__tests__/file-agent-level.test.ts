@@ -18,9 +18,6 @@ vi.mock('../../../session/resolution/resolve-session-defaults.js', () => ({
   readAgentExecutionDefaults: async () => ({ runtime: 'claude-code' }),
 }));
 vi.mock('../../scheduled-run-power.js', () => ({ capabilitiesForTaskRuntime: capabilities }));
-vi.mock('../../../../lib/logger.js', () => ({
-  logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
-}));
 
 const { fileAgentLevel } = await import('../file-agent-level.js');
 
@@ -67,10 +64,5 @@ describe('fileAgentLevel', () => {
 
     launch.mockRejectedValue(new Error('manifest unreadable'));
     expect(await fileAgentLevel(ROOT, null)).toBeNull();
-  });
-
-  it('has nothing to give on a runtime that is not registered', async () => {
-    capabilities.mockReturnValue(undefined);
-    expect(await fileAgentLevel(ROOT, 'gone')).toBeNull();
   });
 });

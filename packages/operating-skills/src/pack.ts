@@ -57,7 +57,7 @@ export interface OperatingSkill {
  * - 5: adding and removing a marketplace SOURCE is the person's, not the agent's
  *   (DOR-502). Version 4 taught `dorkos marketplace list|add|remove|refresh|
  *   validate` as five verbs an agent could run. Two of them now answer 403 with
- *   `operator_only_marketplace_source`, and no approval unlocks them, so the pack
+ *   `operator_only` (then `operator_only_marketplace_source`), and no approval unlocks them, so the pack
  *   had to stop teaching a command that cannot work and start teaching what to ask
  *   the person for instead.
  * - 6: the pack stops calling a `destructive` tool ungated (DOR-509). Version 4
@@ -486,8 +486,15 @@ export interface OperatingSkill {
  *   must act, and a room hears only started, blocked on a person, and shipped, plus
  *   an answer or a result somebody there asked for. An agent seeded at 70 would post
  *   every report and status relay into the room.
+ * - 72: `scheduling-tasks` says a run whose account is out of usage or signed out
+ *   runs on another signed-in account, that `accountPinned` keeps it on its own,
+ *   and that changing only `account` keeps an approved task approved (DOR-5097).
+ *   An agent seeded at 71 would re-ask the person to approve every account move.
+ * - 73: errors are problem documents (DOR-4979). `using-the-marketplace` named the
+ *   refusal of `dorkos marketplace add|remove` by its old code; it is now
+ *   `operator_only`. An agent seeded at 72 would look for a code that never comes.
  */
-export const OPERATING_SKILLS_VERSION = 71;
+export const OPERATING_SKILLS_VERSION = 73;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

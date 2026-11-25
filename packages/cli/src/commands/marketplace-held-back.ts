@@ -37,7 +37,7 @@ export interface MarketplaceHeldBackArgs {
 }
 
 /** The code the server answers a decision with when only a signed-in session may make it. */
-const OPERATOR_COOKIE_REQUIRED = 'operator_cookie_required';
+const PERSON_ONLY = 'person_only';
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE = 'Usage: dorkos marketplace held-back [--allow <name> [--yes] | --refuse <name>]';
@@ -180,7 +180,7 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
       { decision, effects: pkg.effects, bindsTo: pkg.bindsTo }
     );
   } catch (err) {
-    if (err instanceof ApiError && err.body.code === OPERATOR_COOKIE_REQUIRED) {
+    if (err instanceof ApiError && err.code === PERSON_ONLY) {
       // Sign-in is on: a terminal holds an API key, which an agent may hold too,
       // so the decision belongs to a person signed in to the app.
       console.error(

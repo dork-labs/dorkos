@@ -62,7 +62,8 @@ describe('mini app access routes', () => {
       .post('/api/connectors/mini-app-access/approval-a/revoke')
       .send({});
     expect(gone.status).toBe(404);
-    expect(gone.body.code).toBe('MINI_APP_ACCESS_NOT_FOUND');
+    expect(gone.body.code).toBe('not_found');
+    expect(gone.body.detail).toBe('That mini app no longer has this access.');
   });
 
   it.each([

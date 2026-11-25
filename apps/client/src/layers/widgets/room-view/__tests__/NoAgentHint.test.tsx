@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /**
  * The hint over a channel's composer when no agent is in it (DOR-2823): shown
- * for an agentless local channel, and nowhere it would be wrong.
+ * for an agentless local channel, and nowhere it would be wrong. A direct
+ * message whose every agent left the team says so too, before anyone types
+ * (DOR-2365).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -34,6 +36,17 @@ const ana: RoomRosterEntry = {
   authorId: 'author-ana',
   responseMode: 'engaged',
   author: { id: 'author-ana', kind: 'agent', displayName: 'Ana', handle: 'ana' },
+};
+
+const retiredAna: RoomRosterEntry = {
+  ...ana,
+  author: { ...ana.author, retired: true },
+};
+
+const retiredKai: RoomRosterEntry = {
+  ...ana,
+  authorId: 'author-kai',
+  author: { id: 'author-kai', kind: 'agent', displayName: 'Kai', handle: 'kai', retired: true },
 };
 
 function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
@@ -104,5 +117,72 @@ describe('NoAgentHint', () => {
   it('stays out of an archived channel', () => {
     render(<NoAgentHint room={roomWith({ archived: true })} hasEntries onAddAgents={() => {}} />);
     expect(hint()).toBeNull();
+  });
+
+  describe('in a DM whose agents have all left the team (DOR-2365)', () => {
+    const retiredDm = (members: RoomRosterEntry[]) =>
+      roomWith({ kind: 'dm', slug: null, title: 'Ana', members });
+
+    it('names the agent and offers to add one, before anyone types', () => {
+      render(
+        <NoAgentHint
+          room={retiredDm([you, retiredAna])}
+          hasEntries={false}
+          onAddAgents={() => {}}
+        />
+      );
+      expect(hint()).toHaveTextContent(
+        'Ana is no longer on your team. Add an agent to get answers.'
+      );
+    });
+
+    it('opens the agent picker from "Add an agent"', async () => {
+      const onAddAgents = vi.fn();
+      render(
+        <NoAgentHint room={retiredDm([you, retiredAna])} hasEntries onAddAgents={onAddAgents} />
+      );
+      await userEvent.click(screen.getByRole('button', { name: 'Add an agent' }));
+      expect(onAddAgents).toHaveBeenCalledOnce();
+    });
+
+    it('speaks of every agent when a group message lost them all', () => {
+      render(
+        <NoAgentHint
+          room={retiredDm([you, retiredAna, retiredKai])}
+          hasEntries
+          onAddAgents={() => {}}
+        />
+      );
+      expect(hint()).toHaveTextContent(
+        'These agents are no longer on your team. Add an agent to get answers.'
+      );
+    });
+
+    it('stays quiet while one agent here is still on the team', () => {
+      render(
+        <NoAgentHint
+          room={retiredDm([you, retiredAna, { ...ana, authorId: 'author-bo' }])}
+          hasEntries
+          onAddAgents={() => {}}
+        />
+      );
+      expect(hint()).toBeNull();
+    });
+
+    it('stays quiet in a DM whose agent is on the team', () => {
+      render(<NoAgentHint room={retiredDm([you, ana])} hasEntries onAddAgents={() => {}} />);
+      expect(hint()).toBeNull();
+    });
+
+    it('stays out of an archived DM', () => {
+      render(
+        <NoAgentHint
+          room={{ ...retiredDm([you, retiredAna]), archived: true }}
+          hasEntries
+          onAddAgents={() => {}}
+        />
+      );
+      expect(hint()).toBeNull();
+    });
   });
 });

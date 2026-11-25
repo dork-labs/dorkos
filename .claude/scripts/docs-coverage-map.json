@@ -58,12 +58,12 @@
         "audit-schemas",
         "routes/audit.ts",
         "services/mesh/pause/",
-        "routes/agent-pause.ts"
+        "routes/capability-http.ts"
       ]
     },
     {
       "guide": "system-architecture.md",
-      "description": "Deployment boundaries, server roles, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, heartbeats and the audit record, Cloud and marketplace; diagrams",
+      "description": "Deployment boundaries, today's server roles and the pointer to the target, protocols, ports, Projects/extensions, account eligibility, main request admission, Spaces recovery, heartbeats and the audit record, Cloud and marketplace; diagrams",
       "patterns": [
         "apps/server/src/services/projects/",
         "apps/server/src/services/extensions/",
@@ -103,6 +103,16 @@
       ]
     },
     {
+      "guide": "architecture-target.md",
+      "description": "The living target architecture: space side and computer side, one contract, two entries, turns, ways in, mini apps and the core test, the process rule, the build order and what is retired",
+      "patterns": [
+        "decisions/",
+        "research/20261124_architecture-direction-review",
+        "packages/shared/src/session-relay-agent-computer",
+        "apps/server/src/lib/server-role"
+      ]
+    },
+    {
       "guide": "design-system.md",
       "description": "Color palette, typography, spacing, motion specs",
       "patterns": [
@@ -133,11 +143,12 @@
     },
     {
       "guide": "api-reference.md",
-      "description": "OpenAPI spec, Scalar docs UI, Zod schema patterns",
+      "description": "OpenAPI spec, Scalar docs UI, Zod schema patterns, the API lint gate",
       "patterns": [
         "openapi-registry",
         "apps/server/src/routes/",
-        "packages/shared/src/schemas"
+        "packages/shared/src/schemas",
+        "scripts/api-lint/"
       ]
     },
     {
@@ -483,7 +494,7 @@
     },
     {
       "guide": "official-community-operations.md",
-      "description": "Official Community Space soft-launch runbook: alerts from `/metrics` and `/health/ready`, daily soft-launch checks, the D14 launch bar, the upgrade freeze around launch, and incident steps",
+      "description": "Official Community Space opening runbook: alerts from `/metrics` and `/health/ready`, daily checks for the first two weeks, the D14 opening checks, the change freeze while it opens, and incident steps",
       "patterns": [
         "apps/server/src/services/spaces/live/monitoring.ts",
         "apps/space/load/",
@@ -594,7 +605,7 @@
     },
     {
       "guide": "ci.md",
-      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, arming (arm.sh, the queue doors), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
+      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, merging (auto-merge at open from open-pr.sh, the PR-side gates, the queue door), the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
       "patterns": [
         ".github/workflows/",
         "lefthook.yml",

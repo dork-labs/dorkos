@@ -12,7 +12,7 @@ import {
 import { useMoveBinding } from '../model/use-move-binding';
 
 /**
- * What a `CHAT_ALREADY_BOUND` refusal carries: the binding that already owns
+ * What a `chat_already_bound` refusal carries: the binding that already owns
  * the chat, so the client can offer to move it rather than asking the person
  * to go find it.
  */
@@ -42,7 +42,7 @@ export function readChatConflict(
   next: { id: string; name: string }
 ): ChatConflict | null {
   const err = error as { code?: string; body?: unknown } | null;
-  if (!err || err.code !== 'CHAT_ALREADY_BOUND') return null;
+  if (!err || err.code !== 'chat_already_bound') return null;
   const conflict = (err.body as { conflict?: Record<string, unknown> } | undefined)?.conflict;
   const bindingId = typeof conflict?.bindingId === 'string' ? conflict.bindingId : null;
   if (!bindingId) return null;

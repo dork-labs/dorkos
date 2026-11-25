@@ -25,9 +25,15 @@ import { AuditEventSchema, AuditVerifyResultSchema } from '@dorkos/shared/audit-
 import { SearchResponseSchema } from '@dorkos/shared/search-schemas';
 import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { contractSuite } from './harness.js';
+import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NO_SEARCH_WORD = problemBody('invalid_request', {
+  detail: 'Search needs a word of at least 2 letters to look for.',
+});
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** A page of the capability catalog. */
 const CATALOG_PAGE = z
   .object({ catalogVersion: z.string(), total: z.number().int().positive() })
@@ -67,13 +73,10 @@ contractSuite('read-only and system groups', [
     path: '/api/commands?refresh=maybe',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { refresh: { errors: ['Invalid option: expected one of "true"|"false"'] } },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { refresh: ['Invalid option: expected one of "true"|"false"'] },
+      }),
     },
   },
   {
@@ -136,13 +139,10 @@ contractSuite('read-only and system groups', [
     path: '/api/capabilities/catalog?limit=0',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { limit: ['Too small: expected number to be >=1'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { limit: ['Too small: expected number to be >=1'] },
+      }),
     },
   },
   {
@@ -245,7 +245,10 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/team/:memberId/rooms refuses an unknown member',
     path: '/api/team/nobody/rooms',
-    expect: { status: 404, body: { error: 'No member with that id', code: 'MEMBER_NOT_FOUND' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'No member with that id.' }),
+    },
   },
 
   // activity
@@ -259,13 +262,10 @@ contractSuite('read-only and system groups', [
     path: '/api/activity?limit=abc',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
+      }),
     },
   },
 
@@ -284,13 +284,10 @@ contractSuite('read-only and system groups', [
     path: '/api/audit?limit=abc',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { limit: ['Invalid input: expected number, received NaN'] },
+      }),
     },
   },
   {
@@ -301,7 +298,10 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/audit/:id refuses an id it has no event for',
     path: '/api/audit/nope',
-    expect: { status: 404, body: { error: 'No audit event with that id.', code: 'NOT_FOUND' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'No audit event with that id.' }),
+    },
   },
   {
     name: 'GET /api/audit/accounts/:accountId/timeline answers an empty timeline',
@@ -320,10 +320,7 @@ contractSuite('read-only and system groups', [
     path: '/api/search',
     expect: {
       status: 400,
-      body: {
-        error: 'Search needs a word of at least 2 letters to look for.',
-        code: 'INVALID_SEARCH_QUERY',
-      },
+      body: NO_SEARCH_WORD,
     },
   },
   {
@@ -331,10 +328,7 @@ contractSuite('read-only and system groups', [
     path: '/api/search?q=',
     expect: {
       status: 400,
-      body: {
-        error: 'Search needs a word of at least 2 letters to look for.',
-        code: 'INVALID_SEARCH_QUERY',
-      },
+      body: NO_SEARCH_WORD,
     },
   },
 
@@ -345,11 +339,10 @@ contractSuite('read-only and system groups', [
     headers: { 'x-dorkos-agent': 'not-a-real-token' },
     expect: {
       status: 401,
-      body: {
-        error:
+      body: problemBody('agent_identity_unverified', {
+        detail:
           'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
-        code: 'AGENT_IDENTITY_UNVERIFIED',
-      },
+      }),
     },
   },
   {
@@ -362,7 +355,10 @@ contractSuite('read-only and system groups', [
     name: 'GET /api/team/:memberId/rooms refuses an agent',
     path: '/api/team/nobody/rooms',
     headers: { 'x-dorkos-agent': 'not-a-real-token' },
-    expect: { status: 403, body: { error: 'Only people read a profile', code: 'PEOPLE_ONLY' } },
+    expect: {
+      status: 403,
+      body: problemBody('person_only', { detail: 'Only people read a profile.' }),
+    },
   },
   {
     name: 'POST /api/capabilities/:id/invoke runs a read capability for an unknown agent',
@@ -393,13 +389,10 @@ contractSuite('read-only and system groups', [
     body: { limit: 0 },
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { limit: ['Too small: expected number to be >=1'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { limit: ['Too small: expected number to be >=1'] },
+      }),
     },
   },
 
@@ -413,7 +406,7 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/commands reads a repeated runtime as none',
     path: '/api/commands?runtime=test-mode&runtime=nope',
-    expect: { status: 400, body: expect.objectContaining({ error: 'Invalid query' }) },
+    expect: { status: 400, body: expect.objectContaining({ code: 'invalid_request' }) },
   },
   {
     name: 'GET /api/subagents reads a repeated session as none',
@@ -425,10 +418,7 @@ contractSuite('read-only and system groups', [
     path: '/api/search?q=hello&q=world',
     expect: {
       status: 400,
-      body: {
-        error: 'Search needs a word of at least 2 letters to look for.',
-        code: 'INVALID_SEARCH_QUERY',
-      },
+      body: NO_SEARCH_WORD,
     },
   },
   // Bodies
@@ -445,8 +435,8 @@ contractSuite('read-only and system groups', [
     headers: { 'content-type': 'application/json' },
     body: '{"limit":',
     expect: {
-      status: 500,
-      body: { error: 'Unexpected end of JSON input', code: 'INTERNAL_ERROR' },
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
     },
   },
   {
@@ -464,8 +454,8 @@ contractSuite('read-only and system groups', [
     headers: { 'content-type': 'application/json' },
     body: '{"message":',
     expect: {
-      status: 500,
-      body: { error: 'Unexpected end of JSON input', code: 'INTERNAL_ERROR' },
+      status: 400,
+      body: problemBody('malformed_request', { detail: 'The request body is not valid JSON.' }),
     },
   },
   // The tier gate on invoke

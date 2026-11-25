@@ -775,6 +775,20 @@ describe('the rooms capability domain', () => {
       ).resolves.toEqual({ reacted: false });
       expect(service.reactionsFor(channel.id, entry.id)).toEqual([]);
     });
+
+    it('checks the emoji with the same rule as the app, before it runs', () => {
+      const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
+      const input = (emoji: string) => ({ roomId: 'r', entryId: 'e', emoji });
+      expect(react?.input.safeParse(input('\u{1F44D}')).success).toBe(true);
+      for (const emoji of [
+        'lol',
+        '\u{1F44D} nice',
+        '0123',
+        '\u{1F44D}\u{E006F}\u{E006B}\u{E007F}',
+      ]) {
+        expect(react?.input.safeParse(input(emoji)).success, emoji).toBe(false);
+      }
+    });
   });
 
   describe('the history tools', () => {
@@ -793,6 +807,26 @@ describe('the rooms capability domain', () => {
         result.entries.every((entry) => !entry.author.includes('<') && !entry.author.includes('>')),
         'no label carries a bracket a member could have typed'
       ).toBe(true);
+    });
+
+    it('hands back message text the way people see it', async () => {
+      service.post(channel.id, {
+        authorId: human,
+        text: 'ship it\u{E006F}\u{E006B}\u{E007F} today',
+      });
+      service.post(channel.id, {
+        authorId: human,
+        text: 'pay\u{E0100}\u{E0101}\u2066\u3164 the invoice \u{1F468}\u200D\u{1F469}\u200D\u{1F467}',
+      });
+
+      const result = (await call('rooms.read_history', { roomId: channel.id, limit: 10 })) as {
+        entries: Array<{ text: string }>;
+      };
+
+      expect(result.entries.map((entry) => entry.text)).toEqual([
+        'pay the invoice \u{1F468}\u200D\u{1F469}\u200D\u{1F467}',
+        'ship it today',
+      ]);
     });
 
     it('names the operator as an agent should read them, never the registry`s "You"', async () => {
@@ -859,6 +893,7 @@ describe('the rooms capability domain', () => {
     /** One room's detail, as the tool projects it. */
     interface RoomDetailPayload {
       roomId: string;
+      ref: string | null;
       kind: string;
       name: string | null;
       topic: string | null;
@@ -883,6 +918,14 @@ describe('the rooms capability domain', () => {
       };
       const listed = found.rooms[0]!.members.find((member) => member.authorId === human);
       expect(listed?.name).toBe('the operator');
+    });
+
+    it('carries the room’s dork: reference beside its name, on get_room and find_room (DOR-5046)', async () => {
+      expect((await describeAs(channel.id)).ref).toBe(`dork:room:${channel.id}`);
+      const found = (await call('rooms.find_room', { name: 'Backend' })) as {
+        rooms: RoomDetailPayload[];
+      };
+      expect(found.rooms.map((room) => room.ref)).toEqual([`dork:room:${channel.id}`]);
     });
 
     /** Ask for one room as somebody else — the positive control on a refusal. */

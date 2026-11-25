@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import type { StepUpExtensionRisk } from '@dorkos/shared/step-up';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** The query key for the list, under `['extensions']` so every refresh there reaches it. */
 const RISKS_KEY = [...extensionQueryKeys.all, 'step-up-risks'] as const;
@@ -35,8 +36,8 @@ export function useMoveExtensionOut() {
         method: 'POST',
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? 'That didn’t work. Nothing moved.');
+        const body = await readResponseError(res, 'That didn’t work. Nothing moved.');
+        throw new Error(body.message);
       }
     },
     onSuccess: (_data, { name }) => {

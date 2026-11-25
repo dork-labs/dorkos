@@ -11,7 +11,9 @@ import { isPersonTurn } from '../lib/caller-authority.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { carriedHoldOf, markedBoundOf } from '../services/core/turn-power/turn-levels.js';
 import type { MeshCore } from '@dorkos/mesh';
-import { boundaryRefusal, errorBody } from '../lib/route-utils.js';
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
+import { boundaryRefusal } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -142,7 +144,7 @@ function forkDefaultCwd(facts: RequestFacts, fallback: string): string {
 }
 
 /**
- * Why this caller may not fork a chat into `cwd`, as the `403` body, or
+ * Why this caller may not fork a chat into `cwd`, as the problem to answer, or
  * `undefined` when it may: outside the boundary, or a place the caller may not
  * run a chat, by the same rule a new chat's folder meets (the fork runs there).
  *
@@ -158,30 +160,35 @@ async function forkPlaceRefusal(
   cwd: string,
   sessionId: string,
   defaulted = false
-): Promise<object | undefined> {
+): Promise<Problem | undefined> {
   const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
   if (outside) return outside;
   const launcher = sessionLauncherOf(facts);
   const place = launchPlaceRefusal(meshCore, launcher, { cwd, defaulted });
   if (!place) return undefined;
   auditRefusedLaunch(sessionId, place, launchedByOf(meshCore, launcher), { cwd }, 'session.fork');
-  return errorBody(place.message, place.code === 'PROTECTED_FOLDER' ? place.code : 'DESK_NOT_OWN');
+  if (place.code === 'PROTECTED_FOLDER')
+    return problemBody('protected_folder', { detail: place.message });
+  return problemBody('desk_not_own', { detail: place.message, status: 403 });
 }
 
 /**
  * Why this caller may not touch a message waiting in this chat, or `null` when
  * it may: the same place rule a new message meets, asked of the chat's
  * recorded agent (else its folder's agent) and, when known, its folder
- * (DOR-3644 S1, DOR-5035).
+ * (DOR-3644 S1, DOR-5035). A verified agent's relay message into a chat asks it
+ * too (`relay-chat-place.ts`, DOR-5200).
  *
  * @param facts - The request's facts.
  * @param meshCore - Mesh, which lists the registered homes.
  * @param sessionId - The chat.
+ * @param action - What a refusal is recorded as; a queue change unless said otherwise.
  */
 export async function chatPlaceRefusal(
   facts: RequestFacts,
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
-  sessionId: string
+  sessionId: string,
+  action = 'session.queue'
 ): Promise<LaunchPlaceRefusal | null> {
   const launcher = sessionLauncherOf(facts);
   if (launcher.kind === 'person') return null;
@@ -202,13 +209,7 @@ export async function chatPlaceRefusal(
   const place = { chatAgent, ...(cwd ? { cwd } : {}) };
   const refusal = launchPlaceRefusal(meshCore, launcher, place);
   if (refusal) {
-    auditRefusedLaunch(
-      sessionId,
-      refusal,
-      launchedByOf(meshCore, launcher),
-      place,
-      'session.queue'
-    );
+    auditRefusedLaunch(sessionId, refusal, launchedByOf(meshCore, launcher), place, action);
   }
   return refusal;
 }
@@ -216,7 +217,7 @@ export async function chatPlaceRefusal(
 /**
  * Where a fork runs, and why it may not, as the route answers it: the folder
  * the request names, else (DOR-4060) a verified agent's own folder, else the
- * server's default, and the place rule's `403` body when it refuses.
+ * server's default, and the place rule's problem document when it refuses.
  *
  * @param c - The request, for its facts and its `cwd` query.
  * @param meshCore - Mesh, which lists the registered homes.
@@ -226,7 +227,7 @@ export async function forkPlace(
   c: Context<ApiEnv>,
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
   sessionId: string
-): Promise<{ cwd: string; refused?: object }> {
+): Promise<{ cwd: string; refused?: Problem }> {
   const facts = honoRequestFacts(c);
   const query = readQuery(c).cwd;
   const named = typeof query === 'string' && query !== '' ? query : undefined;

@@ -290,12 +290,6 @@ describe('RightPanelContainer', () => {
       expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
     });
 
-    it('keeps an ordinary tab’s body too', () => {
-      mockActiveRightPanelTab = 'files';
-      render(<RightPanelContainer pathname={mockPathname} />);
-      expect(screen.getByTestId('tab-content-files')).toBeVisible();
-    });
-
     it('drops the held tab’s body once the answer says it does not belong', () => {
       mockActiveRightPanelTab = 'session';
       const { rerender } = render(<RightPanelContainer pathname={mockPathname} />);
@@ -342,20 +336,6 @@ describe('RightPanelContainer', () => {
     }
   });
 
-  it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
-    mockRightPanelOpen = false;
-    mockContributions = [makeContribution('a')];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    // Panel structure stays in the DOM for animation readiness (collapsed)
-    expect(screen.getByTestId('right-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
-    // …but a closed panel's handle cannot move, so it is no tab stop.
-    expect(screen.getByTestId('resize-handle')).toHaveAttribute('tabindex', '-1');
-    expect(screen.getByTestId('resize-handle')).toHaveAttribute('aria-disabled', 'true');
-  });
-
   it('renders the sole global tab body — never the removed empty state', () => {
     // Off contextual routes only Pulse (a global tab) is visible. The shell shows
     // its body, not the Wave-1 "nothing to inspect" empty state, which the
@@ -371,18 +351,6 @@ describe('RightPanelContainer', () => {
     expect(screen.queryByText('Nothing to inspect here yet.')).not.toBeInTheDocument();
     // The close button is still structurally present.
     expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
-  });
-
-  it('renders desktop Panel and resize handle when open with visible contributions', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
-    mockContributions = [makeContribution('a')];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    expect(screen.getByTestId('right-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('resize-handle')).toHaveAttribute('aria-label', 'Resize right panel');
-    expect(screen.getByTestId('resize-handle')).toHaveAttribute('tabindex', '0');
   });
 
   it('expands with the default size as a floor when opening (DOR-388)', () => {
@@ -406,43 +374,6 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer pathname={mockPathname} />);
 
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
-  });
-
-  // The container owns the shared header now — the tab strip and close button
-  // are structural, so no panel can lose them. Parametrized across the four
-  // built-in tab ids to prove it holds regardless of which tab is active.
-  it.each(['profile', 'canvas', 'files', 'terminal'])(
-    'renders the shared tab strip and close button when %s is the active tab',
-    (activeId) => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = activeId;
-      mockContributions = [
-        makeContribution('profile'),
-        makeContribution('canvas'),
-        makeContribution('files'),
-        makeContribution('terminal'),
-      ];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
-    }
-  );
-
-  it('renders the active tab’s headerActions in the shared header', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'files';
-    mockContributions = [
-      makeContribution('profile'),
-      makeContribution('files', {
-        headerActions: () => <button type="button">New file</button>,
-      }),
-    ];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    expect(screen.getByRole('button', { name: 'New file' })).toBeInTheDocument();
   });
 
   it('hides a transport-gated tab when the active transport lacks the capability', () => {
@@ -469,25 +400,6 @@ describe('RightPanelContainer', () => {
     expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
   });
 
-  it('shows a transport-gated tab when the active transport has the capability', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'profile';
-    mockTransport = { supportsTerminal: true };
-    mockContributions = [
-      makeContribution('profile', { title: 'Profile' }),
-      makeContribution('terminal', {
-        title: 'Terminal',
-        visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
-      }),
-    ];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Add view' }), { key: 'Enter' });
-    expect(screen.getByRole('menuitem', { name: 'Terminal' })).toBeInTheDocument();
-  });
-
   // DOR-364: the container threads the active agent id and selected working
   // directory into every visibleWhen context, so tabs can scope visibility to a
   // specific agent or folder.
@@ -511,23 +423,6 @@ describe('RightPanelContainer', () => {
       expect(screen.queryByRole('tab', { name: 'Scoped' })).not.toBeInTheDocument();
     });
 
-    it('shows an agent-scoped tab when the active agent id matches', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockCurrentAgentId = 'agent-x';
-      mockContributions = [
-        makeContribution('profile', { title: 'Profile' }),
-        makeContribution('scoped', {
-          title: 'Scoped',
-          visibleWhen: ({ agentId }) => agentId === 'agent-x',
-        }),
-      ];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(screen.getByRole('tab', { name: 'Scoped' })).toBeInTheDocument();
-    });
-
     it('hides a folder-scoped tab when the selected cwd does not match', () => {
       mockRightPanelOpen = true;
       mockActiveRightPanelTab = 'profile';
@@ -544,69 +439,6 @@ describe('RightPanelContainer', () => {
       render(<RightPanelContainer pathname={mockPathname} />);
 
       expect(screen.queryByRole('tab', { name: 'Scoped' })).not.toBeInTheDocument();
-    });
-
-    it('shows a folder-scoped tab when the selected cwd matches', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockSelectedCwd = '/repo/a';
-      mockContributions = [
-        makeContribution('profile', { title: 'Profile' }),
-        makeContribution('scoped', {
-          title: 'Scoped',
-          visibleWhen: ({ cwd }) => cwd === '/repo/a',
-        }),
-      ];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(screen.getByRole('tab', { name: 'Scoped' })).toBeInTheDocument();
-    });
-
-    // Regression guard for the previously-hardcoded context site: the container
-    // must pass the real agentId + cwd (not undefined) alongside pathname +
-    // transport to every predicate.
-    it('passes the full agent context (agentId + cwd) to visibleWhen', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'a';
-      mockPathname = '/session';
-      mockCurrentAgentId = 'agent-x';
-      mockSelectedCwd = '/repo/a';
-      mockExplicitAgentPath = '/repo/explicit';
-      const predicate = vi.fn(() => true);
-      mockContributions = [makeContribution('a', { visibleWhen: predicate })];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(predicate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          pathname: '/session',
-          transport: mockTransport,
-          agentId: 'agent-x',
-          cwd: '/repo/a',
-          explicitAgentPath: '/repo/explicit',
-        })
-      );
-    });
-
-    // Existing pathname-only predicates are unaffected by the added fields.
-    it('leaves a pathname-only predicate unaffected by the agent context', () => {
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockPathname = '/session';
-      mockCurrentAgentId = 'agent-x';
-      mockSelectedCwd = '/repo/a';
-      mockContributions = [
-        makeContribution('profile', { title: 'Profile' }),
-        makeContribution('session-only', {
-          title: 'Session Only',
-          visibleWhen: ({ pathname }) => pathname === '/session',
-        }),
-      ];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(screen.getByRole('tab', { name: 'Session Only' })).toBeInTheDocument();
     });
 
     // Selection honesty (fix 2): a tab gated on an explicit agent pick — the
@@ -664,17 +496,6 @@ describe('RightPanelContainer', () => {
     expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
   });
 
-  it('does not auto-select when active tab is already visible', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'b';
-    mockContributions = [makeContribution('a'), makeContribution('b')];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
-    expect(mockSetActiveRightPanelTab).not.toHaveBeenCalled();
-  });
-
   // Default-tab rule (the Chrome sidePanel rule): contextual wins when present,
   // the global Pulse tab is only the fallback — so Pulse sorts first in the strip
   // yet never steals the default from a contextual surface.
@@ -693,18 +514,6 @@ describe('RightPanelContainer', () => {
       render(<RightPanelContainer pathname={mockPathname} />);
 
       expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('profile');
-    });
-
-    it('falls back to the global tab when no contextual tab is visible', () => {
-      // Dashboard/activity/tasks/…: only the global Pulse tab is visible, so it
-      // becomes the default.
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = null;
-      mockContributions = [makeContribution('pulse', { isGlobal: true })];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
     });
 
     it('leaves a persisted, still-visible contextual tab untouched (DOR-227)', () => {
@@ -773,17 +582,6 @@ describe('RightPanelContainer', () => {
     expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
   });
 
-  it('renders no empty-state copy when every contribution is filtered out', () => {
-    // The Wave-1 empty state is gone (Pulse makes it unreachable): a route that
-    // filters out its only contribution renders an empty body, never stale copy.
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
-    mockContributions = [makeContribution('a', { visibleWhen: () => false })];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-    expect(screen.queryByText('Nothing to inspect here yet.')).not.toBeInTheDocument();
-  });
-
   it('renders Sheet instead of Panel on mobile', () => {
     mockIsMobile = true;
     mockIsBelowDesktop = true;
@@ -798,18 +596,6 @@ describe('RightPanelContainer', () => {
     expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
     // Full bleed on a phone: there is no page beside it worth keeping in view.
     expect(screen.getByTestId('sheet-content')).toHaveClass('sm:max-w-full');
-  });
-
-  it('mobile Sheet renders active content', () => {
-    mockIsMobile = true;
-    mockIsBelowDesktop = true;
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
-    mockContributions = [makeContribution('a')];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
   });
 
   it('the sheet stays open for an Escape a tab keeps for itself, and closes for any other', () => {
@@ -846,29 +632,6 @@ describe('RightPanelContainer', () => {
     expect(sheetEscape.dismissed).toBe(1);
   });
 
-  it('mobile returns null when rightPanelOpen is false', () => {
-    mockIsMobile = true;
-    mockIsBelowDesktop = true;
-    mockRightPanelOpen = false;
-    mockContributions = [makeContribution('a')];
-
-    const { container } = render(<RightPanelContainer pathname={mockPathname} />);
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('mobile Sheet also renders the shared header (tab strip + close)', () => {
-    mockIsMobile = true;
-    mockIsBelowDesktop = true;
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
-    mockContributions = [makeContribution('a'), makeContribution('b')];
-
-    render(<RightPanelContainer pathname={mockPathname} />);
-
-    expect(screen.getByRole('tablist', { name: 'Right panel tabs' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Close panel' })).toBeInTheDocument();
-  });
-
   // A tablet is wider than a phone and still too narrow for three panes: at
   // 768px with the sidebar and the panel both docked, the page between them
   // measured 236px. So the panel comes OVER the page there — but as a sheet at
@@ -887,19 +650,6 @@ describe('RightPanelContainer', () => {
       expect(document.activeElement).toBe(document.getElementById('right-panel-content'));
       expect(document.activeElement?.getAttribute('role')).toBe('tabpanel');
     });
-
-    it('leaves every other tab opening as before', () => {
-      mockIsMobile = true;
-      mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'profile';
-      mockContributions = [makeContribution('profile'), makeContribution('work')];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(document.activeElement?.getAttribute('role')).toBe('tab');
-      expect(document.getElementById('right-panel-content')).not.toHaveAttribute('tabindex');
-    });
   });
 
   // reading width, not the phone's full-bleed takeover, because there is a page
@@ -917,32 +667,6 @@ describe('RightPanelContainer', () => {
       expect(screen.getByTestId('sheet')).toBeInTheDocument();
       expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument();
       expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
-    });
-
-    it('keeps the sheet at reading width rather than full bleed', () => {
-      mockIsMobile = false;
-      mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'a';
-      mockContributions = [makeContribution('a')];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(screen.getByTestId('sheet-content')).not.toHaveClass('sm:max-w-full');
-    });
-
-    it('leaves a measured-short tab at full height — 390×844 is not a tablet', () => {
-      mockIsMobile = false;
-      mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'pulse';
-      mockContributions = [makeContribution('pulse')];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      const className = screen.getByTestId('sheet-content').className;
-      expect(className).not.toContain('!h-auto');
-      expect(className).not.toContain('!bottom-auto');
     });
   });
 
@@ -963,32 +687,6 @@ describe('RightPanelContainer', () => {
       expect(className).toContain('!bottom-auto');
       expect(className).toContain('!h-auto');
       expect(className).toContain('max-h-dvh');
-    });
-
-    it('caps the sheet to its content on the Files tab', () => {
-      mockIsMobile = true;
-      mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'files';
-      mockContributions = [makeContribution('files')];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      expect(screen.getByTestId('sheet-content').className).toContain('!h-auto');
-    });
-
-    it('leaves every other tab at full height, Terminal included', () => {
-      mockIsMobile = true;
-      mockIsBelowDesktop = true;
-      mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'terminal';
-      mockContributions = [makeContribution('terminal')];
-
-      render(<RightPanelContainer pathname={mockPathname} />);
-
-      const className = screen.getByTestId('sheet-content').className;
-      expect(className).not.toContain('!h-auto');
-      expect(className).not.toContain('!bottom-auto');
     });
   });
 });

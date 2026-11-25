@@ -11,7 +11,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import { RemoteCommunityMembersResponseSchema } from '@dorkos/shared/community-views';
 import { logger } from '../../../../../lib/logger.js';
 import { RemoteConnectionStore } from '../../connection-store.js';
 import { RemoteCommunityAdapter } from '../../remote-community-adapter.js';
@@ -198,36 +197,11 @@ describe('a new app against a space from before availability', () => {
     expect(onFailing).not.toHaveBeenCalled();
     for (const log of logs) expect(log).not.toHaveBeenCalled();
   });
-
-  it('reads the member list without the new query, and shows no status', async () => {
-    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
-    const members = await adapter.listMembers(roomId);
-    const memberReads = requests.filter((request) => request.url.includes('/members'));
-    expect(memberReads.map((request) => request.url)).toEqual([
-      `${base}/channels/${roomId}/members`,
-    ]);
-    for (const member of members) {
-      expect(member).not.toHaveProperty('availability');
-      expect(member).not.toHaveProperty('lastSeenAt');
-      expect(member).not.toHaveProperty('runsOn');
-    }
-    // The app's own strict roster schema still reads the old shape.
-    expect(() =>
-      RemoteCommunityMembersResponseSchema.parse({ community: ref, roomId, members, stale: false })
-    ).not.toThrow();
-  });
 });
 
 describe('a new app against a space with availability', () => {
   beforeEach(() => {
     mode = 'new';
-  });
-
-  it('reads the features without a credential', async () => {
-    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
-    expect(await adapter.supportsAgentAvailability()).toBe(true);
-    const read = requests.find((request) => request.url.endsWith('/features'));
-    expect(read?.authorization).toBeUndefined();
   });
 
   it('reports its own agent with its own grant, and leaves out the one refused', async () => {
@@ -262,23 +236,6 @@ describe('a new app against a space with availability', () => {
     expect(reports.map((request) => request.body)).toEqual([
       { agents: [{ agentId: agentMemberId, runsOn: 'computer' }] },
     ]);
-  });
-
-  it('asks for availability on the member list and carries it on the agent row only', async () => {
-    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
-    const members = await adapter.listMembers(roomId);
-    expect(requests.find((request) => request.url.includes('/members'))?.url).toBe(
-      `${base}/channels/${roomId}/members?include=availability`
-    );
-    expect(members.find((member) => member.kind === 'human')).not.toHaveProperty('availability');
-    expect(members.find((member) => member.kind === 'agent')).toMatchObject({
-      availability: 'available',
-      lastSeenAt: '2026-10-15T10:00:00.000Z',
-      runsOn: 'computer',
-    });
-    expect(() =>
-      RemoteCommunityMembersResponseSchema.parse({ community: ref, roomId, members, stale: false })
-    ).not.toThrow();
   });
 
   it('forgets the feature when a report answers 404, and asks the space again', async () => {

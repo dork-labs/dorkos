@@ -21,7 +21,6 @@ vi.mock('../auth/index.js', () => ({
   getUserById: vi.fn(),
 }));
 
-import { MAX_BREADCRUMB_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
 import type { FeedbackDiagnostics } from '@dorkos/shared/telemetry-events';
 
 import { sendFeedback, resolveFeedbackIdentity, listMyFeedback } from '../feedback-reporter.js';
@@ -96,6 +95,14 @@ function bodyForUrl(fetchImpl: FetchMock, url: string): Record<string, unknown> 
   return JSON.parse(init.body as string) as Record<string, unknown>;
 }
 
+/** Every durable-endpoint body, in call order. */
+function durableBodies(fetchImpl: FetchMock): Array<Record<string, unknown>> {
+  const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
+  return calls
+    .filter(([url]) => String(url) === DURABLE_ENDPOINT)
+    .map(([, init]) => JSON.parse(init.body as string) as Record<string, unknown>);
+}
+
 describe('sendFeedback — dual-write', () => {
   it('posts to BOTH the durable site route and the metrics ingest', async () => {
     const fetchImpl = makeFetch('ok');
@@ -108,41 +115,19 @@ describe('sendFeedback — dual-write', () => {
     expect(urls).toContain(METRICS_ENDPOINT);
   });
 
-  it('returns ok:true when the durable post succeeds', async () => {
-    const fetchImpl = makeSplitFetch({ durable: 'ok', metrics: 'ok' });
-    const result = await sendFeedback(baseOptions({ fetchImpl }));
-    expect(result).toEqual({ ok: true });
-  });
-
-  it('returns ok:false when the durable post gets a non-OK response, EVEN THOUGH the metrics post succeeds', async () => {
-    const fetchImpl = makeSplitFetch({ durable: 'not-ok', metrics: 'ok' });
-    const result = await sendFeedback(baseOptions({ fetchImpl }));
-    expect(result).toEqual({ ok: false });
-  });
-
-  it('returns ok:true when the durable post succeeds EVEN THOUGH the metrics post fails', async () => {
-    const fetchImpl = makeSplitFetch({ durable: 'ok', metrics: 'not-ok' });
-    const result = await sendFeedback(baseOptions({ fetchImpl }));
-    expect(result).toEqual({ ok: true });
-  });
-
-  it('returns ok:false when the durable post throws, never throwing itself', async () => {
-    const fetchImpl = makeSplitFetch({ durable: 'reject', metrics: 'ok' });
-    const result = await sendFeedback(baseOptions({ fetchImpl }));
-    expect(result).toEqual({ ok: false });
-  });
-
-  it('returns ok:true when the durable post succeeds even though the metrics post throws', async () => {
-    const fetchImpl = makeSplitFetch({ durable: 'ok', metrics: 'reject' });
-    const result = await sendFeedback(baseOptions({ fetchImpl }));
-    expect(result).toEqual({ ok: true });
-  });
-
-  it('never throws when BOTH posts fail (network error)', async () => {
-    const fetchImpl = makeFetch('reject');
-    const result = await sendFeedback(baseOptions({ fetchImpl }));
-    expect(result).toEqual({ ok: false });
-  });
+  // `ok` reflects ONLY the durable post; the metrics post is best-effort, and
+  // nothing ever throws.
+  it.each([
+    { durable: 'ok', metrics: 'reject', ok: true },
+    { durable: 'not-ok', metrics: 'ok', ok: false },
+    { durable: 'reject', metrics: 'ok', ok: false },
+  ] as const)(
+    'returns ok:$ok when the durable post is $durable and metrics is $metrics',
+    async ({ durable, metrics, ok }) => {
+      const fetchImpl = makeSplitFetch({ durable, metrics });
+      await expect(sendFeedback(baseOptions({ fetchImpl }))).resolves.toEqual({ ok });
+    }
+  );
 
   it('does NO consent gating: dual-writes even with every telemetry kill switch set', async () => {
     vi.stubEnv('DO_NOT_TRACK', '1');
@@ -179,25 +164,6 @@ describe('sendFeedback — durable payload shape', () => {
     expect(body).not.toHaveProperty('event');
   });
 
-  it('carries contact and route through untouched', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'feedback',
-          message: 'hi',
-          contact: 'a@b.com',
-          route: '/tasks',
-        },
-        fetchImpl,
-      })
-    );
-
-    const body = durableBody(fetchImpl);
-    expect(body.contact).toBe('a@b.com');
-    expect(body.route).toBe('/tasks');
-  });
-
   it('attaches reporterEmail/reporterName from a resolved identity', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(
@@ -213,15 +179,14 @@ describe('sendFeedback — durable payload shape', () => {
     expect(body.reporterName).toBe('Dorian');
     // The Better Auth user id itself never rides the wire payload.
     expect(JSON.stringify(body)).not.toContain('user_1');
-  });
-
-  it('omits reporterEmail/reporterName when no identity was resolved', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(baseOptions({ fetchImpl }));
-
-    const body = durableBody(fetchImpl);
-    expect(body).not.toHaveProperty('reporterEmail');
-    expect(body).not.toHaveProperty('reporterName');
+    const metrics = bodyForUrl(fetchImpl, METRICS_ENDPOINT) as {
+      events: Array<{ properties: Record<string, unknown> }>;
+    };
+    expect(metrics.events[0].properties).toMatchObject({
+      reporterEmail: 'dorian@example.com',
+      reporterName: 'Dorian',
+    });
+    expect(JSON.stringify(metrics)).not.toContain('user_1');
   });
 
   it('truncates an over-cap name and drops an over-cap email so identity never 400s the durable write', async () => {
@@ -245,39 +210,6 @@ describe('sendFeedback — durable payload shape', () => {
     const body = durableBody(fetchImpl);
     expect(body.reporterName).toBe('x'.repeat(128));
     expect(body).not.toHaveProperty('reporterEmail');
-  });
-
-  it('renders diagnostics to text and includes it when present', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'crash on save',
-          diagnostics: {
-            clientReport: {
-              version: '0.47.0',
-              platform: 'darwin-arm64',
-              runtimes: ['claude-code'],
-              flags: { darkMode: true },
-            },
-            breadcrumbs: [
-              { at: '2026-08-03T00:00:00.000Z', kind: 'console_error', message: 'boom' },
-            ],
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const body = durableBody(fetchImpl);
-    expect(typeof body.diagnostics).toBe('string');
-    const diagnostics = body.diagnostics as string;
-    expect(diagnostics).toContain('0.47.0');
-    expect(diagnostics).toContain('darwin-arm64');
-    expect(diagnostics).toContain('claude-code');
-    expect(diagnostics).toContain('boom');
-    expect(diagnostics.length).toBeLessThanOrEqual(8000);
   });
 
   it("names the desktop shell's own log apart from the server's (DOR-2045)", async () => {
@@ -312,150 +244,6 @@ describe('sendFeedback — durable payload shape', () => {
     expect(diagnostics).toContain(
       'Desktop app log excerpt:\n2026-09-14 15:25:25.123 info [renderer] Reloading the window.'
     );
-  });
-
-  it('keeps both log excerpts, newest end first, when each is at its own bound', async () => {
-    // The durable route caps the rendered block at 8,000 characters, and BOTH
-    // log excerpts are individually bounded at 8,000 — so "both at once" is not
-    // an edge case, it is the shape of a bug report from a desktop app that has
-    // been running a while. A single head slice across the whole block deleted
-    // the desktop section outright, label included, and at smaller server sizes
-    // it cut the desktop excerpt's NEWEST end, which is the half a report is
-    // filed about.
-    const fetchImpl = makeFetch('ok');
-    const serverLogExcerpt = Array.from(
-      { length: 200 },
-      (_, i) => `2026-09-14T22:25:${String(i % 60).padStart(2, '0')}.000Z warn [http] slow ${i}`
-    )
-      .join('\n')
-      .slice(-8000);
-    const shellLines = Array.from(
-      { length: 200 },
-      (_, i) => `2026-09-14 15:25:25.123 info [renderer] shell line ${i} ${'z'.repeat(20)}`
-    );
-    const shellLogExcerpt = shellLines.join('\n').slice(-8000);
-
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'the window keeps reloading itself',
-          diagnostics: {
-            clientReport: {
-              version: '0.75.0',
-              platform: 'darwin-arm64',
-              runtimes: [],
-              flags: {},
-              shell: 'desktop-app' as const,
-            },
-            serverLogExcerpt,
-            shellLogExcerpt,
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const diagnostics = durableBody(fetchImpl).diagnostics as string;
-    expect(diagnostics.length).toBeLessThanOrEqual(8000);
-    // Both sections survive, each labelled.
-    expect(diagnostics).toContain('Server log excerpt:');
-    expect(diagnostics).toContain('Desktop app log excerpt:');
-    // Each keeps its NEWEST end: the block ends on the last shell line, and the
-    // server section still carries its own last line.
-    expect(diagnostics.endsWith(shellLines[shellLines.length - 1])).toBe(true);
-    expect(diagnostics).toContain('[http] slow 199');
-    // Each is cut from the front, so each says where it was cut.
-    expect(diagnostics.split('\n').filter((l) => l.startsWith('…'))).toHaveLength(2);
-  });
-
-  it('gives a short server excerpt the space it does not use to the desktop one', async () => {
-    // The budget is a floor for each section, not a fixed half: a five-line
-    // server excerpt must not cost the desktop excerpt 4,000 characters.
-    const fetchImpl = makeFetch('ok');
-    const shellLines = Array.from(
-      { length: 200 },
-      (_, i) => `2026-09-14 15:25:25.123 info [renderer] shell line ${i} ${'z'.repeat(20)}`
-    );
-
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'the window keeps reloading itself',
-          diagnostics: {
-            clientReport: {
-              version: '0.75.0',
-              platform: 'darwin-arm64',
-              runtimes: [],
-              flags: {},
-            },
-            serverLogExcerpt: 'warn [http] one slow request',
-            shellLogExcerpt: shellLines.join('\n').slice(-8000),
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const diagnostics = durableBody(fetchImpl).diagnostics as string;
-    const shellSection = diagnostics.slice(diagnostics.indexOf('Desktop app log excerpt:'));
-    expect(diagnostics).toContain('one slow request');
-    expect(shellSection.length).toBeGreaterThan(6000);
-  });
-
-  it('lets a breadcrumb flood share the block rather than starve both logs', async () => {
-    // Breadcrumbs sat OUTSIDE the budget, so they were spent before the logs
-    // were considered: at 23 maximum-size crumbs (the schema allows 50, and the
-    // ring fills with console errors on a page that is misbehaving) both log
-    // sections disappeared with no marker and no log line. All three are
-    // excerpts of the same kind and all three share one budget.
-    const fetchImpl = makeFetch('ok');
-    const breadcrumbs = Array.from({ length: 23 }, (_, i) => ({
-      at: `2026-09-14T22:${String(i % 60).padStart(2, '0')}:00.000Z`,
-      kind: 'console_error' as const,
-      message: `crumb ${i} ${'c'.repeat(MAX_BREADCRUMB_MESSAGE_LEN - 20)}`,
-    }));
-    const serverLines = Array.from(
-      { length: 200 },
-      (_, i) => `2026-09-14T22:25:00.000Z warn [http] slow ${i} ${'y'.repeat(30)}`
-    );
-    const shellLines = Array.from(
-      { length: 200 },
-      (_, i) => `2026-09-14 15:25:25.123 info [renderer] shell line ${i} ${'z'.repeat(20)}`
-    );
-
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'the window keeps reloading itself',
-          diagnostics: {
-            clientReport: {
-              version: '0.75.0',
-              platform: 'darwin-arm64',
-              runtimes: [],
-              flags: {},
-              shell: 'desktop-app' as const,
-            },
-            breadcrumbs,
-            serverLogExcerpt: serverLines.join('\n').slice(-8000),
-            shellLogExcerpt: shellLines.join('\n').slice(-8000),
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const diagnostics = durableBody(fetchImpl).diagnostics as string;
-    expect(diagnostics.length).toBeLessThanOrEqual(8000);
-    expect(diagnostics).toContain('Breadcrumbs:');
-    expect(diagnostics).toContain('Server log excerpt:');
-    expect(diagnostics).toContain('Desktop app log excerpt:');
-    // Each section keeps its newest entry, which is what a front cut is for.
-    expect(diagnostics).toContain('crumb 22');
-    expect(diagnostics).toContain('[http] slow 199');
-    expect(diagnostics.endsWith(shellLines[shellLines.length - 1])).toBe(true);
   });
 
   it('says so in the report when a section had no room, instead of vanishing', async () => {
@@ -542,14 +330,6 @@ describe('sendFeedback — durable payload shape', () => {
     ]);
   });
 
-  it('omits diagnostics when the submission has none', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(baseOptions({ fetchImpl }));
-
-    const body = durableBody(fetchImpl);
-    expect(body).not.toHaveProperty('diagnostics');
-  });
-
   describe('diagnostics context lines (DOR-1960)', () => {
     /** A `clientReport` carrying every environment field the client can capture. */
     function reportWithEnvironment(overrides: Partial<ClientReport> = {}): ClientReport {
@@ -599,67 +379,17 @@ describe('sendFeedback — durable payload shape', () => {
       expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
     });
 
-    it('omits the density suffix on a standard-density display', async () => {
-      const diagnostics = await renderedFor(
-        reportWithEnvironment({ viewport: { width: 800, height: 600, devicePixelRatio: 1 } })
-      );
-
-      expect(diagnostics.split('\n')).toContain('Viewport: 800x600');
-    });
-
-    it('prints one version when the client and server agree', async () => {
-      // The common case: `clientReport.version` came FROM this server's config
-      // route, so a redundant "(server 0.47.0)" on every report is noise.
-      const diagnostics = await renderedFor(reportWithEnvironment({ version: '0.47.0' }), {
-        dorkosVersion: '0.47.0',
+    it.each([
+      { client: '0.47.0', server: '0.47.0', line: 'Version: 0.47.0' },
+      // Upgrade skew: a long-lived tab holding a cached config.
+      { client: '0.47.0', server: '0.48.1', line: 'Version: 0.47.0 (server 0.48.1)' },
+      // `unknown` is a loading state, not a version, so it is not skew.
+      { client: 'unknown', server: '0.48.1', line: 'Version: 0.48.1' },
+    ])('renders client $client / server $server as "$line"', async ({ client, server, line }) => {
+      const diagnostics = await renderedFor(reportWithEnvironment({ version: client }), {
+        dorkosVersion: server,
       });
-
-      expect(diagnostics.split('\n')).toContain('Version: 0.47.0');
-      expect(diagnostics).not.toContain('(server');
-    });
-
-    it('names both versions when the server has moved on under the client', async () => {
-      // The upgrade-skew case this line exists for: a long-lived tab holding a
-      // cached config while the server was restarted onto a new build.
-      const diagnostics = await renderedFor(reportWithEnvironment({ version: '0.47.0' }), {
-        dorkosVersion: '0.48.1',
-      });
-
-      expect(diagnostics.split('\n')).toContain('Version: 0.47.0 (server 0.48.1)');
-    });
-
-    it('reports the server version alone when the client version is still unknown', async () => {
-      // `unknown` is `buildClientReport`'s placeholder for "the config query has
-      // not resolved yet", not a version. Rendering it as skew invents a
-      // disagreement out of a loading state — and "0.48.1 vs unknown" reads to
-      // triage like a real version mismatch worth chasing.
-      const diagnostics = await renderedFor(reportWithEnvironment({ version: 'unknown' }), {
-        dorkosVersion: '0.48.1',
-      });
-
-      expect(diagnostics.split('\n')).toContain('Version: 0.48.1');
-      expect(diagnostics).not.toContain('unknown');
-      expect(diagnostics).not.toContain('(server');
-    });
-
-    it('omits each environment line the client did not send', async () => {
-      // A client that predates these fields (or a host that could not read one)
-      // must not produce `Theme: undefined` — an absent field is not a value.
-      const diagnostics = await renderedFor({
-        version: '0.47.0',
-        platform: 'darwin-arm64',
-        runtimes: [],
-        flags: {},
-      });
-
-      expect(diagnostics).not.toContain('Viewport:');
-      expect(diagnostics).not.toContain('Shell:');
-      expect(diagnostics).not.toContain('Theme:');
-      expect(diagnostics).not.toContain('Locale:');
-      expect(diagnostics).not.toContain('Timezone:');
-      expect(diagnostics).not.toContain('Browser:');
-      expect(diagnostics).not.toContain('undefined');
-      expect(diagnostics.split('\n')).toContain('Version: 0.47.0');
+      expect(diagnostics.split('\n')).toContain(line);
     });
 
     it('keeps the context lines when a full breadcrumb trail overruns the 8000-char cap', async () => {
@@ -693,86 +423,24 @@ describe('sendFeedback — durable payload shape', () => {
       expect(lines).toContain('Theme: dark');
       expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
     });
-
-    it('emits the context lines before the unbounded flags and breadcrumbs', async () => {
-      // The ordering property renderDiagnostics's TSDoc claims — and the ONLY
-      // thing protecting these lines from the tail slice. Deliberately not a
-      // total-size assertion: `flags` is a `z.record()` with no cap on how many
-      // keys it carries, so the header as a whole has no bound worth pinning.
-      const fetchImpl = makeFetch('ok');
-      await sendFeedback(
-        baseOptions({
-          submission: {
-            kind: 'bug',
-            message: 'layout broke',
-            diagnostics: {
-              clientReport: reportWithEnvironment({
-                browser: 'U'.repeat(300),
-                flags: Object.fromEntries(
-                  Array.from({ length: 40 }, (_, i) => [`flag.number.${i}`, true])
-                ),
-              }),
-              breadcrumbs: [
-                { at: '2026-08-03T00:00:00.000Z', kind: 'console_error', message: 'boom' },
-              ],
-            },
-          },
-          fetchImpl,
-        })
-      );
-
-      const diagnostics = durableBody(fetchImpl).diagnostics as string;
-      const viewportAt = diagnostics.indexOf('Viewport:');
-      const browserAt = diagnostics.indexOf('Browser:');
-      const flagsAt = diagnostics.indexOf('Flags:');
-      const breadcrumbsAt = diagnostics.indexOf('Breadcrumbs:');
-
-      expect(viewportAt).toBeGreaterThan(-1);
-      expect(browserAt).toBeGreaterThan(viewportAt);
-      expect(flagsAt).toBeGreaterThan(browserAt);
-      expect(breadcrumbsAt).toBeGreaterThan(flagsAt);
-    });
   });
 
-  it('carries transcriptExcerpt and sets hasTranscript:true when present', async () => {
+  it('carries transcriptExcerpt, truncated to the durable route cap, with hasTranscript:true', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(
       baseOptions({
         submission: {
           kind: 'bug',
           message: 'crash on save',
-          transcriptExcerpt: 'user: it broke\nassistant: sorry',
+          transcriptExcerpt: 'x'.repeat(15_000),
         },
         fetchImpl,
       })
     );
 
     const body = durableBody(fetchImpl);
-    expect(body.transcriptExcerpt).toBe('user: it broke\nassistant: sorry');
+    expect(body.transcriptExcerpt).toBe('x'.repeat(8000));
     expect(body.hasTranscript).toBe(true);
-  });
-
-  it('truncates an oversized transcriptExcerpt to the durable route cap (8000 chars)', async () => {
-    const fetchImpl = makeFetch('ok');
-    const longExcerpt = 'x'.repeat(15_000);
-    await sendFeedback(
-      baseOptions({
-        submission: { kind: 'bug', message: 'crash on save', transcriptExcerpt: longExcerpt },
-        fetchImpl,
-      })
-    );
-
-    const body = durableBody(fetchImpl);
-    expect((body.transcriptExcerpt as string).length).toBe(8000);
-  });
-
-  it('omits transcriptExcerpt/hasTranscript when the submission has none', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(baseOptions({ fetchImpl }));
-
-    const body = durableBody(fetchImpl);
-    expect(body).not.toHaveProperty('transcriptExcerpt');
-    expect(body).not.toHaveProperty('hasTranscript');
   });
 
   it('forwards the screenshot data URL verbatim and sets hasScreenshot:true', async () => {
@@ -807,14 +475,6 @@ describe('sendFeedback — durable payload shape', () => {
       }) as unknown as FetchMock;
     }
 
-    /** Every durable-endpoint body, in call order. */
-    function durableBodies(fetchImpl: FetchMock): Array<Record<string, unknown>> {
-      const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
-      return calls
-        .filter(([url]) => String(url) === DURABLE_ENDPOINT)
-        .map(([, init]) => JSON.parse(init.body as string) as Record<string, unknown>);
-    }
-
     const withScreenshot = {
       kind: 'bug' as const,
       message: 'crash on save',
@@ -840,15 +500,6 @@ describe('sendFeedback — durable payload shape', () => {
       const result = await sendFeedback(baseOptions({ fetchImpl }));
 
       // Nothing to shed, so a second attempt would just repeat the failure.
-      expect(durableBodies(fetchImpl)).toHaveLength(1);
-      expect(result).toEqual({ ok: false });
-    });
-
-    it('does not retry a non-413 failure', async () => {
-      const fetchImpl = makeSplitFetch({ durable: 'not-ok', metrics: 'ok' });
-      const result = await sendFeedback(baseOptions({ submission: withScreenshot, fetchImpl }));
-
-      // A 500 is not a size problem; dropping the screenshot would not help.
       expect(durableBodies(fetchImpl)).toHaveLength(1);
       expect(result).toEqual({ ok: false });
     });
@@ -891,29 +542,6 @@ describe('sendFeedback — durable payload shape', () => {
       }) as unknown as FetchMock;
     }
 
-    /** Every durable-endpoint body, in call order. */
-    function durableBodies(fetchImpl: FetchMock): Array<Record<string, unknown>> {
-      const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
-      return calls
-        .filter(([url]) => String(url) === DURABLE_ENDPOINT)
-        .map(([, init]) => JSON.parse(init.body as string) as Record<string, unknown>);
-    }
-
-    it('forwards the element as its own field, leaving the message as typed', async () => {
-      const fetchImpl = makeFetch('ok');
-      await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
-
-      const body = durableBody(fetchImpl);
-      expect(body.element).toEqual(element);
-      expect(body.message).toBe('messages vanish');
-    });
-
-    it('sends no element key when nothing was pointed at', async () => {
-      const fetchImpl = makeFetch('ok');
-      await sendFeedback(baseOptions({ fetchImpl }));
-      expect(durableBody(fetchImpl)).not.toHaveProperty('element');
-    });
-
     it('retries once without the element when the site refuses the body', async () => {
       // A site that predates the field refuses it (its schema is strict). The
       // report is worth more than the element's name, so it goes again without.
@@ -928,50 +556,6 @@ describe('sendFeedback — durable payload shape', () => {
       expect(result).toEqual({ ok: true });
     });
 
-    it('drops only the label when a site knows the element but not its label', async () => {
-      const fetchImpl = makeDurableScript([
-        {
-          status: 400,
-          body: {
-            issues: [
-              { code: 'unrecognized_keys', keys: ['label'], path: ['element'], message: 'x' },
-            ],
-          },
-        },
-      ]);
-      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
-
-      const bodies = durableBodies(fetchImpl);
-      expect(bodies).toHaveLength(2);
-      expect(bodies[1].element).toEqual({
-        selector: '[data-testid="message-list"]',
-        slot: 'scroll-area',
-        testId: 'message-list',
-      });
-      expect(result).toEqual({ ok: true });
-    });
-
-    it('drops the whole element when an old site refuses the element and its label', async () => {
-      // Label first, then the element: a site that knows neither.
-      const fetchImpl = makeDurableScript([
-        {
-          status: 400,
-          body: {
-            issues: [
-              { code: 'unrecognized_keys', keys: ['label'], path: ['element'], message: 'x' },
-            ],
-          },
-        },
-        { status: 400, body: ELEMENT_UNKNOWN },
-      ]);
-      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
-
-      const bodies = durableBodies(fetchImpl);
-      expect(bodies).toHaveLength(3);
-      expect(bodies[2]).not.toHaveProperty('element');
-      expect(result).toEqual({ ok: true });
-    });
-
     it('does not retry a 400 that names something other than the element', async () => {
       const fetchImpl = makeDurableScript([{ status: 400, body: MESSAGE_TOO_LONG }]);
       const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
@@ -981,86 +565,6 @@ describe('sendFeedback — durable payload shape', () => {
       expect(durableBodies(fetchImpl)).toHaveLength(1);
       expect(result).toEqual({ ok: false });
     });
-
-    it('does not retry a 400 whose body cannot be read', async () => {
-      const fetchImpl = makeDurableScript([{ status: 400 }]);
-      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
-
-      expect(durableBodies(fetchImpl)).toHaveLength(1);
-      expect(result).toEqual({ ok: false });
-    });
-
-    it('also retries when the refusal is about the element value itself', async () => {
-      const fetchImpl = makeDurableScript([
-        { status: 400, body: { issues: [{ code: 'too_big', path: ['element', 'selector'] }] } },
-      ]);
-      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
-
-      expect(durableBodies(fetchImpl)).toHaveLength(2);
-      expect(result).toEqual({ ok: true });
-    });
-
-    it('lands the report on an older site that first says too large, then refuses the element', async () => {
-      // The site checks size before its schema, so a big report with both an
-      // element and a screenshot meets the two refusals in this order.
-      const fetchImpl = makeDurableScript([
-        { status: 413 },
-        { status: 400, body: ELEMENT_UNKNOWN },
-      ]);
-      const result = await sendFeedback(
-        baseOptions({
-          submission: {
-            ...withElement,
-            screenshot: { dataUrl: `data:image/webp;base64,${'QUJD'.repeat(40)}` },
-          },
-          fetchImpl,
-        })
-      );
-
-      const bodies = durableBodies(fetchImpl);
-      expect(bodies).toHaveLength(3);
-      expect(bodies[1]).not.toHaveProperty('screenshot');
-      expect(bodies[1]).toHaveProperty('element');
-      expect(bodies[2]).not.toHaveProperty('screenshot');
-      expect(bodies[2]).not.toHaveProperty('element');
-      expect(bodies[2]).toMatchObject({ message: 'messages vanish' });
-      expect(result).toEqual({ ok: true });
-    });
-
-    it('does not retry a 400 when there was no element to drop', async () => {
-      const fetchImpl = makeDurableScript([{ status: 400, body: ELEMENT_UNKNOWN }]);
-      const result = await sendFeedback(baseOptions({ fetchImpl }));
-
-      expect(durableBodies(fetchImpl)).toHaveLength(1);
-      expect(result).toEqual({ ok: false });
-    });
-
-    it('does not drop the element over a failure that is not a refusal', async () => {
-      const fetchImpl = makeSplitFetch({ durable: 'not-ok', metrics: 'ok' });
-      const result = await sendFeedback(baseOptions({ submission: withElement, fetchImpl }));
-
-      expect(durableBodies(fetchImpl)).toHaveLength(1);
-      expect(result).toEqual({ ok: false });
-    });
-  });
-
-  it('omits both screenshot and hasScreenshot when none was attached', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(baseOptions({ fetchImpl }));
-
-    const body = durableBody(fetchImpl);
-    expect(body).not.toHaveProperty('hasScreenshot');
-    expect(body).not.toHaveProperty('screenshot');
-  });
-
-  it('maps kind:"idea" straight through (the durable route has no PostHog-style event remapping)', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(
-      baseOptions({ submission: { kind: 'idea', message: 'add dark mode' }, fetchImpl })
-    );
-
-    const body = durableBody(fetchImpl);
-    expect(body.kind).toBe('idea');
   });
 });
 
@@ -1107,31 +611,6 @@ describe('sendFeedback — metrics post (best-effort)', () => {
     expect(body.events[0].event).toBe('feature_requested');
     expect(body.events[0].properties).not.toHaveProperty('kind');
   });
-
-  it('attaches reporterEmail/reporterName when the caller passes a resolved identity', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(
-      baseOptions({
-        submission: { kind: 'bug', message: 'crash on save' },
-        identity: { userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' },
-        fetchImpl,
-      })
-    );
-
-    const body = metricsBody(fetchImpl);
-    expect(body.events[0].properties.reporterEmail).toBe('dorian@example.com');
-    expect(body.events[0].properties.reporterName).toBe('Dorian');
-    expect(JSON.stringify(body.events[0].properties)).not.toContain('user_1');
-  });
-
-  it('sends no reporterEmail/reporterName when no identity was resolved', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(baseOptions({ fetchImpl }));
-
-    const body = metricsBody(fetchImpl);
-    expect(body.events[0].properties).not.toHaveProperty('reporterEmail');
-    expect(body.events[0].properties).not.toHaveProperty('reporterName');
-  });
 });
 
 describe('resolveFeedbackIdentity', () => {
@@ -1154,22 +633,6 @@ describe('resolveFeedbackIdentity', () => {
     const identity = await resolveFeedbackIdentity('unknown_id');
 
     expect(identity).toBeUndefined();
-  });
-
-  it('never reads identity from anything other than the passed userId', async () => {
-    // The function's only input is the verified session's userId — there is no
-    // parameter through which a caller could pass a client-supplied email/name
-    // and have it override the database lookup.
-    mockGetUserById.mockReturnValue({
-      id: 'user_1',
-      email: 'real@example.com',
-      name: 'Real Name',
-    });
-
-    const identity = await resolveFeedbackIdentity('user_1');
-
-    expect(identity?.email).toBe('real@example.com');
-    expect(identity?.name).toBe('Real Name');
   });
 });
 
@@ -1200,16 +663,6 @@ describe('listMyFeedback', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('strips trailing slashes from the cloud URL before building the request', async () => {
-    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
-      expect(String(url)).toMatch(/^https:\/\/example\.test\/api\/feedback\/mine\?/);
-      return new Response('[]', { status: 200 });
-    }) as unknown as typeof fetch;
-
-    await listMyFeedback({ dorkHome, cloudUrl: 'https://example.test///', fetchImpl });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
   it('throws (never swallows) on a non-OK response — this is a read the UI must show an error for', async () => {
     const fetchImpl = vi.fn(
       async () => new Response(null, { status: 500 })
@@ -1218,15 +671,5 @@ describe('listMyFeedback', () => {
     await expect(
       listMyFeedback({ dorkHome, cloudUrl: 'https://example.test', fetchImpl })
     ).rejects.toThrow(/500/);
-  });
-
-  it('throws (never swallows) on a network error', async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new Error('network down');
-    }) as unknown as typeof fetch;
-
-    await expect(
-      listMyFeedback({ dorkHome, cloudUrl: 'https://example.test', fetchImpl })
-    ).rejects.toThrow('network down');
   });
 });

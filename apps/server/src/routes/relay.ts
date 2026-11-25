@@ -6,11 +6,12 @@
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
-import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
+import type { AgentSessionStoreLike, RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
   SERVER_MANAGED_PREFIXES,
+  withoutCarriedTurnLimits,
 } from '@dorkos/relay';
 import {
   SendMessageRequestSchema,
@@ -19,34 +20,31 @@ import {
   DeadLetterQuerySchema,
   EndpointRegistrationSchema,
   reachesServerDestination,
-  SERVER_DESTINATION_REFUSAL,
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
 import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import {
-  isFromWifi,
-  NOT_FROM_WIFI,
-  WIFI_ACTION_REFUSAL,
-} from '../services/core/auth/sessions/wifi-level.js';
+import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readHomeManifest } from '../services/core/agent-identity/index.js';
 import { createAdapterRoutes } from './relay-adapters.js';
 import { createRelayWebhookRoutes } from './relay-webhooks.js';
 import { logger } from '../lib/logger.js';
+import { TRACING_OFF } from './relay-problems.js';
 import {
   createReceiptStatusHandler,
   publishRelayMessage,
   type RelayPublishDeps,
 } from './relay-delivery-receipts.js';
+import { relayMessageSender, type AgentSubjectLookup } from './relay-message-sender.js';
+import { relayChatPlaceRefusal, type RelayChatMesh } from './relay-chat-place.js';
 
 /** Allowed subject prefixes for SSE subscription patterns. */
 const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
@@ -144,7 +142,8 @@ export function buildConversations(
     let preview = '';
     let payload: unknown = undefined;
     if (deadLetter?.envelope?.payload) {
-      payload = deadLetter.envelope.payload;
+      // The sender's words, never the limits the server carried on them (DOR-5151).
+      payload = withoutCarriedTurnLimits(deadLetter.envelope.payload);
       const p = payload as Record<string, unknown>;
       const text = p?.content ?? p?.text ?? p?.message;
       preview =
@@ -196,11 +195,22 @@ export interface RelayRouteDeps extends RelayPublishDeps {
    * can't be published straight into it past the room (DOR-3088, Security's G2).
    */
   isRoomSession: (sessionId: string) => boolean;
+  /** The registry's relay address for the agent at a home, so its message goes from it (DOR-5151). */
+  agentSubjectOf?: AgentSubjectLookup;
+  /** Mesh, read at request time, so an agent's message into a chat meets the chat route's place rule (DOR-5200). */
+  chatMesh?: () => RelayChatMesh | undefined;
+  /** The relay adapter's conversation map, so the place rule asks of the chat a turn would run in. */
+  agentSessions?: () => AgentSessionStoreLike | undefined;
 }
 
 /** Why a message addressed to a room's own conversation is refused. */
-const ROOM_SESSION_REFUSAL =
-  "That conversation belongs to a room. Post in the room instead, so the room's rules apply.";
+const ROOM_SESSION_REFUSAL = 'That conversation belongs to a room. Post in the room instead.';
+
+/** A mailbox address that names no mailbox. */
+const ENDPOINT_NOT_FOUND = 'That address has no mailbox.';
+
+/** Why a message to, or a reply address at, a server-owned destination is refused. */
+const RESERVED_SUBJECT_REFUSAL = 'DorkOS keeps that address for itself. Send somewhere else.';
 
 /**
  * The Relay routes, mounted at `/api/relay`: messages, endpoints, dead letters,
@@ -217,29 +227,23 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // POST /messages — Send a message
   router.post('/messages', async (c) => {
     const result = SendMessageRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
 
     // This route takes a client-supplied `from`. It must not let an untrusted
     // caller assert a principal the initiate-consent gate trusts as exempt
     // (reply-forwarding, system, inbound adapter echo) — doing so would let a
     // local caller deliver to a bound human channel with `canInitiate` off,
     // bypassing DOR-277. Server-injected principals never travel this route, so
-    // rejecting them here is safe. Ordinary principals (`relay.human.console`,
-    // `relay.agent.*`, …) still flow and remain subject to the gate.
+    // rejecting them here is safe. Ordinary principals go on to the sender rule
+    // below, which keeps them only for the person, and remain subject to the gate.
     //
     // DOR-871: also rejects `relay.bridge.*`, which the gate evaluates
     // (non-exempt) rather than skips — see `isServerOnlyPrincipal`'s doc for
     // why that principal must still be unassertable here.
     if (isServerOnlyPrincipal(result.data.from)) {
-      return c.json(
-        {
-          error:
-            `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
-            `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
-          code: 'RESERVED_SENDER',
-        },
-        403
-      );
+      return problem(c, 'reserved_sender', {
+        detail: 'DorkOS keeps that sender for itself. Send as yourself instead.',
+      });
     }
 
     // DOR-3037: a person's sender shapes the turn it starts and runs it at the
@@ -248,7 +252,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     // the runtime's default at most, so it is refused there; any other sender
     // is already held to that default.
     if (isFromWifi(honoRequestFacts(c)) && result.data.from.startsWith('relay.human.')) {
-      return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
+      return problem(c, 'not_from_wifi', { detail: WIFI_ACTION_REFUSAL });
     }
 
     // DOR-2432: nothing on this route is a server publisher — the scheduler,
@@ -259,13 +263,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
       (subject): subject is string => subject !== undefined && reachesServerDestination(subject)
     );
     if (refused !== undefined) {
-      return c.json(
-        {
-          error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
-          code: 'RESERVED_SUBJECT',
-        },
-        403
-      );
+      return problem(c, 'reserved_subject', { detail: RESERVED_SUBJECT_REFUSAL });
     }
 
     // DOR-3088 (G2): a room's conversation takes its turns from the room, which holds what an
@@ -273,10 +271,22 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     // so it is refused, as the session relay and an extension's agent-send refuse it.
     const sessionId = extractSessionIdFromSubject(result.data.subject);
     if (sessionId !== null && deps.isRoomSession(sessionId)) {
-      return c.json({ error: ROOM_SESSION_REFUSAL, code: 'ROOM_SESSION' }, 403);
+      return problem(c, 'room_conversation', { detail: ROOM_SESSION_REFUSAL });
     }
 
-    return publishRelayMessage(c, deps, result.data);
+    // DOR-5200: a verified agent's message into a chat follows the chat route's place rule.
+    const facts = honoRequestFacts(c);
+    const placeRefused = await relayChatPlaceRefusal(facts, result.data, {
+      mesh: deps.chatMesh?.(),
+      agentSessions: deps.agentSessions?.(),
+    });
+    if (placeRefused)
+      return problem(c, 'desk_not_own', { detail: placeRefused.error, status: 403 });
+
+    // DOR-5151: the server sets the sender, by the chat route's own reading of the caller.
+    const sent = relayMessageSender(facts, result.data, deps.agentSubjectOf);
+    if ('refused' in sent) return problem(c, 'person_only', { detail: sent.refused.detail });
+    return publishRelayMessage(c, deps, { ...result.data, ...sent });
   });
 
   router.get('/messages/:messageId/status', createReceiptStatusHandler(relayCore));
@@ -284,7 +294,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // GET /messages — List with filters and cursor pagination
   router.get('/messages', (c) => {
     const result = MessageListQuerySchema.safeParse(readQuery(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
     return c.json(relayCore.listMessages(result.data));
   });
 
@@ -316,8 +326,10 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
       const conversations = buildConversations(messages.messages, deadLetters, labelMap);
       return c.json({ conversations });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to build conversations';
-      return c.json({ error: message }, 500);
+      logger.error('[relay] GET /conversations failed', { err });
+      return problem(c, 'internal_error', {
+        detail: 'Couldn’t list message exchanges. Try again.',
+      });
     }
   });
 
@@ -325,7 +337,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // breakdown (all rows join on the envelope id after identity unification).
   router.get('/messages/:id', (c) => {
     const message = relayCore.getMessageDetail(c.req.param('id'));
-    if (!message) return c.json({ error: 'Message not found' }, 404);
+    if (!message) return problem(c, 'not_found', { detail: 'That message doesn’t exist.' });
     return c.json(message);
   });
 
@@ -335,7 +347,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // POST /endpoints — Register an endpoint
   router.post('/endpoints', async (c) => {
     const result = EndpointRegistrationSchema.safeParse(readJsonBody(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
 
     // This route takes a client-supplied subject and, with login off by
     // default, is reachable by anything that can reach the port. A mailbox in a
@@ -345,23 +357,20 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     // `isControlSubject`). The same list the agent tool surface enforces, asked
     // here too rather than trusted to a caller.
     if (isServerManagedSubject(result.data.subject)) {
-      return c.json(
-        {
-          error:
-            `Subject "${result.data.subject}" is in a namespace DorkOS manages and cannot be ` +
-            'registered here. Use a subject outside ' +
-            `${SERVER_MANAGED_PREFIXES.join(', ')}.`,
-        },
-        403
-      );
+      return problem(c, 'reserved_subject', {
+        detail: 'DorkOS manages that address. Use one outside its own prefixes.',
+        extensions: { reservedPrefixes: SERVER_MANAGED_PREFIXES },
+      });
     }
 
     try {
       const endpoint = await relayCore.registerEndpoint(result.data.subject);
       return c.json(endpoint, 201);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Registration failed';
-      return c.json({ error: message }, 422);
+      logger.info('[relay] POST /endpoints refused', { err });
+      return problem(c, 'invalid_request', {
+        detail: 'Couldn’t register that address. Check it, then try again.',
+      });
     }
   });
 
@@ -369,16 +378,16 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // remaining segment but the last, as dots and slashes alike may sit in it.
   router.get('/endpoints/:subject{.+}/inbox', async (c) => {
     const result = InboxQuerySchema.safeParse(readQuery(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
     try {
       const messages = await relayCore.readInbox(c.req.param('subject'), result.data);
       return c.json(messages);
     } catch (err) {
       if ((err as Error & { code?: string })?.code === 'ENDPOINT_NOT_FOUND') {
-        return c.json({ error: 'Endpoint not found' }, 404);
+        return problem(c, 'not_found', { detail: ENDPOINT_NOT_FOUND });
       }
       logger.error('[relay] GET /endpoints/:subject/inbox failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t read that inbox. Try again.' });
     }
   });
 
@@ -386,14 +395,14 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   // remaining segment)
   router.delete('/endpoints/:subject{.+}', async (c) => {
     const removed = await relayCore.unregisterEndpoint(c.req.param('subject'));
-    if (!removed) return c.json({ error: 'Endpoint not found' }, 404);
+    if (!removed) return problem(c, 'not_found', { detail: ENDPOINT_NOT_FOUND });
     return c.json({ success: true });
   });
 
   // GET /dead-letters — List dead-letter messages
   router.get('/dead-letters', async (c) => {
     const result = DeadLetterQuerySchema.safeParse(readQuery(c));
-    if (!result.success) return c.json(validationFailureBody(result.error), 400);
+    if (!result.success) return validationProblem(c, result.error);
     const { endpointHash } = result.data;
     const deadLetters = await relayCore.getDeadLetters(endpointHash ? { endpointHash } : undefined);
     return c.json(deadLetters);
@@ -445,7 +454,7 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
       reason: string;
     };
     if (!source || !reason) {
-      return c.json({ error: 'source and reason are required' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Send both `source` and `reason`.' });
     }
     const deadLetters = await relayCore.getDeadLetters();
     const toRemove = deadLetters.filter(
@@ -462,16 +471,16 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
 
   // GET /messages/:id/trace — Full trace for a message
   router.get('/messages/:id/trace', (c) => {
-    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    if (!traceStore) return problem(c, 'not_found', { detail: TRACING_OFF });
     const span = traceStore.getSpanByMessageId(c.req.param('id'));
-    if (!span) return c.json({ error: 'Trace not found' }, 404);
+    if (!span) return problem(c, 'not_found', { detail: 'No trace for that message.' });
     const spans = traceStore.getTrace(span.traceId);
     return c.json({ traceId: span.traceId, spans });
   });
 
   // GET /trace/metrics — Aggregate delivery metrics from TraceStore
   router.get('/trace/metrics', (c) => {
-    if (!traceStore) return c.json({ error: 'Tracing not available' }, 404);
+    if (!traceStore) return problem(c, 'not_found', { detail: TRACING_OFF });
     return c.json(traceStore.getMetrics());
   });
 
@@ -480,10 +489,10 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     logger.warn('[DEPRECATED] GET /api/relay/stream — use GET /api/events instead');
     const pattern = (readQuery(c).subject as string) || 'relay.human.console.>';
     if (!validateSubscriptionPattern(pattern)) {
-      return c.json(
-        { error: 'Invalid subscription pattern', allowedPrefixes: ALLOWED_PREFIXES },
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: 'That subject pattern isn’t one this stream allows.',
+        extensions: { allowedPrefixes: ALLOWED_PREFIXES },
+      });
     }
     return streamToNodeResponse(c, (res, { signal }) =>
       streamRelayEvents(relayCore, pattern, res, signal)

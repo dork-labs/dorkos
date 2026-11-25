@@ -80,7 +80,7 @@ describe('OperatorIdentityForm', () => {
     const onSaved = await renderForm();
     vi.mocked(mockTransport.setAuthorHandle).mockRejectedValueOnce(
       Object.assign(new Error('@everyone is reserved for DorkOS. Pick a different one.'), {
-        code: 'HANDLE_RESERVED',
+        code: 'handle_reserved',
       })
     );
 
@@ -142,7 +142,7 @@ describe('OperatorIdentityForm', () => {
   it('keeps the refusal out of the toast while it is drawn under the field', async () => {
     await renderForm();
     vi.mocked(mockTransport.setAuthorHandle).mockRejectedValueOnce(
-      Object.assign(new Error('taken'), { code: 'HANDLE_TAKEN' })
+      Object.assign(new Error('taken'), { code: 'handle_taken' })
     );
     fireEvent.change(screen.getByLabelText('Handle'), { target: { value: 'kai' } });
     fireEvent.click(screen.getByTestId('confirm-identity'));
@@ -165,7 +165,7 @@ describe('OperatorIdentityForm', () => {
     await waitFor(() => expect(mockTransport.setAuthorHandle).toHaveBeenCalled());
 
     rendered.unmount();
-    reject(Object.assign(new Error('@kai belongs to somebody else.'), { code: 'HANDLE_TAKEN' }));
+    reject(Object.assign(new Error('@kai belongs to somebody else.'), { code: 'handle_taken' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
   });

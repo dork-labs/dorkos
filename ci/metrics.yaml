@@ -87,7 +87,17 @@ tracked:
       still running.
   - id: tracked.merged-to-released
     unit: hours
-    definition: Time from a PR's merge to the first release tag that contains it; p50.
+    definition: >-
+      Per merged PR, hours from its merge (the PR's mergedAt) to the publication
+      of the first GitHub release that contains its merge commit; reported as
+      p50 and p90 over a window (the daily report shows the 7 days to its day),
+      the verdict reads p50. Containment is commit ancestry: a release holds the
+      commits of compare/<previous release>...<tag>, plus the source of each
+      cherry-pick -x among them, and the earliest published release wins. A
+      sample sits at its release's publication, so a window counts what shipped
+      in it, however long ago it merged; merges are looked up 28 days back. The
+      release commit itself is not a sample. The headline number since releases
+      went daily (DOR-5127); reported, never scored.
   - id: tracked.job-minutes-per-merged-pr
     unit: minutes
     definition: >-
@@ -145,6 +155,26 @@ tracked:
       the count; a day collected before it existed has none and is left out,
       never read as 0. PRs closed without merging are not counted, as for every
       other ejection figure.
+  - id: tracked.ejection-idle-share
+    unit: ratio
+    definition: >-
+      Share of merge-queue ejections (a REMOVED_FROM_MERGE_QUEUE_EVENT by
+      github-merge-queue, reason not `merged`) after which the PR was neither
+      back in the queue nor merged within 60 minutes. Ejections less than 60
+      minutes old at the reading are left out. Read by hand from the PR
+      timelines (GraphQL timelineItems: added, removed, merged), with the p50
+      minutes from ejection to the next queue entry reported beside it; not
+      computed by the daily collector. Lower is better.
+  - id: tracked.conflict-untold
+    unit: count
+    definition: >-
+      Open pull requests into main with auto-merge on that conflict with main
+      and carry no queue-reentry merge-main note for their current head (the
+      `<!-- queue-reentry head=<sha> -->` marker), at the reading. GitHub runs
+      no checks or review on a conflicting pull request, so these wait with
+      nothing telling their author. Read by hand with
+      `scripts/queue-reentry.sh sweep --dry-run` (each `COMMENT conflicting`
+      line is one); not computed by the daily collector. Lower is better.
   - id: tracked.desktop-release-wall-clock
     unit: minutes
     definition: >-
@@ -252,6 +282,16 @@ tracked:
   - id: tracked.review-findings-unfixed-share
     unit: ratio
     definition: Share of real Important review findings whose PR merged without a fix or a written rebuttal (baseline 0.58, plan §5.1).
+  - id: tracked.timed-slot-misses
+    unit: count
+    definition: >-
+      Timed runs that did not happen in time, over the window: each day's
+      daily-release slot (15:07 UTC) and daily-sweep slot (17:13 UTC) with no
+      run of its plan or sweep job starting within 30 minutes, plus each failed
+      claude-code-review run on an open PR's head with no review-redispatch
+      scan starting within 15 minutes after its retry rung passed. Read from
+      the Actions runs API by hand (ledger 261124-161126); not computed by the
+      daily collector.
 
 slo_metrics:
   - headroom

@@ -13,6 +13,8 @@
  *   decline or lowering it (M2). An agent's raise above it asks a person.
  * - `promptUndo`: the prompt an own-agent prompt edit replaced, and the one it
  *   wrote, so a person's Undo can put it back while nothing changed it since.
+ * - `accountUndo`: the account an agent's account-only move replaced, and the
+ *   one it wrote (DOR-5097), so a person's Undo puts back exactly that.
  * - `syncedPrompt`: the hash of a prompt the file sync folded into the row, so
  *   the first read never takes it as a baseline (M-B).
  * - `fileAttest`, `fileCap` and `fileLift`: the SKILL file's attested hash, the
@@ -62,6 +64,16 @@ export interface PromptUndo {
   /** The prompt the agent wrote: Undo applies only while the task still holds it. */
   written: string;
   /** When. */
+  at: string;
+}
+
+/** What an agent's account-only move replaced, for a person's Undo (DOR-5097). */
+export interface AccountUndo {
+  /** The account before the move; `null` followed the agent. */
+  previous: string | null;
+  /** The account the move wrote: Undo applies only while the task still names it. */
+  written: string | null;
+  /** When; the notice names it. */
   at: string;
 }
 
@@ -125,6 +137,8 @@ export interface AgentModeColumn {
   fileCap?: FileCapState;
   /** See the module TSDoc. */
   fileLift?: FileCapLift;
+  /** See the module TSDoc. */
+  accountUndo?: AccountUndo;
   /**
    * The hash of a prompt the file sync folded into the row (M-B): such a prompt
    * is never taken as the first-read baseline. Not an attestation.
@@ -133,7 +147,14 @@ export interface AgentModeColumn {
 }
 
 /** The parts of the column that are objects, read back as they were written. */
-const OBJECT_PARTS = ['attestation', 'promptUndo', 'fileAttest', 'fileCap', 'fileLift'] as const;
+const OBJECT_PARTS = [
+  'attestation',
+  'promptUndo',
+  'fileAttest',
+  'fileCap',
+  'fileLift',
+  'accountUndo',
+] as const;
 
 /** One part of the column to write: a value replaces it, `null` removes it. */
 export type AgentModeColumnPatch = {

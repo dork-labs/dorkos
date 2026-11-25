@@ -239,14 +239,16 @@ describe('Extension Secrets Routes', () => {
       const res = await request(fixtureServer).get('/api/extensions/missing/secrets');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toContain('missing');
     });
 
     it('returns 400 for invalid extension ID', async () => {
       const res = await request(fixtureServer).get('/api/extensions/INVALID_ID/secrets');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Invalid extension ID');
+      expect(res.body).toMatchObject({ code: 'invalid_request', detail: expect.any(String) });
     });
   });
 
@@ -272,8 +274,9 @@ describe('Extension Secrets Routes', () => {
         .send({ value: 'some-value' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('unknown_key');
-      expect(res.body.error).toContain('not declared');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toContain('unknown_key');
+      expect(res.body.detail).toContain('declare');
     });
 
     it('rejects empty value with 400', async () => {
@@ -285,7 +288,7 @@ describe('Extension Secrets Routes', () => {
         .send({ value: '' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('rejects missing value field with 400', async () => {
@@ -297,7 +300,7 @@ describe('Extension Secrets Routes', () => {
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 404 for non-existent extension', async () => {
@@ -308,7 +311,9 @@ describe('Extension Secrets Routes', () => {
         .send({ value: 'test' });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toContain('missing');
     });
 
     it('returns 400 for invalid extension ID', async () => {
@@ -317,7 +322,7 @@ describe('Extension Secrets Routes', () => {
         .send({ value: 'test' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Invalid extension ID');
+      expect(res.body).toMatchObject({ code: 'invalid_request', detail: expect.any(String) });
     });
   });
 
@@ -362,14 +367,16 @@ describe('Extension Secrets Routes', () => {
       const res = await request(fixtureServer).delete('/api/extensions/missing/secrets/api_key');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toContain('missing');
     });
 
     it('returns 400 for invalid extension ID', async () => {
       const res = await request(fixtureServer).delete('/api/extensions/INVALID_ID/secrets/api_key');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Invalid extension ID');
+      expect(res.body).toMatchObject({ code: 'invalid_request', detail: expect.any(String) });
     });
   });
 });

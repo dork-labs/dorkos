@@ -95,6 +95,7 @@ Accessible Claude Code account/project JSONL, local Codex thread stores and the 
 | `/apps`                | Every app, behind the sidebar's Apps door; inherited root search.         |
 | `/todos`               | The to-do list; inherited root search.                                    |
 | `/signed-in`           | Outside the shell: a sign-in's OAuth callback lands here (`?landing=`).   |
+| `/r/$`                 | Outside the shell: a `dork:` link; resolves, then replaces itself.        |
 | `/x/$extensionId`      | Registered extension base page; arbitrary string-valued search.           |
 | `/x/$extensionId/$`    | Extension splat; preserve exact strings such as `1.10`.                   |
 | `/dev/*`               | DEV-only `main.tsx` bypass; outside the generated tree.                   |

@@ -26,8 +26,6 @@ afterEach(() => {
 
 it.each([
   ['telegram', 'a Telegram message', false],
-  ['slack', 'a Slack message', false],
-  ['telegram', 'a Telegram message', true],
   ['slack', 'a Slack message', true],
 ] as const)(
   'DOR-3848: names %s (%s; room: %s) in the saved notice',

@@ -26,6 +26,9 @@
  * @module shared/step-up
  */
 import { z } from 'zod';
+import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+
+extendZodWithOpenApiOnce();
 
 /** The base path of the step-up routes. */
 export const STEP_UP_PATH = '/api/step-up';
@@ -217,18 +220,21 @@ export const StepUpRequestCodeSchema = z
   .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/);
 
 /** What a guarded action answers while it waits for a step-up. */
-export const StepUpRequiredBodySchema = z.object({
-  error: z.string(),
-  code: z.literal(STEP_UP_REQUIRED_CODE),
-  /** The held action to read and confirm. */
-  heldActionId: z.string().min(1),
-  expiresAt: z.string().datetime(),
-  /**
-   * The same 12 characters the sheet shows, so a page outside the app can say
-   * which held action to confirm. This server always sends one.
-   */
-  requestCode: StepUpRequestCodeSchema.optional(),
-});
+export const StepUpRequiredBodySchema = z
+  .object({
+    error: z.string(),
+    code: z.literal(STEP_UP_REQUIRED_CODE),
+    /** The held action to read and confirm. */
+    heldActionId: z.string().min(1),
+    expiresAt: z.string().datetime(),
+    /**
+     * The same 12 characters the sheet shows, so a page outside the app can say
+     * which held action to confirm. This server always sends one.
+     */
+    requestCode: StepUpRequestCodeSchema.optional(),
+  })
+  // One named component, so every held write's 428 points at the same shape.
+  .openapi('StepUpRequired');
 
 /** What a guarded action answers while it waits for a step-up. */
 export type StepUpRequiredBody = z.infer<typeof StepUpRequiredBodySchema>;

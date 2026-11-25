@@ -3,11 +3,15 @@ import type { ApprovalCallback } from '@dorkos/doe';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ToolDecisionOptions } from '@dorkos/shared/agent-runtime';
 
+import { resolveApprovalDecision } from '../shared/policy/approvals.js';
 import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
 import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { checkShellCommand, type ShellCommandVerdict } from '../shared/policy/package-hooks.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { SESSIONS } from '../../../config/constants.js';
+import { PendingApprovalRegistry } from '../shared/timing/pending-approval-registry.js';
+import { PENDING_APPROVAL_TIMING } from '../shared/timing/pending-approval-timing.js';
+
+const TURN_SCOPE = Symbol('Doe turn approval channel');
 const READ_TOOLS = new Set(['read', 'search', 'load_skill', 'tool_search', 'end_beat']);
 const EDIT_TOOLS = new Set(['write', 'edit']);
 interface PendingApproval {
@@ -16,7 +20,7 @@ interface PendingApproval {
 
 /** Approval channel for local engine tools; capability MCP retains its own policy gates. */
 export class DoeApprovals {
-  private readonly pending = new Map<string, PendingApproval>();
+  private readonly pending = new PendingApprovalRegistry<PendingApproval>();
 
   /** Return a callback scoped to this turn's clamped mode and cancellation signal. */
   callback(
@@ -83,35 +87,42 @@ export class DoeApprovals {
               "DorkOS could not run this project's safety checks, so this command was blocked.",
           };
         }
+        if (signal.aborted || context.signal.aborted) return 'deny';
         if (!verdict.allowed) return { decision: 'deny', reason: verdict.reason };
       }
       if (
-        mode === 'bypassPermissions' ||
         READ_TOOLS.has(tool.name) ||
         hostTools.has(tool.name) ||
-        (mode === 'acceptEdits' && EDIT_TOOLS.has(tool.name))
+        resolveApprovalDecision(mode, EDIT_TOOLS.has(tool.name) ? 'edit' : 'other') ===
+          'auto-approve'
       )
         return 'allow';
       const id = context.callId ?? randomUUID();
       return new Promise<'allow' | 'deny'>((resolve) => {
         const aborted = () => settle(false, 'aborted');
-        const settle = (
+        const finish = (
           allowed: boolean,
-          reason: 'approved' | 'denied' | 'timeout' | 'aborted' = allowed ? 'approved' : 'denied'
+          reason: 'approved' | 'denied' | 'timeout' | 'aborted'
         ): void => {
-          if (!this.pending.delete(id)) return;
-          clearTimeout(timer);
           signal.removeEventListener('abort', aborted);
           context.signal.removeEventListener('abort', aborted);
           emit({ type: 'interaction_cancelled', data: { interactionId: id, reason } });
           resolve(allowed ? 'allow' : 'deny');
         };
-        const timer = setTimeout(
-          () => settle(false, 'timeout'),
-          unattended ? SESSIONS.INTERACTION_TIMEOUT_MS : SESSIONS.INTERACTION_PARK_CEILING_MS
+        const settle = (
+          allowed: boolean,
+          reason: 'approved' | 'denied' | 'aborted' = allowed ? 'approved' : 'denied'
+        ): void => {
+          if (removeOwned?.()) finish(allowed, reason);
+        };
+        const profile = unattended ? 'unattended' : 'attended';
+        const removeOwned = this.pending.insert(TURN_SCOPE, id, { settle }, profile, () =>
+          finish(false, 'timeout')
         );
-        timer.unref();
-        this.pending.set(id, { settle });
+        if (!removeOwned) {
+          resolve('deny');
+          return;
+        }
         signal.addEventListener('abort', aborted, { once: true });
         context.signal.addEventListener('abort', aborted, { once: true });
         emit({
@@ -121,7 +132,7 @@ export class DoeApprovals {
             toolName: tool.name,
             input: JSON.stringify(args),
             startedAt: Date.now(),
-            timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+            timeoutMs: PENDING_APPROVAL_TIMING[profile].countdownMs,
             hasSuggestions: false,
           },
         });
@@ -131,7 +142,7 @@ export class DoeApprovals {
 
   /** Resolve only an actual pending interaction; Always Allow is deliberately unsupported. */
   approve(id: string, allowed: boolean, _options?: ToolDecisionOptions): boolean {
-    const pending = this.pending.get(id);
+    const pending = this.pending.peek(TURN_SCOPE, id);
     if (!pending) return false;
     pending.settle(allowed);
     return true;
@@ -139,6 +150,6 @@ export class DoeApprovals {
 
   /** Refuse this turn's remaining requests during owned cleanup. */
   close(): void {
-    for (const pending of [...this.pending.values()]) pending.settle(false);
+    for (const pending of this.pending.values(TURN_SCOPE)) pending.settle(false);
   }
 }

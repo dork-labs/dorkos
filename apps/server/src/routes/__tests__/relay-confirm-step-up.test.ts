@@ -233,8 +233,8 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
     const res = await confirmWith(id, PASSWORD);
     expect(res.body).toMatchObject({
       ok: true,
-      status: 409,
-      result: { code: 'CONFIRMATION_STALE' },
+      status: 412,
+      result: { code: 'precondition_failed' },
     });
     expect(connection.paused).toBe(true);
   });

@@ -23,7 +23,8 @@
  *
  * On top of transport auth, every dispatch is gated (spec `agent-trust` §3.2).
  * This route does not gate it — `registry.invoke` does, from the inside (DOR-467)
- * — so all this module owns is the translation: an agent calling a `destructive`
+ * — and the translation lives in `capability-dispatch.ts`, shared with each
+ * capability's own REST path (`routes/capability-http.ts`): an agent calling a `destructive`
  * capability gets `202` with an `approval_required` payload rather than the
  * operation, and one whose tier ceiling forbids the call gets `403`.
  *
@@ -46,133 +47,36 @@
  *
  * @module routes/capabilities-invoke
  */
-import {
-  isFromWifi,
-  NOT_FROM_WIFI,
-  WIFI_ACTION_REFUSAL,
-} from '../services/core/auth/sessions/wifi-level.js';
 import { Hono } from 'hono';
-import {
-  EXTENSION_TOOL_UNAVAILABLE_CODE,
-  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
-  isExtensionCapabilityId,
-} from '@dorkos/shared/capabilities';
-import { z } from 'zod';
 
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
-import {
-  APPROVAL_TOKEN_HEADER,
-  CapabilityGateRefusal,
-  CapabilityToolError,
-} from '../services/core/capabilities/index.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { ApiEnv } from '../http/api-chain.js';
+import { dispatchCapability } from './capability-dispatch.js';
 import { readJsonBody } from '@dorkos/http-kit';
-import { honoRequestFacts } from '../http/request-facts.js';
-import { logger } from '../lib/logger.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 
 /**
  * Build the capability-invoke router over a composed registry.
  *
- * Dispatch runs entirely through the registry (`get` + `invoke`), so a
- * capability is reachable here the moment its domain composes — no per-capability
- * route wiring. The request body is the capability's raw input (an empty POST
- * defaults to `{}`); the registry parses it against the capability's Zod input
- * schema before invoking.
+ * Dispatch runs entirely through the registry, so a capability is reachable
+ * here the moment its domain composes, with no per-capability route wiring. The
+ * request body is the capability's raw input (an empty POST defaults to `{}`);
+ * the registry parses it against the capability's Zod input schema. What each
+ * outcome answers is {@link dispatchCapability}'s table, shared with every
+ * capability's own REST path.
  *
  * @param registry - The boot-composed capability registry to dispatch through.
  * @returns The routes serving `POST /:id/invoke`, for `app.route('/api/capabilities', …)`.
  */
 export function createCapabilitiesInvokeRoutes(registry: CapabilityRegistry): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
-
-  router.post('/:id/invoke', async (c) => {
-    const id = c.req.param('id');
-
-    const capability = registry.get(id);
-    if (!capability && isExtensionCapabilityId(id)) {
-      return c.json(
-        { error: EXTENSION_TOOL_UNAVAILABLE_MESSAGE, code: EXTENSION_TOOL_UNAVAILABLE_CODE },
-        503
-      );
-    }
-    if (!capability) {
-      return c.json({ error: `Unknown capability: ${id}`, code: 'UNKNOWN_CAPABILITY' }, 404);
-    }
-
-    // A request with no body reads as none at all, as Express 5's `req.body`
-    // did; capabilities with an empty input schema (`config.get`,
-    // `check_update`) accept `{}`.
-    const input = readJsonBody(c, { emptyAs: {} });
-    const facts = honoRequestFacts(c);
-    // A Wi-Fi sign-in reads through capabilities, but acts at the computer
-    // (DOR-2969): an `act` or `destructive` one is refused before it runs.
-    if (isFromWifi(facts) && capability.tier !== 'observe') {
-      return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
-    }
-
-    try {
-      // Attribute the call when the caller presented a resolved agent token
-      // (`X-DorkOS-Agent`). Absent one, this is `undefined` and the invocation
-      // runs unattributed — which does NOT make it ungated: the capability's tier
-      // decides that, so dropping a credential can never widen what a caller
-      // reaches (see `tier-enforcement.ts`).
-      const identity = facts.agentIdentity;
-      // The WIDER fact, stated separately: a token that did not resolve still
-      // means a machine is calling. Without it, a handler that turns the caller
-      // into a domain principal cannot tell a revoked agent from the person at
-      // the keyboard — which is how `rooms.post` came to write as the operator
-      // (DOR-1361, `room-capabilities.ts`'s `callerAuthor`). It changes no tier
-      // decision; the tier still decides that on its own.
-      const agentIdentityPresented = presentsAgentIdentity(facts);
-      const header = facts.headers[APPROVAL_TOKEN_HEADER];
-      const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
-
-      // This route deliberately never mints a trusted marker, even for a
-      // signed-in operator: it is the generic agent actuation path (`dorkos
-      // call`), and the product cost of gating it is one Allow click for a person
-      // running a destructive capability from a shell, which is what spec
-      // `agent-trust` §UX describes anyway.
-      // The signed-in person, when login is on and the session gate verified one.
-      // A capability that acts on somebody's own data needs to know WHICH
-      // person, and "no agent token" is not the same fact as "the owner" —
-      // reading it that way is how an invited user's key reached the owner's
-      // rooms (see `CapabilityInvocationContext.userId`).
-      const user = facts.user;
-      const result = await registry.invoke(id, input, {
-        ...(identity ? { identity } : {}),
-        ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
-        ...(user ? { userId: user.userId } : {}),
-        ...(approvalToken ? { approvalToken } : {}),
-        retryChannel: 'http-header',
-      });
-      return c.json(result);
-    } catch (err) {
-      // 202: the request was recorded and is waiting on a person, so the caller
-      // should come back. 403: refused, and no retry will change that.
-      if (err instanceof CapabilityGateRefusal) {
-        const status = err.decision.outcome === 'approval_required' ? 202 : 403;
-        return c.json(err.decision.payload, status);
-      }
-      // Input failed the capability's Zod input contract — a client error.
-      if (err instanceof z.ZodError) {
-        return c.json(validationFailureBody(err), 400);
-      }
-      // The handler returned an `isError` result (e.g. agent not found, system
-      // agent protected, invalid config patch). Surface its structured payload
-      // verbatim so the caller sees the capability's own message.
-      if (err instanceof CapabilityToolError) {
-        const payload = err.payload;
-        if (payload && typeof payload === 'object') {
-          return c.json(payload, 400);
-        }
-        return c.json({ error: String(payload) }, 400);
-      }
-      logger.error('[capabilities] invoke failed', { id, err });
-      return c.json({ error: 'Internal server error' }, 500);
-    }
-  });
-
+  // A request with no body reads as none at all, as Express 5's `req.body`
+  // did; capabilities with an empty input schema (`config.get`) accept `{}`.
+  router.post('/:id/invoke', (c) =>
+    dispatchCapability(c, {
+      registry,
+      id: c.req.param('id'),
+      input: readJsonBody(c, { emptyAs: {} }),
+    })
+  );
   return router;
 }

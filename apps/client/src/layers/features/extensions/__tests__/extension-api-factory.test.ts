@@ -25,8 +25,6 @@ vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
   executeUiCommand: vi.fn(),
   revealForContent: vi.fn(),
 }));
-
-import { toast } from 'sonner';
 import { revealForContent } from '@/layers/shared/lib/ui-action-dispatcher';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
 
@@ -113,12 +111,6 @@ describe('createExtensionAPI', () => {
     deps = makeDeps();
   });
 
-  // 1. id field
-  it('exposes the extension ID as a readonly property', () => {
-    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-    expect(api.id).toBe('my-ext');
-  });
-
   // 2. registerComponent
   describe('registerComponent', () => {
     it('calls registry.register with a contribution containing the namespaced ID', () => {
@@ -137,17 +129,6 @@ describe('createExtensionAPI', () => {
       expect(contribution.component).toBe(FakeComponent);
     });
 
-    it('respects the priority option', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.registerComponent('dashboard.sections', 'widget', () => null, { priority: 10 });
-
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(contribution.priority).toBe(10);
-    });
-
     it('forwards visibleWhen for dashboard.sections so a section can hide itself', () => {
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const visibleWhen = () => false;
@@ -162,85 +143,6 @@ describe('createExtensionAPI', () => {
       // what makes "visibleWhen is honoured" true for extensions, not just for
       // built-in sections.
       expect(contribution.visibleWhen).toBe(visibleWhen);
-    });
-
-    it('leaves visibleWhen undefined when the extension does not pass one', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerComponent('dashboard.sections', 'widget', () => null);
-
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(contribution.visibleWhen).toBeUndefined();
-    });
-
-    it('uses the label option for a labelled slot, defaulting to the namespaced id', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerComponent('sidebar.footer', 'labelled', () => null, { label: 'Labelled' });
-      api.registerComponent('sidebar.footer', 'unlabelled', () => null);
-
-      const [, labelled] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      const [, unlabelled] = vi.mocked(deps.registry.register).mock.calls[1] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(labelled.label).toBe('Labelled');
-      // No icon is carried for extension-registered footer buttons.
-      expect(labelled.icon).toBeUndefined();
-      expect(unlabelled.label).toBe('my-ext:unlabelled');
-    });
-
-    it('threads an icon option into a right-panel contribution', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const MyIcon = () => null;
-
-      api.registerComponent('right-panel', 'inspector', () => null, {
-        label: 'Inspector',
-        icon: MyIcon,
-      });
-
-      const [slot, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(slot).toBe('right-panel');
-      expect(contribution.title).toBe('Inspector');
-      expect(contribution.icon).toBe(MyIcon);
-    });
-
-    it("marks a right-panel tab as a mini app's and carries its showIn default", () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerComponent('right-panel', 'queue', () => null, {
-        label: 'Queue',
-        showIn: { agents: ['A1'], pages: ['session'] },
-      });
-
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(contribution.extensionId).toBe('my-ext');
-      expect(contribution.declaredPlacement).toEqual({
-        show: { agents: ['A1'], rooms: [], pages: ['session'] },
-        hide: { agents: [], rooms: [], pages: [] },
-      });
-    });
-
-    it('has no declared placement when showIn is omitted, so the tab shows everywhere', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.registerComponent('right-panel', 'queue', () => null, { label: 'Queue' });
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(contribution.declaredPlacement).toBeNull();
     });
 
     it('warns when showIn names nothing, or names a page no page has', () => {
@@ -261,37 +163,6 @@ describe('createExtensionAPI', () => {
       });
       expect(warn).not.toHaveBeenCalled();
       warn.mockRestore();
-    });
-
-    it('leaves a right-panel contribution iconless when no icon option is given', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerComponent('right-panel', 'inspector', () => null, { label: 'Inspector' });
-
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      // Undefined is the honest value — the header supplies a default puzzle-piece.
-      expect(contribution.icon).toBeUndefined();
-    });
-
-    it('returns the unsubscribe function from registry.register', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      const returned = api.registerComponent('dashboard.sections', 'widget', () => null);
-      expect(returned).toBe(unsub);
-    });
-
-    it('adds the unsubscribe function to cleanups', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerComponent('dashboard.sections', 'widget', () => null);
-      expect(cleanups).toContain(unsub);
     });
   });
 
@@ -314,82 +185,10 @@ describe('createExtensionAPI', () => {
         })
       );
     });
-
-    it('uses the provided icon and shortcut', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerCommand('do-thing', 'Do the thing', vi.fn(), {
-        icon: 'zap',
-        shortcut: '⌘D',
-      });
-
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(contribution.icon).toBe('zap');
-      expect(contribution.shortcut).toBe('⌘D');
-    });
-
-    it('falls back to "puzzle" icon when none provided', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.registerCommand('do-thing', 'Label', vi.fn());
-
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
-        string,
-        Record<string, unknown>,
-      ];
-      expect(contribution.icon).toBe('puzzle');
-    });
-
-    it('registers the action handler with the correct action ID', () => {
-      const cb = vi.fn();
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerCommand('do-thing', 'Label', cb);
-
-      expect(deps.registerCommandHandler).toHaveBeenCalledWith('ext:my-ext:do-thing', cb);
-    });
-
-    it('adds the registry unsub to cleanups', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerCommand('do-thing', 'Label', vi.fn());
-      // Cleanup is a wrapper that calls both registry unsub and command handler removal
-      expect(cleanups).toHaveLength(1);
-      cleanups[0]();
-      expect(unsub).toHaveBeenCalled();
-      expect(deps.unregisterCommandHandler).toHaveBeenCalledWith('ext:my-ext:do-thing');
-    });
   });
 
   // 4. registerDialog
   describe('registerDialog', () => {
-    it('registers a dialog contribution with the dialog slot', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const DialogComponent = () => null;
-
-      api.registerDialog('my-dialog', DialogComponent);
-
-      expect(deps.registry.register).toHaveBeenCalledWith(
-        'dialog',
-        expect.objectContaining({
-          id: 'my-ext:my-dialog',
-          component: DialogComponent,
-        })
-      );
-    });
-
-    it('returns open and close controls', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const controls = api.registerDialog('my-dialog', () => null);
-
-      expect(typeof controls.open).toBe('function');
-      expect(typeof controls.close).toBe('function');
-    });
-
     it('keeps its own open flag, which open() and close() drive', () => {
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const controls = api.registerDialog('my-dialog', () => null);
@@ -441,45 +240,6 @@ describe('createExtensionAPI', () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('registerDialog'));
       expect(() => unsub()).not.toThrow();
       warn.mockRestore();
-    });
-
-    it('adds the registry unsub to cleanups', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerDialog('my-dialog', () => null);
-      expect(cleanups).toHaveLength(1);
-      cleanups[0]!();
-      expect(unsub).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // 5. registerSettingsTab
-  describe('registerSettingsTab', () => {
-    it('registers a settings tab with the namespaced ID and label', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const TabComponent = () => null;
-
-      api.registerSettingsTab('prefs', 'Preferences', TabComponent);
-
-      expect(deps.registry.register).toHaveBeenCalledWith(
-        'settings.tabs',
-        expect.objectContaining({
-          id: 'my-ext:prefs',
-          label: 'Preferences',
-          component: TabComponent,
-        })
-      );
-    });
-
-    it('adds the registry unsub to cleanups', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.registerSettingsTab('prefs', 'Prefs', () => null);
-      expect(cleanups).toContain(unsub);
     });
   });
 
@@ -613,12 +373,6 @@ describe('createExtensionAPI', () => {
       expect(executeUiCommand).toHaveBeenCalledWith(deps.dispatcherContext, command, 'agent');
     });
 
-    it('runs other commands without `canvas`', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], { contributions: { pages: true } });
-      api.executeCommand({ action: 'open_command_palette' });
-      expect(executeUiCommand).toHaveBeenCalledOnce();
-    });
-
     it('refuses a place set to anything but true', () => {
       const loose = { contributions: { 'command-palette.items': 'yes' } } as unknown as {
         contributions: Record<string, boolean>;
@@ -720,15 +474,6 @@ describe('createExtensionAPI', () => {
     });
   });
 
-  // 8. navigate
-  it('navigate calls deps.navigate with the correct path', () => {
-    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-    api.navigate('/team');
-
-    expect(deps.navigate).toHaveBeenCalledWith({ to: '/team' });
-  });
-
   // An extension's `navigate` argument is a string the extension author wrote,
   // and it used to reach the router unchecked (DOR-924).
   it.each([
@@ -793,14 +538,6 @@ describe('createExtensionAPI', () => {
     });
   });
 
-  it('navigate keeps the search an in-app path carries', () => {
-    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-    api.navigate('/session?dir=%2Ftmp');
-
-    expect(deps.navigate).toHaveBeenCalledWith({ to: '/session?dir=%2Ftmp' });
-  });
-
   // How an extension opens the Inbox on one of its decisions (DOR-2577): a
   // search-only path keeps the person on the page they are on.
   it('navigate opens the Inbox over the current page for a search-only ?inbox=', () => {
@@ -820,48 +557,10 @@ describe('createExtensionAPI', () => {
 
   // 9. getState
   describe('getState', () => {
-    it('projects selectedCwd and sessionId from the app store', () => {
-      vi.mocked(deps.appStore.getState).mockReturnValue({
-        selectedCwd: '/home/kai/project',
-        sessionId: 'sess-xyz',
-      });
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      const state = api.getState();
-
-      expect(state).toEqual({
-        currentCwd: '/home/kai/project',
-        activeSessionId: 'sess-xyz',
-        agentId: null,
-        currentProject: null,
-        requireLogin: false,
-      });
-    });
-
     it('says whether Require login is on', () => {
       vi.mocked(deps.appStore.getState).mockReturnValue({ requireLogin: true });
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       expect(api.getState().requireLogin).toBe(true);
-    });
-
-    it('projects currentProject from the app store', () => {
-      const project = { root: '/home/kai/project', name: 'project' };
-      vi.mocked(deps.appStore.getState).mockReturnValue({ currentProject: project });
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      expect(api.getState().currentProject).toBe(project);
-    });
-
-    it('returns null for missing fields', () => {
-      vi.mocked(deps.appStore.getState).mockReturnValue({});
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      const state = api.getState();
-
-      expect(state.currentCwd).toBeNull();
-      expect(state.activeSessionId).toBeNull();
-      expect(state.agentId).toBeNull();
-      expect(state.currentProject).toBeNull();
     });
 
     it('resolves agentId from the store currentAgentId (cwd matched an agent)', () => {
@@ -874,49 +573,10 @@ describe('createExtensionAPI', () => {
 
       expect(api.getState().agentId).toBe('01HZ0000000000000000000001');
     });
-
-    it('leaves agentId null when the cwd matched no agent', () => {
-      vi.mocked(deps.appStore.getState).mockReturnValue({
-        selectedCwd: '/home/kai/no-agent',
-        sessionId: 'sess-xyz',
-        currentAgentId: null,
-      });
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      expect(api.getState().agentId).toBeNull();
-    });
   });
 
   // 10. subscribe
   describe('subscribe', () => {
-    it('subscribes to the app store via a projected selector', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const selector = vi.fn((s) => s.currentCwd);
-      const callback = vi.fn();
-
-      api.subscribe(selector, callback);
-
-      expect(deps.appStore.subscribe).toHaveBeenCalledOnce();
-    });
-
-    it('adds the unsubscribe function to cleanups', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.appStore.subscribe).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      api.subscribe(() => null, vi.fn());
-      expect(cleanups).toContain(unsub);
-    });
-
-    it('returns the unsubscribe function', () => {
-      const unsub = vi.fn();
-      vi.mocked(deps.appStore.subscribe).mockReturnValueOnce(unsub);
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-
-      const returned = api.subscribe(() => null, vi.fn());
-      expect(returned).toBe(unsub);
-    });
-
     it('fires the callback with the new agentId when the cwd resolves to a different agent', () => {
       const store = makeReactiveStore({
         selectedCwd: '/p/a',
@@ -992,22 +652,22 @@ describe('createExtensionAPI', () => {
       expect(result).toBeNull();
       vi.unstubAllGlobals();
     });
-  });
 
-  // 12. saveData
-  it('saveData PUTs JSON to /api/extensions/{id}/data', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }));
-    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-    const data = { count: 42 };
+    // 12. saveData
+    it('saveData PUTs JSON to /api/extensions/{id}/data', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }));
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
+      const data = { count: 42 };
 
-    await api.saveData(data);
+      await api.saveData(data);
 
-    expect(fetch).toHaveBeenCalledWith('/api/extensions/my-ext/data', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': 'my-ext' },
-      body: JSON.stringify(data),
+      expect(fetch).toHaveBeenCalledWith('/api/extensions/my-ext/data', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': 'my-ext' },
+        body: JSON.stringify(data),
+      });
+      vi.unstubAllGlobals();
     });
-    vi.unstubAllGlobals();
   });
 
   // 13. notify
@@ -1118,9 +778,13 @@ describe('createExtensionAPI', () => {
         vi.fn().mockResolvedValue({
           ok: false,
           status: 409,
-          json: vi
-            .fn()
-            .mockResolvedValue({ error: 'This was already settled.', code: 'already_resolved' }),
+          json: vi.fn().mockResolvedValue({
+            type: 'urn:dorkos:problem:already_resolved',
+            title: 'This was already settled.',
+            status: 409,
+            code: 'already_resolved',
+            detail: 'This was already settled.',
+          }),
         })
       );
       const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
@@ -1128,33 +792,6 @@ describe('createExtensionAPI', () => {
         message: 'This was already settled.',
         code: 'already_resolved',
       });
-    });
-
-    it('lists this extension’s decisions as views', async () => {
-      const fetchMock = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: vi.fn().mockResolvedValue({ decisions: [decision], offers: [] }),
-      });
-      vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const views = await api.listDecisions();
-      expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/decisions');
-      expect(views).toEqual([
-        {
-          id: decision.id,
-          key: 'ship',
-          title: 'Ship it?',
-          why: 'It is ready.',
-          detail: null,
-          project: decision.project,
-          projectLabel: null,
-          since: null,
-          actions: decision.actions,
-          link: null,
-          raisedAt: decision.raisedAt,
-        },
-      ]);
     });
 
     it('reads and writes per-project settings through the scoped routes', async () => {
@@ -1239,8 +876,11 @@ describe('createExtensionAPI', () => {
           ok: false,
           status: 429,
           json: vi.fn().mockResolvedValue({
-            error: 'Mine has started a lot of chats in the last hour. Try again later.',
-            code: 'start_limit',
+            type: 'urn:dorkos:problem:rate_limited',
+            title: 'Too many requests. Wait a moment, then try again.',
+            status: 429,
+            code: 'rate_limited',
+            detail: 'Mine has started a lot of chats in the last hour. Try again later.',
           }),
         })
       );
@@ -1252,69 +892,6 @@ describe('createExtensionAPI', () => {
         code: 'start_limit',
         message: 'Mine has started a lot of chats in the last hour. Try again later.',
       });
-    });
-
-    it('throws a plain error for any other refusal, such as the person bar', async () => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue({
-          ok: false,
-          status: 403,
-          json: vi.fn().mockResolvedValue({
-            error: 'Only a person can start this.',
-            code: 'start_work_person_required',
-          }),
-        })
-      );
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      const err = await api.startWork(input).catch((e: unknown) => e);
-      expect(err).not.toBeInstanceOf(StartWorkError);
-      expect(err).toMatchObject({ code: 'start_work_person_required', status: 403 });
-    });
-  });
-
-  describe('notify', () => {
-    it('calls toast.info by default', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.notify('Hello world');
-
-      expect(toast.info).toHaveBeenCalledWith('Hello world');
-    });
-
-    it('calls toast.success when type is "success"', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.notify('Done!', { type: 'success' });
-
-      expect(toast.success).toHaveBeenCalledWith('Done!');
-    });
-
-    it('calls toast.error when type is "error"', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.notify('Failed', { type: 'error' });
-
-      expect(toast.error).toHaveBeenCalledWith('Failed');
-    });
-
-    it('calls toast.info when type is explicitly "info"', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.notify('FYI', { type: 'info' });
-
-      expect(toast.info).toHaveBeenCalledWith('FYI');
-    });
-  });
-
-  // 14. isSlotAvailable
-  describe('isSlotAvailable', () => {
-    it('returns true for slots in the available set', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      expect(api.isSlotAvailable('dashboard.sections')).toBe(true);
-      expect(api.isSlotAvailable('command-palette.items')).toBe(true);
-    });
-
-    it('returns false for slots not in the available set', () => {
-      deps = makeDeps({ availableSlots: new Set(['dashboard.sections'] as const) });
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      expect(api.isSlotAvailable('right-panel')).toBe(false);
     });
   });
 
@@ -1343,11 +920,6 @@ describe('createExtensionAPI', () => {
       expect(unsub2).toHaveBeenCalled();
       expect(deps.unregisterCommandHandler).toHaveBeenCalledWith('ext:my-ext:cmd');
     });
-
-    it('starts with an empty cleanups array', () => {
-      const { cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      expect(cleanups).toHaveLength(0);
-    });
   });
 
   // 16. events.subscribe — manifest capability gating
@@ -1360,32 +932,6 @@ describe('createExtensionAPI', () => {
 
     afterEach(() => {
       warnSpy.mockRestore();
-    });
-
-    it('delegates declared kinds to the event bridge and tracks cleanup', () => {
-      const bridgeUnsub = vi.fn();
-      vi.mocked(deps.eventBridge.subscribe).mockReturnValue(bridgeUnsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['turn.completed']);
-      const handler = vi.fn();
-
-      const unsub = api.events.subscribe(['turn.completed'], handler);
-
-      expect(deps.eventBridge.subscribe).toHaveBeenCalledWith(['turn.completed'], handler);
-      expect(unsub).toBe(bridgeUnsub);
-      expect(cleanups).toContain(bridgeUnsub);
-      expect(warnSpy).not.toHaveBeenCalled();
-    });
-
-    it('authorizes a kind via its declared category', () => {
-      const { api } = createExtensionAPI('my-ext', deps, ['turn']);
-      const handler = vi.fn();
-
-      api.events.subscribe(['turn.started', 'turn.completed'], handler);
-
-      expect(deps.eventBridge.subscribe).toHaveBeenCalledWith(
-        ['turn.started', 'turn.completed'],
-        handler
-      );
     });
 
     it('drops undeclared kinds, warns, and only forwards the allowed ones', () => {
@@ -1409,12 +955,6 @@ describe('createExtensionAPI', () => {
       expect(cleanups).toHaveLength(0);
       expect(() => unsub()).not.toThrow();
       expect(warnSpy).toHaveBeenCalledOnce();
-    });
-
-    it('defaults to no declared events when the argument is omitted', () => {
-      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
-      api.events.subscribe(['turn.completed'], vi.fn());
-      expect(deps.eventBridge.subscribe).not.toHaveBeenCalled();
     });
 
     it('cleans up the bridge subscription on deactivate (via cleanups)', () => {

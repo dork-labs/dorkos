@@ -86,8 +86,9 @@ const SCRIPT = `'use strict';
   }).then(function (res) {
     if (res.ok) { say('Passkey added. You can close this tab.'); return; }
     return res.json().then(function (body) {
-      say(body && typeof body.error === 'string'
-        ? body.error
+      var said = body && (typeof body.detail === 'string' ? body.detail : body.error);
+      say(typeof said === 'string'
+        ? said
         : 'The passkey wasn\\u2019t added. Start again in Settings.');
     }, function () { say('The passkey wasn\\u2019t added. Start again in Settings.'); });
   }, function () { say('Couldn\\u2019t reach DorkOS. Start again in Settings.'); });

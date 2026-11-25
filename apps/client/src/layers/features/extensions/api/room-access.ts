@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { extensionKeys } from './queries';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** The cache key for one mini app's rooms. */
 const roomAccessKey = (id: string) => [...extensionKeys.detail(id), 'room-access'] as const;
@@ -42,8 +43,10 @@ export function useSetRoomAccess(extensionId: string) {
         body: JSON.stringify({ roomIds }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-        throw new Error(body.message ?? body.error ?? 'Couldn’t save the rooms. Try again.');
+        const body = await readResponseError(res, 'Couldn’t save the rooms. Try again.', {
+          oldMessageFirst: true,
+        });
+        throw new Error(body.message);
       }
       return ((await res.json()) as { roomIds: string[] }).roomIds;
     },

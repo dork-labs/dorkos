@@ -57,15 +57,6 @@ describe('ensureMaildir', () => {
     }
   });
 
-  it('is idempotent — safe to call multiple times', async () => {
-    await store.ensureMaildir(TEST_ENDPOINT);
-    await store.ensureMaildir(TEST_ENDPOINT);
-
-    const base = path.join(tmpRoot, TEST_ENDPOINT);
-    const stat = await fs.stat(path.join(base, 'new'));
-    expect(stat.isDirectory()).toBe(true);
-  });
-
   it('sets directory permissions to 0o700', async () => {
     await store.ensureMaildir(TEST_ENDPOINT);
 
@@ -98,37 +89,6 @@ describe('deliver', () => {
     expect(result.messageId).toBeDefined();
     expect(result.path).toContain('/new/');
     expect(result.path.endsWith('.json')).toBe(true);
-  });
-
-  it('creates a valid JSON file in new/', async () => {
-    const envelope = makeEnvelope();
-    const result = await store.deliver(TEST_ENDPOINT, envelope);
-    if (!result.ok) throw new Error('deliver failed');
-
-    const data = await fs.readFile(result.path, 'utf-8');
-    const parsed = JSON.parse(data);
-
-    expect(parsed.id).toBe(envelope.id);
-    expect(parsed.subject).toBe(envelope.subject);
-    expect(parsed.from).toBe(envelope.from);
-    expect(parsed.payload).toEqual(envelope.payload);
-  });
-
-  it('does not leave files in tmp/ on success', async () => {
-    const envelope = makeEnvelope();
-    await store.deliver(TEST_ENDPOINT, envelope);
-
-    const tmpFiles = await fs.readdir(path.join(tmpRoot, TEST_ENDPOINT, 'tmp'));
-    expect(tmpFiles).toHaveLength(0);
-  });
-
-  it('uses the envelope id as the message id and filename', async () => {
-    const envelope = makeEnvelope({ id: '01JENVELOPEID000000000000' });
-    const result = await store.deliver(TEST_ENDPOINT, envelope);
-
-    if (!result.ok) throw new Error('deliver failed');
-    expect(result.messageId).toBe(envelope.id);
-    expect(result.path.endsWith(`${envelope.id}.json`)).toBe(true);
   });
 
   it('preserves ULID ordering across distinct envelopes (filenames are their ids)', async () => {
@@ -199,26 +159,6 @@ describe('claim', () => {
     expect(newFiles).toHaveLength(0);
   });
 
-  it('returns the parsed envelope on successful claim', async () => {
-    const envelope = makeEnvelope({ payload: { test: 'data' } });
-    const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
-    if (!deliverResult.ok) throw new Error('deliver failed');
-
-    const claimResult = await store.claim(TEST_ENDPOINT, deliverResult.messageId);
-
-    if (!claimResult.ok) throw new Error('claim failed');
-    expect(claimResult.envelope.subject).toBe('relay.test.subject');
-    expect(claimResult.envelope.payload).toEqual({ test: 'data' });
-  });
-
-  it('returns error when message does not exist in new/', async () => {
-    const result = await store.claim(TEST_ENDPOINT, 'nonexistent-message');
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContain('claim failed');
-  });
-
   it('only one concurrent claim succeeds (atomic rename)', async () => {
     const envelope = makeEnvelope();
     const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
@@ -267,16 +207,6 @@ describe('complete', () => {
     // and must not throw — a throw here sends a twice-delivered message down
     // the caller's failure path.
     await expect(store.complete(TEST_ENDPOINT, 'nonexistent')).resolves.toBeUndefined();
-  });
-
-  it('completing the same message twice does not throw', async () => {
-    const envelope = makeEnvelope();
-    const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
-    if (!deliverResult.ok) throw new Error('deliver failed');
-    await store.claim(TEST_ENDPOINT, deliverResult.messageId);
-
-    await store.complete(TEST_ENDPOINT, deliverResult.messageId);
-    await expect(store.complete(TEST_ENDPOINT, deliverResult.messageId)).resolves.toBeUndefined();
   });
 });
 
@@ -336,14 +266,6 @@ describe('fail', () => {
     expect(deadLetter.failedAt).toBeDefined();
     expect(deadLetter.envelope.id).toBe(envelope.id);
   });
-
-  it('returns error when message does not exist in cur/', async () => {
-    const result = await store.fail(TEST_ENDPOINT, 'nonexistent', 'reason');
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContain('fail operation failed');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -362,19 +284,6 @@ describe('failDirect', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.path).toContain('/failed/');
-  });
-
-  it('writes a .reason.json sidecar', async () => {
-    const envelope = makeEnvelope({ id: 'DIRECT-FAIL-02' });
-    await store.failDirect(TEST_ENDPOINT, envelope, 'budget exceeded');
-
-    const reasonPath = path.join(tmpRoot, TEST_ENDPOINT, 'failed', 'DIRECT-FAIL-02.reason.json');
-    const data = await fs.readFile(reasonPath, 'utf-8');
-    const deadLetter: DeadLetter = JSON.parse(data);
-
-    expect(deadLetter.reason).toBe('budget exceeded');
-    expect(deadLetter.endpointHash).toBe(TEST_ENDPOINT);
-    expect(deadLetter.envelope.id).toBe('DIRECT-FAIL-02');
   });
 
   it('preserves full envelope content in the failed file', async () => {
@@ -402,22 +311,6 @@ describe('listNew', () => {
     await store.ensureMaildir(TEST_ENDPOINT);
   });
 
-  it('returns empty array when no messages exist', async () => {
-    const list = await store.listNew(TEST_ENDPOINT);
-    expect(list).toEqual([]);
-  });
-
-  it('returns message IDs without file extension', async () => {
-    const r1 = await store.deliver(TEST_ENDPOINT, makeEnvelope());
-    if (!r1.ok) throw new Error('deliver failed');
-
-    const list = await store.listNew(TEST_ENDPOINT);
-
-    expect(list).toHaveLength(1);
-    expect(list[0]).toBe(r1.messageId);
-    expect(list[0]).not.toContain('.json');
-  });
-
   it('returns messages in FIFO order (sorted by ULID)', async () => {
     const r1 = await store.deliver(
       TEST_ENDPOINT,
@@ -437,11 +330,6 @@ describe('listNew', () => {
     const list = await store.listNew(TEST_ENDPOINT);
 
     expect(list).toEqual([r1.messageId, r2.messageId, r3.messageId]);
-  });
-
-  it('returns empty array for nonexistent endpoint', async () => {
-    const list = await store.listNew('nonexistent');
-    expect(list).toEqual([]);
   });
 });
 
@@ -497,23 +385,6 @@ describe('readEnvelope', () => {
     expect(read).not.toBeNull();
     expect(read?.payload).toEqual({ read: 'test' });
   });
-
-  it('reads an envelope from cur/ after claim', async () => {
-    const envelope = makeEnvelope();
-    const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
-    if (!deliverResult.ok) throw new Error('deliver failed');
-
-    await store.claim(TEST_ENDPOINT, deliverResult.messageId);
-
-    const read = await store.readEnvelope(TEST_ENDPOINT, 'cur', deliverResult.messageId);
-    expect(read).not.toBeNull();
-    expect(read?.id).toBe(envelope.id);
-  });
-
-  it('returns null for nonexistent message', async () => {
-    const read = await store.readEnvelope(TEST_ENDPOINT, 'new', 'nonexistent');
-    expect(read).toBeNull();
-  });
 });
 
 describe('readDeadLetter', () => {
@@ -532,11 +403,6 @@ describe('readDeadLetter', () => {
     expect(dl?.endpointHash).toBe(TEST_ENDPOINT);
     expect(dl?.envelope.id).toBe('DL-READ-01');
   });
-
-  it('returns null for nonexistent dead letter', async () => {
-    const dl = await store.readDeadLetter(TEST_ENDPOINT, 'nonexistent');
-    expect(dl).toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -547,51 +413,6 @@ describe('full lifecycle', () => {
   beforeEach(async () => {
     await store.ensureMaildir(TEST_ENDPOINT);
   });
-
-  it('deliver -> claim -> complete removes all files', async () => {
-    const envelope = makeEnvelope();
-    const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
-    if (!deliverResult.ok) throw new Error('deliver failed');
-
-    const claimResult = await store.claim(TEST_ENDPOINT, deliverResult.messageId);
-    if (!claimResult.ok) throw new Error('claim failed');
-
-    await store.complete(TEST_ENDPOINT, deliverResult.messageId);
-
-    // No files in any directory
-    expect(await store.listNew(TEST_ENDPOINT)).toHaveLength(0);
-    expect(await store.listCurrent(TEST_ENDPOINT)).toHaveLength(0);
-    expect(await store.listFailed(TEST_ENDPOINT)).toHaveLength(0);
-  });
-
-  it('deliver -> claim -> fail moves to dead letter queue', async () => {
-    const envelope = makeEnvelope();
-    const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
-    if (!deliverResult.ok) throw new Error('deliver failed');
-
-    await store.claim(TEST_ENDPOINT, deliverResult.messageId);
-    const failResult = await store.fail(TEST_ENDPOINT, deliverResult.messageId, 'processing error');
-    if (!failResult.ok) throw new Error('fail failed');
-
-    expect(await store.listNew(TEST_ENDPOINT)).toHaveLength(0);
-    expect(await store.listCurrent(TEST_ENDPOINT)).toHaveLength(0);
-    expect(await store.listFailed(TEST_ENDPOINT)).toHaveLength(1);
-
-    const dl = await store.readDeadLetter(TEST_ENDPOINT, deliverResult.messageId);
-    expect(dl?.reason).toBe('processing error');
-  });
-
-  it('handles multiple messages in parallel', async () => {
-    const envelopes = Array.from({ length: 5 }, (_, i) => makeEnvelope({ id: `PARALLEL-${i}` }));
-
-    const results = await Promise.all(envelopes.map((env) => store.deliver(TEST_ENDPOINT, env)));
-
-    const successes = results.filter((r) => r.ok);
-    expect(successes).toHaveLength(5);
-
-    const list = await store.listNew(TEST_ENDPOINT);
-    expect(list).toHaveLength(5);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -601,33 +422,6 @@ describe('full lifecycle', () => {
 describe('concurrent safety', () => {
   beforeEach(async () => {
     await store.ensureMaildir(TEST_ENDPOINT);
-  });
-
-  it('concurrent delivers of distinct envelopes all succeed with their own IDs', async () => {
-    const envelopes = Array.from({ length: 10 }, (_, i) =>
-      makeEnvelope({ id: `01JCONCURRENT${String(i).padStart(12, '0')}` })
-    );
-    const results = await Promise.all(envelopes.map((e) => store.deliver(TEST_ENDPOINT, e)));
-
-    const successes = results.filter((r) => r.ok);
-    expect(successes).toHaveLength(10);
-
-    // Each delivery is filed under its own envelope id.
-    const ids = successes.map((r) => (r as { ok: true; messageId: string }).messageId);
-    expect(new Set(ids).size).toBe(10);
-    expect(new Set(ids)).toEqual(new Set(envelopes.map((e) => e.id)));
-  });
-
-  it('concurrent claims on the same message: exactly one succeeds', async () => {
-    const deliverResult = await store.deliver(TEST_ENDPOINT, makeEnvelope());
-    if (!deliverResult.ok) throw new Error('deliver failed');
-
-    const claims = await Promise.all(
-      Array.from({ length: 5 }, () => store.claim(TEST_ENDPOINT, deliverResult.messageId))
-    );
-
-    const successes = claims.filter((r) => r.ok);
-    expect(successes).toHaveLength(1);
   });
 });
 

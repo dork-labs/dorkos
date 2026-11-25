@@ -1224,6 +1224,8 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const routePaths = [
       join(repoRoot, 'apps/server/src/routes/connector-management.ts'),
       join(repoRoot, 'apps/server/src/routes/connector-owner-boundary.ts'),
+      // The fixed problem sentences for every connection refusal (DOR-4979).
+      join(repoRoot, 'apps/server/src/routes/connector-problems.ts'),
     ];
     const apiCopy: string[] = [];
 
@@ -1244,7 +1246,8 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
         ts.ScriptKind.TS
       );
       const visit = (node: ts.Node): void => {
-        if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'error') {
+        // `detail` since the routes answer problem documents (DOR-4979).
+        if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'detail') {
           const text = staticText(node.initializer);
           if (text !== undefined) apiCopy.push(text);
         }
@@ -1260,10 +1263,9 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const copySource = apiCopy
       .map((text, index) => `const apiCopy${index} = { message: ${JSON.stringify(text)} };`)
       .join('\n');
-    // 12 -> 9 with the move to Hono (DOR-2804): the same eight messages, the
-    // ones written out two and three times now written once in a helper.
-    expect(apiCopy).toHaveLength(9);
-    expect(new Set(apiCopy).size).toBe(8);
+    // Every refusal sentence the connection routes can send, found as `detail`
+    // values and `ownerRefusal` sentences (DOR-4979 moved them from `error`).
+    expect(apiCopy.length).toBeGreaterThan(40);
     expect(apiCopy).toContain(
       'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
     );

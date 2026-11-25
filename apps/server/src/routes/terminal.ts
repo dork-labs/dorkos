@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { CreateTerminalRequestSchema } from '@dorkos/shared/terminal-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { registerWithSignIn } from '../http/raw-node-stream.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { TerminalLimitError, type TerminalManager } from '../services/terminal/index.js';
@@ -29,7 +29,7 @@ export function createTerminalRoutes(manager: TerminalManager): Hono<ApiEnv> {
   router.post('/', async (c) => {
     const parsed = CreateTerminalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       // The socket attaches by this id alone, so ending the sign-in that made
@@ -39,15 +39,14 @@ export function createTerminalRoutes(manager: TerminalManager): Hono<ApiEnv> {
       unregister = registerWithSignIn(c, () => manager.destroy(id), 'terminal');
       return c.json({ id }, 201);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        const status = err.code === 'NULL_BYTE' ? 400 : 403;
-        return c.json({ error: err.message, code: err.code }, status);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       if (err instanceof TerminalLimitError) {
-        return c.json({ error: err.message, code: 'TERMINAL_LIMIT' }, 429);
+        return problem(c, 'terminal_limit', {
+          detail: 'Too many terminals are open. Close one, then try again.',
+        });
       }
       logger.error('[terminal] POST / failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error');
     }
   });
 

@@ -217,7 +217,9 @@ describe('Extension Routes', () => {
       const res = await request(fixtureServer).post('/api/extensions/missing/enable');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toContain('missing');
     });
   });
 
@@ -239,7 +241,9 @@ describe('Extension Routes', () => {
       const res = await request(fixtureServer).post('/api/extensions/missing/disable');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toContain('missing');
     });
 
     it('returns 409 (not 404) when a required core extension cannot be disabled', async () => {
@@ -254,7 +258,8 @@ describe('Extension Routes', () => {
       const res = await request(fixtureServer).post('/api/extensions/locked-core/disable');
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('required');
+      expect(res.body.code).toBe('conflict');
+      expect(res.body.detail).toContain('required');
       expect(manager.disable).toHaveBeenCalledWith('locked-core');
     });
   });
@@ -292,7 +297,9 @@ describe('Extension Routes', () => {
       const res = await request(fixtureServer).get('/api/extensions/missing/bundle');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('missing');
+      expect(res.headers['content-type']).toBe('application/problem+json');
+      expect(res.body.code).toBe('not_found');
+      expect(res.body.detail).toContain('missing');
     });
 
     it('serves nothing when the step-up risk reading cannot be kept (DOR-4906)', async () => {
@@ -514,7 +521,7 @@ describe('Extension Routes', () => {
         .send({ invalid: true });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 });

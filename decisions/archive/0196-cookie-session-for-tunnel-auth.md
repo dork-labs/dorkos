@@ -1,7 +1,7 @@
 ---
 number: 196
 title: Use cookie-session for Tunnel Passcode Sessions
-status: draft
+status: archived
 created: 2026-03-24
 spec: remote-passcode
 superseded-by: null

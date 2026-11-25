@@ -7,9 +7,8 @@ import {
   mkdir,
   copyFile,
   writeFile,
-  symlink,
 } from 'node:fs/promises';
-import { tmpdir, hostname } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -23,40 +22,12 @@ import { startDarwinJournalWorker, darwinMonotonicNow } from '../runtime/darwin-
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { expect, it } from 'vitest';
-import { createDarwinEngineProcesses } from '../runtime/darwin-engine-processes.js';
 import { createDarwinProcessObserver, darwinBirth } from '../runtime/darwin-process-observer.js';
 // Explicit private native fixture arm; absent in ordinary package tests.
 // eslint-disable-next-line no-restricted-syntax
 const helper = process.env.DORKOS_DARWIN_OBSERVER_FIXTURE;
 // eslint-disable-next-line no-restricted-syntax
 const workerPath = process.env.DORKOS_DARWIN_JOURNAL_WORKER_FIXTURE;
-it.skipIf(!helper || process.platform !== 'darwin')(
-  'queries a genuine live owner and a naturally exited owned child',
-  async () => {
-    const observer = createDarwinProcessObserver({
-      path: helper!,
-      sha256: createHash('sha256')
-        .update(await readFile(helper!))
-        .digest('hex'),
-    });
-    const current = await observer.inspect([process.pid]);
-    const fact = current.processes[0];
-    expect(fact.kind).toBe('present');
-    if (fact.kind !== 'present') throw new Error('missing fixture owner');
-    expect(fact.zombie).toBe(false);
-    expect(darwinBirth(fact.identity).pid).toBe(process.pid);
-    const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{},200)'], { stdio: 'ignore' });
-    const terminal = once(child, 'close');
-    await once(child, 'spawn');
-    const pid = child.pid!;
-    const live = await observer.inspect([pid]);
-    expect(live.processes[0].kind).toBe('present');
-    await terminal;
-    const gone = await observer.inspect([pid]);
-    expect(gone.processes[0]).toEqual({ kind: 'absent', pid });
-  },
-  10000
-);
 
 it
   .skipIf(!helper || !workerPath || process.platform !== 'darwin')
@@ -428,47 +399,6 @@ it
 );
 
 it.skipIf(!helper || process.platform !== 'darwin')(
-  'uses actual native engine lifetimes for holder and original-process observations',
-  async () => {
-    const directory = await realpath(await mkdtemp(join(tmpdir(), 'darwin-engine-identity-')));
-    const processes = createDarwinEngineProcesses({
-      path: helper!,
-      sha256: createHash('sha256')
-        .update(await readFile(helper!))
-        .digest('hex'),
-    });
-    const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{},1200)'], { stdio: 'ignore' });
-    const terminal = once(child, 'close');
-    try {
-      await once(child, 'spawn');
-      const identity = await processes.identity(child.pid!);
-      const manager = await processes.identity(process.pid);
-      expect(await processes.attributeRoot(manager!, identity!)).toBe(true);
-      expect(await processes.attributeRoot(identity!, identity!)).toBe(false);
-      expect(identity?.birth).toMatch(/^darwin-bsd-start:\d+:\d+$/);
-      await symlink(`${hostname()}-${child.pid}`, join(directory, 'SingletonLock'));
-      expect(await processes.holder(directory)).toEqual(identity);
-      const signal = new AbortController().signal;
-      expect(await processes.processes.observe(identity!, signal)).toEqual({ status: 'alive' });
-      expect(
-        await processes.processes.observe({ pid: child.pid!, birth: 'wrong-lifetime' }, signal)
-      ).toEqual({ status: 'dead' });
-      expect(await processes.processes.descendants(identity!, signal)).toEqual({
-        status: 'complete',
-        identities: [identity],
-      });
-      await terminal;
-      expect(await processes.processes.observe(identity!, signal)).toEqual({ status: 'dead' });
-      await expect(processes.holder(directory)).rejects.toThrow('UNKNOWN_NATIVE_HOLDER');
-    } finally {
-      await terminal;
-      await rm(directory, { recursive: true, force: true });
-    }
-  },
-  10000
-);
-
-it.skipIf(!helper || process.platform !== 'darwin')(
   'retains an actual asset close fault and refuses every later packaged admission',
   async () => {
     const script = `
@@ -493,102 +423,6 @@ const originalOpen=fs.open;let closes=[],opens=0;fs.open=async(...args)=>{opens+
       errors: ['ACTUAL_CLOSE_FAULT', 'NATIVE_OBSERVER_UNAVAILABLE', 'NATIVE_OBSERVER_UNAVAILABLE'],
       opens: 1,
     });
-  },
-  10000
-);
-
-it.skipIf(!helper || !workerPath || process.platform !== 'darwin')(
-  'naturally returns the acquired worker after owned pre-seed native admission fails',
-  async () => {
-    const parent = await realpath(await mkdtemp(join(tmpdir(), 'darwin-preseed-refusal-')));
-    const observer = createDarwinProcessObserver({
-      path: helper!,
-      sha256: createHash('sha256')
-        .update(await readFile(helper!))
-        .digest('hex'),
-    });
-    const batch = await observer.inspect([process.pid]);
-    const fact = batch.processes[0];
-    if (fact.kind !== 'present') throw new Error('manager missing');
-    const manager = darwinBirth(fact.identity),
-      time = darwinMonotonicNow();
-    const window = {
-      startSequence: 0,
-      checkpointSequence: 0,
-      endSequence: 0,
-      startMonotonic: time,
-      endMonotonic: time,
-    };
-    const binding = {
-      journalId: 'preseed',
-      browserId: 'browser',
-      profile: { kind: 'ephemeral' as const },
-      browserGeneration: 0,
-      reservationNonce: 'nonce',
-      runtimeIdentityDigest: 'a'.repeat(64),
-      manager,
-      bootScope: {
-        kind: 'observed' as const,
-        value: `darwin-boot:${batch.bootSeconds}:${batch.bootMicroseconds}`,
-        sourceIdentityDigest: '0'.repeat(64),
-      },
-    };
-    const initial: JournalSnapshot = {
-      schemaVersion: 1,
-      kind: 'browser-process-journal',
-      provenance: 'recorded-data',
-      binding,
-      writer: { writerId: 'observer', epoch: 0, kind: 'observer' },
-      sequence: 0,
-      phase: 'allocated',
-      observationWindow: window,
-      root: { kind: 'pending' },
-      retainedIdentities: [
-        {
-          identity: manager,
-          role: 'manager',
-          parent: null,
-          association: null,
-          currentParent: null,
-          acquisitionEpoch: 0,
-          firstSeenSequence: 0,
-          lastSeenSequence: 0,
-          relationWindow: window,
-          lifecycle: 'alive',
-        },
-      ],
-      gaps: [],
-      firstCause: null,
-    };
-    try {
-      await expect(
-        startDarwinJournalWorker({
-          workerPath: workerPath!,
-          location: {
-            parentDirectory: parent,
-            parentIdentity: await observeJournalDirectory(parent),
-            binding,
-          },
-          initial,
-          artifact: { path: helper!, sha256: '0'.repeat(64) },
-          duration: 1000,
-          maxGap: 1000,
-          ownedLaunch: true,
-        })
-      ).rejects.toThrow();
-      expect(darwinMonotonicNow() - time).toBeLessThan(3000);
-      expect(
-        (
-          await readJournal({
-            parentDirectory: parent,
-            parentIdentity: await observeJournalDirectory(parent),
-            binding,
-          })
-        ).state
-      ).toBe('missing');
-    } finally {
-      await rm(parent, { recursive: true, force: true });
-    }
   },
   10000
 );

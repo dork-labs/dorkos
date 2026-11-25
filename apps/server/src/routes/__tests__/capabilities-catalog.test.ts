@@ -161,7 +161,7 @@ describe('GET /api/capabilities/catalog', () => {
       '/api/capabilities/catalog?limit=abc'
     );
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Validation failed');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('rejects a cursor that does not decode to an offset with 400', async () => {

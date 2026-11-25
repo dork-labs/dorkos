@@ -35,6 +35,7 @@ import { initAgentIdentityService } from './services/core/agent-identity/index.j
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { setContinuationHoldDb } from './services/core/turn-power/continuation-hold.js';
+import { setOutsideWordsDb } from './services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -77,7 +78,8 @@ export interface InProcessTestServer {
  * `start()` grows a new process-global singleton that the turn path reads,
  * this boot must wire it too — the eval harness's structural self-test
  * (`@dorkos/evals` widget-round-trip on test-mode) is the tripwire that goes
- * red when they drift.
+ * red when they drift. It skips `loadLocalSpaceId` on purpose: it runs only
+ * test-mode turns, which never read the space id.
  *
  * @param dorkHome - The sandbox data directory every wired singleton is scoped to.
  * @returns The server's routing and a teardown that closes the DB.
@@ -105,6 +107,8 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
   setContinuationHoldDb(db);
+  // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
+  setOutsideWordsDb(db);
   // Whether each chat may follow its agent's level up at a turn's start (DOR-3175).
   setChatRiseFacts(createChatRiseFacts(db));
 

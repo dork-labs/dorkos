@@ -1,7 +1,7 @@
 ---
 number: 177
 title: Standalone Channel Plugin as MCP Server Process
-status: rejected
+status: archived
 created: 2026-03-22
 spec: a2a-channels-interoperability
 superseded-by: null

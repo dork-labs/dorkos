@@ -42,20 +42,25 @@ it('uses the agent endpoint with only the registered agent id', async () => {
 });
 
 it('preserves a server collision without making a second allocation request', async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(
-      Response.json(
-        { error: 'Could not start a new chat.', code: 'SESSION_ID_CONFLICT' },
-        { status: 409 }
-      )
-    );
+  const fetch = vi.fn().mockResolvedValue(
+    Response.json(
+      {
+        type: 'urn:dorkos:problem:conflict',
+        title: 'That clashes with a change made meanwhile.',
+        status: 409,
+        code: 'conflict',
+        detail: 'Couldn’t start a new chat. Try again.',
+      },
+      { status: 409, headers: { 'Content-Type': 'application/problem+json' } }
+    )
+  );
   vi.stubGlobal('fetch', fetch);
   await expect(
     new HttpTransport(api).allocateSession({ kind: 'location', launchRef })
   ).rejects.toMatchObject({
     status: 409,
-    code: 'SESSION_ID_CONFLICT',
+    code: 'conflict',
+    message: 'Couldn’t start a new chat. Try again.',
   });
   expect(fetch).toHaveBeenCalledTimes(1);
 });

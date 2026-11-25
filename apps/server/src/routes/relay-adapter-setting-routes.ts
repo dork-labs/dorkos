@@ -23,18 +23,22 @@
  */
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-
 import {
   AdapterConfigUpdateSchema,
   AdapterCreateRequestSchema,
   AdapterTestRequestSchema,
 } from '@dorkos/shared/relay-schemas';
-
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import {
+  problem,
+  problemBody,
+  readJsonBody,
+  sendProblem,
+  validationProblem,
+} from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { env } from '../env.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -51,7 +55,7 @@ import {
   markedTurnSecretRefusal,
   movesStoredSecrets,
 } from '../services/relay/secrets/marked-turn-secret-gate.js';
-import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
+import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 import {
   adapterResult,
   cardConnection,
@@ -66,7 +70,7 @@ import { holdForStepUp } from './step-up-guard.js';
 import {
   addedListIds,
   opensDirectMessages,
-  ownerAddsListIdRefusal,
+  OWNER_ADDS_LIST_ID_REFUSAL,
   ownerGrantEffect,
   ownerGrantReason,
   ownerListState,
@@ -144,7 +148,9 @@ async function runOrHold(
   ownerExists: () => boolean
 ): Promise<Response> {
   const answer = (result: { status: number; body: unknown }) =>
-    c.json(result.body as object, result.status as ContentfulStatusCode);
+    result.status >= 400
+      ? sendProblem(c, result.body as Problem)
+      : c.json(result.body as object, result.status as ContentfulStatusCode);
   const writer = secretWriter(c);
   const added = use.addedIds ?? [];
   // Adding someone, or opening the DMs to anyone, makes them the owner there (DOR-4595).
@@ -154,7 +160,7 @@ async function runOrHold(
     const facts = honoRequestFacts(c);
     const agent = facts.agentIdentity !== undefined || presentsAgentIdentity(facts);
     if (!agent || !use.agentCard || use.settings.length > 0 || use.typedSecret?.() === true)
-      return c.json(ownerAddsListIdRefusal(), 403);
+      return problem(c, 'owner_only', { detail: OWNER_ADDS_LIST_ID_REFUSAL });
     const card = raiseAgentCard(
       { identity: facts.agentIdentity, presentsAgent: true },
       { kind: 'relay.allowlist', target: use.target, input: use.input, ...use.agentCard() }
@@ -180,8 +186,8 @@ async function runOrHold(
     reason: use.reason,
     // Re-checked on the request that confirmed it: still the owner.
     commit: async (confirming) => {
-      const stale = errorRefusalUnlessOwner(confirming, SETTING_WORDING);
-      if (stale) return { status: 403, body: stale };
+      const stale = problemRefusalUnlessOwner(confirming, SETTING_WORDING);
+      if (stale) return { status: stale.status, body: stale };
       return use.run('person');
     },
   });
@@ -274,12 +280,12 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
 
   router.post('/adapters/test', async (c) => {
     const parsed = AdapterTestRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { type, config } = parsed.data;
     // A test connects with what it is given, so it is held to the add's rule (DOR-3858).
     const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, config);
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
-    if (markedRefusal) return c.json(markedRefusal, 403);
+    if (markedRefusal) return problem(c, 'forbidden', { detail: markedRefusal.error });
     const settings = personSettingsIn(config);
     return runOrHold(
       c,
@@ -292,7 +298,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
           adapterResult(async () => {
             const body = await adapterManager.testConnection(type, config, writer);
             return { status: 200, body };
-          }, 'Test failed'),
+          }, 'Couldn’t test that connection. Try again.'),
       },
       ownerExists
     );
@@ -300,11 +306,11 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
 
   router.post('/adapters', async (c) => {
     const parsed = AdapterCreateRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { type, id, config, enabled, label: topLabel } = parsed.data;
     const markedRefusal = markedAdapterSecretRefusal(c, adapterManager, type, config);
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
-    if (markedRefusal) return c.json(markedRefusal, 403);
+    if (markedRefusal) return problem(c, 'forbidden', { detail: markedRefusal.error });
     // The client may embed label inside config (Transport interface doesn't have a separate
     // label param). Fall back to config.label if the top-level field wasn't provided.
     const label = topLabel ?? (typeof config.label === 'string' ? config.label : undefined);
@@ -341,7 +347,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
               });
             }
             return { status: 201, body: { ok: true, id } };
-          }, 'Create failed'),
+          }, 'Couldn’t add that connection. Try again.'),
       },
       ownerExists
     );
@@ -349,7 +355,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
 
   router.patch('/adapters/:id/config', async (c) => {
     const parsed = AdapterConfigUpdateSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const id = c.req.param('id') ?? '';
     const { config } = parsed.data;
     const existing = adapterManager.getAdapter(id)?.config;
@@ -361,7 +367,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
       existing?.config as Record<string, unknown> | undefined
     );
     if (markedRefusal instanceof AdapterError) return sendAdapterError(c, markedRefusal);
-    if (markedRefusal) return c.json(markedRefusal, 403);
+    if (markedRefusal) return problem(c, 'forbidden', { detail: markedRefusal.error });
     const settings = personSettingsIn(config);
     const name = quotedName(adapterManager.resolveAdapterName(id));
     const stored = existing?.config as Record<string, unknown> | undefined;
@@ -385,7 +391,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
           adapterResult(async () => {
             await adapterManager.updateConfig(id, config, writer);
             return { status: 200, body: { ok: true } };
-          }, 'Update failed'),
+          }, 'Couldn’t save that connection. Try again.'),
         agentCard: () => {
           const shown = ownerListState(stored);
           return {
@@ -396,11 +402,12 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
             run: () =>
               adapterResult(async () => {
                 if (ownerListState(adapterManager.getAdapter(id)?.config.config) !== shown) {
-                  return { status: 409, body: listsChangedRefusal() };
+                  const changed = listsChangedRefusal();
+                  return { status: changed.status, body: changed };
                 }
                 await adapterManager.updateConfig(id, config, 'agent');
                 return { status: 200, body: { ok: true } };
-              }, 'Update failed'),
+              }, 'Couldn’t save that connection. Try again.'),
           };
         },
       },
@@ -409,10 +416,9 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
   });
 }
 
-/** The 409 for an agent's card whose lists changed before the person said yes. */
-function listsChangedRefusal(): { error: string; code: string } {
-  return {
-    error: 'Who may reach your agents here changed since the agent asked. Ask it to ask again.',
-    code: 'LISTS_CHANGED',
-  };
+/** The `412` for an agent's card whose lists changed before the person said yes. */
+function listsChangedRefusal(): Problem {
+  return problemBody('precondition_failed', {
+    detail: 'Who may reach your agents here changed. Ask the agent to ask again.',
+  });
 }

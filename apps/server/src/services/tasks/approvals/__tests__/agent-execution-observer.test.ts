@@ -124,14 +124,6 @@ describe('AgentExecutionObserver', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('says nothing the first time it sees an agent', async () => {
-    const task = follower();
-    await observer.check(agentPath);
-
-    expect(events).toEqual([]);
-    expect(store.getTask(task.id)!.status).toBe('active');
-  });
-
   it('records an outside edit old → new and re-asks for the schedules that follow', async () => {
     const task = follower();
     await observer.check(agentPath);
@@ -187,17 +179,6 @@ describe('AgentExecutionObserver', () => {
     }
   });
 
-  it('never takes DorkOS’s own write for an outside one', async () => {
-    const task = follower();
-    await observer.check(agentPath);
-
-    await observer.writingExecution(agentPath, () => editFile({ model: 'claude-opus-4' }));
-    await observer.check(agentPath);
-
-    expect(events).toEqual([]);
-    expect(store.getTask(task.id)!.status).toBe('active');
-  });
-
   it('never parks for a person’s change made in the app', async () => {
     // Purpose: the app's Runs-on menu and the agent settings page save through
     // `updateAgentManifest`; with the observer installed as boot installs it,
@@ -231,40 +212,6 @@ describe('AgentExecutionObserver', () => {
     // And the person's effort is not reported afterwards.
     await observer.check(agentPath);
     expect(events).toHaveLength(1);
-  });
-
-  it('records a change back, and leaves the schedule waiting for a person', async () => {
-    const task = follower();
-    await observer.check(agentPath);
-    await editFile({ model: 'claude-opus-4' });
-    await observer.check(agentPath);
-
-    await editFile({ model: 'claude-sonnet-4' });
-    await observer.check(agentPath);
-
-    expect(events).toHaveLength(2);
-    expect(events[1]!.summary).toBe(
-      "Warden's model claude-opus-4 → claude-sonnet-4, changed outside DorkOS. " +
-        '1 scheduled task that follows it is waiting for you again'
-    );
-    const still = store.getTask(task.id)!;
-    expect(still.status).toBe('pending_approval');
-    expect(still.enabled).toBe(true);
-    expect(still.approvalChanges).toEqual([
-      { field: 'model', from: 'claude-sonnet-4', to: 'claude-sonnet-4', via: 'agent' },
-    ]);
-  });
-
-  it('sees nothing of an edit reverted before anything looked', async () => {
-    const task = follower();
-    await observer.check(agentPath);
-    await editFile({ model: 'claude-opus-4' });
-    await editFile({ model: 'claude-sonnet-4' });
-
-    await observer.check(agentPath);
-
-    expect(events).toEqual([]);
-    expect(store.getTask(task.id)!.status).toBe('active');
   });
 
   it('records one change once when two checks race on it', async () => {

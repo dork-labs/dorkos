@@ -32,10 +32,13 @@
     "vitest-flake-reporter.ts",
     "lib/load-wait.ts",
     "load-gate/**/*.ts",
+    "release/**/*.ts",
     "check-knip.ts",
     "knip/**/*.ts",
+    "api-lint/**/*.ts",
     "sharding/**/*.ts",
     "neon-preview-sweep.ts",
-    "origin-branch-janitor.ts"
+    "origin-branch-janitor.ts",
+    "provenance/**/*.ts"
   ]
 }

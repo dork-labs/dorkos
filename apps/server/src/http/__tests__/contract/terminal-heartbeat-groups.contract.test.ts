@@ -19,19 +19,25 @@ import {
   type ComposedServer,
   type ContractCase,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-const API_NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NO_AGENT = problemBody('not_found', { detail: 'No agent with that id.' });
+const BAD_DAYS = problemBody('invalid_request', {
+  detail: '`days` must be a whole number from 1 to 90.',
+});
+const API_NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const HOST_NOT_ALLOWED = {
   error:
     'This instance does not answer to the address "evil.example". If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.',
   code: 'HOST_NOT_ALLOWED',
 };
-const VALIDATION_FAILED = z.object({
-  error: z.literal('Validation failed'),
-  details: z.object({}).loose(),
-});
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
 
 describe('contract: the terminal and heartbeat routes', () => {
   let server: ComposedServer | undefined;
@@ -65,7 +71,9 @@ describe('contract: the terminal and heartbeat routes', () => {
       body: { cwd: path.parse(REPO_ROOT).root },
       expect: {
         status: 403,
-        schema: z.object({ error: z.string(), code: z.literal('OUTSIDE_BOUNDARY') }),
+        body: problemBody('outside_boundary', {
+          detail: 'Pick a folder inside the ones DorkOS may use.',
+        }),
       },
     },
     {
@@ -75,7 +83,9 @@ describe('contract: the terminal and heartbeat routes', () => {
       body: { cwd: `${REPO_ROOT}\u0000x` },
       expect: {
         status: 400,
-        schema: z.object({ error: z.string(), code: z.literal('NULL_BYTE') }),
+        body: problemBody('invalid_request', {
+          detail: 'That path has a character paths can’t hold.',
+        }),
       },
     },
     {
@@ -100,14 +110,14 @@ describe('contract: the terminal and heartbeat routes', () => {
     {
       name: 'GET /api/agents/:id/heartbeat of an unknown agent is a 404',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat`,
-      expect: { status: 404, body: { error: 'No agent with that id.', code: 'NOT_FOUND' } },
+      expect: { status: 404, body: NO_AGENT },
     },
     {
       name: 'GET /api/agents/:id/heartbeat refuses ?days=0',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat?days=0`,
       expect: {
         status: 400,
-        body: { error: 'days must be a whole number from 1 to 90.', code: 'INVALID_DAYS' },
+        body: BAD_DAYS,
       },
     },
     {
@@ -115,7 +125,7 @@ describe('contract: the terminal and heartbeat routes', () => {
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat?days=91`,
       expect: {
         status: 400,
-        body: { error: 'days must be a whole number from 1 to 90.', code: 'INVALID_DAYS' },
+        body: BAD_DAYS,
       },
     },
     {
@@ -123,13 +133,13 @@ describe('contract: the terminal and heartbeat routes', () => {
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat?days=abc`,
       expect: {
         status: 400,
-        body: { error: 'days must be a whole number from 1 to 90.', code: 'INVALID_DAYS' },
+        body: BAD_DAYS,
       },
     },
     {
       name: 'GET /api/agents/:id/heartbeat with a trailing slash answers the same',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat/`,
-      expect: { status: 404, body: { error: 'No agent with that id.', code: 'NOT_FOUND' } },
+      expect: { status: 404, body: NO_AGENT },
     },
     {
       name: 'POST /api/agents/:id/heartbeat is the API 404',

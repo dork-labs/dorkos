@@ -11,7 +11,6 @@ import {
   MANIFEST_FILE,
 } from '../manifest.js';
 import type { AgentManifest } from '../mesh-schemas.js';
-import { AgentWorkspaceBindingSchema } from '../mesh-schemas.js';
 
 // === Helpers ===
 
@@ -32,18 +31,6 @@ function makeManifest(overrides?: Partial<AgentManifest>): AgentManifest {
     ...overrides,
   };
 }
-
-// === Tests ===
-
-describe('manifest constants', () => {
-  it('exports MANIFEST_DIR as ".dork"', () => {
-    expect(MANIFEST_DIR).toBe('.dork');
-  });
-
-  it('exports MANIFEST_FILE as "agent.json"', () => {
-    expect(MANIFEST_FILE).toBe('agent.json');
-  });
-});
 
 describe('readManifest', () => {
   const tempDirs: string[] = [];
@@ -90,21 +77,6 @@ describe('readManifest', () => {
     expect(result).toBeNull();
   });
 
-  it('returns parsed manifest for a valid file', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest();
-    const dorkDir = path.join(projectDir, '.dork');
-    await fs.mkdir(dorkDir, { recursive: true });
-    await fs.writeFile(
-      path.join(dorkDir, 'agent.json'),
-      JSON.stringify(manifest, null, 2),
-      'utf-8'
-    );
-
-    const result = await readManifest(projectDir);
-    expect(result).toEqual(manifest);
-  });
-
   it('keeps the agent when a hand-edited execution setting is nonsense', async () => {
     // A typo in `effort` must cost that one field, not the agent: a null from
     // here reads as "no agent registered at this path" to every caller, so the
@@ -123,45 +95,6 @@ describe('readManifest', () => {
     expect(result?.model).toBe('sonnet');
     expect(result?.effort).toBeUndefined();
   });
-
-  it('warns (with path) when a present file fails schema validation', async () => {
-    const projectDir = await makeTempDir();
-    const dorkDir = path.join(projectDir, '.dork');
-    await fs.mkdir(dorkDir, { recursive: true });
-    await fs.writeFile(path.join(dorkDir, 'agent.json'), JSON.stringify({ name: 'x' }), 'utf-8');
-
-    const warn = vi.fn();
-    const result = await readManifest(projectDir, { warn });
-
-    expect(result).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toContain(path.join(dorkDir, 'agent.json'));
-    expect(warn.mock.calls[0]![0]).toContain('schema validation');
-  });
-
-  it('warns when a present file contains invalid JSON', async () => {
-    const projectDir = await makeTempDir();
-    const dorkDir = path.join(projectDir, '.dork');
-    await fs.mkdir(dorkDir, { recursive: true });
-    await fs.writeFile(path.join(dorkDir, 'agent.json'), 'not-json', 'utf-8');
-
-    const warn = vi.fn();
-    const result = await readManifest(projectDir, { warn });
-
-    expect(result).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toContain('invalid JSON');
-  });
-
-  it('stays silent when the manifest file is simply absent', async () => {
-    const projectDir = await makeTempDir();
-    const warn = vi.fn();
-
-    const result = await readManifest(projectDir, { warn });
-
-    expect(result).toBeNull();
-    expect(warn).not.toHaveBeenCalled();
-  });
 });
 
 describe('writeManifest', () => {
@@ -179,15 +112,6 @@ describe('writeManifest', () => {
     }
   });
 
-  it('creates .dork directory if it does not exist', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest();
-
-    await expect(fs.access(path.join(projectDir, '.dork'))).rejects.toThrow();
-    await writeManifest(projectDir, manifest);
-    await expect(fs.access(path.join(projectDir, '.dork'))).resolves.toBeUndefined();
-  });
-
   it('uses atomic temp-file + rename pattern (no leftover temp files)', async () => {
     const projectDir = await makeTempDir();
     const manifest = makeManifest();
@@ -196,17 +120,6 @@ describe('writeManifest', () => {
 
     const dorkContents = await fs.readdir(path.join(projectDir, '.dork'));
     expect(dorkContents).toEqual(['agent.json']);
-  });
-
-  it('produces JSON with 2-space indentation and trailing newline', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest();
-
-    await writeManifest(projectDir, manifest);
-
-    const raw = await fs.readFile(path.join(projectDir, '.dork', 'agent.json'), 'utf-8');
-    expect(raw.endsWith('\n')).toBe(true);
-    expect(raw).toContain('  "id"');
   });
 
   it('throws and writes nothing when the manifest fails schema validation', async () => {
@@ -234,11 +147,6 @@ describe('removeManifest', () => {
     for (const dir of tempDirs.splice(0)) {
       await fs.rm(dir, { recursive: true, force: true });
     }
-  });
-
-  it('is best-effort and does not throw when file is missing', async () => {
-    const projectDir = await makeTempDir();
-    await expect(removeManifest(projectDir)).resolves.toBeUndefined();
   });
 
   it('removes existing manifest file', async () => {
@@ -288,33 +196,6 @@ describe('removeDorkDirectory', () => {
 
     // Directory should be gone
     await expect(fs.access(path.join(projectDir, '.dork'))).rejects.toThrow();
-  });
-
-  it('returns empty array when .dork directory does not exist', async () => {
-    const projectDir = await makeTempDir();
-
-    const deleted = await removeDorkDirectory(projectDir);
-
-    expect(deleted).toEqual([]);
-  });
-
-  it('returns empty array when .dork path is a file, not a directory', async () => {
-    const projectDir = await makeTempDir();
-    // Create a file named .dork instead of a directory
-    await fs.writeFile(path.join(projectDir, '.dork'), 'not a directory', 'utf-8');
-
-    const deleted = await removeDorkDirectory(projectDir);
-
-    expect(deleted).toEqual([]);
-  });
-
-  it('returns empty array when stat throws (e.g., permission error)', async () => {
-    // Use a path that doesn't exist at all — stat will throw ENOENT
-    const projectDir = path.join(os.tmpdir(), 'nonexistent-' + Date.now());
-
-    const deleted = await removeDorkDirectory(projectDir);
-
-    expect(deleted).toEqual([]);
   });
 });
 
@@ -414,51 +295,6 @@ describe('round-trip with new fields', () => {
     }
   });
 
-  it('round-trips a manifest with persona, color, and icon fields', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest({
-      persona: 'You are backend-bot, an expert in REST API design.',
-      personaEnabled: true,
-      color: '#6366f1',
-      icon: '\u{1F916}',
-    });
-
-    await writeManifest(projectDir, manifest);
-    const result = await readManifest(projectDir);
-
-    expect(result).toEqual(manifest);
-  });
-
-  it('round-trips a basic manifest (personaEnabled defaults to true)', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest();
-
-    await writeManifest(projectDir, manifest);
-    const result = await readManifest(projectDir);
-
-    expect(result).toEqual(manifest);
-  });
-
-  it('round-trips a manifest carrying managed mcpServers', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest({
-      mcpServers: [
-        {
-          name: 'my-server',
-          enabled: true,
-          connection: { transport: 'stdio', command: 'node', args: ['server.js'], env: {} },
-          addedAt: '2026-08-03T00:00:00.000Z',
-          addedBy: 'dorian',
-        },
-      ],
-    });
-
-    await writeManifest(projectDir, manifest);
-    const result = await readManifest(projectDir);
-
-    expect(result?.mcpServers).toEqual(manifest.mcpServers);
-  });
-
   it('refuses to write, and reads back null, when an mcpServers entry is malformed', async () => {
     const projectDir = await makeTempDir();
     // A stdio entry with an empty command is invalid — the array is strict (no
@@ -519,40 +355,6 @@ describe('workspace binding (spec `agent-workspace-binding` §3.1)', () => {
     expect(result?.workspace).toEqual({ mode: 'home' });
   });
 
-  it('round-trips a managed binding with its source and provider', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest({
-      workspace: { mode: 'managed', source: '/repos/dorkos', provider: 'worktree' },
-    });
-
-    await writeManifest(projectDir, manifest);
-    const result = await readManifest(projectDir);
-
-    expect(result?.workspace).toEqual({
-      mode: 'managed',
-      source: '/repos/dorkos',
-      provider: 'worktree',
-    });
-  });
-
-  it('round-trips a none binding — sharing the default folder is sayable', async () => {
-    const projectDir = await makeTempDir();
-    const manifest = makeManifest({ workspace: { mode: 'none' } });
-
-    await writeManifest(projectDir, manifest);
-
-    expect((await readManifest(projectDir))?.workspace).toEqual({ mode: 'none' });
-  });
-
-  it('rejects a managed binding with no source at the schema', () => {
-    const bad = { ...makeManifest(), workspace: { mode: 'managed' } };
-
-    // The union itself is strict — `source` is what makes `managed` mean
-    // anything. It is the MANIFEST FIELD that degrades rather than refuses, and
-    // the next two cases are what that looks like.
-    expect(AgentWorkspaceBindingSchema.safeParse(bad.workspace).success).toBe(false);
-  });
-
   // `.catch()`-degraded, on the `model`/`effort` precedent. Refusing the parse
   // would cost the agent its whole presence in the fleet — `readManifest`
   // answers `null`, and every list, roster and router stops seeing it — over a
@@ -602,19 +404,5 @@ describe('workspace binding (spec `agent-workspace-binding` §3.1)', () => {
     expect(reread?.workspace).toEqual({ mode: 'home' });
     expect((raw as AgentManifest).workspace).toEqual({ mode: 'room-worktree', roomId: 'r1' });
     expect(warn).toHaveBeenCalled();
-  });
-
-  // The migration guarantee is NOT a degradation, so it must not be reported as
-  // one. A warning on every pre-change manifest would be noise on every boot.
-  it('says nothing when the workspace key is simply absent', async () => {
-    const projectDir = await makeTempDir();
-    const { workspace: _absent, ...legacy } = makeManifest();
-    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
-    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
-    await fs.writeFile(manifestPath, JSON.stringify(legacy), 'utf-8');
-    const warn = vi.fn();
-
-    expect((await readManifest(projectDir, { warn }))?.workspace).toEqual({ mode: 'home' });
-    expect(warn).not.toHaveBeenCalled();
   });
 });

@@ -1,11 +1,13 @@
 /** Admission-bound new-work recovery; no current-turn replay and no second fallback. */
 import { carryFrom, joinCeilings } from '../handoff/seat-carry.js';
-import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { failedSeatLedger, failedTurnCarry } from '../reseat/failed-seat-record.js';
+import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import type { AsideCarry } from './aside.js';
 import { logRecoveredHandoff } from '../handoff/failure-trace.js';
 import { stat } from 'node:fs/promises';
 import { claudeTranscriptPath } from '../../session/fleet/carry-over-summary.js';
 import type { RecoveryAuthority } from '../reseat/required-launch-store.js';
+import type { SeatMove } from '../reseat/seat-mover.js';
 import { getRoomSeatMover } from '../reseat/create-seat-mover.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { AsideRun } from './aside.js';
@@ -19,16 +21,17 @@ export async function prepareFailedHandoffSeat(
 ): Promise<boolean> {
   if (!input.handoffRecovery) return false;
   const old = input.sessionId;
-  // The old turn's positively recorded effective bounds survive its first fresh turn.
-  // Outside-word provenance alone does not manufacture a permission ceiling.
-  const prior = carryFrom(old, input.agentPath);
-  const level = lastTurnLevelOf(old);
-  if (!level) return false;
-  const ceiling = joinCeilings(prior.permissionCeiling, level);
-  const preserved: AsideCarry = {
-    ...prior,
-    ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
-  };
+  const ledger = failedSeatLedger();
+  // A record an earlier process kept is what a restored authority answers to (DOR-4626), so it
+  // decides the path, never whether this process happens to hold some level for the chat: a
+  // level recorded here without the failed turn behind it must not stand in for that turn's.
+  // Restored, the record's carry joins whatever the chat carries now, and both only add.
+  const restored = read(() => ledger?.restore(old) ?? null);
+  const live = failedTurnCarry(old, input.agentPath);
+  const preserved: AsideCarry | null = restored
+    ? joinRecoveryCarry(restored.carry, live ?? carryFrom(old, input.agentPath))
+    : live;
+  if (!preserved) return false;
   const currentAllowed = () => {
     const room = self.deps.store.getRoom(input.room.id);
     const member = self.deps.store.getMember(input.room.id, input.authorId);
@@ -48,12 +51,37 @@ export async function prepareFailedHandoffSeat(
     );
   };
   const mover = self.deps.seatMover?.() ?? getRoomSeatMover();
-  const moved = await mover?.recoverFailedSeat(
-    { roomId: input.room.id, authorId: input.authorId, agentPath: input.agentPath, sessionId: old },
-    input.entry.id,
-    currentAllowed
-  );
+  // One recovery per failure: a durable record is spent before the attempt, so a restart in
+  // the middle of it can never start another. The candidate refuses a restored authority
+  // without this claim. Usage not yet read since boot is a wait, not a reason to spend it.
+  if (
+    restored &&
+    (!currentAllowed() ||
+      getAccountUsageStore()?.peekByRoot('claude-code', restored.root)?.state !== 'ok' ||
+      !spend(() => ledger?.claim(old) === true))
+  )
+    return false;
+  let moved: SeatMove | null | undefined;
+  try {
+    moved = await mover?.recoverFailedSeat(
+      {
+        roomId: input.room.id,
+        authorId: input.authorId,
+        agentPath: input.agentPath,
+        sessionId: old,
+      },
+      input.entry.id,
+      currentAllowed
+    );
+  } finally {
+    if (restored) ledger?.endClaim(old);
+  }
   if (!moved) return false;
+  // The seat has moved, so its old chat's record is spent whichever process kept it.
+  spend(() => {
+    ledger?.consume(old);
+    return true;
+  });
   input.sessionId = moved.newSessionId;
   input.carried = joinRecoveryCarry(preserved, input.carried);
   const prepare = input.prepareCarry;
@@ -113,6 +141,24 @@ export async function endFailedHandoffAttempt(
     }
   } finally {
     store.endOwnedAttempt();
+  }
+}
+
+/** A ledger write that cannot complete reads as refused; storage loss never grants a retry. */
+function spend(write: () => boolean): boolean {
+  try {
+    return write();
+  } catch {
+    return false;
+  }
+}
+
+/** A ledger read that cannot complete restores nothing. */
+function read<T>(load: () => T | null): T | null {
+  try {
+    return load();
+  } catch {
+    return null;
   }
 }
 

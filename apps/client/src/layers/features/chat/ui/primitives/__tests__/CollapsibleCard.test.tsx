@@ -14,7 +14,7 @@ describe('CollapsibleCard', () => {
         Body
       </CollapsibleCard>
     );
-    expect(screen.getByText('Header')).toBeDefined();
+    expect(screen.getByText('Header')).toBeInTheDocument();
   });
 
   it('calls onToggle when header button is clicked', () => {
@@ -45,7 +45,7 @@ describe('CollapsibleCard', () => {
         Body content
       </CollapsibleCard>
     );
-    expect(screen.getByText('Body content')).toBeDefined();
+    expect(screen.getByText('Body content')).toBeInTheDocument();
   });
 
   it('does not render body when collapsed', () => {
@@ -100,7 +100,7 @@ describe('CollapsibleCard', () => {
         Body
       </CollapsibleCard>
     );
-    expect(screen.getByText('Extra')).toBeDefined();
+    expect(screen.getByText('Extra')).toBeInTheDocument();
   });
 
   it('passes data attributes through', () => {

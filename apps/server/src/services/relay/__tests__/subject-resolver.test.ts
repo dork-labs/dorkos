@@ -6,109 +6,47 @@ import {
   registerEveryFolderAsHome,
 } from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 
-// Every scratch folder counts as a registered home here, so this suite's
-// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+// Every scratch folder counts as a registered home, so the mocked lookups below
+// decide who is an agent (DOR-2355).
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
 describe('resolveSubjectLabel', () => {
-  it('resolves relay.human.console.* to "You"', async () => {
-    const result = await resolveSubjectLabel('relay.human.console.abc-123', {});
-    expect(result).toEqual({ label: 'You', raw: 'relay.human.console.abc-123' });
+  it.each([
+    ['relay.human.console.abc-123', 'You'],
+    ['relay.system.console', 'System Console'],
+    // Shared with the client's resolver so the two never drift (DOR-1490).
+    ['relay.system.tasks.sched-1', TASK_SUBJECT_LABEL],
+    ['some.unknown.subject', 'some.unknown.subject'],
+  ])('labels %s as %s', async (subject, label) => {
+    expect(await resolveSubjectLabel(subject, {})).toEqual({ label, raw: subject });
   });
 
-  it('resolves relay.system.console to "System Console"', async () => {
-    const result = await resolveSubjectLabel('relay.system.console', {});
-    expect(result).toEqual({ label: 'System Console', raw: 'relay.system.console' });
-  });
-
-  // The server half of the twin-resolver guard (DOR-1490). The client's
-  // `resolve-label.ts` renders the same subject on the relay feed and cannot be
-  // imported here, so the shared constant is what keeps the two saying one
-  // thing. Its suite asserts this same equality from the other side.
-  it('names a scheduler subject with the shared label, not a local copy of it', async () => {
-    const result = await resolveSubjectLabel('relay.system.tasks.sched-1', {});
-    expect(result).toEqual({ label: TASK_SUBJECT_LABEL, raw: 'relay.system.tasks.sched-1' });
-    // And the words themselves, so a rename of the constant still has to be a
-    // deliberate act rather than a silent one.
-    expect(TASK_SUBJECT_LABEL).toBe('Scheduled tasks');
-  });
-
-  it('resolves relay.agent.{sessionId} to agent name when available', async () => {
-    const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path/to/project' });
-    const mockReadManifest = vi.fn().mockResolvedValue({ name: 'Obsidian Repo' });
-    const result = await resolveSubjectLabel('relay.agent.abc-123-def', {
-      getSession: mockGetSession,
-      readManifest: mockReadManifest,
+  it.each([
+    'relay.agent.abc-123-def',
+    'relay.agent.claude-code.abc-123-def',
+    'relay.inbox.abc-123-def',
+  ])('names %s after its agent, or falls back to its short session id', async (subject) => {
+    const getSession = vi.fn().mockResolvedValue({ cwd: '/path/to/project' });
+    const named = await resolveSubjectLabel(subject, {
+      getSession,
+      readManifest: vi.fn().mockResolvedValue({ name: 'Obsidian Repo' }),
     });
-    expect(result).toEqual({ label: 'Obsidian Repo', raw: 'relay.agent.abc-123-def' });
-  });
-
-  it('falls back to truncated session ID when agent not found', async () => {
-    const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path' });
-    const mockReadManifest = vi.fn().mockResolvedValue(null);
-    const result = await resolveSubjectLabel('relay.agent.abc-123-def', {
-      getSession: mockGetSession,
-      readManifest: mockReadManifest,
+    expect(named.label).toBe('Obsidian Repo');
+    // The runtime segment is stripped before the session lookup.
+    expect(getSession).toHaveBeenCalledWith('abc-123-def');
+    const unnamed = await resolveSubjectLabel(subject, {
+      getSession: vi.fn().mockRejectedValue(new Error('not found')),
     });
-    expect(result).toEqual({ label: 'Agent (abc-123)', raw: 'relay.agent.abc-123-def' });
-  });
-
-  it('falls back gracefully when session lookup fails', async () => {
-    const mockGetSession = vi.fn().mockRejectedValue(new Error('not found'));
-    const result = await resolveSubjectLabel('relay.agent.abc-123-def', {
-      getSession: mockGetSession,
-    });
-    expect(result).toEqual({ label: 'Agent (abc-123)', raw: 'relay.agent.abc-123-def' });
-  });
-
-  it('resolves runtime-scoped relay.agent.{runtimeType}.{sessionId} the same as legacy', async () => {
-    const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path/to/project' });
-    const mockReadManifest = vi.fn().mockResolvedValue({ name: 'Obsidian Repo' });
-    const result = await resolveSubjectLabel('relay.agent.claude-code.abc-123-def', {
-      getSession: mockGetSession,
-      readManifest: mockReadManifest,
-    });
-    expect(result).toEqual({
-      label: 'Obsidian Repo',
-      raw: 'relay.agent.claude-code.abc-123-def',
-    });
-    // The parser strips the runtime-type segment before the session lookup.
-    expect(mockGetSession).toHaveBeenCalledWith('abc-123-def');
-  });
-
-  it('resolves relay.inbox.{sessionId} — same agent name lookup as relay.agent.*', async () => {
-    const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path/to/project' });
-    const mockReadManifest = vi.fn().mockResolvedValue({ name: 'InboxBot' });
-    const result = await resolveSubjectLabel('relay.inbox.abc-123-def', {
-      getSession: mockGetSession,
-      readManifest: mockReadManifest,
-    });
-    expect(result).toEqual({ label: 'InboxBot', raw: 'relay.inbox.abc-123-def' });
-  });
-
-  it('relay.inbox.* falls back to Agent (shortId) when no manifest', async () => {
-    const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path' });
-    const mockReadManifest = vi.fn().mockResolvedValue(null);
-    const result = await resolveSubjectLabel('relay.inbox.abc-123-def', {
-      getSession: mockGetSession,
-      readManifest: mockReadManifest,
-    });
-    expect(result).toEqual({ label: 'Agent (abc-123)', raw: 'relay.inbox.abc-123-def' });
-  });
-
-  it('unknown subject passes through as-is', async () => {
-    const result = await resolveSubjectLabel('some.unknown.subject', {});
-    expect(result).toEqual({ label: 'some.unknown.subject', raw: 'some.unknown.subject' });
+    expect(unnamed.label).toBe('Agent (abc-123)');
   });
 });
 
-describe('resolveSubjectLabels', () => {
-  it('deduplicates subjects and resolves all', async () => {
-    const subjects = ['relay.human.console.x', 'relay.human.console.x', 'relay.system.console'];
-    const result = await resolveSubjectLabels(subjects, {});
-    expect(result.size).toBe(2);
-    expect(result.get('relay.human.console.x')?.label).toBe('You');
-    expect(result.get('relay.system.console')?.label).toBe('System Console');
-  });
+it('resolveSubjectLabels deduplicates subjects and resolves all', async () => {
+  const result = await resolveSubjectLabels(
+    ['relay.human.console.x', 'relay.human.console.x', 'relay.system.console'],
+    {}
+  );
+  expect(result.size).toBe(2);
+  expect(result.get('relay.system.console')?.label).toBe('System Console');
 });

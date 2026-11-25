@@ -26,20 +26,32 @@ Types in `packages/shared/src/types.ts` re-export from `schemas.ts`, so existing
 
 ## Adding a New Endpoint
 
-1. **Define schemas** in the appropriate `packages/shared/src/` file (`schemas.ts`, `relay-schemas.ts`, or `mesh-schemas.ts`) for request/response shapes
-2. **Register the path** in `apps/server/src/services/core/openapi-registry.ts` with tags, request schema, and response schemas
-3. **Add validation** in the route handler using `Schema.safeParse(readJsonBody(c))`:
+An endpoint is a capability (ADR `261123-170830`): one `defineCapability` with an `http` surface is the route, its OpenAPI entry, its MCP tool and its `dorkos call` id. The generic mount (`apps/server/src/routes/capability-http.ts`) serves the path, and `POST /api/capabilities/{id}/invoke` reaches it too. Both run one dispatcher (`apps/server/src/routes/capability-dispatch.ts`), so the permission check, the audit record, the approval and the statuses are the same on every door. Do not add a hand route or a hand `registerPath` for a new endpoint.
+
+1. **Define the input and output** as Zod schemas, in the domain file or in `packages/shared/src/` when the client reads them too. The input is one `z.object(...)`: path segments, query fields and body fields all land in it.
+2. **Declare the capability** in its domain (see [How to add a capability](agent-operator-surface.md#how-to-add-a-capability)) with an `http` surface:
 
 ```typescript
-const parsed = MyRequestSchema.safeParse(readJsonBody(c));
-if (!parsed.success) {
-  return c.json({ error: 'Invalid request', details: parsed.error.format() }, 400);
-}
-const { field } = parsed.data;
+surfaces: {
+  http: {
+    method: 'post',
+    path: '/api/agents/{agentId}/pause', // each {segment} fills the input field of its name
+    // params: { id: 'agentId' },        // only when a segment's name differs from its field
+    // query: ['dryRun'],                // a write's fields that come from the query string
+    // success: 201,                     // 200 unless declared; 204 sends no body
+  },
+},
 ```
 
-4. Export the inferred type from `packages/shared/src/types.ts` if needed by client code
-5. **Regenerate the published docs** with BOTH commands below, and commit the result
+A `get` or `delete` reads every other field from the query string; a `post`, `put` or `patch` reads them from the JSON body. The path segments always win over a body field of the same name.
+
+3. **Refuse with a code.** A handler that refuses throws `CapabilityToolError({ error, code })`. The status comes from the code in one place (`toolErrorStatus`): `NOT_FOUND` or `…_NOT_FOUND` is 404, a "not you" code (`CANNOT_RESUME_SELF`, `NOT_YOURS`, `OPERATOR_ONLY`) is 403, `NOT_READY` is 503, anything else 400. Never map statuses in a route.
+4. **Test it.** A unit test on the handler (the happy path and each refusal), and a route test through the mount for anything HTTP-specific (see `apps/server/src/routes/__tests__/capability-http.test.ts`). Then run `pnpm --filter @dorkos/server census:update`: the route census and its "serves every path a capability declares" check read the new route.
+5. **Regenerate the published docs** with BOTH commands below, and commit the result.
+
+Two guards keep the mount honest. Building the app throws when a hand route claims a capability's method and path, or when two capabilities declare the same one. And `HAND_SERVED_CAPABILITIES` in `capability-http.ts` lists the capabilities whose path an older hand route still serves: it only shrinks, as each hand route is deleted.
+
+A few shapes a capability cannot carry yet (file uploads, raw bodies, streams) still need a hand route and a hand `registerPath` in `services/core/openapi-registry.ts`; validate the body with `Schema.safeParse(readJsonBody(c))` and answer `validationProblem(c, error)` (a 400 problem). Every failure is a problem document; see [Errors](#errors).
 
 ## Operation ids
 
@@ -71,6 +83,75 @@ A `registerPath` call that sets `security` keeps it. A local install with "Ask f
 
 The document's `info.version` is the product version: the running server's version at `/api/openapi.json`, and the repo `VERSION` in the committed `docs/api/openapi.json`. A release bumps `VERSION`, so the release PR regenerates the docs too (`.claude/commands/system/release.md`, Phase 6).
 
+## Errors
+
+Every failed request on the API is answered with one shape: an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem document, served as `application/problem+json` (ADR `261123-170831`, DOR-4979).
+
+```json
+{
+  "type": "urn:dorkos:problem:invalid_request",
+  "title": "The request didn’t pass its checks.",
+  "status": 400,
+  "code": "invalid_request",
+  "detail": "`cwd`: Required.",
+  "issues": { "formErrors": [], "fieldErrors": { "cwd": ["Required"] } }
+}
+```
+
+| Field          | What it is                                                                          |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `code`         | The machine-readable kind, `lower_snake`. Branch on this. Permanent once published. |
+| `title`        | The code's short summary, the same for every occurrence. Safe to show a person.     |
+| `detail`       | This occurrence, in words. Safe to show a person. Optional.                         |
+| `status`       | The HTTP status, repeated.                                                          |
+| `type`         | `urn:dorkos:problem:<code>`.                                                        |
+| `issues`       | A validation failure only: Zod's flattened form (`formErrors`, `fieldErrors`).      |
+| `retryAfterMs` | A transient failure only: how long to wait. Also sent as `Retry-After`.             |
+| `instance`     | Optional: an id for this occurrence, to quote in a report.                          |
+
+**The code list** is `PROBLEM_CODE_LIST` in `packages/shared/src/problem.ts`, each code with its default status and title. A code that is not on the list cannot be sent. Add one there (lower_snake, small and meaningful, never a rename) before you use it. The OpenAPI document carries the `Problem` schema, `ProblemCode`, and the answers the chain gives every route (`components.responses`: `ValidationProblem`, `MalformedRequestProblem`, `NotFoundProblem`, `RequestTooLargeProblem`, `InternalErrorProblem`).
+
+**Sending one** (`@dorkos/http-kit`):
+
+```typescript
+import { problem, validationProblem } from '@dorkos/http-kit';
+
+if (!agent) return problem(c, 'not_found', { detail: 'No agent is registered at that path.' });
+
+const parsed = Schema.safeParse(readJsonBody(c));
+if (!parsed.success) return validationProblem(c, parsed.error); // 400 invalid_request + detail + issues
+```
+
+`validationProblem` writes `detail` from the first failing field ("`name`: Required.", plus "(and N more)"); pass `detail` when the route can say what to send in plainer words. Two 400 codes, two meanings: `invalid_request` is a body that was read and failed its checks; `malformed_request` is a body that could not be read at all (the chain sends it). `problem()` takes the status and title from the list; pass `status` only when this occurrence needs a different one, and `retryAfterMs` for a transient failure. `detail` is for a person: write it with the `writing-for-humans` skill, and never put a path, a stack or a secret in it.
+
+**Extra fields** a client acts on (the id of a held action, the packages that conflict, when a window ends) ride as RFC 9457 extension members: `problem(c, 'conflict', { detail, extensions: { conflicts } })`, named in camelCase. An extension member never replaces a standard one. **One code per refusal, and no second one:** a problem names what went wrong in `code` alone, never in a `reason` or any other member. A refusal a client branches on gets a code on `PROBLEM_CODE_LIST` (`precondition_failed` when what the caller was shown changed, `already_resolved`, `not_running`, `no_agent`, …); one no client branches on keeps the generic code (`conflict`, `invalid_request`, `forbidden`) and says which in `detail`. Same meaning, same code: a caller that is not a person is always `person_only`, one not at this computer is always `operator_only`, and a NUL byte in a path is always `400 invalid_request`. A call from one app to another's routes (`/api/ext/<id>/…`) that is refused answers `403 forbidden` with the rule in `detail`, and `403 caller_token_invalid` for a token the server forgot (ask for a new one). It was `{ code: 'app_call_refused', reason: 'not-declared' }`. The SDK's own `AppCallRefusal` words, decided in the frame before any request, keep their kebab-case spelling.
+
+**What the chain answers for you.** An error a route throws reaches the error handler (`middleware/error-handler.ts`): a body over the limit is `413 request_too_large`, broken JSON `400 malformed_request`, a body in an encoding or charset the parser cannot read `415 unsupported_media_type`, a path outside the boundary `403 outside_boundary`, a path with a NUL byte `400 invalid_request`, and anything else `500 internal_error`. Every `detail` the chain writes is a fixed sentence: an exception's message or stack never goes on the wire, in any environment (it is logged instead). The upload refusals follow the same rule. A path no route claims under `/api` is `404 not_found`; a route that must look like such a path answers `apiNotFound(c)` (`http/unclaimed.ts`). A multipart upload the parser refused is `uploadRefusalProblem(c, err)` (`http/problems/upload-refusal.ts`).
+
+**Reading one.** Every client reads failures through `readErrorBody` in `@dorkos/shared/problem` (the web client through `shared/lib/response-error`, the CLI through `ApiError`, the desktop shell directly): `detail`, else `title`, as the message; `code` as the kind. A surface that shows the server's own sentence in place of its own copy (`serverSentence`) takes `detail` only, never the generic `title`.
+
+**Never** `c.json({ error: '…' }, 4xx)`, `c.json({ error, details: z.flattenError(…) })` or a hand-built `{ error, code }` body in new code. Older routes still answer `{ error, code, details }`; they move to problem documents folder by folder under DOR-4979, and the readers keep reading both shapes until the last folder moves, when the old branch and the old shape are removed and a lint rule bans `c.json({ error })`.
+
+### Codes that changed: Relay and connected apps
+
+Relay (`/api/relay/*`: messages, mailboxes, chat connections, chat routes, delivery status, the webhook receiver) and connected apps (`/api/connectors/*`, the signed event receiver included) moved to problem documents together (DOR-4979). No `detail` carries an error's own text, an id, an address or a field value any more: the cause is in the server log. For a script written against the old answers:
+
+- **New codes:** `RESERVED_SENDER` → `reserved_sender`, `RESERVED_SUBJECT` (and a mailbox in a namespace DorkOS manages, which now carries `reservedPrefixes`) → `reserved_subject`, `ROOM_SESSION` → `room_conversation`, `BROADCAST_NOT_BRIDGEABLE` → `broadcast_not_bridgeable`, `BRIDGE_NOT_A_DM` → `chat_type_unknown`, a paused chat route's test → `chat_route_paused`, `INVALID_SIGNATURE` and `INVALID_EVENT_SIGNATURE` → `invalid_signature`, `DUPLICATE_ID` → `connection_id_taken`, `CHAT_ALREADY_BOUND` → `chat_already_bound` (still with `conflict`), `cloud_link_needs_update` → `cloud_link_required` (now 401), `provider_not_found` and `authentication_unavailable` → `app_not_set_up` (404), `writes_back_unsupported_app`, `operations_unsupported` and `every_agent_unavailable` → `app_not_supported` (422), `connection_cleanup_pending` → `account_cleanup_pending`, `connection_not_disconnected` → `still_connected`, `session_access_other_agent` → `other_agent_chat`, `session_access_off` → `app_off_in_chat`, `invalid_filter` → `invalid_filter` (now a problem code of its own), `request_open_elsewhere` keeps its name, `definition_changed` and `review_conflict` → `updates_changed` (412, was 409), `event_selection_unavailable` and `events_unavailable` → `updates_unavailable` (503). A new connection that was saved but couldn't start answers `502 connection_saved_not_started` (it was a 500 with the start error's text); trying the add again would meet `connection_id_taken`, so turn it on instead. `INVALID_CONFIG` answers `400 invalid_request` with `fields`, the manifest keys of the refused settings (a map entry is named by the field that holds it; never a value). `cloud_unavailable`, `cloud_refused`, `destination_unavailable` (now 409 everywhere) and `review_resolving` keep their names.
+- **Folded into a shared code** (`detail` still says which):
+  - `not_found` (404): `NOT_FOUND`, `connection_not_found`, `agent_not_found`, `agent_not_owned`, `flow_not_found`, `review_not_found`, `target_not_found`, `request_not_found`, `UNDO_NOT_FOUND`, `GRANT_NOT_FOUND`, `HOLD_NOT_FOUND`, `MINI_APP_ACCESS_NOT_FOUND`, `RELAY_RECEIPT_NOT_FOUND`, an unknown message, mailbox, trace, chat route or connection, and tracing being off. `session_not_found` keeps its own code.
+  - `invalid_request` (400): `INVALID_CONFIG` (with `fields`), `UNKNOWN_TYPE`, `MULTI_INSTANCE_DENIED`, `REMOVE_BUILTIN_DENIED`, `INVALID_AMOUNT`, `INVALID_TOOLKIT`, `INVALID_RELAY_MESSAGE_ID`, `invalid_cursor`, `invalid_selection`, `invalid_event_request`, an unknown agent or connection named in a chat route, a bridge on a route for every chat, and a refused publish or mailbox registration (both were 422).
+  - `precondition_failed` (412, was 409): `CONFIRMATION_STALE`, `LISTS_CHANGED`, `UNDO_STALE`, `preview_stale`.
+  - `person_only` (403): `connector_owner_required`, `operator_cookie_required`. `owner_only` (403): `OWNER_ADDS_LIST_ID`. `origin_not_allowed` (403): `connector_owner_origin_required`.
+  - `forbidden` (403): `HOLD_REQUESTER`, `CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED`, `marked_turn_typed_secret`, `marked_turn_moves_secret`, `EVENT_BINDING_REJECTED`, `principal_required`.
+  - `unauthenticated` (401): `CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED`, `connector_program_credential_required`, `credential_unavailable`, and an account owner DorkOS could not work out.
+  - `expired` (410): `request_expired`, `review_expired`, `authority_expired`, `runtime_authority_expired`.
+  - `already_resolved` (409): `request_already_resolved`. `rate_limited` (429): `request_rate_limited`, too many chat route tests. `conflict` (409): `idempotency_conflict`, `selection_invalid`, `action_failed`.
+  - `temporarily_unavailable` (503): `RELAY_RECEIPT_RESPONSE_UNAVAILABLE` (still with `messageId` and `statusUrl`), `RELAY_RECEIPT_STORAGE_UNAVAILABLE` and the other receipt codes, `EVENTS_UNAVAILABLE`, `service_unavailable`, `agent_requests_unavailable`, `authority_sync_failed`, `managed_sync_unavailable`, `catalog_incomplete`, a chat route store that isn't ready, and a failed connected-apps start (`migration_failed`).
+  - `upstream_unavailable` (502): `actions_unavailable`. `internal_error` (500): any other failure, which used to echo the error's message; a non-refusal failure to turn a connection off is now 500 (was 400).
+  - `unsupported_media_type` (415), `request_too_large` (413) and `malformed_request` (400): the signed event receiver's `UNSUPPORTED_EVENT_ENCODING`, `EVENT_TOO_LARGE` and `INVALID_EVENT_REQUEST`.
+- **The webhook receiver** (`POST /api/relay/webhooks/:id`) answers every refusal before a verified signature with the one flat `401 invalid_signature`: an unknown or stopped connection, one aimed at an address DorkOS keeps, a request with no content type (it was 400) and a bad signature all look the same. After the signature checks out, a body that isn't JSON is `400 malformed_request` (it was the flat 401), a connection that isn't running or a refused delivery is `503 temporarily_unavailable`, and a failed delivery is `500 internal_error`.
+- **Kept as they were:** the `401` `AUTH_REQUIRED` body a delivery-status read or send gets before it is signed in (the same one the login gate sends), the `428` "Confirm it's you" body, and the capability gate's answers on `POST /api/connectors/executions` (moved with the capability doors).
+
 ## Regenerating the published API docs (two steps, not one)
 
 Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
@@ -83,6 +164,71 @@ pnpm --filter=@dorkos/site generate:api-docs  # 2. that JSON -> docs/api/api/**/
 **Running only the first one is the trap, and it is a quiet one.** They are two generators in a chain: `docs:export-api` writes the spec, and `generate:api-docs` writes the Fumadocs MDX pages the site actually publishes from it. If you run step 1 alone and `git status` is clean, the natural read is "no drift, nothing to commit" — but a description change lands entirely in step 2's output, so the JSON can be byte-identical while the published page still shows the old text. That is a page telling users something untrue, and it is not visible in the diff you just looked at.
 
 The `docs-openapi-check` workflow runs both and fails on any difference, so CI catches it. Catching it locally costs one extra command.
+
+## The API lint gate
+
+The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads two committed files, `docs/api/openapi.json` and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It runs as the `API lint gate (DOR-4996)` step of the required `typecheck` job.
+
+| Concept                  | Location                                                           |
+| ------------------------ | ------------------------------------------------------------------ |
+| The check (CLI, ratchet) | `scripts/api-lint/check-api-lint.ts`                               |
+| The rules and word lists | `scripts/api-lint/rules.ts`                                        |
+| The baseline             | `scripts/api-lint/baseline.json`                                   |
+| Tests                    | `scripts/__tests__/check-api-lint.test.ts`                         |
+| The CI step              | `.github/workflows/typecheck.yml`, step `API lint gate (DOR-4996)` |
+
+```bash
+pnpm check:api-lint                    # check against the baseline
+pnpm check:api-lint -- --update        # after fixing findings: lower the baseline
+```
+
+`--update` lowers a blocking rule's entries and never raises them. It sets an advisory rule's entries (`hand-registered-path`) to whatever it measured, up or down, so that count stays true and the rule does not go red the day it starts blocking; `--base` never judges an advisory entry. In the merge queue the step adds `--queue`, which turns a stale entry into a note ([contributing/ci.md](ci.md#api-lint-gate-dor-4996-is-red-in-typecheck) says why).
+
+The counts are per rule and group, not per finding: a PR that fixes one finding and adds another of the same rule in the same group leaves the count where it was and passes. The ratchet stops the API getting worse in total, not every new finding.
+
+### The rules
+
+Every rule is counted per **route group**, the first path segment under `/api` (`sessions` for `/api/sessions/{id}/messages`), so two PRs in different groups never touch the same baseline entry. `hand-registered-path` is counted per file. `param-name` is counted per (group, resource) by decision: one resource named two ways across groups (`/agents/{id}` beside `/mesh/agents/{agentId}`) is DOR-4982's job, not this rule's.
+
+Every rule blocks except `hand-registered-path`, which is **advisory** (`blocking: false` in `RULES`, `rules.ts`). It is still measured, written to the baseline and lowered by `--update`, but it prints as an advisory line and never fails the check. The reason: until the capability HTTP mount (DOR-4978) merges, a documented `registerPath` is the only way to add a route. The mount PR flips the flag, and from then the hand registry takes no new paths (the decision is in ADR PR #4160).
+
+| Rule                   | A finding is                                                                                                                                                                                                                                                                                                                                | The fix                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `operation-id`         | An operation with no `operationId`. Two operations sharing one id **always fail**, whatever the baseline says; ids that match once lowercased with underscores removed count as shared, as they do for the generator.                                                                                                                       | Give each new operation a unique `operationId`.                                                |
+| `verb-path`            | A static path segment that is a command word (`COMMAND_WORDS` in `rules.ts`, or any segment ending in `-all`). `pause`, `resume`, `halt`, `install`, `fork`, `merge` and `trigger` are allowed (`ALLOWED_VERBS`).                                                                                                                           | Name the resource and let the method be the action: `POST /things`, not `POST /things/create`. |
+| `param-name`           | A resource whose `{param}` goes by more than one name in its group (`/rooms/{id}` beside `/rooms/{roomId}`): distinct names minus one.                                                                                                                                                                                                      | Use the name the group already uses.                                                           |
+| `error-missing`        | An operation with no 4xx or 5xx response.                                                                                                                                                                                                                                                                                                   | Declare the error responses the handler can send.                                              |
+| `error-shape`          | A 4xx or 5xx response with no body, or whose JSON body is not a `$ref` to a shared error schema (`SHARED_ERROR_SCHEMAS`: `ErrorResponse`).                                                                                                                                                                                                  | Point the body at `ErrorResponse`.                                                             |
+| `list-paging`          | A GET whose last segment is static and whose 200 body is an array or holds one, but which lacks a `cursor` and `limit` query parameter or a `nextCursor` in its body.                                                                                                                                                                       | Page the list: accept `cursor` and `limit`, return `nextCursor`.                               |
+| `undocumented-route`   | A served route (from the census) with no documented operation. `ALL` middleware, wildcards, `/api/test` and `/api/ext/{id}` are left out; parameter names are ignored when matching. Known gap: an `ALL` or `/*` route answers requests but is never counted here, so a route served only that way can stay undocumented without a finding. | Document the route, then regenerate the docs (above).                                          |
+| `unserved-operation`   | A documented operation no served route answers.                                                                                                                                                                                                                                                                                             | Serve it, or remove it from the document.                                                      |
+| `hand-registered-path` | Advisory. A `registerPath(` call site in the hand registry: `openapi-registry.ts`, `services/core/openapi/*.ts`, and any `*-openapi.ts` or `openapi.ts` under `apps/server/src`. It counts call sites, not paths, so a loop that registers several paths counts once (`computer-openapi.ts` does this).                                     | Nothing today. Once DOR-4978 merges, declare the route as a capability `http` surface (below). |
+
+### When it goes red
+
+| The step says                                | What to do                                                                                            |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `<rule> in <group>: N (baseline M)`          | Your change added a finding. The step lists what it found in that group; fix the new one.             |
+| `..., and the baseline holds none there`     | First finding of that rule in a group. Fix it; the baseline is never added to.                        |
+| `down to N` or `none left`                   | You fixed something. Run `pnpm check:api-lint -- --update` and commit the lowered baseline.           |
+| `baseline raised` or `added to the baseline` | The baseline was edited upward by hand. Revert that edit and fix the finding instead.                 |
+| `cannot run` (exit 2)                        | An input is missing or not valid JSON, or `--base` is not a commit. A gate that cannot measure fails. |
+
+### Adding a route that passes
+
+A new endpoint is a capability ([Adding a New Endpoint](#adding-a-new-endpoint)). A hand route, kept only for a shape a capability cannot carry yet, passes every blocking rule when it is a documented `registerPath` with:
+
+- a unique `operationId` (or none, and the generator derives one: see [Operation ids](#operation-ids));
+- at least one 4xx or 5xx response, each with a body that is `$ref: ErrorResponse`;
+- no command word in any static segment of its path (name the resource, let the method be the action);
+- the parameter name its group already uses for that resource;
+- on a list `GET`: `cursor` and `limit` query parameters and a `nextCursor` in the 200 body.
+
+Then regenerate the docs (above), so `docs/api/openapi.json` and the census both list it. `hand-registered-path` notes the new call, but only as advice.
+
+**DOR-4978 has merged:** a new route is a capability with an `http` surface, served by the generic mount and documented by the OpenAPI projection. The path, parameter and paging rules above still apply to it. `hand-registered-path` still only advises: `scripts/api-lint/check-api-lint.ts` has not been switched to block. One gap stays open: a capability's `http` surface cannot declare its error responses yet, so a new capability route adds one to `error-missing` in its group until it can.
+
+**Never raise a number in the baseline by hand.** `--update` only lowers or removes entries, and CI runs the check with `--base`, which refuses any entry that is higher than the base's or new.
 
 ## Marketplace (`/api/marketplace/*`)
 
@@ -119,7 +265,7 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 
 A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
-**Error responses** use a centralised `mapErrorToStatus` helper — `400` for invalid manifests, `409` for file conflicts, `404` for missing packages/sources, `500` for unexpected failures.
+**Error responses** are problem documents from a centralised `mapErrorToProblem` helper — `400 invalid_request` for invalid manifests, `409 conflict` for file conflicts, `404 not_found` for missing packages/sources, `500 internal_error` for unexpected failures.
 
 See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
 
@@ -137,7 +283,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 
 - `content` (string, required) - Message text.
 - `cwd` (optional) - Working directory.
-- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 SESSION_NOT_FOUND`.
+- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 session_not_found`.
 - `clientMessageId` (optional) - Client correlation for the submitted message.
 - `context` (optional) - Neutral client signals, including UI state.
 - `runtime`, `account`, `agentPath` (optional) - First-message launch/provenance hints; later messages do not rebind the session.
@@ -146,7 +292,7 @@ Trigger-only and accept-only. The server validates the request, accepts the mess
 **Responses:**
 
 - `202` - `SendMessageResponse`: `{ sessionId, messageId, outcome, queuePosition }`. Re-target to the returned canonical id when it differs. `queuePosition: 1` can mean an immediate start or the only waiting message; it is not a start signal.
-- `404` - `SESSION_NOT_FOUND` when no session exists and `create` was not requested.
+- `404` - `session_not_found` when no session exists and `create` was not requested.
 
 The session stream carries queue changes and the eventual turn. `apps/server/src/routes/sessions.ts`, `packages/shared/src/schemas.ts` and `Transport.postMessage` define the contract.
 
@@ -174,7 +320,7 @@ Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/se
 
 ### GET /api/events
 
-Unified SSE stream for all real-time system events. Replaces individual per-resource SSE endpoints (`GET /api/tunnel/stream`, `GET /api/extensions/events`, `GET /api/relay/stream`) with a single multiplexed connection. Clients filter by the SSE `event:` field.
+Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. Three older streams that overlap it are still served today: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. The plan (ADR `261123-170833`) is to remove each one, not deprecate it, in the change that moves every caller onto `/api/events`. New code reads `/api/events` only.
 
 **Events:**
 
@@ -293,7 +439,7 @@ Approve a pending tool call. Resolves the server-side deferred promise so the SD
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/deny
 
@@ -321,7 +467,7 @@ Deny a pending tool call, optionally saying why.
 - `200` - `{ ok: true }`
 - `400` - Invalid request
 - `404` - No pending interaction for this tool call
-- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+- `409` - Interaction already resolved (`already_resolved`)
 
 ### POST /api/sessions/:id/batch-approve
 
@@ -726,10 +872,14 @@ Send a message to a subject pattern.
 }
 ```
 
+The server sets the sender (`routes/relay-message-sender.ts`, DOR-5151). The person's own turn (`sessionLauncherOf`, the chat route's rule) keeps the `from` it names. A verified agent sends from its own registered address, anyone else from `relay.external.http`, and a caller other than the person naming a `relay.human.*` sender is refused, except a verified agent, which is sent from its own address. A message that is not the person's has its turn-shaping payload fields and `responseContext` removed and carries its agent's marks (`launcherTurnCeiling`). A verified agent's message to a chat's own address (`relay.agent.<runtime>.<sessionId>`) meets the chat route's place rule (`routes/relay-chat-place.ts`, `chatPlaceRefusal`, DOR-5200) and gets the same `403 DESK_NOT_OWN` answer.
+
 **Responses:**
 
 - `200` - Message sent: `{ messageId: string, deliveredTo: number }`
 - `400` - Validation error
+- `401` - Login requires a credential, or `person_session_required` for an app window without a session
+- `403` - Reserved sender, destination or reply address, `person_required` for a person's address from someone else, or `DESK_NOT_OWN` for a chat a verified agent may not send into
 
 ### GET /api/relay/messages
 
@@ -835,7 +985,7 @@ Relay system metrics.
 
 ### GET /api/relay/stream
 
-> **Deprecated** — Use `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`).
+> **Still served; to be removed.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. Under ADR `261123-170833` it is removed once `/api/events` carries those subjects and every caller has moved.
 
 SSE event stream for real-time relay activity. Supports server-side subject filtering.
 
@@ -1646,7 +1796,7 @@ Compiles the extension and activates it against a server-side mock API. Reports 
 
 **Endpoint**: `GET /api/extensions/events`
 
-> **Deprecated** — Use `GET /api/events` (event name: `extension_reloaded`).
+> **Still served; to be removed.** New code uses `GET /api/events` (event name: `extension_reloaded`). Under ADR `261123-170833` this stream is removed in the change that moves its callers onto `/api/events`.
 
 **Event**: `extension_reloaded`
 

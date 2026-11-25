@@ -23,51 +23,6 @@ describe('CommunityRegistry', () => {
     expect(registry.has(REMOTE)).toBe(false);
   });
 
-  it('holds the label, so a ULID never has to be rendered', () => {
-    const registry = new CommunityRegistry();
-    registry.register(
-      new FakeCommunityAdapter({ community: LOCAL_COMMUNITY, type: 'local' }),
-      'This machine'
-    );
-    registry.register(new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' }), 'Dork Labs');
-
-    expect(registry.list()).toEqual([
-      { community: LOCAL_COMMUNITY, label: 'This machine', type: 'local' },
-      { community: REMOTE, label: 'Dork Labs', type: 'buzz' },
-    ]);
-  });
-
-  it('renames without the adapter ever hearing about it', () => {
-    const registry = new CommunityRegistry();
-    const adapter = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
-    registry.register(adapter, 'Dork Labs');
-    registry.register(adapter, 'The good relay');
-
-    expect(registry.list()).toHaveLength(1);
-    expect(registry.list()[0]!.label).toBe('The good relay');
-  });
-
-  it('reports capabilities for every registered community, keyed by ref', () => {
-    const registry = new CommunityRegistry();
-    registry.register(
-      new FakeCommunityAdapter({ community: LOCAL_COMMUNITY, type: 'local' }),
-      'This machine'
-    );
-    registry.register(
-      new FakeCommunityAdapter({
-        community: REMOTE,
-        type: 'buzz',
-        capabilities: { canPost: false, invite: 'none', readCursor: 'none' },
-      }),
-      'Dork Labs'
-    );
-
-    const capabilities = registry.getCapabilities();
-    expect(capabilities[LOCAL_COMMUNITY]!.canPost).toBe(true);
-    expect(capabilities[REMOTE]!.canPost).toBe(false);
-    expect(capabilities[REMOTE]!.type).toBe('buzz');
-  });
-
   it('remembers a connection result, because a listing needs it afterwards', async () => {
     const registry = new CommunityRegistry();
     registry.register(

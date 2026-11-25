@@ -18,6 +18,12 @@ function fixture() {
   let publish: ((frame: ViewerFrame) => void) | undefined;
   const stop = vi.fn(async () => undefined);
   const page: ViewerPage = {
+    facts: () => ({ revision: 0, navigationGeneration: 0, controlEpoch: 0 }),
+    onChange: () => () => undefined,
+    takeControl: async () => {
+      throw Error('unused');
+    },
+    handBack: async () => undefined,
     binding: {
       sessionId: 'chat-a',
       profileId: 'profile-a',
@@ -54,6 +60,9 @@ function fixture() {
   ): ViewerFrame => ({
     sequence,
     generation: 1,
+    navigationGeneration: 0,
+    controlEpoch: 0,
+    viewport: { generation: 1, width: 640, height: 480, offsetTop: 0, scale: 1 },
     width: 640,
     height: 480,
     bytes,

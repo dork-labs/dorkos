@@ -18,6 +18,13 @@ export function createMockLocalBrowserTransport(): LocalBrowserTransport {
     takenOver: false,
   };
   return {
+    takeBrowserViewerControl: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
+    sendBrowserViewerInput: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
+    endBrowserViewerControl: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
+    copyBrowserViewerSelection: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
+    pasteBrowserViewerText: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
+    uploadBrowserViewerFiles: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
+    cancelBrowserViewerFiles: vi.fn().mockRejectedValue(new Error('Browser controls are off')),
     subscribeBrowserViewer: vi.fn().mockRejectedValue(new Error('Browser viewing is off')),
     nextBrowserViewerFrame: vi.fn().mockRejectedValue(new Error('Browser viewing is off')),
     closeBrowserViewer: vi.fn().mockResolvedValue(undefined),

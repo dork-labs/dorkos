@@ -14,8 +14,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '@dorkos/http-kit';
-import { validationFailureBody } from '../lib/route-utils.js';
+import { readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
@@ -39,7 +38,7 @@ export function createDiscoveryRoutes(meshCore: MeshCore): Hono<ApiEnv> {
 
   router.post('/scan', async (c) => {
     const parsed = ScanRequestSchema.safeParse(readJsonBody(c));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const data = parsed.data;
 
     // Default to boundary (home dir) instead of DEFAULT_CWD

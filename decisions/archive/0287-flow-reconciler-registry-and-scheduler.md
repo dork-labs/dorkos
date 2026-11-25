@@ -1,7 +1,7 @@
 ---
 number: 287
 title: Composable Reconciler Registry and Scheduler
-status: proposed
+status: archived
 created: 2026-06-25
 spec: flow-triage-feeds-loop
 superseded-by: null

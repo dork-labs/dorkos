@@ -1,7 +1,7 @@
 ---
 number: 195
 title: Use crypto.scrypt for Passcode Hashing
-status: draft
+status: archived
 created: 2026-03-24
 spec: remote-passcode
 superseded-by: null

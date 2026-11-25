@@ -1,3 +1,5 @@
+import { viewerMetadataSchema } from '@dorkos/shared/browser-viewer-control';
+import { createBrowserViewerControls } from './browser-viewer-controls';
 import { z } from 'zod';
 import type { BrowserViewerTransport } from '@dorkos/shared/transport-local-browser';
 import { fetchJSON, fetchNoContent, fetchResponse } from './http-client';
@@ -13,20 +15,22 @@ class InvalidViewerFrame extends Error {
 const secret = z.string().regex(/^[\w-]{43}$/);
 const subscription = z
   .object({
+    metadata: viewerMetadataSchema,
     viewerId: secret,
     nonce: secret,
     binding: z
       .object({
-        chatId: z.string(),
-        profileId: z.string().nullable(),
-        connectionId: z.string(),
-        tabId: z.string(),
+        chatId: z.string().min(1).max(128),
+        profileId: z.string().min(1).max(256).nullable(),
+        connectionId: z.string().min(1).max(256),
+        tabId: z.string().min(1).max(256),
       })
       .strict(),
   })
   .strict();
 const metadata = z
   .object({
+    view: viewerMetadataSchema,
     sequence: z.number().int().positive(),
     generation: z.number().int().positive(),
     width: z.number().int().min(1).max(1280),
@@ -82,6 +86,7 @@ export function createBrowserViewerMethods(
     timeout: 8_000,
   });
   return {
+    ...createBrowserViewerControls(baseUrl, clientId),
     subscribeBrowserViewer: async (chatId, signal) =>
       subscription.parse(
         await fetchJSON(baseUrl, '/browser-viewers', {
@@ -90,7 +95,7 @@ export function createBrowserViewerMethods(
           body: JSON.stringify({ chatId }),
         })
       ),
-    nextBrowserViewerFrame: async (viewer, receipt, signal) => {
+    nextBrowserViewerFrame: async (viewer, receipt, signal, paint) => {
       const response = await fetchResponse(
         baseUrl,
         `/browser-viewers/${encodeURIComponent(viewer.viewerId)}/frame`,
@@ -98,18 +103,30 @@ export function createBrowserViewerMethods(
           ...options(signal),
           timeout: 5_000,
           method: 'POST',
-          body: JSON.stringify({ nonce: viewer.nonce, ...(receipt ? { receipt } : {}) }),
+          body: JSON.stringify({
+            nonce: viewer.nonce,
+            ...(receipt ? { receipt } : {}),
+            ...(paint ? { paint } : {}),
+          }),
         }
       );
-      if (response.status === 204) return null;
       try {
+        if (response.status === 204) {
+          const raw = response.headers.get('x-viewer-metadata');
+          if (!raw || raw.length > 2048) throw new InvalidViewerFrame();
+          viewer.metadata = viewerMetadataSchema.parse(JSON.parse(raw));
+          return null;
+        }
         if (response.headers.get('content-type')?.split(';')[0] !== 'image/jpeg')
           throw new InvalidViewerFrame();
         const rawMetadata = response.headers.get('x-frame-metadata');
-        if (!rawMetadata || rawMetadata.length > 1024) throw new InvalidViewerFrame();
+        if (!rawMetadata || rawMetadata.length > 2048) throw new InvalidViewerFrame();
         const description = metadata.parse(JSON.parse(rawMetadata));
+        if (description.view.viewport?.generation !== description.generation)
+          throw new InvalidViewerFrame();
         const receipt = secret.parse(response.headers.get('x-frame-receipt'));
         const bytes = await readFrameBytes(response, description.byteLength, signal);
+        viewer.metadata = description.view;
         return { ...description, receipt, bytes };
       } catch {
         if (!response.body?.locked) await response.body?.cancel().catch(() => undefined);

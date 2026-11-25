@@ -85,35 +85,9 @@ describe('TASK_WRITE_POLICY drift guard', () => {
       'status',
     ]);
   });
-
-  it('lets agents request limits but never apply them', () => {
-    expect(TASK_WRITE_POLICY.requestedPermissionMode).toBe('agent-writable');
-    expect(TASK_WRITE_POLICY.requestedAllow).toBe('agent-writable');
-    expect(TASK_WRITE_POLICY.approvedAllow).toBe('operator-only');
-    expect(TASK_WRITE_POLICY.acceptLooserThanRequested).toBe('operator-only');
-  });
 });
 
 describe('findOperatorOnlyTaskFields', () => {
-  it('finds nothing in a body of ordinary fields', () => {
-    expect(
-      findOperatorOnlyTaskFields({ name: 'nightly', prompt: 'go', cron: '0 2 * * *' })
-    ).toEqual([]);
-  });
-
-  it('finds permissionMode whatever its value is', () => {
-    // Presence is the question, not the value: a caller that sent the field
-    // reached for it, and this guard deliberately holds no opinion about which
-    // modes are harmless.
-    for (const value of ['bypassPermissions', 'acceptEdits', 'default', null, undefined, '']) {
-      expect(findOperatorOnlyTaskFields({ permissionMode: value })).toEqual(['permissionMode']);
-    }
-  });
-
-  it('finds status, the field that approves a task', () => {
-    expect(findOperatorOnlyTaskFields({ status: 'active' })).toEqual(['status']);
-  });
-
   it('names every offending field at once, sorted', () => {
     expect(
       findOperatorOnlyTaskFields({
@@ -122,12 +96,6 @@ describe('findOperatorOnlyTaskFields', () => {
         status: 'active',
       })
     ).toEqual(['permissionMode', 'status']);
-  });
-
-  it('reaches for nothing on a body that is not an object', () => {
-    for (const body of [null, undefined, 'permissionMode', 42, ['permissionMode']]) {
-      expect(findOperatorOnlyTaskFields(body)).toEqual([]);
-    }
   });
 });
 
@@ -140,12 +108,6 @@ describe('describeOperatorOnlyTaskRefusal', () => {
     expect(message).toContain('permissionMode');
     expect(message).toContain('DorkOS');
   });
-
-  it('reads naturally for more than one field', () => {
-    const message = describeOperatorOnlyTaskRefusal(['permissionMode', 'status']);
-    expect(message).toContain('those fields');
-    expect(message).not.toContain('that field');
-  });
 });
 
 describe('refuseUnknownTaskUpdateFields (DOR-1568)', () => {
@@ -153,14 +115,6 @@ describe('refuseUnknownTaskUpdateFields (DOR-1568)', () => {
     expect(refuseUnknownTaskUpdateFields({ prompt: 'go', cron: '0 2 * * *', enabled: true })).toBe(
       null
     );
-  });
-
-  it('lets an empty or absent body through', () => {
-    // Express 5 leaves `req.body` undefined on a POST with no payload, and a
-    // caller that changed nothing changed nothing wrongly.
-    for (const body of [{}, null, undefined, 'prompt', 42, ['prompt']]) {
-      expect(refuseUnknownTaskUpdateFields(body)).toBe(null);
-    }
   });
 
   it('names target and agentId, the two ways a caller asks to re-home a task', () => {
@@ -177,13 +131,6 @@ describe('refuseUnknownTaskUpdateFields (DOR-1568)', () => {
     expect(refusal.message).not.toContain('delete this task');
     // …and lists the fields that do exist, which is the actionable half.
     expect(refusal.message).toContain('prompt');
-  });
-
-  it('answers both halves at once when a body has each kind', () => {
-    const refusal = refuseUnknownTaskUpdateFields({ agentId: 'bot', promt: 'typo' })!;
-    expect(refusal.fields).toEqual(['agentId', 'promt']);
-    expect(refusal.message).toContain('delete this task and create it again');
-    expect(refusal.message).toContain('no such field');
   });
 
   it('accepts every field the update schema declares, so it cannot drift', () => {

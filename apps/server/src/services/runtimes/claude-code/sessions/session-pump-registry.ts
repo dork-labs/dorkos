@@ -350,9 +350,9 @@ export class SessionPumpRegistry {
    * private `replaceProcess`, always with an already-resolved key.
    *
    * @param sessionId - Session going away, in any id it answers to
-   * @param reason - Why: `sweep` for DorkOS's own record clean-up, else `evict`
+   * @param reason - Why the pump is ending (`PumpTeardownReason`)
    */
-  async evict(sessionId: string, reason: PumpTeardownReason = 'evict'): Promise<void> {
+  async evict(sessionId: string, reason: PumpTeardownReason): Promise<void> {
     const key = this.sessionKeyOf(sessionId);
     const entry = this.entries.get(key);
     if (!entry) return;
@@ -794,9 +794,12 @@ export class SessionPumpRegistry {
     }
     // The last resort (DOR-2065, DOR-2717): a process holding for nothing but
     // background shells and session timers. Either can run for ever (a dev
-    // server, a `/loop`), so twelve of them must not lock every other chat out. Never a helper, a Monitor or an
-    // owed delivery — those still refuse. No wake follows: the CLI's own
-    // "stopped" notice reaches the agent on its next turn.
+    // server, a `/loop`), so twelve of them must not lock every other chat out.
+    // Never a helper, a Monitor or an owed delivery — those still refuse. No
+    // wake follows, so a chat holding a `/loop` is not relaunched for ever. The
+    // agent hears on its next turn: the CLI's own resume notice for a shell,
+    // and DorkOS's one-time note for a timer, which the CLI does not always
+    // give (DOR-3755, `dispatch/session-timers.ts`).
     for (const sessionId of this.slots.leastRecentFirst(candidates)) {
       const entry = this.entries.get(sessionId);
       if (entry === undefined) continue;

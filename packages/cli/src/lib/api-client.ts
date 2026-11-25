@@ -26,6 +26,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { readErrorBody, type ProblemIssues } from '@dorkos/shared/problem';
 import { resolveDorkHome } from './dork-home.js';
 
 /** Default server port — kept in sync with `@dorkos/shared/constants`. */
@@ -43,22 +44,28 @@ const API_KEY_ENV_VAR = 'DORKOS_API_KEY';
 const API_KEY_FILE_NAME = 'api-key';
 
 /**
- * The HTTP error envelope returned by the marketplace routes. The router
- * uses `mapErrorToStatus` in `apps/server/src/routes/marketplace/shared.ts` to map
- * service errors into this shape, so the CLI can detect conflict reports
- * and validation errors without parsing free-form messages.
+ * The HTTP error body the API answers with: a problem document (the
+ * marketplace routes map service errors through `mapErrorToProblem` in
+ * `apps/server/src/routes/marketplace/shared.ts`), so the CLI can detect
+ * conflict reports and validation errors without parsing free-form messages.
  */
 export interface ApiErrorBody {
+  /** The older body's message; a problem document says `detail` instead. */
   error?: string;
+  /** A problem document's explanation of this occurrence. */
+  detail?: string;
+  /** A problem document's short summary. */
+  title?: string;
   conflicts?: unknown[];
   errors?: unknown[];
   details?: unknown;
   /**
    * Discriminator on structured refusals that are not "errors" in the usual
    * sense — notably the capability tier gate's `denied` payload, which explains in
-   * plain words why an agent was not allowed to run something.
+   * plain words why an agent was not allowed to run something. A problem
+   * document's `status` is the HTTP status, a number.
    */
-  status?: string;
+  status?: string | number;
   /** Plain-language explanation carried by a structured refusal. */
   message?: string;
   /** Machine-readable error code, e.g. `AUTH_REQUIRED` from the login gate. */
@@ -71,19 +78,31 @@ export interface ApiErrorBody {
  * conflicts and read `body.conflicts` for the structured conflict array.
  */
 export class ApiError extends Error {
+  /** The machine-readable failure code, when the server gave one. */
+  public readonly code?: string;
+  /** What failed validation, in Zod's flattened form, when the server said. */
+  public readonly issues?: ProblemIssues;
+
   /**
-   * Build a typed API error.
+   * Build a typed API error. The message and code are read from the body by
+   * `readErrorBody` (`@dorkos/shared/problem`): a problem document first, then
+   * the older `{ error, code }` shape.
    *
    * @param status - HTTP status code returned by the server.
    * @param body - Parsed JSON error body. Empty object when the response
    *   was not JSON-decodable.
+   * @param message - The message, when the CLI has a better one than the body's.
    */
   constructor(
     public readonly status: number,
-    public readonly body: ApiErrorBody
+    public readonly body: ApiErrorBody,
+    message?: string
   ) {
-    super(body.error ?? body.message ?? `HTTP ${status}`);
+    const reading = readErrorBody(body, `HTTP ${status}`);
+    super(message ?? reading.message);
     this.name = 'ApiError';
+    if (reading.code !== undefined) this.code = reading.code;
+    if (reading.issues !== undefined) this.issues = reading.issues;
   }
 }
 
@@ -181,8 +200,11 @@ function apiKeyHeaders(): Record<string, string> {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
-/** The code `sessionGate` stamps on its own 401, and the only one this rewrites. */
-const AUTH_REQUIRED_CODE = 'AUTH_REQUIRED';
+/**
+ * The codes the app-wide login gate answers 401 with: today's, and the problem
+ * code it moves to under DOR-4979.
+ */
+const LOGIN_GATE_CODES = new Set(['AUTH_REQUIRED', 'unauthenticated']);
 
 /**
  * Turn the login gate's bare `Unauthorized` into something a person can act on.
@@ -314,8 +336,8 @@ export async function apiRequest(
     // every room address refuses since DOR-1361 — already said something true
     // and specific, and replacing it with "the CLI needs your API key" would
     // send an agent whose identity expired to mint the wrong credential.
-    if (res.status === 401 && (parsed.code === undefined || parsed.code === AUTH_REQUIRED_CODE)) {
-      parsed = { ...parsed, error: buildUnauthorizedMessage(presentedKey) };
+    if (res.status === 401 && (parsed.code === undefined || LOGIN_GATE_CODES.has(parsed.code))) {
+      throw new ApiError(res.status, parsed, buildUnauthorizedMessage(presentedKey));
     }
     throw new ApiError(res.status, parsed);
   }

@@ -71,9 +71,14 @@ export class BrowserPersonFiles {
       });
     }
   };
-  async choose(id: string, files: readonly BrowserPersonFile[]): Promise<void> {
+  async choose(
+    id: string,
+    files: readonly BrowserPersonFile[],
+    assertOperation?: () => void
+  ): Promise<void> {
     const pending = this.pending;
     try {
+      assertOperation?.();
       this.tickets.consume(
         id,
         this.facts(),
@@ -95,14 +100,19 @@ export class BrowserPersonFiles {
       clearTimeout(pending.timer);
       await this.source.authorize();
       this.admit();
+      assertOperation?.();
       await this.source.work.track(
         pending.chooser.setFiles(
           files.map(({ name, mimeType, buffer }) => ({ name, mimeType, buffer }))
         )
       );
       this.admit();
+      assertOperation?.();
     } catch (error) {
-      if (pending) await this.cancel(pending.ticket.id);
+      if (pending) {
+        if (this.pending === pending) await this.cancel(pending.ticket.id);
+        else await this.clearChooser(pending.chooser);
+      }
       throw error;
     } finally {
       for (const file of files) file.buffer.fill(0);
@@ -114,8 +124,11 @@ export class BrowserPersonFiles {
     if (!pending || pending.ticket.id !== id) return;
     this.pending = undefined;
     clearTimeout(pending.timer);
+    await this.clearChooser(pending.chooser);
+  }
+  private async clearChooser(chooser: FileChooser): Promise<void> {
     try {
-      await this.source.work.track(pending.chooser.setFiles([]));
+      await this.source.work.track(chooser.setFiles([]));
     } catch {
       // A closed captured Page has no chooser left to cancel; live failures still hold custody.
       if (this.source.page.isClosed()) return;

@@ -22,4 +22,6 @@ export type {
   LateTurnSource,
 } from './types.js';
 export type { ApprovalAuthorizer } from './approval-handler.js';
+export { TURN_SHAPING_PAYLOAD_FIELDS } from './turn-shaping-sender.js';
+export { resolveAgentTurnIdentity } from './agent-handler.js';
 export type { TraceStoreLike } from '../../types.js';

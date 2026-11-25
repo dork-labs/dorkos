@@ -40,11 +40,8 @@ type AddSourceResponseBody = Omit<AddedMarketplaceSource, 'listing'> &
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE = 'Usage: dorkos marketplace add <url> [--name <name>]';
 
-/**
- * The code the server answers when adding a source needs the person signed in
- * (`MARKETPLACE_SOURCE_NEEDS_APP_CODE` in the server's source-write policy).
- */
-const SOURCE_NEEDS_APP = 'marketplace_source_needs_app';
+/** The code the server answers when adding a source needs the person signed in (DOR-3330). */
+const SOURCE_NEEDS_APP = 'person_only';
 
 /**
  * Parse the raw argv slice that follows `dorkos marketplace add`.
@@ -166,21 +163,17 @@ export async function runMarketplaceAdd(args: MarketplaceAddArgs): Promise<numbe
   } catch (err) {
     if (err instanceof ApiError) {
       // 409 = duplicate name. Surface a clearer hint than the raw server message.
-      if (err.body.code === SOURCE_NEEDS_APP) {
+      if (err.code === SOURCE_NEEDS_APP) {
         // Says what it needs and where in the app to do it instead (DOR-3330);
         // one line, as written for a person.
-        console.error(String(err.body.error ?? err.message));
+        console.error(err.message);
       } else if (err.status === 409) {
         console.error(
           `Error: marketplace '${name}' already exists. Pass --name to choose another.`
         );
-      } else if (err.status === 403 && err.body.message) {
-        // The operator-only refusal (DOR-502). Its `message` is the half that
-        // says what to do instead, and an AGENT running this verb is exactly who
-        // needs to read it — printing only the one-line `error` would leave it
-        // with a "no" and no next step.
-        console.error(`Error: ${err.message}\n${err.body.message}`);
       } else {
+        // The operator-only refusal (DOR-502) reads as its `detail`, which says
+        // what to do instead: an AGENT running this verb is exactly who needs it.
         console.error(`Error: ${err.message}`);
       }
       return 1;

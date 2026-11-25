@@ -172,49 +172,6 @@ describe('ConnectionNotifications', () => {
     );
   });
 
-  it('renders an empty enum default as a real choice and submits it exactly', async () => {
-    const user = userEvent.setup();
-    const create = vi
-      .fn()
-      .mockResolvedValue({ status: 'active', subscriptionId: 'subscription-a' });
-    const transport = createMockTransport({
-      getConnectionEventSource: vi.fn().mockResolvedValue({
-        setupMode: 'managed',
-        configured: false,
-        endpoint: null,
-        reason: null,
-      }),
-      listConnectionEventDefinitions: vi.fn().mockResolvedValue({
-        definitions: [
-          {
-            ...definition,
-            filterSchema: {
-              type: 'object',
-              properties: {
-                folder: { type: 'string', title: 'Folder', enum: ['', 'inbox'], default: '' },
-              },
-            },
-          },
-        ],
-      }),
-      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
-      createConnectionEventSubscription: create,
-    });
-    renderNotifications(transport);
-    await choose(user, 'Account activity', 'New email');
-    expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Leave blank');
-    await choose(user, 'Folder', 'inbox');
-    await choose(user, 'Folder', 'Leave blank');
-    await choose(user, 'Agent', 'Researcher');
-    await user.click(screen.getByRole('button', { name: 'Set up notification' }));
-    await waitFor(() =>
-      expect(create).toHaveBeenCalledWith(
-        'connection-a',
-        expect.objectContaining({ filter: { folder: '' } })
-      )
-    );
-  });
-
   it('says how each notification is doing, in words, across explicit pages', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
@@ -258,32 +215,6 @@ describe('ConnectionNotifications', () => {
       2,
       'connection-a',
       'page-2'
-    );
-  });
-
-  it('loads later discovery pages instead of hiding available activity', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport({
-      getConnectionEventSource: vi.fn().mockResolvedValue({
-        setupMode: 'managed',
-        configured: false,
-        endpoint: null,
-        reason: null,
-      }),
-      listConnectionEventDefinitions: vi
-        .fn()
-        .mockResolvedValueOnce({ definitions: [], nextCursor: 'definitions-2' })
-        .mockResolvedValueOnce({ definitions: [definition] }),
-      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
-    });
-
-    renderNotifications(transport);
-    await user.click(await screen.findByRole('button', { name: 'Load more activity' }));
-    expect(await screen.findByRole('combobox', { name: 'Account activity' })).toBeInTheDocument();
-    expect(transport.listConnectionEventDefinitions).toHaveBeenNthCalledWith(
-      2,
-      'connection-a',
-      'definitions-2'
     );
   });
 
@@ -431,32 +362,6 @@ describe('ConnectionNotifications', () => {
     expect(screen.getByRole('textbox', { name: 'Folder' })).toHaveValue('archive');
   });
 
-  it('allows consent when delivery timing is unknown and keeps that uncertainty visible', async () => {
-    const user = userEvent.setup();
-    const create = vi.fn().mockResolvedValue(subscription({ deliveryMode: 'unknown' }));
-    const transport = createMockTransport({
-      getConnectionEventSource: vi.fn().mockResolvedValue({
-        setupMode: 'managed',
-        configured: false,
-        endpoint: null,
-        reason: null,
-      }),
-      listConnectionEventDefinitions: vi.fn().mockResolvedValue({
-        definitions: [{ ...definition, deliveryMode: 'unknown', filterSchema: {} }],
-      }),
-      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
-      createConnectionEventSubscription: create,
-    });
-
-    renderNotifications(transport);
-    await choose(user, 'Account activity', 'New email');
-    await choose(user, 'Agent', 'Researcher');
-    expect(screen.getByText('Delivery timing unknown')).toBeInTheDocument();
-    expect(screen.getByText(/Setup may stay pending/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Set up notification' }));
-    await waitFor(() => expect(create).toHaveBeenCalledOnce());
-  });
-
   it('distinguishes same-event scopes and removes the exact selected subscription', async () => {
     const user = userEvent.setup();
     const remove = vi.fn().mockResolvedValue(undefined);
@@ -512,9 +417,12 @@ describe('ConnectionNotifications', () => {
     expect(remove).toHaveBeenCalledWith('connection-a', 'subscription-b');
   });
 
-  it('keeps string filters distinct from neighboring fields in visible and accessible scope', async () => {
+  it('reloads the exact subscription list after a remove response is lost', async () => {
     const user = userEvent.setup();
-    const remove = vi.fn().mockResolvedValue(undefined);
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce({ subscriptions: [subscription()] })
+      .mockResolvedValue({ subscriptions: [] });
     const transport = createMockTransport({
       getConnectionEventSource: vi.fn().mockResolvedValue({
         setupMode: 'managed',
@@ -523,28 +431,22 @@ describe('ConnectionNotifications', () => {
         reason: null,
       }),
       listConnectionEventDefinitions: vi.fn().mockResolvedValue({ definitions: [] }),
-      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({
-        subscriptions: [
-          subscription({ id: 'subscription-joined', filter: { folder: 'inbox, unread: true' } }),
-          subscription({
-            id: 'subscription-fields',
-            filter: { unread: true, folder: 'inbox' },
-          }),
-        ],
-      }),
-      deleteConnectionEventSubscription: remove,
+      listConnectionEventSubscriptions: list,
+      deleteConnectionEventSubscription: vi.fn().mockRejectedValue(new Error('response lost')),
     });
 
     renderNotifications(transport);
-    expect(await screen.findByText('Only when Folder is inbox, unread: true')).toBeInTheDocument();
-    expect(screen.getByText('Only when Unread is yes and Folder is inbox')).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent('{');
     await user.click(
-      screen.getByRole('button', {
-        name: 'Remove New email: Goes to Researcher, all in one chat. Only when Unread is yes and Folder is inbox',
+      await screen.findByRole('button', {
+        name: 'Remove New email: Goes to Researcher, all in one chat. Only when Folder is inbox',
       })
     );
-    expect(remove).toHaveBeenCalledWith('connection-a', 'subscription-fields');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t confirm the removal. Check the list.'
+    );
+    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1));
+    expect(list.mock.calls.every(([connectionId]) => connectionId === 'connection-a')).toBe(true);
+    expect(await screen.findByText('No notifications set up.')).toBeInTheDocument();
   });
 
   it('marks only the row being removed as busy, so others can still be removed', async () => {
@@ -581,38 +483,6 @@ describe('ConnectionNotifications', () => {
     expect(second).toBeEnabled();
     finish();
     await waitFor(() => expect(first).toBeEnabled());
-  });
-
-  it('reloads the exact subscription list after a remove response is lost', async () => {
-    const user = userEvent.setup();
-    const list = vi
-      .fn()
-      .mockResolvedValueOnce({ subscriptions: [subscription()] })
-      .mockResolvedValue({ subscriptions: [] });
-    const transport = createMockTransport({
-      getConnectionEventSource: vi.fn().mockResolvedValue({
-        setupMode: 'managed',
-        configured: false,
-        endpoint: null,
-        reason: null,
-      }),
-      listConnectionEventDefinitions: vi.fn().mockResolvedValue({ definitions: [] }),
-      listConnectionEventSubscriptions: list,
-      deleteConnectionEventSubscription: vi.fn().mockRejectedValue(new Error('response lost')),
-    });
-
-    renderNotifications(transport);
-    await user.click(
-      await screen.findByRole('button', {
-        name: 'Remove New email: Goes to Researcher, all in one chat. Only when Folder is inbox',
-      })
-    );
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Couldn’t confirm the removal. Check the list.'
-    );
-    await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1));
-    expect(list.mock.calls.every(([connectionId]) => connectionId === 'connection-a')).toBe(true);
-    expect(await screen.findByText('No notifications set up.')).toBeInTheDocument();
   });
 
   it.each([

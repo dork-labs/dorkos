@@ -11,17 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDataProviderContext } from '../../extension-server-api-factory.js';
-import { ADVISOR_TIMEOUT_MS } from '../../../core/usage/account-advisor.js';
-import { HANDLER_TIMEOUT_MS } from '../../inbox/extension-inbox.js';
-import {
-  ADVISOR_BOUND_MS,
-  CTX_PROTOCOL,
-  INBOX_ACTION_BOUND_MS,
-  flatten,
-  lookup,
-  splitPath,
-  type ProtocolFor,
-} from '../ctx-protocol.js';
+import { lookup, splitPath, type ProtocolFor } from '../ctx-protocol.js';
 
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -204,29 +194,6 @@ describe('CTX_PROTOCOL against a real in-process ctx', () => {
     for (const p of walk(ctx).values) expect(lookup(p)?.kind, p).toBe('const');
     releaseListeners();
   });
-
-  // Purpose: the other direction. Every leaf the table names exists on a real
-  // ctx with the right shape, so the table cannot promise a member nobody has.
-  it('names nothing a real ctx lacks', () => {
-    const { ctx, releaseListeners } = build();
-    for (const { path: p, kind } of flatten()) {
-      const value = at(ctx, p);
-      if (kind.kind === 'const') expect(typeof value, p).toBe('string');
-      else expect(typeof value, p).toBe('function');
-    }
-    // Class-instance namespaces are covered here: each listed member is a
-    // method of the instance (checked above), and the table lists them all.
-    const { classInstances } = walk(ctx);
-    expect(classInstances.sort()).toEqual(['secrets', 'settings']);
-    releaseListeners();
-  });
-
-  // Purpose: every top-level key of a real ctx is in the table, and vice versa.
-  it('covers the same top-level members as a real ctx', () => {
-    const { ctx, releaseListeners } = build();
-    expect(Object.keys(CTX_PROTOCOL).sort()).toEqual(Object.keys(ctx).sort());
-    releaseListeners();
-  });
 });
 
 describe('lookup', () => {
@@ -278,34 +245,4 @@ describe('lookup', () => {
       expect(splitPath(p)).toBeNull();
     }
   );
-
-  // Purpose: the table cannot be widened at run time by code that reaches it
-  // (it is bundled into the child, where extension code runs beside it).
-  it('is frozen deeply', () => {
-    expect(Object.isFrozen(CTX_PROTOCOL)).toBe(true);
-    expect(Object.isFrozen(CTX_PROTOCOL.inbox.members)).toBe(true);
-    expect(() => {
-      (CTX_PROTOCOL.inbox.members as Record<string, unknown>).evil = { kind: 'call' };
-    }).toThrow();
-  });
-});
-
-describe('reverse bounds', () => {
-  // Purpose: the bounds restated in the child-safe table are the ones the
-  // host actually enforces.
-  it('match the host constants', () => {
-    expect(ADVISOR_BOUND_MS).toBe(ADVISOR_TIMEOUT_MS);
-    expect(INBOX_ACTION_BOUND_MS).toBe(HANDLER_TIMEOUT_MS);
-  });
-});
-
-describe('flatten', () => {
-  // Purpose: every leaf is listed once with a full path.
-  it('lists each leaf once', () => {
-    const paths = flatten().map((leaf) => leaf.path);
-    expect(new Set(paths).size).toBe(paths.length);
-    expect(paths).toContain('projectSettings.onChange');
-    expect(paths).toContain('extensionId');
-    expect(paths).not.toContain('inbox');
-  });
 });

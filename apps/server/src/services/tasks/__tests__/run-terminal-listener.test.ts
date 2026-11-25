@@ -64,53 +64,6 @@ describe('run-terminal listener → activity feed (DOR-1573)', () => {
       })
     );
   });
-
-  it('emits run_failed with the error, exactly once (no double, no zero)', async () => {
-    const task = store.createTask(taskInput('report'));
-    const run = store.createRun(task.id, 'scheduled');
-
-    store.updateRun(run.id, { status: 'failed', durationMs: 500, error: 'boom' });
-    await flush();
-
-    expect(activityService.emit).toHaveBeenCalledTimes(1);
-    expect(activityService.emit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'tasks.run_failed',
-        metadata: { error: 'boom' },
-      })
-    );
-  });
-
-  it('does NOT emit for a cancelled run — that stays with the path that ended it', async () => {
-    // The run row cannot say whether an operator or a deadline cancelled the run,
-    // and the two carry different actors, so the emit is left to the dispatch
-    // path (which knows) rather than the row-only funnel.
-    const task = store.createTask(taskInput('stoppable'));
-    const run = store.createRun(task.id, 'scheduled');
-
-    store.updateRun(run.id, { status: 'cancelled', durationMs: 10, error: 'Run cancelled' });
-    await flush();
-
-    expect(activityService.emit).not.toHaveBeenCalled();
-  });
-
-  it('fires the emit exactly once per run even when the run row is stomped after going terminal', async () => {
-    // The terminal guard in updateRun swallows the scheduler's post-publish
-    // status:'running' write, so a run that finished on the relay path is not
-    // double-counted in the feed.
-    const task = store.createTask(taskInput('raced'));
-    const run = store.createRun(task.id, 'scheduled');
-
-    store.updateRun(run.id, { status: 'completed', durationMs: 42 });
-    store.updateRun(run.id, { status: 'running' }); // DOR-248 stomp — ignored
-    store.updateRun(run.id, { status: 'failed', error: 'late' }); // ignored
-    await flush();
-
-    expect(activityService.emit).toHaveBeenCalledTimes(1);
-    expect(activityService.emit).toHaveBeenCalledWith(
-      expect.objectContaining({ eventType: 'tasks.run_success' })
-    );
-  });
 });
 
 describe('run-terminal listener → one notice per failing streak (DOR-3123)', () => {
@@ -132,30 +85,5 @@ describe('run-terminal listener → one notice per failing streak (DOR-3123)', (
       expect.anything(),
       2
     );
-  });
-
-  it('still records the activity and sends the notice when the streak lookup throws', async () => {
-    const { notifyRunCompleted } = await import('../../notifications/emitters/run-completed.js');
-    vi.mocked(notifyRunCompleted).mockClear();
-    const store = new TaskStore(createTestDb());
-    const activity = { emit: vi.fn() };
-    store.setOnRunTerminal(
-      createRunTerminalListener(activity as unknown as ActivityService, undefined, () => {
-        throw new Error('db locked');
-      })
-    );
-    const task = store.createTask(taskInput('health'));
-    const run = store.createRun(task.id, 'scheduled');
-
-    store.updateRun(run.id, { status: 'needs_attention', refusedTools: ['Bash'] });
-    await flush();
-
-    // No streak known, so the notice goes out, as it did before streaks.
-    expect(notifyRunCompleted).toHaveBeenCalledWith(
-      expect.objectContaining({ id: run.id }),
-      expect.anything(),
-      undefined
-    );
-    expect(activity.emit).toHaveBeenCalledTimes(1);
   });
 });

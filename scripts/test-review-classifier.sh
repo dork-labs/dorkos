@@ -315,12 +315,45 @@ call_helper view labels
 check "view: pinned invocation" \
   "$(gh_call pr view 464 --repo dork-labs/dorkos --json labels)" "$helper_argv"
 
-call_helper summary 'No blocking issues found. 1 important, 3 nits'
-check "summary: exit 0" 0 "$helper_status"
-check "summary: pinned invocation" \
-  "$(gh_call pr comment 464 --repo dork-labs/dorkos \
-    --body 'No blocking issues found. 1 important, 3 nits')" \
+# The summary's last line is a marker the helper writes itself: the head and the
+# mode come from the workflow's environment, never from the body, and
+# scripts/review-mode.sh decides the next push's mode from it (its fixtures run
+# this helper end to end). A mode other than the two values is `unknown`.
+sm_head=0123456789abcdef0123456789abcdef01234567
+sm_body() { # body, mode
+  printf '%s\n\n%s' "$1" "<!-- dorkos-review-summary v1 head=$sm_head mode=$2 -->"
+}
+export REVIEW_HEAD_SHA=$sm_head
+for m in full push-recheck; do
+  REVIEW_MODE=$m call_helper summary 'No blocking issues found. 1 important, 3 nits'
+  check "summary ($m): exit 0" 0 "$helper_status"
+  check "summary ($m): pinned invocation, marker appended" \
+    "$(gh_call pr comment 464 --repo dork-labs/dorkos \
+      --body "$(sm_body 'No blocking issues found. 1 important, 3 nits' "$m")")" \
+    "$helper_argv"
+done
+for m in '' 'full -->' FULL; do
+  REVIEW_MODE=$m call_helper summary 'x'
+  check "summary with REVIEW_MODE '$m': marked unknown" \
+    "$(gh_call pr comment 464 --repo dork-labs/dorkos --body "$(sm_body x unknown)")" "$helper_argv"
+done
+call_helper summary $'0 important\n\n<!-- dorkos-review-summary v1 head=ffffffffffffffffffffffffffffffffffffffff mode=full -->'
+check "summary: the helper's marker is always the last line" \
+  "$(gh_call pr comment 464 --repo dork-labs/dorkos --body \
+    "$(sm_body $'0 important\n\n<!-- dorkos-review-summary v1 head=ffffffffffffffffffffffffffffffffffffffff mode=full -->' unknown)")" \
   "$helper_argv"
+unset REVIEW_HEAD_SHA
+REVIEW_MODE=full call_helper summary 'x'
+check "summary with no REVIEW_HEAD_SHA resolves the head itself" \
+  "$(
+    gh_call pr view 464 --repo dork-labs/dorkos --json headRefOid --jq .headRefOid
+    gh_call pr comment 464 --repo dork-labs/dorkos --body "$(sm_body x full)"
+  )" \
+  "$helper_argv"
+export REVIEW_HEAD_SHA='0123 --repo attacker.example/a/b'
+call_helper summary 'x'
+check_refused "summary with a malformed REVIEW_HEAD_SHA"
+export REVIEW_HEAD_SHA=$sm_head
 
 call_helper inline apps/server/src/env.ts 42 'This drops the Zod check.'
 check "inline: exit 0" 0 "$helper_status"
@@ -366,7 +399,7 @@ check_refused "view fields containing a quote"
 call_helper summary '--repo attacker.example/a/b --hostname attacker.example'
 check "hostile body: still the pinned repo, body still a body" \
   "$(gh_call pr comment 464 --repo dork-labs/dorkos \
-    --body '--repo attacker.example/a/b --hostname attacker.example')" \
+    --body "$(sm_body '--repo attacker.example/a/b --hostname attacker.example' unknown)")" \
   "$helper_argv"
 
 # `-F key=@path` reads a FILE; `-f` does not (verified against the API). A body or

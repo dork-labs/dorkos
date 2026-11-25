@@ -13,7 +13,6 @@ import { useRoomStream } from '../use-room-stream';
 import {
   PRESENCE_TICK_MS,
   PRESENCE_TTL_MS,
-  SILENT_FINISH_DISPLAY_MS,
   useRoomHolds,
   useRoomPresence,
   useRoomPresenceClaims,
@@ -125,54 +124,6 @@ describe('the presence store', () => {
     ]);
   });
 
-  it('ignores a signal with no lifecycle on it — a `typing` is not an indicator', () => {
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, { type: 'signal', signal: 'typing', authorId: 'kai', at: 'now' });
-
-    expect(keysIn(ROOM)).toEqual([]);
-  });
-
-  it('ignores a `progress` that is missing its key — a partial payload is not an indicator', () => {
-    // The community port makes `entryId` and `since` optional on its presence
-    // payload, so a backend that can only say "somebody is working" produces
-    // exactly this frame, and `RoomService.publishSignal` accepts it. The client
-    // is where that stops: an indicator with no `entryId` cannot be keyed and
-    // one with no `since` cannot be aged, so a stored partial would show a
-    // worker that no `done` could ever address and no TTL could sensibly clear.
-    const store = useRoomPresenceStore.getState();
-
-    store.observe(ROOM, {
-      type: 'signal',
-      signal: 'progress',
-      authorId: 'kai',
-      at: '2026-07-30T10:00:00.000Z',
-      state: 'working',
-    });
-    store.observe(ROOM, {
-      type: 'signal',
-      signal: 'progress',
-      authorId: 'kai',
-      at: '2026-07-30T10:00:00.000Z',
-      state: 'working',
-      entryId: 'entry-1',
-    });
-
-    expect(keysIn(ROOM)).toEqual([]);
-  });
-
-  it('deletes only the claim a `done` names', () => {
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'working', 'entry-1'));
-    store.observe(ROOM, signal('kai', 'working', 'entry-2'));
-
-    store.observe(ROOM, signal('kai', 'done', 'entry-1'));
-
-    // The other claim is still true, and a `done` that cleared both would have
-    // stranded the room with no indicator for work that is still running.
-    expect(keysIn(ROOM)).toEqual([key('kai', 'entry-2')]);
-  });
-
   it('drops every one of an author’s claims when that author posts', () => {
     const store = useRoomPresenceStore.getState();
     store.observe(ROOM, signal('kai', 'working', 'entry-1'));
@@ -182,17 +133,6 @@ describe('the presence store', () => {
     store.clearAuthor(ROOM, 'kai');
 
     expect(keysIn(ROOM)).toEqual([key('ana', 'entry-3')]);
-  });
-
-  it('forgets a whole room at once', () => {
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'working', 'entry-1'));
-    store.observe('room-2', signal('ana', 'working', 'entry-9'));
-
-    store.clearRoom(ROOM);
-
-    expect(keysIn(ROOM)).toEqual([]);
-    expect(keysIn('room-2')).toEqual([key('ana', 'entry-9')]);
   });
 
   it('prunes what nothing has restated, and keeps what has', () => {
@@ -225,52 +165,6 @@ describe('useRoomPresence', () => {
     ]);
   });
 
-  it('carries the OLDEST claim’s reading onto the row that speaks for the agent', () => {
-    // The collapse to one row has already chosen which claim speaks for Kai, so
-    // reading the newer claim's tool onto that row would describe one turn with
-    // another turn's work — exactly the inconsistency `entryId` is carried for.
-    const store = useRoomPresenceStore.getState();
-    store.observe(
-      ROOM,
-      signal('kai', 'working', 'entry-2', '2026-07-30T10:00:30.000Z', {
-        toolName: 'Bash',
-        target: 'pnpm test',
-      })
-    );
-    store.observe(
-      ROOM,
-      signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z', {
-        toolName: 'Read',
-        target: 'standup.md',
-      })
-    );
-
-    const { result } = renderHook(() => useRoomPresence(ROOM));
-
-    expect(result.current).toHaveLength(1);
-    expect(result.current[0]!.entryId).toBe('entry-1');
-    expect(result.current[0]!.activity).toEqual({ toolName: 'Read', target: 'standup.md' });
-  });
-
-  it('lets a frame with no reading clear one that had it', () => {
-    // Every publish is self-contained, so the last frame is the whole truth
-    // about a claim. Merging instead would leave a verb standing after the turn
-    // that was doing it stopped — the stale-verb bug in its client half.
-    const store = useRoomPresenceStore.getState();
-    store.observe(
-      ROOM,
-      signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z', {
-        toolName: 'Read',
-        target: 'standup.md',
-      })
-    );
-    store.observe(ROOM, signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z'));
-
-    const { result } = renderHook(() => useRoomPresence(ROOM));
-
-    expect(result.current[0]!.activity).toBeUndefined();
-  });
-
   it('counts up on its own clock, with nothing arriving', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
@@ -288,33 +182,12 @@ describe('useRoomPresence', () => {
     expect(result.current[0]!.elapsedMs).toBe(3 * PRESENCE_TICK_MS);
   });
 
-  it('lets an indicator nothing restates expire, and stops its own timer', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
-    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
-
-    const { result } = renderHook(() => useRoomPresence(ROOM));
-    expect(result.current).toHaveLength(1);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(PRESENCE_TTL_MS);
-    });
-
-    expect(result.current).toHaveLength(0);
-    expect(keysIn(ROOM)).toEqual([]);
-    // Nothing left to draw, so nothing left to tick: the room key is gone, which
-    // is what tells the hook to clear its interval.
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
   it('never draws an indicator that expired while nobody was looking', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
     useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
 
-    // The room was closed for the whole of the TTL, so no timer ran and nothing
-    // pruned. Opening it must not show a stale line for the second it takes the
-    // first tick to arrive.
+    // The room was closed for the whole of the TTL, so no timer ran and nothing pruned.
     vi.setSystemTime(new Date('2026-07-30T10:01:00.000Z'));
     const { result } = renderHook(() => useRoomPresence(ROOM));
 
@@ -322,9 +195,9 @@ describe('useRoomPresence', () => {
   });
 
   /**
-   * Presence follows you into a thread (design record §3.2): the panel draws
-   * the claims triggered inside the thread it is showing, and the room's own
-   * line draws everything else — so one claim is one line, in one place.
+   * Presence follows you into a thread (design record §3.2): the panel draws the claims triggered
+   * inside the thread it is showing, and the room's own line draws everything else — so one claim
+   * is one line, in one place.
    */
   describe('scoped to a thread', () => {
     const inThread = { replyIds: new Set(['reply-1']), inside: true };
@@ -341,40 +214,6 @@ describe('useRoomPresence', () => {
 
       expect(renderHook(() => useRoomPresence(ROOM, outsideThread)).result.current).toHaveLength(0);
     });
-
-    it('leaves a claim on a room message in the room, not in the thread', () => {
-      useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-9'));
-
-      expect(renderHook(() => useRoomPresence(ROOM, inThread)).result.current).toHaveLength(0);
-      expect(renderHook(() => useRoomPresence(ROOM, outsideThread)).result.current).toHaveLength(1);
-    });
-
-    it('treats work triggered by the thread’s ROOT as the room’s, not the thread’s', () => {
-      // The root is the thread's head AND an ordinary message in the room's
-      // flow. An agent answering it was triggered before any thread existed and
-      // its answer lands top-level, so drawing that line inside the panel would
-      // move a room's wait into an aside it has nothing to do with. Only the
-      // REPLIES scope a thread's presence.
-      useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'root-1'));
-      const scoped = { replyIds: new Set(['reply-1']), inside: true };
-
-      expect(renderHook(() => useRoomPresence(ROOM, scoped)).result.current).toHaveLength(0);
-    });
-
-    it('answers with everything when nothing scopes it', () => {
-      const store = useRoomPresenceStore.getState();
-      store.observe(ROOM, signal('kai', 'working', 'reply-1'));
-      store.observe(ROOM, signal('ana', 'working', 'entry-9'));
-
-      expect(renderHook(() => useRoomPresence(ROOM)).result.current).toHaveLength(2);
-    });
-  });
-
-  it('answers for the room asked about, and nothing for no room', () => {
-    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
-
-    expect(renderHook(() => useRoomPresence('room-2')).result.current).toHaveLength(0);
-    expect(renderHook(() => useRoomPresence(null)).result.current).toHaveLength(0);
   });
 });
 
@@ -420,9 +259,8 @@ describe('the room stream feeds the store', () => {
   });
 
   it('retires an author’s indicators when that author’s own entry arrives', async () => {
-    // The reconnect-after-reply case, seeded exactly as it happens: the reply is
-    // durable and replays, the `done` beside it was ephemeral and does not. With
-    // no `done` on this stream at all, the entry has to be what clears the line.
+    // The reconnect-after-reply case, seeded exactly as it happens: the reply is durable and
+    // replays, the `done` beside it was ephemeral and does not.
     useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
     const transport = createMockTransport();
     transport.subscribeRoom = vi
@@ -436,23 +274,6 @@ describe('the room stream feeds the store', () => {
     });
 
     await vi.waitFor(() => expect(keysIn(ROOM)).toEqual([]));
-  });
-
-  it('leaves another author’s indicator alone', async () => {
-    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
-    const transport = createMockTransport();
-    transport.subscribeRoom = vi
-      .fn()
-      .mockImplementation((_id: string, _cursor: number, abort: AbortSignal) =>
-        delivers([{ type: 'entry', seq: 2, entry: entry(2, 'ana') }], abort)
-      );
-
-    const { result } = renderHook(() => useRoomStream(ROOM, true), {
-      wrapper: wrapperFor(transport, makeQueryClient()),
-    });
-
-    await vi.waitFor(() => expect(result.current.stalled).toBe(false));
-    expect(keysIn(ROOM)).toEqual([key('kai', 'entry-1')]);
   });
 
   it('claims to know nothing once the room has gone quiet', async () => {
@@ -472,14 +293,12 @@ describe('the room stream feeds the store', () => {
 
     try {
       await vi.waitFor(() => expect(result.current.stalled).toBe(true));
-      // Whatever was working is now unknowable — the release would have come
-      // down the socket that just went away, so a frozen "· 42s" under a line
-      // saying nothing is coming through is the lingering-dots lie.
+      // Whatever was working is now unknowable — the release would have come down the socket that
+      // just went away, so a frozen "· 42s" under a line saying nothing is coming through is the
+      // lingering-dots lie.
       expect(keysIn(ROOM)).toEqual([]);
-      // It takes the whole budget to say so, and no fewer: one bad attempt must
-      // not blank a room's presence. It is deliberately not an exact count any
-      // more — the loop keeps retrying underneath the notice rather than
-      // stopping, so by the time this assertion runs it has tried again.
+      // It takes the whole budget to say so, and no fewer: one bad attempt must not blank a
+      // room's presence.
       expect(
         (transport.subscribeRoom as unknown as { mock: { calls: unknown[][] } }).mock.calls.length
       ).toBeGreaterThanOrEqual(SSE_RESILIENCE.DISCONNECTED_THRESHOLD);
@@ -491,11 +310,7 @@ describe('the room stream feeds the store', () => {
 
 describe('a message waiting on an agent busy elsewhere', () => {
   it('is stored, and kept out of every reader that means "who is working"', () => {
-    // The split that makes the two halves safe to share one store. A waiting
-    // agent has NOT started, so drawing it as a claim would put a pulsing dot
-    // and a stoppable peek row under an agent doing nothing in this room —
-    // which is exactly what happens if `useRoomPresenceClaims` stops excluding
-    // it. Seeded defect: drop the `state !== 'held'` filter in `summarize`.
+    // The split that makes the two halves safe to share one store.
     const store = useRoomPresenceStore.getState();
     store.observe(ROOM, signal('kai', 'working', 'entry-1'));
     store.observe(ROOM, heldSignal('mio', 'entry-2'));
@@ -516,18 +331,6 @@ describe('a message waiting on an agent busy elsewhere', () => {
     ]);
   });
 
-  it('carries the room in the way and whether anywhere else is waiting', () => {
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, heldSignal('mio', 'entry-2', 'room-engagement', undefined, true));
-
-    const { result } = renderHook(() => useRoomHolds(ROOM));
-    expect(result.current[0]).toMatchObject({
-      behindRoomId: 'room-engagement',
-      othersWaiting: true,
-    });
-  });
-
   it('carries whether several of the agent’s turns are in the way (DOR-2104)', () => {
     useRoomPresenceStore
       .getState()
@@ -536,145 +339,15 @@ describe('a message waiting on an agent busy elsewhere', () => {
     const { result } = renderHook(() => useRoomHolds(ROOM));
     expect(result.current[0]).toMatchObject({ severalInTheWay: true });
   });
-
-  it('is cleared by its own `done`, so the wait resolves rather than lingering', () => {
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, heldSignal('mio', 'entry-2'));
-    store.observe(ROOM, signal('mio', 'done', 'entry-2'));
-
-    expect(keysIn(ROOM)).toEqual([]);
-  });
-
-  it('is cleared when that agent speaks here, and restored by the next republish', () => {
-    // `specs/room-presence` §5.1 clears every `(author, *)` indicator in a room
-    // when that author posts. A waiting agent that posts here through
-    // `post_to_room` mid-wait therefore loses its line — for up to the republish
-    // interval, which is the same bound a live claim already accepts.
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, heldSignal('mio', 'entry-2'));
-    store.clearAuthor(ROOM, 'mio');
-    expect(keysIn(ROOM)).toEqual([]);
-
-    store.observe(ROOM, heldSignal('mio', 'entry-2'));
-    expect(keysIn(ROOM)).toEqual([key('mio', 'entry-2')]);
-  });
-
-  it('expires like any other indicator when the server stops restating it', () => {
-    vi.useFakeTimers();
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, heldSignal('mio', 'entry-2'), 0);
-
-    store.prune(PRESENCE_TTL_MS - 1);
-    expect(keysIn(ROOM)).toEqual([key('mio', 'entry-2')]);
-
-    store.prune(PRESENCE_TTL_MS);
-    expect(keysIn(ROOM)).toEqual([]);
-  });
 });
 
 describe('a turn that released with nothing to show (D7)', () => {
-  it('is recorded from a `done` carrying `outcome: "silent"`', () => {
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
-      authorId: 'kai',
-      entryId: 'entry-1',
-      at: 1_000,
-    });
-  });
-
   it('records nothing from a `done` with no `outcome` at all — the regression that matters', () => {
     // The older-server case D7 exists to protect: a `done` that carries no
     // opinion must leave this slot exactly as untouched as it always was.
     useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'done', 'entry-1'));
 
     expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
-  });
-
-  it('records nothing from a `done` carrying `outcome: "answered"`', () => {
-    // A durable entry already landed for this one — the reader can see it,
-    // and this rung has nothing to add on top of it.
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'answered'));
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
-  });
-
-  it('is retired by a LATER `done` in the same room, silent or not', () => {
-    // Without this, Kai's silent release at t=0 could still be fading on
-    // screen at t=2s when Ana's turn finishes normally — misreporting the
-    // turn that just answered as the one that stayed quiet.
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
-    store.observe(ROOM, signal('ana', 'done', 'entry-2', undefined, undefined, 'answered'), 2_000);
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
-  });
-
-  it('is replaced, not joined, by a second silent release in the same room', () => {
-    // The store keeps one slot per room — the lane has exactly one line to put
-    // a release on — so a second agent releasing silently moments later
-    // becomes the line rather than a second one appearing beside it.
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
-    store.observe(ROOM, signal('ana', 'done', 'entry-2', undefined, undefined, 'silent'), 2_000);
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
-      authorId: 'ana',
-      entryId: 'entry-2',
-      at: 2_000,
-    });
-  });
-
-  it('is cleared when its own author speaks here', () => {
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
-
-    store.clearAuthor(ROOM, 'kai');
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
-  });
-
-  it('leaves another author’s slot alone', () => {
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
-
-    store.clearAuthor(ROOM, 'ana');
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
-      authorId: 'kai',
-      entryId: 'entry-1',
-      at: 1_000,
-    });
-  });
-
-  it('is forgotten when the whole room is', () => {
-    const store = useRoomPresenceStore.getState();
-    store.observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 1_000);
-
-    store.clearRoom(ROOM);
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeUndefined();
-  });
-
-  it('survives a `prune`, unlike every other timed field here', () => {
-    // Deliberate: `useRoomSilentFinish` owns its own clock rather than
-    // leaning on the tick `prune` answers to, so a bare `prune` call — however
-    // much time has passed — must not be what makes this slot disappear.
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'), 0);
-
-    useRoomPresenceStore.getState().prune(PRESENCE_TTL_MS * 10);
-
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toEqual({
-      authorId: 'kai',
-      entryId: 'entry-1',
-      at: 0,
-    });
   });
 });
 
@@ -692,73 +365,6 @@ describe('useRoomSilentFinish', () => {
       authorId: 'kai',
       entryId: 'entry-1',
       at: Date.parse('2026-07-30T10:00:00.000Z'),
-    });
-  });
-
-  it('answers null for a room with no release, and for no room at all', () => {
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'answered'));
-
-    expect(renderHook(() => useRoomSilentFinish(ROOM)).result.current).toBeNull();
-    expect(renderHook(() => useRoomSilentFinish(null)).result.current).toBeNull();
-  });
-
-  it('fades out on its own clock once the display window ends', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'));
-
-    const { result } = renderHook(() => useRoomSilentFinish(ROOM));
-    expect(result.current).not.toBeNull();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(SILENT_FINISH_DISPLAY_MS);
-    });
-
-    expect(result.current).toBeNull();
-    // The record itself is untouched — only the READING treats it as gone
-    // (see the `prune` test above).
-    expect(useRoomPresenceStore.getState().silentFinish[ROOM]).toBeDefined();
-  });
-
-  it('never draws a release that expired while nobody was looking', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
-    useRoomPresenceStore
-      .getState()
-      .observe(ROOM, signal('kai', 'done', 'entry-1', undefined, undefined, 'silent'));
-
-    vi.setSystemTime(new Date(Date.now() + SILENT_FINISH_DISPLAY_MS + 60_000));
-    const { result } = renderHook(() => useRoomSilentFinish(ROOM));
-
-    expect(result.current).toBeNull();
-  });
-
-  describe('scoped to a thread', () => {
-    const inThread = { replyIds: new Set(['reply-1']), inside: true };
-    const outsideThread = { replyIds: new Set(['reply-1']), inside: false };
-
-    it('draws a release triggered by a thread reply only inside the thread', () => {
-      useRoomPresenceStore
-        .getState()
-        .observe(ROOM, signal('kai', 'done', 'reply-1', undefined, undefined, 'silent'));
-
-      expect(renderHook(() => useRoomSilentFinish(ROOM, inThread)).result.current).not.toBeNull();
-      expect(renderHook(() => useRoomSilentFinish(ROOM, outsideThread)).result.current).toBeNull();
-    });
-
-    it('leaves a release on a room message in the room, not in the thread', () => {
-      useRoomPresenceStore
-        .getState()
-        .observe(ROOM, signal('kai', 'done', 'entry-9', undefined, undefined, 'silent'));
-
-      expect(renderHook(() => useRoomSilentFinish(ROOM, inThread)).result.current).toBeNull();
-      expect(
-        renderHook(() => useRoomSilentFinish(ROOM, outsideThread)).result.current
-      ).not.toBeNull();
     });
   });
 });

@@ -180,7 +180,7 @@ import { z } from 'zod';
 import path from 'node:path';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { canvasSourcePath, readCanvasFileText, type CanvasFileText } from '../canvas/index.js';
-import type { CanvasDocument } from '@dorkos/shared/room-schemas';
+import { ReactionEmojiSchema, type CanvasDocument } from '@dorkos/shared/room-schemas';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
@@ -207,7 +207,7 @@ import { RoomError } from './room-errors.js';
 import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, requireAgentCwd, toolCallerOf } from './service/room-caller-author.js';
-import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { defuseFile, defuseUntrusted, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import {
   projectMemberMatches,
   projectMemberRoomList,
@@ -497,7 +497,7 @@ export const roomsDomain: CapabilityDomain = {
               'one for every message it shows and names the message you are answering; outside ' +
               'one, read the room history and use the entryId it returns.'
           ),
-        emoji: z.string().min(1).max(16).describe('One emoji, e.g. 👍.'),
+        emoji: ReactionEmojiSchema.describe('One emoji, e.g. 👍.'),
         on: z
           .boolean()
           .optional()
@@ -1396,7 +1396,7 @@ async function readRoomCanvas(
       documents: canvas.list(input.roomId).map((document) => ({
         documentId: document.id,
         type: document.contentType,
-        title: sanitizeIdentity(document.title) ?? document.title,
+        title: sanitizeIdentity(document.title) ?? 'Untitled',
         author: authorLabel(rooms, document.authorId),
         pinned: document.pinned,
         lastChangedAt: document.lastTouchedAt,
@@ -1420,7 +1420,7 @@ async function readRoomCanvas(
     note: UNTRUSTED_NOTE,
     documentId: document.id,
     type: document.contentType,
-    title: sanitizeIdentity(document.title) ?? document.title,
+    title: sanitizeIdentity(document.title) ?? 'Untitled',
     author: authorLabel(rooms, document.authorId),
     pinned: document.pinned,
     ...(document.treeKind !== undefined
@@ -1445,9 +1445,9 @@ async function readRoomCanvas(
   // the file route uses, so nothing here widens what a caller can reach.
   const filePath = canvasSourcePath(document.content);
   if (filePath !== null) {
-    return { ...metadata, ...(await readFileBacked(rooms, document, filePath)) };
+    return { ...metadata, ...defuseFile(await readFileBacked(rooms, document, filePath)) };
   }
-  return { ...metadata, content: document.content };
+  return { ...metadata, content: defuseUntrusted(document.content) };
 }
 
 /**

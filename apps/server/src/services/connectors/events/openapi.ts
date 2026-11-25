@@ -11,6 +11,7 @@ import {
   ConnectorAgentEventSubscriptionQuerySchema,
   ConnectorAgentEventSubscriptionPageSchema,
 } from '@dorkos/shared/connector-event-schemas';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 /** Register the owner-only receive-consent and write-only signing setup routes. */
 export function registerConnectorEventOpenApi(registry: OpenAPIRegistry): void {
@@ -27,16 +28,18 @@ export function registerConnectorEventOpenApi(registry: OpenAPIRegistry): void {
         description: 'Current agent-scoped receive grants.',
         content: { 'application/json': { schema: ConnectorAgentEventSubscriptionPageSchema } },
       },
-      400: { description: 'An agent or cursor is invalid.' },
-      401: { description: 'The API key is missing or no longer active.' },
-      403: { description: 'Agent runtime credentials cannot act as a program API key.' },
-      404: { description: 'The agent is not owned by this API key user.' },
+      400: problemResponse('An agent or cursor is invalid.'),
+      401: problemResponse('The API key is missing or no longer active.'),
+      403: problemResponse('Agent runtime credentials cannot act as a program API key.'),
+      404: problemResponse('The agent is not owned by this API key user.'),
     },
   });
   const prefix = '/api/connectors/connections/{connectionId}/events';
   const params = z.object({ connectionId: z.string().min(1) });
   const query = z.object({ cursor: z.string().max(512).optional() });
-  const error = { description: 'Notifications are unavailable or the owner decision changed.' };
+  const error = problemResponse(
+    'Notifications are unavailable (`temporarily_unavailable`), the choice changed (`precondition_failed`) or the destination can’t take them (`destination_unavailable`).'
+  );
   for (const [path, schema, summary] of [
     [
       'definitions',

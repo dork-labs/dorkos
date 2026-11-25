@@ -1,0 +1,124 @@
+name: queue-reentry
+
+# Puts a pull request back into the merge queue after the queue took it out
+# (DOR-5098). When the queue removes a pull request (a check failed in the
+# group build, a conflict with an entry ahead, `main` red), GitHub turns its
+# auto-merge off and nothing turned it back on: PRs auto-merge from the moment
+# they open (scripts/open-pr.sh), so nobody re-arms them, and on 2026-11-24
+# 9 of 14 ejections waited over an hour. This turns auto-merge back on once the
+# head is green and merges cleanly, which queues it again; a PR that conflicts
+# with `main` gets one comment per head asking the author to merge `main`.
+#
+# It also tells the author of any PR that waits on auto-merge but conflicts
+# with `main`, once per head: GitHub has no merge commit to test for it, so no
+# `pull_request` run starts (no checks, no review, no Security verdict) and
+# nothing else says why (#4296, 2026-11-24). That path only comments, and is
+# read from the same one list query.
+#
+# The decision and every GitHub call are scripts/queue-reentry.sh (fixtures:
+# scripts/test-queue-reentry.sh). It never undoes a person's dequeue or a hold,
+# puts one head back at most twice, and leaves a head alone when
+# scripts/queue-repeat-guard.sh would take it straight back out. Ledger:
+# ci/ledger/261124-152032-queue-reentry.md.
+#
+# WHEN IT RUNS. Scheduled workflows are throttled here (a median gap of about
+# 162 minutes against a 10-minute ask; review-redispatch.yml ran once in the
+# 15 hours after it landed), so the schedule is only the backstop. The sweep
+# also runs when `test` or `pr-gates` finishes: on a merge group, which is when
+# the queue ejects, and on a pull request that went green, which is when an
+# ejected PR whose author merged `main` becomes ready. A conflicting PR starts
+# no runs of its own, so any other PR's run finishing is what notices it.
+# `workflow_run` runs the
+# default branch's copy of this file, like `schedule`; nothing from a pull
+# request is checked out or run, so a pull request cannot change what judges
+# it. The checkout pins the default branch so a dispatch from a branch does too.
+#
+# Never gates a merge and never goes red: every failure is a `::warning::`,
+# and anything that cannot be read means "do nothing".
+#
+# WHOSE KEY: the `dorkos-merge-tail` GitHub App, as in queue-repeat-guard.yml.
+# Turning auto-merge on is the app's pull-requests and contents write; it has
+# no Administration permission. Its own auto-merge events are how the script
+# counts re-entries, so it is told the app's login (`app-slug`).
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_run:
+    workflows: [test, pr-gates]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print the verdict for every ejected or conflicting PR without changing anything'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  sweep:
+    # A merge-group run finishing is when an ejection happens; a pull-request
+    # run matters only when it went green. Anything else skips, without a runner.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.event == 'merge_group' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'success')
+    # One sweep at a time, so two cannot both comment; a burst of finished runs
+    # collapses into the one waiting behind the running sweep.
+    concurrency:
+      group: queue-reentry
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    # The merge-tail App key lives only in `automation`, which deploys main
+    # only (DOR-4030). A schedule or workflow_run run is main's copy on main, so it enters.
+    environment: automation
+    # One list read, then a few reads per ejected or conflicting PR.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/queue-reentry.sh
+            scripts/queue-repeat-guard.sh
+            scripts/should-arm-automerge.sh
+            ci/required-checks.json
+          sparse-checkout-cone-mode: false
+
+      - name: Mint the merge-tail app token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+          # The same scoped-down set queue-repeat-guard.yml mints, all grants
+          # the app already holds: checks to read the head's check runs, pull
+          # requests to comment and turn auto-merge on, contents for the merge.
+          permission-checks: read
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Put queue-ejected pull requests back; tell conflicting ones
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          REENTRY_ACTOR: ${{ steps.app-token.outputs.app-slug }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          # Not -e (GitHub's default shell sets it): every failure is handled.
+          set +e -uo pipefail
+          [[ -n "$GH_TOKEN" ]] || { echo "::warning::queue-reentry: no app token; nothing swept"; exit 0; }
+          [[ -f scripts/queue-reentry.sh ]] || { echo "::warning::queue-reentry: main has no scripts/queue-reentry.sh"; exit 0; }
+          args=()
+          [[ "$DRY_RUN" == true ]] && args=(--dry-run)
+          bash scripts/queue-reentry.sh sweep "${args[@]}" \
+            || echo "::warning::queue-reentry: the sweep stopped early"

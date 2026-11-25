@@ -45,6 +45,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { carryInteractionForward } from '../lib/carry-interaction-forward';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import { sequenceEnqueue } from '../lib/enqueue-sequencer';
+import { usePrepareSessionSend } from './messaging/use-prepare-session-send';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus, TransportErrorInfo } from './chat-types';
@@ -131,7 +132,7 @@ interface UseSessionSubmitParams {
 
 /**
  * The server's refusal code, and the agent it names, when a send was refused
- * for a reason the app can act on (`AGENT_PAUSED` offers Resume, spec
+ * for a reason the app can act on (`agent_paused` offers Resume, spec
  * `audit-trail` PR5). Empty for any other failure.
  */
 function refusalOf(err: unknown): Pick<TransportErrorInfo, 'code' | 'agentId'> {
@@ -228,6 +229,7 @@ export function useSessionSubmit({
   // The chat this panel shows NOW. A send's late steps read it after the POST
   // resolves: by then a tab switch may have put another chat here (DOR-4622).
   const shownSessionIdRef = useRef(sessionId);
+  const prepareSend = usePrepareSessionSend(sessionId, setError);
   useEffect(() => {
     shownSessionIdRef.current = sessionId;
   });
@@ -365,45 +367,14 @@ export function useSessionSubmit({
       // no-op against the effect that already attached this same session.
       streamManager.attachSession(targetSessionId, cwd);
 
-      // Attachments upload next — before the optimistic bubble, before the
-      // trigger latch, before the composer is cleared.
-      //
-      // Latching first made the session read `streaming` for the whole upload:
-      // the button turned into a red Stop that called `interruptSession` on a
-      // session with no turn, the `.catch()` swallowed the refusal, and the
-      // click did nothing at all. Worse, a hung upload never cleared the latch,
-      // because the watchdog that releases it is only armed after the POST, so
-      // the composer stayed wedged in queue mode indefinitely. While this runs
-      // the composer shows the upload in place of Stop and both submit paths
-      // are closed (`isUploading`) — and the upload itself can be cancelled,
-      // which is what keeps that window from becoming a wedge of its own
-      // (`useFileUpload.cancelUpload`).
-      let finalContent: string;
-      try {
-        // The kickoff content is already the exact message to deliver — never
-        // run it through the file/content transform (there are no pending files
-        // on a brand-new session, and it must reach the model verbatim so the
-        // fence stays intact for suppression).
-        finalContent =
-          !opts.kickoff && transformContentRef.current
-            ? await transformContentRef.current(content)
-            : content;
-      } catch (err) {
-        // Nothing was sent, and the words are still in the composer because
-        // `clearInput` has not run yet — the clear used to happen before the
-        // upload, with nothing to put the words back, so an upload failure on
-        // an ordinary send destroyed the message outright (DOR-480).
-        if (opts.kickoff) throw err;
-        setError({
-          heading: 'Couldn’t send message',
-          message: (err as Error).message || 'The attachment didn’t upload. Try again.',
-          // The words are still in the composer (or back in the queue row), so
-          // the retry is a keystroke away. A Retry button here would re-send the
-          // PREVIOUS user message, which is not what anyone asked for.
-          retryable: false,
-        });
-        return;
-      }
+      const preparation = prepareSend(content, {
+        draft: routeContext?.draft,
+        kickoff: opts.kickoff,
+        clearInput,
+        transform: transformContentRef.current,
+      });
+      const ready = preparation instanceof Promise ? await preparation : preparation;
+      if (!ready) return;
 
       const streamStore = useSessionStreamStore.getState();
 
@@ -453,7 +424,7 @@ export function useSessionSubmit({
       // instead of double-submitting. turn_start clears it.
       streamStore.setTriggerPending(targetSessionId, true);
 
-      if (clearInput) setInput('');
+      if (ready.clearInput) setInput('');
 
       try {
         // Client UI-state snapshot for agent situational awareness (ADR-0273),
@@ -514,7 +485,7 @@ export function useSessionSubmit({
 
         const { sessionId: canonicalId } = await transport.postMessage(
           targetSessionId,
-          finalContent,
+          ready.content,
           cwd ?? undefined,
           postOptions
         );
@@ -626,6 +597,7 @@ export function useSessionSubmit({
       setInput,
       setError,
       tryNativeCommand,
+      prepareSend,
       agentPath,
       agentLookupPending,
       agentLookupFailed,

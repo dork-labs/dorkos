@@ -91,9 +91,13 @@ describe('only browser-shard (1/6) on main saves, and only build entries', () =>
     expect(build).toContain('--summarize');
   });
 
-  it('trims on refs/heads/main for shard 1, after the build and before the save', () => {
+  it('trims on refs/heads/main for shard 1, never on a bisect run, after the build and before the save', () => {
     const trim = stepText(shard, "Keep only this run's build entries in the turbo cache");
-    expect(trim).toContain("if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}");
+    // A rolling-bisect run (DOR-5122) tests an older merge, so it must not save
+    // under main head's sha.
+    expect(trim).toContain(
+      "if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 && !inputs.bisect_sha }}"
+    );
     expect(trim).toContain('bash scripts/keep-build-cache-only.sh');
 
     const save = stepText(shard, 'Save the builds for the queue and pull requests');

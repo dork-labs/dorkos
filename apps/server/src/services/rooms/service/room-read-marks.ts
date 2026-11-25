@@ -33,6 +33,7 @@ import type {
 } from '../manage/room-member-directory.js';
 import { projectDetail } from './room-detail-projection.js';
 import type { RoomService } from '../room-service.js';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { projectEntry } from './room-entry-projection.js';
 
@@ -146,6 +147,7 @@ export function projectRoomsRead(
  * Mark the caller's turn when a room in its member list has a bridged member, and project the list.
  * A room's name is typed by a person and read by a model, so it goes through the same sanitizer
  * every other label does, and lands on `null` when nothing survives it, as `projectDetail` does.
+ * Each row carries its `dork:room:` reference as `ref`, as `projectDetail` does (DOR-5046).
  *
  * @param rooms - The rooms service.
  * @param caller - The verified call.
@@ -170,6 +172,7 @@ export function projectMemberRoomList(
   if (outside) markCallerTurnOutsider(caller, { kind: 'room' });
   return listed.map((room) => ({
     roomId: room.roomId,
+    ref: dorkReferenceOrNull('room', room.roomId),
     kind: room.kind,
     name: sanitizeIdentity(room.name) ?? null,
     joined: room.joinedAt,

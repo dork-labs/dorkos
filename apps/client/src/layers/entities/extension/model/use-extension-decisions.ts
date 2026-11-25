@@ -9,9 +9,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  DECISION_OFFER_GONE_CODE,
   DECISION_OFFER_TTL_MS,
-  DECISION_STALE_CODE,
   DecisionActionResponseSchema,
   DecisionOfferResponseSchema,
   ListExtensionDecisionsResponseSchema,
@@ -29,6 +27,7 @@ import {
 import { useEventSubscription } from '@/layers/shared/model';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { createRefreshLeader } from './refresh-leader';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** Which mounted copy of {@link useExtensionDecisions} answers an event. */
 const useIsDecisionsRefreshLeader = createRefreshLeader();
@@ -55,12 +54,19 @@ export interface ExtensionDecisionsState {
   isError: boolean;
 }
 
+/** A refused answer, with the problem's code (`precondition_failed` for a question that changed). */
+type DecisionFailure = Error & { code?: string };
+
+/** The code an answer to a question that changed since it was shown is refused with. */
+const QUESTION_CHANGED = 'precondition_failed';
+
+/** The code an answer to a settled question, or to an offer that lapsed, is refused with. */
+const ALREADY_SETTLED = 'already_resolved';
+
 /** A failed request's own sentence, or the status when it sent none. */
-async function failureOf(res: Response): Promise<Error & { code?: string }> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-  const error: Error & { code?: string } = new Error(
-    body.error ?? `The server answered ${res.status}`
-  );
+async function failureOf(res: Response): Promise<DecisionFailure> {
+  const body = await readResponseError(res, `The server answered ${res.status}`);
+  const error: DecisionFailure = new Error(body.message);
   if (body.code) error.code = body.code;
   return error;
 }
@@ -252,7 +258,7 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
           return null;
         }
         // A question that changed is not a failure to shout about.
-        if (err.code === DECISION_STALE_CODE) toast(err.message);
+        if (err.code === QUESTION_CHANGED) toast(err.message);
         else toast.error(err.message);
         return null;
       }
@@ -304,13 +310,13 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
       if (localOffers.delete(decisionId)) publishOffers();
       if (message) toast(message);
     },
-    onError: (err: Error & { code?: string }, { accept }) => {
+    onError: (err: DecisionFailure, { accept }) => {
       if (err.code === STEP_UP_REQUIRED_CODE) {
         toast(accept ? STEP_UP_NOT_ALLOWED_MESSAGE : STEP_UP_NOT_CONFIRMED_MESSAGE);
         return;
       }
       // A dismiss of an offer that already lapsed is not news.
-      if (!accept && err.code === DECISION_OFFER_GONE_CODE) return;
+      if (!accept && err.code === ALREADY_SETTLED) return;
       toast.error(err.message);
     },
     onSettled: (_data, _error, { decisionId }) => {

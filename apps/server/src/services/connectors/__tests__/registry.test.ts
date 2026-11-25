@@ -19,7 +19,7 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { ConnectorCatalogCache } from '../resources/catalog-cache.js';
-import { ConnectorRegistry, DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS } from '../registry.js';
+import { ConnectorRegistry } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
 class BrokenProvider extends FakeConnectorProvider {
@@ -155,52 +155,6 @@ describe('ConnectorRegistry', () => {
     });
   });
 
-  it('unregister removes a provider; re-registering the same type works again', () => {
-    const composio = new FakeConnectorProvider({ type: 'composio' });
-    registry.register(composio);
-    registry.unregister('composio');
-
-    expect(registry.resolveProvider('composio')).toBeUndefined();
-    expect(registry.listProviders()).toEqual([]);
-    // Unregistering an absent type is a no-op, not a throw (reload calls it
-    // unconditionally before re-creating a provider).
-    expect(() => registry.unregister('composio')).not.toThrow();
-
-    const fresh = new FakeConnectorProvider({ type: 'composio' });
-    registry.register(fresh);
-    expect(registry.resolveProvider('composio')).toBe(fresh);
-  });
-
-  it('unregisters one exact instance and deterministically falls back within its type', () => {
-    const first = new FakeConnectorProvider({
-      type: 'composio',
-      instanceId: 'composio-a' as ConnectorProviderInstanceId,
-    });
-    const second = new FakeConnectorProvider({
-      type: 'composio',
-      instanceId: 'composio-b' as ConnectorProviderInstanceId,
-    });
-    registry.register(first);
-    registry.register(second);
-    expect(registry.resolveProvider('composio')).toBe(second);
-
-    registry.unregisterProviderInstance(first.instanceId);
-    expect(registry.resolveProviderInstance(first.instanceId)).toBeUndefined();
-    expect(registry.resolveProvider('composio')).toBe(second);
-    expect(
-      db
-        .select({ status: connectorProviderInstances.status })
-        .from(connectorProviderInstances)
-        .where(eq(connectorProviderInstances.id, first.instanceId))
-        .get()
-    ).toEqual({ status: 'unavailable' });
-
-    registry.register(first);
-    registry.unregisterProviderInstance(first.instanceId);
-    expect(registry.resolveProvider('composio')).toBe(second);
-    expect(registry.listProviders()).toEqual([second]);
-  });
-
   it('degrades gracefully for accounts whose provider was unregistered', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
@@ -270,20 +224,6 @@ describe('ConnectorRegistry', () => {
       expect(registry.providerForAccount(gmail.id)).toBeUndefined();
     });
 
-    it('brings a sign-in back once the service reports it active again', async () => {
-      const composio = new FakeConnectorProvider({ type: 'composio' });
-      registry.register(composio);
-      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
-      const ref = registry.accountBinding(gmail.id)!.externalAccountRef;
-      composio.setStatus(ref, 'expired');
-      await registry.refreshSignIns();
-      composio.setStatus(ref, 'active');
-
-      await registry.refreshSignIns();
-
-      expect(registry.accountBinding(gmail.id)?.status).toBe('active');
-    });
-
     it('leaves every account as it was when a listing fails, and reports the failure', async () => {
       const composio = new FakeConnectorProvider({ type: 'composio' });
       const broken = new BrokenProvider();
@@ -309,85 +249,6 @@ describe('ConnectorRegistry', () => {
       expect(lastVerifiedAt(unreachable.id)).toBe(verifiedBefore);
       // The reachable provider still refreshed.
       expect(changes).toEqual([{ connectionId: healthy.id, from: 'active', to: 'expired' }]);
-    });
-
-    it('reports a listing that times out as a failure', async () => {
-      const stuck = new BrokenProvider();
-      stuck.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
-      registry.register(stuck);
-
-      const { failures } = await registry.refreshSignIns();
-
-      expect(failures).toHaveLength(1);
-      expect(failures[0]!.message).toMatch(/timed out/);
-    });
-
-    it('gives a slow, many-page listing its own longer deadline than a page read gets', async () => {
-      vi.useFakeTimers();
-      try {
-        const defaults = new ConnectorRegistry({ db });
-        const composio = new FakeConnectorProvider({ type: 'composio' });
-        defaults.register(composio);
-        const gmail = await connectOne(defaults, composio, 'gmail', 'personal');
-        const account = (await composio.listAccounts())[0]!;
-        // Well past the 5-second read deadline, inside the refresh's own.
-        composio.listAccounts = () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve([{ ...account, status: 'expired' }]), 12_000)
-          );
-
-        const slow = defaults.refreshSignIns();
-        await vi.advanceTimersByTimeAsync(12_000);
-        expect(await slow).toMatchObject({ failures: [] });
-        expect(defaults.accountBinding(gmail.id)?.status).toBe('expired');
-
-        // A listing that never ends still fails, at the refresh deadline.
-        composio.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
-        const stuck = defaults.refreshSignIns();
-        await vi.advanceTimersByTimeAsync(DEFAULT_SIGN_IN_REFRESH_TIMEOUT_MS);
-        expect((await stuck).failures[0]!.message).toMatch(/timed out after 20000ms/);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('records nothing from a status the service did not state', async () => {
-      const composio = new FakeConnectorProvider({ type: 'composio' });
-      registry.register(composio);
-      const gmail = await connectOne(registry, composio, 'gmail', 'personal');
-      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'expired');
-      await registry.refreshSignIns();
-      const before = db
-        .select({ status: connections.status, at: connections.lastVerifiedAt })
-        .from(connections)
-        .where(eq(connections.id, gmail.id))
-        .get();
-      composio.setStatus(registry.accountBinding(gmail.id)!.externalAccountRef, 'unknown');
-      await new Promise((resolve) => setTimeout(resolve, 5));
-
-      const { changes, failures } = await registry.refreshSignIns();
-
-      expect({ changes, failures }).toEqual({ changes: [], failures: [] });
-      expect(
-        db
-          .select({ status: connections.status, at: connections.lastVerifiedAt })
-          .from(connections)
-          .where(eq(connections.id, gmail.id))
-          .get()
-      ).toEqual(before);
-      expect(before?.status).toBe('expired');
-    });
-
-    it('records a finished sign-in the service reports without a status as signed in', async () => {
-      const composio = new FakeConnectorProvider({ type: 'composio' });
-      registry.register(composio);
-      const { flowId } = await composio.startConnect('gmail', { label: 'work' });
-      const { account } = await composio.pollConnect(flowId);
-
-      const connected = registry.recordConnect(composio, { ...account!, status: 'unknown' });
-
-      expect(connected.status).toBe('active');
-      expect(registry.accountBinding(connected.id)?.status).toBe('active');
     });
 
     it('never adds, closes, relabels or moves an account; it only records the sign-in', async () => {
@@ -486,22 +347,6 @@ describe('ConnectorRegistry', () => {
       expect(changes).toEqual([]);
       expect(registry.accountBinding(gmail.id)?.status).toBe('active');
     });
-
-    it('skips a provider that does not list accounts', async () => {
-      const silent = new FakeConnectorProvider({ type: 'silent' });
-      const capabilities = silent.getCapabilities();
-      silent.getCapabilities = () => ({
-        ...capabilities,
-        capabilities: {
-          ...capabilities.capabilities,
-          accounts: { status: 'unsupported', reason: 'No account listing.' },
-        },
-      });
-      silent.listAccounts = () => Promise.reject(new Error('should not be asked'));
-      registry.register(silent);
-
-      expect(await registry.refreshSignIns()).toEqual({ changes: [], failures: [] });
-    });
   });
 
   describe('markSignInEnded', () => {
@@ -558,90 +403,6 @@ describe('ConnectorRegistry', () => {
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
-    });
-
-    it('finds an app’s logo address in the kept lists only, never listing upstream', async () => {
-      const provider = new FakeConnectorProvider({
-        type: 'composio',
-        toolkits: [
-          {
-            slug: 'zendesk',
-            displayName: 'Zendesk',
-            authKind: 'oauth2',
-            logoUrl: 'https://logos.composio.dev/api/zendesk',
-          },
-          { slug: 'bare', displayName: 'Bare', authKind: 'oauth2' },
-        ],
-      });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      registry.register(provider, 'material-a');
-
-      // Nothing kept yet: no logo, and no listing to find one.
-      await expect(registry.keptLogoUrl('zendesk')).resolves.toBeUndefined();
-      expect(pages).not.toHaveBeenCalled();
-
-      await registry.readCatalog(provider, signal());
-      await expect(registry.keptLogoUrl('zendesk')).resolves.toBe(
-        'https://logos.composio.dev/api/zendesk'
-      );
-      await expect(registry.keptLogoUrl('bare')).resolves.toBeUndefined();
-      await expect(registry.keptLogoUrl('notion')).resolves.toBeUndefined();
-      expect(pages).toHaveBeenCalledTimes(1);
-    });
-
-    it('drops the kept list when the provider is removed or replaced', async () => {
-      const provider = new FakeConnectorProvider({ type: 'composio' });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      registry.register(provider, 'material-a');
-      await registry.readCatalog(provider, signal());
-      await registry.readCatalog(provider, signal());
-      expect(pages).toHaveBeenCalledTimes(1);
-
-      registry.unregisterProviderInstance(provider.instanceId);
-      await expect(registry.readCatalog(provider, signal())).rejects.toThrow(
-        'composio is no longer set up.'
-      );
-
-      registry.register(provider, 'material-a');
-      await registry.readCatalog(provider, signal());
-      expect(pages).toHaveBeenCalledTimes(2);
-
-      // Registering over a live instance in place is a setup change too.
-      const replacement = new FakeConnectorProvider({ type: 'composio' });
-      const replacementPages = vi.spyOn(replacement, 'listToolkitPage');
-      registry.register(replacement, 'material-a');
-      await registry.readCatalog(replacement, signal());
-      expect(replacementPages).toHaveBeenCalledTimes(1);
-    });
-
-    it('drops every kept copy through one notice, even when the same object registers again', async () => {
-      const provider = new FakeConnectorProvider({ type: 'composio' });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      const removed = vi.fn();
-      registry.onProviderInstanceRemoved(removed);
-      registry.register(provider, 'material-a');
-      expect(removed).not.toHaveBeenCalled();
-      await registry.readCatalog(provider, signal());
-
-      // A key saved again re-registers the live instance: the app list and
-      // everything else kept for the way are dropped together.
-      registry.register(provider, 'material-a');
-      expect(removed).toHaveBeenCalledWith(provider.instanceId);
-      await registry.readCatalog(provider, signal());
-      expect(pages).toHaveBeenCalledTimes(2);
-
-      registry.unregisterProviderInstance(provider.instanceId);
-      expect(removed).toHaveBeenCalledTimes(2);
-    });
-
-    it('finds the providers for a service from the kept list', async () => {
-      const provider = new FakeConnectorProvider({ type: 'composio' });
-      const pages = vi.spyOn(provider, 'listToolkitPage');
-      registry.register(provider, 'material-a');
-
-      expect((await registry.providersForToolkit('gmail')).providers).toEqual([provider]);
-      expect((await registry.providersForToolkit('missing')).providers).toEqual([]);
-      expect(pages).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -1,5 +1,4 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
+import { Hono, type Context } from 'hono';
 import fs, { type FileHandle } from 'fs/promises';
 import { Readable } from 'node:stream';
 import path from 'path';
@@ -12,19 +11,26 @@ import {
   FileContentQuerySchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
-
 import {
   MEDIA_CONTENT_TYPES,
   sha256,
   resolveWithinCwd,
-  pathErrorReply,
   parseByteRange,
   servesInlineHere,
 } from '../lib/file-route-guards.js';
 import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem, pathRefusalProblem } from '../http/problems/boundary-refusal.js';
+import {
+  FILE_MISSING,
+  FOLDER_NOT_FILE,
+  NOT_ALLOWED_TO_CHANGE,
+  PATH_UNFOLLOWABLE,
+  pathCheckFailure,
+} from './file-problems.js';
+import { REFUSED_BECAUSE } from './file-saves/refused-because.js';
 import { readQuery } from '../http/request-query.js';
 import fileEntryRoutes from './file-entries.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -34,6 +40,65 @@ import {
 } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 import { CanonicalFileIdentityChangedError } from '../services/canvas/doc-channel/writes/canonical-writer.js';
 import { disclosableRefusalReason } from '../services/canvas/doc-channel/authorization.js';
+
+/** A file the server could not read for a reason that is not the caller's. */
+const FILE_UNREADABLE = 'Couldn’t read that file. Try again.';
+
+/** A path that names a file where a folder was needed. */
+const FILE_NOT_FOLDER = 'That path is a file, not a folder.';
+
+/**
+ * Answer a save that threw: a fixed sentence per refusal, and for a refused
+ * canvas document save, the check that refused when the owner may know
+ * (DOR-4442). Never a path or the error's own text; the rest goes to the log.
+ *
+ * @param c - The Hono context.
+ * @param err - What the save threw.
+ * @returns The response.
+ */
+function saveFailure(c: Context, err: unknown): Response {
+  const refusal = pathRefusalProblem(c, err);
+  if (refusal) return refusal;
+  if (err instanceof CanonicalFileIdentityChangedError) {
+    return problem(c, 'precondition_failed', {
+      detail: 'This file was replaced while saving. Reload it, then save again.',
+    });
+  }
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'CANVAS_DOCUMENT_NOT_FOUND') {
+    // Which check refused, logged always and told to the owner when safe (DOR-4442).
+    logger.info('[files] a document save check refused', {
+      reason: (err as { reason?: string }).reason ?? null,
+    });
+    const reason = disclosableRefusalReason(err);
+    return problem(c, 'not_found', {
+      detail: reason ? REFUSED_BECAUSE[reason] : 'The document is not available.',
+    });
+  }
+  if (code === 'DOC_SAVE_ID_CONFLICT') {
+    return problem(c, 'precondition_failed', {
+      detail: 'This save doesn’t match the one recorded under its id.',
+    });
+  }
+  if (code === 'DOC_SAVE_FAILED') {
+    return problem(c, 'save_not_applied', {
+      detail: 'That save failed before it changed the file. Send a new save.',
+    });
+  }
+  if (code === 'DOC_SAVE_IN_DOUBT') {
+    return problem(c, 'temporarily_unavailable', {
+      detail: 'The last save needs checking first. Try again soon.',
+    });
+  }
+  if (code === 'ENOENT') return problem(c, 'not_found', { detail: FILE_MISSING });
+  if (code === 'NOT_A_FILE') return problem(c, 'not_a_file', { detail: FOLDER_NOT_FILE });
+  if (code === 'ELOOP' || code === 'ENOTDIR') {
+    return problem(c, 'invalid_request', { detail: PATH_UNFOLLOWABLE });
+  }
+  if (code === 'EACCES') return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
+  logger.error('[files] PUT /content write failed', { err });
+  return problem(c, 'internal_error', { detail: 'Couldn’t save that file. Try again.' });
+}
 
 /** Build confined file routes using the owning installation writer. */
 export function createFileRoutes(writes = new InstallationFileWrites()): Hono<ApiEnv> {
@@ -60,7 +125,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/raw', async (c) => {
     const parsed = RawFileQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, path: relPath } = parsed.data;
 
@@ -68,52 +133,44 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
     try {
       ({ resolved } = await resolveWithinCwd(cwd, relPath));
     } catch (err) {
-      const pathRefusal = pathErrorReply(err);
-      if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-      logger.error('[files] GET /raw boundary failed', { err, cwd, path: relPath });
-      return c.json({ error: 'Internal server error' }, 500);
+      return pathCheckFailure(c, err, 'GET /raw', { cwd, path: relPath });
     }
 
     const contentType = MEDIA_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
     if (!contentType) {
-      return c.json(
-        {
-          error: 'Only image, PDF, 3D-model, audio, and video files can be served',
-          code: 'UNSUPPORTED_TYPE',
-        },
-        415
-      );
+      return problem(c, 'unsupported_media_type', {
+        detail: 'Only pictures, PDFs, 3D models, sound and video open here.',
+      });
     }
 
     let size: number;
     try {
       const stat = await fs.stat(resolved);
       if (!stat.isFile()) {
-        return c.json({ error: 'Not a regular file', code: 'NOT_A_FILE' }, 400);
+        return problem(c, 'not_a_file', { detail: FOLDER_NOT_FILE });
       }
       size = stat.size;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
-        return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
+        return problem(c, 'not_found', { detail: FILE_MISSING });
       }
       if (code === 'ELOOP' || code === 'ENOTDIR') {
-        return c.json({ error: 'Invalid path', code }, 400);
+        return problem(c, 'invalid_request', { detail: PATH_UNFOLLOWABLE });
       }
       logger.error('[files] GET /raw stat failed', { err, resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: FILE_UNREADABLE });
     }
 
     // Resolve the requested byte range (if any) before writing media headers, so an
-    // unsatisfiable range answers as JSON without a media Content-Type getting stuck
-    // to the 416.
+    // unsatisfiable range answers as a problem without a media Content-Type getting
+    // stuck to the 416.
     const range = parseByteRange(c.req.header('range'), size);
     if (range.kind === 'unsatisfiable') {
       c.header('Content-Range', `bytes */${size}`);
-      return c.json(
-        { error: 'Requested range not satisfiable', code: 'RANGE_NOT_SATISFIABLE' },
-        416
-      );
+      return problem(c, 'range_not_satisfiable', {
+        detail: 'That part of the file doesn’t exist.',
+      });
     }
 
     const headers: Record<string, string> = {
@@ -143,14 +200,14 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
     // and a stream nobody reads would hold its file open.
     if (c.req.method === 'HEAD') return c.body(null, status, headers);
 
-    // Opened before answering, so a file gone since the stat is a JSON 500
+    // Opened before answering, so a file gone since the stat is a problem 500
     // rather than media headers with nothing behind them.
     let file: FileHandle;
     try {
       file = await fs.open(resolved, 'r');
     } catch (err) {
       logger.error('[files] GET /raw open failed', { err, resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: FILE_UNREADABLE });
     }
     const stream = file.createReadStream(streamOptions);
     stream.on('error', (err) => logger.error('[files] GET /raw stream failed', { err, resolved }));
@@ -160,18 +217,16 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/', async (c) => {
     const parsed = FileListQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       const validatedCwd = await validateBoundary(parsed.data.cwd);
       const result = await fileLister.listFiles(validatedCwd);
       return c.json(result);
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return c.json({ error: err.message, code: err.code }, 403);
-      }
+      if (err instanceof BoundaryError) return boundaryProblem(c, err);
       logger.error('[files] GET / failed', { err, cwd: parsed.data.cwd });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t list the files here. Try again.' });
     }
   });
 
@@ -190,47 +245,23 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.put('/content', async (c) => {
     const parsed = WriteFileRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     try {
       const result = parsed.data.documentSave
         ? await saveOriginalDocumentFile(writes, parsed.data, honoRequestFacts(c))
         : await writes.save(parsed.data);
+      if ('stale' in result) {
+        // The caller's copy is out of date: hand back what is there now, so
+        // the editor can reconcile without a second read.
+        return problem(c, 'precondition_failed', {
+          detail: 'This file changed since you opened it.',
+          extensions: result.stale,
+        });
+      }
       return c.json(result.body, result.status);
     } catch (err) {
-      const refusal = pathErrorReply(err);
-      if (refusal) return c.json(refusal.body, refusal.status);
-      if (err instanceof CanonicalFileIdentityChangedError)
-        return c.json(
-          {
-            error: 'File changed while waiting to save. Reload it before saving again.',
-            code: 'FILE_IDENTITY_CHANGED',
-          },
-          412
-        );
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'CANVAS_DOCUMENT_NOT_FOUND') {
-        // Which check refused, logged always and told to the owner when safe (DOR-4442).
-        logger.info('[files] a document save check refused', {
-          reason: (err as { reason?: string }).reason ?? null,
-        });
-        const reason = disclosableRefusalReason(err);
-        return c.json(
-          { error: 'The document is not available.', code, ...(reason ? { reason } : {}) },
-          404
-        );
-      }
-      if (code === 'DOC_SAVE_ID_CONFLICT' || code === 'DOC_SAVE_FAILED')
-        return c.json({ error: 'Save operation conflicts with its recorded identity.', code }, 412);
-      if (code === 'DOC_SAVE_IN_DOUBT')
-        return c.json({ error: 'The original save needs recovery.', code }, 503);
-      if (code === 'ENOENT') return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
-      if (code === 'NOT_A_FILE') return c.json({ error: 'Not a regular file', code }, 400);
-      if (code === 'ELOOP' || code === 'ENOTDIR')
-        return c.json({ error: 'Invalid path', code }, 400);
-      if (code === 'EACCES') return c.json({ error: 'Permission denied', code }, 403);
-      logger.error('[files] PUT /content write failed', { err });
-      return c.json({ error: 'Internal server error' }, 500);
+      return saveFailure(c, err);
     }
   });
 
@@ -244,7 +275,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/tree', async (c) => {
     const parsed = FileTreeQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, path: relPath, depth, showHidden } = parsed.data;
 
@@ -253,29 +284,26 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
     try {
       ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath ?? '.'));
     } catch (err) {
-      const pathRefusal = pathErrorReply(err);
-      if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-      logger.error('[files] GET /tree boundary failed', { err, cwd, path: relPath });
-      return c.json({ error: 'Internal server error' }, 500);
+      return pathCheckFailure(c, err, 'GET /tree', { cwd, path: relPath });
     }
 
     try {
       const stat = await fs.stat(resolved);
       if (!stat.isDirectory()) {
-        return c.json({ error: 'Not a directory', code: 'NOT_A_DIRECTORY' }, 400);
+        return problem(c, 'not_a_folder', { detail: FILE_NOT_FOLDER });
       }
       const entries = await fileLister.listTree(resolved, validatedCwd, depth, showHidden);
       return c.json({ entries });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
-        return c.json({ error: 'Directory not found', code: 'NOT_FOUND' }, 404);
+        return problem(c, 'not_found', { detail: 'That folder doesn’t exist.' });
       }
       if (code === 'ENOTDIR') {
-        return c.json({ error: 'Not a directory', code: 'NOT_A_DIRECTORY' }, 400);
+        return problem(c, 'not_a_folder', { detail: FILE_NOT_FOLDER });
       }
       logger.error('[files] GET /tree failed', { err, resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t list that folder. Try again.' });
     }
   });
 
@@ -289,7 +317,7 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
   router.get('/content', async (c) => {
     const parsed = FileContentQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { cwd, path: relPath } = parsed.data;
 
@@ -297,37 +325,34 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
     try {
       ({ resolved } = await resolveWithinCwd(cwd, relPath));
     } catch (err) {
-      const pathRefusal = pathErrorReply(err);
-      if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-      logger.error('[files] GET /content boundary failed', { err, cwd, path: relPath });
-      return c.json({ error: 'Internal server error' }, 500);
+      return pathCheckFailure(c, err, 'GET /content', { cwd, path: relPath });
     }
 
     let buffer: Buffer;
     try {
       const stat = await fs.stat(resolved);
       if (!stat.isFile()) {
-        return c.json({ error: 'Not a regular file', code: 'NOT_A_FILE' }, 400);
+        return problem(c, 'not_a_file', { detail: FOLDER_NOT_FILE });
       }
       if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) {
-        return c.json({ error: 'File too large to open as text', code: 'TOO_LARGE' }, 413);
+        return problem(c, 'too_large', { detail: 'That file is too large to open as text.' });
       }
       buffer = await fs.readFile(resolved);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT') {
-        return c.json({ error: 'File not found', code: 'NOT_FOUND' }, 404);
+        return problem(c, 'not_found', { detail: FILE_MISSING });
       }
       if (code === 'ELOOP' || code === 'ENOTDIR') {
-        return c.json({ error: 'Invalid path', code }, 400);
+        return problem(c, 'invalid_request', { detail: PATH_UNFOLLOWABLE });
       }
       logger.error('[files] GET /content read failed', { err, resolved });
-      return c.json({ error: 'Internal server error' }, 500);
+      return problem(c, 'internal_error', { detail: FILE_UNREADABLE });
     }
 
     // A NUL byte is the standard binary-file heuristic (git uses the same test).
     if (buffer.includes(0)) {
-      return c.json({ error: 'Binary files cannot be opened as text', code: 'BINARY_FILE' }, 415);
+      return problem(c, 'binary_file', { detail: 'That file isn’t text, so it can’t open here.' });
     }
 
     const content = buffer.toString('utf8');

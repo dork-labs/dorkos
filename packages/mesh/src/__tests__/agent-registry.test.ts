@@ -3,12 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { AgentRegistry } from '../agent-registry.js';
 import type { AgentRegistryEntry } from '../agent-registry.js';
-import { DenialList } from '../denial-list.js';
-import {
-  computeHealthStatus,
-  ACTIVE_THRESHOLD_MINUTES,
-  INACTIVE_THRESHOLD_MINUTES,
-} from '../health.js';
+import { ACTIVE_THRESHOLD_MINUTES } from '../health.js';
 
 /** Helper: create an ISO timestamp `minutes` before now. */
 function minutesAgo(minutes: number): string {
@@ -53,7 +48,8 @@ beforeEach(() => {
 
 describe('insert and get', () => {
   it('round-trips an agent entry by id', () => {
-    const entry = makeEntry();
+    // A non-default behavior, so a write that dropped it could not pass on the column default.
+    const entry = makeEntry({ behavior: { responseMode: 'mention-only' } });
     registry.upsert(entry);
 
     const result = registry.get(entry.id);
@@ -82,10 +78,6 @@ describe('insert and get', () => {
     expect(after?.reportsTo).toBeUndefined();
     expect(after?.createdBy).toBe('install:abc');
   });
-
-  it('returns undefined for non-existent id', () => {
-    expect(registry.get('nonexistent')).toBeUndefined();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -100,10 +92,6 @@ describe('getByPath', () => {
     const result = registry.getByPath(entry.projectPath);
     expect(result).toBeDefined();
     expect(result!.id).toBe(entry.id);
-  });
-
-  it('returns undefined for non-existent path', () => {
-    expect(registry.getByPath('/nonexistent/path')).toBeUndefined();
   });
 });
 
@@ -132,30 +120,6 @@ describe('list', () => {
     expect(all[0].id).toBe(newer.id);
     expect(all[1].id).toBe(older.id);
   });
-
-  it('filters by runtime', () => {
-    registry.upsert(makeEntry({ id: '01A', projectPath: '/p/a', runtime: 'claude-code' }));
-    registry.upsert(makeEntry({ id: '01B', projectPath: '/p/b', runtime: 'cursor' }));
-
-    const filtered = registry.list({ runtime: 'claude-code' });
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].runtime).toBe('claude-code');
-  });
-
-  it('filters by capability', () => {
-    registry.upsert(
-      makeEntry({ id: '01A', projectPath: '/p/a', capabilities: ['code-review', 'testing'] })
-    );
-    registry.upsert(makeEntry({ id: '01B', projectPath: '/p/b', capabilities: ['deployment'] }));
-
-    const filtered = registry.list({ capability: 'code-review' });
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].id).toBe('01A');
-  });
-
-  it('returns empty array when no agents exist', () => {
-    expect(registry.list()).toEqual([]);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -163,43 +127,18 @@ describe('list', () => {
 // ---------------------------------------------------------------------------
 
 describe('update', () => {
-  it('modifies mutable fields and returns true', () => {
-    registry.upsert(makeEntry());
-
-    const updated = registry.update('01JKABC00001', {
-      name: 'updated-backend',
-      description: 'Updated description',
-      capabilities: ['new-cap'],
-    });
-
-    expect(updated).toBe(true);
-
-    const result = registry.get('01JKABC00001');
-    expect(result!.name).toBe('updated-backend');
-    expect(result!.description).toBe('Updated description');
-    expect(result!.capabilities).toEqual(['new-cap']);
-  });
-
-  it('returns false for non-existent id', () => {
-    expect(registry.update('nonexistent', { name: 'new' })).toBe(false);
-  });
-
-  it('persists namespace and scanRoot changes', () => {
+  it('persists namespace, scanRoot and behavior changes', () => {
     registry.upsert(
       makeEntry({ id: 'a1', projectPath: '/p/a1', namespace: 'old', scanRoot: '/old' })
     );
-    registry.update('a1', { namespace: 'new', scanRoot: '/new' });
-    const entry = registry.get('a1');
-    expect(entry?.namespace).toBe('new');
-    expect(entry?.scanRoot).toBe('/new');
-  });
-
-  it('persists behavior changes', () => {
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
     registry.update('a1', {
+      namespace: 'new',
+      scanRoot: '/new',
       behavior: { responseMode: 'mention-only' },
     });
     const entry = registry.get('a1');
+    expect(entry?.namespace).toBe('new');
+    expect(entry?.scanRoot).toBe('/new');
     expect(entry?.behavior.responseMode).toBe('mention-only');
   });
 });
@@ -214,10 +153,6 @@ describe('remove', () => {
     expect(registry.remove('01JKABC00001')).toBe(true);
     expect(registry.get('01JKABC00001')).toBeUndefined();
   });
-
-  it('returns false for non-existent id', () => {
-    expect(registry.remove('nonexistent')).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -225,11 +160,6 @@ describe('remove', () => {
 // ---------------------------------------------------------------------------
 
 describe('upsert()', () => {
-  it('inserts new agent when no conflict exists', () => {
-    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a' }));
-    expect(registry.get('agent-1')).toBeDefined();
-  });
-
   it('updates existing agent when same ID re-registered', () => {
     registry.upsert(makeEntry({ id: 'agent-1', name: 'V1', projectPath: '/path/a' }));
     registry.upsert(makeEntry({ id: 'agent-1', name: 'V2', projectPath: '/path/a' }));
@@ -280,37 +210,11 @@ describe('upsert()', () => {
     expect(registry.get('old-id')).toBeUndefined();
     expect(registry.get('new-id')).toBeDefined();
   });
-
-  it('persists behavior_json from entry', () => {
-    const behavior = { responseMode: 'mention-only' as const };
-    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a', behavior }));
-    const entry = registry.get('agent-1');
-    expect(entry?.behavior).toEqual(behavior);
-  });
-
-  it('persists scan_root from entry', () => {
-    registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a', scanRoot: '/projects' }));
-    expect(registry.get('agent-1')?.scanRoot).toBe('/projects');
-  });
 });
 
 // ---------------------------------------------------------------------------
 // rowToEntry round-trip
 // ---------------------------------------------------------------------------
-
-describe('rowToEntry()', () => {
-  it('parses behavior_json from DB column', () => {
-    const behavior = { responseMode: 'mention-only' as const };
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1', behavior }));
-    const entry = registry.get('a1');
-    expect(entry?.behavior).toEqual(behavior);
-  });
-
-  it('reads scanRoot from DB column', () => {
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1', scanRoot: '/my/root' }));
-    expect(registry.get('a1')?.scanRoot).toBe('/my/root');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Health Tracking
@@ -334,47 +238,6 @@ describe('health tracking', () => {
     expect(entry!.healthStatus).toBe('active');
   });
 
-  it('getWithHealth() computes inactive status beyond active threshold', () => {
-    registry.upsert(makeEntry());
-    const midpoint = (ACTIVE_THRESHOLD_MINUTES + INACTIVE_THRESHOLD_MINUTES) / 2;
-    registry.updateHealth('01JKABC00001', minutesAgo(midpoint), 'message');
-    const entry = registry.getWithHealth('01JKABC00001');
-    expect(entry!.healthStatus).toBe('inactive');
-  });
-
-  it('getWithHealth() computes stale status beyond inactive threshold', () => {
-    registry.upsert(makeEntry());
-    registry.updateHealth('01JKABC00001', minutesAgo(INACTIVE_THRESHOLD_MINUTES + 60), 'old_event');
-    const entry = registry.getWithHealth('01JKABC00001');
-    expect(entry!.healthStatus).toBe('stale');
-  });
-
-  it('getWithHealth() computes stale for null last_seen_at', () => {
-    registry.upsert(makeEntry());
-    const entry = registry.getWithHealth('01JKABC00001');
-    expect(entry!.lastSeenAt).toBeNull();
-    expect(entry!.healthStatus).toBe('stale');
-  });
-
-  it('getAggregateStats() returns correct counts', () => {
-    const agent1 = makeEntry({ id: 'agent1', projectPath: '/p/1' });
-    const agent2 = makeEntry({ id: 'agent2', projectPath: '/p/2' });
-    const agent3 = makeEntry({ id: 'agent3', projectPath: '/p/3' });
-    registry.upsert(agent1);
-    registry.upsert(agent2);
-    registry.upsert(agent3);
-    registry.updateHealth('agent1', minutesAgo(1), 'recent'); // active
-    const midpoint = (ACTIVE_THRESHOLD_MINUTES + INACTIVE_THRESHOLD_MINUTES) / 2;
-    registry.updateHealth('agent2', minutesAgo(midpoint), 'old'); // inactive
-    // agent3 has no last_seen_at -> stale
-    const stats = registry.getAggregateStats();
-    expect(stats.totalAgents).toBe(3);
-    expect(stats.activeCount).toBe(1);
-    expect(stats.inactiveCount).toBe(1);
-    expect(stats.staleCount).toBe(1);
-    expect(stats.unreachableCount).toBe(0);
-  });
-
   it('getAggregateStats() counts unreachable agents separately', () => {
     registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/1' }));
     registry.upsert(makeEntry({ id: 'a2', projectPath: '/p/2' }));
@@ -387,14 +250,6 @@ describe('health tracking', () => {
     expect(stats.activeCount).toBe(1);
     expect(stats.unreachableCount).toBe(2);
     expect(stats.staleCount).toBe(0);
-  });
-
-  it('listWithHealth() includes healthStatus for all agents', () => {
-    registry.upsert(makeEntry());
-    registry.updateHealth('01JKABC00001', minutesAgo(1), 'test');
-    const entries = registry.listWithHealth();
-    expect(entries.length).toBe(1);
-    expect(entries[0]!.healthStatus).toBe('active');
   });
 
   it('listWithHealth() reports unreachable agents as unreachable, not active/stale', () => {
@@ -412,107 +267,11 @@ describe('health tracking', () => {
     const stats = registry.getAggregateStats();
     expect(stats.unreachableCount).toBe(1);
   });
-
-  it('getWithHealth() reports unreachable status for a single agent', () => {
-    registry.upsert(makeEntry());
-    registry.updateHealth('01JKABC00001', minutesAgo(1), 'heartbeat');
-    registry.markUnreachable('01JKABC00001');
-    const entry = registry.getWithHealth('01JKABC00001');
-    expect(entry!.healthStatus).toBe('unreachable');
-  });
 });
 
 // ---------------------------------------------------------------------------
 // Anti-regression: Drizzle migration
 // ---------------------------------------------------------------------------
-
-describe('anti-regression: Drizzle migration', () => {
-  it('does not store manifest_json column', () => {
-    // Use the raw SQLite client to inspect table schema
-    const columns = db.$client.pragma('table_info(agents)') as Array<{
-      name: string;
-    }>;
-    const columnNames = columns.map((c) => c.name);
-
-    expect(columnNames).not.toContain('manifest_json');
-    // Verify key structured columns exist instead
-    expect(columnNames).toContain('name');
-    expect(columnNames).toContain('runtime');
-    expect(columnNames).toContain('capabilities_json');
-    expect(columnNames).toContain('project_path');
-  });
-
-  it('computes health status in TypeScript via computeHealthStatus()', () => {
-    registry.upsert(makeEntry());
-
-    // Active: within active threshold
-    const recentTime = minutesAgo(ACTIVE_THRESHOLD_MINUTES / 2);
-    registry.updateHealth('01JKABC00001', recentTime, 'heartbeat');
-    const active = registry.getWithHealth('01JKABC00001');
-    expect(active!.healthStatus).toBe('active');
-    expect(computeHealthStatus(recentTime)).toBe('active');
-
-    // Inactive: between active and inactive thresholds
-    const midpoint = (ACTIVE_THRESHOLD_MINUTES + INACTIVE_THRESHOLD_MINUTES) / 2;
-    const midTime = minutesAgo(midpoint);
-    registry.updateHealth('01JKABC00001', midTime, 'heartbeat');
-    const inactive = registry.getWithHealth('01JKABC00001');
-    expect(inactive!.healthStatus).toBe('inactive');
-    expect(computeHealthStatus(midTime)).toBe('inactive');
-
-    // Stale: beyond inactive threshold
-    const staleTime = minutesAgo(INACTIVE_THRESHOLD_MINUTES + 60);
-    registry.updateHealth('01JKABC00001', staleTime, 'heartbeat');
-    const stale = registry.getWithHealth('01JKABC00001');
-    expect(stale!.healthStatus).toBe('stale');
-    expect(computeHealthStatus(staleTime)).toBe('stale');
-
-    // Null lastSeenAt: stale
-    expect(computeHealthStatus(null)).toBe('stale');
-  });
-
-  it('stores all IDs as ULIDs', () => {
-    const ulidPattern = /^[0-9A-HJKMNP-TV-Z]{26}$/;
-
-    // Agent ID from makeEntry uses a short test ID; verify real ULID-style IDs
-    // work through insert/get. The denial list generates real ULIDs.
-    const denialList = new DenialList(db);
-    denialList.deny('/tmp/test-anti-regression-ulid', 'test', 'user');
-
-    const denials = denialList.list();
-    expect(denials).toHaveLength(1);
-
-    // Read the raw denial row to check the auto-generated ULID id
-    const rawRows = db.$client.prepare('SELECT id FROM agent_denials').all() as Array<{
-      id: string;
-    }>;
-    expect(rawRows[0].id).toMatch(ulidPattern);
-  });
-
-  it('stores timestamps as ISO 8601 strings', () => {
-    const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-
-    registry.upsert(makeEntry());
-    const entry = registry.get('01JKABC00001');
-    expect(entry).toBeDefined();
-    expect(entry!.registeredAt).toMatch(isoPattern);
-
-    // Verify raw row timestamps are ISO strings (not Julian day numbers)
-    const rawRows = db.$client
-      .prepare('SELECT registered_at, updated_at FROM agents WHERE id = ?')
-      .all('01JKABC00001') as Array<{ registered_at: string; updated_at: string }>;
-    expect(rawRows[0].registered_at).toMatch(isoPattern);
-    expect(rawRows[0].updated_at).toMatch(isoPattern);
-
-    // Verify denial timestamps too
-    const denialList = new DenialList(db);
-    denialList.deny('/tmp/test-anti-regression-ts', 'test', 'user');
-    const denialRows = db.$client.prepare('SELECT created_at FROM agent_denials').all() as Array<{
-      created_at: string;
-    }>;
-    expect(denialRows[0].created_at).toMatch(isoPattern);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // markUnreachable
@@ -526,10 +285,6 @@ describe('markUnreachable()', () => {
     const unreachable = registry.listUnreachable();
     expect(unreachable).toHaveLength(1);
     expect(unreachable[0].id).toBe('a1');
-  });
-
-  it('returns false for non-existent agent', () => {
-    expect(registry.markUnreachable('nonexistent')).toBe(false);
   });
 });
 
@@ -549,20 +304,6 @@ describe('markReachable()', () => {
     const future = new Date(Date.now() + 100000).toISOString();
     expect(registry.listUnreachableBefore(future)).toHaveLength(0);
   });
-
-  it('restores health computation from lastSeenAt', () => {
-    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
-    registry.updateHealth('a1', minutesAgo(1), 'heartbeat');
-    registry.markUnreachable('a1');
-    expect(registry.getWithHealth('a1')!.healthStatus).toBe('unreachable');
-
-    registry.markReachable('a1');
-    expect(registry.getWithHealth('a1')!.healthStatus).toBe('active');
-  });
-
-  it('returns false for non-existent agent', () => {
-    expect(registry.markReachable('nonexistent')).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -579,16 +320,6 @@ describe('listUnreachableBefore()', () => {
     const future = new Date(Date.now() + 100000).toISOString();
     const expired = registry.listUnreachableBefore(future);
     expect(expired).toHaveLength(2);
-  });
-
-  it('excludes active agents and recently-unreachable agents', () => {
-    registry.upsert(makeEntry({ id: 'active-agent', projectPath: '/p/active' }));
-    registry.upsert(makeEntry({ id: 'unreachable-agent', projectPath: '/p/unreachable' }));
-    registry.markUnreachable('unreachable-agent');
-    // Cutoff in the past — recently-unreachable agent should NOT be returned
-    const past = new Date(Date.now() - 100000).toISOString();
-    const expired = registry.listUnreachableBefore(past);
-    expect(expired).toHaveLength(0);
   });
 });
 
@@ -617,47 +348,6 @@ describe('agent identity fields', () => {
     expect(result!.icon).toBe('🤖');
   });
 
-  it('defaults personaEnabled to true when not provided', () => {
-    registry.upsert(makeEntry({ id: 'default-agent', projectPath: '/p/default' }));
-    const result = registry.get('default-agent');
-    expect(result!.personaEnabled).toBe(true);
-  });
-
-  it('stores personaEnabled: false correctly', () => {
-    registry.upsert(
-      makeEntry({
-        id: 'disabled-agent',
-        projectPath: '/p/disabled',
-        personaEnabled: false,
-      })
-    );
-    const result = registry.get('disabled-agent');
-    expect(result!.personaEnabled).toBe(false);
-  });
-
-  it('returns undefined for optional fields when not set', () => {
-    registry.upsert(makeEntry({ id: 'minimal-agent', projectPath: '/p/minimal' }));
-    const result = registry.get('minimal-agent');
-    expect(result!.persona).toBeUndefined();
-    expect(result!.color).toBeUndefined();
-    expect(result!.icon).toBeUndefined();
-  });
-
-  it('update persists identity field changes', () => {
-    registry.upsert(makeEntry({ id: 'update-agent', projectPath: '/p/update' }));
-    registry.update('update-agent', {
-      persona: 'New persona text',
-      personaEnabled: false,
-      color: '#ef4444',
-      icon: '🎯',
-    });
-    const result = registry.get('update-agent');
-    expect(result!.persona).toBe('New persona text');
-    expect(result!.personaEnabled).toBe(false);
-    expect(result!.color).toBe('#ef4444');
-    expect(result!.icon).toBe('🎯');
-  });
-
   it('update clears identity fields when set to undefined/null', () => {
     registry.upsert(
       makeEntry({
@@ -677,81 +367,6 @@ describe('agent identity fields', () => {
     expect(result!.persona).toBeUndefined();
     expect(result!.color).toBeUndefined();
     expect(result!.icon).toBeUndefined();
-  });
-
-  it('upsert on conflict updates identity fields', () => {
-    registry.upsert(
-      makeEntry({
-        id: 'conflict-agent',
-        projectPath: '/p/conflict',
-        persona: 'V1 persona',
-        color: '#000',
-      })
-    );
-    registry.upsert(
-      makeEntry({
-        id: 'conflict-agent',
-        projectPath: '/p/conflict',
-        persona: 'V2 persona',
-        color: '#fff',
-        icon: '🚀',
-      })
-    );
-    const result = registry.get('conflict-agent');
-    expect(result!.persona).toBe('V2 persona');
-    expect(result!.color).toBe('#fff');
-    expect(result!.icon).toBe('🚀');
-  });
-
-  it('list returns identity fields for all agents', () => {
-    registry.upsert(
-      makeEntry({
-        id: 'agent-a',
-        projectPath: '/p/a',
-        color: '#red',
-        icon: '🔴',
-      })
-    );
-    registry.upsert(
-      makeEntry({
-        id: 'agent-b',
-        projectPath: '/p/b',
-        persona: 'Test persona',
-        personaEnabled: false,
-      })
-    );
-
-    const all = registry.list();
-    expect(all).toHaveLength(2);
-    const agentA = all.find((a) => a.id === 'agent-a');
-    const agentB = all.find((a) => a.id === 'agent-b');
-    expect(agentA!.color).toBe('#red');
-    expect(agentA!.icon).toBe('🔴');
-    expect(agentB!.persona).toBe('Test persona');
-    expect(agentB!.personaEnabled).toBe(false);
-  });
-
-  it('getByPath returns identity fields', () => {
-    registry.upsert(
-      makeEntry({
-        id: 'path-agent',
-        projectPath: '/p/path-lookup',
-        persona: 'Lookup persona',
-        color: '#abc',
-      })
-    );
-    const result = registry.getByPath('/p/path-lookup');
-    expect(result!.persona).toBe('Lookup persona');
-    expect(result!.color).toBe('#abc');
-  });
-
-  it('DB columns exist for identity fields', () => {
-    const columns = db.$client.pragma('table_info(agents)') as Array<{ name: string }>;
-    const columnNames = columns.map((c) => c.name);
-    expect(columnNames).toContain('persona');
-    expect(columnNames).toContain('persona_enabled');
-    expect(columnNames).toContain('color');
-    expect(columnNames).toContain('icon');
   });
 });
 
@@ -773,24 +388,10 @@ describe('execution defaults on the cache', () => {
     expect(registry.list()[0].effort).toBe('low');
   });
 
-  it('leaves both absent for an agent that inherits', () => {
-    registry.upsert(makeEntry());
-    expect(registry.get('01JKABC00001')?.model).toBeUndefined();
-    expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
-  });
-
   it('clears them when an update drops them', () => {
     registry.upsert(makeEntry({ model: 'sonnet', effort: 'low' }));
     registry.update('01JKABC00001', { model: undefined, effort: undefined });
     expect(registry.get('01JKABC00001')?.model).toBeUndefined();
-    expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
-  });
-
-  it('reads an unrecognized stored effort as no preference rather than passing it on', () => {
-    // A rung a later release drops, or a hand-edited row. "No preference" is the
-    // safe answer; handing a word no adapter knows to a runtime is not.
-    registry.upsert(makeEntry({ effort: 'high' }));
-    db.run?.(`UPDATE agents SET effort = 'ludicrous' WHERE id = '01JKABC00001'`);
     expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
   });
 });

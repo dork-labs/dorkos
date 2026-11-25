@@ -242,6 +242,10 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       // refused too.
       isRoomSession: (sessionId) =>
         roomStore.sessionLedger.bindingForSession(sessionId) !== undefined,
+      // Read at request time, as an agent registers after these routes mount.
+      agentSubjectOf: (agentPath) => refs.meshCore?.getSubjectByPath(agentPath)?.subject,
+      chatMesh: () => refs.meshCore,
+      agentSessions: () => refs.adapterManager?.getAgentSessionStore(),
     };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).
@@ -702,11 +706,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   if (env.DORKOS_TODOS_ENABLED) deps.todos = todoPromises.todoRouteDeps;
   // An agent's work queue, for a person (DOR-3462).
   deps.workQueue = workQueue.routeDeps;
-  // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by
-  // the Hono app, beside the agents group under `/api/agents`; the registry is
-  // read lazily because it is composed after the routes are handed over.
-  deps.agentPause = { registry: () => refs.capabilityRegistry };
-  mountedRouters.push('agent-pause');
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.
   deps.agentInstructions = {

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll } from 'vitest';
 import { contractSuite } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const SHELL = '<!doctype html><html><body><div id="root"></div></body></html>';
 const BUNDLE = 'console.log("the app");';
@@ -145,7 +146,10 @@ contractSuite(
     {
       name: 'an unknown /api path is the API 404, never the shell',
       path: '/api/no-such-route',
-      expect: { status: 404, body: { error: 'Not found', code: 'API_NOT_FOUND' } },
+      expect: {
+        status: 404,
+        body: problemBody('not_found', { detail: 'This server has no API route at that path.' }),
+      },
     },
     {
       name: 'a path that climbs out of the bundles is the bundle 404',

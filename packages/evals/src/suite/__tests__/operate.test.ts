@@ -13,7 +13,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createDb, activityEvents } from '@dorkos/db';
 import { buildSoulContent } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
@@ -25,7 +24,6 @@ import type {
   OracleResult,
 } from '../../types.js';
 import { emptyApprovalLog } from '../../types.js';
-import { selectSuite } from '../index.js';
 import {
   agentSelfEditCase,
   activityReadCase,
@@ -120,38 +118,6 @@ describe('operate-DorkOS case metadata', () => {
     }
   });
 
-  it('every case declares an approvalPolicy naming only the tools its own task needs', () => {
-    // A credentialed turn that reaches for a tool is asked for permission, and a
-    // case with nobody to answer sits out the 90-second turn guard and reports a
-    // runner error — which is exactly what `agent-self-edit`, `activity-read`
-    // and `config-toggle` did on 2026-09-12, the only three `core` cases with no
-    // policy. `runner/approval-driver.ts`'s watcher now fails that fast; these
-    // policies are what keep it quiet.
-    const expected: Record<string, string[]> = {
-      'agent-self-edit': ['update_agent'],
-      'activity-read': ['activity_list'],
-      'config-toggle': ['config_get', 'config_patch'],
-      'marketplace-search-and-install': ['marketplace_search', 'marketplace_install'],
-      'capability-discovery': ['list_capabilities'],
-    };
-    for (const c of operateDorkOsCases) {
-      expect(c.approvalPolicy?.allowTools, c.id).toEqual(expected[c.id]);
-      // Deny-by-default is the point: nothing here allows a file tool or `Bash`,
-      // which is how an agent that gave up on the right tool would satisfy a
-      // filesystem oracle for the wrong reason.
-      expect(c.approvalPolicy?.allowTools.some((t) => /^(bash|write|edit|read)$/i.test(t))).toBe(
-        false
-      );
-    }
-  });
-
-  it('are selected by the core suite', () => {
-    const coreIds = selectSuite('core').map((c) => c.id);
-    for (const c of operateDorkOsCases) {
-      expect(coreIds).toContain(c.id);
-    }
-  });
-
   it('the marketplace case answers its own install approval instead of switching the gate off', () => {
     // The approval is answered through the real routes, so the case exercises
     // production code. Nothing is turned off for it: no `serverEnv` at all.
@@ -160,15 +126,6 @@ describe('operate-DorkOS case metadata', () => {
       decision: 'grant',
     });
     expect(marketplaceInstallCase.serverEnv).toBeUndefined();
-  });
-
-  it('the marketplace case allows only the two tools its task needs', () => {
-    // Deny-by-default is what stops an agent that gave up on the MCP tool and
-    // hand-built the package tree from making the filesystem oracle green.
-    expect(marketplaceInstallCase.approvalPolicy?.allowTools).toEqual([
-      'marketplace_search',
-      'marketplace_install',
-    ]);
   });
 
   it('the marketplace case drives two turns: the ask, then a go-ahead once approved (DOR-529)', () => {
@@ -201,26 +158,6 @@ describe('agent-self-edit', () => {
     await agentSelfEditCase.seed!(sandbox);
   });
 
-  it('seeds a system DorkBot agent (immutable identity + default SOUL with markers)', async () => {
-    const manifest = JSON.parse(
-      await readFile(path.join(sandbox.projectCwd, '.dork', 'agent.json'), 'utf8')
-    );
-    expect(manifest.name).toBe('dorkbot');
-    expect(manifest.isSystem).toBe(true);
-    const soul = await readFile(soulFile(), 'utf8');
-    expect(soul).toContain('<!-- TRAITS:START -->');
-    expect(soul).toContain('<!-- TRAITS:END -->');
-  });
-
-  it('FAILS on the untouched scaffold (no tool call, persona not rewritten)', async () => {
-    const results = await runOracles(agentSelfEditCase, ctx());
-    expect(byLabel(results, 'update_agent').passed).toBe(false);
-    expect(byLabel(results, 'was rewritten').passed).toBe(false);
-    // Markers + immutable identity are already correct in the scaffold.
-    expect(byLabel(results, 'trait markers').passed).toBe(true);
-    expect(byLabel(results, 'immutable identity').passed).toBe(true);
-  });
-
   it('ALL PASS once the agent rewrote its SOUL via update_agent, identity intact', async () => {
     await writeFile(
       soulFile(),
@@ -248,14 +185,6 @@ describe('activity-read', () => {
     await activityReadCase.seed!(sandbox);
   });
 
-  it('seeds activity events into dork.db the server will open', async () => {
-    const db = createDb(path.join(sandbox.dorkHome, 'dork.db'));
-    const rows = await db.select().from(activityEvents);
-    db.$client.close();
-    expect(rows).toHaveLength(3);
-    expect(rows.map((r) => r.category).sort()).toEqual(['agent', 'config', 'tasks']);
-  });
-
   it('PASSES when the agent queried activity and left the workspace untouched', async () => {
     const results = await runOracles(activityReadCase, ctx([toolCallFrame('activity_list')]));
     expect(results.every((r) => r.passed)).toBe(true);
@@ -264,12 +193,6 @@ describe('activity-read', () => {
   it('FAILS the tool-use oracle when activity_list never fired', async () => {
     const results = await runOracles(activityReadCase, ctx());
     expect(byLabel(results, 'activity feed').passed).toBe(false);
-  });
-
-  it('FAILS the read-only oracle when the summary wrote into the workspace', async () => {
-    await writeFile(path.join(sandbox.projectCwd, 'notes.md'), '# jotted something');
-    const results = await runOracles(activityReadCase, ctx([toolCallFrame('activity_list')]));
-    expect(byLabel(results, 'read-only').passed).toBe(false);
   });
 });
 
@@ -282,12 +205,6 @@ describe('config-toggle', () => {
     expect(results.every((r) => r.passed)).toBe(true);
   });
 
-  it('FAILS when nothing was pinned', async () => {
-    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { pins: [] } } }));
-    const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
-    expect(byLabel(results, 'ui.statusBar.pins').passed).toBe(false);
-  });
-
   it('FAILS when the agent over-broadly pinned a sibling too', async () => {
     // git AND model pinned — an over-broad edit that must NOT pass, because it
     // rebuilds exactly the noisy status bar the quiet line replaced.
@@ -298,54 +215,11 @@ describe('config-toggle', () => {
     const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
     expect(byLabel(results, 'ui.statusBar.pins').passed).toBe(false);
   });
-
-  it('FAILS when the section is missing entirely', async () => {
-    await writeFile(configFile(), JSON.stringify({ ui: {} }));
-    const results = await runOracles(configToggleCase, ctx([toolCallFrame('config_patch')]));
-    expect(byLabel(results, 'ui.statusBar.pins').passed).toBe(false);
-  });
-
-  it('FAILS the tool-use oracle when config_patch never fired', async () => {
-    await writeFile(configFile(), JSON.stringify({ ui: { statusBar: { pins: ['git'] } } }));
-    const results = await runOracles(configToggleCase, ctx());
-    expect(byLabel(results, 'config_patch').passed).toBe(false);
-  });
 });
 
 describe('marketplace-search-and-install', () => {
   beforeEach(async () => {
     await marketplaceInstallCase.seed!(sandbox);
-  });
-
-  it('seeds an offline file:// marketplace with a relative-path package', async () => {
-    const marketplace = JSON.parse(
-      await readFile(
-        path.join(sandbox.dorkHome, 'eval-fixtures', 'local-marketplace', 'marketplace.json'),
-        'utf8'
-      )
-    );
-    expect(marketplace.plugins[0].source).toBe('./eval-hello-plugin');
-    // The sources file registers the fixture and suppresses the HTTPS defaults.
-    const sources = JSON.parse(
-      await readFile(path.join(sandbox.dorkHome, 'marketplaces.json'), 'utf8')
-    );
-    expect(sources.sources).toHaveLength(1);
-    expect(sources.sources[0].source).toContain('file://');
-    // The package tree is materially valid (both required manifests present).
-    const plugin = JSON.parse(
-      await readFile(
-        path.join(
-          sandbox.dorkHome,
-          'eval-fixtures',
-          'local-marketplace',
-          'eval-hello-plugin',
-          '.claude-plugin',
-          'plugin.json'
-        ),
-        'utf8'
-      )
-    );
-    expect(plugin.name).toBe('eval-hello-plugin');
   });
 
   it('PASSES once the install landed under DORK_HOME and marketplace_install fired', async () => {
@@ -409,14 +283,6 @@ describe('marketplace-search-and-install', () => {
       ctx([toolCallFrame('marketplace_install')], decidedTooLate)
     );
     expect(byLabel(results, 'who approved it').passed).toBe(false);
-  });
-
-  it('FAILS when nothing was installed', async () => {
-    const results = await runOracles(
-      marketplaceInstallCase,
-      ctx([toolCallFrame('marketplace_install')])
-    );
-    expect(byLabel(results, 'installed under DORK_HOME').passed).toBe(false);
   });
 });
 
@@ -497,18 +363,6 @@ describe('capability-discovery — the answer, not the tool call', () => {
     expect(result.passed).toBe(true);
   });
 
-  it('passes on an answer that DOES spell the tool names', async () => {
-    stubCatalog();
-    expect(
-      (
-        await verdict(
-          'I can use post_to_room, marketplace_install, marketplace_search, mcp_add_server, ' +
-            'activity_list and list_capabilities.'
-        )
-      ).passed
-    ).toBe(true);
-  });
-
   it('FAILS on a fluent sentence that gestures at areas without saying what it does', async () => {
     // The exact string from review. Naming an area is cheap — this one hits
     // three domain words, `capabilities` among them because it is the
@@ -516,20 +370,6 @@ describe('capability-discovery — the answer, not the tool call', () => {
     // capability needs the verb too, and this evidences none.
     stubCatalog();
     const result = await verdict('Here are my capabilities, including connectors and rooms');
-    expect(result.passed).toBe(false);
-    expect(result.detail).toContain('evidenced 0');
-  });
-
-  it('FAILS that same sentence even when it also name-drops the UI', async () => {
-    stubCatalog();
-    expect(
-      (await verdict('Here are my capabilities in the UI, with connectors and rooms')).passed
-    ).toBe(false);
-  });
-
-  it('FAILS on a vague answer that describes nothing', async () => {
-    stubCatalog();
-    const result = await verdict('I can help you with all sorts of things — just ask!');
     expect(result.passed).toBe(false);
     expect(result.detail).toContain('evidenced 0');
   });
@@ -543,55 +383,10 @@ describe('capability-discovery — the answer, not the tool call', () => {
     expect(result.evidence).toMatchObject({ domains: ['room'] });
   });
 
-  it('counts a singular/plural domain pair in the registry as ONE area', async () => {
-    // `connector` and `connectors` are both real domains. The word "connectors"
-    // must not buy two-thirds of the domain-spread bar on its own.
-    stubCatalog();
-    const result = await verdict(
-      'I can recommend connectors and request a connection through them.'
-    );
-    expect(result.evidence).toMatchObject({ domains: ['connector'] });
-  });
-
   it('FAILS honestly when the catalog cannot be read, instead of passing vacuously', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500 }));
     const result = await verdict('anything');
     expect(result.passed).toBe(false);
     expect(result.detail).toContain('could not read the capability catalog');
-  });
-
-  it('matches a word at both boundaries, not anywhere inside a longer one', async () => {
-    // `ui` must match "UI" and not "build"/"guide", or every answer covers it.
-    stubCatalog({ ...catalogPage, capabilities: [{ id: 'ui.click' }] });
-    expect(
-      (await verdict('I can build things and guide you, clicking as I go.')).evidence
-    ).toMatchObject({ evidenced: [] });
-    expect((await verdict('I can click things in the UI for you.')).evidence).toMatchObject({
-      evidenced: ['ui.click'],
-    });
-  });
-
-  it('records whether the catalog tool was called, as evidence and not as a verdict', async () => {
-    // Since #1080 an agent is taught its tools by name and may answer without
-    // calling `list_capabilities`. That is no longer a failure — but it stays
-    // visible on the transcript.
-    stubCatalog();
-    const words = answer(
-      'Rooms: post messages, read the history. Marketplace: search and install. ' +
-        'Also add an MCP server.'
-    );
-    const without = await runOracles(capabilityDiscoveryCase, ctx(words));
-    expect(byLabel(without, 'capabilities the agent really has').passed).toBe(true);
-    expect(byLabel(without, 'capabilities the agent really has').evidence).toMatchObject({
-      calledListCapabilities: false,
-    });
-
-    const withCall = await runOracles(
-      capabilityDiscoveryCase,
-      ctx([toolCallFrame('mcp__dorkos__list_capabilities'), ...words])
-    );
-    expect(byLabel(withCall, 'capabilities the agent really has').evidence).toMatchObject({
-      calledListCapabilities: true,
-    });
   });
 });

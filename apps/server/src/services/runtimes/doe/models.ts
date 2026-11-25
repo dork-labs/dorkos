@@ -2,6 +2,7 @@
 import type { ModelDescriptor } from '@dorkos/doe';
 import { DoeInferenceConfigSchema, type DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import type { ModelOption } from '@dorkos/shared/types';
+import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 
 /** Deliberate translation between platform and engine protocol names. */
 export function doeProtocol(protocol: DoeInferenceConfig['protocol']): ModelDescriptor['protocol'] {
@@ -26,7 +27,7 @@ export function listDoeModels(config: DoeInferenceConfig | null): ModelOption[] 
       contextWindow: model.contextWindow,
       maxOutputTokens: model.maxOutputTokens,
       supportsStreaming: true,
-      paidFromCredits: model.source === 'dorkos-credits',
+      paidFromCredits: model.source === CREDITS_PROVIDER_ID,
     },
   ];
 }

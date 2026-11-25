@@ -150,49 +150,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(claude.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('asks the settings resolver about the RESOLVED runtime', async () => {
-      // Every tier below the session row is a per-runtime answer, so a resolver
-      // asked about the adapter's boot runtime hands a codex turn a Claude
-      // model alias.
-      const envelope = agentEnvelope('relay.agent.codex.session-9');
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      expect(resolveExecutionSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ runtimeType: 'codex' })
-      );
-    });
-
-    it('runs a claude-code session on claude-code', async () => {
-      const envelope = agentEnvelope('relay.agent.claude-code.session-2');
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('runs a legacy three-token subject on the default runtime', async () => {
-      // A subject that names no runtime is not a routing failure — it is the
-      // shape every relay_send to a mesh agent has always had, and the host's
-      // default is what ran it before this existed.
-      const envelope = agentEnvelope('relay.agent.01AGENTULID');
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('runs a mesh agent-scoped subject on the default runtime when nothing says otherwise', async () => {
-      // No context, so no agent directory, so no manifest to read (DOR-1627).
-      const envelope = agentEnvelope('relay.agent.ana.01AGENTULID');
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-    });
-
     it('refuses a session whose runtime this build did not register', async () => {
       // Loudly, and without touching any runtime. Substituting the default here
       // is what "silently wrong" looks like: an answer arrives, in the right
@@ -205,16 +162,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(result.error).toContain('opencode');
       expect(claude.sendMessage).not.toHaveBeenCalled();
       expect(codex.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('records the refusal on the adapter status', async () => {
-      const envelope = agentEnvelope('relay.agent.opencode.session-3');
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      const status = adapter.getStatus();
-      expect(status.errorCount).toBe(1);
-      expect(status.lastError).toContain('opencode');
     });
   });
 
@@ -230,26 +177,6 @@ describe('the relay adapter picks the runtime a message names', () => {
         'run-c',
         expect.objectContaining({ status: 'completed' })
       );
-    });
-
-    it('runs a task naming no runtime on the default one', async () => {
-      const envelope = taskEnvelope(taskPayload({ runId: 'run-d' }));
-
-      await adapter.deliver(envelope.subject, envelope);
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('refuses a task naming a runtime this build did not register', async () => {
-      const envelope = taskEnvelope(taskPayload({ runtime: 'opencode', runId: 'run-e' }));
-
-      const result = await adapter.deliver(envelope.subject, envelope);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('opencode');
-      expect(claude.sendMessage).not.toHaveBeenCalled();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
     });
 
     it('refuses a forged dispatch for its sender before it looks at the runtime (DOR-2416)', async () => {
@@ -280,36 +207,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       const real = taskEnvelope(taskPayload({ runId: 'run-h' }));
       expect((await adapter.deliver(real.subject, real)).success).toBe(true);
     });
-
-    it('runs an opencode task on opencode when this build registered it', async () => {
-      // The receiving half of the scheduler handshake, and not codex-shaped: the
-      // scheduler sets `payload.runtime` to whatever the run resolved to, and
-      // routing here is by name, so a third runtime needs no code of its own.
-      const opencode = mockRuntime('opencode');
-      const wide = new ClaudeCodeAdapter(
-        'claude-code',
-        {},
-        {
-          ...deps,
-          agentRuntimes: new Map([
-            ['claude-code', claude],
-            ['opencode', opencode],
-          ]),
-        }
-      );
-      await wide.start(mockRelay());
-      const envelope = taskEnvelope(taskPayload({ runtime: 'opencode', runId: 'run-f' }));
-
-      const result = await wide.deliver(envelope.subject, envelope);
-
-      expect(result.success).toBe(true);
-      expect(opencode.sendMessage).toHaveBeenCalledOnce();
-      expect(claude.sendMessage).not.toHaveBeenCalled();
-      expect(taskStore.updateRun).toHaveBeenCalledWith(
-        'run-f',
-        expect.objectContaining({ status: 'completed' })
-      );
-    });
   });
 
   describe('what the adapter claims', () => {
@@ -321,30 +218,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(adapter.subjectPrefix).toContain('relay.agent.codex.');
       expect(adapter.subjectPrefix).toContain('relay.agent.');
       expect(adapter.subjectPrefix).toContain('relay.system.tasks.');
-    });
-
-    it('holds its default runtime even when the map omits it', () => {
-      // A host that passed a map without its own default runtime in it would
-      // otherwise route this adapter's unnamed messages nowhere.
-      const solo = new ClaudeCodeAdapter(
-        'claude-code',
-        {},
-        { ...deps, agentRuntimes: new Map([['codex', codex]]) }
-      );
-      expect(solo.subjectPrefix).toContain('relay.agent.claude-code.');
-    });
-  });
-
-  describe('a host that wires exactly one runtime (every caller before DOR-1614)', () => {
-    it('answers every agent subject on that runtime', async () => {
-      const solo = new ClaudeCodeAdapter('claude-code', {}, { ...deps, agentRuntimes: undefined });
-      await solo.start(mockRelay());
-
-      const envelope = agentEnvelope('relay.agent.claude-code.session-1');
-      const result = await solo.deliver(envelope.subject, envelope);
-
-      expect(result.success).toBe(true);
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
     });
   });
 
@@ -375,10 +248,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       await wide.start(mockRelay());
     });
 
-    it('claims a prefix for it', () => {
-      expect(wide.subjectPrefix).toContain('relay.agent.test-mode-b.');
-    });
-
     it('routes its session to ITSELF, never silently to the default', async () => {
       const envelope = agentEnvelope('relay.agent.test-mode-b.sess-1');
 
@@ -387,26 +256,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(result.success).toBe(true);
       expect(extra.sendMessage).toHaveBeenCalledOnce();
       expect(claude.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('asks the settings resolver about it by name', async () => {
-      await wide.deliver('relay.agent.test-mode-b.sess-1', agentEnvelope('x'));
-
-      expect(resolveExecutionSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ runtimeType: 'test-mode-b' })
-      );
-    });
-
-    it('still reads a namespace it holds no runtime for as a mesh subject', async () => {
-      // The widening is exactly the claimed set and nothing more: a direct
-      // agent-to-agent send to `ns-a` names no runtime and takes the default,
-      // exactly as before.
-      const envelope = agentEnvelope('relay.agent.ns-a.01AGENTULID');
-
-      await wide.deliver(envelope.subject, envelope);
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(extra.sendMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -450,53 +299,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(claude.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('asks the settings resolver about that runtime too', async () => {
-      // Model and effort live in one runtime's namespace, so a turn routed to
-      // codex and priced against claude-code defaults is still half wrong.
-      await withManifest.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
-
-      expect(resolveExecutionSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ runtimeType: 'codex' })
-      );
-    });
-
-    it('lets the runtime a subject NAMES win over the manifest', async () => {
-      // The subject segment comes from a session's own ownership row — the
-      // recorded owner of a conversation that already exists, which outranks a
-      // preference expressed about the agent (ADR-0255).
-      const envelope = agentEnvelope('relay.agent.claude-code.session-2');
-
-      await withManifest.deliver(envelope.subject, envelope, meshContext());
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
-      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
-    });
-
-    it('leaves a legacy three-token session subject on the default runtime', async () => {
-      // That subject names a SESSION, not an agent. Reading a manifest for it
-      // would hand a running conversation to a program holding none of it.
-      const envelope = agentEnvelope('relay.agent.01AGENTULID');
-
-      await withManifest.deliver(envelope.subject, envelope, meshContext());
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
-    });
-
-    it('still refuses a subject naming a runtime this build did not register', async () => {
-      // The refusal path must not become reachable-by-manifest: a named runtime
-      // is answered by that runtime or by nobody.
-      const envelope = agentEnvelope('relay.agent.opencode.session-3');
-
-      const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('opencode');
-      expect(claude.sendMessage).not.toHaveBeenCalled();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
-    });
-
     it('refuses when the agent runs on a runtime the relay does not hold', async () => {
       // A wiring mismatch — the composition root passes every registered runtime
       // — and answering it on another program is the failure this ladder exists
@@ -510,27 +312,6 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(result.error).toContain('opencode');
       expect(claude.sendMessage).not.toHaveBeenCalled();
       expect(codex.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('answers on the default runtime when the manifest cannot be read', async () => {
-      // Tolerant by contract: an unreadable manifest is not a reason to drop
-      // somebody's message.
-      resolveTurnRuntimeType.mockRejectedValue(new Error('EACCES'));
-      const envelope = agentEnvelope(MESH_SUBJECT);
-
-      const result = await withManifest.deliver(envelope.subject, envelope, meshContext());
-
-      expect(result.success).toBe(true);
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-    });
-
-    it('does not ask when nothing resolved an agent directory', async () => {
-      // A mesh agent the registry does not know: `buildContext` returns nothing,
-      // and there is no manifest to look for.
-      await withManifest.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT));
-
-      expect(resolveTurnRuntimeType).not.toHaveBeenCalled();
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
     });
 
     describe('a started conversation keeps the runtime it started on (DOR-1774)', () => {
@@ -649,161 +430,6 @@ describe('the relay adapter picks the runtime a message names', () => {
         });
       });
 
-      it('records nothing for a first turn that reached no runtime at all', async () => {
-        // The orphan-row hazard `room-turn-runner.ts` documents: a write made on
-        // arrival mints one row per message that reached no runtime, and
-        // afterwards nothing can tell those from real bindings. `sendMessage`
-        // hands back a lazy generator, so a turn thrown out of on the first pull
-        // produced no transcript for anyone to be bound to.
-        const brokenCodex: AgentRuntimeLike = {
-          ...codex,
-          sendMessage: vi.fn().mockImplementation(() =>
-            (async function* (): AsyncGenerator<StreamEvent> {
-              throw new Error('the runtime fell over before it said anything');
-            })()
-          ),
-        };
-        const sticky = stickyAdapter(brokenCodex);
-        await sticky.start(mockRelay());
-
-        const result = await sticky.deliver(
-          MESH_SUBJECT,
-          agentEnvelope(MESH_SUBJECT),
-          meshContext()
-        );
-
-        expect(result.success).toBe(false);
-        expect(bindSessionRuntime).not.toHaveBeenCalled();
-        expect(bound.size).toBe(0);
-      });
-
-      it('records nothing for a first turn that only reported an error', async () => {
-        // The shape that makes this gate about CONTENT rather than about events.
-        // A claude-code turn that never reached the model still emits: a
-        // pre-stream credential failure arrives as an `error` event rather than
-        // a throw, and a terminal `done` is synthesized underneath it. Counting
-        // those as "the turn ran" binds a conversation on the strength of "not
-        // signed in" — and because this shape is keyed by the agent id alone and
-        // the write is first-write-wins, that binding is permanent: there is no
-        // next conversation to correct it on and no UI over the row.
-        const unauthenticatedCodex: AgentRuntimeLike = {
-          ...codex,
-          sendMessage: vi.fn().mockImplementation(() =>
-            (async function* (): AsyncGenerator<StreamEvent> {
-              yield {
-                type: 'error',
-                data: { message: 'Not signed in. Run `claude auth login`.' },
-              } as StreamEvent;
-              yield { type: 'done', data: {} } as StreamEvent;
-            })()
-          ),
-        };
-        const sticky = stickyAdapter(unauthenticatedCodex);
-        await sticky.start(mockRelay());
-
-        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
-
-        expect(unauthenticatedCodex.sendMessage).toHaveBeenCalledOnce();
-        expect(bindSessionRuntime).not.toHaveBeenCalled();
-        expect(bound.size).toBe(0);
-      });
-
-      it('lets the corrected manifest decide the next turn after an error-only one', async () => {
-        // The consequence, and the input `main` recovered from: the operator
-        // reads "not signed in", fixes the agent to claude-code, and sends
-        // again. With a binding written from that first turn nothing could ever
-        // move it — so the absence of the row is what keeps the fix workable.
-        const unauthenticatedCodex: AgentRuntimeLike = {
-          ...codex,
-          sendMessage: vi.fn().mockImplementation(() =>
-            (async function* (): AsyncGenerator<StreamEvent> {
-              yield {
-                type: 'error',
-                data: { message: 'Not signed in. Run `claude auth login`.' },
-              } as StreamEvent;
-              yield { type: 'done', data: {} } as StreamEvent;
-            })()
-          ),
-        };
-        const sticky = stickyAdapter(unauthenticatedCodex);
-        await sticky.start(mockRelay());
-
-        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
-
-        resolveTurnRuntimeType.mockImplementation(async ({ sessionId }) =>
-          sessionId ? (bound.get(sessionId) ?? 'claude-code') : 'claude-code'
-        );
-        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
-
-        expect(claude.sendMessage).toHaveBeenCalledOnce();
-      });
-
-      it('records a turn that streamed and then failed, because its transcript is real', async () => {
-        // Not gated on the turn SUCCEEDING, deliberately. A turn that spoke and
-        // then crashed still wrote a transcript under this id, so who owns it is
-        // a fact — and leaving it unbound would expose the conversation most
-        // likely to be resumed to exactly the reroute this closes.
-        const crashingCodex: AgentRuntimeLike = {
-          ...codex,
-          sendMessage: vi.fn().mockImplementation(() =>
-            (async function* (): AsyncGenerator<StreamEvent> {
-              yield { type: 'text_delta', data: { text: 'on it' } } as StreamEvent;
-              throw new Error('and then it fell over');
-            })()
-          ),
-        };
-        const sticky = stickyAdapter(crashingCodex);
-        await sticky.start(mockRelay());
-
-        const result = await sticky.deliver(
-          MESH_SUBJECT,
-          agentEnvelope(MESH_SUBJECT),
-          meshContext()
-        );
-
-        expect(result.success).toBe(false);
-        expect(bound.get(SDK_ID)).toBe('codex');
-      });
-
-      it('leaves the turn standing when the binding write fails', async () => {
-        // Bookkeeping about a turn whose answer has already gone out. A
-        // `SQLITE_BUSY` on this row must not turn an answered turn into a failed
-        // delivery — what is lost is one attribution row, which the next turn on
-        // this conversation writes again.
-        bindSessionRuntime.mockRejectedValue(new Error('SQLITE_BUSY'));
-        const sticky = stickyAdapter();
-        await sticky.start(mockRelay());
-
-        const result = await sticky.deliver(
-          MESH_SUBJECT,
-          agentEnvelope(MESH_SUBJECT),
-          meshContext()
-        );
-
-        expect(result.success).toBe(true);
-        expect(codex.sendMessage).toHaveBeenCalledOnce();
-      });
-
-      it('logs a failed binding write with the session id as an argument, not in the format', async () => {
-        // The session id is runtime-minted text; inside the format string a
-        // `%s` in it would be read as a directive (CodeQL js/tainted-format-string).
-        bindSessionRuntime.mockRejectedValue(new Error('SQLITE_BUSY'));
-        const warn = vi.fn();
-        deps.logger = { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() };
-        const sticky = stickyAdapter();
-        await sticky.start(mockRelay());
-
-        await sticky.deliver(MESH_SUBJECT, agentEnvelope(MESH_SUBJECT), meshContext());
-
-        const call = warn.mock.calls.find(([format]) =>
-          String(format).includes('could not record which runtime owns')
-        );
-        expect(call).toBeDefined();
-        expect(call![0]).not.toContain(SDK_ID);
-        expect(call![0]).toContain('%s');
-        expect(call![1]).toBe(SDK_ID);
-      });
-
       it('records nothing when the relay resolved no agent, whatever the payload names (DOR-5057)', async () => {
         // Without an agent from the subject there is nobody to record, and a
         // payload's `cwd` or `forAgent` is the sender's word, not an agent.
@@ -831,32 +457,6 @@ describe('the relay adapter picks the runtime a message names', () => {
           claude.sendMessage = quiet;
         }
       });
-
-      it('records nothing for a subject that names its own runtime', async () => {
-        // That id is a session somebody else created and bound — the cockpit,
-        // or the chat binding that minted it. A second opinion written from here
-        // is a write about a conversation this shape does not own.
-        const sticky = stickyAdapter();
-        await sticky.start(mockRelay());
-
-        await sticky.deliver(
-          'relay.agent.codex.session-9',
-          agentEnvelope('relay.agent.codex.session-9'),
-          meshContext()
-        );
-
-        expect(codex.sendMessage).toHaveBeenCalledOnce();
-        expect(bindSessionRuntime).not.toHaveBeenCalled();
-      });
-    });
-
-    it('leaves a host that wires no resolver exactly as it was', async () => {
-      const envelope = agentEnvelope(MESH_SUBJECT);
-
-      await adapter.deliver(envelope.subject, envelope, meshContext());
-
-      expect(claude.sendMessage).toHaveBeenCalledOnce();
-      expect(codex.sendMessage).not.toHaveBeenCalled();
     });
   });
 

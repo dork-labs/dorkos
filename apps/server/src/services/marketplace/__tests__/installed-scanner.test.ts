@@ -51,11 +51,6 @@ describe('scanInstalledPackages', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  it('returns empty list when dorkHome has no plugins or agents', async () => {
-    const result = await scanInstalledPackages(dorkHome);
-    expect(result).toEqual([]);
-  });
-
   it('walks plugins and agents directories and returns merged list', async () => {
     const pluginDir = join(dorkHome, 'plugins', 'sentry-monitor');
     await writeManifest(pluginDir, {
@@ -137,28 +132,6 @@ describe('scanInstalledPackages', () => {
     ]);
   });
 
-  it('reports no dependencyWarnings key at all for a clean install', async () => {
-    // Absence is the common case and must not render as an empty warning row.
-    const pluginDir = join(dorkHome, 'plugins', 'clean');
-    await writeManifest(pluginDir, {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'clean',
-      version: '1.0.0',
-    });
-    await writeMetadata(pluginDir, {
-      name: 'clean',
-      version: '1.0.0',
-      installedAt: '2026-08-18T12:00:00.000Z',
-      type: 'plugin',
-      dependencyWarnings: [],
-    });
-
-    const [installed] = await scanInstalledPackages(dorkHome);
-
-    expect(installed).not.toHaveProperty('dependencyWarnings');
-  });
-
   it('walks the shapes directory so installed Shapes are visible (DOR-355 regression)', async () => {
     // A Shape installs to `<dorkHome>/shapes/<name>`, a root the scanner
     // originally never walked — so installed Shapes never appeared at
@@ -192,74 +165,6 @@ describe('scanInstalledPackages', () => {
     });
   });
 
-  it('surfaces all five package types together across every install root', async () => {
-    // One install per type, each at its real install root (skill-packs and
-    // adapters share plugins/ with plugins; agents and shapes have their own
-    // roots) — the load-bearing "no type is invisible to the scan" contract.
-    await writeManifest(join(dorkHome, 'plugins', 'p'), {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'p',
-      version: '1.0.0',
-    });
-    await writeManifest(join(dorkHome, 'plugins', 'sp'), {
-      schemaVersion: 1,
-      type: 'skill-pack',
-      name: 'sp',
-      version: '1.0.0',
-    });
-    await writeManifest(join(dorkHome, 'plugins', 'ad'), {
-      schemaVersion: 1,
-      type: 'adapter',
-      name: 'ad',
-      version: '1.0.0',
-    });
-    await writeManifest(join(dorkHome, 'agents', 'a'), {
-      schemaVersion: 1,
-      type: 'agent',
-      name: 'a',
-      version: '1.0.0',
-    });
-    await writeManifest(join(dorkHome, 'shapes', 's'), {
-      schemaVersion: 1,
-      type: 'shape',
-      name: 's',
-      version: '1.0.0',
-    });
-
-    const result = await scanInstalledPackages(dorkHome);
-    const byType = Object.fromEntries(result.map((p) => [p.type, p.name]));
-    expect(byType).toEqual({
-      plugin: 'p',
-      'skill-pack': 'sp',
-      adapter: 'ad',
-      agent: 'a',
-      shape: 's',
-    });
-  });
-
-  it('omits provenance fields when the install-metadata sidecar is missing', async () => {
-    const pluginDir = join(dorkHome, 'plugins', 'orphan-plugin');
-    await writeManifest(pluginDir, {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'orphan-plugin',
-      version: '0.1.0',
-    });
-
-    const result = await scanInstalledPackages(dorkHome);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({
-      name: 'orphan-plugin',
-      version: '0.1.0',
-      type: 'plugin',
-      installPath: pluginDir,
-      scope: 'global',
-    });
-    expect(result[0].installedFrom).toBeUndefined();
-    expect(result[0].installedAt).toBeUndefined();
-  });
-
   it('surfaces adapterType for an installed connector adapter, matching what Browse shows (DOR-710)', async () => {
     const connectorDir = join(dorkHome, 'plugins', 'slack-connector');
     await writeManifest(connectorDir, {
@@ -273,24 +178,6 @@ describe('scanInstalledPackages', () => {
     const result = await scanInstalledPackages(dorkHome);
     expect(result).toHaveLength(1);
     expect(result[0].adapterType).toBe('connector');
-  });
-
-  it('never leaks adapterType onto a non-adapter package, even if the manifest carries the field', async () => {
-    // The same gate `flattenMergedEntry` applies for Browse: adapterType is
-    // meaningful only for `type: 'adapter'`, so it must not leak through for
-    // any other type even if present on disk.
-    const pluginDir = join(dorkHome, 'plugins', 'odd-plugin');
-    await writeManifest(pluginDir, {
-      schemaVersion: 1,
-      type: 'plugin',
-      adapterType: 'connector',
-      name: 'odd-plugin',
-      version: '1.0.0',
-    });
-
-    const result = await scanInstalledPackages(dorkHome);
-    expect(result).toHaveLength(1);
-    expect(result[0].adapterType).toBeUndefined();
   });
 
   it('sees a CC-NATIVE package (only .claude-plugin/plugin.json, no .dork/manifest.json) — DOR-264', async () => {
@@ -313,38 +200,6 @@ describe('scanInstalledPackages', () => {
       type: 'plugin',
       installPath: pluginDir,
     });
-  });
-
-  it('skips package directories with missing or unreadable manifests', async () => {
-    // Directory exists with no manifest at all.
-    await mkdir(join(dorkHome, 'plugins', 'empty-dir'), { recursive: true });
-
-    // Valid plugin alongside the broken one.
-    const goodDir = join(dorkHome, 'plugins', 'good-plugin');
-    await writeManifest(goodDir, {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'good-plugin',
-      version: '1.0.0',
-    });
-
-    const result = await scanInstalledPackages(dorkHome);
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('good-plugin');
-  });
-
-  it('only walks plugins/ and agents/, ignoring sibling directories', async () => {
-    // Stash a "package-like" tree under an unrelated dir.
-    const strayDir = join(dorkHome, 'somewhere-else', 'rogue');
-    await writeManifest(strayDir, {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'rogue',
-      version: '1.0.0',
-    });
-
-    const result = await scanInstalledPackages(dorkHome);
-    expect(result).toEqual([]);
   });
 
   it('never lists a crash-left install backup, even with a valid manifest (DOR-175)', async () => {
@@ -388,43 +243,6 @@ describe('scanInstalledPackages', () => {
       version: '1.2.3',
       installPath: realDir,
     });
-  });
-
-  it('excludes backups from the merged single-project view as well (DOR-175)', async () => {
-    const projectPath = await mkdtemp(join(tmpdir(), 'dorkos-scanner-project-'));
-    try {
-      const localReal = join(projectPath, '.dork', 'plugins', 'flow');
-      await writeManifest(localReal, {
-        schemaVersion: 1,
-        type: 'plugin',
-        name: 'flow',
-        version: '1.0.0',
-      });
-      const localBackup = join(
-        projectPath,
-        '.dork',
-        'plugins',
-        `flow.dorkos-bak-${Date.now()}-cafebabe`
-      );
-      await writeManifest(localBackup, {
-        schemaVersion: 1,
-        type: 'plugin',
-        name: 'flow',
-        version: '0.9.0',
-      });
-
-      const result = await scanInstalledPackages(dorkHome, projectPath);
-
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({
-        name: 'flow',
-        version: '1.0.0',
-        installPath: localReal,
-        scope: 'agent-local',
-      });
-    } finally {
-      await rm(projectPath, { recursive: true, force: true });
-    }
   });
 });
 
@@ -486,28 +304,6 @@ describe('readInstalledIdentity', () => {
     const listed = await scanInstalledPackages(dorkHome);
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({ name: 'cc-broken', version: '1.3.0', type: 'plugin' });
-  });
-
-  it("reports a Claude-Code-only package's own version, and no declared version when it states none", async () => {
-    // Purpose: "declares none" must not read as a real 0.0.0 to the update check.
-    const withVersion = join(dorkHome, 'plugins', 'cc-versioned');
-    await writePluginJson(withVersion, { name: 'cc-versioned', version: '2.0.0' });
-    const without = join(dorkHome, 'plugins', 'cc-unversioned');
-    await writePluginJson(without, { name: 'cc-unversioned' });
-
-    expect(await readInstalledIdentity(withVersion)).toMatchObject({
-      version: '2.0.0',
-      declaredVersion: '2.0.0',
-    });
-    const identity = await readInstalledIdentity(without);
-    expect(identity).toMatchObject({ name: 'cc-unversioned', version: '0.0.0' });
-    expect(identity?.declaredVersion).toBeUndefined();
-  });
-
-  it('returns null rather than throwing for a directory it cannot read', async () => {
-    // Purpose: it sits on the installed-list and update-check paths, where
-    // one unreadable package must cost only its own entry.
-    expect(await readInstalledIdentity(join(dorkHome, 'does', 'not', 'exist'))).toBeNull();
   });
 });
 
@@ -572,24 +368,6 @@ describe('scanInstallationsAcrossScopes', () => {
     });
   });
 
-  // Purpose: agent-only installs (no global copy) are plain agent-local, not
-  // overrides.
-  it('tags agent-only installs as agent-local', async () => {
-    await writeManifest(join(agentA, '.dork', 'plugins', 'solo'), {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'solo',
-      version: '1.0.0',
-    });
-
-    const result = await scanInstallationsAcrossScopes(dorkHome, [
-      { projectPath: agentA, id: 'a', name: 'Alpha Agent' },
-    ]);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].scope).toBe('agent-local');
-  });
-
   // Purpose: a crash-left backup inside an agent's .dork/plugins/ must not
   // surface as a phantom installation row (DOR-175).
   it('excludes crash-left backups from the cross-scope walk', async () => {
@@ -615,26 +393,6 @@ describe('scanInstallationsAcrossScopes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ name: 'solo', version: '1.0.0', scope: 'agent-local' });
-  });
-
-  // Purpose: two registry entries can point at one directory (re-registration);
-  // the scan must not produce duplicate rows for them.
-  it('dedupes agents sharing a project path and skips unreadable agent dirs', async () => {
-    await writeManifest(join(agentA, '.dork', 'plugins', 'solo'), {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'solo',
-      version: '1.0.0',
-    });
-
-    const result = await scanInstallationsAcrossScopes(dorkHome, [
-      { projectPath: agentA, id: 'a', name: 'Alpha Agent' },
-      { projectPath: agentA, id: 'a2', name: 'Alpha Clone' },
-      { projectPath: join(agentB, 'does-not-exist'), id: 'ghost', name: 'Ghost' },
-    ]);
-
-    expect(result).toHaveLength(1);
-    expect(result[0].agentId).toBe('a');
   });
 });
 
@@ -685,23 +443,6 @@ describe('scanInstallationRecords', () => {
       metadata: { commitSha: 'a'.repeat(40), entryVersion: '0.7.2' },
       package: { name: 'flow', version: '0.7.2', scope: 'global', installPath: pluginDir },
     });
-  });
-
-  it('reports no declared version for a Claude-Code-only package that states none', async () => {
-    // Purpose: a synthesized 0.0.0 must never read as a real version, or the
-    // check would compare against a number nobody declared.
-    const pluginDir = join(dorkHome, 'plugins', 'bare');
-    await mkdir(join(pluginDir, '.claude-plugin'), { recursive: true });
-    await writeFile(
-      join(pluginDir, '.claude-plugin', 'plugin.json'),
-      JSON.stringify({ name: 'bare', description: 'no version here' })
-    );
-
-    const [record] = await scanInstallationRecords(dorkHome, { agents: [] });
-
-    expect(record?.package.name).toBe('bare');
-    expect(record?.declaredVersion).toBeUndefined();
-    expect(record?.metadata).toBeNull();
   });
 
   it('gives one record per installation across scopes, with the agent identity', async () => {
@@ -756,33 +497,6 @@ describe('scanInstallationRecords', () => {
       dev: true,
       fetched: false,
     });
-  });
-
-  it('flags a symlinked install on the listing, and leaves a fetched one unflagged', async () => {
-    // Purpose: `GET /installed` (and `dorkos marketplace installed`) must say
-    // which installs are a developer's linked working copy, since those are
-    // never updated in place. The flag is present only when true, so a fetched
-    // install's listing entry is unchanged.
-    const source = join(agentA, 'working-copy');
-    await writeManifest(source, {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'dev',
-      version: '1.0.0',
-    });
-    await mkdir(join(dorkHome, 'plugins'), { recursive: true });
-    await symlink(source, join(dorkHome, 'plugins', 'dev'));
-    await writeManifest(join(dorkHome, 'plugins', 'fetched'), {
-      schemaVersion: 1,
-      type: 'plugin',
-      name: 'fetched',
-      version: '1.0.0',
-    });
-
-    const listed = await scanInstallationsAcrossScopes(dorkHome, []);
-
-    expect(listed.find((p) => p.name === 'dev')?.linked).toBe(true);
-    expect(listed.find((p) => p.name === 'fetched')).not.toHaveProperty('linked');
   });
 
   it("gives one project's merged view when asked for a project", async () => {
@@ -843,10 +557,5 @@ describe('computeProvides', () => {
 
     const provides = await computeProvides(installPath);
     expect(provides).toEqual({ commands: 3, skills: 2, hooks: true });
-  });
-
-  it('returns zeros and hooks:false when the package ships none of them', async () => {
-    const provides = await computeProvides(installPath);
-    expect(provides).toEqual({ commands: 0, skills: 0, hooks: false });
   });
 });

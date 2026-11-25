@@ -126,15 +126,45 @@ export interface CliSurface {
   subcommand?: string;
 }
 
+/** The success statuses a capability's HTTP route may answer with. */
+export type HttpSuccessStatus = 200 | 201 | 202 | 204;
+
 /**
- * The HTTP projection of a capability: the method + path auto-registered into
- * the OpenAPI document so the capability appears in `/api/docs`.
+ * The HTTP projection of a capability: a route the server serves (the generic
+ * capability mount, `routes/capability-http.ts`) and the OpenAPI document
+ * describes, both from this one declaration (ADR 261123-170830).
+ *
+ * The request is the capability's input, gathered from three places: the
+ * path's `{name}` segments (see {@link HttpSurface.params}), the query string
+ * (see {@link HttpSurface.query}) and, for `post`/`put`/`patch`, the JSON body.
+ *
+ * Still to come, each in its own change: the error codes a route may answer,
+ * its page shape, its stability and its audience. Each joins this interface as
+ * a field of its own.
  */
 export interface HttpSurface {
-  /** HTTP method for the projected route. */
+  /** HTTP method for the route. */
   method: HttpMethod;
-  /** Route path, e.g. `/api/capabilities`. */
+  /** Route path in OpenAPI form, e.g. `/api/agents/{agentId}/pause`. */
   path: string;
+  /**
+   * Which input field each `{segment}` of {@link HttpSurface.path} fills, keyed
+   * by segment name. A segment not listed fills the input field of its own
+   * name, so declare an entry only when the two names differ.
+   */
+  params?: Readonly<Record<string, string>>;
+  /**
+   * The input fields read from the query string. Defaults to every field the
+   * path does not carry for `get` and `delete`, and to none for `post`, `put`
+   * and `patch`, whose remaining fields come from the JSON body.
+   */
+  query?: readonly string[];
+  /**
+   * The status a successful call answers with. Defaults to `200`; `204` sends
+   * no body. An approval the caller must wait for is always `202`, whatever
+   * this says.
+   */
+  success?: HttpSuccessStatus;
 }
 
 /**

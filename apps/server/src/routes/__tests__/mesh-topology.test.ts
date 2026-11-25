@@ -189,7 +189,7 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 when action is invalid', async () => {
@@ -200,7 +200,7 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 when sourceNamespace is empty', async () => {
@@ -211,7 +211,7 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     // --- The mesh-wide switch (DOR-1338) ---
@@ -255,9 +255,9 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
       // The caller gets the schema's own wording, not a paraphrase.
-      expect(res.body.details.fieldErrors.targetNamespace).toContain(
+      expect(res.body.issues.fieldErrors.targetNamespace).toContain(
         WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE
       );
       expect(meshCore.allowCrossNamespace).not.toHaveBeenCalled();
@@ -275,7 +275,8 @@ describe('Mesh topology routes', () => {
       });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('nope');
+      expect(res.body.code).toBe('invalid_request');
+      expect(res.body.detail).toBe('That access rule isn’t allowed.');
     });
   });
 
@@ -300,7 +301,7 @@ describe('Mesh topology routes', () => {
       const res = await request(app).get('/api/mesh/agents/nonexistent/access');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Agent not found');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('returns empty array when agent has no reachable peers', async () => {

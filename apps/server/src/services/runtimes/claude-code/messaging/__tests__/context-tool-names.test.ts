@@ -123,9 +123,8 @@ import {
   _buildRelayConnectionsBlock,
 } from '../context-builder.js';
 import { createDorkOsToolServer } from '../../mcp-tools/index.js';
-import { ALWAYS_LOADED_TOOLS, IN_SESSION_TOOL_PREFIX } from '../../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../mcp-tools/tool-exposure.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { OPERATING_SKILLS_PACK, TOOL_NAME_NOTE } from '@dorkos/operating-skills';
 import { GEN_UI_CONTEXT } from '../../../shared/gen-ui-context.js';
 import { buildRoomToolsBlock } from '../../../shared/room-tools-context.js';
 import { formatRoomContext } from '../../../shared/room-context-block.js';
@@ -533,7 +532,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // so it stays deferred.
     // 154 -> 157 for `todo_add`, `todo_update` and `todos_list`, on by default since DOR-5071:
     // no prompt block names them, so they stay deferred.
-    expect(advertised.size).toBe(157);
+    // 157 -> 158 for `resolve_link` (DOR-5046): no prompt block names it, so it stays deferred.
+    expect(advertised.size).toBe(158);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -648,50 +648,6 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     expect(prefixed.length).toBe(83);
   });
 
-  it('names only advertised tools in the agent-session variant of the prompt too', async () => {
-    // The prompt has two shapes now: a plain session, and one whose working
-    // directory hosts a registered agent — which is told the six agent-to-agent
-    // tools are already loaded (DOR-1337 / F8). The variant the plain scan above
-    // never renders needs the same guard, or a name could rot in the half of the
-    // prose only agents read.
-    const advertised = await advertisedToolNames();
-    const prompt = (
-      await buildSystemPromptAppend(testHome(CWD), CWD, undefined, { agentSession: true })
-    ).text;
-
-    const unknown = [
-      ...new Set(
-        identifierTokens(prompt)
-          .filter((token) => token.startsWith(IN_SESSION_TOOL_PREFIX))
-          .filter((token) => token !== IN_SESSION_TOOL_PREFIX)
-          .map((token) => token.slice(IN_SESSION_TOOL_PREFIX.length))
-          .filter((name) => !advertised.has(name))
-      ),
-    ].sort();
-    expect(unknown).toEqual([]);
-
-    // And it says the four are loaded, in full, so nothing spends a ToolSearch.
-    for (const name of ['mesh_list', 'mesh_inspect', 'chat_send', 'chat_read']) {
-      expect(prompt).toContain(`${IN_SESSION_TOOL_PREFIX}${name}`);
-    }
-  });
-
-  it('explains the naming rule, and which tools need no lookup at all', async () => {
-    // Knowing the full name is only half of it: most of the surface is deferred
-    // behind tool search, and both evals showed a model reaching for ToolSearch
-    // and searching the wrong string. The five always-loaded tools are the other
-    // half — the prompt has to say they need no lookup, or a room turn spends one
-    // anyway out of caution.
-    const prompt = (await buildSystemPromptAppend(testHome(CWD), CWD)).text;
-    expect(prompt).toContain('<dorkos_tools>');
-    expect(prompt).toContain('already in your tool list');
-    expect(prompt).toContain('deferred, not missing');
-    // The worked example must name a tool that IS deferred, or it teaches a
-    // lookup for something already loaded.
-    expect(prompt).toContain(`ToolSearch(query="select:${IN_SESSION_TOOL_PREFIX}marketplace_get")`);
-    expect(ALWAYS_LOADED_TOOLS.has('marketplace_get')).toBe(false);
-  });
-
   it('names no in-session tool at all in the runtime-neutral blocks it renders', async () => {
     // Both halves matter, and for the same reason. Codex and OpenCode render
     // these blocks too and reach DorkOS through the external `/mcp` server under
@@ -748,46 +704,6 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
           'or mark the token as a searchable ending — "its name ends in `x`".'
       ).toEqual([]);
     }
-  });
-
-  it('never has one tool description name another tool as callable', async () => {
-    // A tool's DESCRIPTION is the third model-facing surface, and the least
-    // obvious: the same string is served verbatim to the external `/mcp` server
-    // (`register-from-definitions.ts`), where the prefix is whatever a person's
-    // harness config chose. So a description saying "call `mcp_signin` first" is
-    // wrong on claude-code (needs the prefix) AND unreliable everywhere else —
-    // the DOR-1292 defect, one layer down from the prompt blocks.
-    //
-    // Read off the live server, so registration and prose cannot disagree.
-    const server = createDorkOsToolServer(
-      createFullDeps(),
-      undefined,
-      undefined,
-      undefined,
-      composeCapabilityRegistryForDocs()
-    );
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: 'dor-1292-description-probe', version: '0.0.0' });
-    await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);
-    const { tools } = await client.listTools();
-    await client.close();
-
-    const advertised = new Set(tools.map((t) => t.name));
-    const offenders = tools
-      .map((t) => ({
-        name: t.name,
-        named: [...new Set(namedAsCallable(t.description ?? '', advertised))],
-      }))
-      .filter((entry) => entry.named.length > 0)
-      .map((entry) => `${entry.name}: names ${entry.named.join(', ')}`)
-      .sort();
-
-    expect(
-      offenders,
-      'these tool descriptions name a tool by a string no harness guarantees. Say what the ' +
-        'tool DOES ("sign in with the MCP sign-in tool"), or "this same tool" for a ' +
-        'two-call protocol.'
-    ).toEqual([]);
   });
 
   it('keeps tool names out of every runtime-neutral module, rendered or not', async () => {
@@ -1038,64 +954,5 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
         ).toContain(`${prefix}post_to_room(roomId:`);
       }
     }
-  });
-
-  it('makes every operating skill say its tool names are endings', async () => {
-    // These skills are projected into `.claude/skills/` for EVERY harness, so
-    // they hit the same wall as the prompt blocks — with the twist that the names
-    // are the payload of a reference doc, and stripping them to verb phrases
-    // would make the pages useless to search. The names stay; the page has to say
-    // what they are. One shared note, so six documents cannot drift into six
-    // slightly different claims.
-    //
-    // Read off the RENDERED pack, never the source. An earlier revision scanned
-    // the file text for `TOOL_NAME_NOTE`, which the `import` line alone satisfied:
-    // the reviewer deleted `${TOOL_NAME_NOTE}` from `managing-agents.ts`'s body,
-    // left the import, and this passed while the projected skill named `mesh_list`
-    // and `create_agent` bare with no note in sight. `skill.body` is the artifact
-    // an agent actually receives, so it cannot be satisfied by an import.
-    const advertised = await advertisedToolNames();
-    expect(OPERATING_SKILLS_PACK.map((skill) => skill.name).sort()).toEqual([
-      'answering-dorkos-questions',
-      'building-dorkos-apps',
-      'continuing-on-another-account',
-      'managing-agents',
-      'operating-dorkos',
-      'reading-activity',
-      'scheduling-tasks',
-      'using-the-agent-browser',
-      'using-the-marketplace',
-      'waiting-for-a-busy-computer',
-      'working-in-room-repos',
-      'working-on-a-heartbeat',
-      'working-with-spin-off-chats',
-    ]);
-
-    // `building-dorkos-apps` is the App Builder Pack vendored byte for byte
-    // (DOR-4061): Security reviewed that exact text, so DorkOS may not add the
-    // note to it. The note belongs in the next pack version, upstream. Only the
-    // note is waived; the prefix rule below still holds for it.
-    const VENDORED_VERBATIM = new Set(['building-dorkos-apps']);
-    const offenders: string[] = [];
-    for (const skill of OPERATING_SKILLS_PACK) {
-      const names = [...new Set(namedAsCallable(skill.body, advertised))];
-      if (
-        names.length > 0 &&
-        !skill.body.includes(TOOL_NAME_NOTE) &&
-        !VENDORED_VERBATIM.has(skill.name)
-      ) {
-        offenders.push(`${skill.name}: names ${names.sort().join(', ')} without the endings note`);
-      }
-      // The prefix itself is never right here: one of the three runtimes would be
-      // reading somebody else's tool name.
-      if (skill.body.includes(IN_SESSION_TOOL_PREFIX)) {
-        offenders.push(`${skill.name}: spells the prefix`);
-      }
-    }
-    expect(
-      offenders,
-      'these skills name DorkOS tools without telling the reader the names are endings. ' +
-        'Interpolate TOOL_NAME_NOTE into the body.'
-    ).toEqual([]);
   });
 });

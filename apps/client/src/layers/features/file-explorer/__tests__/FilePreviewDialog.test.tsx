@@ -37,11 +37,13 @@ function markdownFile(text: string, commit = 'aaa1111'): RoomFileContentResponse
 /** The refusal the HTTP adapter shapes for a save that lost the race. */
 function fileChanged(commit: string) {
   return Object.assign(new Error('Somebody changed this file'), {
-    code: 'FILE_CHANGED',
+    code: 'file_changed',
     status: 409,
     body: {
-      error: 'Somebody changed this file',
-      code: 'FILE_CHANGED',
+      title: 'Somebody changed these files since you opened them.',
+      status: 409,
+      detail: 'Somebody changed this file',
+      code: 'file_changed',
       conflict: {
         path: 'ROOM.md',
         commit,
@@ -331,7 +333,7 @@ describe('when somebody else got there first', () => {
     transport.readRoomFileContent = vi
       .fn()
       .mockResolvedValueOnce(markdownFile('# Rules\n'))
-      .mockRejectedValue(refusal('ROOM_FILE_NOT_FOUND', 404));
+      .mockRejectedValue(refusal('room_file_not_found', 404));
     transport.saveRoomFile = vi.fn().mockRejectedValue(fileChanged('ddd4444'));
     renderDialog(transport);
 
@@ -430,7 +432,7 @@ describe('when the room refuses the save', () => {
   it('says the request was too large in words, not as a server error', async () => {
     const transport = createMockTransport();
     transport.readRoomFileContent = vi.fn().mockResolvedValue(markdownFile('# Rules\n'));
-    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal('REQUEST_TOO_LARGE', 413));
+    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal('request_too_large', 413));
     renderDialog(transport);
 
     const box = await startEditing();
@@ -446,7 +448,7 @@ describe('when the room refuses the save', () => {
   it('points at the warning above the files when the room is stuck', async () => {
     const transport = createMockTransport();
     transport.readRoomFileContent = vi.fn().mockResolvedValue(markdownFile('# Rules\n'));
-    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal('MAIN_CHECKOUT_DIRTY', 409));
+    transport.saveRoomFile = vi.fn().mockRejectedValue(refusal('main_checkout_dirty', 409));
     renderDialog(transport);
 
     const box = await startEditing();

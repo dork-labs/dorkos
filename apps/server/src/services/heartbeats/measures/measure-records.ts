@@ -8,6 +8,7 @@
  * @module services/heartbeats/measures/measure-records
  */
 import { and, eq, gte, inArray, isNotNull, lte, notLike, sql } from 'drizzle-orm';
+import { isReactionEmoji } from '@dorkos/shared/room-schemas';
 import {
   auditEvents,
   todos,
@@ -210,6 +211,9 @@ function readAnswers(db: Db, entryIds: string[]): Map<string, EntryAnswer> {
     WHERE x.entry_id IN (${ids})
   `);
   for (const reaction of reactions) {
+    // A row an older install stored under a looser check is no answer: the room
+    // no longer shows it, so it must not count as one here either.
+    if (!isReactionEmoji(reaction.emoji)) continue;
     answers.get(reaction.entryId)?.reactions.push({ emoji: reaction.emoji, at: reaction.at });
   }
   return answers;

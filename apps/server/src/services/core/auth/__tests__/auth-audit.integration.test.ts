@@ -8,12 +8,17 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, auditEvents, type Db } from '@dorkos/db';
-import { createAuth, toNodeHandler } from '../index.js';
-import { initConfigManager } from '../../config-manager.js';
+import { getAuth, initAuth } from '../index.js';
+import { createApiApp } from '../../../../http/api-chain.js';
+import { mountBetterAuth } from '../../../../http/better-auth.js';
+import { frontDoorListener } from '../../../../http/front-door.js';
+import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
+import { resetHeldStepUpsForTests } from '../step-up/step-up-holds.js';
+import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { AuditLog } from '../../../audit/audit-log.js';
 import { AccountIds } from '../../../audit/account-ids.js';
@@ -24,7 +29,28 @@ const fixtureServer = fixtureTarget.server;
 
 const EMAIL = 'owner' + '@' + 'dork.test';
 const PASSWORD = 'correct-horse-battery-staple';
-const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
+const HOST = `localhost:${env.DORKOS_PORT}`;
+const ORIGIN = `http://${HOST}`;
+
+/** A POST from the app's own page, through the production `/api` chain. */
+const post = (url: string) =>
+  request(fixtureServer).post(url).set('Host', HOST).set('Origin', ORIGIN);
+
+/**
+ * Send a write the chain holds for the owner's password (API keys, signing
+ * other devices out), confirm it, and answer what the write itself returned.
+ */
+async function confirmed(
+  held: Awaited<ReturnType<typeof post>>,
+  cookies: string[]
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  expect(held.status).toBe(428);
+  const res = await post(`/api/step-up/${held.body.heldActionId}/password`)
+    .set('Cookie', cookies)
+    .send({ password: PASSWORD });
+  expect(res.body.ok).toBe(true);
+  return { status: res.body.status, body: res.body.result };
+}
 
 describe('auth events in the audit log (integration)', () => {
   let tmpDir: string;
@@ -33,39 +59,52 @@ describe('auth events in the audit log (integration)', () => {
   beforeAll(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-auth-audit-'));
     initConfigManager(tmpDir);
+    // Login on, as it is once an owner account exists.
+    configManager.set('auth', { enabled: true });
     db = createDb(path.join(tmpDir, 'auth-audit.db'));
     runMigrations(db);
     initAuditTrail({
       log: new AuditLog(db),
       accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
     });
-    const app = express();
-    app.all('/api/auth/*splat', toNodeHandler(createAuth(db, tmpDir)));
-    fixtureTarget.mount(app);
+    initAuth(db, tmpDir);
+    const app = createApiApp({
+      admission: new MainRequestAdmission(),
+      beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
+    });
+    app.route('/api/step-up', createStepUpRoutes());
+    fixtureTarget.mount(frontDoorListener(app));
   });
 
   afterAll(() => {
+    resetHeldStepUpsForTests();
     resetAuditTrail();
+    db.$client.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  /** Rows written since `from`, as [action, visibility]. */
+  /**
+   * Rows written since `from`, as [action, visibility]. The password
+   * confirmation a held write needs is on record as its own `step-up.confirm`
+   * row; it is not an auth event, so it is left out here.
+   */
   const rowsSince = (from: number) =>
     db
       .select()
       .from(auditEvents)
       .all()
-      .filter((row) => row.seq > from)
+      .filter((row) => row.seq > from && row.action !== 'step-up.confirm')
       .map((row) => [row.action, row.visibility]);
   const lastSeq = () => db.select().from(auditEvents).all().at(-1)?.seq ?? 0;
 
   let cookies: string[];
 
   it('records the owner account, linked to the install id it was known by', async () => {
-    const res = await request(fixtureServer)
-      .post('/api/auth/sign-up/email')
-      .set('Origin', ORIGIN)
-      .send({ email: EMAIL, password: PASSWORD, name: 'Dorian' });
+    const res = await post('/api/auth/sign-up/email').send({
+      email: EMAIL,
+      password: PASSWORD,
+      name: 'Dorian',
+    });
     expect(res.status).toBe(200);
 
     const linked = db
@@ -81,13 +120,12 @@ describe('auth events in the audit log (integration)', () => {
 
   it('records a sign-in as an admins-only row, with where it came from', async () => {
     const from = lastSeq();
-    const res = await request(fixtureServer)
-      .post('/api/auth/sign-in/email')
-      .set('Origin', ORIGIN)
+    const res = await post('/api/auth/sign-in/email')
       .set('User-Agent', 'audit-test-agent')
       .send({ email: EMAIL, password: PASSWORD });
     expect(res.status).toBe(200);
-    cookies = res.headers['set-cookie'] as unknown as string[];
+    // The cookie pairs, as a browser sends them back.
+    cookies = (res.headers['set-cookie'] as unknown as string[]).map((c) => c.split(';')[0]);
 
     expect(rowsSince(from)).toEqual([['auth.signed_in', 'admins']]);
     const row = db.select().from(auditEvents).all().at(-1)!;
@@ -96,10 +134,10 @@ describe('auth events in the audit log (integration)', () => {
 
   it('records a failed sign-in, naming nobody', async () => {
     const from = lastSeq();
-    const res = await request(fixtureServer)
-      .post('/api/auth/sign-in/email')
-      .set('Origin', ORIGIN)
-      .send({ email: EMAIL, password: 'wrong-password-entirely' });
+    const res = await post('/api/auth/sign-in/email').send({
+      email: EMAIL,
+      password: 'wrong-password-entirely',
+    });
     expect(res.status).toBeGreaterThanOrEqual(400);
 
     expect(rowsSince(from)).toEqual([['auth.sign_in_failed', 'admins']]);
@@ -111,11 +149,10 @@ describe('auth events in the audit log (integration)', () => {
 
   it('records an API key created and revoked, without the key', async () => {
     let from = lastSeq();
-    const created = await request(fixtureServer)
-      .post('/api/auth/api-key/create')
-      .set('Origin', ORIGIN)
-      .set('Cookie', cookies)
-      .send({ name: 'cli' });
+    const created = await confirmed(
+      await post('/api/auth/api-key/create').set('Cookie', cookies).send({ name: 'cli' }),
+      cookies
+    );
     expect(created.status).toBe(200);
     expect(rowsSince(from)).toEqual([['api_key.created', 'space']]);
     expect(JSON.stringify(db.select().from(auditEvents).all())).not.toContain(
@@ -123,9 +160,7 @@ describe('auth events in the audit log (integration)', () => {
     );
 
     from = lastSeq();
-    const deleted = await request(fixtureServer)
-      .post('/api/auth/api-key/delete')
-      .set('Origin', ORIGIN)
+    const deleted = await post('/api/auth/api-key/delete')
       .set('Cookie', cookies)
       .send({ keyId: created.body.id });
     expect(deleted.status).toBe(200);
@@ -134,16 +169,12 @@ describe('auth events in the audit log (integration)', () => {
 
   it('records revoking every other sign-in as a revocation, not a sign-out', async () => {
     // A second sign-in, so there is another session to revoke.
-    await request(fixtureServer)
-      .post('/api/auth/sign-in/email')
-      .set('Origin', ORIGIN)
-      .send({ email: EMAIL, password: PASSWORD });
+    await post('/api/auth/sign-in/email').send({ email: EMAIL, password: PASSWORD });
     const from = lastSeq();
-    const res = await request(fixtureServer)
-      .post('/api/auth/revoke-other-sessions')
-      .set('Origin', ORIGIN)
-      .set('Cookie', cookies)
-      .send({});
+    const res = await confirmed(
+      await post('/api/auth/revoke-other-sessions').set('Cookie', cookies).send({}),
+      cookies
+    );
     expect(res.status).toBe(200);
     // Every other session goes (the sign-up's own and the one just made), and
     // each is a revocation.
@@ -156,11 +187,7 @@ describe('auth events in the audit log (integration)', () => {
 
   it('records a sign-out', async () => {
     const from = lastSeq();
-    const res = await request(fixtureServer)
-      .post('/api/auth/sign-out')
-      .set('Origin', ORIGIN)
-      .set('Cookie', cookies)
-      .send({});
+    const res = await post('/api/auth/sign-out').set('Cookie', cookies).send({});
     expect(res.status).toBe(200);
     expect(rowsSince(from)).toEqual([['auth.signed_out', 'admins']]);
   });

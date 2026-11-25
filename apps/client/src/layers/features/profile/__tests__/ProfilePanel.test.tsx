@@ -75,19 +75,19 @@ describe('ProfilePanel — the handle’s refusals', () => {
   }
 
   it('says a different thing for each handle refusal', async () => {
-    const taken = await messageFor('HANDLE_TAKEN', '@taken is taken. Pick a different one.');
+    const taken = await messageFor('handle_taken', '@taken is taken. Pick a different one.');
     cleanup();
     const reserved = await messageFor(
-      'HANDLE_RESERVED',
+      'handle_reserved',
       '@taken is reserved for DorkOS. Pick a different one.'
     );
     cleanup();
     const lookalike = await messageFor(
-      'HANDLE_LOOKALIKE',
+      'handle_lookalike',
       '@taken looks too much like @t4ken. Pick a different one.'
     );
     cleanup();
-    const invalid = await messageFor('INVALID_HANDLE', 'A handle is all lowercase.');
+    const invalid = await messageFor('invalid_handle', 'A handle is all lowercase.');
 
     expect(new Set([taken, reserved, lookalike, invalid]).size).toBe(4);
     // And each one has to say something about ITS refusal, not just differ.
@@ -101,7 +101,7 @@ describe('ProfilePanel — the handle’s refusals', () => {
   });
 
   it('never falls back to one generic sentence when the code is known', async () => {
-    const taken = await messageFor('HANDLE_TAKEN', '');
+    const taken = await messageFor('handle_taken', '');
     expect(taken).not.toMatch(/Couldn’t save your handle/);
   });
 });
@@ -124,10 +124,11 @@ describe('ProfilePanel — the photo', () => {
 
   it('maps each upload refusal to what to do about it', async () => {
     const cases: [string, RegExp][] = [
-      ['AVATAR_TOO_LARGE', /over 2 MB/i],
-      ['AVATAR_TYPE_UNSUPPORTED', /PNG, JPEG or WebP/i],
-      ['AVATAR_MISSING', /came through/i],
-      ['OPERATOR_ONLY', /only the person at the keyboard/i],
+      ['request_too_large', /over 2 MB/i],
+      ['malformed_request', /pick one photo/i],
+      ['avatar_type_unsupported', /PNG, JPEG or WebP/i],
+      ['avatar_missing', /came through/i],
+      ['operator_only', /only the person at the keyboard/i],
     ];
     for (const [code, expected] of cases) {
       renderPanel(SELF, {

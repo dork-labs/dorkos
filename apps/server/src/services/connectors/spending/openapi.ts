@@ -11,10 +11,15 @@ import {
   SetSpendingPriceBodySchema,
   SpendingSummarySchema,
 } from '@dorkos/shared/connector-spending';
+import { problemResponse } from '../../core/openapi/problem-openapi.js';
 
 const held = { description: 'Confirm it’s you first: more money could leave without a card.' };
-const refused = { description: 'Only the person who owns this DorkOS can change spending.' };
-const invalid = { description: 'The amount is below $0.01, above the maximum, or not a number.' };
+const refused = problemResponse(
+  '`person_only` or `owner_only`: only the person who owns this DorkOS can change spending.'
+);
+const invalid = problemResponse(
+  '`invalid_request`: the amount is below $0.01, above the maximum, or not a number.'
+);
 
 /**
  * Register the spending routes.

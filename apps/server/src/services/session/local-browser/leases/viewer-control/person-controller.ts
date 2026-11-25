@@ -38,9 +38,10 @@ export class BrowserPersonController {
       inputReady: () => this.current() && this.work.ready(),
       confirmPaint: (paint) => this.work.confirmPaint(paint),
       // Capture the generation-specific object synchronously before the first await.
-      runPerson: (event) => this.work.run(event),
-      readSelection: () => this.work.readSelection(),
-      chooseFiles: (id, payloads) => this.work.chooseFiles(id, payloads),
+      runPerson: (event, admit) => this.work.run(event, admit),
+      readSelection: (admit) => this.work.readSelection(admit),
+      chooseFiles: (id, payloads, settled, admit) =>
+        this.work.chooseFiles(id, payloads, settled, admit),
       cancelFileChooser: (id) => {
         const work = this.work;
         work.assertCurrent();

@@ -1,7 +1,7 @@
 ---
 number: 226
 title: Store MCP API Key in Config.json with Env Var Override
-status: draft
+status: archived
 created: 2026-04-05
 spec: external-mcp-access
 superseded-by: null

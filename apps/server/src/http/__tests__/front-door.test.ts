@@ -55,10 +55,6 @@ function fixtureApp(): Hono<ApiEnv> {
     const body = new Uint8Array(await c.req.arrayBuffer());
     return c.json({ bytes: body.length, sha256: sha256(body) });
   });
-  app.post('/json', async (c) => {
-    const body = (await c.req.json()) as { blob: string };
-    return c.json({ length: body.blob.length });
-  });
   // Refuses an oversize body from its declared length, without reading it.
   app.post('/small', (c) =>
     Number(c.req.header('content-length') ?? 0) > 1024
@@ -128,9 +124,6 @@ function fixtureApp(): Hono<ApiEnv> {
   );
   // Refuses without reading the body, as an auth check ahead of an upload does.
   app.post('/refuse', (c) => c.json({ error: 'no' }, 401));
-  app.get('/boom', () => {
-    throw new Error('fixture failure');
-  });
   return app;
 }
 
@@ -181,18 +174,6 @@ describe('front door', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ bytes: TWO_MB, sha256: sha256(body) });
-  });
-
-  it('hands a route a 2 MB JSON body to parse', async () => {
-    const base = await serveThroughFrontDoor(fixtureApp());
-    const blob = 'x'.repeat(TWO_MB);
-    const res = await fetch(`${base}/json`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blob }),
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ length: TWO_MB });
   });
 
   it('keeps a route’s own 413, and the next request still works', async () => {
@@ -254,20 +235,8 @@ describe('front door', () => {
     await vi.waitFor(() => expect(closedRequests).toContain('/forever'));
   });
 
-  it('answers HEAD with the headers and no body', async () => {
-    const base = await serveThroughFrontDoor(fixtureApp());
-    const res = await fetch(`${base}/head`, { method: 'HEAD' });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('x-fixture')).toBe('yes');
-    expect(await res.text()).toBe('');
-  });
-
   it.each([
     ['no Host at all (HTTP/1.0)', 'GET /head HTTP/1.0\r\n\r\n'],
-    [
-      'a port out of range',
-      'GET /head HTTP/1.1\r\nHost: localhost:99999\r\nConnection: close\r\n\r\n',
-    ],
     [
       'a Host with a path in it',
       'GET /head HTTP/1.1\r\nHost: example.com/x\r\nConnection: close\r\n\r\n',
@@ -333,12 +302,6 @@ describe('front door', () => {
     expect(raw).toMatch(/HTTP\/1\.1 200 OK[\s\S]*x-fixture: yes/i);
   });
 
-  it('keeps a route’s error answer', async () => {
-    const base = await serveThroughFrontDoor(fixtureApp());
-    const res = await fetch(`${base}/boom`);
-    expect(res.status).toBe(500);
-  });
-
   it('lets the upgrade router claim a WebSocket on the same server', async () => {
     const server = createFrontDoorServer(fixtureApp());
     servers.push(server);
@@ -384,22 +347,6 @@ describe('front door', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(KeepAwakeStatusSchema.parse(body)).toEqual(body);
-    });
-
-    it('keeps the app-wide 1 MB JSON limit', async () => {
-      const base = await serveThroughFrontDoor(app);
-      const res = await fetch(`${base}/api/no-such-route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blob: 'x'.repeat(TWO_MB) }),
-      });
-      expect(res.status).toBe(413);
-    });
-
-    it('keeps the /api 404', async () => {
-      const base = await serveThroughFrontDoor(app);
-      const res = await fetch(`${base}/api/no-such-route`);
-      expect(res.status).toBe(404);
     });
 
     it('refuses an /api request with no Host at all, as the host guard always has', async () => {

@@ -109,8 +109,9 @@ function asyncRunner(
       live += 1;
       maxLive = Math.max(maxLive, live);
       try {
-        // Yield first, so two turns that could overlap get the chance to.
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        // Yield first, so two turns that could overlap get the chance to. setImmediate,
+        // not setTimeout, so a test on a fake clock still runs its turns.
+        await new Promise((resolve) => setImmediate(resolve));
         if (busy(request)) return { sessionId, text: null, unanswered: 'busy' as const };
         return { sessionId, text: await script(request, sessionId) };
       } finally {
@@ -300,6 +301,7 @@ describe('one seat per agent per room, and the hand-off', () => {
   }, 30_000);
 
   afterEach(async () => {
+    vi.useRealTimers();
     // A timed-out cold import still owns its continuation. Drain it before restoring the home.
     await setupPromise?.catch(() => undefined);
     setChatMessageService?.(undefined);
@@ -448,6 +450,8 @@ describe('one seat per agent per room, and the hand-off', () => {
     await settle();
     let seatsBusy = true;
     const triedAt: Record<string, number[]> = { [bo]: [], [cy]: [] };
+    // The retry spacing is a 1 s timer; a fake clock walks 2.5 s of it at once.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     // The runtime refuses each seat's hand-off turn, as it does a session still running
     // background work: no claim stands in the way, so every try is a turn that starts and ends.
     busy = (request) => {
@@ -477,7 +481,12 @@ describe('one seat per agent per room, and the hand-off', () => {
       expect(accepted.handoffId).toEqual(expect.any(String));
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    // Walk the clock in steps: each try yields on setImmediate (left real) before it is
+    // refused and its retry is timed, so one 2.5 s jump would outrun the second try.
+    for (let elapsed = 0; elapsed < 2_500; elapsed += 100) {
+      await vi.advanceTimersByTimeAsync(100);
+      for (let i = 0; i < 3; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    }
 
     // Each refusal releases a claim; before the fix that woke the other seat at once, so the
     // two traded tries about ten times a second for as long as the seats stayed busy.
@@ -493,10 +502,17 @@ describe('one seat per agent per room, and the hand-off', () => {
     const before = { bo: triedAt[bo]!.length, cy: triedAt[cy]!.length };
     seatsBusy = false;
     service.post(dorkos.id, { authorId: human, text: '@bo @cy morning' });
-    await settle();
+    // Settle on the fake clock: the room's zero-delay hand-overs are fake timers too. Each
+    // step is 1 ms, so the next timed retry (about half a second away) stays far off.
+    let settled = false;
+    void settle().then(() => (settled = true));
+    while (!settled) {
+      await vi.advanceTimersByTimeAsync(1);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     expect(triedAt[bo]).toHaveLength(before.bo + 1);
     expect(triedAt[cy]).toHaveLength(before.cy + 1);
-  }, 15_000);
+  });
 
   it('C: an out-of-date request is declined, and the asker is told why', async () => {
     productHandsOff('Please review PR 12.');

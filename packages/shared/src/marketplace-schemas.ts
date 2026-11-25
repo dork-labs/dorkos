@@ -29,6 +29,7 @@ import { z } from 'zod';
 import { ApprovedPermissionSetSchema, ExtensionApprovedSourceSchema } from './config-schema.js';
 import type { PermissionMode } from './schemas.js';
 import type { CheckResult } from './health-schemas.js';
+import { HIDDEN_CHARACTERS } from './hidden-characters.js';
 
 // ---------------------------------------------------------------------------
 // Package type
@@ -517,24 +518,6 @@ export const PLUGIN_PROGRAMS_SCOPE_NOTE =
 export function describeProgramLine(command: string, args: readonly string[] = []): string {
   return [command, ...args].map((part) => revealHiddenCharacters(JSON.stringify(part))).join(' ');
 }
-
-/**
- * Characters that change how text around them is displayed without being seen:
- * bidirectional controls (which can make `rm -rf ~` read as something else),
- * zero-width characters, the soft hyphen, the line and paragraph separators,
- * variation selectors, and Unicode tag characters (U+E0000\u2013E007F). Tag
- * characters show nothing to a person but read as text to a model, so they can
- * carry instructions nobody approving the text could see (DOR-5060). Variation
- * selectors are matched by their Unicode property, outside the class: inside
- * one they would combine with the character before them.
- *
- * One selector is left alone: a single U+FE0F straight after an emoji, which
- * only asks for the emoji's colour form (`\u2764\uFE0F`) and is in most emoji people
- * type (DOR-5075). Any other selector, a U+FE0F after anything but an emoji,
- * and a second selector after the first are still matched.
- */
-const HIDDEN_CHARACTERS =
-  /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2028\u2029\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]|(?<!\p{Extended_Pictographic})\uFE0F|(?!\uFE0F)\p{Variation_Selector}/gu;
 
 /**
  * A hidden character's code point as a person reads it, `U+202E`: upper-case

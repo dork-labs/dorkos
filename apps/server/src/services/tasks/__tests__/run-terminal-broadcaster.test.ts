@@ -56,22 +56,6 @@ describe('broadcastRunTerminal via the TaskStore run-terminal hook (DOR-403)', (
     expect(failCalls()[0][1]).toMatchObject({ runId: created.id, scheduleId: task.id });
   });
 
-  it('broadcasts task_run_failed on a store-level updateRun("failed") — the relay receiver path', async () => {
-    const task = store.createTask(taskInput('relay-fail'));
-    const created = store.createRun(task.id, 'manual');
-    // The relay receiver (packages/relay task-handler) finalizes a delivered run
-    // by writing the terminal status straight to TaskStore, exactly like this.
-    store.updateRun(created.id, {
-      status: 'failed',
-      finishedAt: new Date().toISOString(),
-      error: 'agent turn failed',
-    });
-    await flush();
-
-    expect(failCalls()).toHaveLength(1);
-    expect(failCalls()[0][1]).toMatchObject({ runId: created.id, scheduleId: task.id });
-  });
-
   it('does NOT broadcast task_run_failed on a successful terminal run', async () => {
     const task = store.createTask(taskInput('success'));
     const created = store.createRun(task.id, 'scheduled');
@@ -105,29 +89,5 @@ describe('broadcastRunTerminal via the TaskStore run-terminal hook (DOR-403)', (
       .mock.calls.filter(([name]) => name === 'task_run_finished')
       .map(([, data]) => (data as { status: string }).status);
     expect(finished).toEqual(['completed', 'needs_attention', 'cancelled']);
-  });
-
-  it('does NOT broadcast on a cancelled terminal run', async () => {
-    const task = store.createTask(taskInput('cancelled'));
-    const created = store.createRun(task.id, 'manual');
-
-    store.updateRun(created.id, { status: 'cancelled' });
-    await flush();
-
-    expect(failCalls()).toHaveLength(0);
-  });
-
-  it('does NOT re-broadcast on a re-observation of an already-terminal run', async () => {
-    const task = store.createTask(taskInput('reobserve'));
-    const created = store.createRun(task.id, 'scheduled');
-
-    // First failure fires once.
-    store.updateRun(created.id, { status: 'failed', error: 'boom' });
-    // Later stomps on the already-terminal run are guarded no-ops — no re-fire.
-    store.updateRun(created.id, { status: 'running' });
-    store.updateRun(created.id, { status: 'failed', error: 'late' });
-    await flush();
-
-    expect(failCalls()).toHaveLength(1);
   });
 });

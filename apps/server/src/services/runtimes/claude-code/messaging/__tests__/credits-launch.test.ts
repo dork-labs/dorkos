@@ -24,9 +24,14 @@ describe('the process env of a credits turn', () => {
       {
         PATH: '/bin',
         HTTPS_PROXY: 'http://proxy',
+        https_proxy: 'http://proxy-lower.invalid',
+        NO_PROXY: 'localhost',
+        NODE_EXTRA_CA_CERTS: '/fixture/extra-ca.pem',
         CLAUDE_CONFIG_DIR: '/credits',
         DORKOS_AGENT_TOKEN: 'agent',
         DORKOS_SESSION_ID: 'credits-chat',
+        DORKOS_AGENT_ID: 'credits-agent',
+        DORKOS_SPACE_ID: 'credits-space',
         FLOW_RUNTIME: 'claude-code',
         FLOW_HARNESS: 'dorkos',
         GIT_CONFIG_COUNT: '1',
@@ -43,9 +48,14 @@ describe('the process env of a credits turn', () => {
       [
         'PATH',
         'HTTPS_PROXY',
+        'https_proxy',
+        'NO_PROXY',
+        'NODE_EXTRA_CA_CERTS',
         'CLAUDE_CONFIG_DIR',
         'DORKOS_AGENT_TOKEN',
         'DORKOS_SESSION_ID',
+        'DORKOS_AGENT_ID',
+        'DORKOS_SPACE_ID',
         'FLOW_RUNTIME',
         'FLOW_HARNESS',
         'GIT_CONFIG_COUNT',
@@ -55,6 +65,12 @@ describe('the process env of a credits turn', () => {
         'ANTHROPIC_AUTH_TOKEN',
       ].sort()
     );
+    expect(env).toMatchObject({
+      HTTPS_PROXY: 'http://proxy',
+      https_proxy: 'http://proxy-lower.invalid',
+      NO_PROXY: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/fixture/extra-ca.pem',
+    });
   });
 
   it('keeps the telemetry-off names a DO_NOT_TRACK server projects (DOR-4990)', () => {

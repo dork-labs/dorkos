@@ -1,7 +1,7 @@
 ---
 number: 115
 title: Separate pendingUserContent Ephemeral State from JSONL-Sourced Messages Array
-status: proposed
+status: archived
 created: 2026-03-11
 spec: fix-chat-ui-reliability-bugs
 superseded-by: null

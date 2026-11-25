@@ -17,6 +17,9 @@ import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
  *
  * @vitest-environment node
  */
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
@@ -27,7 +30,14 @@ import {
   resetAgentIdentityService,
 } from '../../../../core/agent-identity/index.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
+import { resolveLaunch } from '../launch-resolver.js';
 import type { AgentSession } from '../../agent-types.js';
+import {
+  SPACE_ID_FILENAME,
+  resetLocalSpaceIdForTests,
+  loadLocalSpaceId,
+} from '../../../../../lib/identity/space-id.js';
+import { INSTANCE_ID_FILENAME } from '../../../../../lib/instance-id.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -165,5 +175,75 @@ describe('executeSdkQuery — who the session token is minted for', () => {
     const options = await launchWith(null);
 
     expect((options.env as Record<string, string>)[AGENT_TOKEN_ENV_VAR]).toBeUndefined();
+  });
+});
+
+describe('executeSdkQuery — the references a signature carries (DOR-5138)', () => {
+  let dorkHome: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    initAgentIdentityService(createTestDb());
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-refs-'));
+    // Where a turn WOULD mint, if it read the file itself: it must not.
+    vi.stubEnv('DORK_HOME', dorkHome);
+    // Ambient values from the server's own environment must never ride through.
+    vi.stubEnv('DORKOS_AGENT_ID', 'ambient-agent');
+    vi.stubEnv('DORKOS_SPACE_ID', 'ambient-space');
+  });
+
+  afterEach(async () => {
+    resetLocalSpaceIdForTests();
+    vi.unstubAllEnvs();
+    resetAgentIdentityService();
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('names the chat’s Mesh agent and the space boot loaded, never the install id', async () => {
+    const installId = '11111111-2222-3333-4444-555555555555';
+    await fs.writeFile(path.join(dorkHome, INSTANCE_ID_FILENAME), installId);
+    const spaceId = await loadLocalSpaceId(dorkHome);
+
+    const env = (await launchWith(meshWithAgent())).env as Record<string, string>;
+
+    expect(env.DORKOS_AGENT_ID).toBe('01JAGENT0000000000000000');
+    expect(spaceId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(env.DORKOS_SPACE_ID).toBe(spaceId);
+    expect(Object.values(env)).not.toContain(installId);
+  });
+
+  it('leaves the agent out when the folder hosts no agent, and keeps the space', async () => {
+    const spaceId = await loadLocalSpaceId(dorkHome);
+    const env = (await launchWith(null)).env as Record<string, string>;
+
+    expect(env).not.toHaveProperty('DORKOS_AGENT_ID');
+    expect(env.DORKOS_SPACE_ID).toBe(spaceId);
+  });
+
+  it('pins the same Mesh id on the launch, so a changed id relaunches the warm process', async () => {
+    const resolved = await resolveLaunch({
+      sessionId: 's1',
+      content: 'hello',
+      session: makeSession(),
+      opts: {
+        cwd: AGENT_CWD,
+        meshCore: meshWithAgent(),
+        requiredLaunches,
+        onSdkSessionRebind: async () => {},
+      },
+      effectiveCwd: AGENT_CWD,
+    });
+
+    expect(resolved.launch.agentIdentity?.agentId).toBe('01JAGENT0000000000000000');
+    expect((resolved.launch.options.env as Record<string, string>).DORKOS_AGENT_ID).toBe(
+      resolved.launch.agentIdentity?.agentId
+    );
+  });
+
+  it('carries no space id and writes no file when the server never booted', async () => {
+    const env = (await launchWith(meshWithAgent())).env as Record<string, string>;
+
+    expect(env).not.toHaveProperty('DORKOS_SPACE_ID');
+    expect(await fs.readdir(dorkHome)).not.toContain(SPACE_ID_FILENAME);
   });
 });

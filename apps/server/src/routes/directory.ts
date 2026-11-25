@@ -14,7 +14,8 @@ import {
 import { logger } from '../lib/logger.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { boundaryProblem } from '../http/problems/boundary-refusal.js';
 import { readQuery } from '../http/request-query.js';
 
 const CreateDirectoryBodySchema = z.object({
@@ -24,11 +25,23 @@ const CreateDirectoryBodySchema = z.object({
 
 const router = new Hono<ApiEnv>();
 
+/** The folder asked for is not there. */
+const FOLDER_MISSING = 'That folder doesn’t exist.';
+
+/** The operating system would not let DorkOS read the folder. */
+const NOT_ALLOWED_TO_READ = 'DorkOS isn’t allowed to read that folder.';
+
+/** Reading the folder failed for a reason that is not the caller's. */
+const FOLDER_UNREADABLE = 'Couldn’t read that folder. Try again.';
+
+/** Making the folder failed for a reason that is not the caller's. */
+const FOLDER_NOT_MADE = 'Couldn’t make that folder. Try again.';
+
 // GET /api/directory - Browse directories (restricted to configured boundary)
 router.get('/', async (c) => {
   const parsed = BrowseDirectoryQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { path: userPath, showHidden } = parsed.data;
 
@@ -43,15 +56,12 @@ router.get('/', async (c) => {
     // session routes got in PR #412 (DOR-437).
     resolved = await validateBoundaryOrDorkHome(targetPath);
   } catch (err: unknown) {
-    if (err instanceof BoundaryError) {
-      if (err.code === 'NULL_BYTE') return c.json({ error: err.message, code: err.code }, 400);
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404);
-    if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
+    if (code === 'ENOENT') return problem(c, 'not_found', { detail: FOLDER_MISSING });
+    if (code === 'EACCES') return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_READ });
     logger.error('[directory] GET / validateBoundary failed', { err, targetPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: FOLDER_UNREADABLE });
   }
 
   // Read directory entries (directories only)
@@ -60,11 +70,13 @@ router.get('/', async (c) => {
     dirents = (await fs.readdir(resolved, { withFileTypes: true })) as import('fs').Dirent[];
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404);
-    if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
-    if (code === 'ENOTDIR') return c.json({ error: 'Not a directory' }, 400);
+    if (code === 'ENOENT') return problem(c, 'not_found', { detail: FOLDER_MISSING });
+    if (code === 'EACCES') return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_READ });
+    if (code === 'ENOTDIR') {
+      return problem(c, 'not_a_folder', { detail: 'That path is a file, not a folder.' });
+    }
     logger.error('[directory] GET / readdir failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: FOLDER_UNREADABLE });
   }
 
   const entries = dirents
@@ -116,20 +128,16 @@ router.get('/default', (c) => {
 router.post('/', async (c) => {
   const parsed = CreateDirectoryBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Validation failed', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
 
   const { parentPath, folderName } = parsed.data;
 
   // Validate folder name is kebab-case
   if (!AGENT_NAME_REGEX.test(folderName)) {
-    return c.json(
-      {
-        error:
-          'Invalid folder name. Lowercase letters, numbers, and hyphens only. Must start with a letter.',
-      },
-      400
-    );
+    return problem(c, 'invalid_request', {
+      detail: 'Use lowercase letters, numbers and hyphens, starting with a letter.',
+    });
   }
 
   // Validate parentPath is within boundary
@@ -137,15 +145,14 @@ router.post('/', async (c) => {
   try {
     resolvedParent = await validateBoundary(parentPath);
   } catch (err: unknown) {
-    if (err instanceof BoundaryError) {
-      if (err.code === 'NULL_BYTE') return c.json({ error: err.message, code: err.code }, 400);
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
+    if (err instanceof BoundaryError) return boundaryProblem(c, err);
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return c.json({ error: 'Parent directory not found' }, 404);
-    if (code === 'EACCES') return c.json({ error: 'Permission denied' }, 403);
+    if (code === 'ENOENT') {
+      return problem(c, 'not_found', { detail: 'The folder to make it in doesn’t exist.' });
+    }
+    if (code === 'EACCES') return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_READ });
     logger.error('[directory] POST / validateBoundary failed', { err, parentPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: FOLDER_NOT_MADE });
   }
 
   const newDirPath = path.join(resolvedParent, folderName);
@@ -153,7 +160,7 @@ router.post('/', async (c) => {
   // Check if directory already exists
   try {
     await fs.access(newDirPath);
-    return c.json({ error: 'Directory already exists' }, 409);
+    return problem(c, 'already_exists', { detail: 'A folder with that name is already there.' });
   } catch {
     // Expected — directory does not exist yet
   }
@@ -162,7 +169,7 @@ router.post('/', async (c) => {
     await fs.mkdir(newDirPath, { recursive: true });
   } catch (err) {
     logger.error('[directory] POST / mkdir failed', { err, newDirPath });
-    return c.json({ error: 'Failed to create directory' }, 500);
+    return problem(c, 'internal_error', { detail: FOLDER_NOT_MADE });
   }
   return c.json({ path: newDirPath }, 201);
 });

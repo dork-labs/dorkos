@@ -183,7 +183,23 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Handles: a person’s own anywhere; an agent’s refused by the route on plain-http Wi-Fi': [
     'PATCH /api/rooms/authors/:authorId/handle',
   ],
-  'Work and agents at the chat level: tasks, to-dos, pausing, agent settings': [
+  // The generic capability mount (`routes/capability-http.ts`) runs the
+  // capability dispatcher, which refuses every act and destructive capability
+  // from Wi-Fi before it runs; only `allowFromWifi` (agent.pause) gets through.
+  'Capability paths: the dispatcher refuses act and destructive tiers; pausing is allowed (allowFromWifi)':
+    [
+      'POST /api/agents/:agentId/pause',
+      'POST /api/agents/:agentId/resume',
+      'POST /api/agents/:agentId/mcp-servers',
+      'PATCH /api/agents/:agentId/mcp-servers/:name',
+      'DELETE /api/agents/:agentId/mcp-servers/:name',
+      'POST /api/agents/:agentId/mcp-servers/:name/import',
+      'POST /api/agents/:agentId/mcp-servers/:name/enable',
+      'POST /api/agents/:agentId/mcp-servers/:name/disable',
+      'POST /api/agents/:agentId/mcp-servers/:name/test',
+      'PUT /api/agents/:agentId/mcp-servers/:name/client',
+    ],
+  'Work and agents at the chat level: tasks, to-dos, agent settings': [
     'DELETE /api/tasks/:id',
     'POST /api/tasks/runs/:id/cancel',
     'PATCH /api/todo-promises/:id',
@@ -191,8 +207,6 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     // A to-do made or changed from Wi-Fi follows the Wi-Fi hold (DOR-5070).
     'POST /api/todos',
     'PATCH /api/todos/:id',
-    'POST /api/agents/:id/pause',
-    'POST /api/agents/:id/resume',
     'PATCH /api/agents/current',
     'PUT /api/config/agents/defaultAgent',
   ],
@@ -275,6 +289,12 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Already this computer only: the route refuses every other caller': [
     'POST /api/browser-viewers',
     'POST /api/browser-viewers/:viewerId/frame',
+    'POST /api/browser-viewers/:viewerId/take-over',
+    'POST /api/browser-viewers/:viewerId/input',
+    'POST /api/browser-viewers/:viewerId/hand-back',
+    'POST /api/browser-viewers/:viewerId/copy',
+    'POST /api/browser-viewers/:viewerId/paste',
+    'POST /api/browser-viewers/:viewerId/files',
     'DELETE /api/browser-viewers/:viewerId',
     'POST /api/system/shell-check/continue',
     // The load gate's waiting line: let one job through, or move it up (DOR-4209).

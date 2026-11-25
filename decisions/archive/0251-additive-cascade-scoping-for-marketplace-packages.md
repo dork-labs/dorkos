@@ -1,7 +1,7 @@
 ---
 number: 251
 title: Additive Cascade Scoping for Marketplace Packages
-status: draft
+status: archived
 created: 2026-04-13
 spec: marketplace-scoped-installs
 superseded-by: null

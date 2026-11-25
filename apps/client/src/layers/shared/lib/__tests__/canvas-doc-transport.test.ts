@@ -69,8 +69,11 @@ describe('document event Transport contract', () => {
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            error: 'The document is not available.',
-            code: 'CANVAS_DOCUMENT_NOT_FOUND',
+            type: 'urn:dorkos:problem:not_found',
+            title: 'That doesn’t exist here.',
+            status: 404,
+            code: 'not_found',
+            detail: 'The document is not available.',
           }),
           { status: 404 }
         )
@@ -137,8 +140,11 @@ describe('actual numeric Retry-After error metadata', () => {
     async (operation) => {
       const controller = new AbortController();
       const body = {
-        error: 'The document has too many pending events. Try again later.',
-        code: 'DOC_CHANNEL_RATE_LIMIT',
+        type: 'urn:dorkos:problem:rate_limited',
+        title: 'Too many requests. Wait a moment, then try again.',
+        status: 429,
+        code: 'rate_limited',
+        detail: 'The document has too many pending events. Try again later.',
         retryAfterMs: 999,
       };
       vi.mocked(fetch).mockResolvedValue(
@@ -150,7 +156,7 @@ describe('actual numeric Retry-After error metadata', () => {
           ? transport.ingestCanvasEvent('doc', input, condition, controller.signal)
           : transport.getCanvasEventReceipt('doc', input.id, condition, controller.signal);
       await expect(result).rejects.toMatchObject({
-        message: body.error,
+        message: body.detail,
         code: body.code,
         status: 429,
         body,
@@ -181,7 +187,8 @@ describe('actual numeric Retry-After error metadata', () => {
     async (header) => {
       vi.mocked(fetch).mockResolvedValue(
         new Response(
-          JSON.stringify({ error: 'busy', code: 'DOC_CHANNEL_RATE_LIMIT', retryAfterMs: 123 }),
+          // Not a problem document: an older body's `retryAfterMs` is never read.
+          JSON.stringify({ error: 'busy', code: 'rate_limited', retryAfterMs: 123 }),
           {
             status: 429,
             headers: header === null ? {} : { 'Retry-After': header },
@@ -194,7 +201,7 @@ describe('actual numeric Retry-After error metadata', () => {
         .catch((value: unknown) => value);
       expect(error).toMatchObject({
         status: 429,
-        code: 'DOC_CHANNEL_RATE_LIMIT',
+        code: 'rate_limited',
         body: { retryAfterMs: 123 },
       });
       expect(Object.hasOwn(error as object, 'retryAfterMs')).toBe(false);
@@ -204,8 +211,11 @@ describe('actual numeric Retry-After error metadata', () => {
     vi.mocked(fetch).mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: 'The document is not available.',
-          code: 'CANVAS_DOCUMENT_NOT_FOUND',
+          type: 'urn:dorkos:problem:not_found',
+          title: 'That doesn’t exist here.',
+          status: 404,
+          code: 'not_found',
+          detail: 'The document is not available.',
         }),
         {
           status: 404,
@@ -216,7 +226,11 @@ describe('actual numeric Retry-After error metadata', () => {
     const error = await new HttpTransport('/api')
       .getCanvasEventReceipt('doc', input.id, condition, signal)
       .catch((value: unknown) => value);
-    expect(error).toMatchObject({ status: 404, code: 'CANVAS_DOCUMENT_NOT_FOUND' });
+    expect(error).toMatchObject({
+      status: 404,
+      code: 'not_found',
+      body: { detail: 'The document is not available.' },
+    });
     expect(Object.hasOwn(error as object, 'retryAfterMs')).toBe(false);
   });
 });
@@ -239,15 +253,24 @@ it.each(['0', '0.5', ' 3 '])(
 
 it('does not assign backoff metadata to a503 even when its header is numeric', async () => {
   vi.mocked(fetch).mockResolvedValue(
-    new Response(JSON.stringify({ error: 'unavailable', code: 'DOC_CHANNEL_UNAVAILABLE' }), {
-      status: 503,
-      headers: { 'Retry-After': '2' },
-    })
+    new Response(
+      JSON.stringify({
+        type: 'urn:dorkos:problem:temporarily_unavailable',
+        title: 'That’s not available right now. Try again soon.',
+        status: 503,
+        code: 'temporarily_unavailable',
+        detail: 'Document events are not available yet.',
+      }),
+      {
+        status: 503,
+        headers: { 'Retry-After': '2' },
+      }
+    )
   );
   const error = await new HttpTransport('/api')
     .ingestCanvasEvent('doc', input, condition, signal)
     .catch((value: unknown) => value);
-  expect(error).toMatchObject({ status: 503, code: 'DOC_CHANNEL_UNAVAILABLE' });
+  expect(error).toMatchObject({ status: 503, code: 'temporarily_unavailable' });
   expect(Object.hasOwn(error as object, 'retryAfterMs')).toBe(false);
   expect(vi.mocked(fetch).mock.calls[0][1]?.body).toBe(JSON.stringify(input));
   expect(vi.mocked(fetch).mock.calls[0][1]?.signal).toBe(signal);

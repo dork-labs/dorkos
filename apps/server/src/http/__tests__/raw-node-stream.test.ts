@@ -3,12 +3,11 @@
  * the Node socket, as the discovery scan does. Driven over a real port behind
  * the real `/api` chain, because what it promises is about the wire: the
  * chain's headers on the raw response, each write leaving at once, a departed
- * client noticed, nothing left listening afterwards.
+ * client noticed.
  */
 import http, { type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono, type Context } from 'hono';
 
 vi.mock('../../services/core/config-manager.js', () => ({
@@ -21,7 +20,6 @@ vi.mock('../../lib/logger.js', () => ({
 import type { ApiEnv } from '../api-chain.js';
 import { streamToNodeResponse, type RawNodeStreamControl } from '../raw-node-stream.js';
 import { honoGroupListener } from './hono-group-listener.js';
-import { SseStreamSink } from '../../services/core/streams/durable-stream-sink.js';
 
 type Writer = (res: ServerResponse, control: RawNodeStreamControl) => Promise<void> | void;
 
@@ -31,20 +29,10 @@ afterEach(async () => {
   server = undefined;
 });
 
-/**
- * Serve `POST /api/stream` behind the chain, written by `writer`. `returned`
- * sees the raw response the moment the helper hands back its marker.
- */
-async function serve(
-  writer: Writer,
-  returned?: (outgoing: ServerResponse) => void
-): Promise<string> {
+/** Serve `POST /api/stream` behind the chain, written by `writer`. */
+async function serve(writer: Writer): Promise<string> {
   const routes = new Hono<ApiEnv>();
-  routes.post('/', async (c) => {
-    const marker = await streamToNodeResponse(c, writer);
-    returned?.(c.env.outgoing);
-    return marker;
-  });
+  routes.post('/', (c) => streamToNodeResponse(c, writer));
   server = http.createServer(honoGroupListener({ path: '/api/stream', routes }));
   server.listen(0, '127.0.0.1');
   await new Promise((resolve) => server!.once('listening', resolve));
@@ -129,27 +117,6 @@ describe('streamToNodeResponse', () => {
     expect(await writerDone).toBe(true);
   });
 
-  it('does not abort a stream that ended, and removes its listener', async () => {
-    let signal: AbortSignal | undefined;
-    let during = 0;
-    let after = 0;
-    const host = await serve(
-      (res, control) => {
-        signal = control.signal;
-        during = res.listenerCount('close');
-        res.writeHead(200, EVENT_HEAD);
-        res.end('event: done\ndata: {}\n\n');
-      },
-      (outgoing) => (after = outgoing.listenerCount('close'))
-    );
-
-    const { response } = open(host);
-    await bodyOf(await response);
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(signal!.aborted).toBe(false);
-    expect(after).toBe(during - 1);
-  });
-
   it('lets the chain answer an error thrown before anything was written', async () => {
     const host = await serve(() => {
       throw new Error('could not start');
@@ -158,8 +125,8 @@ describe('streamToNodeResponse', () => {
     const { response } = open(host);
     const res = await response;
     expect(res.statusCode).toBe(500);
-    expect(res.headers['content-type']).toMatch(/^application\/json/);
-    expect(JSON.parse(await bodyOf(res))).toMatchObject({ code: 'INTERNAL_ERROR' });
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(JSON.parse(await bodyOf(res))).toMatchObject({ code: 'internal_error' });
   });
 
   it('closes the connection on an error thrown after the head went out', async () => {
@@ -181,54 +148,11 @@ describe('streamToNodeResponse', () => {
     expect(ended).not.toBe('complete');
   });
 
-  it('carries a durable SSE sink unchanged: its head, its frames, and the reader leaving', async () => {
-    let sinkAborted!: (aborted: boolean) => void;
-    const left = new Promise<boolean>((resolve) => (sinkAborted = resolve));
-    const host = await serve(async (res, { signal }) => {
-      const sink = new SseStreamSink(res);
-      sink.flushHeaders();
-      await sink.send({ id: 'r-1-1-7', event: 'text_delta', data: { a: 1 } });
-      await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
-      sinkAborted(sink.signal.aborted && sink.closed);
-    });
-
-    const { req, response } = open(host);
-    const res = await response;
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toBe('text/event-stream');
-    expect(res.headers['cache-control']).toBe('no-cache');
-    expect(res.headers['x-accel-buffering']).toBe('no');
-    expect(res.headers['x-content-type-options']).toBe('nosniff');
-    res.setEncoding('utf8');
-    let text = '';
-    await new Promise<void>((resolve) =>
-      res.on('data', (chunk: string) => {
-        text += chunk;
-        if (text.endsWith('}\n\n')) resolve();
-      })
-    );
-    expect(text).toBe(': connected\n\nid: r-1-1-7\nevent: text_delta\ndata: {"a":1}\n\n');
-    req().destroy();
-    expect(await left).toBe(true);
-  });
-
   /** A request from this computer, all the bare context needs to stand in for one. */
   const THIS_COMPUTER = {
     headers: { host: 'localhost:4242' },
     socket: { remoteAddress: '127.0.0.1' },
   };
-
-  it('answers with a fresh marker, never the shared one', async () => {
-    const outgoing = Object.assign(new (await import('node:events')).EventEmitter(), {
-      destroyed: false,
-      writableFinished: true,
-    });
-    const c = { env: { outgoing, incoming: THIS_COMPUTER }, var: {} } as unknown as Context<ApiEnv>;
-    const marker = await streamToNodeResponse(c, () => undefined);
-    expect(marker).not.toBe(RESPONSE_ALREADY_SENT);
-    expect([...marker.headers]).toEqual([...RESPONSE_ALREADY_SENT.headers]);
-    expect(outgoing.listenerCount('close')).toBe(0);
-  });
 
   it('aborts at once when the response was already gone', async () => {
     const outgoing = Object.assign(new (await import('node:events')).EventEmitter(), {

@@ -29,7 +29,7 @@ export function useCreateAgent() {
       // which asks the person whether to create it anyway (DOR-2325). That is a
       // question, not a failure.
       isShownInline: (error: Error) =>
-        (error as Error & { body?: { code?: string } }).body?.code === 'template_needs_review',
+        (error as Error & { body?: { code?: string } }).body?.code === 'needs_review',
     },
   });
 }

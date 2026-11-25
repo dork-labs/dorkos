@@ -158,7 +158,7 @@ describe('unclaimed-chats router', () => {
       .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
       .send({ agentId: 'agent-a' });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('CHAT_ALREADY_BOUND');
+    expect(res.body.code).toBe('chat_already_bound');
     // The unclaimed chat was NOT marked claimed on the failed attempt.
     expect(store.getById(chat.id)?.status).toBe('pending');
   });
@@ -308,7 +308,8 @@ describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
     // The claim itself succeeded — the person is not left with an unclaimed
     // chat because a room failed to mint.
     expect(res.status).toBe(201);
-    expect(res.body.bridgeError).toBe('room mint failed');
+    // An exception's own text never reaches the answer; the log has it.
+    expect(res.body.bridgeError).toBe('The chat’s room couldn’t be made. Try again.');
     expect(res.body.binding.bridge).toBe('off');
     expect(res.body.binding.roomId).toBeNull();
     expect(store.getById(chat.id)?.status).toBe('claimed');
@@ -450,7 +451,11 @@ describe('unclaimed-chats router — Leave (DOR-883)', () => {
     const res = await request(app).post(`/api/relay/unclaimed-chats/${chat.id}/leave`);
 
     expect(res.status).toBe(500);
-    expect(res.body.error).toMatch(/already kicked/i);
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('internal_error');
+    // A fixed sentence: the platform's own words go to the log, never the answer.
+    expect(res.body.detail).toBe('Couldn’t leave that chat. Try again.');
+    expect(JSON.stringify(res.body)).not.toMatch(/already kicked/i);
     // The row is unchanged — still pending, not silently dismissed.
     expect(store.getById(chat.id)?.status).toBe('pending');
   });

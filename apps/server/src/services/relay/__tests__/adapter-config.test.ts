@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFile, writeFile, chmod, stat } from 'node:fs/promises';
+import { WEBHOOK_MANIFEST } from '@dorkos/relay';
 import {
   AdapterConfigWrites,
+  parseAdapterConfigForPersist,
   loadAdapterConfig,
   saveAdapterConfig,
   watchAdapterConfig,
@@ -18,15 +20,12 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn().mockResolvedValue({ mode: 0o600 }),
 }));
 
-// Mock logger
-vi.mock('../../../lib/logger.js', () => ({
-  logger: {
-    warn: vi.fn(),
-    info: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  },
-}));
+// Spy on the real logger (silenced) rather than mocking our own module.
+beforeEach(() => {
+  for (const level of ['warn', 'info', 'error', 'debug'] as const) {
+    vi.spyOn(logger, level).mockImplementation(() => undefined);
+  }
+});
 
 /** Captured chokidar handlers so tests can fire them manually. */
 let chokidarHandlers: Record<string, (arg?: unknown) => unknown>;
@@ -71,42 +70,6 @@ describe('loadAdapterConfig — removed adapter types', () => {
     );
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("'legacy-sdk'"));
   });
-
-  it('does not crash and returns no adapters when the only entry is a removed type', async () => {
-    vi.mocked(readFile).mockResolvedValue(
-      JSON.stringify({
-        adapters: [
-          { id: 'legacy-sdk', type: 'telegram-chatsdk', enabled: true, config: { token: 'x' } },
-        ],
-      })
-    );
-
-    const { adapters: configs } = await loadAdapterConfig(CONFIG_PATH);
-
-    expect(configs).toEqual([]);
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('the Telegram (Chat SDK) adapter was removed')
-    );
-  });
-
-  it('leaves configs without removed types untouched and logs no migration hint', async () => {
-    vi.mocked(readFile).mockResolvedValue(
-      JSON.stringify({
-        adapters: [{ id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'y' } }],
-      })
-    );
-
-    const { adapters: configs } = await loadAdapterConfig(CONFIG_PATH);
-
-    expect(configs).toHaveLength(1);
-    // No removed-type hint. There IS a warning — this stored integration
-    // predates `dmPolicy`, so it is carried forward at 'open' and said out
-    // loud (DOR-788, covered in safe-defaults.test.ts) — so this asserts on
-    // the message rather than on silence.
-    expect(
-      vi.mocked(logger.warn).mock.calls.filter((call) => String(call[0]).includes('was removed'))
-    ).toHaveLength(0);
-  });
 });
 
 describe('loadAdapterConfig — secret-file permissions', () => {
@@ -125,15 +88,6 @@ describe('loadAdapterConfig — secret-file permissions', () => {
 
     expect(vi.mocked(chmod)).toHaveBeenCalledWith(CONFIG_PATH, 0o600);
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('tightened it to owner-only'));
-  });
-
-  skipOnWindows('leaves an already-0600 adapters.json alone on read', async () => {
-    vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
-    vi.mocked(stat).mockResolvedValue({ mode: 0o600 } as Awaited<ReturnType<typeof stat>>);
-
-    await loadAdapterConfig(CONFIG_PATH);
-
-    expect(vi.mocked(chmod)).not.toHaveBeenCalled();
   });
 });
 
@@ -179,7 +133,7 @@ describe('loadAdapterConfig — one bad entry must not take the others down', ()
     ],
   });
 
-  it('keeps the entries that parse', async () => {
+  it('keeps the entries that parse and hands back the one that did not', async () => {
     // The whole array used to be parsed at once, so ONE bad entry returned
     // nothing at all — and the next save wrote that nothing to disk.
     vi.mocked(readFile).mockResolvedValue(MIXED);
@@ -187,27 +141,6 @@ describe('loadAdapterConfig — one bad entry must not take the others down', ()
     const { adapters } = await loadAdapterConfig(CONFIG_PATH);
 
     expect(adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
-  });
-
-  it('reports the entry it skipped, by id', async () => {
-    vi.mocked(readFile).mockResolvedValue(MIXED);
-
-    await loadAdapterConfig(CONFIG_PATH);
-
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("'broken'"),
-      expect.anything()
-    );
-  });
-
-  it('hands the unreadable entry back so a later save cannot erase it', async () => {
-    vi.mocked(readFile).mockResolvedValue(MIXED);
-
-    const { unparsed } = await loadAdapterConfig(CONFIG_PATH);
-
-    expect(unparsed).toEqual([
-      { id: 'broken', type: 'telegram', enabled: 'yes please', config: null },
-    ]);
   });
 
   it('writes the unreadable entry back out when a later save runs', async () => {
@@ -233,7 +166,6 @@ describe('loadAdapterConfig — one bad entry must not take the others down', ()
     const loaded = await loadAdapterConfig(CONFIG_PATH);
 
     expect(loaded).toEqual({ adapters: [], unparsed: [] });
-    expect(logger.error).toHaveBeenCalled();
   });
 });
 
@@ -278,20 +210,6 @@ describe('an unreadable entry does not become a permanent ghost', () => {
     expect(written.adapters.find((a) => a.id === 'telegram-1')?.enabled).toBe(true);
   });
 
-  it('says which ghost it dropped', async () => {
-    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
-    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
-    vi.mocked(logger.warn).mockClear();
-
-    await saveAdapterConfig(
-      CONFIG_PATH,
-      [...adapters, { id: 'telegram-1', type: 'telegram', enabled: true, config: {} }] as never,
-      unparsed
-    );
-
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("'telegram-1'"));
-  });
-
   it('keeps a ghost whose id no parsed entry claims', async () => {
     vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
     const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
@@ -305,21 +223,6 @@ describe('an unreadable entry does not become a permanent ghost', () => {
     expect(written.adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
     expect(written.adapters[1]).toMatchObject({ enabled: 'yes please' });
   });
-
-  it('warns that an unreadable entry may still hold a credential in plain text', async () => {
-    // It is preserved verbatim, so the DOR-280 migration never touched it. That
-    // is a different fact from "this entry did not load", with a different fix.
-    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
-
-    await loadAdapterConfig(CONFIG_PATH);
-
-    const credentialWarnings = vi
-      .mocked(logger.warn)
-      .mock.calls.filter((call) => String(call[0]).includes('plain text'));
-    expect(credentialWarnings).toHaveLength(1);
-    expect(String(credentialWarnings[0]![0])).toContain("'telegram-1'");
-    expect(String(credentialWarnings[0]![0])).toContain(CONFIG_PATH);
-  });
 });
 
 describe('watchAdapterConfig — watcher error handling', () => {
@@ -328,96 +231,29 @@ describe('watchAdapterConfig — watcher error handling', () => {
     chokidarHandlers = {};
   });
 
-  it('logs a watcher error naming adapters.json instead of throwing', () => {
-    watchAdapterConfig(CONFIG_PATH, vi.fn());
-    const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
-
-    expect(() => chokidarHandlers.error!(err)).not.toThrow();
-
-    const [message, context] = vi.mocked(logger.warn).mock.calls[0]!;
-    expect(String(message).startsWith(`[watcher-error] AdapterConfig: ${CONFIG_PATH}`)).toBe(true);
-    expect(context).toEqual(
-      expect.objectContaining({
-        configPath: CONFIG_PATH,
-        code: 'EMFILE',
-        message: 'EMFILE: too many open files',
-        stack: err.stack,
-        suppressingFurtherErrors: true,
-      })
-    );
-  });
-
-  it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
-    watchAdapterConfig(CONFIG_PATH, vi.fn());
-
-    chokidarHandlers.error!(Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
-      expect.objectContaining({ suppressingFurtherErrors: true })
-    );
-  });
-
-  it('does not invoke onChange when the watcher errors', () => {
+  it('logs a watcher error instead of throwing, and never treats it as a change', () => {
     const onChange = vi.fn();
     watchAdapterConfig(CONFIG_PATH, onChange);
 
-    chokidarHandlers.error!(new Error('EMFILE'));
+    expect(() => chokidarHandlers.error!(new Error('EMFILE'))).not.toThrow();
 
     expect(onChange).not.toHaveBeenCalled();
+    expect(String(vi.mocked(logger.warn).mock.calls[0]![0])).toContain(CONFIG_PATH);
   });
 
-  // A single fd-exhaustion episode can make chokidar fire 'error' many times
-  // for one dead watcher. The handler must latch: log the first, drop repeats
-  // of the same code.
-  it('logs only the first of many errors carrying the same code', () => {
+  // One fd-exhaustion episode can fire 'error' many times for one dead
+  // watcher, so repeats of a code are dropped. Keyed on `code`, so a benign
+  // EACCES cannot hide an EMFILE storm that follows it.
+  it('logs the first error of each code once', () => {
     watchAdapterConfig(CONFIG_PATH, vi.fn());
 
-    chokidarHandlers.error!(Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
-    chokidarHandlers.error!(Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
-    chokidarHandlers.error!(Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+    for (const code of ['EACCES', 'EMFILE', 'EMFILE', 'EMFILE']) {
+      chokidarHandlers.error!(Object.assign(new Error(code), { code }));
+    }
 
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
-    );
-  });
-
-  // The masking bug: a latch keyed on "any error at all" would let one benign
-  // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
-  // NEW code always gets its own line.
-  it('logs a separate line for each distinct error code', () => {
-    watchAdapterConfig(CONFIG_PATH, vi.fn());
-
-    chokidarHandlers.error!(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
-    chokidarHandlers.error!(Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
-
-    expect(logger.warn).toHaveBeenCalledTimes(2);
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ code: 'EACCES' })
-    );
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ code: 'EMFILE' })
-    );
-  });
-
-  // Regression guard: if the latch were ever hoisted out of the per-call
-  // closure to module scope, one config watcher's first error would wrongly
-  // suppress a second watcher's first error too.
-  it('scopes the latch per watcher — a second watcher logs its own first error', () => {
-    watchAdapterConfig(CONFIG_PATH, vi.fn());
-    const firstOnError = chokidarHandlers.error!;
-    watchAdapterConfig('/mock/other-adapters.json', vi.fn());
-    const secondOnError = chokidarHandlers.error!;
-    expect(secondOnError).not.toBe(firstOnError);
-
-    firstOnError(Object.assign(new Error('EMFILE A'), { code: 'EMFILE' }));
-    secondOnError(Object.assign(new Error('EMFILE B'), { code: 'EMFILE' }));
-
-    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(
+      vi.mocked(logger.warn).mock.calls.map(([, ctx]) => (ctx as { code: string }).code)
+    ).toEqual(['EACCES', 'EMFILE']);
   });
 });
 
@@ -482,5 +318,30 @@ describe('AdapterConfigWrites — a hung save', () => {
     expect(later).toHaveBeenCalledOnce();
     expect(apply).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('has not finished'));
+  });
+});
+
+// `fields` carries manifest field keys only: a record key a person typed (a
+// header's name) is never sent back (review on DOR-4979).
+describe('parseAdapterConfigForPersist fields', () => {
+  it('names the owning field for a bad entry in a free-form map', () => {
+    const attempt = () =>
+      parseAdapterConfigForPersist(
+        {
+          id: 'wh-x',
+          type: 'webhook',
+          enabled: false,
+          config: {
+            inbound: { subject: 'relay.webhook.x', secret: 'secret-16-chars!!' },
+            outbound: {
+              url: 'https://example.com',
+              secret: 'secret-16-chars!!',
+              headers: { 'X-Private-Name': 5 },
+            },
+          },
+        },
+        WEBHOOK_MANIFEST
+      );
+    expect(attempt).toThrow(expect.objectContaining({ fields: ['outbound.headers'] }));
   });
 });

@@ -164,7 +164,7 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(TEXT, 'notes.log');
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('PEOPLE_ONLY');
+      expect(res.body.code).toBe('person_only');
       // THE assertion that makes this about ordering rather than about status
       // codes: multer never ran, so there is no directory at all.
       await expect(readdir(attachmentDir())).rejects.toThrow();
@@ -177,7 +177,7 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(TEXT, 'notes.log');
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.code).toBe('room_not_found');
       await expect(readdir(attachmentDir())).rejects.toThrow();
     });
 
@@ -187,7 +187,7 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(TEXT, 'notes.log');
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('ROOM_ARCHIVED');
+      expect(res.body.code).toBe('room_archived');
     });
   });
 
@@ -203,7 +203,8 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(Buffer.alloc(uploadConfig.maxFileSize + 1, 7), 'big.bin');
 
       expect(res.status).toBe(413);
-      expect(res.body.error).toContain(`${uploadConfig.maxFileSize / 1024 / 1024}MB`);
+      expect(res.body.code).toBe('request_too_large');
+      expect(res.body.detail).toContain(`${uploadConfig.maxFileSize / 1024 / 1024}MB`);
     });
 
     it('refuses a type outside the configured allowlist', async () => {
@@ -212,13 +213,28 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await upload(TEXT, 'notes.log', 'text/plain');
 
       expect(res.status).toBe(415);
+      expect(res.body.code).toBe('unsupported_media_type');
+    });
+
+    it('answers a body the parser cannot read with a fixed sentence, never its words', async () => {
+      const res = await request(fixtureServer)
+        .post(`/api/rooms/${roomId}/attachments`)
+        .set('Content-Type', 'multipart/form-data')
+        .send('nothing');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('malformed_request');
+      expect(res.body.detail).toBe(
+        'That upload couldn’t be read. Send it again as one complete form.'
+      );
+      expect(JSON.stringify(res.body)).not.toContain('Boundary');
     });
 
     it('refuses a request with no files at all', async () => {
       const res = await request(fixtureServer).post(`/api/rooms/${roomId}/attachments`);
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('ATTACHMENT_MISSING');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('leaves nothing behind when one file of several fails', async () => {
@@ -389,7 +405,7 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+      expect(res.body.code).toBe('attachment_not_found');
     });
 
     it('shows a POSTED file to anyone who may read the message', async () => {
@@ -420,14 +436,14 @@ describe('/api/rooms/:id/attachments', () => {
       // 404 rather than 403: a stranger learns nothing, not even that the file
       // is real.
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+      expect(res.body.code).toBe('attachment_not_found');
     });
 
     it('404s a file that never existed', async () => {
       const res = await request(fixtureServer).get(`/api/rooms/${roomId}/attachments/nope`);
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+      expect(res.body.code).toBe('attachment_not_found');
     });
 
     // A bare `..` is deliberately NOT in this table. Every HTTP client resolves
@@ -443,7 +459,7 @@ describe('/api/rooms/:id/attachments', () => {
         const res = await request(fixtureServer).get(`/api/rooms/${roomId}/attachments/${id}`);
 
         expect(res.status).toBe(404);
-        expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+        expect(res.body.code).toBe('attachment_not_found');
       }
     );
   });
@@ -477,7 +493,7 @@ describe('/api/rooms/:id/attachments', () => {
         .send({ text: 'again', attachmentIds: [id] });
 
       expect(again.status).toBe(409);
-      expect(again.body.code).toBe('ATTACHMENT_ALREADY_POSTED');
+      expect(again.body.code).toBe('conflict');
     });
 
     it('refuses more files than the configured limit', async () => {
@@ -492,7 +508,7 @@ describe('/api/rooms/:id/attachments', () => {
         .send({ text: 'all of them', attachmentIds: ids });
 
       expect(wrote.status).toBe(400);
-      expect(wrote.body.code).toBe('TOO_MANY_ATTACHMENTS');
+      expect(wrote.body.code).toBe('invalid_request');
     });
   });
 });

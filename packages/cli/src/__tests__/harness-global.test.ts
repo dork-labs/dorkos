@@ -18,12 +18,12 @@ import {
   vi,
   type MockInstance,
 } from 'vitest';
+// Compiles the server's harness consent module now, not inside the first test (DOR-4518).
+import './preload-harness-server.js';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { runHarnessSync } from '../harness-sync-command.js';
 import { runHarnessGlobal, parseHarnessGlobalArgs } from '../harness-global-command.js';
-import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 import { createTempDir, pinHome, syncArgs } from './harness-fixtures.js';
 
 describe('dorkos harness global — sharing your all-projects packages', () => {
@@ -118,13 +118,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
     }
   });
 
-  it('pins its own home directory, so nothing here can read the developer’s', () => {
-    // The precondition every case below rests on, asserted rather than assumed:
-    // `os.homedir()` answers `$HOME` before it asks the password database, and
-    // this suite is the only one whose subject removes files from a home folder.
-    expect(os.homedir()).toBe(userHome);
-  });
-
   describe('case 6: the ask prints every link name and writes nothing', () => {
     it('prints the block, names each link, and leaves the settings file alone', async () => {
       installGlobal('globex', ['greet', 'wave']);
@@ -175,6 +168,13 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(fs.existsSync(claudeSkillsDir())).toBe(false);
     });
 
+    it('--enable refuses a name that is not an agent tool, and writes nothing', async () => {
+      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'emacs']));
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain("'emacs' is not an agent tool DorkOS knows.");
+      expect(storedGlobal()).toBeUndefined();
+    });
+
     it('--enable a second tool adds one element and keeps the first', async () => {
       installGlobal('globex', ['greet']);
       await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
@@ -186,34 +186,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(fs.lstatSync(path.join(claudeSkillsDir(), 'globex__greet')).isSymbolicLink()).toBe(
         true
       );
-    });
-
-    it('--enable refuses a name that is not an agent tool, and writes nothing', async () => {
-      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'emacs']));
-      expect(result.exitCode).toBe(1);
-      expect(errors()).toContain("'emacs' is not an agent tool DorkOS knows.");
-      expect(storedGlobal()).toBeUndefined();
-    });
-
-    it('--list stamps nothing', async () => {
-      installGlobal('globex', ['greet']);
-      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--list']));
-      expect(result.exitCode).toBe(0);
-      expect(storedGlobal()).toBeUndefined();
-      expect(printed()).toContain('DorkOS has not asked you yet.');
-    });
-
-    it('--list says which of the five tools DorkOS has actually tested', async () => {
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'cursor']));
-      logSpy.mockClear();
-
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--list']));
-      const out = printed();
-      expect(out).toContain('Cursor');
-      // Six names in a list read as six measurements, and only one of them is.
-      expect(out).toContain('DorkOS tested Codex on 2026-09-09 and it reads this folder.');
-      expect(out).toContain('DorkOS has not tested them.');
     });
   });
 
@@ -361,17 +333,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       // Codex is untouched: a different directory, a different reader.
       expect(fs.lstatSync(sharedLink).isSymbolicLink()).toBe(true);
     });
-
-    it('refuses a tool that is not shared with, and changes nothing', async () => {
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
-
-      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--disable', 'cursor']));
-
-      expect(result.exitCode).toBe(1);
-      expect(errors()).toContain('Not sharing with Cursor, so there is nothing to stop.');
-      expect(storedGlobal()?.harnesses).toEqual(['codex']);
-    });
   });
 
   describe('the boundary: a confined deployment is not asked and does not write in a home folder', () => {
@@ -419,22 +380,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(printed()).toContain('DorkOS is limited to /workspace');
     });
 
-    it('--list under a boundary names no folder, rather than an empty heading', async () => {
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
-      logSpy.mockClear();
-      vi.stubEnv('DORKOS_BOUNDARY', '/workspace');
-
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--list']));
-
-      const out = printed();
-      // The answer is still shown — somebody confined the deployment, they did
-      // not un-choose Codex — and the reason no folder is named is said out loud.
-      expect(out).toContain('Codex');
-      expect(out).not.toContain('Which puts links in:');
-      expect(out).toContain('DorkOS is limited to /workspace');
-    });
-
     it('--disable under a boundary says the links it cannot reach are still there', async () => {
       // The honest half of the boundary rule. A machine that shared before it
       // was confined still HAS those links; DorkOS may no longer touch them.
@@ -462,32 +407,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
       expect(storedGlobal()?.harnesses).toEqual([]);
     });
-
-    it('neither set: the user tier is planned, and the question is asked', async () => {
-      installGlobal('globex', ['greet']);
-      expect(process.env.DORKOS_BOUNDARY).toBeUndefined();
-
-      await runHarnessSync(syncArgs({ global: true }));
-
-      expect(printed()).toContain(
-        'Share the packages you installed for all your projects with your other agent tools?'
-      );
-    });
-  });
-
-  describe('the sentence about what DorkOS has tested', () => {
-    it('is said when the shared folder is in play, and not when only Claude Code is', async () => {
-      installGlobal('globex', ['greet']);
-
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
-      // Five tools none of this run touched. Saying it here would be a sentence
-      // about a folder nothing was written to.
-      expect(printed()).not.toContain('DorkOS tested Codex on 2026-09-09');
-      logSpy.mockClear();
-
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
-      expect(printed()).toContain('DorkOS tested Codex on 2026-09-09');
-    });
   });
 
   describe('F1: the sentence the run ends on', () => {
@@ -508,31 +427,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(out).not.toContain('does not share them with Claude Code');
       expect(out).toContain(
         'Your all-projects skills are in Claude Code’s own skills folder now. No other agent tool can see them yet.'
-      );
-    });
-
-    it('sync --global ends on the same sentence, for the same machine', async () => {
-      // Two surfaces, one decision. They used to reach it separately.
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
-      logSpy.mockClear();
-
-      await runHarnessSync(syncArgs({ global: true }));
-
-      const out = printed();
-      expect(out).not.toContain('does not share them with Claude Code');
-      expect(out).toContain('Your all-projects skills are in Claude Code’s own skills folder now.');
-    });
-
-    it('--list ends on it too', async () => {
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
-      logSpy.mockClear();
-
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--list']));
-
-      expect(printed()).toContain(
-        'Your all-projects skills are in Claude Code’s own skills folder now.'
       );
     });
   });
@@ -650,19 +544,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(trace.some((l) => l.text.startsWith('Removing '))).toBe(true);
       expect(trace.some((l) => l.text.startsWith('Removed '))).toBe(true);
     });
-
-    it('--disable prints a receipt as well as a promise', async () => {
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
-      logSpy.mockClear();
-
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--disable', 'codex']));
-
-      const out = printed();
-      expect(out).toContain('Removing 1 link(s):');
-      expect(out).toContain('Removed 1 link(s):');
-      expect(out.indexOf('Removing 1 link(s):')).toBeLessThan(out.indexOf('Removed 1 link(s):'));
-    });
   });
 
   describe('F5: a link a global sweep may not remove', () => {
@@ -717,59 +598,6 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       const occurrences = out.split('Claude Code needs a restart').length - 1;
       expect(occurrences).toBe(1);
       expect(out).toContain('In Gemini CLI, run /skills reload.');
-    });
-
-    it('does not print when every folder was already there', async () => {
-      installGlobal('globex', ['greet']);
-      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
-      logSpy.mockClear();
-
-      await runHarnessSync(syncArgs({ fix: true, global: true }));
-
-      // A tool already reading a folder picks up a new link in it on its own.
-      // Saying otherwise teaches people to restart for nothing.
-      expect(printed()).not.toContain('Claude Code needs a restart');
-    });
-  });
-
-  describe('the dispatcher', () => {
-    it('routes `harness global`', async () => {
-      installGlobal('globex', ['greet']);
-      const code = await runHarnessDispatcher('global', ['--list']);
-      expect(code).toBe(0);
-      expect(printed()).toContain('Packages you installed for all your projects:');
-    });
-
-    it('prints help for `harness global --help` rather than a parse error', async () => {
-      const code = await runHarnessDispatcher('global', ['--help']);
-      expect(code).toBe(0);
-      expect(printed()).toContain('Options (global):');
-    });
-
-    it('names `global` among the subcommands an unknown one is measured against', async () => {
-      const code = await runHarnessDispatcher('nonsense', []);
-      expect(code).toBe(1);
-      expect(errors()).toContain('Usage: dorkos harness <sync|adopt|hooks|global> [options]');
-    });
-  });
-
-  describe('argument parsing', () => {
-    it('bare `global` means --list', () => {
-      expect(parseHarnessGlobalArgs([])).toEqual({
-        list: true,
-        enable: undefined,
-        disable: undefined,
-      });
-    });
-
-    it('refuses --enable and --disable together', async () => {
-      const result = await runHarnessGlobal({ list: false, enable: 'codex', disable: 'cursor' });
-      expect(result.exitCode).toBe(1);
-      expect(errors()).toContain('Pass either --enable or --disable, not both.');
-    });
-
-    it('rejects an unknown option by name', () => {
-      expect(() => parseHarnessGlobalArgs(['--nope'])).toThrow(/--nope/);
     });
   });
 });

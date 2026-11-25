@@ -134,7 +134,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: 'gone.txt', to: 'to.txt' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('returns 409 when the target already exists', async () => {
@@ -146,7 +146,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: 'from.txt', to: 'to.txt' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('CONFLICT');
+      expect(res.body.code).toBe('already_exists');
       expect(await fs.readFile(path.join(dir, 'to.txt'), 'utf8')).toBe('existing\n');
     });
 
@@ -159,7 +159,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: 'src', to: 'src/inner' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('COPY_INTO_SELF');
+      expect(res.body.code).toBe('copy_into_self');
       await expect(fs.access(path.join(dir, 'src', 'inner'))).rejects.toThrow();
     });
 
@@ -176,7 +176,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: 'from.txt', to: 'dangling' });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('CONFLICT');
+      expect(res.body.code).toBe('already_exists');
       // The link still exists and still points where the user pointed it.
       const stat = await fs.lstat(path.join(dir, 'dangling'));
       expect(stat.isSymbolicLink()).toBe(true);
@@ -212,7 +212,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: 'src', to: 'link/inner' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('COPY_INTO_SELF');
+      expect(res.body.code).toBe('copy_into_self');
       // The source is exactly as it was — no partial copy inside it.
       expect(await fs.readdir(path.join(dir, 'src'))).toEqual(['a.ts']);
     });
@@ -228,7 +228,7 @@ describe('File explorer copy + reveal routes', () => {
           .send({ cwd: dir, from: 'src', to: 'SRC/inner' });
 
         expect(res.status).toBe(400);
-        expect(res.body.code).toBe('COPY_INTO_SELF');
+        expect(res.body.code).toBe('copy_into_self');
         expect(await fs.readdir(path.join(dir, 'src'))).toEqual(['a.ts']);
       }
     );
@@ -241,7 +241,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: '.', to: 'copy-of-root' });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('REFUSE_ROOT');
+      expect(res.body.code).toBe('working_folder_root');
     });
 
     it('rejects a from-path that escapes the working directory with 403', async () => {
@@ -252,7 +252,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, from: '../../etc/passwd', to: 'to.txt' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('rejects a body missing `to` with 400', async () => {
@@ -294,7 +294,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, path: 'gone.txt' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
       expect(revealInFileManager).not.toHaveBeenCalled();
     });
 
@@ -307,7 +307,7 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, path: '../../etc/passwd' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
       expect(revealInFileManager).not.toHaveBeenCalled();
     });
 
@@ -320,7 +320,10 @@ describe('File explorer copy + reveal routes', () => {
         .send({ cwd: dir, path: 'note.txt' });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('REVEAL_UNAVAILABLE');
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.code).toBe('internal_error');
+      expect(res.body.detail).toBe('Couldn’t open the file manager.');
+      expect(JSON.stringify(res.body)).not.toContain('xdg-open');
     });
 
     it('rejects an empty body with 400', async () => {

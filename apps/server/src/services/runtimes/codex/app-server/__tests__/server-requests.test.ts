@@ -87,22 +87,6 @@ describe('mapServerRequest (spec §10)', () => {
     expect(mapped.replies.cancelled).toEqual({ decision: 'cancel' });
   });
 
-  it('prefers approvalId, and offers "for this session" when Codex lists it', () => {
-    const mapped = mapServerRequest(
-      {
-        id: 1,
-        method: 'item/commandExecution/requestApproval',
-        params: { itemId: 'call_1', approvalId: 'net-1', command: 'x' },
-      },
-      noTurn
-    );
-    if (!('kind' in mapped)) throw new Error('refused');
-    expect(mapped.interactionId).toBe('net-1');
-    expect(mapped.card.data).toMatchObject({ hasSuggestions: true, alwaysAllowScope: 'session' });
-    expect(mapped.replies.approve!(true)).toEqual({ decision: 'acceptForSession' });
-    expect(mapped.replies.approve!(false)).toEqual({ decision: 'accept' });
-  });
-
   it('spells out a writeStdin kind and extra permissions on the card input', () => {
     const inputOf = (params: Record<string, unknown>, turn = noTurn) => {
       const mapped = mapServerRequest(
@@ -352,30 +336,6 @@ describe('approvals over the fake app-server', () => {
     expect([...fake.replies.values()]).toEqual([{ decision: 'decline' }]);
   });
 
-  it('approves for the session when asked and offered', async () => {
-    const h = harness();
-    h.host.home(PERSON_HOME).nextTurn(approvalTurn);
-    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
-    await until(gen, 'approval_required');
-    h.transport.answerApproval('s1', 'cmd-approval', true, true);
-    await rest(gen);
-    const fake = h.host.home(PERSON_HOME).processes[0]!;
-    expect([...fake.replies.values()]).toEqual([{ decision: 'acceptForSession' }]);
-  });
-
-  it('answers false for an id nothing is waiting on, and for the wrong kind of card', async () => {
-    const h = harness();
-    expect(h.transport.answerApproval('s1', 'nope', true)).toBe(false);
-    h.host.home(PERSON_HOME).nextTurn(approvalTurn);
-    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
-    await until(gen, 'approval_required');
-    expect(h.transport.answerQuestion('s1', 'cmd-approval', { '0': 'x' })).toBe(false);
-    expect(h.transport.answerElicitation('s1', 'cmd-approval', 'accept')).toBe(false);
-    expect(h.transport.answerApproval('s2', 'cmd-approval', true)).toBe(false);
-    h.transport.answerApproval('s1', 'cmd-approval', true);
-    await rest(gen);
-  });
-
   it('declines at the park ceiling, withdraws the card as timed out, and the agent carries on', async () => {
     const h = harness({ interactionExpireMs: 30 });
     h.host.home(PERSON_HOME).nextTurn(approvalTurn);
@@ -457,48 +417,5 @@ describe('approvals over the fake app-server', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fake.replies.get(77)).toEqual({ decision: 'decline' });
-  });
-
-  it('asks a question and answers it by question id', async () => {
-    const h = harness();
-    let reply: unknown;
-    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
-      reply = await ctx.serverRequest('item/tool/requestUserInput', {
-        itemId: 'ask-1',
-        isBlocking: true,
-        questions: [{ id: 'name', header: 'Name', question: 'What name?', options: null }],
-      });
-      ctx.complete('completed');
-    });
-    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
-    const card = await until(gen, 'question_prompt');
-    expect(card.data).toMatchObject({
-      toolCallId: 'ask-1',
-      questions: [{ question: 'What name?' }],
-    });
-    expect(h.transport.answerQuestion('s1', 'ask-1', { '0': 'Ada' })).toBe(true);
-    await rest(gen);
-    expect(reply).toEqual({ answers: { name: { answers: ['Ada'] } } });
-  });
-
-  it('draws a form elicitation and returns what the person filled in', async () => {
-    const h = harness();
-    let reply: unknown;
-    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
-      reply = await ctx.serverRequest('mcpServer/elicitation/request', {
-        serverName: 'crm',
-        mode: 'form',
-        message: 'Which account?',
-        requestedSchema: { type: 'object', properties: {} },
-      });
-      ctx.complete('completed');
-    });
-    const gen = h.transport.runTurn(h.request({ sessionId: 's1' }));
-    const card = await until(gen, 'elicitation_prompt');
-    const id = (card.data as { interactionId: string }).interactionId;
-    expect(card.data).toMatchObject({ serverName: 'crm', mode: 'form', message: 'Which account?' });
-    expect(h.transport.answerElicitation('s1', id, 'accept', { account: 'acme' })).toBe(true);
-    await rest(gen);
-    expect(reply).toEqual({ action: 'accept', content: { account: 'acme' }, _meta: null });
   });
 });

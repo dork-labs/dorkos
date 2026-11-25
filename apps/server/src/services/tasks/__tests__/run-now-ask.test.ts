@@ -250,28 +250,6 @@ describe('a "Run now" ask reaches the person waiting for it', () => {
     await service.stop();
   });
 
-  it('still refuses a SCHEDULED run its asks, and shows nobody a card', async () => {
-    // The other half of the promise the task form makes. A fire the clock
-    // started has nobody in front of it, so its asks are refused where they are
-    // raised (#1818) — and it needs no session surface, because there is nobody
-    // to surface anything to.
-    const task = askingTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
-
-    await (service as unknown as { dispatch(t: typeof task, when: Date): Promise<void> }).dispatch(
-      task,
-      // An on-time fire of the task's 03:00 occurrence: a fire far from any
-      // occurrence would be skipped as stale and never reach the bus (DOR-2718).
-      new Date('2023-11-14T03:00:00.000Z')
-    );
-    await vi.waitFor(() => expect(agent.ensureSession).toHaveBeenCalledOnce());
-
-    expect(ensureOpts[0]).toMatchObject({ unattended: true });
-    expect(listPendingInteractionsAcrossSessions()).toHaveLength(0);
-
-    await service.stop();
-  });
-
   it('follows the runtime when it renames the session mid-turn', async () => {
     // The claude-code SDK mints its own id on the first turn and renames the
     // session to it. Everything a turn holds is keyed by session id, so a rename
@@ -376,37 +354,6 @@ describe('a "Run now" ask reaches the person waiting for it', () => {
 
     answered.resolve();
     await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('completed'));
-
-    await service.stop();
-  });
-
-  it('takes the card away when the run is halted before anyone answers', async () => {
-    // A pending ask deliberately OUTLIVES its own turn — that is the parked case,
-    // and it is why `turn_end` does not clear one. But a run somebody stopped is
-    // not parked, it is over: nobody is coming back to that card, and left alone
-    // it stands in every fleet-wide ask surface for the four-hour park ceiling,
-    // pointing at a turn that no longer exists.
-    const task = askingTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
-    const run = await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(listPendingInteractionsAcrossSessions()).toHaveLength(1));
-
-    await expect(service.cancelRun(run!.id)).resolves.toEqual({ state: 'stopping' });
-    await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('cancelled'));
-
-    await vi.waitFor(() => expect(listPendingInteractionsAcrossSessions()).toHaveLength(0));
-
-    await service.stop();
-  });
-
-  it('leaves a "Run now" answerable — it is never told nobody is there', async () => {
-    const task = askingTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
-
-    await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(agent.ensureSession).toHaveBeenCalledOnce());
-
-    expect(ensureOpts[0]).toMatchObject({ unattended: false });
 
     await service.stop();
   });

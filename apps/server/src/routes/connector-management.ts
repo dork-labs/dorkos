@@ -24,9 +24,8 @@ import {
   ConnectorGrantExclusionError,
   type ConnectorGrantExclusionService,
 } from '../services/connectors/access/grant-exclusions.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
   ConnectorManagementReviewError,
@@ -46,12 +45,21 @@ import {
 } from '../services/connectors/agent-request-service.js';
 import { ConnectorSubscriptionError } from '../services/connectors/events/subscription-store.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import {
+  AGENT_REQUEST_PROBLEM,
+  GRANT_EXCLUSION_PROBLEM,
+  MANAGEMENT_REVIEW_PROBLEM,
+  RECONCILIATION_PROBLEM,
+  SUBSCRIPTION_PROBLEM,
+  sendConnectorProblem,
+} from './connector-problems.js';
 import { CONNECTED_APPS, onlyRemovesAccess } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { PROGRAM_KEY_ROUTES as KEY } from '../services/connectors/principal/program-key-routes.js';
 import {
   migrationHealthGate,
   ownerRefusal,
+  ownerUnverified,
   presentsMachineSignal,
   requestAbortSignal,
   requestUser,
@@ -107,13 +115,9 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
 
 /** The 401 for a program that did not prove a verified API key. */
 function programKeyRequired(c: Context<ApiEnv>): Response {
-  return c.json(
-    {
-      error: 'This program needs a verified API key to request an account change.',
-      code: 'connector_program_credential_required',
-    },
-    401
-  );
+  return problem(c, 'unauthenticated', {
+    detail: 'Use a verified API key to ask for an account change.',
+  });
 }
 
 /**
@@ -131,8 +135,8 @@ async function resolveReviewRequester(
   if (presentsMachineSignal(c)) {
     return ownerRefusal(
       c,
-      'connector_owner_required',
-      'An agent or approval token cannot make account decisions.'
+      'person_only',
+      'Agents and approval tokens can’t make account decisions.'
     );
   }
   const existing = requestUser(c);
@@ -143,7 +147,7 @@ async function resolveReviewRequester(
       existing?.credential === 'api-key' ? existing : await verifier(honoRequestFacts(c));
     if (user?.credential !== 'api-key' || !user.credentialId) return programKeyRequired(c);
     const owner = deps.resolveOwner(user);
-    if (!owner) return c.json({ error: 'DorkOS could not verify who owns this account.' }, 401);
+    if (!owner) return ownerUnverified(c);
     return { kind: 'program', requesterId: user.credentialId, owner };
   }
   if (existing?.credential === 'api-key') return programKeyRequired(c);
@@ -162,59 +166,22 @@ function ownerId(owner: ConnectorOwnerAuthority): string {
  */
 function managementErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ConnectorAgentRequestError) {
-    const status =
-      error.code === 'request_not_found'
-        ? 404
-        : error.code === 'service_unavailable'
-          ? 503
-          : error.code === 'event_selection_unavailable'
-            ? 422
-            : 409;
-    return c.json({ error: error.message, code: error.code }, status);
+    return sendConnectorProblem(c, AGENT_REQUEST_PROBLEM[error.code], error);
   }
   // An update choice refused at the consent boundary. The agent-request
   // service turns these into `event_selection_unavailable` itself; this keeps
   // any that reach a route honest instead of a generic failure.
   if (error instanceof ConnectorSubscriptionError) {
-    const status =
-      error.code === 'not_found'
-        ? 404
-        : error.code === 'invalid_filter'
-          ? 400
-          : error.code === 'events_unavailable'
-            ? 503
-            : error.code === 'destination_unavailable'
-              ? 422
-              : 409;
-    return c.json(
-      {
-        code: error.code,
-        error:
-          error.code === 'review_conflict'
-            ? 'Those updates changed while you were choosing them. Pick them again.'
-            : error.code === 'events_unavailable'
-              ? 'Updates can’t be set up right now. Try again later, or answer without updates.'
-              : 'Those updates can’t be set up. Pick them again, or answer without updates.',
-      },
-      status
-    );
+    return sendConnectorProblem(c, SUBSCRIPTION_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorManagementReviewError) {
-    const status =
-      error.code === 'review_not_found' || error.code === 'target_not_found' ? 404 : 409;
-    return c.json({ error: error.message, code: error.code }, status);
+    return sendConnectorProblem(c, MANAGEMENT_REVIEW_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorGrantExclusionError) {
-    return c.json({ error: error.message, code: error.code }, 404);
+    return sendConnectorProblem(c, GRANT_EXCLUSION_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorReconciliationError) {
-    const status =
-      error.code === 'connection_not_found'
-        ? 404
-        : error.code === 'operations_unsupported' || error.code === 'every_agent_unavailable'
-          ? 422
-          : 409;
-    return c.json({ error: error.message, code: error.code }, status);
+    return sendConnectorProblem(c, RECONCILIATION_PROBLEM[error.code], error);
   }
   const managed = managedCloudErrorResponse(c, error);
   if (managed) return managed;
@@ -236,13 +203,9 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
   });
   const requireAgentRequests = (c: Context<ApiEnv>) =>
     deps.agentRequests ??
-    c.json(
-      {
-        error: 'Agent service requests are unavailable while agent identity is offline.',
-        code: 'agent_requests_unavailable',
-      },
-      503
-    );
+    problem(c, 'temporarily_unavailable', {
+      detail: 'Agents’ requests aren’t available while agent identity is off.',
+    });
 
   // Path-less, like the Express router it replaces: every `/api/connectors`
   // request that reaches this group, its routes or the groups after it, is
@@ -255,7 +218,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorManagementReviewCreateRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     try {
       const review = deps.reviews.create(requester, input.data);
       return c.json(
@@ -284,7 +247,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const query = ReviewListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     try {
       return c.json({ reviews: deps.reviews.list(owner, query.data.state) });
     } catch (error) {
@@ -308,7 +271,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorManagementReviewDecisionSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const reviewRequestId = c.req.param('reviewRequestId');
     const decide = async () => {
       try {
@@ -335,7 +298,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const requests = requireAgentRequests(c);
     if (requests instanceof Response) return requests;
     const query = AgentRequestListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     try {
       return c.json({
         requests: requests
@@ -365,7 +328,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const requests = requireAgentRequests(c);
     if (requests instanceof Response) return requests;
     const input = ConnectorAgentRequestDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const requestId = c.req.param('requestId');
     const decide = async () => {
       const active = requestAbortSignal(c);
@@ -397,7 +360,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorAgentRequestAuthenticationInputSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const requestId = c.req.param('requestId');
     // Connecting an account for an agent waits for the owner (DOR-4355).
     return runFrontDoorWrite(c, {
@@ -436,7 +399,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorReconciliationPreviewRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     const controller = new AbortController();
     c.env.outgoing.once('close', () => controller.abort());
     try {
@@ -529,7 +492,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const input = ConnectorReconciliationApplyRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!input.success) return c.json(validationFailureBody(input.error), 400);
+    if (!input.success) return validationProblem(c, input.error);
     /**
      * Send the save. As narrowing, the service refuses it inside its write when it
      * would also settle the review, and this answers `null` so the save waits.

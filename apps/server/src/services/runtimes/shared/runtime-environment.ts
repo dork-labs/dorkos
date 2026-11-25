@@ -12,6 +12,7 @@ import {
   RUNTIME_ENV_PROFILES,
   CUSTOM_CLAUDE_MODES,
 } from './runtime-environment-catalog.js';
+import { TURN_REFERENCE_ENV_NAMES } from './references/turn-reference-env.js';
 
 /** Runtime whose auth profile and custom inheritance are selected. */
 export type EnvironmentRuntime = 'claude-code' | 'codex' | 'opencode' | 'doe';
@@ -89,6 +90,8 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
   };
   for (const name of paths[input.runtime]) names.add(name);
   if (input.purpose === 'turn') names.add('DORKOS_SESSION_ID');
+  // The chat's agent and space, for signatures (provenance v2); never the install id.
+  if (input.purpose === 'turn') for (const name of TURN_REFERENCE_ENV_NAMES) names.add(name);
   if (authPurpose(input.purpose)) for (const name of profileNames(input)) names.add(name);
   if (input.runtime === 'claude-code' && ['turn', 'warmup'].includes(input.purpose)) {
     names.add('CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS');

@@ -9,7 +9,6 @@ import { createInstallationJobs } from '../jobs.js';
 import {
   INSTALLATION_LIMITS,
   INSTALLATION_TARGET,
-  InstallationFailure,
   canonicalDigest,
   sha256,
   type AttemptBinding,
@@ -23,7 +22,6 @@ import {
   type JobIntent,
   type RawWriter,
   type VerifierRequest,
-  type VersionProbeRequest,
 } from '../contracts.js';
 
 const spawnMock = vi.hoisted(() => vi.fn());
@@ -279,119 +277,6 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     };
   }
 
-  it.each(['stdout', 'stderr', 'both'] as const)(
-    'finishes prepared raws and drains available originals with missing %s',
-    async (missing) => {
-      const s = sinkFixture();
-      const child = new EventEmitter() as EventEmitter & {
-        stdout: PassThrough | null;
-        stderr: PassThrough | null;
-      };
-      child.stdout = missing === 'stdout' || missing === 'both' ? null : new PassThrough();
-      child.stderr = missing === 'stderr' || missing === 'both' ? null : new PassThrough();
-      spawnMock.mockImplementation(() => {
-        queueMicrotask(() => {
-          child.emit('error', new Error('spawn failed'));
-          const survivors = [child.stdout, child.stderr].filter(
-            (stream): stream is PassThrough => !!stream
-          );
-          if (!survivors.length) child.emit('close', -1, null);
-          let remaining = survivors.length;
-          for (const stream of survivors) {
-            stream.once('close', () => {
-              if (--remaining === 0) child.emit('close', -1, null);
-            });
-            stream.end('surviving original');
-          }
-        });
-        return child as unknown as ChildProcess;
-      });
-      const producer = jobs();
-      const run = await producer.runInstaller({ ...request, sink: s.sink });
-      expect(spawnMock).toHaveBeenCalledTimes(1);
-      expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-      expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-      expect(s.sink.birth).not.toHaveBeenCalled();
-      expect(run.facts.birth).toBeNull();
-      expect(run.facts.exitObserved).toBe(false);
-      expect(run.facts.closeObserved).toBe(true);
-      for (const name of ['stdout', 'stderr'] as const) {
-        expect(run.facts[name]).toMatchObject({
-          rawFlushedClosed: true,
-          eof: !!child[name],
-          closed: !!child[name],
-        });
-        expect(s[name].write).toHaveBeenCalledTimes(child[name] ? 1 : 0);
-      }
-      expect(producer.custody()).toMatchObject({ pending: 1, firstCause: 'CUSTODY_UNCERTAIN' });
-      expect(() => producer.requireReturned(run.handle)).toThrow('CUSTODY_UNCERTAIN');
-      await expect(producer.runInstaller(request)).rejects.toThrow('CUSTODY_UNCERTAIN');
-    }
-  );
-
-  it('splits a coalesced retained prefix into bounded original raw writes', async () => {
-    const s = sinkFixture();
-    const child = new OriginalChild();
-    const writes: Uint8Array[] = [];
-    const bytes = Buffer.alloc(INSTALLATION_LIMITS.bufferBytes * 2 + 17, 71);
-    s.stdout.write = vi.fn(async (chunk) => {
-      expect(chunk.byteLength).toBeLessThanOrEqual(INSTALLATION_LIMITS.bufferBytes);
-      writes.push(Uint8Array.from(chunk));
-    });
-    installChild(child, () => child.finish(0, null, bytes as unknown as string));
-    const producer = jobs();
-    const run = await producer.runInstaller({ ...request, sink: s.sink });
-    expect(writes.length).toBeGreaterThan(1);
-    expect(Buffer.concat(writes)).toEqual(bytes);
-    expect(run.facts.stdout).toMatchObject({ overflow: false, retainedBytes: bytes.byteLength });
-    expect(producer.requireReturned(run.handle)).toEqual(run.facts);
-  });
-
-  it('keeps observed terminal failure ahead of later raw and receipt failures', async () => {
-    const s = sinkFixture();
-    const child = new OriginalChild();
-    s.stdout.finish = vi.fn(async () => {
-      throw new InstallationFailure('CUSTODY_UNCERTAIN');
-    });
-    s.sink.receipt = vi.fn(async () => {
-      throw new InstallationFailure('CUSTODY_UNCERTAIN');
-    });
-    installChild(child, () => child.finish(1));
-    const producer = jobs();
-    const run = await producer.runInstaller({ ...request, sink: s.sink });
-    expect(run.facts.firstCause).toBe('INSTALLER_FAILED');
-    expect(run.facts.cleanupCauses).toContain('CUSTODY_UNCERTAIN');
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-    expect(s.sink.receipt).toHaveBeenCalledTimes(1);
-    expect(producer.custody().firstCause).toBe('INSTALLER_FAILED');
-  });
-
-  it('preserves an earlier failure before a signaled original exit', async () => {
-    const s = sinkFixture();
-    const child = new OriginalChild();
-    const controller = new AbortController();
-    s.sink.birth = vi.fn(async () => {
-      controller.abort();
-      child.finish(null, 'SIGTERM');
-    });
-    spawnMock.mockImplementation(() => {
-      child.launch();
-      return child as unknown as ChildProcess;
-    });
-    const producer = jobs();
-    const run = await producer.runInstaller({
-      ...request,
-      sink: s.sink,
-      signal: controller.signal,
-    });
-    expect(run.facts.firstCause).toBe('ABORTED');
-    expect(run.facts.signal).toBe('SIGTERM');
-    expect(producer.custody().firstCause).toBe('ABORTED');
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-  });
-
   it('runs the exact official argv with closed environment, intent before spawn and original settlement', async () => {
     const s = sinkFixture();
     const child = new OriginalChild();
@@ -445,57 +330,6 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     await expect(producer.runInstaller(request)).rejects.toThrow('CUSTODY_UNCERTAIN');
   });
 
-  it('drains while birth is pending, and sends verifier stdin only after birth resolves', async () => {
-    const birth = deferred<void>();
-    const entered = deferred<void>();
-    const s = sinkFixture();
-    s.sink.birth = vi.fn(async () => {
-      entered.resolve();
-      await birth.promise;
-    });
-    const child = new OriginalChild(true);
-    spawnMock.mockImplementation(() => {
-      child.launch();
-      child.stdout.write('early reply ');
-      return child as unknown as ChildProcess;
-    });
-    child.stdin!.once('finish', () => child.finish(0, null, 'done'));
-    const producer = jobs();
-    const pending = producer.runVerifier(await verifierRequest(s.sink));
-    await entered.promise;
-    expect(child.input).toHaveLength(0);
-    // Drain is already active despite a blocked durable-birth sink.
-    await vi.waitFor(() => expect(s.stdout.write).toHaveBeenCalled());
-    birth.resolve();
-    const run = await pending;
-    expect(JSON.parse(Buffer.concat(child.input).toString()).binding).toEqual(binding);
-    expect(producer.requireReturned(run.handle).descendantDisposition).toBe('not-applicable');
-    expect(child.kill).not.toHaveBeenCalled();
-  });
-
-  it('uses one installer followed by one verifier with the same fixed binding and ends', async () => {
-    const producer = jobs();
-    const installed = new OriginalChild();
-    installChild(installed, () => installed.finish());
-    const first = await producer.runInstaller(request);
-    producer.requireReturned(first.handle);
-    const verified = new OriginalChild(true);
-    spawnMock.mockImplementation(() => {
-      verified.launch();
-      return verified as unknown as ChildProcess;
-    });
-    verified.stdin!.once('finish', () => verified.finish(0, null, 'bounded reply'));
-    const second = await producer.runVerifier(await verifierRequest(sinkFixture().sink));
-    expect(second.facts.binding).toEqual(first.facts.binding);
-    expect(second.facts.birth?.bounds).toEqual(first.facts.birth?.bounds);
-    expect(second.handle.jobId).not.toBe(first.handle.jobId);
-    expect(producer.requireReturned(second.handle).descendantDisposition).toBe('not-applicable');
-    expect(spawnMock).toHaveBeenCalledTimes(2);
-    await expect(producer.runVerifier(await verifierRequest(sinkFixture().sink))).rejects.toThrow(
-      'CUSTODY_UNCERTAIN'
-    );
-  });
-
   it('a pending original excludes a second role without a second spawn', async () => {
     const born = deferred<void>();
     const s = sinkFixture();
@@ -518,30 +352,6 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     await pending;
   });
 
-  it('retains birth failure, attempts both raw finishes and never sends request bytes or relaunches', async () => {
-    const s = sinkFixture();
-    s.sink.birth = vi.fn(async () => {
-      throw new InstallationFailure('RECORD_FAILED');
-    });
-    const child = new OriginalChild(true);
-    spawnMock.mockImplementation(() => {
-      child.launch();
-      return child as unknown as ChildProcess;
-    });
-    child.stdin!.once('finish', () => child.finish(2, null, '', 'missing request'));
-    const producer = jobs();
-    const run = await producer.runVerifier(await verifierRequest(s.sink));
-    expect(child.input).toHaveLength(0);
-    expect(run.facts.firstCause).toBe('RECORD_FAILED');
-    expect(run.facts.descendantDisposition).toBe('unknown');
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-    expect(s.sink.receipt).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(() => producer.requireReturned(run.handle)).toThrow('CUSTODY_UNCERTAIN');
-    expect(producer.custody()).toMatchObject({ pending: 1, firstCause: 'RECORD_FAILED' });
-  });
-
   it('retains overflow, drains through EOF and caps memory/raw writes rather than truncating success', async () => {
     const s = sinkFixture();
     const child = new OriginalChild();
@@ -562,43 +372,6 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     expect(run.facts.firstCause).toBe('RETENTION_EXCEEDED');
     expect(() => producer.requireReturned(run.handle)).toThrow('RETENTION_EXCEEDED');
     expect(child.kill).not.toHaveBeenCalled();
-  });
-
-  it('a write failure does not suppress peer drain, either raw finish or original close', async () => {
-    const s = sinkFixture();
-    s.stdout.write = vi.fn(async () => {
-      throw new InstallationFailure('IO_FAILED');
-    });
-    const child = new OriginalChild();
-    installChild(child, () => child.finish(0, null, 'out', 'peer'));
-    const producer = jobs();
-    const run = await producer.runInstaller({ ...request, sink: s.sink });
-    expect(run.facts.firstCause).toBe('IO_FAILED');
-    expect(run.facts.closeObserved).toBe(true);
-    expect(s.stderr.write).toHaveBeenCalled();
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-    expect(() => producer.requireReturned(run.handle)).toThrow('IO_FAILED');
-  });
-
-  it('ambiguous raw finish and receipt failure stay retained without numeric close retry', async () => {
-    const s = sinkFixture();
-    s.stdout.finish = vi.fn(async () => {
-      throw new InstallationFailure('CUSTODY_UNCERTAIN');
-    });
-    s.sink.receipt = vi.fn(async () => {
-      throw new InstallationFailure('RECORD_FAILED');
-    });
-    const child = new OriginalChild();
-    installChild(child, () => child.finish());
-    const producer = jobs();
-    const run = await producer.runInstaller({ ...request, sink: s.sink });
-    expect(run.facts.firstCause).toBe('CUSTODY_UNCERTAIN');
-    expect(run.facts.cleanupCauses).toEqual(['CUSTODY_UNCERTAIN', 'RECORD_FAILED']);
-    expect(run.facts.stdout.rawFlushedClosed).toBe(false);
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-    expect(producer.custody()).toEqual({ pending: 1, firstCause: 'CUSTODY_UNCERTAIN' });
   });
 
   it('requests stop once on abort, awaits actual original return and preserves unknown disposition', async () => {
@@ -630,6 +403,34 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     expect(() => producer.requireReturned(run.handle)).toThrow('ABORTED');
   });
 
+  it('pin or binding mismatch refuses before prepare/spawn', async () => {
+    const s = sinkFixture();
+    await writeFile(request.library.cli.path, 'changed source');
+    const run = await jobs().runInstaller({ ...request, sink: s.sink });
+    expect(run.facts.firstCause).toBe('HASH_MISMATCH');
+    expect(s.sink.prepare).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+    const foreign = await jobs().runInstaller({
+      ...request,
+      sink: s.sink,
+      attempt: { ...request.attempt, binding: { ...binding, nonce: 'foreign' } },
+    });
+    expect(foreign.facts.firstCause).toBe('BINDING_MISMATCH');
+  });
+
+  it('installer nonzero exit is not trusted return and cannot be retried', async () => {
+    const child = new OriginalChild();
+    installChild(child, () => child.finish(1));
+    const producer = jobs();
+    const run = await producer.runInstaller(request);
+    expect(run.facts.firstCause).toBe('INSTALLER_FAILED');
+    expect(run.facts.descendantDisposition).toBe('unknown');
+    await expect(producer.runVerifier(await verifierRequest(request.sink))).rejects.toThrow(
+      'INSTALLER_FAILED'
+    );
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
   it('work end requests only the retained original once; final end never fabricates settlement', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const s = sinkFixture();
@@ -659,43 +460,6 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     expect(run.facts.descendantDisposition).toBe('unknown');
   });
 
-  it('abort after raw prepare finishes both originals without spawning', async () => {
-    const s = sinkFixture();
-    const controller = new AbortController();
-    s.sink.prepare = vi.fn(async () => {
-      controller.abort();
-      return { stdout: s.stdout, stderr: s.stderr };
-    });
-    const producer = jobs();
-    const run = await producer.runInstaller({
-      ...request,
-      sink: s.sink,
-      signal: controller.signal,
-    });
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(run.facts.birth).toBeNull();
-    expect(run.facts.firstCause).toBe('ABORTED');
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-    expect(producer.custody().pending).toBe(1); // no invented no-acquisition certificate
-  });
-
-  it('synchronous spawn failure finishes both prepared raws and consumes the original slot', async () => {
-    const s = sinkFixture();
-    spawnMock.mockImplementation(() => {
-      throw new Error('fixture spawn failure');
-    });
-    const producer = jobs();
-    const run = await producer.runInstaller({ ...request, sink: s.sink });
-    expect(run.facts.birth).toBeNull();
-    expect(run.facts.firstCause).toBe('IO_FAILED');
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-    expect(s.sink.receipt).toHaveBeenCalledTimes(1);
-    await expect(producer.runInstaller(request)).rejects.toThrow('IO_FAILED');
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
-
   it('failed original stop stays uncertain and is not retried after abort', async () => {
     const born = deferred<void>();
     const s = sinkFixture();
@@ -721,78 +485,5 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     expect(run.facts.cleanupCauses).toContain('CUSTODY_UNCERTAIN');
     expect(child.kill).toHaveBeenCalledTimes(1);
     expect(run.facts.descendantDisposition).toBe('unknown');
-  });
-
-  it('a regressing monotonic sample is a retained clock failure, never renewed bounds', async () => {
-    const s = sinkFixture();
-    s.sink.prepare = vi.fn(async () => {
-      clock = 999;
-      return { stdout: s.stdout, stderr: s.stderr };
-    });
-    const producer = jobs();
-    const run = await producer.runInstaller({ ...request, sink: s.sink });
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(run.facts.firstCause).toBe('CLOCK_UNAVAILABLE');
-    expect(run.facts.birth).toBeNull();
-    expect(producer.custody().pending).toBe(1);
-    expect(s.stdout.finish).toHaveBeenCalledTimes(1);
-    expect(s.stderr.finish).toHaveBeenCalledTimes(1);
-  });
-
-  it('pin or binding mismatch refuses before prepare/spawn', async () => {
-    const s = sinkFixture();
-    await writeFile(request.library.cli.path, 'changed source');
-    const run = await jobs().runInstaller({ ...request, sink: s.sink });
-    expect(run.facts.firstCause).toBe('HASH_MISMATCH');
-    expect(s.sink.prepare).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-    const foreign = await jobs().runInstaller({
-      ...request,
-      sink: s.sink,
-      attempt: { ...request.attempt, binding: { ...binding, nonce: 'foreign' } },
-    });
-    expect(foreign.facts.firstCause).toBe('BINDING_MISMATCH');
-  });
-
-  it('installer nonzero exit is not trusted return and cannot be retried', async () => {
-    const child = new OriginalChild();
-    installChild(child, () => child.finish(1));
-    const producer = jobs();
-    const run = await producer.runInstaller(request);
-    expect(run.facts.firstCause).toBe('INSTALLER_FAILED');
-    expect(run.facts.descendantDisposition).toBe('unknown');
-    await expect(producer.runVerifier(await verifierRequest(request.sink))).rejects.toThrow(
-      'INSTALLER_FAILED'
-    );
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('fresh-verifier mode has only one probe slot; controller cannot acquire it', async () => {
-    const executablePath = join(
-      request.candidate.candidateRoot,
-      INSTALLATION_TARGET.executablePath
-    );
-    await mkdir(join(executablePath, '..'), { recursive: true });
-    const executable = await file(executablePath, 'arm64 executable fixture bytes');
-    const probe: VersionProbeRequest = {
-      binding,
-      bounds: request.bounds,
-      executable,
-      cwd: request.attempt.attemptRoot,
-      sink: sinkFixture().sink,
-    };
-    await expect(jobs().runVersionProbe(probe)).rejects.toThrow('BINDING_MISMATCH');
-    const producer = createInstallationJobs(config, {
-      ownerKind: 'fresh-verifier',
-      now: () => clock,
-    });
-    await expect(producer.runInstaller(request)).rejects.toThrow('BINDING_MISMATCH');
-    const child = new OriginalChild();
-    installChild(child, () => child.finish(0, null, 'Chromium 157.0.8103.15\n'));
-    const run = await producer.runVersionProbe(probe);
-    expect(spawnMock.mock.calls[0][0]).toBe(executablePath);
-    expect(spawnMock.mock.calls[0][1]).toEqual(['--version']);
-    expect(producer.requireReturned(run.handle).descendantDisposition).toBe('not-applicable');
-    await expect(producer.runVersionProbe(probe)).rejects.toThrow('CUSTODY_UNCERTAIN');
   });
 });

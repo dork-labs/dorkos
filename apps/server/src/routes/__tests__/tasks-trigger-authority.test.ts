@@ -54,7 +54,6 @@ import { ScheduleBlockSchema } from '@dorkos/skills/schedule-schema';
 import { MISPLACED_SCHEDULE_PERMISSIONS } from '@dorkos/shared/schedule-file-problems';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
-import { OPERATOR_ONLY_TASK_CODE } from '../../services/tasks/task-write-policy.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -174,7 +173,7 @@ describe('POST /api/tasks/:id/trigger', () => {
         .set('x-dorkos-agent', 'agent-token-abc');
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(OPERATOR_ONLY_TASK_CODE);
+      expect(res.body.code).toBe('person_only');
       expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
     });
 

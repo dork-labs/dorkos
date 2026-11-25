@@ -175,7 +175,7 @@ describe('a question that ended in history (DOR-1293)', () => {
       screen.getByRole('radiogroup', {
         name: 'Which sorting algorithm do you prefer for general-purpose use?',
       })
-    ).toBeDefined();
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('question-prompt-unanswered')).toBeNull();
   });
 
@@ -215,7 +215,7 @@ describe('a question that ended in history (DOR-1293)', () => {
     renderQuestionPart({ status: 'error', questionOutcome: 'errored', result: huge });
     const clamped = screen.getByTestId('question-prompt-result').querySelector('pre');
     expect(clamped?.textContent?.length).toBe(5120);
-    expect(screen.getByRole('button', { name: /Show full output/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Show full output/ })).toBeInTheDocument();
   });
 
   it('a RECOVERED pending question is answerable, whatever history said', () => {
@@ -229,7 +229,7 @@ describe('a question that ended in history (DOR-1293)', () => {
       screen.getByRole('radiogroup', {
         name: 'Which sorting algorithm do you prefer for general-purpose use?',
       })
-    ).toBeDefined();
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('question-prompt-unanswered')).toBeNull();
   });
 });

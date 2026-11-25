@@ -117,7 +117,8 @@ describe('the "opened by" mark on a session canvas', () => {
       .post(`/api/sessions/${SESSION}/canvas`)
       .send({ content: widget, openedBy: { extensionId: 'desk' } });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('CANVAS_APP_WIDGET_ACTION');
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe('invalid_request');
     expect(stored()).toHaveLength(0);
   });
 
@@ -143,7 +144,7 @@ describe('the "opened by" mark on a session canvas', () => {
     for (const id of ['notes', 'no-such-app']) {
       const res = await openFor(id);
       expect(res.status, id).toBe(400);
-      expect(res.body.code).toBe('CANVAS_OPENED_BY_UNKNOWN_APP');
+      expect(res.body.code).toBe('invalid_request');
     }
     expect(stored()).toHaveLength(0);
   });
@@ -173,7 +174,7 @@ describe('the "opened by" mark on a session canvas', () => {
       .send({ content: PAGE, openedBy: { extensionId: 'desk' } });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.body.code).toBe('person_only');
     expect(stored()).toHaveLength(0);
   });
 
@@ -181,7 +182,7 @@ describe('the "opened by" mark on a session canvas', () => {
     signedInUser = { userId: 'user_key', credential: 'api-key' };
     const byKey = await openFor('desk');
     expect(byKey.status).toBe(401);
-    expect(byKey.body.code).toBe('PERSON_SESSION_REQUIRED');
+    expect(byKey.body.code).toBe('person_session_required');
     expect(stored()).toHaveLength(0);
 
     signedInUser = { userId: 'user_window', credential: 'cookie' };

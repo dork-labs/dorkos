@@ -24,15 +24,26 @@ import { registerFromDefinitions, type ExternalToolConfigs } from './register-fr
 const A = ToolAnnotationPresets;
 
 /**
+ * What `mesh_list` and `mesh_inspect` add to every agent's manifest: its
+ * `dork:agent:` reference, the target of a `[Name](/r/<ref>)` link (DOR-5046).
+ */
+const ListedAgentSchema = AgentManifestSchema.extend({
+  ref: z
+    .string()
+    .nullable()
+    .describe('The agent reference, e.g. dork:agent:{agentId}. Link it as [Name](/r/{ref}).'),
+});
+
+/**
  * `outputSchema` for `mesh_list`.
  *
- * The manifest plus the one field the listing adds: `relaySubject`, the agent's
- * canonical endpoint address (DOR-1337). Optional because the handler omits it
- * rather than guessing when an id resolves to nothing.
+ * The listed agent plus the one field only the listing adds: `relaySubject`, the
+ * agent's canonical endpoint address (DOR-1337). Optional because the handler
+ * omits it rather than guessing when an id resolves to nothing.
  */
 const meshListOutputSchema = {
   agents: z.array(
-    AgentManifestSchema.extend({
+    ListedAgentSchema.extend({
       relaySubject: z
         .string()
         .optional()
@@ -41,6 +52,9 @@ const meshListOutputSchema = {
   ),
   count: z.number(),
 };
+
+/** `outputSchema` for `mesh_inspect`: the inspection, its agent with its reference. */
+const meshInspectOutputSchema = MeshInspectSchema.extend({ agent: ListedAgentSchema });
 
 /** The external-only additions for each `mesh_*` tool. */
 const MESH_EXTERNAL_CONFIGS: ExternalToolConfigs = {
@@ -57,7 +71,7 @@ const MESH_EXTERNAL_CONFIGS: ExternalToolConfigs = {
   mesh_deny: { annotations: A.mutateUpdateLocal },
   mesh_unregister: { annotations: A.mutateDeleteLocal },
   mesh_status: { annotations: A.readOnlyLocal, outputSchema: MeshStatusSchema },
-  mesh_inspect: { annotations: A.readOnlyLocal, outputSchema: MeshInspectSchema },
+  mesh_inspect: { annotations: A.readOnlyLocal, outputSchema: meshInspectOutputSchema },
   mesh_query_topology: { annotations: A.readOnlyLocal, outputSchema: TopologyViewSchema },
 };
 

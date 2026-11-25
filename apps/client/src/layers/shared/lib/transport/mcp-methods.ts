@@ -1,14 +1,14 @@
 /**
  * Managed-MCP Transport methods factory (HTTP adapter) — per-agent MCP server
- * CRUD over the generic capability-invoke path (spec `mcp-server-management`
- * §7). Every verb rides `POST /api/capabilities/:id/invoke`: the body is the
- * capability's raw input, the response is the plain result, and a destructive
- * verb answers `202` with a {@link CapabilityApprovalRequired} payload when a
- * person must approve first.
- *
- * The client never calls a dedicated `/api/agents/:id/mcp-servers` route — those
- * are not mounted. The generic invoke endpoint is the working path, and the
- * approval token rides the `X-DorkOS-Approval` header on the confirming retry.
+ * CRUD (spec `mcp-server-management` §7). Each verb rides its capability's own
+ * REST path under `/api/agents/:agentId/mcp-servers`, which the server serves
+ * from the capability's declaration; the sign-in verbs and the browser preset
+ * declare no path, so they ride `POST /api/capabilities/:id/invoke`. Either
+ * way the body is the capability's input (less what the path carries), the
+ * response is the plain result, and a destructive verb answers `202` with a
+ * {@link CapabilityApprovalRequired} payload when a person must approve first.
+ * The approval token rides the `X-DorkOS-Approval` header on the confirming
+ * retry.
  *
  * @module shared/lib/transport/mcp-methods
  */
@@ -31,7 +31,7 @@ import { fetchJSON } from './http-client';
 const APPROVAL_TOKEN_HEADER = 'X-DorkOS-Approval';
 
 /**
- * The two body shapes a capability invoke can return: the capability's own
+ * The two body shapes a capability call can return: the capability's own
  * result `T`, or the approval-required envelope. They are disjoint at runtime —
  * the envelope is a non-array object with `status: 'approval_required'` — so a
  * `T` that is an array (the managed-server list) never collides with it.
@@ -48,21 +48,28 @@ function isApprovalRequired(body: unknown): body is CapabilityApprovalRequired {
   );
 }
 
+/** The path of an agent's managed servers, or of one of them. */
+function serversPath(agentId: string, name?: string): string {
+  const base = `/agents/${encodeURIComponent(agentId)}/mcp-servers`;
+  return name === undefined ? base : `${base}/${encodeURIComponent(name)}`;
+}
+
 /** Create the managed-MCP methods bound to a base URL. */
 export function createMcpMethods(baseUrl: string) {
   /**
-   * Invoke a capability by id. `fetchJSON` treats both `200` and `202` as OK
+   * Call one capability's route. `fetchJSON` treats both `200` and `202` as OK
    * (`res.ok`), so the two outcomes are disambiguated by the body shape, not the
    * status code.
    */
-  function invokeCapability<T>(
-    id: string,
-    input: unknown,
+  function callCapability<T>(
+    path: string,
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    body?: unknown,
     approvalToken?: string
   ): Promise<CapabilityInvokeBody<T>> {
-    return fetchJSON<CapabilityInvokeBody<T>>(baseUrl, `/capabilities/${id}/invoke`, {
-      method: 'POST',
-      body: JSON.stringify(input),
+    return fetchJSON<CapabilityInvokeBody<T>>(baseUrl, path, {
+      method,
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       // Overriding `headers` replaces `fetchJSON`'s default wholesale, so
       // `Content-Type` must be restated alongside the approval token.
       ...(approvalToken
@@ -73,87 +80,93 @@ export function createMcpMethods(baseUrl: string) {
     });
   }
 
+  /** Run a capability that declares no REST path, through the invoke endpoint. */
+  function invokeCapability<T>(id: string, input: unknown): Promise<T> {
+    return callCapability<T>(`/capabilities/${id}/invoke`, 'POST', input) as Promise<T>;
+  }
+
   /** Run a destructive verb, mapping the two possible bodies to the result union. */
-  async function invokeMutation(
-    id: string,
-    input: unknown,
+  async function mutation(
+    path: string,
+    method: 'POST' | 'PATCH',
+    body: unknown,
     approvalToken?: string
   ): Promise<AgentMcpMutationResult> {
-    const body = await invokeCapability<ManagedMcpServer[]>(id, input, approvalToken);
-    if (isApprovalRequired(body)) {
-      return { status: 'approval_required', approval: body };
+    const answer = await callCapability<ManagedMcpServer[]>(path, method, body, approvalToken);
+    if (isApprovalRequired(answer)) {
+      return { status: 'approval_required', approval: answer };
     }
-    return { status: 'ok', servers: body };
+    return { status: 'ok', servers: answer };
   }
 
   return {
     listAgentMcpServers(agentId: string): Promise<ManagedMcpServerView[]> {
-      return invokeCapability<ManagedMcpServerView[]>('mcp.list', { agentId }).then(
-        (body) => body as ManagedMcpServerView[]
-      );
+      return callCapability<ManagedMcpServerView[]>(serversPath(agentId), 'GET') as Promise<
+        ManagedMcpServerView[]
+      >;
     },
 
     getAgentBrowserPreset(): Promise<AgentBrowserPreset> {
-      return invokeCapability<AgentBrowserPreset>('mcp.browser_preset', {}).then(
-        (body) => body as AgentBrowserPreset
-      );
+      return invokeCapability<AgentBrowserPreset>('mcp.browser_preset', {});
     },
 
     addAgentMcpServer(
-      input: AddAgentMcpServerInput,
+      { agentId, ...server }: AddAgentMcpServerInput,
       opts?: { approvalToken?: string }
     ): Promise<AgentMcpMutationResult> {
-      return invokeMutation('mcp.add', input, opts?.approvalToken);
+      return mutation(serversPath(agentId), 'POST', server, opts?.approvalToken);
     },
 
     importAgentMcpServer(
-      input: ImportAgentMcpServerInput,
+      { agentId, name }: ImportAgentMcpServerInput,
       opts?: { approvalToken?: string }
     ): Promise<AgentMcpMutationResult> {
-      return invokeMutation('mcp.import', input, opts?.approvalToken);
+      return mutation(`${serversPath(agentId, name)}/import`, 'POST', {}, opts?.approvalToken);
     },
 
     updateAgentMcpServer(
-      input: UpdateAgentMcpServerInput,
+      { agentId, name, ...patch }: UpdateAgentMcpServerInput,
       opts?: { approvalToken?: string }
     ): Promise<AgentMcpMutationResult> {
-      return invokeMutation('mcp.update', input, opts?.approvalToken);
+      return mutation(serversPath(agentId, name), 'PATCH', patch, opts?.approvalToken);
     },
 
     removeAgentMcpServer(agentId: string, name: string): Promise<ManagedMcpServer[]> {
-      return invokeCapability<ManagedMcpServer[]>('mcp.remove', { agentId, name }).then(
-        (body) => body as ManagedMcpServer[]
-      );
+      return callCapability<ManagedMcpServer[]>(serversPath(agentId, name), 'DELETE') as Promise<
+        ManagedMcpServer[]
+      >;
     },
 
     enableAgentMcpServer(agentId: string, name: string): Promise<ManagedMcpServer[]> {
-      return invokeCapability<ManagedMcpServer[]>('mcp.enable', { agentId, name }).then(
-        (body) => body as ManagedMcpServer[]
-      );
+      return callCapability<ManagedMcpServer[]>(
+        `${serversPath(agentId, name)}/enable`,
+        'POST',
+        {}
+      ) as Promise<ManagedMcpServer[]>;
     },
 
     disableAgentMcpServer(agentId: string, name: string): Promise<ManagedMcpServer[]> {
-      return invokeCapability<ManagedMcpServer[]>('mcp.disable', { agentId, name }).then(
-        (body) => body as ManagedMcpServer[]
-      );
+      return callCapability<ManagedMcpServer[]>(
+        `${serversPath(agentId, name)}/disable`,
+        'POST',
+        {}
+      ) as Promise<ManagedMcpServer[]>;
     },
 
     testAgentMcpServer(agentId: string, name: string): Promise<AgentMcpTestResult> {
-      return invokeCapability<AgentMcpTestResult>('mcp.test', { agentId, name }).then(
-        (body) => body as AgentMcpTestResult
-      );
+      return callCapability<AgentMcpTestResult>(
+        `${serversPath(agentId, name)}/test`,
+        'POST',
+        {}
+      ) as Promise<AgentMcpTestResult>;
     },
 
     startMcpSignin(agentId: string, name: string): Promise<StartMcpSigninResult> {
-      return invokeCapability<StartMcpSigninResult>('mcp.signin', { agentId, name }).then(
-        (body) => body as StartMcpSigninResult
-      );
+      return invokeCapability<StartMcpSigninResult>('mcp.signin', { agentId, name });
     },
 
     pollMcpSignin(flowId: string): Promise<McpSigninPollResult> {
-      return invokeCapability<McpSigninPollResult>('mcp.poll_signin', { flowId }).then(
-        (body) => body as McpSigninPollResult
-      );
+      return invokeCapability<McpSigninPollResult>('mcp.poll_signin', { flowId });
     },
 
     async setMcpClientCredentials(
@@ -161,9 +174,7 @@ export function createMcpMethods(baseUrl: string) {
       name: string,
       credentials: McpClientCredentials
     ): Promise<void> {
-      await invokeCapability('mcp.set_client', {
-        agentId,
-        name,
+      await callCapability(`${serversPath(agentId, name)}/client`, 'PUT', {
         clientId: credentials.clientId,
         // Omitted rather than sent empty: the capability's input rejects an empty
         // secret, and "no secret" is the normal case for a public client.

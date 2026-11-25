@@ -100,8 +100,10 @@ function isWithin(root: string, dir: string): boolean {
  * this, because the boundary check hands back `cwd` real-pathed while Mesh keeps
  * each home as registered: a home under a symlink (macOS's `/tmp`) would
  * otherwise never contain a `cwd` that is inside it.
+ *
+ * @param dir - The folder.
  */
-function realOr(dir: string): string {
+export function realOr(dir: string): string {
   const resolved = path.resolve(dir);
   try {
     return fs.realpathSync.native(resolved);

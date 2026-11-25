@@ -31,6 +31,11 @@ const PEOPLE_ONLY = json(
 );
 const SIGNED_OUT = json(ErrorSchema, 'Not signed in');
 
+/** The passkey check a 428 hands back: one named component for both routes that send it. */
+const PasskeyCheckRequiredSchema = z
+  .object({ code: z.string(), options: z.unknown() })
+  .openapi('PasskeyCheckRequired');
+
 /**
  * Register the devices routes.
  *
@@ -62,7 +67,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       'Ends one sign-in, closes every stream, socket and terminal it had open, and stops ' +
       'the chats it started. Your own current sign-in from anywhere; any other only from ' +
       'the owner at the computer DorkOS runs on or signed in over https, never ' +
-      'plain-http Wi-Fi.',
+      'from a plain-http network sign-in.',
     request: { params: z.object({ id: z.string() }) },
     responses: {
       204: { description: 'Signed out' },
@@ -80,7 +85,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     description:
       'Ends every sign-in but the asking one (all of them when the asker has none) and closes ' +
       'what each had open. Only from the owner at the computer DorkOS runs on or signed in ' +
-      'over https, never plain-http Wi-Fi.',
+      'over https, never from a plain-http network sign-in.',
     responses: {
       200: json(SignOutEverywhereElseResultSchema, 'How many sign-ins ended'),
       401: SIGNED_OUT,
@@ -92,9 +97,9 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     method: 'put',
     path: '/api/devices/sessions/{id}/runs-agents',
     tags: TAGS,
-    summary: 'Let a Wi-Fi device run agents',
+    summary: 'Let a device on the network run agents',
     description:
-      'Lets one Wi-Fi sign-in start turns at the agent’s own level, or stops it. Every ' +
+      'Lets one network sign-in start turns at the agent’s own level, or stops it. Every ' +
       'sign-in starts with this off. Only the owner at the computer DorkOS runs on may ' +
       'change it, from the app’s own page. Turning it on needs a fresh passkey check, as ' +
       'approving a sign-in does: the first call answers `428` (`PASSKEY_CHECK_REQUIRED`), the ' +
@@ -114,10 +119,10 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       204: { description: 'Changed' },
       401: json(ErrorSchema, 'Not signed in, or the passkey check did not pass'),
       403: PEOPLE_ONLY,
-      404: json(ErrorSchema, 'No live Wi-Fi sign-in of yours has that id'),
+      404: json(ErrorSchema, 'No live network sign-in of yours has that id'),
       409: json(ErrorSchema, 'Add a passkey on this computer first'),
       428: json(
-        z.object({ code: z.string(), options: z.unknown() }),
+        PasskeyCheckRequiredSchema,
         'Run this passkey check, then call again with its response'
       ),
     },
@@ -127,9 +132,9 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     method: 'get',
     path: '/api/devices/sign-in-requests',
     tags: TAGS,
-    summary: 'Devices asking to sign in over Wi-Fi',
+    summary: 'Devices asking to sign in over the network',
     description:
-      'Devices on Wi-Fi waiting for the owner to approve their sign-in: what each says it ' +
+      'Devices on the network waiting for the owner to approve their sign-in: what each says it ' +
       'is, its address and when it asked. Only for the owner at the computer DorkOS runs on.',
     responses: {
       200: json(WifiSignInRequestListSchema, 'The waiting requests, newest first'),
@@ -142,7 +147,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     method: 'post',
     path: '/api/devices/sign-in-requests/{id}/approve',
     tags: TAGS,
-    summary: 'Approve a Wi-Fi sign-in',
+    summary: 'Approve a network sign-in',
     description:
       'Approves one waiting device and answers a one-time code to type on it. The first ' +
       'call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second ' +
@@ -162,7 +167,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       404: json(ErrorSchema, 'That request has ended'),
       409: json(ErrorSchema, 'Add a passkey on this computer first'),
       428: json(
-        z.object({ code: z.string(), options: z.unknown() }),
+        PasskeyCheckRequiredSchema,
         'Run this passkey check, then call again with its response'
       ),
     },
@@ -172,7 +177,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     method: 'post',
     path: '/api/devices/sign-in-requests/{id}/decline',
     tags: TAGS,
-    summary: 'Decline a Wi-Fi sign-in',
+    summary: 'Decline a network sign-in',
     description:
       'Turns one waiting device away. Only for the owner at the computer DorkOS runs on.',
     request: { params: z.object({ id: z.string() }) },

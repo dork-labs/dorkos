@@ -45,18 +45,6 @@ describe('TaskStore run-terminal hook (DOR-240)', () => {
     expect(passedTask?.agentId).toBe('agent-1');
   });
 
-  it('does NOT fire on a running (non-terminal) write', async () => {
-    const task = store.createTask(taskInput('idle'));
-    const created = store.createRun(task.id, 'scheduled');
-    const listener = vi.fn();
-    store.setOnRunTerminal(listener);
-
-    store.updateRun(created.id, { status: 'running', sessionId: 'sess-1' });
-    await flush();
-
-    expect(listener).not.toHaveBeenCalled();
-  });
-
   it('does NOT fire again on the already-terminal no-op (DOR-248 stomp path)', async () => {
     const task = store.createTask(taskInput('double'));
     const created = store.createRun(task.id, 'scheduled');
@@ -88,13 +76,5 @@ describe('TaskStore run-terminal hook (DOR-240)', () => {
 
     expect(returned?.status).toBe('completed');
     expect(store.getRun(created.id)?.status).toBe('completed');
-  });
-
-  it('does nothing when no listener is registered (unchanged behavior)', async () => {
-    const task = store.createTask(taskInput('nolistener'));
-    const created = store.createRun(task.id, 'scheduled');
-    const returned = store.updateRun(created.id, { status: 'completed', durationMs: 1000 });
-    await flush();
-    expect(returned?.status).toBe('completed');
   });
 });

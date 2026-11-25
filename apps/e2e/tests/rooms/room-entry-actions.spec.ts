@@ -86,6 +86,8 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(toolbar.getByRole('button', { name: 'Copy text' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'View profile' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'Make a to-do' })).toBeVisible();
+    // Copy link is in the menu and the drawer only: the capsule has no room (DOR-5046).
+    await expect(toolbar.getByRole('button', { name: 'Copy link' })).toHaveCount(0);
   });
 
   test('the toolbar encloses the buttons it is drawn around', async ({
@@ -341,6 +343,7 @@ test.describe('Rooms — every message gets a menu', () => {
       'Copy text',
       'View profile',
       'Make a to-do',
+      'Copy link',
     ]);
 
     await menu.getByRole('menuitem', { name: 'Reply in thread' }).click();
@@ -803,6 +806,7 @@ test.describe('Rooms — the menu on a touch screen', () => {
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole('button', { name: 'Reply in thread' })).toBeVisible();
     await expect(drawer.getByRole('button', { name: 'Copy text' })).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Copy link' })).toBeVisible();
 
     await drawer.getByRole('button', { name: 'Reply in thread' }).click();
     await expect(roomsPage.threadPanel).toBeVisible();

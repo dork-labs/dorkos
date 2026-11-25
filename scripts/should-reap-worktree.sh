@@ -7,8 +7,8 @@
 # were most of a disk. Every cleanup path was a human-triggered offer nobody was
 # present to accept: `/flow:done` offers worktree removal only if the work ran
 # through /flow AND the worktree was recorded AND the branch is already merged,
-# but `main` merges through a queue and merge-tail.yml arms auto-merge on a
-# 10-minute tick, so the merge lands long after the session that opened the PR
+# but `main` merges through a queue and auto-merge (turned on when the PR
+# opens), so the merge lands long after the session that opened the PR
 # has ended. The adversarial review workflow, which produced 47 of those 107
 # removed worktrees — the largest single category — said nothing about cleanup at
 # all. Figures and method: research/20260801_worktree-and-branch-sweep.md.

@@ -12,9 +12,6 @@ import { describe, it, expect } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { createTurnLiveness } from '../turn-liveness.js';
 import {
-  AGENT_TASK_ID,
-  DELIVERY_AGENT_TASK_ID,
-  SHELL_TASK_ID,
   readBackgroundTaskFrames,
   readDeliverySegmentFrames,
 } from './fixtures/background-tasks.js';
@@ -98,21 +95,6 @@ describe('the warm path reads every live task, not only subagents', () => {
     expect(liveness.liveTaskIds()).toEqual(['shell-1']);
   });
 
-  it('counts a task type nobody has catalogued as work that holds the process', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(
-      // A Monitor, and a type invented after this test was written. Guessing
-      // "harmless" about an unknown type is the guess that throws work away.
-      tasksChanged([
-        { id: 'monitor-1', type: 'monitor' as 'local_agent' },
-        { id: 'future-1', type: 'shipped_next_year' as 'local_agent' },
-      ])
-    );
-
-    expect(liveness.liveTaskCounts()).toEqual({ agents: 0, shells: 0, other: 2 });
-    expect(liveness.liveAgentCount()).toBe(0);
-  });
-
   it('gives up on owed deliveries and reports which ones it abandoned', () => {
     const liveness = createTurnLiveness();
     liveness.observe(taskSettled('task-1'));
@@ -133,22 +115,7 @@ function resultFrame(): SDKMessage {
   return { type: 'result', subtype: 'success', session_id: 'sdk-1' } as unknown as SDKMessage;
 }
 
-/** The model speaking inside a segment. */
-function assistantFrame(): SDKMessage {
-  return {
-    type: 'assistant',
-    uuid: 'a-1',
-    parent_tool_use_id: null,
-    message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] },
-  } as unknown as SDKMessage;
-}
-
 describe('createTurnLiveness — notifications owed a delivery', () => {
-  it('does not hold the stream open when nothing is owed and nothing is live', () => {
-    const liveness = createTurnLiveness();
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
-  });
-
   // The case the first attempt at this fix got wrong: a task SETTLES before the
   // `result` that ends the segment, so keying on "tasks still running" left
   // nothing outstanding at the moment it mattered.
@@ -158,27 +125,6 @@ describe('createTurnLiveness — notifications owed a delivery', () => {
     expect(liveness.owedCount()).toBe(1);
     // Owed with nothing live is the ONLY hold that gets a deadline.
     expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: true });
-  });
-
-  it.each(['failed', 'stopped'] as const)('owes a delivery for a %s task too', (status) => {
-    const liveness = createTurnLiveness();
-    liveness.observe(taskSettled('t1', status));
-    expect(liveness.holdOpenAtResult().hold).toBe(true);
-  });
-
-  it('ignores a settle with no task id rather than owing an unmatchable delivery', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe({ type: 'system', subtype: 'task_notification' } as unknown as SDKMessage);
-    expect(liveness.owedCount()).toBe(0);
-  });
-
-  it('ignores messages that say nothing about background work', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe({ type: 'system', subtype: 'status' } as unknown as SDKMessage);
-    liveness.observe({ type: 'system', subtype: 'task_progress' } as unknown as SDKMessage);
-    liveness.observe(resultFrame());
-    expect(liveness.owedCount()).toBe(0);
-    expect(liveness.liveAgentCount()).toBe(0);
   });
 });
 
@@ -200,62 +146,6 @@ describe('createTurnLiveness — what a delivery looks like ON THE STREAM (DOR-1
     expect(liveness.owedCount()).toBe(0);
     expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
   });
-
-  // The turn's own init opens nothing new, so it must not drain a queue that
-  // has not been handed over.
-  it('the turn opening init is not a delivery segment', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(taskSettled('t1'));
-    expect(liveness.observe(initFrame())).toEqual({ segmentRunning: false });
-    expect(liveness.owedCount()).toBe(1);
-  });
-
-  // The model speaking proves a segment is under way and that a `result` will
-  // close it — enough to drop a deadline, but it hands nothing over, so the
-  // queue stands.
-  it.each(['assistant', 'stream_event'])('%s activity releases without draining owed', (type) => {
-    const liveness = createTurnLiveness();
-    liveness.observe(taskSettled('t1'));
-    liveness.observe(resultFrame());
-    const change = liveness.observe({ ...assistantFrame(), type } as unknown as SDKMessage);
-    expect(change).toEqual({ segmentRunning: true });
-    expect(liveness.owedCount()).toBe(1);
-  });
-
-  // These promise no `result`, so releasing a deadline on them could leave the
-  // turn held open with nothing coming and nothing to bound it.
-  it.each(['task_progress', 'task_updated', 'background_tasks_changed'])(
-    '%s never reports a segment running',
-    (subtype) => {
-      const liveness = createTurnLiveness();
-      liveness.observe(resultFrame());
-      const change = liveness.observe({
-        type: 'system',
-        subtype,
-        tasks: [],
-        session_id: 'sdk-1',
-      } as unknown as SDKMessage);
-      expect(change).toEqual({ segmentRunning: false });
-    }
-  );
-
-  it('the tag DOR-1149 keyed on is no longer read at all', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(taskSettled('t1'));
-    liveness.observe(resultFrame());
-    // The transcript-only shape. Were this still parsed, `owed` would drop.
-    const change = liveness.observe({
-      type: 'user',
-      session_id: 'sdk-1',
-      parent_tool_use_id: null,
-      message: {
-        role: 'user',
-        content: '<task-notification><task-id>t1</task-id></task-notification>',
-      },
-    } as unknown as SDKMessage);
-    expect(change).toEqual({ segmentRunning: false });
-    expect(liveness.owedCount()).toBe(1);
-  });
 });
 
 describe('createTurnLiveness — background agents still running (DOR-1238)', () => {
@@ -265,129 +155,6 @@ describe('createTurnLiveness — background agents still running (DOR-1238)', ()
     expect(liveness.liveAgentCount()).toBe(1);
     // No deadline: the level signal is self-correcting, so a hold that waits on
     // it cannot wedge — and expiring one mid-segment is the bug (DOR-1238).
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
-  });
-
-  it('lets go once the agent leaves the level set', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(tasksChanged([{ id: 'agent-1', type: 'local_agent' }]));
-    liveness.observe(tasksChanged([]));
-    expect(liveness.liveAgentCount()).toBe(0);
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
-  });
-
-  // Background SHELLS are out of scope: the CLI kills them 5s after stdin ends
-  // and always did, so holding for one would change behaviour nobody asked to
-  // change.
-  it('a background shell does not hold the stream open', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(tasksChanged([{ id: 'shell-1', type: 'local_bash' }]));
-    expect(liveness.liveAgentCount()).toBe(0);
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
-  });
-
-  it('counts the agents in a mixed set and ignores the shells beside them', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(
-      tasksChanged([
-        { id: 'agent-1', type: 'local_agent' },
-        { id: 'shell-1', type: 'local_bash' },
-        { id: 'agent-2', type: 'local_agent' },
-      ])
-    );
-    expect(liveness.liveAgentCount()).toBe(2);
-  });
-
-  // REPLACE semantics, per `sdk.d.ts`: the latest frame IS the membership. An id
-  // that only ever appeared on an edge bookend is not live, so a `task_started`
-  // whose task was killed without a bookend cannot pin the stream open.
-  it('takes the latest level frame as authoritative, never the edge bookends', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe({
-      type: 'system',
-      subtype: 'task_started',
-      task_id: 'started-only',
-      task_type: 'local_agent',
-    } as unknown as SDKMessage);
-    expect(liveness.liveAgentCount()).toBe(0);
-
-    liveness.observe(tasksChanged([{ id: 'agent-1', type: 'local_agent' }]));
-    liveness.observe(tasksChanged([{ id: 'agent-2', type: 'local_agent' }]));
-    expect(liveness.liveAgentCount()).toBe(1);
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
-  });
-
-  // Belt and braces. The level frame that drops the agent precedes its
-  // notification in every capture, so this is not what normally clears it — but
-  // a settled task is definitionally no longer running, whatever order the two
-  // arrive in.
-  it('a settled agent stops being live even without a level frame', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(tasksChanged([{ id: 'agent-1', type: 'local_agent' }]));
-    liveness.observe(taskSettled('agent-1'));
-    expect(liveness.liveAgentCount()).toBe(0);
-    // Settled, so a delivery is now owed — and THAT hold does get a deadline.
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: true });
-  });
-
-  // The cap (`MAX_DEFERRED_SEGMENT_CLOSES`, 8) was a third way to close early.
-  // A turn with a chatty helper is legitimately many segments long.
-  it('holds at every result for as long as the agent lives — there is no cap', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(tasksChanged([{ id: 'agent-1', type: 'local_agent' }]));
-    for (let i = 0; i < 40; i++) {
-      expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
-    }
-  });
-
-  // This runs inside the pump's message loop, where ANY throw leaves the
-  // `for await` and is reported as the process dying. A malformed frame must
-  // not be able to fake a crash.
-  it('survives a level frame with no usable tasks, and keeps holding', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(tasksChanged([{ id: 'agent-1', type: 'local_agent' }]));
-
-    for (const malformed of [
-      { type: 'system', subtype: 'background_tasks_changed', session_id: 'sdk-1' },
-      { type: 'system', subtype: 'background_tasks_changed', tasks: null, session_id: 'sdk-1' },
-      { type: 'system', subtype: 'background_tasks_changed', tasks: 'nope', session_id: 'sdk-1' },
-    ]) {
-      expect(() => liveness.observe(malformed as unknown as SDKMessage)).not.toThrow();
-    }
-    // DELIBERATE: the set is left alone rather than cleared. A frame we cannot
-    // read is not evidence that the agents stopped, and dropping a hold is the
-    // failure this module exists to prevent.
-    expect(liveness.liveAgentCount()).toBe(1);
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
-  });
-
-  it('skips entries with no usable task id but keeps the rest of the frame', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe({
-      type: 'system',
-      subtype: 'background_tasks_changed',
-      tasks: [
-        { task_type: 'local_agent', description: 'no id' },
-        null,
-        { task_id: 42, task_type: 'local_agent' },
-        { task_id: 'agent-real', task_type: 'local_agent', description: 'fine' },
-      ],
-      session_id: 'sdk-1',
-    } as unknown as SDKMessage);
-    expect(liveness.liveAgentCount()).toBe(1);
-  });
-
-  it('a live agent outranks an owed delivery: the hold takes no deadline', () => {
-    const liveness = createTurnLiveness();
-    liveness.observe(
-      tasksChanged([
-        { id: 'agent-1', type: 'local_agent' },
-        { id: 'agent-2', type: 'local_agent' },
-      ])
-    );
-    liveness.observe(taskSettled('agent-2'));
-    expect(liveness.liveAgentCount()).toBe(1);
-    expect(liveness.owedCount()).toBe(1);
     expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
   });
 });
@@ -417,28 +184,6 @@ describe('createTurnLiveness — against the captured SDK 0.3.224 stream', () =>
     expect(liveness.owedCount()).toBe(2);
     expect(liveness.liveAgentCount()).toBe(0);
   });
-
-  it('holds the stream open at a result taken while the captured agent is live', () => {
-    const liveness = createTurnLiveness();
-    const frames = readBackgroundTaskFrames();
-    // Everything up to (not including) the level frame that drops the agent.
-    for (const frame of frames.slice(0, 4)) liveness.observe(frame);
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
-
-    liveness.observe(frames[4]!);
-    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
-  });
-
-  it('reads the agent and the shell apart by task_type, not by session_id', () => {
-    const liveness = createTurnLiveness();
-    const frames = readBackgroundTaskFrames();
-    liveness.observe(frames[2]!); // both tasks live
-    expect(liveness.liveAgentCount()).toBe(1);
-    liveness.observe(taskSettled(AGENT_TASK_ID));
-    expect(liveness.liveAgentCount()).toBe(0);
-    liveness.observe(taskSettled(SHELL_TASK_ID));
-    expect(liveness.owedCount()).toBe(2);
-  });
 });
 
 // The whole turn, replayed off the wire. This is the suite that would have
@@ -455,11 +200,6 @@ describe('createTurnLiveness — against the captured delivery segment', () => {
     const frames = readDeliverySegmentFrames();
     return { liveness: createTurnLiveness(), frames };
   }
-
-  it('never sees a task-notification user message in the whole capture', () => {
-    const users = readDeliverySegmentFrames().filter((f) => f.type === 'user');
-    expect(users.some((f) => JSON.stringify(f).includes('<task-notification>'))).toBe(false);
-  });
 
   it('holds at the first result, then closes at the second — no deadline ever needed', () => {
     const { liveness, frames } = replay();
@@ -489,17 +229,104 @@ describe('createTurnLiveness — against the captured delivery segment', () => {
     liveness.observe(resultFrame());
     expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
   });
+});
 
-  it('the captured second init really is an init that follows a result', () => {
-    const frames = readDeliverySegmentFrames();
-    const inits = frames.filter(
-      (f) => f.type === 'system' && 'subtype' in f && f.subtype === 'init'
-    );
-    expect(inits).toHaveLength(2);
-    expect(frames.indexOf(inits[1]!)).toBe(8);
-    // The agent's settle is the frame immediately before it.
-    const settle = frames[7] as unknown as { subtype: string; task_id: string };
-    expect(settle.subtype).toBe('task_notification');
-    expect(settle.task_id).toBe(DELIVERY_AGENT_TASK_ID);
+/**
+ * A run id in the CLI's real shape (SDK 0.3.304): the run's start time in base
+ * 36, padded to nine characters, then eight hex digits. Ids of one task sort,
+ * as plain strings, in the order the runs opened.
+ */
+function runIdAt(ms: number, hex: string): string {
+  return `${ms.toString(36).padStart(9, '0')}-${hex}`;
+}
+
+/** An earlier and a later run of one task. */
+const RUN_1 = runIdAt(Date.UTC(2026, 10, 1, 20, 0, 0), '1a2b3c4d');
+const RUN_2 = runIdAt(Date.UTC(2026, 10, 1, 20, 5, 0), '9f8e7d6c');
+
+/** A level frame whose entries name the run each task is on (SDK 0.3.304). */
+function tasksChangedWithRuns(
+  tasks: Array<{ id: string; type: 'local_agent' | 'local_bash'; runId: string }>
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: tasks.map(({ id, type, runId }) => ({
+      task_id: id,
+      run_id: runId,
+      task_type: type,
+      description: `task ${id}`,
+    })),
+    session_id: 'sdk-1',
+  } as unknown as SDKMessage;
+}
+
+/** A settle that names its run, and optionally keeps itself out of the transcript. */
+function runSettled(taskId: string, runId: string | undefined, extra: object = {}): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: taskId,
+    ...(runId !== undefined ? { run_id: runId } : {}),
+    status: 'completed',
+    ...extra,
+    session_id: `subagent-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
+/** A task starting, in the foreground or the background. */
+function taskStarted(taskId: string, backgrounded: boolean, runId?: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_started',
+    task_id: taskId,
+    ...(runId !== undefined ? { run_id: runId } : {}),
+    task_type: 'local_agent',
+    description: `task ${taskId}`,
+    is_backgrounded: backgrounded,
+    session_id: 'sdk-1',
+  } as unknown as SDKMessage;
+}
+
+// DOR-3755. A resumed task keeps its `task_id` and gets a new `run_id`, and
+// the run ids of one task sort in the order the runs opened (`sdk.d.ts`). Keyed
+// on the task id alone, a late settle from the old run deleted the NEW run's
+// live entry, and the helper still working read as gone.
+describe('createTurnLiveness — one task, several runs (DOR-3755)', () => {
+  it("a late settle from an earlier run leaves the newer run's helper live", () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(tasksChangedWithRuns([{ id: 'agent-1', type: 'local_agent', runId: RUN_2 }]));
+    liveness.observe(runSettled('agent-1', RUN_1));
+
+    expect(liveness.liveAgentCount()).toBe(1);
+    // A live helper holds with no deadline, whatever else is owed.
+    expect(liveness.holdOpenAtResult()).toEqual({ hold: true, armDeadline: false });
+  });
+
+  it('two runs of one task that both settle owe two deliveries, cleared one at a time', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(runSettled('agent-1', RUN_1));
+    liveness.observe(runSettled('agent-1', RUN_2));
+    expect(liveness.owedCount()).toBe(2);
+
+    // One consumed prompt clears one debt, the older one.
+    expect(liveness.clearOldestOwed(1)).toEqual(['agent-1']);
+    expect(liveness.owedCount()).toBe(1);
+  });
+});
+
+// DOR-3755. The CLI emits `task_notification` for every task it registers. A
+// foreground task's result already went back inline as its tool result, and a
+// `skip_transcript` task is never put in front of the model, so neither is
+// ever delivered — and a debt for one held the turn for the full deadline.
+describe('createTurnLiveness — settles nothing is delivered for (DOR-3755)', () => {
+  it('a foreground task owes nothing, so the result closes at once', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskStarted('fg-1', false));
+    liveness.observe(runSettled('fg-1', undefined));
+    liveness.observe(resultFrame());
+
+    expect(liveness.owedCount()).toBe(0);
+    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
   });
 });

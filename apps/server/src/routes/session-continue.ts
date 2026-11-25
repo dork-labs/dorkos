@@ -24,16 +24,15 @@
  * @module routes/session-continue
  */
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { MeshCore } from '@dorkos/mesh';
 import { CREDITS_ACCOUNT_ID, type LimitHistoryResponse } from '@dorkos/shared/account-usage';
 import { ContinueSessionRequestSchema, WaitForResetRequestSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
-import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
+import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import {
   AmbiguousSessionError,
@@ -53,9 +52,15 @@ import { resolveSessionCwdOrDefault } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
 import { resolveCaller } from './room-caller.js';
-import { roomErrorReply } from './room-error-response.js';
+import { sendRoomError } from './room-error-response.js';
 import { rejectUnknownModel } from './session-model-gate.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
+import {
+  accountNotAllowedReply,
+  invalidSessionId,
+  ownerRefusalReply,
+  sessionNotFound,
+} from './session-route-replies.js';
 
 /** What continuing a session reads from the running server. */
 export interface SessionContinueDeps {
@@ -71,31 +76,37 @@ export interface SessionContinueDeps {
  */
 function requirePersonAndSession(c: Context<ApiEnv>): string | Response {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
   let caller;
   try {
     caller = resolveCaller(honoRequestFacts(c));
   } catch (err) {
     // No caller was resolved, so no refusal here is worded for the owner.
-    const reply = roomErrorReply(err, 'session-continue', () => false);
-    return c.json(reply.body, reply.status as ContentfulStatusCode);
+    return sendRoomError(c, err, 'session-continue', () => false);
   }
   if (caller.kind !== 'human') {
-    return c.json(errorBody('Only a person can move or hold a chat', 'PEOPLE_ONLY'), 403);
+    return problem(c, 'person_only', { detail: 'Only a person can move or hold a chat.' });
   }
   return sessionId;
 }
 
+/** The code a service refusal answers with, by the status it names. */
+const REFUSAL_CODES = {
+  400: 'invalid_request',
+  409: 'conflict',
+  503: 'temporarily_unavailable',
+} as const;
+
 /** Answer a refusal from the service, or a 500 for anything else. */
 function continueErrorReply(c: Context<ApiEnv>, err: unknown, route: string): Response {
-  if (err instanceof AccountNotAllowedError) return c.json(err.toBody(), 409);
+  if (err instanceof AccountNotAllowedError) return accountNotAllowedReply(c, err);
   if (err instanceof ContinueError || err instanceof CarryOverError) {
-    return c.json(errorBody(err.message, err.code), err.status as ContentfulStatusCode);
+    return problem(c, REFUSAL_CODES[err.status], { detail: err.message });
   }
   logger.error(`[session-continue] ${route} failed`, {
     err: err instanceof Error ? err.message : String(err),
   });
-  return c.json(errorBody('Something went wrong, and nothing was changed.', 'CONTINUE_ERROR'), 500);
+  return problem(c, 'internal_error', { detail: 'Something went wrong, and nothing was changed.' });
 }
 
 /**
@@ -134,12 +145,12 @@ export function continueSessionHandler(
     const sessionId = requirePersonAndSession(c);
     if (sessionId instanceof Response) return sessionId;
     const parsed = ContinueSessionRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     // Moving onto DorkOS credits spends the account's money, so it is the
     // owner's call alone, like every other credits choice (DOR-2652).
     if (parsed.data.account === CREDITS_ACCOUNT_ID) {
       const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), CONTINUE_ON_CREDITS);
-      if (refusal) return c.json(refusal, 403);
+      if (refusal) return ownerRefusalReply(c, refusal);
     }
     try {
       const result = await continueSession(sessionId, parsed.data, {
@@ -166,7 +177,7 @@ export async function waitForResetHandler(c: Context<ApiEnv>): Promise<Response>
   const sessionId = requirePersonAndSession(c);
   if (sessionId instanceof Response) return sessionId;
   const parsed = WaitForResetRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-  if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+  if (!parsed.success) return validationProblem(c, parsed.error);
   try {
     return c.json({ plan: await waitForReset(sessionId, parsed.data) });
   } catch (err) {
@@ -198,7 +209,7 @@ export async function cancelContinueHandler(c: Context<ApiEnv>): Promise<Respons
  */
 export async function limitHistoryHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+  if (!sessionId) return invalidSessionId(c);
   // The same boundary judgement as `GET /:id/events`: a directory the caller
   // named first, else the one the session's runtime places it in.
   const cwdParam = (readQuery(c).cwd as string) || undefined;
@@ -208,17 +219,16 @@ export async function limitHistoryHandler(c: Context<ApiEnv>): Promise<Response>
     cwd = await resolveSessionCwdOrDefault(runtime, sessionId, cwdParam);
   } catch (err) {
     if (err instanceof AmbiguousSessionError || err instanceof SessionDiscoveryUnavailableError)
-      return c.json(
-        errorBody(err.message, err.code),
-        err instanceof AmbiguousSessionError ? 409 : 503
-      );
+      return err instanceof AmbiguousSessionError
+        ? problem(c, 'conflict', { detail: err.message })
+        : problem(c, 'temporarily_unavailable', { detail: err.message });
     throw err;
   }
   const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-  if (outside) return c.json(outside, 403);
+  if (outside) return sendProblem(c, outside);
   const store = getSessionLimitStore();
   if (!store?.knowsSession(sessionId)) {
-    return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    return sessionNotFound(c);
   }
   try {
     return c.json({ entries: store.history(sessionId) } satisfies LimitHistoryResponse);
@@ -226,6 +236,6 @@ export async function limitHistoryHandler(c: Context<ApiEnv>): Promise<Response>
     logger.error('[session-continue] limit-history failed', {
       err: err instanceof Error ? err.message : String(err),
     });
-    return c.json(errorBody('Could not read the limit history.', 'LIMIT_HISTORY_ERROR'), 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t read the limit history.' });
   }
 }

@@ -27,7 +27,7 @@ export function usePreviewDevLink() {
 /**
  * Run a package from a folder. The caller sends the preview's `change` back as
  * `expectedChange`, so a folder that changed since the person read the dialog
- * is refused with `dev_link_changed` rather than linked. The dialog reports
+ * is refused (`412 precondition_failed`) rather than linked. The dialog reports
  * every refusal itself.
  */
 export function useLinkFolder() {

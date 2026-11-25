@@ -63,3 +63,83 @@ export interface BrowserViewerChooser {
   multiple: boolean;
   navigationGeneration: number;
 }
+
+/** Opaque authority travels only beside its original cookie and app-instance proof. */
+export const viewerSecretSchema = z.string().regex(/^[\w-]{43}$/);
+const generation = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+export const viewerControlRefSchema = z
+  .object({
+    nonce: viewerSecretSchema,
+    controllerId: viewerSecretSchema,
+    controlEpoch: generation,
+  })
+  .strict();
+export const viewerOperationSchema = viewerControlRefSchema
+  .extend({
+    navigationGeneration: generation,
+    viewportGeneration: generation.min(1),
+    sequence: generation.min(1),
+  })
+  .strict();
+export type BrowserViewerOperation = z.infer<typeof viewerOperationSchema>;
+export const viewerPaintSchema = z
+  .object({
+    addressReceipt: viewerSecretSchema,
+    viewportGeneration: generation.min(1),
+  })
+  .strict();
+export type BrowserViewerPaint = z.infer<typeof viewerPaintSchema>;
+export const viewerViewportSchema = z
+  .object({
+    generation: generation.min(1),
+    width: z.number().finite().positive().max(100_000),
+    height: z.number().finite().positive().max(100_000),
+    offsetTop: z.number().finite().min(0).max(100_000),
+    scale: z.number().finite().positive().max(100),
+  })
+  .strict();
+export type BrowserViewerViewport = z.infer<typeof viewerViewportSchema>;
+export const viewerMetadataSchema = z
+  .object({
+    revision: generation,
+    navigationGeneration: generation,
+    controlEpoch: generation,
+    viewport: viewerViewportSchema.nullable(),
+    control: z
+      .object({
+        id: viewerSecretSchema,
+        epoch: generation,
+        ready: z.boolean(),
+        nextSequence: generation.min(1),
+      })
+      .strict()
+      .nullable(),
+    chooser: z
+      .object({
+        id: viewerSecretSchema,
+        host: z.string().min(1).max(255),
+        multiple: z.boolean(),
+        navigationGeneration: generation,
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type BrowserViewerMetadata = z.infer<typeof viewerMetadataSchema>;
+export const viewerOutcomeSchema = z
+  .object({
+    sequence: generation.min(1),
+    status: z.enum(['done', 'refused', 'uncertain']),
+    code: z
+      .enum([
+        'viewer_denied',
+        'viewer_busy',
+        'viewer_limit',
+        'viewer_stale',
+        'viewer_uncertain',
+        'file_picker_stuck',
+      ])
+      .optional(),
+  })
+  .strict();
+export type BrowserViewerOutcome = z.infer<typeof viewerOutcomeSchema>;

@@ -181,8 +181,9 @@ async function waitUntilUp(
   const started = Date.now();
   const until = Math.min(deadline, started + BOOT_TIMEOUT_MS);
   while (Date.now() < until) {
-    if (child.exitCode !== null) {
-      throw new Error(`The server exited (${child.exitCode}) before it answered:\n${output()}`);
+    const exitStatus = child.exitCode ?? child.signalCode;
+    if (exitStatus !== null) {
+      throw new Error(`The server exited (${exitStatus}) before it answered:\n${output()}`);
     }
     try {
       const res = await fetch(`${baseUrl}/api/health`);
@@ -339,7 +340,7 @@ const BOOT_ATTEMPTS = 3;
 
 /** One server process, started but not yet known to answer. */
 export interface StartedServer {
-  /** The process, read for its exit code while the boot waits on it. */
+  /** The process, read for its exit status while the boot waits on it. */
   readonly child: ChildProcess;
   /** Where it should listen. */
   readonly baseUrl: string;

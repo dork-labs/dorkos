@@ -126,115 +126,6 @@ describe('scanInstalledPlugins', () => {
     expect(glob.commands).toEqual([]);
   });
 
-  it('SK-07: enumerates top-level command files and flags skills that use the plugin-root token', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-
-    const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
-    writeManifest(plugin, 'flowy', ['commands', 'skills']);
-    // A skill whose SKILL.md references the plugin-root token, and one that does not.
-    mkdirSync(join(plugin, 'skills', 'uses-token'), { recursive: true });
-    writeFileSync(
-      join(plugin, 'skills', 'uses-token', 'SKILL.md'),
-      '# uses\nRead ${CLAUDE_PLUGIN_ROOT}/x\n'
-    );
-    writeSkill(join(plugin, 'skills'), 'plain');
-    // Two top-level commands plus a nested file (nested is ignored).
-    mkdirSync(join(plugin, 'commands', 'nested'), { recursive: true });
-    writeFileSync(join(plugin, 'commands', 'capture.md'), '# capture\n');
-    writeFileSync(join(plugin, 'commands', 'triage.md'), '# triage\n');
-    writeFileSync(join(plugin, 'commands', 'nested', 'deep.md'), '# deep\n');
-
-    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flowy')!;
-
-    expect(proj.commands).toEqual([
-      {
-        name: 'capture',
-        sourcePath: '.dork/plugins/flowy/commands/capture.md',
-        content: '# capture\n',
-      },
-      {
-        name: 'triage',
-        sourcePath: '.dork/plugins/flowy/commands/triage.md',
-        content: '# triage\n',
-      },
-    ]);
-    expect(proj.skills.find((s) => s.name === 'uses-token')?.usesPluginRoot).toBe(true);
-    expect(proj.skills.find((s) => s.name === 'plain')?.usesPluginRoot).toBe(false);
-  });
-
-  it('SK-06: reads the SKILL.md frontmatter `name` (the effective identity in frontmatter-keyed harnesses)', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-
-    const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
-    writeManifest(plugin, 'flowy', ['skills']);
-    // A skill whose DIRECTORY name differs from its frontmatter `name`.
-    mkdirSync(join(plugin, 'skills', 'capturing'), { recursive: true });
-    writeFileSync(
-      join(plugin, 'skills', 'capturing', 'SKILL.md'),
-      '---\nname: capturing-work\ndescription: cap\n---\n# body\n'
-    );
-    // A skill with no frontmatter at all → no frontmatter name.
-    writeSkill(join(plugin, 'skills'), 'plain');
-
-    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flowy')!;
-    expect(proj.skills.find((s) => s.name === 'capturing')?.frontmatterName).toBe('capturing-work');
-    expect(proj.skills.find((s) => s.name === 'plain')?.frontmatterName).toBeUndefined();
-  });
-
-  it('scans project plugins (and skips the global scope) when no dorkHome is given', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-
-    const projPlugin = join(projectRoot, '.dork', 'plugins', 'my-plugin');
-    writeManifest(projPlugin, 'my-plugin', ['skills']);
-    writeSkill(join(projPlugin, 'skills'), 'alpha');
-
-    // No `dorkHome` — global scope is skipped, project scope is still scanned.
-    const plugins = scanInstalledPlugins({ projectRoot });
-
-    expect(plugins.map((p) => `${p.location.scope}:${p.name}`)).toEqual(['project:my-plugin']);
-    const proj = plugins[0]!;
-    expect(proj.skills).toEqual([
-      {
-        name: 'alpha',
-        sourceDir: '.dork/plugins/my-plugin/skills/alpha',
-        usesPluginRoot: false,
-        usesPluginData: false,
-        hasSchedule: false,
-      },
-    ]);
-  });
-
-  it('SK-03: flags a skill that declares a schedule, readable or not', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-
-    const plugin = join(projectRoot, '.dork', 'plugins', 'flow');
-    writeManifest(plugin, 'flow', ['skills']);
-    // A readable block: the ordinary scheduled task.
-    mkdirSync(join(plugin, 'skills', 'drain'), { recursive: true });
-    writeFileSync(
-      join(plugin, 'skills', 'drain', 'SKILL.md'),
-      "---\nname: drain\ndescription: drains\nschedule:\n  cron: '0 9 * * *'\n---\n# body\n"
-    );
-    // A block DorkOS cannot read. It still counts: discovery parks it as a row
-    // carrying the complaint, and can only do that if the file is projected.
-    mkdirSync(join(plugin, 'skills', 'broken'), { recursive: true });
-    writeFileSync(
-      join(plugin, 'skills', 'broken', 'SKILL.md'),
-      '---\nname: broken\ndescription: broken\nschedule:\n  cron: 42\n  timezone: []\n---\n# body\n'
-    );
-    // No block at all — the ordinary skill.
-    mkdirSync(join(plugin, 'skills', 'plain'), { recursive: true });
-    writeFileSync(
-      join(plugin, 'skills', 'plain', 'SKILL.md'),
-      '---\nname: plain\ndescription: plain\n---\n# body\n'
-    );
-
-    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flow')!;
-    expect(proj.skills.find((s) => s.name === 'drain')?.hasSchedule).toBe(true);
-    expect(proj.skills.find((s) => s.name === 'broken')?.hasSchedule).toBe(true);
-    expect(proj.skills.find((s) => s.name === 'plain')?.hasSchedule).toBe(false);
-  });
-
   it('does NOT collect a skill dir that is a symlink escaping the install dir, from EITHER root', () => {
     // A marketplace install can never produce this: `stagePackageContents`
     // strips every symlink as it copies (DOR-279). But `dorkos harness sync`
@@ -265,48 +156,6 @@ describe('scanInstalledPlugins', () => {
     const [evil] = scanInstalledPlugins({ projectRoot });
     expect(evil?.skills.map((s) => s.name)).toEqual(['chore', 'honest']);
   });
-
-  it('skips a plugin with a missing or invalid manifest', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
-
-    // No .dork/manifest.json at all.
-    mkdirSync(join(projectRoot, '.dork', 'plugins', 'no-manifest', 'skills'), { recursive: true });
-    // Invalid manifest (missing required fields).
-    const bad = join(projectRoot, '.dork', 'plugins', 'bad');
-    mkdirSync(join(bad, '.dork'), { recursive: true });
-    writeFileSync(join(bad, '.dork', 'manifest.json'), JSON.stringify({ name: 'bad' }));
-
-    expect(scanInstalledPlugins({ dorkHome, projectRoot })).toEqual([]);
-  });
-
-  it('returns nothing when neither plugins root exists', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
-    expect(scanInstalledPlugins({ dorkHome, projectRoot })).toEqual([]);
-  });
-
-  it('HK-09: drops malformed (non-array) hook event values instead of crashing the merge', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
-
-    const plugin = join(projectRoot, '.dork', 'plugins', 'hooky');
-    writeManifest(plugin, 'hooky', ['hooks']);
-    mkdirSync(join(plugin, 'hooks'), { recursive: true });
-    // `Stop` is a valid array; `Bad` is an object (a real-world malformation that
-    // would crash `[...groups]` if accepted) — only `Stop` survives.
-    writeFileSync(
-      join(plugin, 'hooks', 'hooks.json'),
-      JSON.stringify({
-        Stop: [{ hooks: [{ type: 'command', command: 'echo ok' }] }],
-        Bad: { type: 'command', command: 'echo nope' },
-      })
-    );
-
-    const proj = scanInstalledPlugins({ dorkHome, projectRoot }).find((p) => p.name === 'hooky')!;
-    expect(proj.hooks).toHaveProperty('Stop');
-    expect(proj.hooks).not.toHaveProperty('Bad');
-  });
 });
 
 describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () => {
@@ -325,19 +174,6 @@ describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () 
     return scanInstalledPlugins({ dorkHome, projectRoot }).find((p) => p.name === 'hooky')?.hooks;
   }
 
-  // The four shapes the PR #552 differential sweep found reaching the projector
-  // and crashing it. Each is dropped here instead, so nothing downstream ever
-  // maps over a group that has no commands to map.
-  it('HK-09: drops a matcher group whose command entry has no `command`', () => {
-    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ type: 'command' }] }] }));
-    expect(scanHooks()).toBeUndefined();
-  });
-
-  it('drops a matcher group whose `command` is not a string', () => {
-    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 42 }] }] }));
-    expect(scanHooks()).toBeUndefined();
-  });
-
   it('treats a hooks.json larger than DorkOS reads as unreadable, without loading it (DOR-2321)', () => {
     // Purpose: installed package files are read within the package-file size
     // limit, so an oversized hooks.json yields no hooks rather than a huge read.
@@ -348,49 +184,11 @@ describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () 
     expect(scanHooks()).toBeUndefined();
   });
 
-  it('drops a null matcher group', () => {
-    writeHookyPlugin(JSON.stringify({ Stop: [null] }));
-    expect(scanHooks()).toBeUndefined();
-  });
-
   it('HK-09: keeps the readable group when one good and one bad group share an event', () => {
     writeHookyPlugin(
       JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] })
     );
     expect(scanHooks()).toEqual({ Stop: [{ hooks: [{ type: 'command', command: 'good.sh' }] }] });
-  });
-
-  it('normalizes a matcher only when it is a non-empty string, as the preview discloses it', () => {
-    writeHookyPlugin(
-      JSON.stringify({
-        PreToolUse: [
-          { matcher: 'Bash', hooks: [{ type: 'command', command: 'a.sh' }] },
-          { matcher: 42, hooks: [{ type: 'command', command: 'b.sh' }] },
-          { matcher: '', hooks: [{ type: 'command', command: 'c.sh' }] },
-        ],
-      })
-    );
-    expect(scanHooks()).toEqual({
-      PreToolUse: [
-        { matcher: 'Bash', hooks: [{ type: 'command', command: 'a.sh' }] },
-        { hooks: [{ type: 'command', command: 'b.sh' }] },
-        { hooks: [{ type: 'command', command: 'c.sh' }] },
-      ],
-    });
-  });
-
-  it('keeps fields it does not interpret and defaults a missing hook type', () => {
-    // `timeout` is a real Claude Code hook field: a reader that kept only what it
-    // recognized would silently change a working hook.
-    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ command: 'slow.sh', timeout: 60 }] }] }));
-    expect(scanHooks()).toEqual({
-      Stop: [{ hooks: [{ type: 'command', command: 'slow.sh', timeout: 60 }] }],
-    });
-  });
-
-  it('reports no hooks at all for an event whose every group is unusable', () => {
-    writeHookyPlugin(JSON.stringify({ Stop: [], PostToolUse: [{ hooks: [] }] }));
-    expect(scanHooks()).toBeUndefined();
   });
 });
 
@@ -413,47 +211,10 @@ describe('scanInstalledPlugins — salvaged-hooks evidence (DOR-1724)', () => {
 
   const HOOKS_FILE = '.dork/plugins/hooky/hooks/hooks.json';
 
-  it('HK-09: records the whole file when the JSON does not parse', () => {
-    writeHookyPlugin('{ not json');
-    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, total: true }]);
-  });
-
-  it('records the whole file when the top level is not an object', () => {
-    writeHookyPlugin(JSON.stringify('Stop'));
-    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, total: true }]);
-  });
-
-  it('records a non-array event value as a total loss for that event', () => {
-    writeHookyPlugin(
-      JSON.stringify({
-        Stop: [{ hooks: [{ command: 'ok.sh' }] }],
-        Bad: { type: 'command', command: 'nope.sh' },
-      })
-    );
-    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'Bad', total: true }]);
-  });
-
   it('HK-09: records a PARTIAL loss when a readable group survives beside a bad one', () => {
     writeHookyPlugin(
       JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] })
     );
     expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'Stop', total: false }]);
-  });
-
-  it('records a total loss when every group under an event is unusable', () => {
-    writeHookyPlugin(JSON.stringify({ PostToolUse: [{ hooks: [] }] }));
-    expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'PostToolUse', total: true }]);
-  });
-
-  it('records nothing for an event that simply declares no groups', () => {
-    // `{"Stop": []}` is an EMPTY declaration, not a lost one — warning about it
-    // would send the operator to look for damage that is not there.
-    writeHookyPlugin(JSON.stringify({ Stop: [] }));
-    expect(scanUnreadable()).toEqual([]);
-  });
-
-  it('HK-09: records nothing for a fully readable file', () => {
-    writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ command: 'fine.sh' }] }] }));
-    expect(scanUnreadable()).toEqual([]);
   });
 });

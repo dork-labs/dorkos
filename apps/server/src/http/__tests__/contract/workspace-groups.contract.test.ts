@@ -32,6 +32,7 @@ import { TemplateCatalogSchema } from '@dorkos/shared/template-catalog';
 import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import { contractSuite } from './harness.js';
+import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -62,12 +63,21 @@ afterAll(() => {
 const NO_MANIFEST = path.join(REPO_ROOT, 'apps/server/src');
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 const OUTSIDE = {
   error: 'Access denied: path outside directory boundary',
   code: 'OUTSIDE_BOUNDARY',
 };
 const NULL_BYTE = { error: 'Invalid path: null bytes not allowed', code: 'NULL_BYTE' };
+const GIT_OUTSIDE = problemBody('outside_boundary', {
+  detail: 'Pick a folder inside the ones DorkOS may use.',
+});
+const GIT_NULL_BYTE = problemBody('invalid_request', {
+  detail: 'That path has a character paths can’t hold.',
+});
+const NO_WORKSPACE = problemBody('not_found', { detail: 'No workspace with that id.' });
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CROSS_SITE = { 'Sec-Fetch-Site': 'cross-site' };
@@ -138,40 +148,43 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/directory refuses a folder outside the boundary',
     path: '/api/directory?path=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/directory refuses a walk out of the boundary',
     path: `/api/directory?path=${q(`${REPO_ROOT}/../../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/directory refuses a NUL byte',
     path: `/api/directory?path=${q(`${REPO_ROOT}/a\0b`)}`,
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/directory answers 404 for a folder that does not exist',
     path: `/api/directory?path=${q(path.join(REPO_ROOT, 'no-such-folder'))}`,
-    expect: { status: 404, body: { error: 'Directory not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That folder doesn’t exist.' }),
+    },
   },
   {
     name: 'GET /api/directory refuses a file',
     path: `/api/directory?path=${q(path.join(REPO_ROOT, 'package.json'))}`,
-    expect: { status: 400, body: { error: 'Not a directory' } },
+    expect: {
+      status: 400,
+      body: problemBody('not_a_folder', { detail: 'That path is a file, not a folder.' }),
+    },
   },
   {
     name: 'GET /api/directory refuses an empty path',
     path: '/api/directory?path=',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { path: { errors: ['Too small: expected string to have >=1 characters'] } },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { path: ['Too small: expected string to have >=1 characters'] },
+      }),
     },
   },
   {
@@ -179,13 +192,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: `/api/directory?path=${q(REPO_ROOT)}&path=${q(REPO_ROOT)}`,
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { path: { errors: ['Invalid input: expected string, received array'] } },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { path: ['Invalid input: expected string, received array'] },
+      }),
     },
   },
   {
@@ -206,16 +216,13 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: {},
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: {
-            parentPath: ['Invalid input: expected string, received undefined'],
-            folderName: ['Invalid input: expected string, received undefined'],
-          },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: {
+          parentPath: ['Invalid input: expected string, received undefined'],
+          folderName: ['Invalid input: expected string, received undefined'],
         },
-      },
+      }),
     },
   },
   {
@@ -224,13 +231,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/directory',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
-      },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
+      }),
     },
   },
   {
@@ -240,10 +244,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { parentPath: SCRATCH, folderName: 'Not Kebab' },
     expect: {
       status: 400,
-      body: {
-        error:
-          'Invalid folder name. Lowercase letters, numbers, and hyphens only. Must start with a letter.',
-      },
+      body: problemBody('invalid_request', {
+        detail: 'Use lowercase letters, numbers and hyphens, starting with a letter.',
+      }),
     },
   },
   {
@@ -251,14 +254,14 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: '/tmp', folderName: 'contract-escape' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/directory refuses a NUL byte in the parent',
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: `${SCRATCH}\0`, folderName: 'contract-nul' },
-    expect: { status: 400, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/directory makes a missing parent inside the boundary on the way',
@@ -279,7 +282,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/directory',
     body: { parentPath: SCRATCH, folderName: NEW_FOLDER },
-    expect: { status: 409, body: { error: 'Directory already exists' } },
+    expect: {
+      status: 409,
+      body: problemBody('already_exists', { detail: 'A folder with that name is already there.' }),
+    },
   },
   {
     name: 'PUT /api/directory is not a route',
@@ -317,30 +323,27 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/git/status refuses a folder outside the boundary',
     path: '/api/git/status?dir=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/git/status refuses a walk out of the boundary',
     path: `/api/git/status?dir=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/git/status refuses a NUL byte with a 403',
+    name: 'GET /api/git/status refuses a NUL byte with a 400',
     path: `/api/git/status?dir=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/git/status refuses a repeated dir',
     path: '/api/git/status?dir=a&dir=b',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { dir: { errors: ['Invalid input: expected string, received array'] } },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { dir: ['Invalid input: expected string, received array'] },
+      }),
     },
   },
   {
@@ -371,13 +374,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces?projectKey=a&projectKey=b',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          formErrors: [],
-          fieldErrors: { projectKey: ['Invalid input: expected string, received array'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { projectKey: ['Invalid input: expected string, received array'] },
+      }),
     },
   },
   {
@@ -395,13 +395,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces/resolve',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          formErrors: [],
-          fieldErrors: { path: ['Invalid input: expected string, received undefined'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { path: ['Invalid input: expected string, received undefined'] },
+      }),
     },
   },
   {
@@ -409,7 +406,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/workspaces/ports',
     body: { path: REPO_ROOT },
-    expect: { status: 404, body: { error: 'No managed workspace for path' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That path isn’t inside a managed workspace.' }),
+    },
   },
   {
     name: 'POST /api/workspaces/ports refuses a request with no body',
@@ -417,13 +417,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces/ports',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
-      },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
+      }),
     },
   },
   {
@@ -433,7 +430,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: {},
     expect: {
       status: 400,
-      schema: z.object({ error: z.literal('Validation failed'), details: z.object({}).loose() }),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
@@ -442,25 +439,25 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces',
     expect: {
       status: 400,
-      schema: z.object({ error: z.literal('Validation failed'), details: z.object({}).loose() }),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
     name: 'GET /api/workspaces/:id answers 404 for an unknown workspace',
     path: '/api/workspaces/no-such-workspace',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'GET /api/workspaces/:id decodes an encoded slash and still answers 404',
     path: '/api/workspaces/..%2F..%2Fetc',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'POST /api/workspaces/:id/pin answers 404 for an unknown workspace',
     method: 'POST',
     path: '/api/workspaces/no-such-workspace/pin',
     body: { pinned: true },
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'POST /api/workspaces/:id/pin refuses a body without pinned',
@@ -469,20 +466,17 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { pinned: 'yes' },
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { pinned: ['Invalid input: expected boolean, received string'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { pinned: ['Invalid input: expected boolean, received string'] },
+      }),
     },
   },
   {
     name: 'DELETE /api/workspaces/:id answers 404 for an unknown workspace',
     method: 'DELETE',
     path: '/api/workspaces/no-such-workspace?force=true',
-    expect: { status: 404, body: { error: 'Not found' } },
+    expect: { status: 404, body: NO_WORKSPACE },
   },
   {
     name: 'DELETE /api/workspaces/:id refuses an empty approvedRemoveHooks',
@@ -490,15 +484,12 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/workspaces/no-such-workspace?approvedRemoveHooks=',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          formErrors: [],
-          fieldErrors: {
-            approvedRemoveHooks: ['Too small: expected string to have >=1 characters'],
-          },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: {
+          approvedRemoveHooks: ['Too small: expected string to have >=1 characters'],
         },
-      },
+      }),
     },
   },
 
@@ -533,30 +524,27 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
   {
     name: 'GET /api/projects/resolve refuses a folder outside the boundary',
     path: '/api/projects/resolve?cwd=/etc',
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'GET /api/projects/resolve refuses a walk out of the boundary',
     path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}/../..`)}`,
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/projects/resolve refuses a NUL byte with a 403',
+    name: 'GET /api/projects/resolve refuses a NUL byte with a 400',
     path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}\0`)}`,
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'GET /api/projects/resolve refuses a missing cwd',
     path: '/api/projects/resolve',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { cwd: { errors: ['Invalid input: expected string, received undefined'] } },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { cwd: ['Invalid input: expected string, received undefined'] },
+      }),
     },
   },
   {
@@ -576,7 +564,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: CROSS_SITE,
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('project_lookup_person_required') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {
@@ -585,11 +573,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can look up a project.',
-        code: 'project_lookup_person_required',
-        message: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
-      },
+      body: problemBody('person_only', {
+        detail: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
+      }),
     },
   },
 
@@ -639,15 +625,12 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/read-cursors/channel/x',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: {
-            kind: ['Invalid option: expected one of "room"|"session"|"inbox"|"room-thread"'],
-          },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: {
+          kind: ['Invalid option: expected one of "room"|"session"|"inbox"|"room-thread"'],
         },
-      },
+      }),
     },
   },
   {
@@ -656,13 +639,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/read-cursors/session/contract-session',
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: ['Invalid input: expected object, received undefined'],
-          fieldErrors: {},
-        },
-      },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
+      }),
     },
   },
   {
@@ -672,13 +652,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { lastReadSeq: -1 },
     expect: {
       status: 400,
-      body: {
-        error: 'Validation failed',
-        details: {
-          formErrors: [],
-          fieldErrors: { lastReadSeq: ['Too small: expected number to be >=0'] },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { lastReadSeq: ['Too small: expected number to be >=0'] },
+      }),
     },
   },
   {
@@ -686,7 +663,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'PUT',
     path: '/api/read-cursors/room/no-such-room',
     body: { lastReadSeq: 1 },
-    expect: { status: 404, schema: z.object({ error: z.string(), code: z.string() }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('room_not_found') }).loose() },
   },
   {
     name: 'GET /api/read-cursors/:kind/:id refuses an agent it cannot verify',
@@ -694,7 +671,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 401,
-      schema: z.object({ code: z.literal('AGENT_IDENTITY_UNVERIFIED') }).loose(),
+      schema: z.object({ code: z.literal('agent_identity_unverified') }).loose(),
     },
   },
   {
@@ -723,44 +700,50 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: '/etc' },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
     name: 'POST /api/session-locations refuses a walk out of the boundary',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: `${REPO_ROOT}/../..` },
-    expect: { status: 403, body: OUTSIDE },
+    expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'POST /api/session-locations refuses a NUL byte with a 403',
+    name: 'POST /api/session-locations refuses a NUL byte with a 400',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: `${REPO_ROOT}\0` },
-    expect: { status: 403, body: NULL_BYTE },
+    expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
     name: 'POST /api/session-locations refuses an unknown field',
     method: 'POST',
     path: '/api/session-locations',
     body: { cwd: REPO_ROOT, extra: true },
-    expect: { status: 400, body: { error: 'Choose a valid chat folder.' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Choose a valid chat folder.' }),
+    },
   },
   {
     name: 'POST /api/session-locations refuses a request with no body',
     method: 'POST',
     path: '/api/session-locations',
-    expect: { status: 400, body: { error: 'Choose a valid chat folder.' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Choose a valid chat folder.' }),
+    },
   },
   {
     name: 'GET /api/session-locations/:id answers 404 for an id that is not a UUID',
     path: '/api/session-locations/not-a-uuid',
-    expect: { status: 404, body: { error: 'Chat folder not found.' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'Chat folder not found.' }) },
   },
   {
     name: 'GET /api/session-locations/:id answers 404 for a UUID nobody saved',
     path: `/api/session-locations/${randomUUID()}`,
-    expect: { status: 404, body: { error: 'Chat folder not found.' } },
+    expect: { status: 404, body: problemBody('not_found', { detail: 'Chat folder not found.' }) },
   },
   {
     name: 'GET /api/session-locations/:id refuses a cross-site request',
@@ -768,10 +751,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: CROSS_SITE,
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can choose a chat folder.',
-        code: 'SESSION_LOCATION_PERSON_REQUIRED',
-      },
+      body: problemBody('person_only', { detail: 'Open DorkOS to choose a chat folder.' }),
     },
   },
   {
@@ -782,11 +762,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { cwd: REPO_ROOT },
     expect: {
       status: 403,
-      body: {
-        error: 'Only a person can choose a chat folder.',
-        code: 'SESSION_LOCATION_PERSON_REQUIRED',
-        message: 'Only a person can choose a chat folder.',
-      },
+      body: problemBody('person_only', { detail: 'Only a person can choose a chat folder.' }),
     },
   },
   {
@@ -795,7 +771,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: AGENT,
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('SESSION_LOCATION_PERSON_REQUIRED') }).loose(),
+      schema: z.object({ code: z.literal('person_only') }).loose(),
     },
   },
   {
@@ -842,7 +818,12 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     method: 'POST',
     path: '/api/templates',
     body: TEMPLATE,
-    expect: { status: 409, body: { error: `Template ID '${TEMPLATE.id}' already exists` } },
+    expect: {
+      status: 409,
+      body: problemBody('conflict', {
+        detail: `A template called '${TEMPLATE.id}' already exists. Pick another id.`,
+      }),
+    },
   },
   {
     name: 'POST /api/templates refuses a built-in id',
@@ -851,7 +832,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { ...TEMPLATE, id: 'blank' },
     expect: {
       status: 409,
-      body: { error: `Template ID 'blank' conflicts with a built-in template` },
+      body: problemBody('conflict', {
+        detail: `A built-in template is called 'blank'. Pick another id.`,
+      }),
     },
   },
   {
@@ -860,14 +843,17 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/templates',
     expect: {
       status: 400,
-      schema: z.object({ error: z.literal('Validation failed'), details: z.object({}).loose() }),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {
     name: 'DELETE /api/templates/:id refuses a built-in template',
     method: 'DELETE',
     path: '/api/templates/blank',
-    expect: { status: 403, body: { error: `Cannot delete built-in template 'blank'` } },
+    expect: {
+      status: 403,
+      body: problemBody('forbidden', { detail: 'Built-in templates can’t be deleted.' }),
+    },
   },
   {
     name: 'DELETE /api/templates/:id removes a template (after the cases above)',
@@ -879,13 +865,19 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     name: 'DELETE /api/templates/:id answers 404 for a template that is gone (after the case above)',
     method: 'DELETE',
     path: `/api/templates/${TEMPLATE.id}`,
-    expect: { status: 404, body: { error: `Template '${TEMPLATE.id}' not found` } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: `No template is called '${TEMPLATE.id}'.` }),
+    },
   },
   {
     name: 'DELETE /api/templates/:id decodes the id',
     method: 'DELETE',
     path: '/api/templates/a%20b',
-    expect: { status: 404, body: { error: `Template 'a b' not found` } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: `No template is called 'a b'.` }),
+    },
   },
   {
     name: 'GET /api/templates/:id is not a route',
@@ -904,15 +896,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/harness/status',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: {
-            projectPath: { errors: ['Invalid input: expected string, received undefined'] },
-          },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { projectPath: ['Invalid input: expected string, received undefined'] },
+      }),
     },
   },
   {
@@ -920,13 +907,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/harness/status?projectPath=apps',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid query',
-        details: {
-          errors: [],
-          properties: { projectPath: { errors: ['projectPath must be an absolute path'] } },
-        },
-      },
+      body: validationProblemBody({
+        formErrors: [],
+        fieldErrors: { projectPath: ['projectPath must be an absolute path'] },
+      }),
     },
   },
   {
@@ -974,10 +958,10 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/harness/sync',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid body',
-        details: { errors: ['Invalid input: expected object, received undefined'] },
-      },
+      body: validationProblemBody({
+        formErrors: ['Invalid input: expected object, received undefined'],
+        fieldErrors: {},
+      }),
     },
   },
   {
@@ -1056,22 +1040,28 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     path: '/api/shapes/..%2F..%2Fsecret/apply',
     expect: {
       status: 400,
-      body: {
-        error: "Invalid Shape name '../../secret' — must be a kebab-case slug (a-z, 0-9, -)",
-      },
+      body: problemBody('invalid_request', {
+        detail: "'../../secret' isn’t a Shape name. Use lowercase letters, digits and dashes.",
+      }),
     },
   },
   {
     name: 'POST /api/shapes/:name/apply answers 404 for a Shape that is not installed',
     method: 'POST',
     path: '/api/shapes/ghost/apply',
-    expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: "No Shape called 'ghost' is installed." }),
+    },
   },
   {
     name: 'POST /api/shapes/:name/fork answers 404 for a Shape that is not installed',
     method: 'POST',
     path: '/api/shapes/ghost/fork',
-    expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: "No Shape called 'ghost' is installed." }),
+    },
   },
   {
     name: 'POST /api/shapes/:name/fork refuses a target name that is not a slug',
@@ -1080,9 +1070,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { as: '../escape' },
     expect: {
       status: 400,
-      body: {
-        error: "Invalid Shape name '../escape' — must be a kebab-case slug (a-z, 0-9, -)",
-      },
+      body: problemBody('invalid_request', {
+        detail: "'../escape' isn’t a Shape name. Use lowercase letters, digits and dashes.",
+      }),
     },
   },
   {
@@ -1092,7 +1082,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     body: { captureCurrent: 'yes' },
     expect: {
       status: 400,
-      schema: z.object({ error: z.literal('Validation failed'), details: z.object({}).loose() }),
+      schema: z.object({ code: z.literal('invalid_request'), issues: z.unknown() }).loose(),
     },
   },
   {

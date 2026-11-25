@@ -25,15 +25,26 @@
 #   review-gh.sh diff                          print the pull request's diff
 #   review-gh.sh view <jsonFields>             print PR metadata as JSON
 #   review-gh.sh summary <body>                 post the top-level summary comment
+#                                               (the helper appends its marker)
 #   review-gh.sh inline <path> <line> <body>    post one line-level review comment
 #   review-gh.sh security-verdict pass 0        post the Security lens's verdict
 #   review-gh.sh security-verdict fail <musts> <categories>
+#   review-gh.sh security-findings <details>     save a failing lens's details
+#                                               for Security (never posted)
 #
 # Environment, set by the workflow and out of the model's reach:
 #   REVIEW_REPO  OWNER/REPO, no host prefix (validated below)
 #   REVIEW_PR    the pull request number (validated below)
-#   REVIEW_HEAD_SHA  the head commit the review is about (security-verdict;
-#                when unset, the PR's current head is resolved, as for inline)
+#   REVIEW_HEAD_SHA  the head commit the review is about (summary marker and
+#                security-verdict; when unset, the PR's current head is
+#                resolved, as for inline)
+#   REVIEW_MODE  full or push-recheck, as decided by the workflow before the
+#                review; stamped into the summary's marker
+#   REVIEW_FINDINGS_DIR  absolute path of the private directory where
+#                `security-findings` saves the details. When set, a `fail`
+#                verdict needs those details saved first, and a `pass` discards
+#                any. The workflow encrypts them to Security's key afterwards
+#                (scripts/security-findings.sh post) and deletes the plaintext.
 #   GH_TOKEN     supplied to the reviewer's shell by claude-code-action
 #
 # Run this from a copy materialized out of the repository's DEFAULT BRANCH, never
@@ -67,6 +78,26 @@ case "$pr" in
   '' | *[!0-9]*) die "REVIEW_PR must be a pull request number; got '$pr'" ;;
 esac
 
+# The head the Security lens judged, set by the workflow; resolved only when
+# unset (a manual dispatch), like `inline`.
+review_head() {
+  sha=${REVIEW_HEAD_SHA:-}
+  if [ -z "$sha" ]; then
+    sha=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq '.headRefOid') ||
+      die "could not resolve the head commit of $repo#$pr"
+  fi
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "unexpected head commit '$sha'"
+}
+
+# REVIEW_FINDINGS_DIR, when the workflow sets it: absolute, and nothing else.
+findings_dir() {
+  fdir=${REVIEW_FINDINGS_DIR:-}
+  case "$fdir" in
+    /*) ;;
+    *) die "REVIEW_FINDINGS_DIR must be an absolute path; got '$fdir'" ;;
+  esac
+}
+
 sub=${1:-}
 [ "$#" -gt 0 ] && shift
 
@@ -91,7 +122,24 @@ case "$sub" in
   summary)
     [ "$#" -eq 1 ] || die "summary takes one argument, the comment body (got $#)"
     [ -n "$1" ] || die "summary body must not be empty"
-    exec gh pr comment "$pr" --repo "$repo" --body "$1"
+    # The summary's last line is a hidden marker written here, never by the
+    # model: the head this review is about and the mode the workflow decided
+    # (REVIEW_MODE, from "Decide the review mode"). scripts/review-mode.sh reads
+    # only summaries whose last line is this marker with mode=full, so the next
+    # push's mode comes from what this workflow recorded. A REVIEW_MODE other
+    # than the two values (unset on a run of an older workflow) is written as
+    # `unknown`, which review-mode.sh never counts, so it costs at most one more
+    # full review.
+    review_head
+    mode=${REVIEW_MODE:-}
+    case "$mode" in
+      full | push-recheck) ;;
+      *) mode=unknown ;;
+    esac
+    body="$1
+
+<!-- dorkos-review-summary v1 head=$sha mode=$mode -->"
+    exec gh pr comment "$pr" --repo "$repo" --body "$body"
     ;;
 
   inline)
@@ -163,14 +211,21 @@ case "$sub" in
       *) die "security-verdict must be pass or fail; got '$verdict'" ;;
     esac
 
-    # The head the review was about, set by the workflow; resolved only when
-    # unset (a manual dispatch), like `inline`.
-    sha=${REVIEW_HEAD_SHA:-}
-    if [ -z "$sha" ]; then
-      sha=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq '.headRefOid') ||
-        die "could not resolve the head commit of $repo#$pr"
+    review_head
+
+    # The details behind a fail go to Security, encrypted (security-findings
+    # below). Where the workflow provides for them, a fail without them is
+    # refused, so the author never gets a verdict nobody can explain. A pass is
+    # the final word, so it discards any details saved earlier in the run.
+    if [ -n "${REVIEW_FINDINGS_DIR:-}" ]; then
+      findings_dir
+      if [ "$verdict" = fail ]; then
+        [ -s "$fdir/findings.txt" ] && [ "$(cat "$fdir/head" 2>/dev/null)" = "$sha" ] ||
+          die "security-verdict fail needs the details saved first: run security-findings '<details>', then this again"
+      else
+        rm -f "$fdir/findings.txt" "$fdir/head"
+      fi
     fi
-    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "unexpected head commit '$sha'"
 
     if [ "$verdict" = pass ]; then
       line="Security lens: **pass** at \`${sha:0:7}\`, no Musts."
@@ -183,5 +238,34 @@ _Advisory while the cloud and local Security reviews are compared (DOR-5099)._"
     exec gh pr comment "$pr" --repo "$repo" --body "$body"
     ;;
 
-  *) die "unknown subcommand '$sub'; expected diff, view, summary, inline or security-verdict" ;;
+  security-findings)
+    # The details behind a failing Security lens: for each Must, the file and
+    # line, the attacker, the attack and the smallest fix. They never go to
+    # GitHub from here. This saves them to a private file at a path the workflow
+    # chose (REVIEW_FINDINGS_DIR), and a later trusted step encrypts them to
+    # Security's public key and deletes the plaintext. The model chooses only the
+    # text, which is only ever encrypted as opaque bytes, never run or parsed.
+    # Nothing here echoes it back: diagnostics name its size, not its content.
+    [ "$#" -eq 1 ] || die "security-findings takes one argument, the details (got $#)"
+    [ -n "${REVIEW_FINDINGS_DIR:-}" ] ||
+      die "security-findings is not available on this run (REVIEW_FINDINGS_DIR is unset)"
+    findings_dir
+    [ -n "$1" ] || die "security-findings details must not be empty"
+    size=$(printf '%s' "$1" | wc -c | tr -d ' ')
+    [ "$size" -le 16384 ] ||
+      die "security-findings details are $size bytes; the limit is 16384. Shorten them and run this again"
+    review_head
+    # Private from the first byte: umask before the directory and the file exist.
+    umask 077
+    mkdir -p "$fdir" || die "could not create the findings directory"
+    [ -d "$fdir" ] && [ ! -L "$fdir" ] || die "the findings directory is not a plain directory"
+    if ! { printf '%s\n' "$1" >"$fdir/findings.txt.tmp" &&
+      mv -f "$fdir/findings.txt.tmp" "$fdir/findings.txt" &&
+      printf '%s\n' "$sha" >"$fdir/head"; }; then
+      die "could not save the details"
+    fi
+    echo "Saved $size bytes of Security details for ${sha:0:7}. After the review they are encrypted so only Security can read them, and the plaintext is deleted; nothing is posted in the clear. Now post the verdict: security-verdict fail <musts> <categories>."
+    ;;
+
+  *) die "unknown subcommand '$sub'; expected diff, view, summary, inline, security-verdict or security-findings" ;;
 esac

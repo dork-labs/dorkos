@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import type { SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { RequiredLaunchOwner } from '../../messaging/launch/required-launch.js';
+import type { FailedSeatRecord } from '../../../../rooms/reseat/failed-seat-ledger.js';
 import type { AgentSession } from '../../agent-types.js';
 import { accountIdForRoot } from '../../claude-config-dir.js';
 import { isCreditsClaudeRoot } from '../../credits-root.js';
@@ -49,6 +50,75 @@ export function failedSessionAuthority(session: AgentSession | undefined, blocke
     runtime: 'claude-code' as const,
     accountId: accountIdForRoot(failure.root) ?? null,
   };
+}
+
+/**
+ * The same authority after a restart (DOR-4626), from the server's durable record, read only when
+ * this process holds nothing for the session: no failure in memory, no process, nothing busy and
+ * nothing waiting on a person. The record refuses itself when it is this process's own, claimed,
+ * corrupt or too old; callers still match it against the latest durable turn.
+ *
+ * @param owner - The runtime's injected launch owner; absent or unavailable restores nothing.
+ * @param sessionId - The failed chat.
+ * @param session - This process's record of it, if any.
+ * @param blocked - A live process, lock, background work or helper on the session.
+ */
+function restoredSessionAuthority(
+  owner: RequiredLaunchOwner | undefined,
+  sessionId: string,
+  session: AgentSession | undefined,
+  blocked: boolean
+) {
+  if (blocked || session?.priorServerFailure || (session?.pendingInteractions.size ?? 0) > 0)
+    return null;
+  let record: FailedSeatRecord | null;
+  try {
+    record = owner?.().failures?.restore(sessionId) ?? null;
+  } catch {
+    return null;
+  }
+  if (!record) return null;
+  const { carry: _carry, ...failure } = record;
+  return {
+    ...failure,
+    runtime: 'claude-code' as const,
+    accountId: accountIdForRoot(failure.root) ?? null,
+    restored: true as const,
+  };
+}
+
+/** The runtime's own guards a recovery reads, so the facade stays one call. */
+interface FailedSeatGuards {
+  isLocked(sessionId: string): boolean;
+  holdsBackgroundWork(sessionId: string): boolean;
+  isHelperWorking(sessionId: string): boolean;
+}
+
+/**
+ * A failed room chat's recovery authority: this process's live record while it holds one, else
+ * the durable record an earlier process kept, only while no process runs for the session at all.
+ *
+ * @param guards - The runtime's lock, background-work and helper checks.
+ * @param sessionId - The failed chat.
+ * @param session - This process's record of it, if any.
+ * @param owner - The runtime's injected launch owner.
+ * @param crash - The live crash policy, or `'cold'` when no process is held for the session.
+ */
+export function failedSeatAuthorityOf(
+  guards: FailedSeatGuards,
+  sessionId: string,
+  session: AgentSession | undefined,
+  owner: RequiredLaunchOwner | undefined,
+  crash: 'allows' | 'refuses' | 'cold'
+) {
+  const busy =
+    guards.isLocked(sessionId) ||
+    guards.holdsBackgroundWork(sessionId) ||
+    guards.isHelperWorking(sessionId);
+  return (
+    failedSessionAuthority(session, busy || crash !== 'allows') ??
+    restoredSessionAuthority(owner, sessionId, session, busy || crash !== 'cold')
+  );
 }
 
 /** Bind the exact injected owner lazily; absence remains unknown, never a global fallback. */

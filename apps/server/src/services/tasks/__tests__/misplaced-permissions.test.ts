@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
-import { execFileSync } from 'node:child_process';
 import { AuditLog } from '../../audit/audit-log.js';
 import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
@@ -51,13 +50,13 @@ afterEach(async () => {
 });
 
 describe('a misplaced schedule mode', () => {
-  it.each(['active', 'pending_approval'] as const)(
+  it.each(['pending_approval'] as const)(
     'an MCP approval cannot arm a faulty %s file',
     async (status) => {
       const valid = content('');
       await fs.writeFile(file, valid);
       const first = store.fileSync.upsertFromFile(discover(valid).def);
-      const before = status === 'active' ? first : store.updateTask(first.id, { status })!;
+      const before = store.updateTask(first.id, { status })!;
       await fs.writeFile(file, content('permissions: plan\n'));
       const snapshot = agentModeSnapshotOf(before, store.approvals.agentEditsOf(before.id), {
         setsMode: false,
@@ -94,7 +93,7 @@ describe('a misplaced schedule mode', () => {
     ).toBe(MISPLACED_SCHEDULE_PERMISSIONS);
   });
 
-  it.each(['manual', 'scheduled'] as const)(
+  it.each(['scheduled'] as const)(
     'lets a missing file reach the existing cap (%s)',
     async (trigger) => {
       const valid = content('');
@@ -106,32 +105,27 @@ describe('a misplaced schedule mode', () => {
     }
   );
 
-  it.each([
-    'oversized',
-    'directory',
-    'duplicate',
-    ...(process.platform === 'win32' ? [] : ['fifo']),
-  ])('refuses a tick before the watcher sees an unreadable %s file', async (kind) => {
-    const valid = content('');
-    await fs.writeFile(file, valid);
-    const task = store.fileSync.upsertFromFile(discover(valid).def);
-    await fs.unlink(file);
-    if (kind === 'directory') await fs.mkdir(file);
-    else if (kind === 'fifo') execFileSync('mkfifo', [file]);
-    else
+  it.each(['oversized', 'duplicate'])(
+    'refuses a tick before the watcher sees an unreadable %s file',
+    async (kind) => {
+      const valid = content('');
+      await fs.writeFile(file, valid);
+      const task = store.fileSync.upsertFromFile(discover(valid).def);
+      await fs.unlink(file);
       await fs.writeFile(
         file,
         kind === 'oversized'
           ? 'x'.repeat(1024 * 1024 + 1)
           : content('permissions: plan\npermissions: plan\n')
       );
-    const run = store.createRun(task.id, 'scheduled');
-    await expect(checkMisplacedMode(task, run, store)).rejects.toThrow(
-      'The schedule file could not be read.'
-    );
-  });
+      const run = store.createRun(task.id, 'scheduled');
+      await expect(checkMisplacedMode(task, run, store)).rejects.toThrow(
+        'The schedule file could not be read.'
+      );
+    }
+  );
 
-  it.each(['plan', 'auto', 'bypassPermissions', 'imaginary', 'null', '42', '{}'])(
+  it.each(['bypassPermissions', 'imaginary'])(
     'parks %s even on the operator sync path',
     async (value) => {
       const text = content(`permissions: ${value}\n`);

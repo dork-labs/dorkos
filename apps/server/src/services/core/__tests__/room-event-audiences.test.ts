@@ -5,7 +5,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { eventFanOut, requiresAudience, type FanOutClient } from '../event-fan-out.js';
+import {
+  SCOPED_EXACT_EVENTS,
+  eventFanOut,
+  requiresAudience,
+  type FanOutClient,
+} from '../event-fan-out.js';
 import { roomAudience } from '../../rooms/service/room-audience.js';
 
 vi.mock('../auth/index.js', () => ({ readOwnerAccount: () => ({ id: 'owner' }) }));
@@ -137,6 +142,48 @@ describe('every room_* event and read_cursor', () => {
     expect(removed).not.toHaveBeenCalled();
   });
 });
+
+// An in-process listener hears every broadcast, addressed or not (`EventFanOut.subscribe`), so
+// one that passed a read cursor on could hand it to readers its audience never named. Every
+// listener is pinned here, so a new one fails until someone has read what it forwards; and none
+// may name a read cursor: one that needs to must first carry the audience with it.
+it('every in-process listener is a reviewed one, and none picks out a read cursor', () => {
+  const scoped = Object.keys(SCOPED_EXACT_EVENTS);
+  const listeners = sources(sourceRoot).flatMap((path) => {
+    const source = ts.createSourceFile(
+      path,
+      readFileSync(path, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true
+    );
+    let subscribes = false;
+    const named = new Set<string>();
+    function visit(node: ts.Node): void {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'subscribe' &&
+        node.expression.expression.getText(source) === 'eventFanOut'
+      )
+        subscribes = true;
+      if (ts.isStringLiteralLike(node) && scoped.includes(node.text)) named.add(node.text);
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+    return subscribes ? [{ path: path.slice(sourceRoot.length + 1), named: [...named] }] : [];
+  });
+  expect(listeners.map(({ path }) => path).sort()).toEqual([
+    // Room lifecycle into the local community's own streams.
+    'services/communities/local/local-community-adapter.ts',
+    // Approval verdicts, matched by ask id, back to the turn that waits on them.
+    'services/core/approvals/approval-service.ts',
+    'services/core/approvals/approval-verdict-delivery.ts',
+    // Notifications, to know when to send the daily shift report.
+    'services/notifications/emitters/shift-report.ts',
+  ]);
+  expect(listeners.filter(({ named }) => named.length > 0)).toEqual([]);
+  // It reads every server source file, which took about 6 s on a loaded CI shard.
+}, 30_000);
 
 it('requires room and dynamic audiences at compile time in both APIs', () => {
   const path = join(sourceRoot, 'services/core/event-fan-out.ts');

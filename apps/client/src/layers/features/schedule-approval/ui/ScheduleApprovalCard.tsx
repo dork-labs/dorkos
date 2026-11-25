@@ -180,7 +180,7 @@ function ScheduleApprovalContent({
   const now = useNow(AGE_TICK_MS);
   const navigate = useSafeNavigate();
   const updateTask = useUpdateTask({
-    isShownInline: (error) => 'code' in error && error.code === 'schedule_review_changed',
+    isShownInline: (error) => 'code' in error && error.code === 'precondition_failed',
   });
   const deleteTask = useDeleteTask();
   const testRunState = useScheduleTestRun(task.id);
@@ -374,7 +374,7 @@ function ScheduleApprovalContent({
           onApproved?.();
         },
         onError: (error) => {
-          if ('code' in error && error.code === 'schedule_review_changed') onStale();
+          if ('code' in error && error.code === 'precondition_failed') onStale();
           releaseSettledSchedule(task.id);
           setDecision(null);
           setApprovedAt(null);

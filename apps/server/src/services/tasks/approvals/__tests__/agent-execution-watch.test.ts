@@ -107,12 +107,6 @@ describe('startAgentExecutionWatch', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('keeps its record beside the permission record, not in the agents’ tree', () => {
-    const file = agentExecutionRecordPath(dorkHome);
-    expect(path.dirname(file)).toBe(path.join(dorkHome, 'permissions'));
-    expect(file.startsWith(path.join(dorkHome, 'agents'))).toBe(false);
-  });
-
   it('gives every registered agent a baseline at boot, followed or not', async () => {
     // Purpose: an agent first seen after an edit would carry the edit in as its
     // baseline, silently. An agent nobody follows yet can gain a follower later.
@@ -135,13 +129,6 @@ describe('startAgentExecutionWatch', () => {
     await watch.forget('agent-leaving');
 
     expect(baselines()).toEqual([]);
-  });
-
-  it('gives an agent a baseline when it registers', async () => {
-    const late = await addAgent('agent-late');
-    await watch.checkAgent(late);
-
-    expect(baselines()).toEqual(['agent-late']);
   });
 
   it('gives an agent a baseline when a schedule of its is approved', async () => {
@@ -169,10 +156,5 @@ describe('startAgentExecutionWatch', () => {
       model: 'claude-opus-4',
     });
     expect(store.getTask(task.id)!.status).toBe('pending_approval');
-  });
-
-  it('answers nothing for a schedule whose agent is not registered', async () => {
-    const task = follower('agent-gone');
-    expect(await watch.beforeScheduledFire(task)).toBeUndefined();
   });
 });

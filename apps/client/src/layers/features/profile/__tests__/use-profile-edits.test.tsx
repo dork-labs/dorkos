@@ -150,10 +150,10 @@ describe('the operator profile writes', () => {
 
 describe('why a claim was refused (DOR-1778)', () => {
   it('names the two refusals a person can do something about', () => {
-    expect(identityLinkErrorMessage({ code: 'IDENTITY_NOT_EXTERNAL' }, true)).toContain(
+    expect(identityLinkErrorMessage({ code: 'identity_not_external' }, true)).toContain(
       'another chat platform'
     );
-    expect(identityLinkErrorMessage({ code: 'OPERATOR_ONLY' }, true)).toContain('install’s owner');
+    expect(identityLinkErrorMessage({ code: 'operator_only' }, true)).toContain('install’s owner');
   });
 
   it('passes an unrecognised refusal’s own sentence through', () => {

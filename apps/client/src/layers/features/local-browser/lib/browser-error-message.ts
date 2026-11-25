@@ -1,55 +1,32 @@
-const MESSAGES: Record<string, string> = {
-  stale_page: 'Page changed. Read it again before continuing.',
-  navigation_uncertain: 'Check what happened before continuing.',
-  navigation_unreachable: 'Couldn’t reach that site. Check the address and try again.',
-  navigation_timed_out: 'That site didn’t respond. Try again in a moment.',
-  uncertain: 'Check what happened before continuing.',
-  paused: 'Agent paused. Resume when ready.',
-  busy: 'Browser is busy. Wait a moment.',
-  profile_busy: 'Close the Agent browser and finish signing in, then try again.',
-  profile_not_found: 'Those sign-ins are already gone. Refresh and try again.',
-  sign_ins_partial: 'Some sign-ins couldn’t be cleared. Try again.',
-  browser_download: 'Couldn’t download the browser. Check your connection and try again.',
-  cancelled: 'Browser setup stopped. Open it again to continue.',
-  focus_unavailable: 'This tab stopped responding. Choose it again.',
-  handoff_open: 'An agent is waiting on you in this browser. Answer its card first.',
-  history_refused: 'DorkOS doesn’t open that page here, so you stayed on this one.',
-  no_history: 'There’s no page to go to that way.',
-  history_changed: 'The page’s history changed. Try again.',
-};
-/** Refusals the server writes for a person, so its own words show. The fallback covers an empty one. */
+import { browserRefusalCode } from '@/layers/entities/local-browser';
+
+/**
+ * Codes the `/api/local-browser` routes answer with a sentence written for a
+ * person (the server words every browser refusal itself), with the line to
+ * show when one arrives with no words.
+ */
 const SERVER_WORDED: Record<string, string> = {
-  local_only: 'Use DorkOS on this computer to control its browser.',
+  operator_only: 'Use DorkOS on this computer to control its browser.',
   person_only: 'Only you can do this, from DorkOS.',
-  bad_request: 'Check your browser choice and try again.',
-  unsupported: 'This browser can’t open here.',
+  owner_only: 'Only this DorkOS owner can choose its browser.',
+  invalid_request: 'Check your browser choice and try again.',
+  not_found: 'Those sign-ins are already gone. Refresh and try again.',
+  precondition_failed: 'Page changed. Read it again before continuing.',
+  history_refused: 'DorkOS doesn’t open that page here, so you stayed on this one.',
 };
-const STORAGE_MESSAGES = [
-  'Free some space, then open the browser again.',
-  'Check folder permissions, then open the browser again.',
-];
+
+/** What to say for a refusal whose words were not written for a person, or never arrived. */
+const FALLBACK = 'Couldn’t reach the browser. Reconnect and try again.';
 
 /** Render known recovery guidance, keeping arbitrary process messages out of the app. */
 export function browserErrorMessage(cause: unknown): string {
-  const error = cause as { code?: string; message?: string } | null;
-  if (
-    error?.code === 'busy' &&
-    error.message === 'The browser is still closing. Wait before opening it again.'
-  )
-    return 'The browser is still closing. Wait, then try again.';
-  if (error?.code === 'busy' && error.message === 'Restart DorkOS to finish closing this browser.')
-    return 'Restart DorkOS to finish closing this browser.';
-  if (error?.code === 'browser_storage') {
-    return (
-      STORAGE_MESSAGES.find((message) => message === error.message) ??
-      'Couldn’t save the browser. Check free space and folder permissions.'
-    );
-  }
+  if (!cause) return FALLBACK;
+  const code = browserRefusalCode(cause);
+  const message = (cause as { message?: string }).message?.trim() ?? '';
   // The panel can point at the window, so it says more than the server's line.
-  if (error?.code === 'signing_in') return 'Finish signing in first. The sign-in window is open.';
-  if (error?.code && Object.hasOwn(SERVER_WORDED, error.code))
-    return error.message?.trim() || SERVER_WORDED[error.code];
-  const known =
-    error?.code && Object.hasOwn(MESSAGES, error.code) ? MESSAGES[error.code] : undefined;
-  return known ?? 'Couldn’t reach the browser. Reconnect and try again.';
+  if (code === 'signing_in') return 'Finish signing in first. The sign-in window is open.';
+  if (code && Object.hasOwn(SERVER_WORDED, code)) return message || SERVER_WORDED[code];
+  // Every other browser refusal is a `conflict` whose sentence is the whole message.
+  if (code === 'conflict' && message) return message;
+  return FALLBACK;
 }

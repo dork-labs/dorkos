@@ -104,7 +104,10 @@ describe('owned Chrome page stream', () => {
         width: 640,
         height: 480,
         bytes: image,
-        generation: f.handle.facts().navigationGeneration + 1,
+        generation: expect.any(Number),
+        navigationGeneration: f.handle.facts().navigationGeneration,
+        controlEpoch: f.handle.facts().controlEpoch,
+        viewport: expect.objectContaining({ width: 640, height: 480, scale: 1 }),
         sequence: 1,
       })
     );

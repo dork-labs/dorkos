@@ -1,8 +1,8 @@
 /**
- * Answers from Wi-Fi into a turn that runs above Default (DOR-3037).
+ * Answers from the network into a turn that runs above Default (DOR-3037).
  *
  * A turn a person started at this computer runs at the agent's own level, and
- * answering its question is a message into that turn. From Wi-Fi, where a
+ * answering its question is a message into that turn. From the network, where a
  * message of one's own would be held to the runtime's default, an answer to
  * such a turn may only pick among what it offered: a question's option labels,
  * an elicitation's offered values (`enum`, `const`, `oneOf`, `anyOf`), yes or no. Typed words, and the reason a
@@ -22,13 +22,13 @@ import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.j
 import { lastTurnLevelOf } from '../services/core/turn-power/turn-levels.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
 
-/** What a Wi-Fi sign-in reads when it types into a turn above Default. */
+/** What a network sign-in reads when it types into a turn above Default. */
 export const WIFI_FREE_TEXT_REFUSAL =
-  'This chat runs above Default. From Wi-Fi, pick an offered answer.';
+  'This chat runs above Default. From your network, pick an offered answer.';
 
-/** What a Wi-Fi sign-in reads when it denies an agent's request with a reason. */
+/** What a network sign-in reads when it denies an agent's request with a reason. */
 export const WIFI_DENY_REASON_REFUSAL =
-  'From Wi-Fi, deny without a reason. Add one at this computer.';
+  'From your network, deny without a reason. Add one at this computer.';
 
 /** The refusal body. */
 type Refusal = { error: string; code: typeof NOT_FROM_WIFI };
@@ -52,7 +52,7 @@ function turnAboveDefault(runtime: AgentRuntime, sessionId: string): boolean {
 }
 
 /**
- * Whether the gate applies: a Wi-Fi request whose own message would be held
+ * Whether the gate applies: a network request whose own message would be held
  * (not the owner's own, DOR-3242) into a turn above Default.
  */
 function gated(facts: RequestFacts, runtime: AgentRuntime, sessionId: string): boolean {
@@ -67,7 +67,7 @@ function pendingOf(sessionId: string, id: string): PendingInteractionDTO | undef
 }
 
 /**
- * The refusal for question answers from Wi-Fi that type words into a turn
+ * The refusal for question answers from the network that type words into a turn
  * above Default, or `undefined` when they may go on. A dismissal (no answers)
  * always may.
  *
@@ -122,7 +122,7 @@ function isPick(value: unknown, field: unknown): boolean {
 }
 
 /**
- * The refusal for an elicitation answer from Wi-Fi that types words into a
+ * The refusal for an elicitation answer from the network that types words into a
  * turn above Default, or `undefined` when it may go on. Declining or
  * cancelling always may.
  *
@@ -155,7 +155,7 @@ export function refuseTypedElicitation(
 }
 
 /**
- * The refusal for a Deny from Wi-Fi that carries a reason into a turn above
+ * The refusal for a Deny from the network that carries a reason into a turn above
  * Default: the reason is words the agent reads. A Deny with no reason may go on.
  *
  * @param facts - The request facts.

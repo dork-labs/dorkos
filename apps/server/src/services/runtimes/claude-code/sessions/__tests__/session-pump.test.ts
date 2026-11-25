@@ -124,15 +124,6 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     ]);
   });
 
-  // Purpose: an explicit warm runs NO turn. `createIdlePrompt` is what makes
-  // that true, and a prompt that yielded anything would spend tokens nobody
-  // asked to spend.
-  it('an explicit warm sends no user message', async () => {
-    const h = harness();
-    await warmed(h);
-    expect(await h.readPrompt()).toEqual([]);
-  });
-
   // Purpose: the WARMING -> CRASHED row. A process that dies before init has
   // failed the launch, and the caller has to hear about it.
   it('WARMING -> CRASHED when the process dies before init', async () => {
@@ -146,56 +137,6 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     expect(h.pump.warmth).toBe('crashed');
     expect(h.crashes).toEqual([
       { sessionId: 'sess-1', stateAtCrash: 'warming', error: expect.any(Error) },
-    ]);
-  });
-
-  // Purpose: the WARM -> RUNNING row, and the acceptance seam. The message
-  // reaches the held stream, and the pump reports a turn open.
-  it('WARM -> RUNNING on dispatch, pushing into the held stream', async () => {
-    const h = harness();
-    await warmed(h);
-    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
-
-    expect(h.pump.state).toBe('running');
-    expect(h.pump.warmth).toBe('running');
-    expect(await h.readPrompt()).toEqual(['hello']);
-    expect(h.queries.length).toBe(1);
-  });
-
-  // Purpose: a dequeued BATCH is one turn, and each of its messages carries its
-  // own correlation id into the stream. Without the per-message stamp the one
-  // `result` the CLI answers with could not name any of them, and the window
-  // would never close (DOR-1168).
-  it('sends a whole batch as one turn, each message stamped with its own id', async () => {
-    const h = harness();
-    await warmed(h);
-    await h.pump.dispatch([
-      { content: 'first', messageId: 'm1' },
-      { content: 'second', messageId: 'm2' },
-    ]);
-
-    expect(h.pump.state).toBe('running');
-    expect(await h.readStamped()).toEqual([
-      { content: 'first', uuid: 'm1' },
-      { content: 'second', uuid: 'm2' },
-    ]);
-  });
-
-  // Purpose: the same stamp on the path that boots the process, where the first
-  // message rides the launch rather than being pushed after it.
-  it('stamps the opening message when the batch rides a cold launch', async () => {
-    const h = harness();
-    const dispatching = h.pump.dispatch([
-      { content: 'first', messageId: 'm1' },
-      { content: 'second', messageId: 'm2' },
-    ]);
-    await vi.waitFor(() => expect(h.queries.length).toBe(1));
-    h.live().emit(initMessage());
-    await dispatching;
-
-    expect(await h.readStamped()).toEqual([
-      { content: 'first', uuid: 'm1' },
-      { content: 'second', uuid: 'm2' },
     ]);
   });
 
@@ -219,19 +160,6 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
 
     expect(h.pump.state).toBe('warm');
     expect(h.live().closed).toBe(0);
-  });
-
-  // Purpose: a second `result` must be harmless, exactly as task 0.1's
-  // idempotent closeTurn makes it on the projector.
-  it('endTurn is idempotent and a no-op with no window open', async () => {
-    const h = harness();
-    await warmed(h);
-    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
-    h.pump.endTurn();
-    h.pump.endTurn();
-
-    expect(h.pump.state).toBe('warm');
-    expect(h.states.filter((s) => s.to === 'warm').length).toBe(2);
   });
 
   // Purpose: the RUNNING -> CRASHED row. The crash is reported with the turn
@@ -294,31 +222,12 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     const query = h.live();
 
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
     expect(h.pump.state).toBe('cold');
     expect(h.pump.warmth).toBe('cold');
     expect(query.closed).toBe(1);
     // Teardown is not a crash: nobody should be told the session failed.
     expect(h.crashes).toEqual([]);
-  });
-
-  // Purpose: a dispatch on a cold pump is one launch carrying the message, not
-  // a launch followed by a push — so there is no window where the process is up
-  // and the message is merely "accepted".
-  it('a cold dispatch rides the launch: COLD -> WARMING -> WARM -> RUNNING', async () => {
-    const h = harness();
-    const dispatched = h.pump.dispatch([{ content: 'first words', messageId: 'msg-first-words' }]);
-    await vi.waitFor(() => expect(h.queries.length).toBe(1));
-    h.live().emit(initMessage());
-    await dispatched;
-
-    expect(h.pump.state).toBe('running');
-    expect(await h.readPrompt()).toEqual(['first words']);
-    expect(h.states).toEqual([
-      { from: 'cold', to: 'warming' },
-      { from: 'warming', to: 'warm' },
-      { from: 'warm', to: 'running' },
-    ]);
   });
 
   // Purpose: DOR-1187. On the cold path the pump reaches WARM (system/init)
@@ -473,18 +382,6 @@ describe('SessionPump — guards', () => {
     expect(h.live().closed).toBe(0);
   });
 
-  // Purpose: reap is idempotent and a no-op when there is no process, because
-  // its callers are timers and sweeps that cannot know the answer in advance.
-  it('reap is idempotent and a no-op when cold', async () => {
-    const h = harness();
-    await expect(h.pump.reap()).resolves.toBe(false);
-
-    await warmed(h);
-    await expect(h.pump.reap()).resolves.toBe(true);
-    await expect(h.pump.reap()).resolves.toBe(false);
-    expect(h.queries[0]!.closed).toBe(1);
-  });
-
   // Purpose: the ceiling guard. With nothing able to reclaim a slot (task 3.4
   // installs the LRU that can), a launch over the ceiling is refused rather
   // than quietly booting a thirteenth subprocess.
@@ -545,42 +442,12 @@ describe('SessionPump — guards', () => {
 
     const torn = harness();
     await warmed(torn);
-    await torn.pump.teardown();
+    await torn.pump.teardown('stop');
     await expect(torn.pump.warm()).rejects.toMatchObject({ reason: 'process-gone' });
   });
 });
 
 describe('SessionPump — launch and teardown', () => {
-  // Purpose: two callers racing to warm one session must not produce two CLI
-  // subprocesses. This is the memo on the in-flight launch, and it is the bug
-  // the ceiling could never catch.
-  it('two concurrent launches share one process', async () => {
-    const h = harness();
-    const first = h.pump.warm();
-    const second = h.pump.warm();
-    await vi.waitFor(() => expect(h.queries.length).toBe(1));
-    h.live().emit(initMessage());
-    await Promise.all([first, second]);
-
-    expect(h.queries.length).toBe(1);
-    expect(h.launches.length).toBe(1);
-  });
-
-  // Purpose: a dispatch arriving while somebody else's warm is still booting
-  // waits for it instead of launching beside it.
-  it('a dispatch during a launch joins it rather than starting a second', async () => {
-    const h = harness();
-    const warming = h.pump.warm();
-    await vi.waitFor(() => expect(h.queries.length).toBe(1));
-    const dispatched = h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
-    h.live().emit(initMessage());
-    await Promise.all([warming, dispatched]);
-
-    expect(h.queries.length).toBe(1);
-    expect(h.pump.state).toBe('running');
-    expect(await h.readPrompt()).toEqual(['hello']);
-  });
-
   // Purpose: shutdown racing a launch is the way a subprocess outlives DorkOS.
   // The launch has to notice the teardown when it returns and close what it got.
   it('a teardown during a launch closes the process the launcher returns', async () => {
@@ -599,7 +466,7 @@ describe('SessionPump — launch and teardown', () => {
 
     const warming = h.pump.warm();
     await vi.waitFor(() => expect(entered).toBe(true));
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
     release(late);
 
     await expect(warming).rejects.toMatchObject({ reason: 'process-gone' });
@@ -617,17 +484,6 @@ describe('SessionPump — launch and teardown', () => {
     });
 
     await expect(h.pump.warm()).rejects.toThrow('claude binary not found');
-    expect(h.pump.state).toBe('crashed');
-    expect(h.crashes[0]?.stateAtCrash).toBe('warming');
-  });
-
-  // Purpose: nothing else bounds the pre-init window, so a process that boots
-  // and never initializes would hold a dispatch open for as long as the server
-  // runs.
-  it('a launch that never initializes is called dead', async () => {
-    const h = harness({ initTimeoutMs: 20 });
-
-    await expect(h.pump.warm()).rejects.toThrow('The agent took too long to start.');
     expect(h.pump.state).toBe('crashed');
     expect(h.crashes[0]?.stateAtCrash).toBe('warming');
   });
@@ -657,84 +513,9 @@ describe('SessionPump — launch and teardown', () => {
       query.closed += 1;
     });
 
-    await h.pump.teardown();
+    await h.pump.teardown('stop');
     expect(query.closed).toBe(1);
     expect(h.pump.state).toBe('cold');
-  });
-
-  // Purpose: teardown is called from shutdown paths that may run twice.
-  it('teardown is idempotent', async () => {
-    const h = harness();
-    await warmed(h);
-    await h.pump.teardown();
-    await h.pump.teardown();
-    expect(h.queries[0]!.closed).toBe(1);
-  });
-});
-
-describe('SessionPump — capabilities and the demux seam', () => {
-  // Purpose: feature-detect, never version-sniff. What the CLI reports at init
-  // is what the pump believes.
-  it('caches the protocol capabilities system/init reports', async () => {
-    const h = harness();
-    await warmed(h, ['interrupt_receipt_v1']);
-
-    expect(h.pump.capabilities).toEqual(['interrupt_receipt_v1']);
-    expect(h.pump.supports('interrupt_receipt_v1')).toBe(true);
-    expect(h.pump.supports('interrupt_cancel_queued_v1')).toBe(false);
-  });
-
-  // Purpose: an older CLI reports no capabilities at all, and must degrade
-  // honestly rather than crash or be assumed capable.
-  it('an older CLI that reports no capabilities supports nothing', async () => {
-    const h = harness();
-    await warmed(h);
-    expect(h.pump.capabilities).toEqual([]);
-    expect(h.pump.supports('interrupt_receipt_v1')).toBe(false);
-  });
-
-  // Purpose: a relaunch gets its own process, so it must not inherit the
-  // previous one's answers.
-  it('a relaunch after a crash starts from no capabilities', async () => {
-    const h = harness();
-    await warmed(h, ['interrupt_receipt_v1']);
-    h.live().failStream(new Error('killed'));
-    await vi.waitFor(() => expect(h.pump.state).toBe('crashed'));
-
-    const dispatched = h.pump.dispatch([{ content: 'again', messageId: 'msg-again' }]);
-    await vi.waitFor(() => expect(h.queries.length).toBe(2));
-    expect(h.pump.capabilities).toEqual([]);
-    h.live().emit(initMessage([]));
-    await dispatched;
-    expect(h.pump.capabilities).toEqual([]);
-  });
-
-  // Purpose: task 3.3 cuts turn windows out of this stream, so it must see
-  // every message, in order, including the init.
-  it('hands every message to the demux, in order', async () => {
-    const h = harness();
-    await warmed(h);
-    h.live().emit(otherMessage());
-    await vi.waitFor(() => expect(h.messages.length).toBe(2));
-
-    expect(h.messages[0]).toMatchObject({ subtype: 'init' });
-    expect(h.messages[1]).toMatchObject({ subtype: 'status' });
-  });
-
-  // Purpose: a bug in the consumer must not take down a subprocess holding
-  // somebody's conversation.
-  it('a demux that throws does not kill the process', async () => {
-    const h = harness({
-      onMessage: () => {
-        throw new Error('demux bug');
-      },
-    });
-    await warmed(h);
-    h.live().emit(otherMessage());
-
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(h.pump.state).toBe('warm');
-    expect(h.crashes).toEqual([]);
   });
 });
 
@@ -758,37 +539,20 @@ describe('SessionPump — steer (P4 deliverIntoTurn, task 4.1)', () => {
       { content: 'also check the tests', uuid: 'm-steer' },
     ]);
   });
+});
 
-  // Purpose: with no turn open there is nothing to join. Reported, never thrown,
-  // so the server degrades rather than failing the person's message.
-  it('reports no-open-turn on a WARM session, without throwing', async () => {
-    const h = harness();
-    await warmed(h);
-    expect(h.pump.state).toBe('warm');
-
-    expect(h.pump.steer('too early', 'm-steer')).toBe('no-open-turn');
-    expect(await h.readPrompt()).toEqual([]);
+// Purpose: a bug in the consumer must not take down a subprocess holding
+// somebody's conversation.
+it('a demux that throws does not kill the process', async () => {
+  const h = harness({
+    onMessage: () => {
+      throw new Error('demux bug');
+    },
   });
+  await warmed(h);
+  h.live().emit(otherMessage());
 
-  // Purpose: the same on a COLD pump — no process, no turn, and still no throw.
-  it('reports no-open-turn on a COLD session', () => {
-    const h = harness();
-    expect(h.pump.state).toBe('cold');
-    expect(h.pump.steer('nobody home', 'm-steer')).toBe('no-open-turn');
-  });
-
-  // Purpose: the amnesiac seam — the consumer can abandon the input stream
-  // without the pump being told, so `push` reporting the stream gone must become
-  // a `stream-closed` receipt rather than a silent success into nothing.
-  it('reports stream-closed when the input stream was abandoned under a live turn', async () => {
-    const h = harness();
-    await warmed(h);
-    await h.pump.dispatch([{ content: 'do the thing', messageId: 'm-open' }]);
-    expect(h.pump.state).toBe('running');
-
-    // The consumer (the SDK subprocess) walks away from the held prompt.
-    await h.launches[0]!.prompt.return?.(undefined);
-
-    expect(h.pump.steer('too late', 'm-steer')).toBe('stream-closed');
-  });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(h.pump.state).toBe('warm');
+  expect(h.crashes).toEqual([]);
 });

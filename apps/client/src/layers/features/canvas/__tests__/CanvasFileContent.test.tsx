@@ -458,7 +458,7 @@ describe('CanvasFileContent', () => {
   });
 
   it('shows a friendly message for a binary file', async () => {
-    readFileContent.mockRejectedValue(Object.assign(new Error('binary'), { code: 'BINARY_FILE' }));
+    readFileContent.mockRejectedValue(Object.assign(new Error('binary'), { code: 'binary_file' }));
     renderFile('assets/blob.bin');
     await waitFor(() =>
       expect(screen.getByText(/isn.t text, so the editor can.t show it/i)).toBeInTheDocument()

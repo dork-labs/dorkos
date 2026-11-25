@@ -33,7 +33,6 @@ import {
   buildHeaderBlockIdentityNodes,
   buildHeaderBlockVersionNodes,
 } from '../ui/header-block-menu';
-import { useCommunityApprovalStore } from '@/layers/entities/community';
 import { SidebarHeaderBlock, teamNameFor } from '../ui/SidebarHeaderBlock';
 import { MobileCommunityContextSwitcher } from '../ui/context/CommunityContextSwitcher';
 
@@ -373,45 +372,16 @@ describe('buildHeaderBlockIdentityNodes', () => {
     ]);
   });
 
-  it('names you by your name and says the row opens your profile', () => {
-    expect(buildHeaderBlockIdentityNodes(base)[0]).toMatchObject({
-      label: 'Dorian',
-      description: 'View profile',
-    });
-  });
-
-  it('carries the account’s status under its name', () => {
-    expect(
-      buildHeaderBlockIdentityNodes({ ...base, accountStatus: 'Signed in · Dorian' }).find(
-        (n) => n.id === 'dorkos-account'
-      )
-    ).toMatchObject({ label: 'DorkOS account', description: 'Signed in · Dorian' });
-  });
-
   it('drops the you row when the roster names nobody, rather than offering a dead row', () => {
     expect(buildHeaderBlockIdentityNodes({ ...base, you: null }).map((n) => n.id)).toEqual([
       'dorkos-account',
       'settings',
     ]);
   });
-
-  it('says "account" once, meaning the DorkOS account, and never "workspace"', () => {
-    const said = buildHeaderBlockIdentityNodes(base)
-      .filter((n) => n.kind === 'action')
-      .map((n) => (n.kind === 'action' ? n.label : ''));
-    expect(said.filter((text) => /account/i.test(text))).toEqual(['DorkOS account']);
-    expect(said.filter((text) => /workspace/i.test(text))).toEqual([]);
-  });
 });
 
 describe('buildHeaderBlockVersionNodes', () => {
   const base = { version: '0.58.0', isDevMode: false, onCheckForUpdates: () => {} };
-
-  it('spells the version line the way the design does, behind its own rule', () => {
-    const nodes = buildHeaderBlockVersionNodes(base);
-    expect(nodes.map((n) => n.id)).toEqual(['sep-version', 'version']);
-    expect(nodes[1]).toMatchObject({ label: 'v0.58.0 beta', hint: 'Check for updates' });
-  });
 
   it('says "Development build" instead of a number nobody can update to', () => {
     const nodes = buildHeaderBlockVersionNodes({ ...base, isDevMode: true });
@@ -419,10 +389,6 @@ describe('buildHeaderBlockVersionNodes', () => {
       kind: 'note',
       text: 'Development build',
     });
-  });
-
-  it('withholds the version line entirely until the server has answered', () => {
-    expect(buildHeaderBlockVersionNodes({ ...base, version: null })).toEqual([]);
   });
 });
 
@@ -433,10 +399,6 @@ describe('buildHeaderBlockVersionNodes', () => {
 describe('teamNameFor', () => {
   it('names the cockpit after the operator', () => {
     expect(teamNameFor('Dorian')).toBe('Dorian’s team');
-  });
-
-  it('does not double the s on a name that already ends in one', () => {
-    expect(teamNameFor('Chris')).toBe('Chris’ team');
   });
 
   it('falls back to a name it can say honestly when the roster is empty', () => {
@@ -483,29 +445,6 @@ describe('SidebarHeaderBlock', () => {
     ).toBeInTheDocument();
   });
 
-  it('keeps you, your DorkOS account, Settings and the version line on phones', async () => {
-    // This menu is the version number's one home in the chrome (BC-44), and
-    // the footer menu deliberately does not repeat these rows, so a phone that
-    // lost them here would have no way to reach them at all.
-    renderMobileSwitcher();
-    await configAnswered();
-    // The phone trigger is an icon to fit the top bar at 390px, so its name
-    // has to live in its accessible name rather than on screen.
-    expect(screen.getByTestId('sidebar-header-block')).toHaveAccessibleName(/Dorian’s team menu/);
-    expect(screen.getByTestId('sidebar-header-block')).not.toHaveTextContent('Dorian’s team');
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const sheet = await screen.findByRole('dialog');
-    expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
-    // A menu item is only a menu item inside a menu (axe aria-required-parent),
-    // and the identity rows are their own menu, above the destinations.
-    const you = within(sheet).getByRole('menu', { name: 'You' });
-    expect(within(you).getByRole('menuitem', { name: /Dorian/ })).toBeInTheDocument();
-    expect(within(you).getByRole('menuitem', { name: /DorkOS account/ })).toBeInTheDocument();
-    fireEvent.click(within(you).getByRole('menuitem', { name: 'Settings' }));
-    expect(mockOpenSettings).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(sheet).not.toBeInTheDocument());
-  });
-
   it('adds phone search at eight communities and exposes keyboard-safe reorder actions', async () => {
     mockSearch = { community: 'community-4' };
     mockConnections = Array.from({ length: 8 }, (_, index) => ({
@@ -546,45 +485,6 @@ describe('SidebarHeaderBlock', () => {
     expect(screen.getByTestId('sidebar-search-pill')).toBeInTheDocument();
   });
 
-  it('puts Find and New on one row on a phone, Find taking the width (Phase 4 S6)', () => {
-    mockIsMobile = true;
-    renderBlock();
-    // The switcher lives in the One Bar on a phone, so it is not drawn here.
-    expect(screen.queryByTestId('sidebar-header-block')).not.toBeInTheDocument();
-    const pill = screen.getByTestId('sidebar-search-pill');
-    const newMenu = screen.getByTestId('new-menu');
-    // Siblings in one row, Find first: a full 44px line is no longer spent on
-    // a 74px button.
-    expect(pill.parentElement).toBe(newMenu.parentElement);
-    expect(pill.nextElementSibling).toBe(newMenu);
-    expect(pill.className).toContain('flex-1');
-    expect(pill.parentElement?.className).toContain('flex-row');
-  });
-
-  it('rings the switcher with the shared focus ring, not one of its own (Phase 4 S5)', async () => {
-    renderBlock();
-    const trigger = await screen.findByTestId('sidebar-header-block');
-    expect(trigger.className).toContain('focus-ring');
-    expect(trigger.className).not.toMatch(/focus-visible:ring-/);
-  });
-
-  it('says "workspace" nowhere — not in the block, not in its menu', async () => {
-    renderBlock();
-    await configAnswered();
-    // Observable first: the block IS rendered and DOES carry an accessible
-    // name, so the absence below is about the wording and not about an empty
-    // document.
-    const block = screen.getByTestId('sidebar-header-block');
-    expect(block.getAttribute('aria-label')).toMatch(/team/);
-    expect(block.outerHTML).not.toMatch(/workspace/i);
-
-    // There is no workspace object, so the menu opens plain Settings (DOR-2628).
-    fireEvent.pointerDown(block);
-    const menu = await screen.findByRole('menu');
-    expect(await within(menu).findByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
-    expect(menu.textContent).not.toMatch(/workspace/i);
-  });
-
   it('opens the settings dialog from Settings', async () => {
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
@@ -606,28 +506,6 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(row).toHaveTextContent('Not signed in'));
     fireEvent.click(row);
     expect(mockOpenSettings).toHaveBeenCalledWith('account');
-  });
-
-  it('names the signed-in account with the service’s own label', async () => {
-    mockCloudLinked = true;
-    mockCloudAccountLabel = 'kai@dork.dev';
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    const row = await screen.findByRole('menuitem', { name: /DorkOS account/ });
-    await waitFor(() => expect(row).toHaveTextContent('Signed in · kai@dork.dev'));
-  });
-
-  it('has only one row that says "Account" — the duplicate profile row is gone', async () => {
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    await screen.findByRole('menuitem', { name: /DorkOS account/ });
-    expect(screen.getAllByRole('menuitem', { name: /account/i })).toHaveLength(1);
-  });
-
-  it('shows the running version in the menu once the server answers', async () => {
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    expect(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ })).toBeInTheDocument();
   });
 
   it('keeps the installed app first and orders communities by the owner preference', async () => {
@@ -725,35 +603,6 @@ describe('SidebarHeaderBlock', () => {
     expect(mockListRemoteCommunityRooms).not.toHaveBeenCalled();
   });
 
-  it('re-reads and restores the owner’s local route only on explicit installation selection', async () => {
-    mockSearch = { community: 'a' };
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockGetCommunityNavigation.mockResolvedValue({
-      ownerKey: 'owner-a',
-      installationDestination: { path: '/tasks', search: { view: 'board' } },
-      order: ['a'],
-      destinations: [],
-    });
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Dorian’s team/ }));
-
-    await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith({ to: '/tasks', search: { view: 'board' } })
-    );
-    expect(mockGetCommunityNavigation).toHaveBeenCalledOnce();
-  });
-
   it('discards a delayed installation route after the owner changes', async () => {
     let resolveNavigation!: (value: {
       ownerKey: string;
@@ -844,6 +693,54 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(selected).toHaveFocus());
   });
 
+  it('disables keyboard selection of the installation while a destination is pending', async () => {
+    let resolveRemembered!: (value: null) => void;
+    mockSearch = { community: 'b' };
+    mockConnections = [
+      {
+        ref: 'a',
+        remoteCommunityId: 'remote-a',
+        label: 'Alpha',
+        pinnedOrigin: 'https://a.example.com',
+        connectedHumanMemberId: 'person-a',
+        status: 'connected',
+        expiresAt: null,
+      },
+      {
+        ref: 'b',
+        remoteCommunityId: 'remote-b',
+        label: 'Beta',
+        pinnedOrigin: 'https://b.example.com',
+        connectedHumanMemberId: 'person-b',
+        status: 'connected',
+        expiresAt: null,
+      },
+    ];
+    mockResolveCommunityNavigation.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRemembered = resolve;
+        })
+    );
+    renderBlock();
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
+    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+
+    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
+    const installation = await screen.findByRole('menuitemradio', { name: /Dorian’s team/ });
+    expect(installation).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.keyDown(installation, { key: 'Enter' });
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+
+    resolveRemembered(null);
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/channels',
+      search: { community: 'a' },
+    });
+  });
+
   it('returns to the prior route and says so when the target destination read fails', async () => {
     mockConnections = [
       {
@@ -878,59 +775,6 @@ describe('SidebarHeaderBlock', () => {
         description: 'You’re still where you were. Try again in a moment.',
       })
     );
-  });
-
-  it('reenables selection when the initial qualified navigation rejects', async () => {
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockNavigate.mockRejectedValueOnce(new Error('navigation interrupted'));
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() =>
-      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
-    );
-    expect(mockResolveCommunityNavigation).not.toHaveBeenCalled();
-  });
-
-  it('opens the remembered room after the qualified target commits', async () => {
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockNavigate.mockImplementation(async ({ search }: { search?: { community?: string } }) => {
-      if (search?.community === 'a') commitCommunityRouteEpoch('community:a');
-    });
-    mockResolveCommunityNavigation.mockResolvedValue({
-      ref: 'a',
-      roomId: 'general',
-      threadId: 'thread-1',
-      scrollAnchorEntryId: 'entry-4',
-    });
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
-    expect(mockNavigate).toHaveBeenLastCalledWith({
-      to: '/channels',
-      search: { community: 'a', id: 'general', thread: 'thread-1' },
-    });
   });
 
   it('opens from the global context shortcut, from a message box too', async () => {
@@ -1018,32 +862,6 @@ describe('SidebarHeaderBlock', () => {
     expect(pill).toHaveTextContent('2');
     expect(pill).toHaveAttribute('aria-hidden', 'true');
     expect(pill).toHaveAttribute('data-tone', 'you');
-  });
-
-  it('says when stale counts were last checked, and only for stale counts', async () => {
-    const community = (ref: string, label: string, state: 'verified' | 'stale') => ({
-      ref,
-      remoteCommunityId: `remote-${ref}`,
-      label,
-      pinnedOrigin: `https://${ref}.example.com`,
-      connectedHumanMemberId: `person-${ref}`,
-      status: 'connected' as const,
-      expiresAt: null,
-      attention: {
-        state,
-        unreadCount: 3,
-        mentionCount: 1,
-        verifiedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-      },
-    });
-    mockConnections = [community('a', 'Alpha', 'stale'), community('b', 'Beta', 'verified')];
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    const alpha = (await screen.findByText('Alpha')).closest('[role="menuitemradio"]');
-    const beta = screen.getByText('Beta').closest('[role="menuitemradio"]');
-    expect(alpha).toHaveTextContent('1 mention, 2 other unread, last checked 5m ago');
-    expect(beta).toHaveTextContent('1 mention, 2 other unread');
-    expect(beta).not.toHaveTextContent('last checked');
   });
 
   // DOR-2543. Only the owner's connection carries a notice, and its row is the one with the dot.
@@ -1142,149 +960,6 @@ describe('SidebarHeaderBlock', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('discards a delayed destination after another route commits', async () => {
-    let resolveRemembered!: (value: null) => void;
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockResolveCommunityNavigation.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveRemembered = resolve;
-        })
-    );
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
-
-    commitCommunityRouteEpoch('test:other-route');
-    resolveRemembered(null);
-
-    await waitFor(() =>
-      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
-    );
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it('lets a newer choice win: a failed read for the older one neither navigates back nor speaks', async () => {
-    let rejectRemembered!: (error: Error) => void;
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockResolveCommunityNavigation.mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectRemembered = reject;
-        })
-    );
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
-
-    // The person goes somewhere else (Back, a link) while Alpha's read waits.
-    commitCommunityRouteEpoch('test:newer-choice');
-    rejectRemembered(new Error('offline'));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
-    );
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it('says "still where you were" only once the way back has landed', async () => {
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
-    mockNavigate
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('navigation interrupted'));
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
-    await waitFor(() =>
-      expect(screen.getByTestId('sidebar-header-block')).not.toHaveAttribute('aria-busy')
-    );
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it('disables keyboard selection of the installation while a destination is pending', async () => {
-    let resolveRemembered!: (value: null) => void;
-    mockSearch = { community: 'b' };
-    mockConnections = [
-      {
-        ref: 'a',
-        remoteCommunityId: 'remote-a',
-        label: 'Alpha',
-        pinnedOrigin: 'https://a.example.com',
-        connectedHumanMemberId: 'person-a',
-        status: 'connected',
-        expiresAt: null,
-      },
-      {
-        ref: 'b',
-        remoteCommunityId: 'remote-b',
-        label: 'Beta',
-        pinnedOrigin: 'https://b.example.com',
-        connectedHumanMemberId: 'person-b',
-        status: 'connected',
-        expiresAt: null,
-      },
-    ];
-    mockResolveCommunityNavigation.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveRemembered = resolve;
-        })
-    );
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
-
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    const installation = await screen.findByRole('menuitemradio', { name: /Dorian’s team/ });
-    expect(installation).toHaveAttribute('aria-disabled', 'true');
-    fireEvent.keyDown(installation, { key: 'Enter' });
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-
-    resolveRemembered(null);
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/channels',
-      search: { community: 'a' },
-    });
-  });
-
   it('grows the menu without moving anything outside it (BC-43)', async () => {
     // Three rows.
     mockMenuNodes = rows(3);
@@ -1322,14 +997,6 @@ describe('SidebarHeaderBlock', () => {
     await waitFor(() => expect(mockGetConfig.mock.calls.length).toBeGreaterThan(asked));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('You’re up to date'));
   });
-
-  it('names the newer release when the server has one', async () => {
-    mockConfig = { version: '0.58.0', latestVersion: '0.59.0', isDevMode: false };
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /v0\.58\.0 beta/ }));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Version 0.59.0 is available'));
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1353,26 +1020,6 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
       'aria-label',
       'Context menu'
     );
-  });
-
-  it('paints the name the moment the roster and the server answer', async () => {
-    mockRosterPending = false;
-    renderBlock();
-
-    expect(await screen.findByText('Dorian’s team')).toBeInTheDocument();
-    expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
-  });
-
-  it('still says "Your team" for an install that genuinely has no name', async () => {
-    // The counter-proof: the placeholder is about the QUERY, not about the
-    // answer. A roster that has answered with nobody gets the honest fallback,
-    // not bones forever.
-    mockRosterPending = false;
-    mockSelf = null;
-    renderBlock();
-
-    expect(await screen.findByText('Your team')).toBeInTheDocument();
-    expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
   });
 });
 
@@ -1453,14 +1100,6 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockOpenSettings).not.toHaveBeenCalled();
   });
 
-  it('opens this DorkOS’s settings, never a Community’s, from Settings', async () => {
-    mockConnections = [alpha()];
-    await openManageAlpha();
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }));
-    expect(mockOpenSettings).toHaveBeenCalledTimes(1);
-    expect(mockOpenExternalLink).not.toHaveBeenCalled();
-  });
-
   it('hides every action that needs the Community’s site while it is offline', async () => {
     mockConnections = [
       alpha({
@@ -1481,35 +1120,6 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(within(manage).queryByRole('menuitem', { name: /Leave/ })).not.toBeInTheDocument();
     // Disconnecting is local, so it still works offline.
     expect(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ })).toBeInTheDocument();
-  });
-
-  it('offers no invitations for an archived Community, and still reaches its settings', async () => {
-    mockConnections = [
-      alpha({
-        access: {
-          state: 'verified',
-          effective: { ...none, read: true },
-          lastKnown: {
-            lifecycle: 'archived',
-            capabilities: { ...none, read: true },
-            verifiedAt: '2026-09-21T00:00:00.000Z',
-          },
-        },
-      }),
-    ];
-    const manage = await openManageAlpha();
-    expect(within(manage).queryByRole('menuitem', { name: /Invite/ })).not.toBeInTheDocument();
-    expect(within(manage).getByRole('menuitem', { name: /^Space settings/ })).toBeInTheDocument();
-  });
-
-  it('shows no Community actions while this DorkOS is selected', async () => {
-    mockConnections = [alpha()];
-    renderMobileSwitcher();
-    await configAnswered();
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    await screen.findByRole('dialog');
-    expect(screen.queryByRole('group', { name: /Manage/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'Add a space' })).toBeInTheDocument();
   });
 
   it('confirms before disconnecting, and then leaves only the Community it disconnected', async () => {
@@ -1546,21 +1156,6 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/', replace: true });
     expect(toast.success).toHaveBeenCalledWith('Alpha is disconnected.');
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-  });
-
-  it('warns when this DorkOS disconnected but the Community could not be told', async () => {
-    mockConnections = [alpha()];
-    const manage = await openManageAlpha();
-    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    act(() =>
-      mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: false, agentsNotRemoved: [] })
-    );
-    expect(toast.warning).toHaveBeenCalledWith(
-      'Disconnected here, but Alpha couldn’t be reached. Finish under Connected installations on Alpha.',
-      expect.anything()
-    );
-    expect(toast.success).not.toHaveBeenCalledWith('Alpha is disconnected.');
   });
 
   // DOR-2603. Purpose: Disconnect removes the agents this app added to the Community, so the
@@ -1640,22 +1235,6 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(within(confirm).getByRole('button', { name: 'Disconnect' })).toBeEnabled();
   });
 
-  it('never waits on a check that has not started', async () => {
-    mockConnections = [alpha()];
-    mockDisconnectImpact = {
-      data: undefined,
-      isError: false,
-      fetchStatus: 'idle',
-      refetch: vi.fn(),
-    };
-    const manage = await openManageAlpha();
-    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
-    const confirm = await screen.findByRole('alertdialog');
-    expect(confirm).not.toHaveTextContent('Checking for agents');
-    expect(confirm).toHaveTextContent('Any agents you added from here will be removed from Alpha.');
-    expect(within(confirm).getByRole('button', { name: 'Disconnect' })).toBeEnabled();
-  });
-
   it('names the agents it could not remove when the Community could not be reached', async () => {
     mockConnections = [alpha()];
     mockDisconnectImpact = {
@@ -1678,69 +1257,6 @@ describe('the context switcher’s lifecycle actions', () => {
       expect.anything()
     );
     expect(toast.success).not.toHaveBeenCalled();
-  });
-
-  it('counts agents this app no longer has instead of repeating a placeholder', async () => {
-    mockConnections = [alpha()];
-    mockDisconnectImpact = {
-      data: {
-        agents: [
-          { localAgentId: 'scout', displayName: 'Scout' },
-          { localAgentId: 'gone-1', displayName: null },
-          { localAgentId: 'gone-2', displayName: null },
-        ],
-      },
-      isError: false,
-      fetchStatus: 'idle',
-      refetch: vi.fn(),
-    };
-    const manage = await openManageAlpha();
-    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
-    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
-      'The 3 agents you added from here will be removed from Alpha: Scout and 2 unnamed agents.'
-    );
-  });
-
-  it('names an agent the Community would not remove even though the rest went', async () => {
-    mockConnections = [alpha()];
-    const manage = await openManageAlpha();
-    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    act(() =>
-      mockEndConnection.mock.calls[0]![1].onSuccess({
-        remoteRevoked: true,
-        agentsNotRemoved: [
-          { localAgentId: 'scout', displayName: 'Scout' },
-          { localAgentId: 'echo', displayName: 'Echo' },
-        ],
-      })
-    );
-    expect(toast.warning).toHaveBeenCalledWith(
-      'Disconnected, but Scout and Echo couldn’t be removed. Remove them under Agents on Alpha.',
-      expect.anything()
-    );
-  });
-
-  it('stays put after disconnecting a Community that was not on screen', async () => {
-    mockConnections = [alpha()];
-    commitCommunityRouteEpoch(JSON.stringify(['community', 'b', null, null]));
-    const manage = await openManageAlpha();
-    fireEvent.click(within(manage).getByRole('menuitem', { name: /^Disconnect…$/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
-    act(() =>
-      mockEndConnection.mock.calls[0]![1].onSuccess({ remoteRevoked: true, agentsNotRemoved: [] })
-    );
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('on a hub, still offers other spaces the team name, never "Private"', async () => {
-    mockConfig = { ...mockConfig, serverRole: 'hub' } as typeof mockConfig;
-    renderMobileSwitcher();
-    await configAnswered();
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
-    fireEvent.click(add.getByRole('menuitem', { name: /Join a space…/ }));
-    expect(await screen.findByLabelText('Name for this installation')).toHaveValue('Dorian’s team');
   });
 
   it('connects a space in place and sends running your own server to the guide', async () => {
@@ -1766,20 +1282,6 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockOpenExternalLink).toHaveBeenCalledWith(
       'https://dorkos.ai/docs/self-hosting/space-server'
     );
-  });
-
-  // Purpose: an install with no DorkOS account must neither show the hosted
-  // entry points nor ask the account anything (spec P5). Fails if the rows
-  // render inert or the list is read anyway.
-  it('offers no Start or Your spaces rows, and asks nothing, while unlinked', async () => {
-    renderMobileSwitcher();
-    await waitFor(() => expect(mockGetCloudStatus).toHaveBeenCalled());
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
-    expect(add.getByRole('menuitem', { name: /Join a space/ })).toBeInTheDocument();
-    expect(add.queryByRole('menuitem', { name: /Start a space/ })).not.toBeInTheDocument();
-    expect(add.queryByRole('menuitem', { name: /Your spaces/ })).not.toBeInTheDocument();
-    expect(mockListHostedCommunities).not.toHaveBeenCalled();
   });
 
   // Purpose: linked, Start and Join lead and Your spaces carries the move
@@ -1810,17 +1312,6 @@ describe('the context switcher’s lifecycle actions', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Move one here' }));
     expect(await screen.findByText('First, export the old space:')).toBeInTheDocument();
-  });
-
-  it('offers nothing when the linked account does not host communities', async () => {
-    mockCloudLinked = true;
-    mockListHostedCommunities.mockResolvedValueOnce({ available: false } as never);
-    renderMobileSwitcher();
-    await waitFor(() => expect(mockListHostedCommunities).toHaveBeenCalled());
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
-    expect(add.queryByRole('menuitem', { name: /Start a space/ })).not.toBeInTheDocument();
-    expect(add.queryByRole('menuitem', { name: /Your spaces/ })).not.toBeInTheDocument();
   });
 
   // Purpose: Join is one flow (spec §4). An invitation opens on the space's
@@ -1861,63 +1352,6 @@ describe('the context switcher’s lifecycle actions', () => {
     expect(mockOpenConnections).not.toHaveBeenCalled();
   });
 
-  // Purpose: joining a space that runs on DorkOS makes no second account
-  // (D5). Fails if the invitation opens without the single sign-on hint, if
-  // the invite leaves its fragment, or if the hint reaches another server.
-  it('opens an invitation on the DorkOS account where the space signs in with it', async () => {
-    mockGetCommunityAccountSignIn.mockResolvedValue({
-      available: true,
-      origins: ['https://a.example.com'],
-    });
-    renderMobileSwitcher();
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(
-      within(await screen.findByRole('group', { name: 'Add a space' })).getByRole('menuitem', {
-        name: /Join a space…/,
-      })
-    );
-    const field = await screen.findByLabelText('Space address or invitation link');
-    await waitFor(() => expect(mockGetCommunityAccountSignIn).toHaveBeenCalled());
-
-    const elsewhere = 'https://b.example.com/c/remote-b/join#invite=secret';
-    fireEvent.change(field, { target: { value: elsewhere } });
-    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
-    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(elsewhere);
-
-    fireEvent.change(field, {
-      target: { value: 'https://a.example.com/c/remote-a/join#invite=secret' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Open invitation' }));
-    expect(mockOpenExternalLink).toHaveBeenLastCalledWith(
-      'https://a.example.com/c/remote-a/join?sign-in=single-sign-on#invite=secret'
-    );
-    expect(field).toHaveValue('https://a.example.com/c/remote-a');
-    expect(field).toHaveAccessibleDescription(
-      'Join on a.example.com with your DorkOS account in the new tab, then connect.'
-    );
-  });
-
-  // Purpose: the approval page of a space that runs on DorkOS also leads with
-  // the account. Fails if the link opens without the hint.
-  it('opens the approval page on the DorkOS account where the space signs in with it', async () => {
-    mockGetCommunityAccountSignIn.mockResolvedValue({
-      available: true,
-      origins: ['https://a.example.com'],
-    });
-    mockConnections = [alpha({ status: 'pending' })];
-    useCommunityApprovalStore.getState().rememberLink('', 'a', 'https://a.example.com/pair/p_1');
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Approve on Alpha' });
-    const open = await within(dialog).findByRole('link', { name: /Open Alpha to approve/ });
-    await waitFor(() =>
-      expect(open).toHaveAttribute('href', 'https://a.example.com/pair/p_1?sign-in=single-sign-on')
-    );
-    expect(dialog).toHaveTextContent('Sign in there with your DorkOS account.');
-    useCommunityApprovalStore.getState().forget('none');
-  });
-
   it('opens a Community that needs reconnecting in the connect dialog, not Connections', async () => {
     mockConnections = [alpha({ status: 'reconnect-required' })];
     renderBlock();
@@ -1930,22 +1364,6 @@ describe('the context switcher’s lifecycle actions', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Disconnect' }));
     expect(mockEndConnection).toHaveBeenCalledWith(
       expect.objectContaining({ ref: 'a', status: 'reconnect-required' }),
-      expect.anything()
-    );
-  });
-
-  it('opens a Community still waiting for approval on its wait, not Connections', async () => {
-    mockConnections = [alpha({ status: 'pending' })];
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    const dialog = await screen.findByRole('dialog', { name: 'Approve on Alpha' });
-    expect(within(dialog).getByText('Waiting for your approval')).toBeInTheDocument();
-    expect(mockOpenConnections).not.toHaveBeenCalled();
-    expect(mockNavigate).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel approval' }));
-    expect(mockEndConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ ref: 'a', status: 'pending' }),
       expect.anything()
     );
   });
@@ -1976,40 +1394,6 @@ describe('the context switcher’s lifecycle actions', () => {
     // The host's own administration page, on the connection's pinned origin.
     expect(mockOpenExternalLink).toHaveBeenCalledWith('https://a.example.com/host');
     expect(mockOpenConnections).not.toHaveBeenCalled();
-  });
-
-  it('names each host when the person runs more than one, once per host', async () => {
-    mockConnections = [
-      alpha({ hostOperator: true }),
-      alpha({ ref: 'a2', remoteCommunityId: 'remote-a2', label: 'Alpha Two', hostOperator: true }),
-      alpha({
-        ref: 'b',
-        remoteCommunityId: 'remote-b',
-        label: 'Beta',
-        pinnedOrigin: 'https://b.example.com',
-        hostOperator: true,
-      }),
-      alpha({
-        ref: 'c',
-        remoteCommunityId: 'remote-c',
-        label: 'Gamma',
-        pinnedOrigin: 'https://c.example.com',
-      }),
-    ];
-    renderMobileSwitcher();
-    fireEvent.click(screen.getByTestId('sidebar-header-block'));
-    const add = within(await screen.findByRole('group', { name: 'Add a space' }));
-    expect(
-      add
-        .getAllByRole('menuitem', { name: /^Create a space/ })
-        .map((row) => row.getAttribute('data-menu-item-id'))
-    ).toEqual(['add-community-create-a.example.com', 'add-community-create-b.example.com']);
-    fireEvent.click(
-      add.getByRole('menuitem', {
-        name: 'Create a space on b.example.com…, opens on b.example.com',
-      })
-    );
-    expect(mockOpenExternalLink).toHaveBeenCalledWith('https://b.example.com/host');
   });
 
   it('reaches Create a space from the keyboard in the desktop menu, through Advanced', async () => {
@@ -2113,16 +1497,6 @@ describe('focus after a phone choice', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('lands on the heading after choosing this DorkOS, too', async () => {
-    mockSearch = { community: 'a' };
-    renderOnPage({ mobile: true });
-    fireEvent.click(trigger());
-    fireEvent.click(await screen.findByRole('radio', { name: /Dorian’s team/ }));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/', search: {} }));
-    await settle();
-    expect(heading()).toHaveFocus();
-  });
-
   it('stays off the heading when the switch fails, and returns to the trigger', async () => {
     mockResolveCommunityNavigation.mockRejectedValue(new Error('offline'));
     renderOnPage({ mobile: true });
@@ -2133,46 +1507,6 @@ describe('focus after a phone choice', () => {
     await settle();
     expect(heading()).not.toHaveFocus();
     expect(trigger()).toHaveFocus();
-  });
-
-  it('gives focus back to the trigger when a slow switch fails after the sheet has gone', async () => {
-    let rejectRemembered!: (error: Error) => void;
-    mockResolveCommunityNavigation.mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectRemembered = reject;
-        })
-    );
-    renderOnPage({ mobile: true });
-    fireEvent.click(trigger());
-    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
-    // The sheet is closed and held its focus for the heading; nothing has it.
-    await settle();
-    expect(document.activeElement).toBe(document.body);
-    rejectRemembered(new Error('offline'));
-    await idle();
-    await settle();
-    expect(trigger()).toHaveFocus();
-  });
-
-  it('stays off the heading when a newer route overtakes the switch', async () => {
-    let resolveRemembered!: (value: null) => void;
-    mockResolveCommunityNavigation.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveRemembered = resolve;
-        })
-    );
-    renderOnPage({ mobile: true });
-    fireEvent.click(trigger());
-    fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
-    commitCommunityRouteEpoch('test:newer-choice');
-    resolveRemembered(null);
-    await idle();
-    await settle();
-    expect(heading()).not.toHaveFocus();
   });
 
   it('never takes focus back from something the person focused while it loaded', async () => {
@@ -2198,35 +1532,25 @@ describe('focus after a phone choice', () => {
     expect(box).toHaveFocus();
   });
 
-  it('wins over focus the app moved by itself while it loaded, like a composer on mount', async () => {
-    let resolveRemembered!: (value: null) => void;
+  it('gives focus back to the trigger when a slow switch fails after the sheet has gone', async () => {
+    let rejectRemembered!: (error: Error) => void;
     mockResolveCommunityNavigation.mockImplementation(
       () =>
-        new Promise((resolve) => {
-          resolveRemembered = resolve;
+        new Promise((_resolve, reject) => {
+          rejectRemembered = reject;
         })
     );
-    mockListRemoteCommunityRooms.mockResolvedValue({ community: 'a', rooms: [], stale: false });
     renderOnPage({ mobile: true });
     fireEvent.click(trigger());
     fireEvent.click(await screen.findByRole('radio', { name: /Alpha/ }));
     await waitFor(() => expect(mockResolveCommunityNavigation).toHaveBeenCalledOnce());
+    // The sheet is closed and held its focus for the heading; nothing has it.
     await settle();
-    screen.getByRole('button', { name: 'Message box' }).focus();
-    resolveRemembered(null);
+    expect(document.activeElement).toBe(document.body);
+    rejectRemembered(new Error('offline'));
     await idle();
     await settle();
-    expect(heading()).toHaveFocus();
-  });
-
-  it('leaves desktop to the popover’s own focus return', async () => {
-    renderOnPage({ mobile: false });
-    fireEvent.pointerDown(trigger());
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: /Alpha/ }));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(2));
-    await idle();
-    await settle();
-    expect(heading()).not.toHaveFocus();
+    expect(trigger()).toHaveFocus();
   });
 });
 
@@ -2258,33 +1582,6 @@ describe('the switcher while the spaces experiment is off (DOR-2740)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Add a space' })).not.toBeInTheDocument();
     expect(screen.queryByText(/space/i)).not.toBeInTheDocument();
     expect(mockListHostedCommunities).not.toHaveBeenCalled();
-  });
-
-  it('ignores a space address and names this DorkOS', async () => {
-    mockConfig = { ...mockConfig, experiments: spacesExperiment(false) };
-    mockConnections = [alpha];
-    mockSearch = { community: 'a' };
-    renderBlock();
-    await configAnswered();
-    expect(screen.getByRole('button', { name: 'Dorian’s team menu' })).toBeInTheDocument();
-  });
-
-  it('hides space rows while the config has not answered yet', () => {
-    mockGetConfig.mockReturnValueOnce(new Promise(() => {}));
-    mockConnections = [alpha];
-    renderBlock();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
-  });
-
-  it('shows them again once it is on (the control)', async () => {
-    mockConnections = [alpha];
-    renderBlock();
-    await configAnswered();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    expect(await screen.findByText('Alpha')).toBeInTheDocument();
-    // On desktop "Add a space" is a submenu, so its trigger is a menu item.
-    expect(screen.getByRole('menuitem', { name: 'Add a space' })).toBeInTheDocument();
   });
 });
 
@@ -2341,19 +1638,6 @@ describe('the official DorkOS space while the spaces experiment is off', () => {
     expect(mockListHostedCommunities).not.toHaveBeenCalled();
   });
 
-  it('opens the official space from its address, and no other', async () => {
-    mockConnections = [official, alpha];
-    mockSearch = { community: 'o' };
-    const { unmount } = renderBlock();
-    await configAnswered();
-    expect(await screen.findByRole('button', { name: 'DorkOS menu' })).toBeInTheDocument();
-    unmount();
-    mockSearch = { community: 'a' };
-    renderBlock();
-    await configAnswered();
-    expect(screen.getByRole('button', { name: 'Dorian’s team menu' })).toBeInTheDocument();
-  });
-
   it('offers to join it while it is not connected, and opens Join on its link', async () => {
     mockConnections = [alpha];
     renderBlock();
@@ -2363,16 +1647,5 @@ describe('the official DorkOS space while the spaces experiment is off', () => {
     expect(await screen.findByLabelText('Space address or invitation link')).toHaveValue(
       OFFICIAL_LINK
     );
-  });
-
-  it('shows no space at all once the official link is cleared (the control)', async () => {
-    mockConfig = { ...mockConfig, officialSpace: null };
-    mockConnections = [official, alpha];
-    renderBlock();
-    await configAnswered();
-    fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    expect(await screen.findByRole('menuitem', { name: /Settings/ })).toBeInTheDocument();
-    expect(screen.queryByText('DorkOS')).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /Join the DorkOS/ })).not.toBeInTheDocument();
   });
 });

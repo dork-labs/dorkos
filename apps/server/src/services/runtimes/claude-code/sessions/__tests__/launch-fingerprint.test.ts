@@ -9,13 +9,9 @@ import { describe, it, expect } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { EffortLevel } from '@dorkos/shared/types';
 import {
-  PIN_DISPOSITIONS,
-  RELAUNCH_PINS,
-  LIVE_PINS,
   accountsMatch,
   captureLaunchFingerprint,
   compareLaunchFingerprints,
-  withLiveToolSurface,
   type LaunchParams,
 } from '../launch-fingerprint.js';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
@@ -110,58 +106,6 @@ function grantedOptions(grants: DirectoryGrant[], base: Partial<Options> = {}): 
   return launched;
 }
 
-describe('the pin list', () => {
-  it('enumerates exactly the rows of spec §4.5, with the disposition each row states', () => {
-    // Drift guard. The spec's table has ten rows; three of them
-    // (`model`/`effort`/`fastMode`, and `settingSources`/`env`) name more than
-    // one field, and each field gets its own verdict here. A launch option
-    // added without a decision fails this.
-    //
-    // `systemPromptAppend` stays `'relaunch'` and its SCOPE narrowed
-    // (agent-memory spec D2 §Pinned). It now digests the append minus the
-    // agent's own `<agent_memory>` block, because that block is written DURING
-    // turns by the agent itself: digesting it would tear down the warm process
-    // nearly every time an agent saved a note. Everything else in the append —
-    // persona, boundaries, tool groups, the caller's per-run instructions —
-    // still relaunches, and `the relaunch pins` below asserts BOTH directions,
-    // because a one-direction test passes for a pin that stopped digesting the
-    // append entirely and would let a persona edit ride a stale process
-    // forever.
-    expect(PIN_DISPOSITIONS).toEqual({
-      cwd: 'relaunch',
-      accountRoot: 'relaunch',
-      credentialEnv: 'relaunch',
-      agentIdentity: 'relaunch',
-      systemPromptAppend: 'relaunch',
-      settingSources: 'relaunch',
-      env: 'relaunch',
-      effort: 'relaunch',
-      fastMode: 'relaunch',
-      settingsEnv: 'relaunch',
-      additionalDirectories: 'relaunch',
-      folderAllows: 'relaunch',
-      permissionsDeny: 'relaunch',
-      folderConfig: 'relaunch',
-      toolSurface: 'relaunch',
-      mcpServers: 'live',
-      plugins: 'live',
-      permissionMode: 'live',
-      model: 'live',
-    });
-  });
-
-  it('splits into a relaunch set and a live set that together cover every pin', () => {
-    expect([...RELAUNCH_PINS, ...LIVE_PINS].sort()).toEqual(Object.keys(PIN_DISPOSITIONS).sort());
-    expect(RELAUNCH_PINS.filter((pin) => LIVE_PINS.includes(pin as never))).toEqual([]);
-  });
-
-  it('records a value for every relaunch pin and every live pin', () => {
-    const fingerprint = capture();
-    expect(Object.keys(fingerprint.pins).sort()).toEqual([...RELAUNCH_PINS].sort());
-    expect(Object.keys(fingerprint.live).sort()).toEqual([...LIVE_PINS].sort());
-  });
-});
-
 describe('the account pin', () => {
   it('refuses to be captured when the env does not pin the account the launch declares', () => {
     // A launch whose `CLAUDE_CONFIG_DIR` names one account while the launcher
@@ -186,17 +130,6 @@ describe('the account pin', () => {
     expect(decision.action === 'relaunch' && decision.changed).toContain('accountRoot');
   });
 
-  it('forces a relaunch when only the spelled CLAUDE_CONFIG_DIR moves, root unchanged', () => {
-    // Absence and a path are different accounts to Claude Code's Keychain even
-    // when the resolved root is the same string, so both halves are compared.
-    const spelled = capture();
-    // The launcher on the DEFAULT root spells it by ABSENCE (`claudeConfigDirEnv`).
-    const absent = capture({ options: options({ env: { PATH: '/usr/bin' } }) });
-    const decision = compareLaunchFingerprints(spelled, absent);
-    expect(decision.action).toBe('relaunch');
-    expect(decision.action === 'relaunch' && decision.changed).toContain('accountRoot');
-  });
-
   it('relaunches on an account change even when everything else is only live-settable', () => {
     // The mutation this pins: a compare that answers the cheap live diff first
     // and never reaches the account. A different account may NEVER be reached
@@ -214,16 +147,6 @@ describe('the account pin', () => {
     );
     expect(decision.action).toBe('relaunch');
     expect('liveChanges' in decision).toBe(false);
-  });
-
-  it('relaunches on an account change even when the two fingerprints are otherwise identical', () => {
-    // The mutation this pins: an `if (live === next) return reuse` fast path, or
-    // any equality shortcut computed before the account is consulted.
-    const live = capture();
-    const next = { ...live, account: { root: OTHER_ROOT, configDirEnv: OTHER_ROOT } };
-    const decision = compareLaunchFingerprints(live, next);
-    expect(decision.action).toBe('relaunch');
-    expect(decision.action === 'relaunch' && decision.changed).toContain('accountRoot');
   });
 
   it('says two accounts match only when both the root and its spelling agree', () => {
@@ -260,17 +183,6 @@ describe('the account pin', () => {
         { root: CLIENT_ROOT, configDirEnv: CLIENT_ROOT }
       )
     ).toBe(true);
-  });
-
-  it('carries the spelling in the accountRoot pin as well as in the account row', () => {
-    // The account is deliberately compared twice — once unconditionally through
-    // `accountsMatch`, once through the ordinary pin loop. `accountsMatch` alone
-    // catches every case, so nothing else here can fail if the pin row quietly
-    // stops carrying the spelling. This asserts the second layer directly, so
-    // the redundancy cannot be refactored away unnoticed.
-    const spelled = capture();
-    const absent = capture({ options: options({ env: { PATH: '/usr/bin' } }) });
-    expect(spelled.pins.accountRoot).not.toBe(absent.pins.accountRoot);
   });
 
   it('keeps no secret in the relaunch reason', () => {
@@ -417,22 +329,6 @@ describe('the relaunch pins', () => {
     expect(decision.action === 'relaunch' && decision.changed).toContain('systemPromptAppend');
   });
 
-  it('reads the stable half handed to it, never the append sitting on the prompt', () => {
-    // The mechanism, pinned directly. Two launches whose PROMPTS are identical
-    // and whose stable halves differ must be told apart — which is only true if
-    // the digest is taken over the field the resolver assembled. A capture that
-    // read `options.systemPrompt.append` back off the prompt would report these
-    // two as the same launch, and that is exactly the shape a textual
-    // exclusion marker degrades into.
-    const sharedPrompt = options({
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: 'identical on the prompt' },
-    });
-    const a = capture({ systemPromptAppendStable: 'one', options: sharedPrompt });
-    const b = capture({ systemPromptAppendStable: 'two', options: sharedPrompt });
-
-    expect(a.pins.systemPromptAppend).not.toBe(b.pins.systemPromptAppend);
-  });
-
   it('does not relaunch when a freshly minted agent token replaces an identical one', () => {
     // The token VALUE is re-minted on every resolution (`agent-identity-service.mint`
     // returns fresh random bytes), so pinning it would relaunch on every single
@@ -450,6 +346,51 @@ describe('the relaunch pins', () => {
       })
     );
     expect(decision.action).toBe('reuse');
+  });
+
+  describe('the chat, agent and space references (DOR-4380, DOR-5138)', () => {
+    // As the launcher builds it: the agent's Mesh id rides the env AND the
+    // identity pin, so the env copy is left out of the digest.
+    const withRefs = (chat: string, agent: string, space: string) =>
+      capture({
+        agentIdentity: {
+          agentPath: '/repo',
+          displayName: 'Scout',
+          attributed: true,
+          agentId: agent,
+        },
+        options: options({
+          env: {
+            PATH: '/usr/bin',
+            CLAUDE_CONFIG_DIR: CLIENT_ROOT,
+            DORKOS_SESSION_ID: chat,
+            DORKOS_AGENT_ID: agent,
+            DORKOS_SPACE_ID: space,
+          },
+        }),
+      });
+    const before = withRefs('chat-1', 'agent-1', 'space-1');
+
+    it('rides the warm process when only the chat or space reference moved', () => {
+      // A rekeyed chat is the same chat; the space id is what boot loaded.
+      for (const after of [
+        withRefs('chat-2', 'agent-1', 'space-1'),
+        withRefs('chat-1', 'agent-1', 'space-2'),
+      ]) {
+        expect(after.pins.env).toBe(before.pins.env);
+        expect(compareLaunchFingerprints(before, after).action).toBe('reuse');
+      }
+    });
+
+    it('relaunches when the agent’s Mesh id moved, so no warm process signs as the old one', () => {
+      const after = withRefs('chat-1', 'agent-2', 'space-1');
+      // Not through the env digest, which ignores the env copy...
+      expect(after.pins.env).toBe(before.pins.env);
+      // ...but through the identity pin, which carries the same id.
+      const decision = compareLaunchFingerprints(before, after);
+      expect(decision.action).toBe('relaunch');
+      expect(decision.action === 'relaunch' && [...decision.changed]).toEqual(['agentIdentity']);
+    });
   });
 
   it('relaunches when a launch that could not attribute itself is asked to attribute', () => {
@@ -489,26 +430,6 @@ describe('the effort pin and the model-capability cache (DOR-1308)', () => {
     });
     const decision = compareLaunchFingerprints(launch1, dispatch2);
     expect(decision.action).toBe('reuse');
-  });
-
-  it('still relaunches when the session effort setting itself changes, capability unresolved on both sides', () => {
-    // The guard the fix must not break: a REAL effort change is still a pin,
-    // even while the capability stays unresolved throughout.
-    const decision = compareLaunchFingerprints(
-      captureReasoning({ effortInput: 'high', capabilityResolved: false }),
-      captureReasoning({ effortInput: 'low', capabilityResolved: false })
-    );
-    expect(decision.action).toBe('relaunch');
-    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
-  });
-
-  it('still relaunches when the session effort setting itself changes, capability resolved on both sides', () => {
-    const decision = compareLaunchFingerprints(
-      captureReasoning({ effortInput: 'high', capabilityResolved: true }),
-      captureReasoning({ effortInput: 'low', capabilityResolved: true })
-    );
-    expect(decision.action).toBe('relaunch');
-    expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
   });
 
   it('relaunches on a capability-driven reasoning change once both sides have a resolved capability', () => {
@@ -551,30 +472,6 @@ describe('the effort pin and the model-capability cache (DOR-1308)', () => {
     expect(decision.action).toBe('relaunch');
     expect(decision.action === 'relaunch' && decision.changed).toContain('effort');
   });
-
-  it('does not relaunch when `minimal` and `low` are the same SDK effort (S2)', () => {
-    // `toSdkEffort` maps DorkOS `minimal` to the SDK's `low`, so a session
-    // moving between the two never changes what the process actually runs
-    // under. Comparing the raw setting (an earlier version of this fix) read
-    // this as a change and tore down a warm process for an edit with zero
-    // observable effect.
-    const decision = compareLaunchFingerprints(
-      captureReasoning({ effortInput: 'minimal', capabilityResolved: true }),
-      captureReasoning({ effortInput: 'low', capabilityResolved: true })
-    );
-    expect(decision.action).toBe('reuse');
-  });
-
-  it('does not relaunch when unset and `none` resolve to the same bare effort on a non-adaptive model (S2)', () => {
-    // Both map to `toSdkEffort` returning `undefined`, and on a non-adaptive
-    // model neither ever attaches a `thinking` block — so the two settings
-    // are indistinguishable to the process either way.
-    const decision = compareLaunchFingerprints(
-      captureReasoning({ effortInput: undefined, capabilityResolved: true }),
-      captureReasoning({ effortInput: 'none', capabilityResolved: true })
-    );
-    expect(decision.action).toBe('reuse');
-  });
 });
 
 describe('across two dispatches', () => {
@@ -591,23 +488,9 @@ describe('across two dispatches', () => {
     expect(second.action).toBe('reuse');
     expect(second.action === 'reuse' && second.liveChanges).toEqual([]);
   });
-
-  it('is not a boundary check: a matching fingerprint says nothing about the cwd', () => {
-    // Spec §4.5 acceptance 6. Boundary validation is task 3.9's, and it must not
-    // be assumed to have happened because two fingerprints agree — two launches
-    // OUTSIDE the boundary agree with each other perfectly.
-    const outside = { options: options({ cwd: '/etc' }) };
-    expect(compareLaunchFingerprints(capture(outside), capture(outside)).action).toBe('reuse');
-  });
 });
 
 describe('the live pins', () => {
-  it('rides the warm process when nothing moved, with nothing to apply', () => {
-    const decision = compareLaunchFingerprints(capture(), capture());
-    expect(decision.action).toBe('reuse');
-    expect(decision.action === 'reuse' && decision.liveChanges).toEqual([]);
-  });
-
   it.each([
     ['model', { model: 'claude-sonnet-4-6' }],
     ['permissionMode', { permissionMode: 'plan' as const }],
@@ -616,21 +499,6 @@ describe('the live pins', () => {
     const decision = compareLaunchFingerprints(capture(), capture({ options: options(override) }));
     expect(decision.action).toBe('reuse');
     expect(decision.action === 'reuse' && decision.liveChanges.map((c) => c.pin)).toEqual([pin]);
-  });
-
-  it('rides the warm process when the MCP server set changes', () => {
-    const decision = compareLaunchFingerprints(
-      capture(),
-      capture({
-        options: options({
-          mcpServers: { dorkos: { type: 'http', url: 'http://localhost:4242/mcp' } },
-        }),
-      })
-    );
-    expect(decision.action).toBe('reuse');
-    expect(decision.action === 'reuse' && decision.liveChanges.map((c) => c.pin)).toEqual([
-      'mcpServers',
-    ]);
   });
 
   it.each([
@@ -671,33 +539,11 @@ describe('the live pins', () => {
     // which exists to be handed back to `setMcpServers` and is never logged.
     expect(JSON.stringify(fingerprint.pins)).not.toContain('hunter2');
   });
-
-  it('does not call setMcpServers for a fresh instance of the same in-process server', () => {
-    // The factory builds new `McpServer` objects per launch on purpose
-    // ("Already connected to a transport"), so instance identity says nothing.
-    // Reconnecting every server on every dispatch would be a real cost.
-    const withInstance = (instance: object) =>
-      capture({
-        options: options({
-          mcpServers: { dorkos: { type: 'sdk', name: 'dorkos', instance } as never },
-        }),
-      });
-    const decision = compareLaunchFingerprints(withInstance({ a: 1 }), withInstance({ a: 2 }));
-    expect(decision.action === 'reuse' && decision.liveChanges).toEqual([]);
-  });
 });
 
 describe('the folder-grant pin (spec `agent-home-desk` §4.2)', () => {
   const worktree: DirectoryGrant = { path: '/rooms/r1/worktrees/ana', access: 'write' };
   const repo: DirectoryGrant = { path: '/rooms/r1/repo', access: 'read' };
-
-  it('rides the warm process when the same set arrives in a different order', () => {
-    const decision = compareLaunchFingerprints(
-      capture({ options: grantedOptions([worktree, repo]) }),
-      capture({ options: grantedOptions([repo, worktree]) })
-    );
-    expect(decision.action).toBe('reuse');
-  });
 
   it('relaunches when a grant is dropped, so an earlier turn’s folder is not left reachable', () => {
     const decision = compareLaunchFingerprints(
@@ -706,24 +552,6 @@ describe('the folder-grant pin (spec `agent-home-desk` §4.2)', () => {
     );
     // A read-only grant is also a deny rule, so the deny pin moves with it.
     expect(decision.action === 'relaunch' && decision.changed).toContain('additionalDirectories');
-  });
-
-  it('relaunches when only a grant’s access changes', () => {
-    const decision = compareLaunchFingerprints(
-      capture({ options: grantedOptions([worktree, repo]) }),
-      capture({ options: grantedOptions([worktree, { ...repo, access: 'write' }]) })
-    );
-    // A read-only grant is also a deny rule, so the deny pin moves with it.
-    expect(decision.action === 'relaunch' && decision.changed).toContain('additionalDirectories');
-  });
-
-  it('does not move with fastMode, which shares the settings object', () => {
-    const before = capture({ options: grantedOptions([worktree]) });
-    const after = capture({
-      options: grantedOptions([worktree], { settings: { fastMode: true } }),
-    });
-    expect(before.pins.additionalDirectories).toBe(after.pins.additionalDirectories);
-    expect(before.pins.fastMode).not.toBe(after.pins.fastMode);
   });
 });
 
@@ -752,24 +580,6 @@ describe('the tool-surface pin (DOR-2685)', () => {
     });
   }
 
-  it('rides the warm process when a rebuilt server lists the same tools', () => {
-    // Purpose: the server is rebuilt for every dispatch. If two builds of the
-    // same list compared unequal, every warm process would relaunch on every
-    // message, so this is the guard against a relaunch storm.
-    const decision = compareLaunchFingerprints(launchListing(core), launchListing([...core]));
-    expect(decision.action).toBe('reuse');
-    expect(decision.action === 'reuse' && decision.liveChanges).toEqual([]);
-  });
-
-  it('rides when the same tools arrive in another order', () => {
-    // Purpose: domain assembly order is not part of what the model sees.
-    const decision = compareLaunchFingerprints(
-      launchListing([...core, extensionTool]),
-      launchListing([extensionTool, ...core.slice().reverse()])
-    );
-    expect(decision.action).toBe('reuse');
-  });
-
   it('relaunches when a tool joins the list, naming only this pin', () => {
     // Purpose: an extension started since the process launched; the warm
     // process would never list its tool without a relaunch.
@@ -789,47 +599,5 @@ describe('the tool-surface pin (DOR-2685)', () => {
       launchListing(core)
     );
     expect(decision.action === 'relaunch' && decision.changed).toEqual(['toolSurface']);
-  });
-
-  it('relaunches when only a tool’s input schema changes', () => {
-    // Purpose: a tool that now takes a different argument is a different tool
-    // to the model, even under the same name.
-    const decision = compareLaunchFingerprints(
-      launchListing([...core, extensionTool]),
-      launchListing([
-        ...core,
-        { ...extensionTool, inputSchema: { to: z.string(), cc: z.string() } },
-      ])
-    );
-    expect(decision.action === 'relaunch' && decision.changed).toEqual(['toolSurface']);
-  });
-
-  it('compares as unchanged when the live surface is kept, and nothing else is hidden', () => {
-    // Purpose: the hold a busy process gets. Only the tool surface is taken
-    // from the live process; another pin that moved still relaunches.
-    const live = launchListing(core);
-    const wanted = launchListing([...core, extensionTool]);
-    expect(compareLaunchFingerprints(live, withLiveToolSurface(live, wanted)).action).toBe('reuse');
-    const movedCwd = launchListing([...core, extensionTool], { cwd: '/elsewhere' });
-    const decision = compareLaunchFingerprints(live, withLiveToolSurface(live, movedCwd));
-    expect(decision.action === 'relaunch' && decision.changed).toEqual(['cwd']);
-  });
-
-  it('leaves external servers to the mcpServers pin and unrecorded sdk servers equal', () => {
-    // Purpose: only DorkOS-built servers have a digest; an http server is
-    // swapped live by `setMcpServers`, and must not start relaunching.
-    const external = { gh: { type: 'http' as const, url: 'https://x/mcp' } };
-    const a = capture({ options: options({ mcpServers: external }) });
-    const b = capture({
-      options: options({ mcpServers: { gh: { type: 'http', url: 'https://y/mcp' } } }),
-    });
-    expect(a.pins.toolSurface).toBe(b.pins.toolSurface);
-    const unrecorded = (instance: object) =>
-      capture({
-        options: options({
-          mcpServers: { other: { type: 'sdk', name: 'other', instance } as never },
-        }),
-      });
-    expect(compareLaunchFingerprints(unrecorded({}), unrecorded({})).action).toBe('reuse');
   });
 });

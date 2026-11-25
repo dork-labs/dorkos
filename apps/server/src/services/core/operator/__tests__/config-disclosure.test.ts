@@ -254,6 +254,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
             label: null,
             color: null,
             noAutoMove: true,
+            agentsMayPick: true,
           },
         ],
         defaultAccountColor: '#0d9488',

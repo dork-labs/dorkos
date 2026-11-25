@@ -33,8 +33,11 @@ const packageOf = (specifier) =>
     .slice(0, specifier.startsWith('@') ? 2 : 1)
     .join('/');
 
-/** Each import, export-from and literal `import()` in a file, with whether it is type-only. */
-function importsOf(visit) {
+/**
+ * Each import, export-from and literal `import()` in a file, with whether it is type-only.
+ * Shared with `work-graph-boundary.js`, so both boundaries see the same import forms.
+ */
+export function importsOf(visit) {
   const each = (node) => {
     if (node.source?.type === 'Literal' && typeof node.source.value === 'string')
       visit(

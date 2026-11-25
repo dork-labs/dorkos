@@ -529,7 +529,11 @@ describe('the workflows take the text-only lane on a pull request only', () => {
     }
   });
 
-  it('runs browser-smoke, and its fan-in check, only on a pull request', () => {
+  it('runs browser-smoke, and its fan-in check, only on a non-release pull request or a queue entry', () => {
+    // DOR-5130: the merge queue runs the smoke shards too; the text-only lane
+    // stays PR-only (its step answers `full` for a merge group, above), so a
+    // queue entry reaches the smoke on `full` or, from the no-browser lane,
+    // `none`. A pull request into release/ still gets the full suite instead.
     const code = workflowCode('browser-test.yml');
     const smoke = code
       .split('\n')
@@ -537,9 +541,8 @@ describe('the workflows take the text-only lane on a pull request only', () => {
     expect(smoke).toHaveLength(2);
     for (const line of smoke) {
       expect(line).toContain(
-        "github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/')"
+        "((github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/')) || github.event_name == 'merge_group') && needs.text-only-scope.outputs.browser != 'none'"
       );
-      expect(line).not.toContain('merge_group');
     }
   });
 

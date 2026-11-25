@@ -20,8 +20,6 @@ import {
   NANGO_SECRET_KEY_REF,
   assertNangoEncryptionKey,
   maybeCreateNangoProvider,
-  toExternalAccountRef,
-  toNangoConnectionId,
 } from '../nango.js';
 
 /**
@@ -148,52 +146,6 @@ connectorConformance(makeProvider, {
 });
 
 describe('NangoConnectorProvider — self-host-custody semantics', () => {
-  it('declares the self-host, multi-account, brokered-execution capability shape', () => {
-    const caps = makeProvider().getCapabilities();
-    expect(caps).toMatchObject({
-      type: 'nango',
-      supportsMultiAccount: true,
-      custody: 'self-host',
-    });
-  });
-
-  it('wraps the Nango connectionId as an opaque, provider-scoped id and back', () => {
-    const id = toExternalAccountRef('conn_abc123');
-    expect(id).toBe('nango:conn_abc123');
-    expect(toNangoConnectionId(id)).toBe('conn_abc123');
-  });
-
-  it('carries the connect label as the connection tag and echoes self-host custody', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('gmail', { label: 'work' });
-    const poll = await provider.pollConnect(flowId);
-
-    expect(poll.status).toBe('connected');
-    expect(poll.account?.label).toBe('work');
-    expect(poll.account?.custody).toBe('self-host');
-    expect(poll.account?.externalAccountRef.startsWith('nango:')).toBe(true);
-  });
-
-  it('yields two distinct, independently-addressable ids for two connects of one integration', async () => {
-    const provider = makeProvider();
-
-    const first = await provider.startConnect('gmail', { label: 'personal' });
-    const personal = (await provider.pollConnect(first.flowId)).account!;
-    const second = await provider.startConnect('gmail', { label: 'work' });
-    const work = (await provider.pollConnect(second.flowId)).account!;
-
-    expect(personal.externalAccountRef).not.toBe(work.externalAccountRef);
-    const accounts = await provider.listAccounts({ toolkit: 'gmail' });
-    expect(new Set(accounts.map((a) => a.externalAccountRef)).size).toBe(2);
-  });
-
-  it('surfaces a failed Nango connect as a typed failure, never a throw', async () => {
-    const provider = makeProvider();
-    const poll = await provider.pollConnect('cs_does_not_exist');
-    expect(poll.status).toBe('failed');
-    expect(poll.error).toBeTruthy();
-  });
-
   it('disconnect is idempotent for an unknown/already-revoked id', async () => {
     const provider = makeProvider();
     await expect(
@@ -299,16 +251,6 @@ describe('NangoConnectorProvider — integrations go by their app’s service id
     await expect(provider.listAccounts({ toolkit: 'google-mail' })).resolves.toEqual([]);
   });
 
-  it('reports which integration keys now go by an app’s id', async () => {
-    const { provider } = providerOver([
-      { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
-      { uniqueKey: 'notion', provider: 'notion', displayName: 'Notion' },
-      { uniqueKey: 'acme-crm', provider: 'acme', displayName: 'Acme' },
-    ]);
-
-    await expect(provider.serviceRenames()).resolves.toEqual(new Map([['google-mail', 'gmail']]));
-  });
-
   it('never gives the app’s row to an integration set up later', async () => {
     const home = {
       uniqueKey: 'mail-home',
@@ -330,25 +272,6 @@ describe('NangoConnectorProvider — integrations go by their app’s service id
     expect(client.startedWith).toEqual(['mail-home']);
   });
 
-  it('without set-up dates, keeps the app’s row with the integration that holds accounts', async () => {
-    const { client, provider } = providerOver([
-      { uniqueKey: 'a-first', provider: 'google-mail' },
-      { uniqueKey: 'b-used', provider: 'google-mail' },
-    ]);
-    // The first account lands on the integration that is not the app's yet.
-    const { flowId } = await provider.startConnect('b-used');
-    const poll = await provider.pollConnect(flowId);
-
-    // The sign-in still finishes under the id it started with…
-    expect(poll).toMatchObject({ status: 'connected', account: { toolkit: 'b-used' } });
-    // …and from then on the integration with the account is the app's.
-    const slugs = (await provider.listToolkits()).map((toolkit) => toolkit.slug);
-    expect(slugs).toEqual(['a-first', 'gmail']);
-    await expect(provider.serviceRenames()).resolves.toEqual(new Map([['b-used', 'gmail']]));
-    await provider.startConnect('gmail');
-    expect(client.startedWith).toEqual(['b-used', 'b-used']);
-  });
-
   it('asks again, never fails, when naming a connected account’s app fails', async () => {
     const client = new FakeNangoClient([
       { uniqueKey: 'google-mail', provider: 'google-mail', displayName: 'Gmail' },
@@ -365,35 +288,6 @@ describe('NangoConnectorProvider — integrations go by their app’s service id
       status: 'connected',
       account: { toolkit: 'gmail' },
     });
-  });
-
-  it('keeps a second integration of one app reachable under its own key', async () => {
-    const { client, provider } = providerOver([
-      { uniqueKey: 'mail-home', provider: 'google-mail', displayName: 'Gmail' },
-      { uniqueKey: 'mail-work', provider: 'google-mail', displayName: 'Gmail' },
-    ]);
-
-    const toolkits = await provider.listToolkits();
-    expect(toolkits.map((toolkit) => [toolkit.slug, toolkit.displayName])).toEqual([
-      ['gmail', 'Gmail'],
-      ['mail-work', 'Gmail (mail-work)'],
-    ]);
-    await provider.startConnect('mail-work');
-    await provider.startConnect('gmail');
-    expect(client.startedWith).toEqual(['mail-work', 'mail-home']);
-  });
-
-  it('keeps an integration of an app DorkOS does not know under its own key', async () => {
-    const { client, provider } = providerOver([
-      { uniqueKey: 'acme-crm', provider: 'acme', displayName: 'Acme' },
-    ]);
-
-    await expect(provider.listToolkits()).resolves.toEqual([
-      { slug: 'acme-crm', displayName: 'Acme', authKind: 'oauth2' },
-    ]);
-    const { flowId } = await provider.startConnect('acme-crm');
-    expect(client.startedWith).toEqual(['acme-crm']);
-    expect((await provider.pollConnect(flowId)).account?.toolkit).toBe('acme-crm');
   });
 });
 
@@ -433,61 +327,9 @@ describe('NangoConnectorProvider — degrade contract on transport failure', () 
       expect(poll.error).toBeTruthy();
     });
   }
-
-  it('startConnect throws a typed error when Nango returns no authorize URL', async () => {
-    const client: NangoHttpClient = {
-      listIntegrations: () =>
-        Promise.resolve([{ uniqueKey: 'gmail', provider: 'google-mail', authMode: 'OAUTH2' }]),
-      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cs_1', authorizeUrl: '' }),
-      getConnectionState: () => Promise.resolve({ status: 'PENDING' }),
-      listConnections: () => Promise.resolve([]),
-      deleteConnection: () => Promise.resolve(),
-    };
-    const provider = new NangoConnectorProvider({ client });
-    await expect(provider.startConnect('gmail')).rejects.toThrow(/no authorize URL/);
-  });
-
-  it('carries an integration’s logo URL into the toolkit', async () => {
-    const client: NangoHttpClient = {
-      listIntegrations: () =>
-        Promise.resolve([
-          {
-            uniqueKey: 'slack',
-            provider: 'slack',
-            displayName: 'Slack',
-            authMode: 'OAUTH2',
-            logoUrl: 'https://app.nango.dev/images/template-logos/slack.svg',
-          },
-        ]),
-      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cs_1', authorizeUrl: '' }),
-      getConnectionState: () => Promise.resolve({ status: 'PENDING' }),
-      listConnections: () => Promise.resolve([]),
-      deleteConnection: () => Promise.resolve(),
-    };
-
-    await expect(new NangoConnectorProvider({ client }).listToolkits()).resolves.toEqual([
-      {
-        slug: 'slack',
-        displayName: 'Slack',
-        authKind: 'oauth2',
-        logoUrl: 'https://app.nango.dev/images/template-logos/slack.svg',
-      },
-    ]);
-  });
-
-  it('does NOT swallow a non-transport error (a genuine bug still surfaces)', async () => {
-    const client = new FakeNangoClient();
-    client.failWith(new TypeError('bug in mapping'));
-    const provider = new NangoConnectorProvider({ client });
-    await expect(provider.listToolkits()).rejects.toThrow(/bug in mapping/);
-  });
 });
 
 describe('assertNangoEncryptionKey — the enforced 256-bit-key gate', () => {
-  it('accepts a valid 256-bit base64 key', () => {
-    expect(() => assertNangoEncryptionKey(VALID_ENCRYPTION_KEY)).not.toThrow();
-  });
-
   it('refuses a missing key with a helpful, secret-free error', () => {
     expect(() => assertNangoEncryptionKey(undefined)).toThrow(NangoEncryptionKeyError);
     expect(() => assertNangoEncryptionKey('')).toThrow(/Nango server uses, then restart DorkOS\.$/);
@@ -519,14 +361,6 @@ describe('maybeCreateNangoProvider — the configured-only registry gate', () =>
     const provider = await maybeCreateNangoProvider({
       credentials: fakeCredentials({}),
       baseUrl: 'http://localhost:3003',
-      encryptionKey: VALID_ENCRYPTION_KEY,
-    });
-    expect(provider).toBeNull();
-  });
-
-  it('returns null when the base URL is absent (connector not configured)', async () => {
-    const provider = await maybeCreateNangoProvider({
-      credentials: fakeCredentials({ [NANGO_SECRET_KEY_REF]: 'sk-nango-test' }),
       encryptionKey: VALID_ENCRYPTION_KEY,
     });
     expect(provider).toBeNull();

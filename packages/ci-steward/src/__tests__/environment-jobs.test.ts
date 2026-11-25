@@ -153,9 +153,13 @@ describe('checkEnvironmentJobs on the real workflows', () => {
       );
     expect(uses.map(([n]) => n).sort()).toEqual([
       'auto-revert.yml',
+      'daily-release.yml',
+      'daily-release.yml',
       'dependabot-lockfile-repair.yml',
+      'queue-reentry.yml',
       'queue-repeat-guard.yml',
       'review-redispatch.yml',
+      'rolling-bisect.yml',
     ]);
     expect(new Set(uses.map(([, ref]) => ref))).toEqual(new Set([APP_TOKEN_SHA]));
   });

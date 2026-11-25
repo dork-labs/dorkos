@@ -133,6 +133,18 @@ describe('reading a chat and a start', () => {
     });
   });
 
+  it('never counts a chat another chat already holds as one the item started (DOR-3690)', () => {
+    const running = {
+      sessionId: 'other-chat',
+      status: 'already-running',
+      note: 'Already running: [Lane](/session?session=other-chat).',
+    };
+    expect(startResultFrom(answer(running), 'acct')).toEqual({
+      kind: 'refused',
+      message: running.note,
+    });
+  });
+
   it('ends the item on any other refusal', () => {
     expect(
       startResultFrom(answer({ code: 'OUTSIDE_BOUNDARY', error: 'Not there.' }, true), null)

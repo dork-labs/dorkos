@@ -39,6 +39,7 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** No ngrok token reaches any server here, whatever this shell exports. */
 const NO_TUNNEL = { NGROK_AUTHTOKEN: '' };
@@ -50,10 +51,12 @@ const BASE_ENV = { ...NO_TUNNEL, ...OFFICIAL_SPACE };
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NO_STORE = { 'cache-control': 'no-store' };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const UNAVAILABLE = { available: false };
 const NOT_LINKED = { ok: false, message: 'This instance is not linked to a DorkOS account.' };
 const SPACE_NOT_LINKED = { ok: false, message: 'This DorkOS is not linked to a DorkOS account.' };
@@ -233,12 +236,12 @@ contractSuite(
       expect: { status: 200, body: NOT_LINKED },
     },
     {
-      name: 'POST /api/cloud/seats/:seatId/assign answers malformed JSON as a 500',
+      name: 'POST /api/cloud/seats/:seatId/assign answers malformed JSON as a 400',
       method: 'POST',
       path: '/api/cloud/seats/seat-1/assign',
       headers: { 'content-type': 'application/json' },
       body: '{"subject":',
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 400, schema: MALFORMED_JSON },
     },
     {
       name: 'POST /api/cloud/billing/:page refuses an agent before naming the page',
@@ -415,11 +418,10 @@ contractSuite(
       headers: { origin: 'https://evil.example.com' },
       expect: {
         status: 403,
-        body: {
-          error:
-            'This instance does not answer to pages from "https://evil.example.com". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
-          code: 'ORIGIN_NOT_ALLOWED',
-        },
+        body: problemBody('origin_not_allowed', {
+          detail:
+            'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+        }),
       },
     },
     // hosted spaces, with spaces off and an official space configured

@@ -14,7 +14,6 @@ import type {
   StoredSessionSettingsResponse,
   HistoryRead,
   TaskItem,
-  SessionLockedError,
   ReloadPluginsResult,
   AlwaysAllowBreadth,
 } from '@dorkos/shared/types';
@@ -50,6 +49,7 @@ import {
   parsePendingInteractionsResponse,
   parseRecentSessionsResponse,
 } from './tolerant-session-frames';
+import { responseError, type ResponseError } from '../response-error';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS: an approval or a question waits on a person, and the
@@ -70,6 +70,23 @@ const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 // hang would leave the composer stuck AND wedge every message queued behind it.
 // The bound is what guarantees the "reset on settle" the chain relies on.
 const MESSAGE_TRIGGER_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * The error a refused trigger rejects with. A chat still busy with a reply
+ * (`session_locked`) also carries who holds it and since when, from the
+ * problem document's `lockedBy` and `lockedAt`.
+ *
+ * @param response - The failed response; its body is consumed.
+ */
+async function sessionLockedError(response: Response): Promise<ResponseError> {
+  const error = await responseError(response, `HTTP ${response.status}`);
+  if (error.code !== 'session_locked') return error;
+  const held = error.body as { lockedBy?: unknown; lockedAt?: unknown } | undefined;
+  return Object.assign(error, {
+    lockedBy: typeof held?.lockedBy === 'string' ? held.lockedBy : 'unknown',
+    lockedAt: typeof held?.lockedAt === 'string' ? held.lockedAt : '',
+  });
+}
 
 /**
  * Create all session-related methods bound to a base URL.
@@ -179,7 +196,7 @@ export function createSessionMethods(
      * The HTTP transport does not know the active session's runtime at
      * invocation time, so this returns a concrete `ClaudePluginTransport` for
      * any sessionId. The server route rejects non-Claude runtimes with a 501
-     * (`NOT_SUPPORTED`) and callers should still gate on `supportsPlugins`.
+     * (`not_supported`) and callers should still gate on `supportsPlugins`.
      */
     asClaudePluginTransport(sessionId: string): ClaudePluginTransport {
       return {
@@ -224,8 +241,7 @@ export function createSessionMethods(
       }
 
       if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(error.error || `HTTP ${res.status}`);
+        throw await responseError(res);
       }
 
       const data = (await res.json()) as HistoryRead;
@@ -282,22 +298,10 @@ export function createSessionMethods(
         // before starting this session" is actionable; "HTTP 400" is a dead end
         // with a Retry button under it that can only fail the same way. The
         // status is the fallback for a body that carried no reason.
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          code?: string;
-        };
         // The code and body ride along, as `fetchJSON`'s errors carry them: a
-        // refusal such as `AGENT_PAUSED` names what the app can offer instead
+        // refusal such as `agent_paused` names what the app can offer instead
         // of Retry (spec `audit-trail` PR5).
-        const failure = new Error(body.error || `HTTP ${response.status}`) as Error & {
-          code?: string;
-          status?: number;
-          body?: unknown;
-        };
-        failure.code = body.code;
-        failure.status = response.status;
-        failure.body = body;
-        throw failure;
+        throw await responseError(response, `HTTP ${response.status}`);
       }
 
       // Trigger-only, accept-only contract: the turn (or the queue place) is
@@ -366,7 +370,7 @@ export function createSessionMethods(
      * `POST /sessions/:id/command-intents/:intent`. Trigger-only (202), mirroring
      * {@link postMessage}: the compaction is delivered out-of-band over `/events`
      * and the 202 body carries the SDK-canonical id. Throws a typed
-     * `SESSION_LOCKED` error on 409 when a turn is already running. Trailing
+     * `session_locked` error on 409 when a turn is already running. Trailing
      * instructions (e.g. `/compact focus on the API changes`) ride the JSON body.
      *
      * Bounded by `COMMAND_INTENT_REQUEST_TIMEOUT_MS` — the same 30s `fetchJSON`
@@ -400,17 +404,7 @@ export function createSessionMethods(
       });
 
       if (!response.ok) {
-        if (response.status === 409) {
-          const errorData = (await response.json().catch(() => null)) as SessionLockedError | null;
-          if (errorData?.code === 'SESSION_LOCKED') {
-            const error = new Error('Session locked') as Error & SessionLockedError;
-            error.code = 'SESSION_LOCKED';
-            error.lockedBy = errorData.lockedBy;
-            error.lockedAt = errorData.lockedAt;
-            throw error;
-          }
-        }
-        throw new Error(`HTTP ${response.status}`);
+        throw await sessionLockedError(response);
       }
 
       const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
@@ -424,7 +418,7 @@ export function createSessionMethods(
      * (spec gen-ui-tier1 §3). Trigger-only, identical to `postMessage`: the
      * server injects a `<ui_action>` block as the next user turn, the 202 body
      * carries the canonical session id, and the turn streams over `/events`.
-     * Throws a typed `SESSION_LOCKED` error on 409 when a turn is running.
+     * Throws a typed `session_locked` error on 409 when a turn is running.
      */
     async sendUiAction(sessionId: string, action: UiActionRequest): Promise<{ sessionId: string }> {
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/ui-action`, {
@@ -438,17 +432,7 @@ export function createSessionMethods(
       });
 
       if (!response.ok) {
-        if (response.status === 409) {
-          const errorData = (await response.json().catch(() => null)) as SessionLockedError | null;
-          if (errorData?.code === 'SESSION_LOCKED') {
-            const error = new Error('Session locked') as Error & SessionLockedError;
-            error.code = 'SESSION_LOCKED';
-            error.lockedBy = errorData.lockedBy;
-            error.lockedAt = errorData.lockedAt;
-            throw error;
-          }
-        }
-        throw new Error(`HTTP ${response.status}`);
+        throw await sessionLockedError(response);
       }
 
       // Trigger-only contract, identical to postMessage: the turn streams over

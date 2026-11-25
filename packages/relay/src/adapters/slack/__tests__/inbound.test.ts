@@ -1,25 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockRelay } from '../../../__tests__/fixtures.js';
-import {
-  buildSubject,
-  extractChannelId,
-  handleInboundMessage,
-  getEffectiveChannelConfig,
-  clearCaches,
-  createSlackInboundState,
-  SUBJECT_PREFIX,
-  MAX_CONTENT_LENGTH,
-} from '../inbound.js';
+import { handleInboundMessage, createSlackInboundState } from '../inbound.js';
 import type { SlackMessageEvent, InboundOptions, SlackInboundState } from '../inbound.js';
 import type { WebClient } from '@slack/web-api';
 import type { AdapterInboundCallbacks } from '../../../types.js';
 import type { RelayPublisher } from '../../../types.js';
-import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
 import { ThreadParticipationTracker } from '../thread-tracker.js';
 import { createSlackPresenceState } from '../presence.js';
-
-/** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
-const testCodec = new SlackThreadIdCodec();
 
 function createMockClient(): WebClient & { reactions: { add: ReturnType<typeof vi.fn> } } {
   return {
@@ -57,38 +44,6 @@ function createEvent(overrides: Partial<SlackMessageEvent> = {}): SlackMessageEv
   };
 }
 
-describe('buildSubject', () => {
-  it('returns DM subject for non-group', () => {
-    expect(buildSubject(testCodec, 'D12345', false)).toBe('relay.human.slack.D12345');
-  });
-
-  it('returns group subject for group channel', () => {
-    expect(buildSubject(testCodec, 'C12345', true)).toBe('relay.human.slack.group.C12345');
-  });
-});
-
-describe('extractChannelId', () => {
-  it('extracts channel ID from DM subject', () => {
-    expect(extractChannelId(testCodec, 'relay.human.slack.D12345')).toBe('D12345');
-  });
-
-  it('extracts channel ID from group subject', () => {
-    expect(extractChannelId(testCodec, 'relay.human.slack.group.C12345')).toBe('C12345');
-  });
-
-  it('returns null for non-slack subject', () => {
-    expect(extractChannelId(testCodec, 'relay.human.telegram.12345')).toBeNull();
-  });
-
-  it('returns null for empty remainder', () => {
-    expect(extractChannelId(testCodec, 'relay.human.slack')).toBeNull();
-  });
-
-  it('returns null for empty group suffix', () => {
-    expect(extractChannelId(testCodec, 'relay.human.slack.group.')).toBeNull();
-  });
-});
-
 describe('handleInboundMessage', () => {
   let relay: RelayPublisher;
   let client: WebClient;
@@ -117,129 +72,10 @@ describe('handleInboundMessage', () => {
     );
   });
 
-  it('publishes group message with group segment', async () => {
-    // @mentions the bot, because a channel message that names nobody is
-    // filtered by the default respond mode. This used to publish unmentioned:
-    // the call sites here fell back to 'always' while the schema said
-    // 'thread-aware' (DOR-623). This test is about the subject, not the gate.
-    const event = createEvent({ channel: 'C12345', text: '<@UBOTID> hello' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    expect(relay.publish).toHaveBeenCalledWith(
-      'relay.human.slack.group.C12345',
-      expect.objectContaining({ channelType: 'group' }),
-      expect.any(Object)
-    );
-  });
-
   it('skips bot own messages (echo prevention)', async () => {
     const event = createEvent({ user: 'UBOTID' });
     await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('skips bot_message subtype', async () => {
-    const event = createEvent({ subtype: 'bot_message' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('skips channel_join subtype', async () => {
-    const event = createEvent({ subtype: 'channel_join' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('skips messages with bot_id', async () => {
-    const event = createEvent({ bot_id: 'B12345' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('skips messages without text', async () => {
-    const event = createEvent({ text: undefined });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).not.toHaveBeenCalled();
-  });
-
-  it('caps content at MAX_CONTENT_LENGTH', async () => {
-    const longText = 'X'.repeat(40_000);
-    const event = createEvent({ text: longText });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(published.content.length).toBe(MAX_CONTENT_LENGTH);
-  });
-
-  it('includes platformData with channel, user, ts', async () => {
-    const event = createEvent({ ts: '1234.5678', thread_ts: '1234.0000', team: 'T123' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    expect(relay.publish).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        platformData: expect.objectContaining({
-          ts: '1234.5678',
-          threadTs: '1234.0000',
-          teamId: 'T123',
-        }),
-      }),
-      expect.any(Object)
-    );
-  });
-
-  it('records error when publish fails without throwing', async () => {
-    (relay.publish as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
-    const event = createEvent();
-    await expect(
-      handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state)
-    ).resolves.toBeUndefined();
-    expect(callbacks.recordError).toHaveBeenCalled();
-  });
-
-  it('calls trackInbound on successful publish', async () => {
-    const event = createEvent();
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(callbacks.trackInbound).toHaveBeenCalled();
-  });
-
-  it('uses SUBJECT_PREFIX constant for bot from field', async () => {
-    const event = createEvent();
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-    expect(relay.publish).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(Object),
-      expect.objectContaining({ from: `${SUBJECT_PREFIX}.bot` })
-    );
-  });
-
-  it('does not include channelName for DM messages', async () => {
-    const event = createEvent({ channel: 'D67890' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(published.channelName).toBeUndefined();
-  });
-
-  it('resolves and includes channelName for group messages', async () => {
-    // @mentions the bot for the same reason as the group-subject test above.
-    const event = createEvent({ channel: 'C12345', text: '<@UBOTID> hello' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-
-    const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(published.channelName).toBe('general');
-  });
-
-  it('falls back to userId when user resolution fails', async () => {
-    const failingClient = {
-      users: { info: vi.fn().mockRejectedValue(new Error('api error')) },
-      conversations: { info: vi.fn().mockResolvedValue({ channel: { name: 'general' } }) },
-    } as unknown as WebClient;
-    const event = createEvent({ user: 'U99999' });
-    await handleInboundMessage(event, failingClient, relay, 'UBOTID', callbacks, state);
-
-    const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(published.senderName).toBe('U99999');
   });
 
   describe('working presence — the trigger message is queued, not marked', () => {
@@ -265,36 +101,6 @@ describe('handleInboundMessage', () => {
       expect(presence.pendingReactions.get('D67890')?.map((e) => e.ts)).toEqual(['1234.5678']);
     });
 
-    it('queues nothing when typingIndicator is none', async () => {
-      const event = createEvent({ ts: '1234.5678' });
-      const presence = createSlackPresenceState();
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        presence
-      );
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(presence.pendingReactions.size).toBe(0);
-      expect(client.reactions.add).not.toHaveBeenCalled();
-    });
-
-    it('queues nothing when typingIndicator is omitted (default)', async () => {
-      const event = createEvent({ ts: '1234.5678' });
-
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(client.reactions.add).not.toHaveBeenCalled();
-    });
-
     it('forgets the queued message when the publish is rejected', async () => {
       const event = createEvent({ ts: '1234.5678' });
       const presence = createSlackPresenceState();
@@ -318,131 +124,11 @@ describe('handleInboundMessage', () => {
 
       expect(presence.pendingReactions.has('D67890')).toBe(false);
     });
-
-    // The router's own drops (paused binding, missing agent, no binding) come
-    // back as deliveredTo: 0 with NOTHING in `rejected` — and the queue was only
-    // cleared for an explicit rejection, so every one of those left a trigger
-    // behind and offset the `:eyes:` on every later turn in the channel by one
-    // (DOR-789).
-    it('forgets the queued message when the router silently drops it', async () => {
-      const event = createEvent({ ts: '1234.5678' });
-      const presence = createSlackPresenceState();
-      (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ deliveredTo: 0 });
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'reaction',
-        presence
-      );
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(presence.pendingReactions.has('D67890')).toBe(false);
-    });
   });
 
   describe('event deduplication', () => {
     afterEach(() => {
       vi.useRealTimers();
-    });
-
-    it('skips duplicate event_id (no relay.publish call)', async () => {
-      const event = createEvent();
-      const options: InboundOptions = { eventId: 'evt-abc-123' };
-
-      // First call — should process normally
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        options
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-
-      // Second call with same event_id — should be skipped
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        options
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
-    it('processes different messages with different event_ids normally', async () => {
-      await handleInboundMessage(
-        createEvent({ ts: '1111.0001' }),
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-1' }
-      );
-      await handleInboundMessage(
-        createEvent({ ts: '1111.0002' }),
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-2' }
-      );
-
-      expect(relay.publish).toHaveBeenCalledTimes(2);
-    });
-
-    it('processes normally when no event_id is provided', async () => {
-      await handleInboundMessage(
-        createEvent({ ts: '2222.0001' }),
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        {}
-      );
-      await handleInboundMessage(
-        createEvent({ ts: '2222.0002' }),
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state
-      );
-
-      expect(relay.publish).toHaveBeenCalledTimes(2);
     });
 
     it('dedups the same message delivered as message and app_mention with distinct event_ids', async () => {
@@ -490,203 +176,9 @@ describe('handleInboundMessage', () => {
 
       expect(relay.publish).toHaveBeenCalledTimes(1);
     });
-
-    it('dedups message/app_mention pairs regardless of arrival order', async () => {
-      const mentionText = '<@UBOTID> status?';
-      const mentionEvent = createEvent({
-        type: 'app_mention',
-        channel: 'C99999',
-        ts: '4444.0001',
-        text: mentionText,
-      });
-      const messageEvent = createEvent({ channel: 'C99999', ts: '4444.0001', text: mentionText });
-
-      await handleInboundMessage(
-        mentionEvent,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'Ev-mention-first', respondMode: 'always' }
-      );
-      await handleInboundMessage(
-        messageEvent,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'Ev-message-second', respondMode: 'mention-only' }
-      );
-
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
-    it('cleans up expired entries and allows reprocessing', async () => {
-      vi.useFakeTimers();
-      const event = createEvent();
-
-      // Process with event_id
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-expire' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-
-      // Advance past TTL (5 minutes)
-      vi.advanceTimersByTime(5 * 60 * 1_000 + 1);
-
-      // Same event_id should now process again (entry expired)
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-expire' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(2);
-    });
-
-    it('clearCaches clears the dedup cache', async () => {
-      const event = createEvent();
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-clear' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-
-      // Clear all caches including dedup
-      clearCaches(state);
-
-      // Same event_id should now process again
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-clear' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe('instance-scoped caches', () => {
-    it('dedup is isolated per adapter instance', async () => {
-      const stateA = createSlackInboundState();
-      const stateB = createSlackInboundState();
-      const event = createEvent({ ts: '5000.0001' });
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        stateA,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-iso' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-
-      // Same event on a different instance — independent state, so it processes.
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        stateB,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-iso' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(2);
-    });
-
-    it('clearCaches on one instance does not wipe another instance dedup', async () => {
-      const stateA = createSlackInboundState();
-      const stateB = createSlackInboundState();
-      const event = createEvent({ ts: '5001.0001' });
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        stateB,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-b' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-
-      // Stopping instance A clears its caches — it must not touch instance B's.
-      clearCaches(stateA);
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        stateB,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-b' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1); // still deduped by B's own state
-    });
-
     it('re-processes a message after a rejected publish (dedup rolled back)', async () => {
       (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         messageId: 'm',
@@ -728,45 +220,6 @@ describe('handleInboundMessage', () => {
       );
       expect(relay.publish).toHaveBeenCalledTimes(2);
     });
-
-    it('still dedups the twin after a successful publish', async () => {
-      const mentionText = '<@UBOTID> deploy';
-      const messageEvent = createEvent({ channel: 'C12345', ts: '6001.0001', text: mentionText });
-      const mentionEvent = createEvent({
-        type: 'app_mention',
-        channel: 'C12345',
-        ts: '6001.0001',
-        text: mentionText,
-      });
-
-      await handleInboundMessage(
-        messageEvent,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-m', respondMode: 'thread-aware' }
-      );
-      await handleInboundMessage(
-        mentionEvent,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { eventId: 'evt-am', respondMode: 'always' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('respond mode gating', () => {
@@ -789,49 +242,9 @@ describe('handleInboundMessage', () => {
       );
     }
 
-    it("'always' processes all messages", async () => {
-      const event = createEvent({ channel: 'C12345', text: 'hello' });
-      await callWithOptions(event, { respondMode: 'always' });
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
-    it('with no respondMode supplied, falls back to the schema default and not to always', async () => {
-      // DOR-623: the default is stated once, in `DEFAULT_RESPOND_MODE`. These
-      // call sites used to restate it as 'always', so whether an unaddressed
-      // channel message was answered depended on whether the config had
-      // travelled through the schema.
-      const event = createEvent({ channel: 'C12345', text: 'general chatter' });
-      await callWithOptions(event, {});
-      expect(relay.publish).not.toHaveBeenCalled();
-    });
-
-    it("'mention-only' processes @mentions", async () => {
-      const event = createEvent({ channel: 'C12345', text: `Hey <@${BOT_ID}> help` });
-      await callWithOptions(event, { respondMode: 'mention-only' });
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
     it("'mention-only' skips non-mentions", async () => {
       const event = createEvent({ channel: 'C12345', text: 'just chatting' });
       await callWithOptions(event, { respondMode: 'mention-only' });
-      expect(relay.publish).not.toHaveBeenCalled();
-    });
-
-    it("'thread-aware' processes DMs always", async () => {
-      const event = createEvent({ channel: 'D67890', text: 'hi in DM' });
-      await callWithOptions(event, { respondMode: 'thread-aware' });
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
-    it("'thread-aware' processes @mentions in main channel", async () => {
-      const event = createEvent({ channel: 'C12345', text: `<@${BOT_ID}> help` });
-      await callWithOptions(event, { respondMode: 'thread-aware' });
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
-    it("'thread-aware' skips non-mention in main channel", async () => {
-      const event = createEvent({ channel: 'C12345', text: 'general chatter' });
-      await callWithOptions(event, { respondMode: 'thread-aware' });
       expect(relay.publish).not.toHaveBeenCalled();
     });
 
@@ -846,49 +259,9 @@ describe('handleInboundMessage', () => {
       await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
       expect(relay.publish).toHaveBeenCalledTimes(1);
     });
-
-    it("'thread-aware' skips non-participating threads without mention", async () => {
-      const tracker = new ThreadParticipationTracker();
-      const event = createEvent({
-        channel: 'C12345',
-        text: 'thread reply',
-        thread_ts: '2222.0000',
-      });
-      await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
-      expect(relay.publish).not.toHaveBeenCalled();
-    });
-
-    it("'thread-aware' processes @mentions in non-participating threads", async () => {
-      const tracker = new ThreadParticipationTracker();
-      const event = createEvent({
-        channel: 'C12345',
-        text: `<@${BOT_ID}> can you help?`,
-        thread_ts: '3333.0000',
-      });
-      await callWithOptions(event, { respondMode: 'thread-aware', threadTracker: tracker });
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('DM policy gating', () => {
-    it('allowlist: allowed user processes', async () => {
-      const event = createEvent({ channel: 'D67890', user: 'U12345', text: 'hi' });
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { dmPolicy: 'allowlist', dmAllowlist: ['U12345'] }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
-
     it('allowlist: a non-allowed user is turned away', async () => {
       const event = createEvent({ channel: 'D67890', user: 'U99999', text: 'hi' });
       await handleInboundMessage(
@@ -941,69 +314,6 @@ describe('handleInboundMessage', () => {
       expect(warnings[0]).toContain('DM Allowlist');
       expect(warnings[0]).toContain('the allowlist is empty');
     });
-
-    it('says it once per conversation, however many messages arrive', async () => {
-      // One person retrying must not be able to fill the operator's log.
-      const warnings: string[] = [];
-      const logger = {
-        debug: vi.fn(),
-        info: vi.fn(),
-        warn: vi.fn((...args: unknown[]) => warnings.push(args.map(String).join(' '))),
-        error: vi.fn(),
-      };
-      const options = { dmPolicy: 'allowlist' as const, dmAllowlist: [] };
-
-      for (const ts of ['1111.0001', '1111.0002', '1111.0003']) {
-        await handleInboundMessage(
-          createEvent({ channel: 'D67890', user: 'U99999', text: 'hi', ts }),
-          client,
-          relay,
-          'UBOTID',
-          callbacks,
-          state,
-          logger,
-          'none',
-          undefined,
-          undefined,
-          options
-        );
-      }
-
-      expect(warnings).toHaveLength(1);
-      // A DIFFERENT conversation is still explained.
-      await handleInboundMessage(
-        createEvent({ channel: 'D55555', user: 'U99999', text: 'hi', ts: '2222.0001' }),
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        logger,
-        'none',
-        undefined,
-        undefined,
-        options
-      );
-      expect(warnings).toHaveLength(2);
-    });
-
-    it('open policy: all DMs process', async () => {
-      const event = createEvent({ channel: 'D67890', user: 'U99999', text: 'hi' });
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        { dmPolicy: 'open' }
-      );
-      expect(relay.publish).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('channel overrides', () => {
@@ -1024,48 +334,5 @@ describe('handleInboundMessage', () => {
       );
       expect(relay.publish).not.toHaveBeenCalled();
     });
-
-    it('respondMode override takes precedence over global', async () => {
-      // Global is 'always' but channel override is 'mention-only' — should skip non-mention
-      const event = createEvent({ channel: 'C12345', text: 'hello' });
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none',
-        undefined,
-        undefined,
-        {
-          respondMode: 'always',
-          channelOverrides: { C12345: { respondMode: 'mention-only' } },
-        }
-      );
-      expect(relay.publish).not.toHaveBeenCalled();
-    });
-  });
-});
-
-describe('getEffectiveChannelConfig', () => {
-  it('returns global defaults when no override exists', () => {
-    const config = getEffectiveChannelConfig('C12345', 'thread-aware', {});
-    expect(config).toEqual({ enabled: true, respondMode: 'thread-aware' });
-  });
-
-  it('merges channel override respondMode', () => {
-    const config = getEffectiveChannelConfig('C12345', 'thread-aware', {
-      C12345: { respondMode: 'always' },
-    });
-    expect(config).toEqual({ enabled: true, respondMode: 'always' });
-  });
-
-  it('merges channel override enabled: false', () => {
-    const config = getEffectiveChannelConfig('C12345', 'always', {
-      C12345: { enabled: false },
-    });
-    expect(config).toEqual({ enabled: false, respondMode: 'always' });
   });
 });

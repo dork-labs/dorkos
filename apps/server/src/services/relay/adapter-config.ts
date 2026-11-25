@@ -180,9 +180,38 @@ function toJsonObject(key: string, value: unknown): unknown {
   } catch {
     throw new AdapterError(
       `Invalid ${key}: expected JSON, and the existing value was left unchanged.`,
-      'INVALID_CONFIG'
+      'INVALID_CONFIG',
+      undefined,
+      [key]
     );
   }
+}
+
+/**
+ * The manifest field keys a schema refused (`token`, `inbound.subject`), for
+ * the form to mark (DOR-4979). Only a key the manifest declares is sent: a
+ * path into a list or a free-form map (a header's name, which a person typed)
+ * is marked on the field that owns it, and anything else is dropped.
+ *
+ * @param error - The refusal.
+ * @param skip - Leading path segments that are not the config's own: `1` for the
+ *   entry envelope, whose config fields sit under `config`.
+ * @param manifest - The adapter type's manifest; without one, nothing is named.
+ */
+function configFieldKeys(
+  error: z.ZodError,
+  skip: number,
+  manifest: AdapterManifest | undefined
+): string[] {
+  const declared = (manifest?.configFields ?? []).map((field) => field.key);
+  const keys = error.issues
+    .filter((issue) => skip === 0 || issue.path[0] === 'config')
+    .map((issue) => {
+      const path = issue.path.slice(skip).map(String).join('.');
+      return declared.find((key) => path === key || path.startsWith(`${key}.`));
+    })
+    .filter((key): key is string => key !== undefined);
+  return [...new Set(keys)];
 }
 
 /**
@@ -225,7 +254,9 @@ export function parseAdapterConfigForPersist(
   if (!envelope.success) {
     throw new AdapterError(
       `Invalid adapter entry: ${z.prettifyError(envelope.error)}`,
-      'INVALID_CONFIG'
+      'INVALID_CONFIG',
+      undefined,
+      configFieldKeys(envelope.error, 1, manifest)
     );
   }
 
@@ -239,7 +270,9 @@ export function parseAdapterConfigForPersist(
   if (!config.success) {
     throw new AdapterError(
       `Invalid ${envelope.data.type} configuration: ${z.prettifyError(config.error)}`,
-      'INVALID_CONFIG'
+      'INVALID_CONFIG',
+      undefined,
+      configFieldKeys(config.error, 0, manifest)
     );
   }
   return { ...envelope.data, config: config.data } as AdapterConfig;
@@ -872,7 +905,8 @@ export function reserveWebhookOwnership(
       throw new AdapterError(
         `Address ownership conflicts with connection '${other.id}'. Choose a different webhook address.`,
         'INVALID_CONFIG',
-        config.id
+        config.id,
+        ['inbound.subject']
       );
     }
   }
@@ -882,7 +916,8 @@ export function reserveWebhookOwnership(
     throw new AdapterError(
       error instanceof Error ? error.message : 'Address ownership could not be checked.',
       'INVALID_CONFIG',
-      config.id
+      config.id,
+      ['inbound.subject']
     );
   }
 }

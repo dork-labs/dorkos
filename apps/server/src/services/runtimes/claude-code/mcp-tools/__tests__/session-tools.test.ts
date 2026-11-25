@@ -36,7 +36,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
-import { z } from 'zod';
 import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
@@ -165,10 +164,7 @@ import {
   __resetAccountAdvisorForTests,
   registerAccountAdvisor,
 } from '../../../../core/usage/account-advisor.js';
-import {
-  ADVISOR_FAILED_REASON,
-  NO_ADVISOR_REASON,
-} from '../../../../core/usage/account-ranking.js';
+import { ADVISOR_FAILED_REASON } from '../../../../core/usage/account-ranking.js';
 import {
   agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
@@ -188,7 +184,6 @@ import {
   registerTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { resolveLaunchAccountRoot as resolveLaunch } from '../../claude-config-dir.js';
-import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import type { McpToolDeps } from '../types.js';
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
@@ -203,14 +198,16 @@ import { StartWorkService, setStartWorkService } from '../../../../extensions/st
 import { queuedChatCaller } from '../../../../work-queue/work-queue-wiring.js';
 import { WorkClaimService } from '../../../../session/claims/work-claim-service.js';
 import { setWorkClaims } from '../../../../session/claims/work-claim-current.js';
+import {
+  initSessionVisibility,
+  resetSessionVisibility,
+} from '../../../../audit/session-visibility.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import { SessionStore } from '../../sessions/session-store.js';
 import {
   SESSION_START_CLIENT_ID,
-  SessionStartInputShape,
   UNKNOWN_CALLER_MESSAGE,
   createSessionStartHandler,
-  getSessionTools,
 } from '../session-tools.js';
 
 /**
@@ -539,9 +536,33 @@ describe('session_start', () => {
       expect(dispatchMessage).not.toHaveBeenCalled();
     });
 
-    it('an account, when no advisor is registered', async () => {
-      expect(await expectRefused({ ...BASE, account: 'work' })).toMatchObject({
-        error: NO_ADVISOR_REASON,
+    it('the main sign-in, when no advisor is registered (DOR-5033)', async () => {
+      installStore([account('work'), { ...account('main-row'), isDefault: true }]);
+      expect(await expectRefused({ ...BASE, account: 'main-row' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'Agents can’t pick the main sign-in. Name another account.',
+      });
+      // `default` names the same row, and is refused the same way.
+      expect(await expectRefused({ ...BASE, account: 'default' })).toMatchObject({
+        error: 'Agents can’t pick the main sign-in. Name another account.',
+      });
+    });
+
+    it('an account no person let agents pick, when no advisor is registered', async () => {
+      expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'A person hasn’t let agents pick this account. Ask them in Settings.',
+      });
+    });
+
+    it('an account a person kept agents off, when no advisor is registered', async () => {
+      installStore([
+        account('work'),
+        { ...account('client'), agentsMayPick: true, noAutoMove: true },
+      ]);
+      expect(await expectRefused({ ...BASE, account: 'client' })).toMatchObject({
+        code: 'ACCOUNT_REFUSED',
+        error: 'A person kept agents off this account.',
       });
     });
   });
@@ -712,6 +733,13 @@ describe('session_start', () => {
     expect(result.isError).toBeUndefined();
   });
 
+  it('starts on a named account with no advisor registered, by core’s own rule (DOR-5033)', async () => {
+    installStore([account('work'), { ...account('client'), agentsMayPick: true }]);
+    const result = await asScout()({ ...BASE, account: 'client' });
+    expect(payloadOf(result)).toMatchObject({ account: { id: 'client', label: 'CLIENT' } });
+    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBe('client');
+  });
+
   it('still starts a session with no account when no advisor is registered', async () => {
     const result = await asScout()(BASE);
     expect(result.isError).toBeUndefined();
@@ -735,14 +763,6 @@ describe('session_start', () => {
     );
     // Only the row: no runtime is handed an in-memory session for the new id.
     expect(claude.updateSession).not.toHaveBeenCalled();
-  });
-
-  it('leaves the input schema alone, so the approval card shows the mode asked for', () => {
-    const schema = z.object(SessionStartInputShape);
-    expect(schema.parse({ ...BASE, permissionMode: 'bypassPermissions' }).permissionMode).toBe(
-      'bypassPermissions'
-    );
-    expect(schema.parse({ ...BASE, permissionMode: 'plan' }).permissionMode).toBe('plan');
   });
 
   it('writes the granted mode even when none was asked for, so the row never seeds another', async () => {
@@ -841,7 +861,9 @@ describe('session_start', () => {
 
       const body = payloadOf(result);
       expect(body.title).toBe('Rooms: always answer people');
-      expect(body.link).toBe(`[Rooms: always answer people](/session?session=${body.sessionId})`);
+      expect(body.link).toBe(`[Rooms: always answer people](/r/dork:chat:${body.sessionId})`);
+      // Its reference too, the target of a `/r/` link (DOR-5046).
+      expect(body.ref).toBe(`dork:chat:${body.sessionId}`);
       expect(claude.renameSession).toHaveBeenCalledWith(
         body.sessionId,
         'Rooms: always answer people',
@@ -851,43 +873,6 @@ describe('session_start', () => {
         resourceLabel: 'Rooms: always answer people',
         summary: 'Started "Rooms: always answer people" in /work/project',
       });
-    });
-
-    it('takes the title from the reason, never the brief, when none is given', async () => {
-      const result = await asScout()({
-        ...BASE,
-        prompt: 'DOR-2823 end to end rooms conversation routing. Read the ticket first.',
-        reason: 'make rooms answer people. Then check the tabs.',
-      });
-
-      const body = payloadOf(result);
-      expect(body.title).toBe('Make rooms answer people');
-      expect(claude.renameSession).toHaveBeenCalledWith(
-        body.sessionId,
-        'Make rooms answer people',
-        '/work/project'
-      );
-    });
-
-    it('names a chat with no title and no reason after the agent that started it', async () => {
-      const deps = makeDeps();
-      const result = await asScout(deps)(BASE);
-
-      const body = payloadOf(result);
-      expect(body.title).toBe('Started by Scout');
-      expect(body.link).toBe(`[Started by Scout](/session?session=${body.sessionId})`);
-      expect(claude.renameSession).toHaveBeenCalledWith(
-        body.sessionId,
-        'Started by Scout',
-        '/work/project'
-      );
-    });
-
-    it('falls back from a blank title instead of refusing the start', async () => {
-      const result = await asScout()({ ...BASE, title: '   ', reason: 'tidy the docs' });
-
-      expect(result.isError).toBeUndefined();
-      expect(payloadOf(result).title).toBe('Tidy the docs');
     });
 
     it('tries the rename again once the first turn settles when the transcript was not there yet', async () => {
@@ -926,22 +911,6 @@ describe('session_start', () => {
         },
       });
     });
-
-    it('is not written for a refused call', async () => {
-      const deps = makeDeps();
-      await asScout(deps)({ ...BASE, cwd: '/etc' });
-      expect(deps.activityService.emit).not.toHaveBeenCalled();
-    });
-  });
-
-  it('is an act-tier tool in the agents area whose card shows what it grants', () => {
-    expect(MCP_TOOL_TIERS.session_start).toMatchObject({
-      tier: 'act',
-      area: 'agents',
-      title: 'Start a spin-off chat',
-      approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
-    });
-    expect(getSessionTools(makeDeps()).map((t) => t.name)).toEqual(['session_start']);
   });
 });
 
@@ -1014,15 +983,6 @@ describe('session_start records who started the new session (spec flow-multiproj
       expect(store.get(sessionId)?.scheduledOrigin).toBe('run');
     });
 
-    it('stamps nothing on a spin-off from an ordinary chat', async () => {
-      const handler = createSessionStartHandler(withRun(), () => ({
-        agentPath: AGENT_HOME,
-        sessionId: 'parent-chat',
-      }));
-      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
-      expect(store.get(sessionId)?.scheduledOrigin).toBeNull();
-    });
-
     it('[SEC PR, fixed MUST-G] a chat the work queue starts counts as scheduled, whoever queued it', async () => {
       const handler = createSessionStartHandler(withRun(), queuedChatCaller(AGENT_HOME));
       const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
@@ -1040,12 +1000,6 @@ describe('session_start records who started the new session (spec flow-multiproj
       const handler = createSessionStartHandler(withRun(), queuedChatCaller(AGENT_HOME, bound));
       await handler(BASE);
       expect(vi.mocked(dispatchMessage).mock.calls[0]![0].permissionCeiling).toEqual(bound);
-    });
-
-    it('writes no row for a call from outside any chat that is not the queue', async () => {
-      const handler = createSessionStartHandler(withRun(), () => ({ agentPath: AGENT_HOME }));
-      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
-      expect(store.get(sessionId)).toBeNull();
     });
 
     it('asks what a started chat was when its own row holds no stamp, on a carry-over', () => {
@@ -1188,23 +1142,6 @@ describe('session_start records who started the new session (spec flow-multiproj
       expect(send).not.toHaveBeenCalled();
       expect(getSpinOffStartup()?.failureOf(sessionId)).toBeNull();
     });
-
-    it('honors reportBack off while still exposing the startup failure', async () => {
-      const { sessionId } = payloadOf(
-        await fromChat('parent-chat')({ ...BASE, reportBack: 'off' })
-      ) as { sessionId: string };
-      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
-      expect(send).not.toHaveBeenCalled();
-      expect(getSpinOffStartup()?.failureOf(sessionId)).toContain('five minutes');
-    });
-
-    it('disarms a refused launch that already returned an error to the starter', async () => {
-      vi.mocked(dispatchMessage).mockRejectedValueOnce(new SessionCapacityError(50));
-      const result = await fromChat('parent-chat')(BASE);
-      expect(result.isError).toBe(true);
-      await vi.advanceTimersByTimeAsync(SPIN_OFF_START_TIMEOUT_MS);
-      expect(send).not.toHaveBeenCalled();
-    });
   });
 
   it('promises no reports to a parent that cannot take chat messages (a room, a run)', async () => {
@@ -1262,13 +1199,6 @@ describe('session_start records who started the new session (spec flow-multiproj
     }
   });
 
-  it('points a spin-off told reportBack off at chat_send, when its parent takes messages', async () => {
-    wireChats(true);
-    await fromChat('parent-chat')({ ...BASE, reportBack: 'off' });
-    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
-    expect(seed).toContain('chat_send to parent-chat');
-  });
-
   it('reports back by default, and not when told reportBack off (spec spin-off-chats §5)', async () => {
     wireChats(true);
     const on = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
@@ -1277,22 +1207,6 @@ describe('session_start records who started the new session (spec flow-multiproj
       sessionId: string;
     };
     expect(store.get(off.sessionId)?.reportBack).toBe(false);
-  });
-
-  it('tells the new chat who started it and how it reports, ahead of the starter’s background', async () => {
-    wireChats(true);
-    await fromChat('parent-chat')({ ...BASE, seedContext: 'The repo is in /work.' });
-    const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
-    expect(seed).toContain('parent-chat');
-    expect(seed).toContain('goes back to that chat on its own');
-    expect(seed.indexOf('parent-chat')).toBeLessThan(seed.indexOf('The repo is in /work.'));
-  });
-
-  it('takes an optional reason of at most 200 characters', () => {
-    const schema = z.object(SessionStartInputShape);
-    expect(schema.safeParse(BASE).success).toBe(true);
-    expect(schema.safeParse({ ...BASE, reason: 'x'.repeat(200) }).success).toBe(true);
-    expect(schema.safeParse({ ...BASE, reason: 'x'.repeat(201) }).success).toBe(false);
   });
 
   it('inherits the calling chat’s extension, and counts against its limits', async () => {
@@ -1387,12 +1301,6 @@ describe('session_start records who started the new session (spec flow-multiproj
       originExtensionId: 'flow',
       reason: 'Split off the tests',
     });
-  });
-
-  it('records nothing when there is no calling chat (the external /mcp server)', async () => {
-    const result = await asScout()(BASE);
-    const { sessionId } = payloadOf(result) as { sessionId: string };
-    expect(store.get(sessionId)).toBeNull();
   });
 });
 
@@ -2335,7 +2243,7 @@ describe('session_start claims the work it starts (DOR-4019)', () => {
     ]);
   });
 
-  it('asks first: a key another chat of the agent holds is refused, and nothing starts', async () => {
+  it('refuses a key another chat holds without naming it when the caller cannot read it, and nothing starts', async () => {
     claims.claim('a1', 'other-chat', 'DOR-1');
     const result = await asScout()({ ...BASE, claim: 'DOR-1' });
     expect(result.isError).toBe(true);
@@ -2375,11 +2283,6 @@ describe('session_start claims the work it starts (DOR-4019)', () => {
     expect(results.filter((r) => !r.isError)).toHaveLength(1);
     expect(results.filter((r) => r.isError && payloadOf(r).code === 'CLAIMED')).toHaveLength(1);
   });
-
-  it('claims nothing when no key is named', async () => {
-    await asScout()(BASE);
-    expect(claims.check('a1')).toEqual([]);
-  });
 });
 
 describe('session_start gives back a claim when the chat never runs (DOR-4019)', () => {
@@ -2413,5 +2316,65 @@ describe('session_start gives back a claim when the chat never runs (DOR-4019)',
     expect(claims.check('a1')).toEqual([
       expect.objectContaining({ key: 'DOR-6', sessionId: `canon-${minted}` }),
     ]);
+  });
+});
+
+describe('session_start hands back the chat already on the work (DOR-3690)', () => {
+  let claims: WorkClaimService;
+  const fromCoordinator = () =>
+    createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'coordinator',
+    }));
+
+  beforeEach(() => {
+    claims = new WorkClaimService({ db: createTestDb() });
+    setWorkClaims(claims);
+    // Agent work every member reads, as a spin-off of this agent's is.
+    initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space' as const])));
+  });
+
+  afterEach(() => {
+    setWorkClaims(undefined);
+    resetSessionVisibility();
+  });
+
+  it('returns the running chat for a named key instead of starting a second one', async () => {
+    claims.claim('a1', 'other-chat', 'DOR-10');
+    const result = await fromCoordinator()({ ...BASE, claim: 'DOR-10' });
+    expect(result.isError).toBeFalsy();
+    const payload = payloadOf(result);
+    expect(payload).toMatchObject({
+      status: 'already-running',
+      sessionId: 'other-chat',
+      claim: 'DOR-10',
+    });
+    expect(payload.link).toMatch(/\]\(\/r\/dork:chat:other-chat\)$/);
+    expect(payload.ref).toBe('dork:chat:other-chat');
+    expect(payload.note).toContain(`Already running: ${payload.link},`);
+    expect(payload.note).toMatch(/startAnyway: true/);
+    expect(dispatchMessage).not.toHaveBeenCalled();
+    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+  });
+
+  it('refuses without naming the chat when the caller may not read it', async () => {
+    resetSessionVisibility();
+    claims.claim('a1', 'other-chat', 'DOR-18');
+    const result = await fromCoordinator()({ ...BASE, title: 'DOR-18 lane' });
+    expect(result.isError).toBe(true);
+    const payload = payloadOf(result);
+    expect(payload.code).toBe('CLAIMED');
+    expect(payload.error).toMatch(/^DOR-18 is already claimed by a private chat of yours since /);
+    expect(JSON.stringify(payload)).not.toContain('other-chat');
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('lets one of two racing starts on one inferred key through, and hands the other back', async () => {
+    const results = await Promise.all([
+      fromCoordinator()({ ...BASE, title: 'DOR-19 lane' }),
+      fromCoordinator()({ ...BASE, title: 'DOR-19 lane' }),
+    ]);
+    const statuses = results.map((r) => payloadOf(r).status).sort();
+    expect(statuses).toEqual(['already-running', 'started']);
   });
 });

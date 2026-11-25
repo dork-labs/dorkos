@@ -33,8 +33,9 @@ Three things outlive any single run and live at the domain root, `audits/runs/ui
 Read `audits/runs/ui/profile.md` at the start of every `run`, `pulse`, and `execute`. It answers
 questions this procedure deliberately does not hard-code, and each answer changes behavior:
 
-- **Landing style** — a repo with no merge queue must not inherit arm-then-verify or a bare
-  `gh pr merge --auto`; `execute` follows the profile's answer, not this repo's habits.
+- **Landing style** — in this repo, `scripts/open-pr.sh` opens each PR with auto-merge
+  on and nobody arms it; a repo with no merge queue must not inherit that; `execute` follows the
+  profile's answer, not this repo's habits.
 - **Changelog** — whether a batch owes a fragment, and in what shape.
 - **Isolation** — worktree per batch, or something else.
 - **Formatting gate** — the exact command that satisfies CI, run last before every push.
@@ -326,7 +327,7 @@ duplicated here:
 
 - **`orchestrating-parallel-work`** → its **"Landing Parallel Batches"** section, which owns
   sequencing by collision class, the per-batch chain, the landing rules (format last before every
-  push; verify the merge is armed **or** queued; rebase to both intents; test-merge in-flight
+  push; verify auto-merge is on **or** the PR is queued; rebase to both intents; test-merge in-flight
   branches), rolling dispatch, and close-out discipline.
 - **`REVIEW.md`** → its **"Failure modes worth hunting by name"** section, the library a review
   brief points a reviewer at. `assets/review-brief.md` is that brief.

@@ -23,7 +23,7 @@ import { useFileExplorerStore } from './file-explorer-store';
  * dir keys on settle to reconcile with the server. Rename/move/delete also fix
  * up the persisted `expanded`/`selectedPath` in the store so an open or selected
  * subtree follows (or clears with) the entry. Deleting a non-empty directory is
- * a two-step confirm: the first non-recursive delete throws `DIR_NOT_EMPTY`,
+ * a two-step confirm: the first non-recursive delete throws `folder_not_empty`,
  * which parks the entry in `pendingRecursiveDelete` for the caller to confirm.
  *
  * @module features/file-explorer/model/use-file-crud
@@ -257,14 +257,14 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
           return;
         }
         // Directory: try the safe non-recursive delete; a non-empty directory
-        // throws DIR_NOT_EMPTY, which we surface as a confirm before wiping it.
+        // throws folder_not_empty, which we surface as a confirm before wiping it.
         try {
           await transport.deleteEntry(cwd, entry.path);
           cache.setChildren(parent, (es) => es.filter((e) => e.path !== entry.path));
           useFileExplorerStore.getState().dropExpandedPaths(entry.path);
           cache.invalidate(parent);
         } catch (err) {
-          if (getErrorCode(err) === 'DIR_NOT_EMPTY') {
+          if (getErrorCode(err) === 'folder_not_empty') {
             setPendingRecursiveDelete(entry);
             return;
           }
@@ -326,7 +326,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
     (from: EntryRef, toDir: string): Promise<void> =>
       guard(async () => {
         // A folder cannot go inside itself. The server refuses it too (400
-        // COPY_INTO_SELF, which reads the same), but the round trip buys nothing
+        // copy_into_self, which reads the same), but the round trip buys nothing
         // — and this used to return in silence, which is how a paste right after
         // copying a folder looked like nothing happening at all.
         if (from.isDir && isAtOrUnder(toDir, from.path)) {

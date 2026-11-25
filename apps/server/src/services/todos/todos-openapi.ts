@@ -5,6 +5,7 @@
  * @module services/todos/todos-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   CreateTodoRequestSchema,
@@ -16,7 +17,6 @@ import {
 } from '@dorkos/shared/todo-schemas';
 
 /** A refusal: plain words and a stable code. */
-const TodoErrorSchema = z.object({ error: z.string(), code: z.string() }).openapi('TodoError');
 
 /**
  * Register the to-do routes.
@@ -55,22 +55,10 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
         description: 'The new to-do',
         content: { 'application/json': { schema: TodoSchema } },
       },
-      400: {
-        description: 'A bad body',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      401: {
-        description: 'Step up first',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      403: {
-        description: 'An agent',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      429: {
-        description: 'Past a daily cap',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
+      400: problemResponse('A bad body'),
+      401: problemResponse('Step up first'),
+      403: problemResponse('An agent'),
+      429: problemResponse('Past a daily cap'),
     },
   });
 
@@ -88,10 +76,7 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
         description: 'The to-do',
         content: { 'application/json': { schema: TodoCardSchema } },
       },
-      404: {
-        description: 'No such to-do',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
+      404: problemResponse('No such to-do'),
     },
   });
 
@@ -109,26 +94,11 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: { description: 'The to-do', content: { 'application/json': { schema: TodoSchema } } },
-      400: {
-        description: 'A bad body',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      401: {
-        description: 'Step up first',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      403: {
-        description: 'Not yours',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      404: {
-        description: 'No such to-do',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
-      409: {
-        description: 'It changed since',
-        content: { 'application/json': { schema: TodoErrorSchema } },
-      },
+      400: problemResponse('A bad body'),
+      401: problemResponse('Step up first'),
+      403: problemResponse('Not yours'),
+      404: problemResponse('No such to-do'),
+      412: problemResponse('`precondition_failed`: it changed since it was shown'),
     },
   });
 }

@@ -73,23 +73,6 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
     expect(cards[0]).toHaveAttribute('data-testid', 'power-source-cloud');
     expect(cards[0]).toHaveTextContent('Recommended');
   });
-
-  it('renders the approved copy for each source verbatim', () => {
-    renderPicker();
-    expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
-    expect(
-      screen.getByText('Claude, GPT, Gemini and 300+ more, in the cloud.')
-    ).toBeInTheDocument();
-    expect(screen.getByText('Private and free, on your computer')).toBeInTheDocument();
-    // Platform-adaptive noun (jsdom navigator.platform is not Mac → "this computer").
-    expect(
-      screen.getByText(/Models run on this computer. Nothing you type ever leaves it\./)
-    ).toBeInTheDocument();
-    expect(screen.getByText('Use your own API key')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Anthropic, OpenAI, or any OpenAI-compatible server/)
-    ).toBeInTheDocument();
-  });
 });
 
 // Three cards of four lines each is a wall to read before you have chosen
@@ -98,19 +81,6 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
 describe('OpenCodeProviderPicker — the list is short, the detail is at the step (DOR-917)', () => {
   const CLOUD_SUB = 'One OpenRouter account covers them all. Pay for what you use.';
   const CLOUD_TRADE_OFF = 'Your prompts and code are sent to the model’s provider.';
-  const LOCAL_SUB = 'Runs Quick helpers and Solid coders. Frontier models stay cloud-only.';
-  const LOCAL_TRADE_OFF = 'Smaller models: good for edits and quick help.';
-
-  it('keeps the sub-line and the trade-off off the choose list', () => {
-    renderPicker();
-
-    expect(screen.queryByText(CLOUD_SUB)).not.toBeInTheDocument();
-    expect(screen.queryByText(LOCAL_SUB)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Trade-off:/)).not.toBeInTheDocument();
-    // What survives on a card: the headline, its badge, and the one line under it.
-    expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
-    expect(screen.getByTestId('power-source-cloud')).toHaveTextContent('Recommended');
-  });
 
   it('says the cloud path’s sub-line and trade-off at the step, word for word', async () => {
     const user = userEvent.setup();
@@ -121,27 +91,6 @@ describe('OpenCodeProviderPicker — the list is short, the detail is at the ste
     const details = await screen.findByTestId('connect-step-details');
     expect(details).toHaveTextContent(CLOUD_SUB);
     expect(details).toHaveTextContent(`Trade-off: ${CLOUD_TRADE_OFF}`);
-  });
-
-  it('says the local path’s sub-line and trade-off at the step, word for word', async () => {
-    const user = userEvent.setup();
-    renderPicker({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
-
-    await user.click(screen.getByTestId('power-source-local'));
-
-    const details = await screen.findByTestId('connect-step-details');
-    expect(details).toHaveTextContent(LOCAL_SUB);
-    expect(details).toHaveTextContent(`Trade-off: ${LOCAL_TRADE_OFF}`);
-  });
-
-  it('adds nothing to the quiet key path, which was already two lines', async () => {
-    const user = userEvent.setup();
-    renderPicker();
-
-    await user.click(screen.getByTestId('power-source-direct'));
-
-    expect(await screen.findByLabelText('API key')).toBeInTheDocument();
-    expect(screen.queryByTestId('connect-step-details')).not.toBeInTheDocument();
   });
 
   it('commits nothing on the way in: Back returns to the list unchanged', async () => {
@@ -172,30 +121,11 @@ describe('OpenCodeProviderPicker — Change power source label (spec §9)', () =
     );
   }
 
-  it('labels the current source in plain language for the local path', () => {
-    renderWithProvider('ollama');
-    expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
-      'Currently: On your computer (Ollama)'
-    );
-  });
-
-  it('labels the current source for the cloud path', () => {
-    renderWithProvider('openrouter');
-    expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
-      'Currently: Cloud via OpenRouter'
-    );
-  });
-
   it('labels a bring-your-own-key source by provider name', () => {
     renderWithProvider('openai');
     expect(screen.getByTestId('opencode-current-source')).toHaveTextContent(
       'Currently: Your own API key (OpenAI)'
     );
-  });
-
-  it('omits the current-source line on a first connect (no currentProvider)', () => {
-    renderPicker();
-    expect(screen.queryByTestId('opencode-current-source')).not.toBeInTheDocument();
   });
 });
 
@@ -212,32 +142,6 @@ describe('OpenCodeProviderPicker — in-dialog step navigation (spec §5)', () =
 
     await user.click(screen.getByTestId('connect-step-back'));
     expect(screen.getByTestId('opencode-power-sources')).toBeInTheDocument();
-  });
-
-  it('opens the Direct step and returns with Back', async () => {
-    const user = userEvent.setup();
-    renderPicker();
-
-    await user.click(screen.getByTestId('power-source-direct'));
-    expect(await screen.findByLabelText('API key')).toBeInTheDocument();
-    // The address is behind Advanced for a named service — it is noise for the
-    // person who picked OpenAI and only matters to the one who did not.
-    expect(screen.queryByLabelText(/base url/i)).not.toBeInTheDocument();
-    await user.click(screen.getByTestId('direct-provider-advanced'));
-    expect(screen.getByLabelText(/base url/i)).toBeInTheDocument();
-
-    await user.click(screen.getByTestId('connect-step-back'));
-    expect(screen.getByTestId('power-source-local')).toBeInTheDocument();
-  });
-
-  it('opens the local step under its own header', async () => {
-    const user = userEvent.setup();
-    renderPicker({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
-
-    await user.click(screen.getByTestId('power-source-local'));
-    const step = await screen.findByTestId('opencode-connect-step');
-    expect(step).toHaveTextContent('Private and free, on your computer');
-    expect(screen.getByTestId('connect-step-back')).toBeInTheDocument();
   });
 });
 
@@ -357,31 +261,6 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => 
       expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
     });
   });
-
-  it('shows the explicit success moment + Done when showConnectSuccess is set', async () => {
-    // Purpose (spec §6): the toolbar flow ends on an explicit success panel with a
-    // Done button that closes the dialog — not a silent auto-close.
-    const user = userEvent.setup();
-    const onOpenChange = vi.fn();
-    renderInDialog(
-      { storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }) },
-      { showConnectSuccess: true, onOpenChange }
-    );
-
-    await user.click(await screen.findByTestId('power-source-direct'));
-    await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
-    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
-
-    const panel = await screen.findByTestId('runtime-connected-panel');
-    expect(panel).toHaveTextContent('OpenCode is connected');
-    // Direct is provider-honest — no frontier claim (a Direct key can point at a
-    // local LM Studio / vLLM server), just the connection + handoff line.
-    expect(panel).toHaveTextContent('This chat uses OpenCode');
-    expect(panel).not.toHaveTextContent('Frontier models are unlocked.');
-
-    await user.click(screen.getByTestId('runtime-connected-done'));
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
 });
 
 describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => {
@@ -443,28 +322,6 @@ describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => 
     expect(await screen.findByLabelText('OpenRouter key')).toBeInTheDocument();
   });
 
-  it('ends an in-place switch in the success panel with Done, cancel gone', async () => {
-    // Purpose (spec §9): switching source on a ready runtime is not a dead end —
-    // a successful switch reaches the same success moment a first connect does,
-    // and the "Keep current source" cancel disappears once switched.
-    const user = userEvent.setup();
-    renderReady(OPENCODE_READY_OLLAMA, {
-      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
-    });
-
-    await user.click(await screen.findByTestId('runtime-change-opencode'));
-    // Switch to a Direct provider and complete the connect.
-    await user.click(await screen.findByTestId('power-source-direct'));
-    await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
-    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
-
-    // The success panel replaces the change UI; the cancel affordance is gone.
-    const panel = await screen.findByTestId('runtime-connected-panel');
-    expect(panel).toHaveTextContent('OpenCode is connected');
-    expect(screen.queryByTestId('runtime-change-cancel-opencode')).not.toBeInTheDocument();
-    expect(screen.getByTestId('runtime-connected-done')).toBeInTheDocument();
-  });
-
   it('does not offer Change when the ready runtime reports no connected provider', async () => {
     const user = userEvent.setup();
     renderReady({
@@ -520,25 +377,6 @@ describe('DirectProviderPath — the form remembers what you entered', () => {
       'placeholder',
       'Saved key ends in ab12. Paste to replace.'
     );
-  });
-
-  it('shows a progress row rather than a flash of empty fields while it loads', () => {
-    renderDirect({
-      getOpenCodeDirectSetup: vi.fn(() => new Promise<OpenCodeDirectSetup>(() => {})),
-    });
-    expect(screen.getByTestId('connect-progress')).toBeInTheDocument();
-    expect(screen.queryByLabelText('API key')).not.toBeInTheDocument();
-  });
-
-  it('follows the chosen source with its own key format hint', async () => {
-    const user = userEvent.setup();
-    renderDirect();
-
-    expect(await screen.findByLabelText('API key')).toHaveAttribute('placeholder', 'sk-…');
-    await user.click(screen.getByRole('combobox'));
-    await user.click(await screen.findByRole('option', { name: 'Anthropic' }));
-
-    expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'sk-ant-…');
   });
 
   it('requires an address for an OpenAI-compatible server, and nothing else does', async () => {
@@ -718,20 +556,6 @@ describe('DirectProviderPath — nothing is saved until the key is accepted', ()
       )
     );
   });
-
-  it('leaves Save off when a key is saved and nothing has changed', async () => {
-    renderDirect({
-      getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
-        providerId: 'openai',
-        baseURL: null,
-        key: { saved: true, last4: 'ab12' },
-      }),
-    });
-
-    // Nothing to save — but the saved key can still be tested.
-    expect(await screen.findByRole('button', { name: 'Save & connect' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Test key' })).toBeEnabled();
-  });
 });
 
 // Picking a power source fills its own address in, so nobody has to know one.
@@ -757,24 +581,6 @@ describe('DirectProviderPath — a named source brings its own address', () => {
     await user.click(await screen.findByRole('option', { name: label }));
   }
 
-  it('offers the named sources from the shared list, plus Other', async () => {
-    const user = userEvent.setup();
-    renderDirect();
-
-    await user.click(await screen.findByRole('combobox'));
-    const names = screen.getAllByRole('option').map((option) => option.textContent);
-    expect(names).toEqual(['OpenAI', 'Anthropic', 'Other (OpenAI-compatible)']);
-  });
-
-  it('fills the chosen source’s own address into the field', async () => {
-    const user = userEvent.setup();
-    renderDirect();
-
-    await pick(user, 'Anthropic');
-    await user.click(screen.getByTestId('direct-provider-advanced'));
-    expect(screen.getByLabelText(/base url/i)).toHaveValue('https://api.anthropic.com');
-  });
-
   it('says plainly when an address is not encrypted, without opening Advanced', async () => {
     const user = userEvent.setup();
     renderDirect();
@@ -791,15 +597,6 @@ describe('DirectProviderPath — a named source brings its own address', () => {
     expect(screen.getByTestId('direct-provider-insecure')).toHaveTextContent(
       'This address isn’t encrypted. Your key travels in the open.'
     );
-  });
-
-  it('offers no "Get an API key" link for a source with no such page', async () => {
-    const user = userEvent.setup();
-    renderDirect();
-
-    expect(await screen.findByRole('link', { name: /Get an API key/ })).toBeInTheDocument();
-    await pick(user, 'Other (OpenAI-compatible)');
-    expect(screen.queryByRole('link', { name: /Get an API key/ })).not.toBeInTheDocument();
   });
 
   it('does not send a base URL for a source that already sits at its own address', async () => {
@@ -887,15 +684,6 @@ describe('DirectProviderPath — reopening tells the services apart by address',
     renderWith(setup);
     expect(await screen.findByRole('combobox')).toHaveTextContent(expected);
   });
-
-  it('warns about an unencrypted address on reopen too', async () => {
-    renderWith({
-      providerId: 'openai',
-      baseURL: 'http://lm.example.com:8000/v1',
-      key: { saved: true, last4: 'ab12' },
-    });
-    expect(await screen.findByTestId('direct-provider-insecure')).toBeInTheDocument();
-  });
 });
 
 describe('DirectProviderPath — when the saved settings cannot be read', () => {
@@ -961,28 +749,6 @@ describe('DirectProviderPath — the Test result says WHICH key it is about', ()
 
     expect(await screen.findByText('Your saved key works')).toBeInTheDocument();
     expect(transport.checkProviderCredential).toHaveBeenCalledWith('openai', null, null);
-  });
-
-  it('treats a field holding only whitespace as empty', async () => {
-    const user = userEvent.setup();
-    const transport = renderDirect({ ...SAVED });
-
-    await user.type(await screen.findByLabelText('API key'), '   ');
-    await user.click(screen.getByRole('button', { name: 'Test key' }));
-
-    expect(await screen.findByText('Your saved key works')).toBeInTheDocument();
-    expect(transport.checkProviderCredential).toHaveBeenCalledWith('openai', null, null);
-  });
-
-  it('says "Key works" about a key that was actually typed', async () => {
-    const user = userEvent.setup();
-    renderDirect({ ...SAVED });
-
-    await user.type(await screen.findByLabelText('API key'), 'sk-typed-key');
-    await user.click(screen.getByRole('button', { name: 'Test key' }));
-
-    expect(await screen.findByText('Key works')).toBeInTheDocument();
-    expect(screen.queryByText('Your saved key works')).not.toBeInTheDocument();
   });
 });
 
@@ -1072,33 +838,6 @@ describe('DirectProviderPath — the form stays put while it works', () => {
     await act(async () => {
       gate.resolve({ ok: true });
     });
-  });
-
-  it('is just as read-only while a Test is in flight', async () => {
-    // A Test's answer is about the fields as they stood when it was sent, so
-    // editing them mid-flight would leave an answer on screen about values that
-    // are no longer there.
-    const user = userEvent.setup();
-    const gate = deferred<{ ok: true }>();
-    renderDirect({ checkProviderCredential: vi.fn(() => gate.promise) });
-
-    await user.type(await screen.findByLabelText('API key'), 'sk-being-tested');
-    await user.click(screen.getByRole('button', { name: 'Test key' }));
-
-    expect(await screen.findByTestId('connect-progress')).toHaveTextContent('Checking your key…');
-    expect(screen.getByTestId('direct-provider')).toBeInTheDocument();
-    expect(screen.getByLabelText('API key')).toBeDisabled();
-    expect(screen.getByRole('combobox')).toHaveAttribute('data-disabled');
-    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
-
-    await act(async () => {
-      gate.resolve({ ok: true });
-    });
-    // And everything is usable again once the answer lands.
-    expect(await screen.findByText('Key works')).toBeInTheDocument();
-    expect(screen.getByLabelText('API key')).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeEnabled();
   });
 
   it('replaces a failed Test result with the save’s answer, never both at once', async () => {

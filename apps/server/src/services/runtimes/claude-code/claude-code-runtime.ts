@@ -2,7 +2,7 @@ import {
   sessionBillingPrediction,
   observedSessionRoot,
   observedSessionBilling,
-  failedSessionAuthority,
+  failedSeatAuthorityOf,
   requiredLaunchOwnerFromSettings,
 } from './sessions/identity/failed-seat-authority.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
@@ -680,7 +680,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       sessionId,
       cwd: cwdKey,
     });
-    session.connectorTurn = connectorTurn;
     // Who may be asked, how far the turn reaches, and which room a teammate's
     // turn is fenced to: all per turn, all assigned on every send.
     assignTurnBounds(session, opts);
@@ -707,6 +706,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let sawRuntimeError = false;
     try {
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey, turnAgentOf(opts));
+      senderOpts.toolTurnOwner = connectorTurn;
       const persistent = this.persistent.shouldDispatch(sessionId);
       // The resume path keeps no process between turns, so a turn there can
       // never end background work by restarting one (DOR-2065).
@@ -1791,14 +1791,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   readObservedBilling(sessionId: string) {
     return observedSessionBilling(this.sessionStore.findSession(sessionId));
   }
-  /** Existing crash/current guards plus the exact previous terminal SDK witness. */
+  /** Live crash/current guards and terminal witness; a later process reads the durable record. */
   readFailedSeatAuthority(sessionId: string) {
-    return failedSessionAuthority(
+    return failedSeatAuthorityOf(
+      this,
+      sessionId,
       this.sessionStore.findSession(sessionId),
-      this.isLocked(sessionId) ||
-        this.holdsBackgroundWork(sessionId) ||
-        this.isHelperWorking(sessionId) ||
-        !this.persistent.failedSeatCrashAllows(sessionId)
+      this.requiredLaunches,
+      this.persistent.failedSeatCrashAllows(sessionId)
     );
   }
 

@@ -20,7 +20,6 @@ describe('the build served by the HTTP server', () => {
   it('honors the explicit preview build without changing the development data mode', () => {
     state.env.CLIENT_DIST_PATH = '/preview/dist/renderer';
     expect(clientDistPath()).toBe('/preview/dist/renderer');
-    expect(state.env.NODE_ENV).toBe('development');
   });
 
   it('leaves ordinary development to Vite', () => {

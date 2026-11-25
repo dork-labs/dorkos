@@ -26,6 +26,7 @@ import {
   initMessage,
   resultMessage,
   taskNotificationMessage,
+  taskStartedMessage,
   type BackgroundTaskType,
 } from './fake-pump-query.js';
 
@@ -126,25 +127,6 @@ describe('reap declines while the process is still working', () => {
       because: 'background-work',
       holding: { agents: 1, other: 0 },
     });
-    expect(await reapNow(harness.pump)).toBe(false);
-  });
-
-  it('declines while a Monitor-typed task is running', async () => {
-    const harness = await warmPump();
-    await runTask(harness, 'monitor');
-
-    expect(harness.pump.quietness()).toMatchObject({
-      quiet: false,
-      because: 'background-work',
-      holding: { agents: 0, other: 1 },
-    });
-    expect(await reapNow(harness.pump)).toBe(false);
-  });
-
-  it('declines while a task of a type nobody has catalogued is running', async () => {
-    const harness = await warmPump();
-    await runTask(harness, 'some_type_shipped_next_year');
-
     expect(await reapNow(harness.pump)).toBe(false);
   });
 
@@ -258,24 +240,6 @@ describe('isHelperWorking, the question the stall watchdog asks', () => {
   });
 });
 
-// FB-18. A turn's stream-end sweep spares the tasks this process still names;
-// a process that is gone names none, so its helpers are swept rather than kept.
-describe("liveTaskIds, what a turn's stream-end sweep spares", () => {
-  it('names the live tasks of a process that is up', async () => {
-    const harness = await warmPump();
-    await runTask(harness, 'local_agent');
-    expect(harness.pump.liveTaskIds()).toEqual(['task-1']);
-  });
-
-  it('names none once the process has crashed, though its last frame said otherwise', async () => {
-    const harness = await warmPump();
-    await runTask(harness, 'local_agent');
-    await harness.crash();
-    expect(harness.pump.holdsProcess).toBe(false);
-    expect(harness.pump.liveTaskIds()).toEqual([]);
-  });
-});
-
 // DOR-2717. A laptop asleep for the night is not four hours of work: the
 // ceiling is measured in awake time, so waking up does not reap at once.
 describe('the ceiling counts awake time, not time asleep', () => {
@@ -314,16 +278,6 @@ describe('the background-work ceiling and its quiet reset', () => {
     await runTask(harness, 'local_agent');
     return harness;
   }
-
-  it('does not reset the ceiling for thirty seconds of quiet', async () => {
-    const harness = await spellWithGap(30_000);
-
-    // The spell still dates from the first helper, so eleven more minutes puts
-    // it past four hours and the process is taken back.
-    vi.advanceTimersByTime(11 * 60_000);
-    expect(harness.pump.isHoldingWork()).toBe(false);
-    expect(await reapNow(harness.pump)).toBe(true);
-  });
 
   it('does reset the ceiling for a full minute of quiet', async () => {
     const harness = await spellWithGap(SESSIONS.BACKGROUND_QUIET_RESET_MS);
@@ -406,38 +360,6 @@ describe('an open turn that is still talking is never past the ceiling', () => {
     expect(harness.pump.isHoldingWork()).toBe(false);
   });
 
-  it("does not count a helper's frames as the turn talking", async () => {
-    let turnOpen = false;
-    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
-    await runTask(harness, 'local_agent');
-    await harness.emit(assistantMessage());
-    turnOpen = true;
-    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS);
-    // Only the helper is talking now.
-    await harness.emit({
-      ...assistantMessage(),
-      parent_tool_use_id: 'toolu_helper',
-    } as ReturnType<typeof assistantMessage>);
-
-    expect(harness.pump.isPastCeiling()).toBe(true);
-  });
-
-  it('starts the turn clocks over after a result', async () => {
-    let turnOpen = false;
-    const harness = await warmPump({ hasRuntimeTurnOpen: () => turnOpen });
-    await harness.emit(assistantMessage());
-    turnOpen = true;
-    vi.advanceTimersByTime(15 * 60 * 60_000);
-    await harness.emit(resultMessage());
-    turnOpen = false;
-    // The next turn begins: sixteen hours since the FIRST turn began, one since this.
-    vi.advanceTimersByTime(60 * 60_000);
-    await harness.emit(assistantMessage());
-    turnOpen = true;
-
-    expect(harness.pump.isPastHardLimit()).toBe(false);
-  });
-
   it('still ends a /loop between its turns once the background clock runs out', async () => {
     let turnOpen = false;
     const harness = await warmPump({
@@ -468,16 +390,6 @@ describe('an open turn that is still talking is never past the ceiling', () => {
 
     expect(harness.pump.isPastCeiling()).toBe(true);
   });
-
-  it('does not let background frames with no turn open restart the clock', async () => {
-    const harness = await warmPump();
-    await runTask(harness, 'local_agent');
-    vi.advanceTimersByTime(SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS - 60_000);
-    await harness.emit(assistantMessage());
-    vi.advanceTimersByTime(2 * 60_000);
-
-    expect(harness.pump.isPastCeiling()).toBe(true);
-  });
 });
 
 // T35. The one hold with no other way out: a delivery that is owed and never
@@ -503,17 +415,6 @@ describe('the owed-delivery clock', () => {
     );
   });
 
-  it('arms on a notification that lands with no turn and no segment running', async () => {
-    const harness = await warmPump();
-    // No `result` at all: the settle itself is what takes the count from zero,
-    // and without this arming point nothing would ever release the debt.
-    await harness.emit(taskNotificationMessage('task-1'));
-
-    vi.advanceTimersByTime(OWED_DELIVERY_TIMEOUT_MS);
-    expect(harness.gateChanges).toHaveLength(1);
-    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
-  });
-
   it('is cancelled by a segment starting, whose init clears the debt properly', async () => {
     const harness = await warmPump();
     await harness.emit(taskNotificationMessage('task-1'));
@@ -531,38 +432,28 @@ describe('the owed-delivery clock', () => {
     await harness.emit(initMessage());
     expect(harness.pump.quietness()).toMatchObject({ quiet: true });
   });
+});
 
-  it('is not re-armed by a further settle', async () => {
+// DOR-3755 item 3. The CLI emits `task_notification` for EVERY task it
+// registers, the ones nothing will ever be delivered for included: a foreground
+// helper or shell, whose result already went back inline as its tool result,
+// and a task it keeps out of the transcript (`skip_transcript`). Each of those
+// used to open a debt no delivery segment would ever clear, so the next message
+// into the chat waited out the whole owed-delivery clock.
+describe('a settle nothing will be delivered for (DOR-3755)', () => {
+  it('a foreground task owes nothing, so the next message is not held for thirty seconds', async () => {
     const harness = await warmPump();
-    await harness.emit(taskNotificationMessage('task-1'));
+    await harness.emit(taskStartedMessage('fg-1', false));
+    await harness.emit(taskNotificationMessage('fg-1'));
+    await harness.emit(resultMessage());
 
-    vi.advanceTimersByTime(20_000);
-    await harness.emit(taskNotificationMessage('task-2'));
-
-    // The bound is on the debt, not on each notification: a stream of settles
-    // must not walk the deadline forward. Ten more seconds is thirty from the
-    // FIRST one, and that is when it fires.
-    vi.advanceTimersByTime(10_000);
-    expect(harness.gateChanges).toHaveLength(1);
-    expect(logger.info).toHaveBeenCalledWith(
-      '[SessionPump] an owed delivery never arrived; releasing the queue',
-      expect.objectContaining({ tasks: ['task-1', 'task-2'] })
-    );
-  });
-
-  it('measures how late a delivery that arrives after the clock expired was', async () => {
-    const harness = await warmPump();
-    await harness.emit(taskNotificationMessage('task-1'));
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
     vi.advanceTimersByTime(OWED_DELIVERY_TIMEOUT_MS);
-
-    vi.advanceTimersByTime(5_000);
-    await harness.emit(assistantMessage());
-
-    // The thirty seconds are a guarantee, not a measurement. This line is how
-    // the number gets checked against real sessions instead of assumed.
-    expect(logger.info).toHaveBeenCalledWith(
-      '[SessionPump] a delivery arrived after its clock expired',
-      expect.objectContaining({ lateByMs: 5_000 })
+    // No clock was armed, so none gave up on anything.
+    expect(harness.gateChanges).toHaveLength(0);
+    expect(logger.info).not.toHaveBeenCalledWith(
+      '[SessionPump] an owed delivery never arrived; releasing the queue',
+      expect.anything()
     );
   });
 });

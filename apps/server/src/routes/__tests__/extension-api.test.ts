@@ -18,6 +18,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { bridgeExpressRouter } from '../../services/extensions/http/express-bridge.js';
 import type { ExtensionHttpHandler } from '../../services/extensions/http/extension-http.js';
 import { createExtensionApiRoutes, splitExtensionMount } from '../extension-api.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -63,7 +64,8 @@ describe('/api/ext/:id/*', () => {
     const res = await request(fixtureServer).get('/api/ext/my-ext/status');
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Extension 'my-ext' has no server routes" });
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'my-ext has no server routes.' });
     expect(manager.getServerHandler).toHaveBeenCalledWith('my-ext');
   });
 
@@ -148,7 +150,9 @@ describe('/api/ext/:id/*', () => {
     const res = await request(fixtureServer).get('/api/ext/my-ext/nothing');
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: 'Not found', code: 'API_NOT_FOUND' });
+    expect(res.body).toEqual(
+      problemBody('not_found', { detail: 'This server has no API route at that path.' })
+    );
   });
 
   it('answers a route that throws, rejects or hands on an error with the chain’s error', async () => {
@@ -169,7 +173,9 @@ describe('/api/ext/:id/*', () => {
     ]) {
       const res = await request(fixtureServer).get(`/api/ext/my-ext${path}`);
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ error: message, code: 'INTERNAL_ERROR' });
+      expect(res.body).toMatchObject({ code: 'internal_error', status: 500 });
+      // The exception's own words never reach the wire (they are logged).
+      expect(JSON.stringify(res.body)).not.toContain(message);
     }
   });
 

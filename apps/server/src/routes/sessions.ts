@@ -18,7 +18,6 @@ import { Hono } from 'hono';
 import type { Db } from '@dorkos/db';
 import { mountSessionSettingsPatch } from './session-settings-patch.js';
 import { mountSessionSendMessage } from './session-send-message.js';
-import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
 import {
@@ -39,11 +38,13 @@ import { stampHistory } from '../services/session/chat-messages/chat-message-sta
 import * as historyWindow from '../services/session/history/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { forkPlace } from './session-launcher.js';
+import { invalidSessionId, ownerRefusalReply, sessionNotFound } from './session-route-replies.js';
+import { recordChatFork } from '../services/work-graph/index.js';
 import { readQuery } from '../http/request-query.js';
-import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
+import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
 import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
@@ -157,13 +158,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.get('/', async (c) => {
     const parsed = ListSessionsQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { limit, cwd, runtime: runtimeFilter } = parsed.data;
     const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-    if (outside) return c.json(outside, 403);
+    if (outside) return sendProblem(c, outside);
     if (runtimeFilter !== undefined && !runtimeRegistry.has(runtimeFilter)) {
-      return c.json(errorBody(`Unknown runtime: ${runtimeFilter}`, 'UNKNOWN_RUNTIME'), 400);
+      return problem(c, 'invalid_request', { detail: `Unknown runtime: ${runtimeFilter}` });
     }
 
     const projectDir = cwd || vaultRoot;
@@ -205,7 +206,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.get('/recent', async (c) => {
     const parsed = RecentSessionsQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { limit, touchedSince } = parsed.data;
 
@@ -247,7 +248,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.get('/daily-counts', async (c) => {
     const parsed = SessionDailyCountsQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+      return validationProblem(c, parsed.error);
     }
     const { days } = parsed.data;
 
@@ -326,7 +327,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // was handed, and first-write-wins would make that guess the binding (DOR-812).
   router.get('/:id/runtime-type', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
     const runtime = await runtimeRegistry.getSessionRuntimeType(sessionId);
     return c.json({ runtime });
   });
@@ -357,7 +358,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // binding (DOR-812).
   router.get('/:id/settings', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
     // Under the id as asked, deliberately: a session that has not started has no
     // runtime to hold an alias, and `getInternalSessionId` needs a resolved
     // runtime, which for an unbound id would be the inference. A started session
@@ -374,7 +375,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // answering. Both now resolve through the same ladder.
   router.get('/:id', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const cwdParam = (readQuery(c).cwd as string) || undefined;
 
@@ -382,13 +383,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
     const projectDir = await resolveSessionCwdOrNull(runtime, sessionId, cwdParam);
-    if (!projectDir) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    if (!projectDir) return sessionNotFound(c);
     // A directory the caller never named is judged here — otherwise omitting
     // `?cwd=` would read a session that naming the same directory is refused for.
     const outside = await boundaryRefusal(projectDir, { allowDorkHome: true });
-    if (outside) return c.json(outside, 403);
+    if (outside) return sendProblem(c, outside);
     const session = await runtime.getSession(projectDir, internalSessionId);
-    if (!session) return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+    if (!session) return sessionNotFound(c);
     await runtimeRegistry.rememberNativeSession?.(
       session,
       readCallerPrincipal(honoRequestFacts(c))
@@ -447,7 +448,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // GET /api/sessions/:id/tasks - Get task state from SDK transcript
   router.get('/:id/tasks', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const cwdParam = (readQuery(c).cwd as string) || undefined;
 
@@ -462,7 +463,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     // A directory the caller never named is judged here — otherwise omitting
     // `?cwd=` would read a session that naming the same directory is refused for.
     const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-    if (outside) return c.json(outside, 403);
+    if (outside) return sendProblem(c, outside);
 
     const etag = await runtime.getSessionETag(cwd, internalSessionId);
     if (etag) {
@@ -476,7 +477,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
       const tasks = await runtime.getSessionTasks(cwd, internalSessionId);
       return c.json({ tasks });
     } catch {
-      return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+      return sessionNotFound(c);
     }
   });
 
@@ -487,7 +488,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // the same response (DOR-1322).
   router.get('/:id/messages', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const cwdParam = (readQuery(c).cwd as string) || undefined;
 
@@ -497,19 +498,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
 
     const cwd = await resolveSessionCwdOrNull(runtime, sessionId, cwdParam);
     if (!cwd) {
-      return c.json(
-        errorBody(
-          "Could not determine this session's working directory. Pass ?cwd= with the session's project directory.",
-          'SESSION_CWD_REQUIRED'
-        ),
-        404
-      );
+      return sessionNotFound(c, "Couldn't place this chat. Pass ?cwd= with its project folder.");
     }
     // A directory the caller never named is judged here — otherwise omitting
     // `?cwd=` would read a session that naming the same directory is refused for.
     // DOR-1322 shipped without this and the gap was live until DOR-1444.
     const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-    if (outside) return c.json(outside, 403);
+    if (outside) return sendProblem(c, outside);
 
     const etag = await runtime.getSessionETag(cwd, internalSessionId);
     // Only a whole read answers by ETag: the tag names the whole transcript.
@@ -535,7 +530,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     const ids = [...new Set([sessionId, internalSessionId])];
     const stamp: historyWindow.StampHistory = (slice) => stampHistory(ids, slice);
     const read = historyWindow.answerHistory(filterKickoffHistory(messages), readQuery(c), stamp);
-    return read ? c.json(read) : c.json(historyWindow.UNKNOWN_CURSOR, 404);
+    return read ? c.json(read) : problem(c, 'not_found', { detail: 'No message has that id.' });
   });
 
   mountSessionSettingsPatch(router, deps, personBirthDb);
@@ -543,48 +538,43 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // POST /api/sessions/:id/fork - Fork a session
   router.post('/:id/fork', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const parsed = ForkSessionRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+      return validationProblem(c, parsed.error);
     }
 
     // A fork runs where it is put, so only where its caller may run one (DOR-3644).
     const { cwd, refused } = await forkPlace(c, deps.meshCore, sessionId);
-    if (refused) return c.json(refused, 403);
+    if (refused) return sendProblem(c, refused);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
     try {
       const forked = await runtime.forkSession(cwd, internalSessionId, parsed.data);
-      if (!forked) return c.json(errorBody('Session not found or fork failed', 'FORK_FAILED'), 404);
+      if (!forked) return sessionNotFound(c, 'Nothing was forked.');
+      recordChatFork(internalSessionId, forked.id);
       return c.json(forked, 201);
     } catch {
-      return c.json(errorBody('Fork failed', 'FORK_ERROR'), 500);
+      return problem(c, 'internal_error', { detail: 'The fork failed. Try again.' });
     }
   });
 
   // POST /api/sessions/:id/reload-plugins - Reload plugins from disk
   router.post('/:id/reload-plugins', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     if (!runtime.reloadPlugins) {
-      return c.json(errorBody('Plugin reload not supported by this runtime', 'NOT_SUPPORTED'), 501);
+      return problem(c, 'not_supported', { detail: 'This chat’s program can’t reload plugins.' });
     }
 
     try {
       const result = await runtime.reloadPlugins(sessionId);
       if (!result) {
-        return c.json(
-          errorBody(
-            'No active query — send a message first to establish a session',
-            'NO_ACTIVE_QUERY'
-          ),
-          409
-        );
+        return problem(c, 'conflict', { detail: 'Send a message first, then reload plugins.' });
       }
       return c.json(result);
     } catch (err) {
@@ -594,15 +584,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
       // to a process that stopped answering, not refused — so the honest answer is
       // "no confirmation", not "failed".
       if (err instanceof ControlRequestTimeoutError) {
-        return c.json(
-          errorBody(
-            "The agent didn't confirm the plugin reload in time — it may still apply; try again if the new plugin doesn't appear",
-            'RELOAD_TIMEOUT'
-          ),
-          504
-        );
+        return problem(c, 'temporarily_unavailable', {
+          detail:
+            "The agent didn't confirm the reload. It may still apply, so check before retrying.",
+          status: 504,
+        });
       }
-      return c.json(errorBody('Plugin reload failed', 'RELOAD_ERROR'), 500);
+      return problem(c, 'internal_error', { detail: 'Plugin reload failed.' });
     }
   });
 
@@ -619,7 +607,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // the "Stopped by" lines. Re-read on every `chat_activity` stream nudge.
   router.get('/:id/chat-messages', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
     const service = getChatMessageService();
     if (!service) {
       const empty: ChatActivityResponse = { sent: [], stops: [] };
@@ -649,7 +637,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
   // so this route file stays under the file-size rule, mirroring `/:id/events`.
   // Semantics: fresh turn via the dispatcher, 202, turn streams over /events. A
-  // session still PRODUCING a turn answers 409 SESSION_LOCKED here — unlike
+  // session still PRODUCING a turn answers 409 `session_locked` here — unlike
   // /messages, which now queues: a widget action is answered by the turn it was
   // clicked in, so running it against whatever a later turn leaves behind is not
   // the same action. A click after that turn ENDED is accepted, even while the
@@ -719,7 +707,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // POST /api/sessions/:id/tasks/:taskId/stop - Stop a running background task
   router.post('/:id/tasks/:taskId/stop', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     // The route matches only a non-empty segment, so `taskId` is always set.
     const taskId = c.req.param('taskId');
@@ -735,13 +723,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
       // `runtime-interrupt-receipts` §2).
       if (receipt.outcome === 'not-running') {
         if (runtime.hasSession(sessionId)) {
-          return c.json(errorBody('Task not found or already stopped', 'TASK_NOT_RUNNING'), 409);
+          return problem(c, 'task_not_running', { detail: 'That task already stopped.' });
         }
-        return c.json(errorBody('Session not found', 'SESSION_NOT_FOUND'), 404);
+        return sessionNotFound(c);
       }
       return c.json({ receipt, taskId });
     } catch (_err) {
-      return c.json(errorBody('Failed to stop task', 'STOP_TASK_ERROR'), 500);
+      return problem(c, 'internal_error', { detail: 'The task couldn’t be stopped. Try again.' });
     }
   });
 
@@ -751,11 +739,11 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // to switch, which is a normal answer: the held message is already on its way.
   router.post('/:id/process/switch', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
     // It ends an agent's running work on a person's say-so: the owner's call,
     // never an agent's (spec `warm-process-lifecycle`, "Switch now is owner-only").
     const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), SWITCH_NOW);
-    if (refusal) return c.json(refusal, 403);
+    if (refusal) return ownerRefusalReply(c, refusal);
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     return c.json({ switched: runtime.switchWhenReady?.(sessionId) === true });
   });
@@ -763,7 +751,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // POST /api/sessions/:id/interrupt - Interrupt the active query
   router.post('/:id/interrupt', async (c) => {
     const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return c.json(errorBody('Invalid session ID', 'INVALID_SESSION_ID'), 400);
+    if (!sessionId) return invalidSessionId(c);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     // Stop means stop everything queued (spec `persistent-session-runtime` §3.5,

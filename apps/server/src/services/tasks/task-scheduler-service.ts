@@ -28,7 +28,12 @@ import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
-import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
+import {
+  publishRunStop,
+  unconfirmedStop,
+  type CancelRunOutcome,
+  type RunStopDelivery,
+} from './run-cancel.js';
 import { atCapSkipReason, RunAccounting } from './run-accounting.js';
 import { emitRefusedAskActivity } from './run-activity.js';
 import { checkRunAccount } from './session/run-account.js';
@@ -689,12 +694,7 @@ export class TaskSchedulerService {
     const stoppedHere = this.runs.stopHere(runId, this.store, OPERATOR_CANCEL);
     if (stoppedHere) return stoppedHere;
 
-    if (!this.relay) {
-      return {
-        state: 'unconfirmed',
-        reason: 'This run is not being driven by this server, and the message bus is off.',
-      };
-    }
+    if (!this.relay) return unconfirmedStop('no_bus', 'Not driven here, and the bus is off.');
 
     let delivery: RunStopDelivery;
     try {
@@ -706,7 +706,7 @@ export class TaskSchedulerService {
       // useless answer.
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`could not send the stop request for run ${runId}: ${message}`);
-      return { state: 'unconfirmed', reason: `The stop request could not be sent: ${message}` };
+      return unconfirmedStop('send_failed', `The stop request could not be sent: ${message}`);
     }
 
     if (delivery.deliveredTo > 0) {
@@ -724,21 +724,15 @@ export class TaskSchedulerService {
     // cause worth telling somebody, and it is never the one they would guess.
     if (delivery.rejection) {
       logger.warn(`stop request for run ${runId} was refused: ${delivery.rejection}`);
-      return {
-        state: 'unconfirmed',
-        reason:
-          `The stop request could not be sent because ${delivery.rejection}. ` +
-          'The agent may still be working — try again in a moment.',
-      };
+      return unconfirmedStop(
+        'refused',
+        `The stop request could not be sent because ${delivery.rejection}. ` +
+          'The agent may still be working — try again in a moment.'
+      );
     }
 
     logger.warn(`no runner acknowledged the stop request for run ${runId}`);
-    return {
-      state: 'unconfirmed',
-      reason:
-        'Nothing picked up the stop request. The agent may still be working — ' +
-        'check the run again in a moment.',
-    };
+    return unconfirmedStop('no_answer', 'Nothing picked up the stop request.');
   }
 
   /**

@@ -14,7 +14,6 @@
  * @module routes/work-queue
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
   AddWorkItemRequestSchema,
   ReorderWorkQueueRequestSchema,
@@ -22,9 +21,9 @@ import {
   UpdateWorkQueueRequestSchema,
 } from '@dorkos/shared/work-queue-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import {
   WorkQueueError,
@@ -53,22 +52,22 @@ export interface WorkQueueRouterDeps {
   isOwner(facts: RequestFacts): boolean;
 }
 
-/** The HTTP status for each refusal. */
-const STATUS: Record<WorkQueueErrorCode, ContentfulStatusCode> = {
-  NOT_FOUND: 404,
-  NOT_YOURS: 403,
-  NOT_QUEUED: 409,
-  NOT_ENDED: 409,
-  FULL: 409,
-  BAD_CWD: 400,
-  CAP_CEILING: 409,
-  STALE_QUEUE: 409,
+/** The problem code each refusal answers with; each code's own status comes with it. */
+const PROBLEM: Record<WorkQueueErrorCode, ProblemCode> = {
+  NOT_FOUND: 'not_found',
+  NOT_YOURS: 'forbidden',
+  NOT_QUEUED: 'conflict',
+  NOT_ENDED: 'conflict',
+  FULL: 'conflict',
+  BAD_CWD: 'invalid_request',
+  CAP_CEILING: 'conflict',
+  STALE_QUEUE: 'conflict',
 };
 
-/** Answer a {@link WorkQueueError} with its status, or rethrow. */
+/** Answer a {@link WorkQueueError} as a problem document, or rethrow. */
 function refusal(c: Context<ApiEnv>, err: unknown): Response {
   if (!(err instanceof WorkQueueError)) throw err;
-  return c.json(errorBody(err.message, err.code), STATUS[err.code]);
+  return problem(c, PROBLEM[err.code], { detail: err.message });
 }
 
 /**
@@ -82,10 +81,10 @@ export function createWorkQueuesStopRoutes(deps: WorkQueueRouterDeps): Hono<ApiE
   router.put('/stop', (c) => {
     const facts = honoRequestFacts(c);
     if (presentsAgentIdentity(facts) || !deps.isOwner(facts)) {
-      return c.json(errorBody('Only the owner can stop every queue.', 'NOT_YOURS'), 403);
+      return problem(c, 'owner_only', { detail: 'Only the owner can stop every queue.' });
     }
     const body = SetWorkQueuesStoppedRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     deps.service.setAllStopped(body.data.stopped);
     return c.json(body.data);
   });
@@ -106,18 +105,18 @@ export function createWorkQueueRoutes(deps: WorkQueueRouterDeps): Hono<ApiEnv> {
     const facts = honoRequestFacts(c);
     if (presentsAgentIdentity(facts)) {
       return {
-        refused: c.json(errorBody('Agents use their own work queue tools.', 'NOT_A_PERSON'), 403),
+        refused: problem(c, 'person_only', { detail: 'Agents use their own work queue tools.' }),
       };
     }
     if (!deps.isOwner(facts)) {
       return {
-        refused: c.json(errorBody('Only the owner can open this queue.', 'NOT_YOURS'), 403),
+        refused: problem(c, 'owner_only', { detail: 'Only the owner can open this queue.' }),
       };
     }
     // Mounted under `/api/agents/:id/work-queue`: the parent path's parameter.
     const agentId = c.req.param('id') as string;
     if (!deps.agentExists(agentId)) {
-      return { refused: c.json(errorBody('No agent on the team has that id.', 'NOT_FOUND'), 404) };
+      return { refused: problem(c, 'not_found', { detail: 'No agent on the team has that id.' }) };
     }
     return { agentId };
   }
@@ -132,7 +131,7 @@ export function createWorkQueueRoutes(deps: WorkQueueRouterDeps): Hono<ApiEnv> {
     const caller = agentIdOf(c);
     if ('refused' in caller) return caller.refused;
     const body = UpdateWorkQueueRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     return c.json(deps.service.update(caller.agentId, body.data));
   });
 
@@ -140,7 +139,7 @@ export function createWorkQueueRoutes(deps: WorkQueueRouterDeps): Hono<ApiEnv> {
     const caller = agentIdOf(c);
     if ('refused' in caller) return caller.refused;
     const body = ReorderWorkQueueRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     return c.json(deps.service.reorder(caller.agentId, body.data.itemIds));
   });
 
@@ -148,7 +147,7 @@ export function createWorkQueueRoutes(deps: WorkQueueRouterDeps): Hono<ApiEnv> {
     const caller = agentIdOf(c);
     if ('refused' in caller) return caller.refused;
     const body = AddWorkItemRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       return c.json(deps.service.add({ kind: 'person' }, caller.agentId, body.data), 201);
     } catch (err) {

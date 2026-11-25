@@ -90,7 +90,7 @@ describe('writes from another port on this computer (DOR-3370)', () => {
       .send({ name: 'Error', message: 'from another port' });
 
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('ORIGIN_NOT_ALLOWED');
+    expect(res.body.code).toBe('origin_not_allowed');
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
     expect(captureClientError).not.toHaveBeenCalled();
   });

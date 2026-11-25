@@ -44,18 +44,21 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const FOREIGN_HOST = { host: 'evil.example' };
 const VALIDATION_FAILED = z
-  .object({ error: z.literal('Validation failed'), details: z.unknown() })
-  .strict();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
-const TOO_LARGE = z.object({ code: z.literal('REQUEST_TOO_LARGE') }).loose();
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
+const TOO_LARGE = z.object({ code: z.literal('request_too_large') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const MESSAGE_PAGE = z.object({ messages: z.array(z.unknown()) }).loose();
@@ -63,11 +66,27 @@ const ENDPOINTS = z.array(z.object({ subject: z.string() }).loose());
 const ADAPTERS = z.array(z.object({ config: z.object({ id: z.string() }).loose() }).loose());
 const CATALOG = z.array(z.object({ manifest: z.object({ type: z.string() }).loose() }).loose());
 const BINDINGS = z.object({ bindings: z.array(z.unknown()) }).strict();
-const BINDING_NOT_FOUND = { error: 'Binding not found' };
-const CHAT_NOT_FOUND = { error: 'Unclaimed chat not found' };
+const BINDING_NOT_FOUND = problemBody('not_found', { detail: 'That chat route doesn’t exist.' });
+const CONNECTION_NOT_FOUND = problemBody('not_found', { detail: 'That connection doesn’t exist.' });
+const ENDPOINT_NOT_FOUND = problemBody('not_found', { detail: 'That address has no mailbox.' });
+const UNKNOWN_AGENT = problemBody('invalid_request', {
+  detail: 'That agent isn’t registered here.',
+});
+const RECEIPT_NOT_FOUND = problemBody('not_found', {
+  detail: 'No delivery status for that message.',
+});
+const INVALID_SIGNATURE = problemBody('invalid_signature', {
+  detail: 'The signature, time or nonce didn’t check out.',
+});
+/** Any problem document with this code. */
+const problemWith = (code: string) =>
+  z.object({ code: z.literal(code), detail: z.string() }).loose();
+const CHAT_NOT_FOUND = problemBody('not_found', {
+  detail: 'That chat isn’t waiting to be claimed.',
+});
 /** An unknown connection answers exactly like a bad signature (DOR-3650). */
-const WEBHOOK_NOT_FOUND = { error: 'INVALID_SIGNATURE' };
-const TRACING_ABSENT_OR_EMPTY = { error: 'Trace not found' };
+const WEBHOOK_NOT_FOUND = INVALID_SIGNATURE;
+const TRACING_ABSENT_OR_EMPTY = problemBody('not_found', { detail: 'No trace for that message.' });
 /** A well-formed relay message id no message has. */
 const UNKNOWN_MESSAGE_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 /** The webhook receiver's raw byte ceiling. */
@@ -114,7 +133,10 @@ contractSuite('the Relay groups, login off, nothing set up', [
   {
     name: 'GET an unknown message is a 404',
     path: `/api/relay/messages/${UNKNOWN_MESSAGE_ID}`,
-    expect: { status: 404, body: { error: 'Message not found' } },
+    expect: {
+      status: 404,
+      body: problemBody('not_found', { detail: 'That message doesn’t exist.' }),
+    },
   },
   {
     name: 'GET the status of a malformed message id is refused, never cached',
@@ -122,7 +144,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     expect: {
       status: 400,
       headers: { 'cache-control': 'no-store' },
-      body: { error: 'Invalid relay message ID.', code: 'INVALID_RELAY_MESSAGE_ID' },
+      body: problemBody('invalid_request', { detail: 'That isn’t a message id.' }),
     },
   },
   {
@@ -131,7 +153,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     expect: {
       status: 404,
       headers: { 'cache-control': 'no-store' },
-      body: { error: 'Delivery receipt not found.', code: 'RELAY_RECEIPT_NOT_FOUND' },
+      body: RECEIPT_NOT_FOUND,
     },
   },
   {
@@ -159,12 +181,9 @@ contractSuite('the Relay groups, login off, nothing set up', [
     body: { subject: 'relay.contract.inbox', payload: 'hi', from: 'relay.system.console' },
     expect: {
       status: 403,
-      body: {
-        error:
-          'Sender "relay.system.console" is a reserved server principal and cannot be asserted ' +
-          'by a client. Send from your own principal (e.g. relay.human.console).',
-        code: 'RESERVED_SENDER',
-      },
+      body: problemBody('reserved_sender', {
+        detail: 'DorkOS keeps that sender for itself. Send as yourself instead.',
+      }),
     },
   },
   {
@@ -174,12 +193,9 @@ contractSuite('the Relay groups, login off, nothing set up', [
     body: { subject: 'relay.system.tasks.x', payload: 'hi', from: 'relay.human.console' },
     expect: {
       status: 403,
-      schema: z
-        .object({
-          error: z.string().startsWith('Cannot send to "relay.system.tasks.x": '),
-          code: z.literal('RESERVED_SUBJECT'),
-        })
-        .strict(),
+      body: problemBody('reserved_subject', {
+        detail: 'DorkOS keeps that address for itself. Send somewhere else.',
+      }),
     },
   },
   {
@@ -194,7 +210,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     },
     expect: {
       status: 403,
-      schema: z.object({ code: z.literal('RESERVED_SUBJECT') }).loose(),
+      schema: problemWith('reserved_subject'),
     },
   },
   {
@@ -214,7 +230,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     path: '/api/relay/messages',
     headers: { 'content-type': 'application/json' },
     body: '{broken',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /messages over the JSON limit is refused before parsing',
@@ -263,21 +279,19 @@ contractSuite('the Relay groups, login off, nothing set up', [
     body: { subject: 'relay.agent.someone' },
     expect: {
       status: 403,
-      schema: z
-        .object({ error: z.string().startsWith('Subject "relay.agent.someone" is in a namespace') })
-        .strict(),
+      schema: problemWith('reserved_subject').extend({ reservedPrefixes: z.array(z.string()) }),
     },
   },
   {
     name: 'DELETE an endpoint nobody registered is a 404',
     method: 'DELETE',
     path: '/api/relay/endpoints/contract.nobody.here',
-    expect: { status: 404, body: { error: 'Endpoint not found' } },
+    expect: { status: 404, body: ENDPOINT_NOT_FOUND },
   },
   {
     name: 'GET the inbox of an endpoint nobody registered is a 404',
     path: '/api/relay/endpoints/contract.nobody.here/inbox',
-    expect: { status: 404, body: { error: 'Endpoint not found' } },
+    expect: { status: 404, body: ENDPOINT_NOT_FOUND },
   },
   {
     name: 'GET an inbox with an unknown status filter is a validation failure',
@@ -309,7 +323,10 @@ contractSuite('the Relay groups, login off, nothing set up', [
     name: 'DELETE /dead-letters with no group named is refused',
     method: 'DELETE',
     path: '/api/relay/dead-letters',
-    expect: { status: 400, body: { error: 'source and reason are required' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Send both `source` and `reason`.' }),
+    },
   },
   {
     name: 'DELETE /dead-letters for a group that has none removes nothing',
@@ -335,16 +352,16 @@ contractSuite('the Relay groups, login off, nothing set up', [
     path: '/api/relay/stream?subject=%3E',
     expect: {
       status: 400,
-      body: {
-        error: 'Invalid subscription pattern',
-        allowedPrefixes: ['relay.human.console.', 'relay.system.', 'relay.signal.'],
-      },
+      body: problemBody('invalid_request', {
+        detail: 'That subject pattern isn’t one this stream allows.',
+        extensions: { allowedPrefixes: ['relay.human.console.', 'relay.system.', 'relay.signal.'] },
+      }),
     },
   },
   {
     name: 'GET /stream with a pattern outside the allowed prefixes is refused',
     path: '/api/relay/stream?subject=relay.agent.%3E',
-    expect: { status: 400, schema: z.object({ error: z.string() }).loose() },
+    expect: { status: 400, schema: problemWith('invalid_request') },
   },
   // --- adapters ---
   {
@@ -360,7 +377,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
   {
     name: 'GET an unknown connection is a 404',
     path: '/api/relay/adapters/contract-nobody',
-    expect: { status: 404, body: { error: 'Adapter not found' } },
+    expect: { status: 404, body: CONNECTION_NOT_FOUND },
   },
   {
     name: 'POST /adapters/test with no type is a validation failure',
@@ -383,7 +400,9 @@ contractSuite('the Relay groups, login off, nothing set up', [
     body: { type: 'not-a-type', id: 'contract-unknown', config: {} },
     expect: {
       status: 400,
-      schema: z.object({ error: z.string(), code: z.literal('UNKNOWN_TYPE') }).strict(),
+      body: problemBody('invalid_request', {
+        detail: 'DorkOS doesn’t know that kind of connection.',
+      }),
     },
   },
   {
@@ -397,7 +416,11 @@ contractSuite('the Relay groups, login off, nothing set up', [
     },
     expect: {
       status: 400,
-      schema: z.object({ error: z.string(), code: z.literal('INVALID_CONFIG') }).strict(),
+      // The refused settings by key, for the form to mark; never their values.
+      body: problemBody('invalid_request', {
+        detail: 'Check this connection’s settings, then save again.',
+        extensions: { fields: ['inbound.subject', 'inbound.secret'] },
+      }),
     },
   },
   {
@@ -406,7 +429,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     path: '/api/relay/adapters/contract-nobody',
     expect: {
       status: 404,
-      schema: z.object({ error: z.string(), code: z.literal('NOT_FOUND') }).strict(),
+      body: CONNECTION_NOT_FOUND,
     },
   },
   {
@@ -423,20 +446,20 @@ contractSuite('the Relay groups, login off, nothing set up', [
     body: { config: {} },
     expect: {
       status: 404,
-      schema: z.object({ error: z.string(), code: z.literal('NOT_FOUND') }).strict(),
+      body: CONNECTION_NOT_FOUND,
     },
   },
   {
     name: 'POST enable on an unknown connection is refused',
     method: 'POST',
     path: '/api/relay/adapters/contract-nobody/enable',
-    expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+    expect: { status: 404, body: CONNECTION_NOT_FOUND },
   },
   {
     name: 'POST disable on an unknown connection is refused',
     method: 'POST',
     path: '/api/relay/adapters/contract-nobody/disable',
-    expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
+    expect: { status: 404, body: CONNECTION_NOT_FOUND },
   },
   {
     name: 'GET a connection’s events lists them',
@@ -476,7 +499,10 @@ contractSuite('the Relay groups, login off, nothing set up', [
     method: 'POST',
     path: '/api/relay/bindings',
     body: { adapterId: 'contract-nobody', agentId: 'someone' },
-    expect: { status: 400, body: { error: "Adapter 'contract-nobody' not found" } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'That connection doesn’t exist.' }),
+    },
   },
   {
     name: 'POST move with no agent is a validation failure',
@@ -492,7 +518,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     body: { agentId: 'contract-no-agent' },
     expect: {
       status: 400,
-      body: { error: "Agent 'contract-no-agent' not found in mesh registry" },
+      body: UNKNOWN_AGENT,
     },
   },
   {
@@ -849,8 +875,12 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
     expect(created.status).toBe(201);
     expect(created.json).toMatchObject({ subject });
     const again = await call(server, 'POST', '/api/relay/endpoints', { subject });
-    expect(again.status).toBe(422);
-    expect(again.json).toEqual({ error: expect.any(String) });
+    expect(again.status).toBe(400);
+    expect(again.json).toEqual(
+      problemBody('invalid_request', {
+        detail: 'Couldn’t register that address. Check it, then try again.',
+      })
+    );
     await check(server, {
       path: '/api/relay/endpoints',
       expect: { status: 200, schema: z.array(z.object({ subject: z.string() }).loose()).min(1) },
@@ -874,7 +904,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
     });
     await check(server, {
       path: `/api/relay/endpoints/${subject}/inbox`,
-      expect: { status: 404, body: { error: 'Endpoint not found' } },
+      expect: { status: 404, body: ENDPOINT_NOT_FOUND },
     });
   });
 
@@ -911,14 +941,14 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers,
       body,
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
     await check(server, {
       method: 'POST',
       path: url,
       headers: signed(body, randomUUID(), 'a-different-secret-sixteen'),
       body,
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
     // A re-serialized body no longer matches what was signed.
     await check(server, {
@@ -926,14 +956,14 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: signed(body),
       body: JSON.stringify(JSON.parse(body)),
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
     await check(server, {
       method: 'POST',
       path: url,
       headers: signed(body, randomUUID(), HOOK_SECRET, '1000'),
       body,
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
     const { 'x-nonce': _nonce, ...noNonce } = signed(body);
     await check(server, {
@@ -941,15 +971,18 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: noNonce,
       body,
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
-    // Signed, but not JSON: verified first, then refused.
+    // Signed, but not JSON: verified first, then told its body isn't JSON.
     await check(server, {
       method: 'POST',
       path: url,
       headers: signed('{broken'),
       body: '{broken',
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      expect: {
+        status: 400,
+        body: problemBody('malformed_request', { detail: 'The request’s body isn’t JSON.' }),
+      },
     });
     // Any content type is read as bytes.
     const plain = 'plain text is still bytes';
@@ -958,7 +991,11 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: { ...signed(plain), 'content-type': 'text/plain' },
       body: plain,
-      expect: { status: 401, body: { error: 'INVALID_SIGNATURE' } },
+      // Verified as bytes, then read as JSON, which plain text isn't.
+      expect: {
+        status: 400,
+        body: problemBody('malformed_request', { detail: 'The request’s body isn’t JSON.' }),
+      },
     });
     const { 'content-type': _type, ...untyped } = signed(body);
     await check(server, {
@@ -966,7 +1003,8 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       path: url,
       headers: untyped,
       body,
-      expect: { status: 400, body: { error: 'Send a request body with a content type.' } },
+      // Flat, as every unverified refusal is, so it can't probe which ids run.
+      expect: { status: 401, body: INVALID_SIGNATURE },
     });
   });
 
@@ -1037,13 +1075,9 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       body: { adapterId: HOOK_ID, agentId: agent!.agentId, chatId: 'contract-chat' },
       expect: {
         status: 409,
-        schema: z
-          .object({
-            error: z.string(),
-            code: z.literal('CHAT_ALREADY_BOUND'),
-            conflict: z.object({ bindingId: z.literal(binding.id) }).loose(),
-          })
-          .strict(),
+        schema: problemWith('chat_already_bound').extend({
+          conflict: z.object({ bindingId: z.literal(binding.id) }).loose(),
+        }),
       },
     });
     await check(server, {
@@ -1052,7 +1086,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       body: { adapterId: HOOK_ID, agentId: 'contract-no-agent' },
       expect: {
         status: 400,
-        body: { error: "Agent 'contract-no-agent' not found in mesh registry" },
+        body: UNKNOWN_AGENT,
       },
     });
     await check(server, {
@@ -1075,7 +1109,12 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       method: 'PATCH',
       path: `/api/relay/bindings/${binding.id}`,
       body: { bridge: 'room', chatId: null },
-      expect: { status: 400, schema: VALIDATION_FAILED },
+      expect: {
+        status: 400,
+        body: problemBody('invalid_request', {
+          detail: 'Pick one chat before turning this route into a channel.',
+        }),
+      },
     });
     await check(server, {
       method: 'POST',
@@ -1095,7 +1134,12 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
     await check(server, {
       method: 'POST',
       path: `/api/relay/bindings/${binding.id}/test`,
-      expect: { status: 409, body: { error: 'Binding is paused. Resume to run a test.' } },
+      expect: {
+        status: 409,
+        body: problemBody('chat_route_paused', {
+          detail: 'This chat route is paused. Resume it to run a test.',
+        }),
+      },
     });
     await check(server, {
       method: 'POST',
@@ -1141,7 +1185,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       body: hook,
       expect: {
         status: 403,
-        schema: z.object({ code: z.literal('marked_turn_typed_secret') }).loose(),
+        schema: problemWith('forbidden'),
       },
     });
     await setup(server, 'POST', '/api/relay/adapters', hook);
@@ -1230,7 +1274,7 @@ describe('contract: the Relay groups with login on', () => {
       expect: {
         status: 404,
         headers: { 'cache-control': 'no-store' },
-        body: { error: 'Delivery receipt not found.', code: 'RELAY_RECEIPT_NOT_FOUND' },
+        body: RECEIPT_NOT_FOUND,
       },
     });
     await check(server, {

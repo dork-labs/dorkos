@@ -22,7 +22,9 @@
 #   bash scripts/heavy-run-lock.sh --status (the line, who runs, the stale check)
 #   bash scripts/heavy-run-lock.sh --list | --insert | --move | --remove ...
 #                                           (write the line by command, never
-#                                           by hand; scripts/lib/heavy-order-write.sh)
+#                                           by hand; scripts/lib/heavy-order-write.sh;
+#                                           an --insert with no position goes where
+#                                           its ticket ranks: lib/heavy-order-rank.sh)
 #
 # It forwards the command's output and exit code unchanged, so on a quiet
 # machine it is invisible: the first slot is free and the command starts. The
@@ -285,6 +287,8 @@ if [ -n "$label" ] || [ -n "$order_cmd" ]; then
   . "$here/lib/heavy-order.sh"
   # shellcheck source=lib/heavy-order-write.sh
   . "$here/lib/heavy-order-write.sh"
+  # shellcheck source=lib/heavy-order-rank.sh
+  . "$here/lib/heavy-order-rank.sh"
   [ -n "$label" ] && { order_valid label "$label" || exit 2; }
   order_dir=$(heavy_order_dir)
   if order_dir_ready "$order_dir"; then

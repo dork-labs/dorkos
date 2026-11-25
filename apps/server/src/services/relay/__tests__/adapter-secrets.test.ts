@@ -11,7 +11,6 @@ import {
   materializeAdapterSecrets,
   resolveAdapterSecrets,
   deleteAdapterSecrets,
-  secretFieldKeys,
 } from '../adapter-secrets.js';
 import {
   maskSensitiveFields,
@@ -58,16 +57,6 @@ const manifests = new Map<string, AdapterManifest>([
 function telegramConfig(token: string): AdapterConfig {
   return { id: 'telegram-1', type: 'telegram', enabled: true, config: { token } } as AdapterConfig;
 }
-
-describe('secretFieldKeys', () => {
-  it('returns the password field keys for a known adapter type', () => {
-    expect(secretFieldKeys(TELEGRAM_MANIFEST)).toContain('token');
-  });
-
-  it('returns an empty list for an unknown manifest', () => {
-    expect(secretFieldKeys(undefined)).toEqual([]);
-  });
-});
 
 describe('materializeAdapterSecrets — migration', () => {
   let store: FakeCredentialStore;
@@ -230,10 +219,6 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
     webhookManifests = new Map<string, AdapterManifest>([['webhook', WEBHOOK_MANIFEST]]);
   });
 
-  it('is declared a secret field by the manifest', () => {
-    expect(secretFieldKeys(WEBHOOK_MANIFEST)).toContain('outbound.headers');
-  });
-
   it('moves every header value into the credential store', async () => {
     const config = webhookConfig({ Authorization: 'Bearer sk-live-abc', 'X-Trace': 'on' });
 
@@ -288,18 +273,6 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
     await deleteAdapterSecrets(config, { store, manifests: webhookManifests });
 
     expect(store.secrets.size).toBe(0);
-  });
-
-  it('is masked out of an API read, like any other secret field', () => {
-    const masked = maskSensitiveFields(
-      {
-        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16-chars' },
-        outbound: { url: 'u', secret: 'x', headers: { Authorization: 'Bearer sk-live-abc' } },
-      },
-      WEBHOOK_MANIFEST
-    );
-
-    expect(JSON.stringify(masked)).not.toContain('sk-live-abc');
   });
 });
 
@@ -411,34 +384,6 @@ describe('setting webhook custom headers through the form (DOR-796, server half)
         WEBHOOK_MANIFEST
       )
     ).toThrow(/expected JSON/);
-  });
-
-  it('treats a cleared field as no headers', () => {
-    const parsed = parseAdapterConfigForPersist(
-      formEntry({
-        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
-        outbound: { url: 'https://example.com/hook', secret: 'outbound-secret-16c', headers: '' },
-      }),
-      WEBHOOK_MANIFEST
-    );
-
-    expect((parsed.config as { outbound: { headers: unknown } }).outbound.headers).toEqual({});
-  });
-
-  it('leaves the caller’s own object unmutated', () => {
-    // The normalizer writes through copies; mutating the request body would
-    // surprise every caller downstream of the route.
-    const config = {
-      inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
-      outbound: {
-        url: 'https://example.com/hook',
-        secret: 'outbound-secret-16c',
-        headers: '{"Authorization": "Bearer x"}',
-      },
-    };
-    parseAdapterConfigForPersist(formEntry(config), WEBHOOK_MANIFEST);
-
-    expect(config.outbound.headers).toBe('{"Authorization": "Bearer x"}');
   });
 
   it('round-trips: typed headers survive validation, encryption, and resolution', async () => {

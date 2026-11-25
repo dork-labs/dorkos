@@ -14,16 +14,15 @@
 export function accountChangeError(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
   switch (code) {
-    case 'connection_cleanup_pending':
+    case 'account_cleanup_pending':
       return 'DorkOS is still removing this app’s earlier access. Try again in a few minutes.';
-    case 'connection_not_disconnected':
+    case 'still_connected':
       return 'Disconnect this app before removing it.';
-    case 'connection_not_found':
+    case 'not_found':
       return 'This app is no longer connected. Pick it again from the list.';
-    case 'provider_not_found':
-    case 'authentication_unavailable':
+    case 'app_not_set_up':
       return 'Sign-in isn’t available for this app. Check Settings › Connections, then try again.';
-    case 'idempotency_conflict':
+    case 'conflict':
       return 'This sign-in was already used. Start again.';
     default:
       return 'Couldn’t confirm that change. Check the app before trying again.';

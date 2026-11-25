@@ -86,6 +86,7 @@ Skills load their description into every session (the retrieval index) and their
 | `opensrc`                        | Fetching dependency source for implementation context                                                                |
 | `orchestrating-parallel-work`    | Agent-tool fan-out, batching, background agents                                                                      |
 | `organizing-fsd-architecture`    | FSD layer placement (defers to rules/fsd-layers.md for the import matrix)                                            |
+| `pruning-tests`                  | Weekly from @dorkos-qa: delete tests that fail the keep-rubric in one package, then tighten its test budget          |
 | `reading-session-transcripts`    | DorkOS session URL → JSONL resolution (claude-code runtime)                                                          |
 | `receiving-code-review`          | Technical evaluation of inbound review feedback                                                                      |
 | `requesting-code-review`         | Dispatching code-reviewer for batch-level verification                                                               |
@@ -120,23 +121,23 @@ Skills load their description into every session (the retrieval index) and their
 
 Rules inject context when Claude edits matching files (`paths:` frontmatter — a single comma-separated scalar; individually-quoted lists are invalid YAML and break loading).
 
-| Rule                     | Applies To                                                           | Key Guidance                                                                              |
-| ------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `agent-storage.md`       | mesh package, manifest, agents/mesh routes                           | File-first write-through (ADR-0043)                                                       |
-| `api.md`                 | `apps/server/src/routes/**/*.ts`                                     | Zod validation, thin routes, error shapes                                                 |
-| `app-copy.md`            | `apps/client/src/**/*.{ts,tsx}`                                      | In-app copy pointer to `writing-app-copy` + `meta/VOICE.md`: voice, words, length cap     |
-| `ci-pipeline.md`         | workflows, lefthook, turbo, hooks, `ci/`, scripts                    | Pipeline change protocol: hypothesis, ledger, deadlock, fence                             |
-| `components.md`          | `apps/client/src/**/*.tsx`                                           | Radix/shadcn patterns, a11y, which utilities exist                                        |
-| `conventions.md`         | `**/*.ts, **/*.tsx`                                                  | TSDoc format, file-size thresholds, DRY/complexity                                        |
-| `desktop.md`             | `apps/desktop/**`                                                    | Electron shell facts, packaging + native-module rebuilds                                  |
-| `dork-home.md`           | server + packages src                                                | dorkHome parameter convention, no `os.homedir()`                                          |
-| `fsd-layers.md`          | `apps/client/src/layers/**`                                          | FSD layer dependency rules, barrel imports                                                |
-| `room-conduct.md`        | rooms services/UI, relay adapters, room schemas                      | Agent etiquette in shared rooms; spec over ideation                                       |
-| `safe-defaults.md`       | config + manifest/task schemas, config-manager                       | Absence is not consent; verdict + carryover registries                                    |
-| `server-structure.md`    | `apps/server/src/{services,routes}/**`                               | Domain placement for new services, thin routes                                            |
-| `site-marketing-copy.md` | marketing layer + `(marketing)` routes                               | Points at `meta/VOICE.md`; site-specific voice, DorkOS-is certainty, /compare conventions |
-| `testing.md`             | `**/__tests__/**, **/*.test.{ts,tsx}`                                | Vitest patterns, mock Transport, FakeAgentRuntime                                         |
-| `user-facing-writing.md` | changelog, docs MDX, READMEs, package descriptions, operating skills | Pointer to `writing-for-humans` + `meta/VOICE.md` + 5 self-checks                         |
+| Rule                     | Applies To                                                           | Key Guidance                                                                                                             |
+| ------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `agent-storage.md`       | mesh package, manifest, agents/mesh routes                           | File-first write-through (ADR-0043)                                                                                      |
+| `api.md`                 | `apps/server/src/routes/**/*.ts`                                     | Zod validation, thin routes, error shapes                                                                                |
+| `app-copy.md`            | `apps/client/src/**/*.{ts,tsx}`                                      | In-app copy pointer to `writing-app-copy` + `meta/VOICE.md`: voice, words, length cap                                    |
+| `ci-pipeline.md`         | workflows, lefthook, turbo, hooks, `ci/`, scripts                    | Pipeline change protocol: hypothesis, ledger, deadlock, fence                                                            |
+| `components.md`          | `apps/client/src/**/*.tsx`                                           | Radix/shadcn patterns, a11y, which utilities exist                                                                       |
+| `conventions.md`         | `**/*.ts, **/*.tsx`                                                  | TSDoc format, file-size thresholds, DRY/complexity                                                                       |
+| `desktop.md`             | `apps/desktop/**`                                                    | Electron shell facts, packaging + native-module rebuilds                                                                 |
+| `dork-home.md`           | server + packages src                                                | dorkHome parameter convention, no `os.homedir()`                                                                         |
+| `fsd-layers.md`          | `apps/client/src/layers/**`                                          | FSD layer dependency rules, barrel imports                                                                               |
+| `room-conduct.md`        | rooms services/UI, relay adapters, room schemas                      | Agent etiquette in shared rooms; spec over ideation                                                                      |
+| `safe-defaults.md`       | config + manifest/task schemas, config-manager                       | Absence is not consent; verdict + carryover registries                                                                   |
+| `server-structure.md`    | `apps/server/src/{services,routes}/**`                               | Core or mini app (the core test), no new process per feature, space side or computer side, domain placement, thin routes |
+| `site-marketing-copy.md` | marketing layer + `(marketing)` routes                               | Points at `meta/VOICE.md`; site-specific voice, DorkOS-is certainty, /compare conventions                                |
+| `testing.md`             | `**/__tests__/**, **/*.test.{ts,tsx}`                                | Vitest patterns, mock Transport, FakeAgentRuntime                                                                        |
+| `user-facing-writing.md` | changelog, docs MDX, READMEs, package descriptions, operating skills | Pointer to `writing-for-humans` + `meta/VOICE.md` + 5 self-checks                                                        |
 
 ## Hooks (Event-Triggered)
 
@@ -160,7 +161,7 @@ Test running is deliberately **not** a per-edit hook — the model runs targeted
 
 **Formatting is deliberately not a per-edit hook either** (changed 2026-08-24). `format-changed.sh` used to sit on `PostToolUse(W/E)` and run prettier on the one file just written. Rewriting a file the moment the model edits it makes the model's in-context copy stale, so its next string-replace edit fails to match text prettier already changed — reproduced live in this repo twice, and researched in `research/20260824_agent_post_edit_formatting_stale_context.md` (which supersedes Layer 1 of `research/20260320_prettier_formatting_ai_agents.md`). It now runs on `Stop`, once per turn, over the tree's changed files: unstaged + staged + untracked, minus deletions, minus what `.prettierignore` covers. Nothing is lost by moving it, because formatting is enforced twice further down where no agent can skip it — lefthook `pre-commit` (`prettier --write {staged_files}`, `stage_fixed: true`) and the required CI `prettier --check .` gate in `lint.yml` (DOR-485). It fails open in every direction: no prettier, no git, no changes, or a prettier crash all exit 0 silently. `async: true` was deliberately **not** carried over — it does not fix staleness, it only makes the moment of the rewrite unpredictable. The full reasoning is in the script's header; read it before putting a formatter back on the edit path.
 
-Git hooks: lefthook (`lefthook.yml`) runs prettier and affected-only lint at pre-commit and, at pre-push, a formatting check plus fast ratchets (changelog fragments, max-lines, own-mocks, CI ledger coverage) and a check that your last push's CI has finished (neither hook typechecks or runs tests; run `pnpm verify:preopen` before a PR, or a full `pnpm verify` when it touches `.github/`); `.claude/git-hooks/` (post-commit changelog-fragment populator — writes a fragment to `changelog/unreleased/` per commit, never edits `CHANGELOG.md`) installs via `.claude/scripts/install-git-hooks.sh`.
+Git hooks: lefthook (`lefthook.yml`) runs prettier and affected-only lint at pre-commit and, at pre-push, a formatting check plus fast ratchets (changelog fragments, max-lines, own-mocks, CI ledger coverage) and a check that your last push's CI has finished (neither hook typechecks or runs tests; the PR's CI does; `pnpm verify:preopen` and `pnpm verify` are optional, for debugging a failure); `.claude/git-hooks/` (post-commit changelog-fragment populator — writes a fragment to `changelog/unreleased/` per commit, never edits `CHANGELOG.md`) installs via `.claude/scripts/install-git-hooks.sh`.
 
 ## ADR Pipeline
 

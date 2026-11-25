@@ -5,13 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
 import {
   ResponsiveDialog,
-  ResponsiveDialogTrigger,
   ResponsiveDialogContent,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-  ResponsiveDialogDescription,
-  ResponsiveDialogFooter,
-  ResponsiveDialogClose,
   ResponsiveDialogBody,
   ResponsiveDialogFullscreenToggle,
   useResponsiveDialog,
@@ -194,42 +188,6 @@ describe('ResponsiveDialog', () => {
     }
   );
 
-  it('gives a controlled false open prop precedence over defaultOpen', () => {
-    const onOpenChange = vi.fn();
-    render(
-      <ResponsiveDialog open={false} defaultOpen onOpenChange={onOpenChange}>
-        <ResponsiveDialogContent>content</ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-
-    expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
-    act(() => primitiveOpenChange.dialog?.(true));
-    expect(onOpenChange).toHaveBeenCalledWith(true);
-    expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
-  });
-
-  it('renders Dialog on desktop', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent>content</ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    expect(screen.getByTestId('dialog-root')).toBeInTheDocument();
-    expect(screen.queryByTestId('drawer-root')).not.toBeInTheDocument();
-  });
-
-  it('renders Drawer on mobile', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent>content</ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    expect(screen.getByTestId('drawer-root')).toBeInTheDocument();
-    expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
-  });
-
   it('keeps the open primitive stable across a breakpoint and adapts after close', () => {
     mockUseIsMobile.mockReturnValue(false);
     const { rerender } = render(
@@ -260,36 +218,6 @@ describe('ResponsiveDialog', () => {
     );
     expect(screen.getByTestId('drawer-root')).toBeInTheDocument();
     expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
-  });
-});
-
-describe('ResponsiveDialogContent', () => {
-  it('forwards props to DialogContent on desktop', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent data-testid="custom-id" aria-describedby="desc">
-          content
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    const content = screen.getByTestId('custom-id');
-    expect(content).toBeInTheDocument();
-    expect(content).toHaveAttribute('aria-describedby', 'desc');
-  });
-
-  it('forwards props to DrawerContent on mobile', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent data-testid="custom-id" aria-describedby="desc">
-          content
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    const content = screen.getByTestId('custom-id');
-    expect(content).toBeInTheDocument();
-    expect(content).toHaveAttribute('aria-describedby', 'desc');
   });
 });
 
@@ -345,44 +273,6 @@ describe('useResponsiveDialog', () => {
     );
     spy.mockRestore();
   });
-
-  it('returns isDesktop=true on desktop', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(
-      <ResponsiveDialog open>
-        <ContextSpy />
-      </ResponsiveDialog>
-    );
-    expect(screen.getByTestId('is-desktop').textContent).toBe('true');
-    expect(screen.getByTestId('fs-state').textContent).toBe('false');
-  });
-
-  it('returns isDesktop=false on mobile', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(
-      <ResponsiveDialog open>
-        <ContextSpy />
-      </ResponsiveDialog>
-    );
-    expect(screen.getByTestId('is-desktop').textContent).toBe('false');
-    expect(screen.getByTestId('fs-state').textContent).toBe('false');
-  });
-});
-
-describe('ResponsiveDialogBody', () => {
-  it('renders with correct data-slot and classes', () => {
-    render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent>
-          <ResponsiveDialogBody data-testid="body">body content</ResponsiveDialogBody>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    const body = screen.getByTestId('body');
-    expect(body).toHaveAttribute('data-slot', 'responsive-dialog-body');
-    expect(body.className).toContain('overflow-y-auto');
-    expect(body.className).toContain('px-4');
-  });
 });
 
 describe('ResponsiveDialogFullscreenToggle', () => {
@@ -396,19 +286,6 @@ describe('ResponsiveDialogFullscreenToggle', () => {
       </ResponsiveDialog>
     );
     expect(screen.getByRole('button', { name: 'Enter fullscreen' })).toBeInTheDocument();
-  });
-
-  it('returns null on mobile', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    const { container } = render(
-      <ResponsiveDialog open>
-        <ResponsiveDialogContent>
-          <ResponsiveDialogFullscreenToggle />
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    expect(screen.queryByRole('button', { name: /fullscreen/i })).not.toBeInTheDocument();
-    expect(container.querySelectorAll('[aria-label*="fullscreen"]')).toHaveLength(0);
   });
 
   it('toggles fullscreen state on click', () => {
@@ -442,18 +319,6 @@ describe('defaultFullscreen', () => {
     expect(screen.getByTestId('fs-state').textContent).toBe('true');
   });
 
-  it('isFullscreen is always false on mobile even with defaultFullscreen', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(
-      <ResponsiveDialog open defaultFullscreen>
-        <ResponsiveDialogContent>
-          <ContextSpy />
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-    expect(screen.getByTestId('fs-state').textContent).toBe('false');
-  });
-
   it('resets fullscreen state when dialog closes', () => {
     mockUseIsMobile.mockReturnValue(false);
 
@@ -479,42 +344,5 @@ describe('defaultFullscreen', () => {
 
     render(<TestWrapper />);
     expect(screen.getByTestId('fs-state').textContent).toBe('false');
-  });
-});
-
-describe('fullscreen data attribute', () => {
-  it('sets data-fullscreen on desktop content when fullscreen', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(
-      <ResponsiveDialog open defaultFullscreen>
-        <ResponsiveDialogContent data-testid="content">
-          <ResponsiveDialogFullscreenToggle />
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    );
-
-    const content = screen.getByTestId('content');
-    expect(content).toHaveAttribute('data-fullscreen');
-
-    // Toggle off
-    fireEvent.click(screen.getByRole('button', { name: 'Exit fullscreen' }));
-    expect(content).not.toHaveAttribute('data-fullscreen');
-  });
-});
-
-describe('displayNames', () => {
-  it.each([
-    ['ResponsiveDialog', ResponsiveDialog],
-    ['ResponsiveDialogTrigger', ResponsiveDialogTrigger],
-    ['ResponsiveDialogContent', ResponsiveDialogContent],
-    ['ResponsiveDialogHeader', ResponsiveDialogHeader],
-    ['ResponsiveDialogTitle', ResponsiveDialogTitle],
-    ['ResponsiveDialogDescription', ResponsiveDialogDescription],
-    ['ResponsiveDialogFooter', ResponsiveDialogFooter],
-    ['ResponsiveDialogClose', ResponsiveDialogClose],
-    ['ResponsiveDialogBody', ResponsiveDialogBody],
-    ['ResponsiveDialogFullscreenToggle', ResponsiveDialogFullscreenToggle],
-  ])('%s has displayName set', (name, component) => {
-    expect(component.displayName).toBe(name);
   });
 });

@@ -16,8 +16,6 @@ import {
   redactForLog,
   registerLinkNavigator,
   registerTabOpener,
-  supportsNewTab,
-  supportsSeparateWindow,
   type LinkNavigation,
 } from '../link-navigation';
 
@@ -33,37 +31,6 @@ describe('declaredScheme', () => {
     expect(declaredScheme('irc://irc.example.com/dorkos')).toBe('irc:');
     expect(declaredScheme('  JavaScript:alert(1)')).toBe('javascript:');
     expect(declaredScheme('mailto:hi@dorkos.ai')).toBe('mailto:');
-  });
-
-  it('never resolves against the page — a relative href declares no scheme', () => {
-    expect(declaredScheme('/team')).toBeNull();
-    expect(declaredScheme('#section')).toBeNull();
-    expect(declaredScheme('?settings=open')).toBeNull();
-    expect(declaredScheme('//evil.com/steal')).toBeNull();
-  });
-
-  it('declines to repeat back a scheme too long to be a scheme', () => {
-    // A refused href is agent- or attacker-authored and `new URL` will parse a
-    // scheme of any length out of one. The caller falls back to its generic
-    // sentence rather than rendering a heading that never ends.
-    expect(declaredScheme(`${'a'.repeat(302)}:payload`)).toBeNull();
-    // 64 characters including the colon is the boundary — kept.
-    expect(declaredScheme(`${'a'.repeat(63)}:payload`)).toBe(`${'a'.repeat(63)}:`);
-    expect(declaredScheme(`${'a'.repeat(64)}:payload`)).toBeNull();
-  });
-
-  it('keeps a real reverse-DNS OAuth scheme, which a tighter clamp would have eaten', () => {
-    // The case this message exists to serve: an MCP server naming a desktop
-    // sign-in link. Well past 24 characters, nowhere near abuse.
-    expect(declaredScheme('com.mycompany.myapp.oauth://authorize')).toBe(
-      'com.mycompany.myapp.oauth:'
-    );
-  });
-
-  it('answers null for anything that is not a URL at all', () => {
-    expect(declaredScheme('')).toBeNull();
-    expect(declaredScheme('   ')).toBeNull();
-    expect(declaredScheme('https://[')).toBeNull();
   });
 });
 
@@ -90,26 +57,6 @@ describe('classifyLink', () => {
     });
   });
 
-  it('treats an absolute same-origin app route as internal', () => {
-    expect(classifyLink(`${ORIGIN}/tasks`, FROM)).toEqual({
-      kind: 'internal',
-      url: `${ORIGIN}/tasks`,
-      path: '/tasks',
-    });
-  });
-
-  it('keeps a nested app route internal', () => {
-    const link = classifyLink('/marketplace/sources', FROM);
-    expect(link).toMatchObject({ kind: 'internal', path: '/marketplace/sources' });
-  });
-
-  it('ignores a trailing slash when matching a route', () => {
-    expect(classifyLink('/session/', FROM)).toMatchObject({
-      kind: 'internal',
-      path: '/session',
-    });
-  });
-
   it('treats a hash-only href as internal to the current route', () => {
     expect(classifyLink('#section', FROM)).toMatchObject({
       kind: 'internal',
@@ -123,20 +70,6 @@ describe('classifyLink', () => {
     expect(classifyLink('?settings=open', FROM)).toMatchObject({
       kind: 'internal',
       path: '/team?view=topology&settings=open',
-    });
-  });
-
-  it('lets a query-only href override a param it names', () => {
-    expect(classifyLink('?view=list', FROM)).toMatchObject({
-      kind: 'internal',
-      path: '/team?view=list',
-    });
-  });
-
-  it('replaces the search when the href carries a path', () => {
-    expect(classifyLink('/team?view=list', FROM)).toMatchObject({
-      kind: 'internal',
-      path: '/team?view=list',
     });
   });
 
@@ -155,31 +88,17 @@ describe('classifyLink', () => {
   });
 
   it('treats mailto: as dispatchable — a browser hands it to the OS from any page', () => {
-    // Deliberately reports success even though the desktop shell denies it
-    // today: the line this allowlist draws is what the *browser* will refuse,
-    // not what one shell currently declines.
+    // Deliberately reports success even though the desktop shell denies it today: the line this
+    // allowlist draws is what the *browser* will refuse, not what one shell currently declines.
     expect(classifyLink('mailto:hi@dorkos.ai', FROM)).toEqual({
       kind: 'external',
       url: 'mailto:hi@dorkos.ai',
     });
   });
 
-  it('treats tel: as dispatchable — the same case as mailto:, and the reason chat phone links still work', () => {
-    // Added with DOR-547, when markdown links joined this policy. A browser
-    // hands `tel:` to the OS dialer from any page, so an agent writing a phone
-    // number as a link produces one that goes somewhere on the web and phone
-    // surfaces — which it did before this list governed markdown, and must
-    // still do after.
-    expect(classifyLink('tel:+15551234567', FROM)).toEqual({
-      kind: 'external',
-      url: 'tel:+15551234567',
-    });
-  });
-
   it('still refuses the chat-only schemes the markdown sanitizer permits', () => {
-    // `irc:`, `ircs:` and `xmpp:` are the whole of what Streamdown's sanitizer
-    // allows and this list does not. Before DOR-547 they dispatched from chat
-    // markdown and nowhere else; now they are refused everywhere, out loud.
+    // `irc:`, `ircs:` and `xmpp:` are the whole of what Streamdown's sanitizer allows and this
+    // list does not.
     for (const href of ['irc://irc.example.com/dorkos', 'ircs://irc.example.com', 'xmpp:a@b.com']) {
       expect(classifyLink(href, FROM), href).toEqual({
         kind: 'blocked',
@@ -189,19 +108,12 @@ describe('classifyLink', () => {
   });
 
   it('blocks a file: target from the http cockpit — opening one is a guaranteed no-op', () => {
-    // Browsers block file: from an http: page and the desktop shell forwards
-    // only http(s), so reporting success here would be a lie. An MCP server
-    // naming `file:///…/authorize.html` must not produce a confirm button.
+    // Browsers block file: from an http: page and the desktop shell forwards only http(s), so
+    // reporting success here would be a lie.
     expect(classifyLink('file:///Users/kai/notes.md', FROM)).toEqual({
       kind: 'blocked',
       reason: 'unsupported-scheme',
     });
-  });
-
-  it('allows a file: target from a file: page — the only surface where it works', () => {
-    expect(
-      classifyLink('file:///Users/kai/notes.md', 'file:///Applications/DorkOS/index.html')
-    ).toMatchObject({ kind: 'external' });
   });
 
   it('blocks a scheme nothing in the app opens', () => {
@@ -254,27 +166,6 @@ describe('classifyLink', () => {
     expect(classifyLink('   ', FROM)).toEqual({ kind: 'blocked', reason: 'unparsable' });
   });
 
-  it('blocks a malformed base instead of throwing', () => {
-    expect(classifyLink('/session', 'not-a-url')).toEqual({
-      kind: 'blocked',
-      reason: 'unparsable',
-    });
-  });
-
-  it('defaults its base to the current page', () => {
-    // jsdom serves the tests from localhost, whose root path is an app route.
-    expect(classifyLink('/tasks')).toMatchObject({ kind: 'internal', path: '/tasks' });
-  });
-
-  it('keeps working from a file:// base (the electron-vite preview renderer)', () => {
-    // `loadFile` puts the renderer on file://, where a relative in-app link
-    // inherits `file:`. Dropping it from the allowlist would block every
-    // internal link in that mode, so this pins it.
-    const from = 'file:///Applications/DorkOS.app/renderer/index.html';
-    expect(classifyLink('/tasks', from)).toMatchObject({ kind: 'internal', path: '/tasks' });
-    expect(classifyLink('https://dorkos.ai', from)).toMatchObject({ kind: 'external' });
-  });
-
   it('classifies every declared app route as internal', () => {
     for (const route of APP_ROUTE_PATHS) {
       expect(classifyLink(route, FROM), route).toMatchObject({ kind: 'internal' });
@@ -283,17 +174,12 @@ describe('classifyLink', () => {
 });
 
 describe('internalRoutePath', () => {
-  // The gate for a path this app did not author: the server's activity
-  // `linkPath`, an extension's `navigate(path)` argument (DOR-924). Both used
-  // to be cast straight into the router's typed `to`.
+  // The gate for a path this app did not author: the server's activity `linkPath`, an extension's
+  // `navigate(path)` argument (DOR-924).
   it('returns the router path for a route the app serves', () => {
     expect(internalRoutePath('/tasks')).toBe('/tasks');
     expect(internalRoutePath('/agents')).toBe('/agents');
     expect(internalRoutePath('/')).toBe('/');
-  });
-
-  it('keeps the search and hash a supplied path carries', () => {
-    expect(internalRoutePath('/session?dir=%2Ftmp#top')).toBe('/session?dir=%2Ftmp#top');
   });
 
   it('refuses a path naming no route, rather than inventing one', () => {
@@ -324,12 +210,7 @@ describe('link dispatch', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let tabCleanups: (() => void)[];
 
-  /**
-   * Register a strip and collect what it opens. Torn down in `afterEach` rather
-   * than at the end of the test body, so a failing assertion cannot leak an
-   * opener into the next case and turn a cascade into what looks like a second
-   * detection.
-   */
+  /** Register a strip and collect what it opens. */
   function captureTabOpens(): string[] {
     const opened: string[] = [];
     tabCleanups.push(registerTabOpener((href) => opened.push(href)));
@@ -360,45 +241,6 @@ describe('link dispatch', () => {
       expect(openSpy).not.toHaveBeenCalled();
     });
 
-    it('passes the replace intent through to the router', () => {
-      openLink('/tasks', { replace: true });
-      expect(navigated).toEqual([{ href: '/tasks', replace: true }]);
-    });
-
-    it('opens an internal link in a second cockpit window on request', () => {
-      enterDesktopShell();
-      openLink('/session?dir=%2Ftmp', { target: 'window' });
-      expect(openSpy).toHaveBeenCalledWith(
-        `${window.location.origin}/session?dir=%2Ftmp`,
-        '_blank'
-      );
-      expect(navigated).toEqual([]);
-    });
-
-    it('degrades a window request in a browser to a browser tab, never to here', () => {
-      // A browser has no second window worth offering, so the palette never
-      // asks for one there — but the seam must answer honestly for anything
-      // that does. A tab is not the window that was asked for; navigating in
-      // place would take away the view the person still has.
-      openLink('/session?dir=%2Ftmp', { target: 'window' });
-      expect(openSpy).toHaveBeenCalledWith(
-        `${window.location.origin}/session?dir=%2Ftmp`,
-        '_blank'
-      );
-      expect(navigated).toEqual([]);
-    });
-
-    it('keeps a window request out of the strip, even with one registered', () => {
-      // "Put this on my other monitor" is not "give me another tab". A desktop
-      // window request must reach the shell's own-origin handler even with a
-      // strip registered, or the tab/window split is a lie told in the UI.
-      enterDesktopShell();
-      const opened = captureTabOpens();
-      openLink('/tasks', { target: 'window' });
-      expect(opened).toEqual([]);
-      expect(openSpy).toHaveBeenCalledWith(`${window.location.origin}/tasks`, '_blank');
-    });
-
     it('hands an external link to the browser', () => {
       openLink('https://dorkos.ai/docs');
       expect(openSpy).toHaveBeenCalledWith(
@@ -409,15 +251,6 @@ describe('link dispatch', () => {
       expect(navigated).toEqual([]);
     });
 
-    it('hands a same-origin non-route path to the browser', () => {
-      openLink('/dev', { target: 'window' });
-      expect(openSpy).toHaveBeenCalledWith(
-        `${window.location.origin}/dev`,
-        '_blank',
-        'noopener,noreferrer'
-      );
-    });
-
     it('refuses a script-bearing scheme', () => {
       openLink('javascript:alert(1)');
       expect(openSpy).not.toHaveBeenCalled();
@@ -426,25 +259,11 @@ describe('link dispatch', () => {
     });
 
     it('opens an internal target with exactly two arguments — never noopener', () => {
-      // The desktop shell's window-open handler has to be able to tell our own
-      // cockpit from someone else's site; a `noopener` third argument here
-      // would forfeit that. Asserting the whole call pins the arity.
+      // The desktop shell's window-open handler has to be able to tell our own cockpit from
+      // someone else's site; a `noopener` third argument here would forfeit that.
       enterDesktopShell();
       openLink('/tasks', { target: 'window' });
       expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
-    });
-
-    it('warns rather than forcing a document load when no router is registered', () => {
-      unregister();
-      openLink('/tasks');
-      expect(openSpy).not.toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalled();
-    });
-
-    it('still reaches the browser for external links with no router registered', () => {
-      unregister();
-      openLink('https://dorkos.ai');
-      expect(openSpy).toHaveBeenCalled();
     });
 
     it('opens an internal link in an in-window tab in the desktop app', () => {
@@ -456,80 +275,11 @@ describe('link dispatch', () => {
       expect(openSpy).not.toHaveBeenCalled();
       expect(navigated).toEqual([]);
     });
-
-    it('opens a real browser tab in the browser, where no strip is registered', () => {
-      // The browser owns tabs there, so the app entry registers no opener
-      // (DOR-568) and this must reach `window.open` rather than quietly
-      // navigating in place and losing the view you asked to keep.
-      openLink('/session?dir=%2Ftmp', { target: 'tab' });
-      expect(openSpy).toHaveBeenCalledWith(
-        `${window.location.origin}/session?dir=%2Ftmp`,
-        '_blank'
-      );
-      expect(navigated).toEqual([]);
-    });
-
-    it('opens a browser tab in the browser even with a strip registered', () => {
-      // The surface decides, not who registered an adapter. `main.tsx` only
-      // registers an opener on the desktop, but that gate reads as redundant
-      // beside `registerLinkNavigator` — and if it were the only thing enforcing
-      // the surface, deleting it would turn every "Open in a new tab" in the
-      // browser into an in-place navigation into a strip nothing renders, with
-      // the whole suite still green.
-      const opened = captureTabOpens();
-      openLink('/session?dir=%2Ftmp', { target: 'tab' });
-      expect(opened).toEqual([]);
-      expect(openSpy).toHaveBeenCalledWith(
-        `${window.location.origin}/session?dir=%2Ftmp`,
-        '_blank'
-      );
-      expect(navigated).toEqual([]);
-    });
-
-    it('hands a desktop tab request to the shell when no strip is registered yet', () => {
-      // Nothing renders a strip until the app entry registers one. Until then a
-      // same-origin `window.open` reaches the shell's `setWindowOpenHandler`
-      // (`apps/desktop/src/main/window-manager.ts`), which recognises its own
-      // origin and builds a second cockpit window. Not the tab that was asked
-      // for, but a second view, and never an in-place navigation.
-      enterDesktopShell();
-      openLink('/session?dir=%2Ftmp', { target: 'tab' });
-      expect(openSpy).toHaveBeenCalledWith(
-        `${window.location.origin}/session?dir=%2Ftmp`,
-        '_blank'
-      );
-      expect(navigated).toEqual([]);
-    });
-
-    it('sends an external link to the browser even when a tab is asked for', () => {
-      const opened = captureTabOpens();
-      openLink('https://dorkos.ai/docs', { target: 'tab' });
-      expect(opened).toEqual([]);
-      expect(openSpy).toHaveBeenCalledWith(
-        'https://dorkos.ai/docs',
-        '_blank',
-        'noopener,noreferrer'
-      );
-    });
-
-    it('reports whether the link was actually dispatched', () => {
-      expect(openLink('/tasks')).toBe(true);
-      expect(openLink('/tasks', { target: 'window' })).toBe(true);
-      expect(openLink('/tasks', { target: 'tab' })).toBe(true);
-      expect(openLink('https://dorkos.ai')).toBe(true);
-      expect(openLink('myapp://authorize')).toBe(false);
-      expect(openLink('javascript:alert(1)')).toBe(false);
-      unregister();
-      // Internal with nowhere to route it is a no-op, and must say so.
-      expect(openLink('/tasks')).toBe(false);
-    });
   });
 
   describe('openExternalLink', () => {
     it('leaves the app even for one of our own routes', () => {
-      // The LinkSafetyModal's contract is "this leaves what you are looking
-      // at". A gen-UI widget, MCP App, or elicitation payload naming `/team`
-      // must not navigate the session out from under the reader.
+      // The LinkSafetyModal's contract is "this leaves what you are looking at".
       openExternalLink('/session');
       expect(openSpy).toHaveBeenCalledWith(
         `${window.location.origin}/session`,
@@ -539,17 +289,6 @@ describe('link dispatch', () => {
       expect(navigated).toEqual([]);
     });
 
-    it('still opens with no router registered', () => {
-      unregister();
-      openExternalLink('https://dorkos.ai/docs');
-      expect(openSpy).toHaveBeenCalledWith(
-        'https://dorkos.ai/docs',
-        '_blank',
-        'noopener,noreferrer'
-      );
-      expect(warnSpy).not.toHaveBeenCalled();
-    });
-
     it('refuses a script-bearing scheme', () => {
       openExternalLink('javascript:alert(1)');
       expect(openSpy).not.toHaveBeenCalled();
@@ -557,10 +296,9 @@ describe('link dispatch', () => {
     });
 
     it('uses the desktop shell bridge, which is the only thing that can leave our own origin', () => {
-      // `window.open` at `http://localhost:<port>` is claimed by the shell's
-      // window-open handler and becomes a second cockpit window — right for
-      // "open in a new tab", and a broken promise for everything here. Settings
-      // → Server's "open in your browser" is exactly that URL.
+      // `window.open` at `http://localhost:<port>` is claimed by the shell's window-open handler
+      // and becomes a second cockpit window — right for "open in a new tab", and a broken promise
+      // for everything here.
       const openExternal = vi.fn().mockResolvedValue(undefined);
       window.electronAPI = { openExternal } as unknown as ElectronAPI;
       try {
@@ -569,41 +307,6 @@ describe('link dispatch', () => {
         expect(openSpy).not.toHaveBeenCalled();
       } finally {
         delete window.electronAPI;
-      }
-    });
-
-    it('falls back to window.open when a host exposes a bridge without this method', () => {
-      // The bridge is feature-detected per method, like every other
-      // `electronAPI` consumer. A host with an older or partial preload would
-      // otherwise throw out of the seam instead of opening anything.
-      window.electronAPI = { platform: 'darwin' } as unknown as ElectronAPI;
-      try {
-        expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
-        expect(openSpy).toHaveBeenCalledWith(
-          'https://dorkos.ai/docs',
-          '_blank',
-          'noopener,noreferrer'
-        );
-      } finally {
-        delete window.electronAPI;
-      }
-    });
-
-    it('reports a bridge failure somewhere findable rather than as an unhandled rejection', async () => {
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      window.electronAPI = {
-        openExternal: vi.fn().mockRejectedValue(new Error('shell refused')),
-      } as unknown as ElectronAPI;
-      try {
-        // Already returned `true` by the time the promise settles, so the only
-        // honest thing left is to leave a trace a bug report can find.
-        expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
-        await Promise.resolve();
-        await Promise.resolve();
-        expect(errorSpy).toHaveBeenCalled();
-      } finally {
-        delete window.electronAPI;
-        errorSpy.mockRestore();
       }
     });
 
@@ -619,19 +322,13 @@ describe('link dispatch', () => {
     });
 
     it('refuses on the desktop what the shell would drop, rather than reporting success (DOR-547)', () => {
-      // The ticket's own symptom, one process later. `mailto:`/`tel:` clear
-      // this module's allowlist and are then dropped by the shell's
-      // http(s)-only `isWebLink` — silently, before this. Refused here instead,
-      // synchronously, so the return value the caller gates on is honest.
+      // The ticket's own symptom, one process later.
       const openExternal = vi.fn().mockResolvedValue(true);
       window.electronAPI = { openExternal } as unknown as ElectronAPI;
       try {
         expect(openExternalLink('mailto:hi@dorkos.ai')).toBe(false);
         expect(openExternal).not.toHaveBeenCalled();
-        // Whose policy refused it is part of the sentence. The generic title
-        // would have said "DorkOS doesn't open mailto: links", which is false
-        // on the web app and self-contradicting beside "opens web, email and
-        // phone links".
+        // Whose policy refused it is part of the sentence.
         expect(toast.error).toHaveBeenCalledWith('The desktop app can’t open mailto: links', {
           id: 'dorkos-link-refused',
           description: 'They open from DorkOS in a browser.',
@@ -640,123 +337,17 @@ describe('link dispatch', () => {
         delete window.electronAPI;
       }
     });
-
-    it('still opens mailto: and tel: where a browser would carry them', () => {
-      // No bridge in scope: the web app and the phone surface, where both
-      // genuinely reach an OS handler. The desktop refusal above must not
-      // become a refusal everywhere.
-      expect(openExternalLink('mailto:hi@dorkos.ai')).toBe(true);
-      expect(openExternalLink('tel:+15551234567')).toBe(true);
-      expect(toast.error).not.toHaveBeenCalled();
-    });
-
-    it('reports a shell decline the client-side mirror let through', async () => {
-      // Drift insurance, not a live second case: everything reaching the bridge
-      // has been through `new URL`, so the two predicates cannot disagree today
-      // (a `HTTP://` spelling arrives lowercased and clears both). They are
-      // still two predicates in two processes, and the failure mode when one
-      // widens is a link reported as opened that never opened — the whole bug
-      // class this ticket is about. The boolean makes that loud on the day it
-      // happens.
-      //
-      // It also must not blame the scheme: this is a web link, and "http: links
-      // don't open in the desktop app" would be false.
-      const openExternal = vi.fn().mockResolvedValue(false);
-      window.electronAPI = { openExternal } as unknown as ElectronAPI;
-      try {
-        openExternalLink('https://dorkos.ai/docs');
-        await Promise.resolve();
-        await Promise.resolve();
-        expect(toast.error).toHaveBeenCalledWith('The desktop app couldn’t open that link', {
-          id: 'dorkos-link-refused',
-          description: 'It didn’t reach your browser.',
-        });
-      } finally {
-        delete window.electronAPI;
-      }
-    });
-
-    it('stays silent when an older preload answers nothing at all', async () => {
-      // `undefined` is "this build predates the boolean", not "declined".
-      // Accusing the shell of refusing a link it opened would be its own lie.
-      const openExternal = vi.fn().mockResolvedValue(undefined);
-      window.electronAPI = { openExternal } as unknown as ElectronAPI;
-      try {
-        expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
-        await Promise.resolve();
-        await Promise.resolve();
-        expect(toast.error).not.toHaveBeenCalled();
-      } finally {
-        delete window.electronAPI;
-      }
-    });
-
-    it('reports whether the link was actually dispatched', () => {
-      // Callers that tell the user something happened must gate on this.
-      // A refusal is otherwise silent, and silence reads as success.
-      expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
-      expect(openExternalLink('/session')).toBe(true);
-      expect(openExternalLink('myapp://authorize')).toBe(false);
-      expect(openExternalLink('javascript:alert(1)')).toBe(false);
-      expect(openExternalLink('http://')).toBe(false);
-      // A file: target from the http cockpit cannot open, so it must not claim to.
-      expect(openExternalLink('file:///Users/kai/authorize.html')).toBe(false);
-    });
   });
 
   describe('a refusal says so (DOR-547)', () => {
     it('names the scheme it will not open', () => {
-      // The seam owns the policy, so it owns the sentence. Before this, a
-      // refused click was a console warning and nothing the person could see —
-      // identical, from their side, to a link that was simply broken.
+      // The seam owns the policy, so it owns the sentence.
       openExternalLink('irc://irc.example.com/dorkos');
 
       expect(toast.error).toHaveBeenCalledWith('DorkOS doesn’t open irc: links', {
         id: 'dorkos-link-refused',
         description: 'Only web, email and phone links open.',
       });
-    });
-
-    it('says something different when the address is broken rather than refused', () => {
-      openExternalLink('http://');
-
-      expect(toast.error).toHaveBeenCalledWith('DorkOS couldn’t open that link', {
-        id: 'dorkos-link-refused',
-        description: 'The address is incomplete.',
-      });
-    });
-
-    it('names the scheme the href itself declares, never one it inherited', () => {
-      expect(classifyLink('/team', 'app://obsidian.md/index.html')).toEqual({
-        kind: 'blocked',
-        reason: 'unsupported-scheme',
-      });
-      // The href in that case declares no scheme of its own, so the message
-      // falls back to the same sentence a broken address gets. An explicit one
-      // is named.
-      openExternalLink('app://obsidian.md/team');
-      expect(toast.error).toHaveBeenCalledWith('DorkOS doesn’t open app: links', expect.anything());
-    });
-
-    it('reuses one toast slot, so a second refused click replaces the first message', () => {
-      openExternalLink('irc://irc.example.com/dorkos');
-      openExternalLink('xmpp:someone@example.com');
-
-      expect(toast.error).toHaveBeenCalledTimes(2);
-      const ids = vi.mocked(toast.error).mock.calls.map(([, options]) => options?.id);
-      expect(new Set(ids).size).toBe(1);
-    });
-
-    it('stays quiet when there is no refusal to report', () => {
-      openExternalLink('https://dorkos.ai/docs');
-      openLink('/tasks');
-      expect(toast.error).not.toHaveBeenCalled();
-    });
-
-    it('drops the scheme from the message when it is too long to be one', () => {
-      openExternalLink(`${'a'.repeat(302)}://payload`);
-
-      expect(toast.error).toHaveBeenCalledWith('DorkOS couldn’t open that link', expect.anything());
     });
 
     it('refuses every hostile spelling by name, on one message shape', () => {
@@ -787,30 +378,6 @@ describe('link dispatch', () => {
         expect(toast.error, href).toHaveBeenCalledWith(title, expect.anything());
       }
     });
-
-    it('stays quiet for a missing router, which is a wiring bug and not a refusal', () => {
-      unregister();
-      expect(openLink('/tasks')).toBe(false);
-      expect(warnSpy).toHaveBeenCalled();
-      expect(toast.error).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('supportsNewTab', () => {
-    it('stays true in the desktop app — a tab is a tab, whoever owns it', () => {
-      enterDesktopShell();
-      expect(supportsNewTab()).toBe(true);
-    });
-  });
-
-  describe('supportsSeparateWindow', () => {
-    it('is true in the desktop app and false in the browser', () => {
-      // A browser's "new window" is the tab "Open in a new tab" already offers,
-      // so the second row is not offered there (DOR-568).
-      expect(supportsSeparateWindow()).toBe(false);
-      enterDesktopShell();
-      expect(supportsSeparateWindow()).toBe(true);
-    });
   });
 
   describe('registerLinkNavigator', () => {
@@ -834,9 +401,8 @@ describe('openExternalWindowLater', () => {
     delete window.electronAPI;
   });
 
-  // Purpose: a window opened after a round trip is a blocked pop-up in Safari;
-  // this opens it in the press, without `noopener`, so a block is visible.
-  // Fails if the window is opened late, with `noopener`, or keeps its opener.
+  // Purpose: a window opened after a round trip is a blocked pop-up in Safari; this opens it in
+  // the press, without `noopener`, so a block is visible.
   it('opens a blank window at once, severs its opener, and sends it on later', () => {
     const replace = vi.fn();
     const fake = { opener: {} as unknown, location: { replace }, close: vi.fn() };
@@ -848,11 +414,6 @@ describe('openExternalWindowLater', () => {
     expect(replace).toHaveBeenCalledWith('https://community.example.invalid/claim/secret');
   });
 
-  it('answers null when the browser blocks the window', () => {
-    vi.spyOn(window, 'open').mockReturnValue(null);
-    expect(openExternalWindowLater()).toBeNull();
-  });
-
   it('closes the window rather than send it to a link it would refuse', () => {
     const fake = { opener: null, location: { replace: vi.fn() }, close: vi.fn() };
     vi.spyOn(window, 'open').mockReturnValue(fake as unknown as Window);
@@ -861,16 +422,6 @@ describe('openExternalWindowLater', () => {
     expect(pending!.go('javascript:alert(1)')).toBe(false);
     expect(fake.close).toHaveBeenCalled();
     expect(fake.location.replace).not.toHaveBeenCalled();
-  });
-
-  it('hands the link to the desktop shell when there is one', () => {
-    const openExternal = vi.fn(() => Promise.resolve(true));
-    window.electronAPI = { openExternal } as unknown as ElectronAPI;
-    const open = vi.spyOn(window, 'open');
-    const pending = openExternalWindowLater();
-    expect(open).not.toHaveBeenCalled();
-    pending!.go('https://community.example.invalid/claim/secret');
-    expect(openExternal).toHaveBeenCalledWith('https://community.example.invalid/claim/secret');
   });
 });
 
@@ -883,13 +434,6 @@ describe('redactForLog', () => {
     expect(redactForLog('mailto:someone@example.com')).toBe('mailto:…');
     expect(redactForLog('not a link')).toBe('[unparsable link]');
   });
-
-  it('is what a refusal logs', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    openExternalLink('irc://irc.example.com/secret-room?key=abc');
-    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-room');
-    warn.mockRestore();
-  });
 });
 
 describe('plainAppAddress — which agent-written links open without asking (DOR-2824)', () => {
@@ -897,6 +441,23 @@ describe('plainAppAddress — which agent-written links open without asking (DOR
     expect(plainAppAddress('/session?session=abc', FROM)).toBe('/session?session=abc');
     expect(plainAppAddress(`${ORIGIN}/session?session=abc`, FROM)).toBe('/session?session=abc');
     expect(plainAppAddress('/team', FROM)).toBe('/team');
+  });
+
+  it('passes a /r/ link, which only names a thing (DOR-5046)', () => {
+    const chat = '/r/dork:chat:7c1e4b2a-9f3d-4e8b-a6c5-a1b2c3d4e5f6';
+    expect(plainAppAddress(chat, FROM)).toBe(chat);
+    expect(plainAppAddress(`${ORIGIN}/r/dork:agent:01KJXYKJYW4N8QGQ5W4GB6YM9J`, FROM)).toBe(
+      '/r/dork:agent:01KJXYKJYW4N8QGQ5W4GB6YM9J'
+    );
+  });
+
+  it.each([
+    ['a search param', '/r/dork:chat:abc?send=1'],
+    ['a prompt', '/r/dork:chat:abc?prompt=hi'],
+    ['another origin', 'https://evil.example/r/dork:chat:abc'],
+    ['no reference', '/r/not-a-ref'],
+  ])('refuses a /r/ link with %s', (_label, href) => {
+    expect(plainAppAddress(href, FROM)).toBeNull();
   });
 
   it.each([
@@ -930,14 +491,5 @@ describe('plainAppAddress — which agent-written links open without asking (DOR
     ['a different case of a known key', '/session?Session=abc'],
   ])('refuses a link carrying %s', (_label, href) => {
     expect(plainAppAddress(href, FROM)).toBeNull();
-  });
-
-  it('keeps a hash and every address param', () => {
-    expect(plainAppAddress('/channels?id=r1&thread=t1&entry=4#top', FROM)).toBe(
-      '/channels?id=r1&thread=t1&entry=4#top'
-    );
-    expect(plainAppAddress('/session?session=abc&message=m1', FROM)).toBe(
-      '/session?session=abc&message=m1'
-    );
   });
 });

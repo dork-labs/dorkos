@@ -80,7 +80,7 @@ describe('workspaces routes', () => {
       .post('/api/workspaces')
       .send({ projectKey: 'core', key: 'k', source: 'ext::sh' });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('UNSAFE_WORKSPACE_SOURCE');
+    expect(res.body.code).toBe('invalid_request');
   });
 
   it('DELETE returns 200 + blocked:dirty for a dirty workspace (not 409)', async () => {

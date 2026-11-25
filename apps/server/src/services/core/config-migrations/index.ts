@@ -75,6 +75,7 @@ import {
   renameTodoPromiseActions,
   seedLoadGate,
   markSlotlessApprovals,
+  seedAgentsMayPickOff,
 } from './v0-90-onward.js';
 
 /**
@@ -1184,4 +1185,11 @@ export const CONFIG_MIGRATIONS = {
   // (DOR-4891). Only a listed approval gets its places on the next scan. See
   // `markSlotlessApprovals`.
   '0.140.0': markSlotlessApprovals,
+  // v0.141.0 is the newest tag, so this opens 0.142.0. Frozen from merge;
+  // anything further opens `'0.143.0'`.
+  //
+  // Writes `agentsMayPick: false` on every registered Claude account row that
+  // lacks it, and touches nothing else (DOR-5033). Absent already reads as
+  // closed; this puts the choice on disk. See `seedAgentsMayPickOff`.
+  '0.142.0': seedAgentsMayPickOff,
 } as const;

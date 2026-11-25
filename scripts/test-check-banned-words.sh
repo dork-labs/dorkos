@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# scripts-suite-lane: harness (needs node_modules; see scripts/run-scripts-suites.sh)
 # Fixture suite for scripts/check-banned-words.sh, the DOR-1517 prose guard.
 #
 # It exists because a guard nobody has watched fail is not known to work. The

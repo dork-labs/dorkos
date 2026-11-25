@@ -101,7 +101,7 @@ describe('ChatAppAnswerers', () => {
     const transport = transportWith([]);
     vi.mocked(transport.createBinding).mockRejectedValue(
       Object.assign(new Error('taken'), {
-        code: 'CHAT_ALREADY_BOUND',
+        code: 'chat_already_bound',
         body: { conflict: { bindingId: 'b-old', agentId: 'mailroom' } },
       })
     );

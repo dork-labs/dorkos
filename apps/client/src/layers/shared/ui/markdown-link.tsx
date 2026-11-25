@@ -108,7 +108,7 @@ function MarkdownLinkImpl({ href, className, children, node: _node, ...rest }: M
       // genuine `click` event.
       const isModified =
         event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
-      // A link to one of the app's own pages — `[Chat title](/session?session=…)`
+      // A link to one of the app's own pages — `[Chat title](/r/dork:chat:…)`
       // — goes there without asking (DOR-2824). `plainAppAddress` is the gate,
       // not the href's shape: only a same-origin URL on a core route, carrying
       // only params that say which chat or message to show, qualifies.

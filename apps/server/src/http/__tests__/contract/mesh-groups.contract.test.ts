@@ -47,6 +47,7 @@ import {
   type ComposedServer,
   type ContractCase,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -58,16 +59,27 @@ mkdirSync(WORK, { recursive: true });
 afterAll(() => rmSync(WORK, { recursive: true, force: true }));
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
-const AGENT_NOT_FOUND = { error: 'Agent not found' };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
+const AGENT_NOT_FOUND = problemBody('not_found', { detail: 'No agent with that id.' });
+const OUTSIDE = problemBody('outside_boundary', {
+  detail: 'Pick a folder inside the ones DorkOS may use.',
+});
+const NO_PATH = problemBody('invalid_request', { detail: 'Send the agent’s folder as `path`.' });
+const NO_AGENT_HERE = problemBody('not_found', {
+  detail: 'No agent is registered in that folder.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 /** A ULID nothing in a fresh install has. */
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).loose();
-const BOUNDARY_REFUSAL = z.object({ error: z.string(), code: z.string() }).strict();
+const VALIDATION_FAILED = z
+  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
+  .loose();
 const NEEDS_APPROVAL = z.object({ error: z.string(), code: z.literal('NEEDS_APPROVAL') }).strict();
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
 const AGENT_LIST = z.object({ agents: z.array(z.object({ id: z.string() }).loose()) }).strict();
 const EVENT_STREAM = {
   'content-type': 'text/event-stream',
@@ -122,7 +134,7 @@ contractSuite('mesh, agent and discovery groups', [
   {
     name: 'GET /api/mesh/agents/:id answers 404 for an unknown agent',
     path: `/api/mesh/agents/${UNKNOWN_ULID}`,
-    expect: { status: 404, headers: JSON_TYPE, body: AGENT_NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: AGENT_NOT_FOUND },
   },
   {
     name: 'HEAD /api/mesh/agents/:id answers 404 with no body',
@@ -189,7 +201,7 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'POST',
     path: '/api/mesh/discover',
     body: { roots: ['/'] },
-    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE },
   },
   {
     name: 'POST /api/mesh/discover refuses malformed JSON as the chain does',
@@ -197,7 +209,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: '/api/mesh/discover',
     headers: { 'content-type': 'application/json' },
     body: '{"roots":',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /api/mesh/agents refuses an empty body',
@@ -210,7 +222,7 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'POST',
     path: '/api/mesh/agents',
     body: { path: '/', overrides: { name: 'x', runtime: 'claude-code' } },
-    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE },
   },
   {
     name: 'POST /api/mesh/agents refuses a new folder with no name or runtime',
@@ -219,11 +231,9 @@ contractSuite('mesh, agent and discovery groups', [
     body: { path: REPO_ROOT + '/.temp' },
     expect: {
       status: 400,
-      body: {
-        error:
-          'overrides.name and overrides.runtime are required to register a directory that has ' +
-          'no .dork/agent.json of its own',
-      },
+      body: problemBody('invalid_request', {
+        detail: 'Send overrides.name and overrides.runtime: this folder has no agent.json yet.',
+      }),
     },
   },
   {
@@ -233,7 +243,9 @@ contractSuite('mesh, agent and discovery groups', [
     body: { path: REPO_ROOT + '/.temp', scanRoot: REPO_ROOT + '/apps' },
     expect: {
       status: 400,
-      body: { error: `Scan root must be an ancestor of the agent path: ${REPO_ROOT}/apps` },
+      body: problemBody('invalid_request', {
+        detail: '`scanRoot` must be a folder that holds the agent’s folder.',
+      }),
     },
   },
   {
@@ -243,12 +255,10 @@ contractSuite('mesh, agent and discovery groups', [
     body: { permissions: {}, tierCeiling: 'act' },
     expect: {
       status: 400,
-      body: {
-        error:
-          'Only a person can change permissions, from the Permissions page. Agents can ask the person.',
-        code: 'USE_PERMISSIONS_API',
-        fields: ['permissions', 'tierCeiling'],
-      },
+      body: problemBody('invalid_request', {
+        detail: 'Only a person changes permissions, on the Permissions page. Agents can ask.',
+        extensions: { fields: ['permissions', 'tierCeiling'] },
+      }),
     },
   },
   {
@@ -310,25 +320,31 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'POST',
     path: '/api/mesh/deny',
     body: { path: '/' },
-    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE },
   },
   {
     name: 'DELETE /api/mesh/denied?path= refuses a dot-dot walk',
     method: 'DELETE',
     path: `/api/mesh/denied?path=${encodeURIComponent(`${REPO_ROOT}/../outside`)}`,
-    expect: { status: 400, body: { error: 'Invalid path' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'That path isn’t allowed.' }),
+    },
   },
   {
     name: 'DELETE /api/mesh/denied?path= refuses a path outside the boundary',
     method: 'DELETE',
     path: `/api/mesh/denied?path=${encodeURIComponent('/')}`,
-    expect: { status: 403, body: { error: 'Path outside boundary: /' } },
+    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE },
   },
   {
     name: 'DELETE /api/mesh/denied with no path is a 400',
     method: 'DELETE',
     path: '/api/mesh/denied',
-    expect: { status: 400, body: { error: 'Missing required parameter: path' } },
+    expect: {
+      status: 400,
+      body: problemBody('invalid_request', { detail: 'Send the folder as `path`.' }),
+    },
   },
   {
     // The folder never rides in the path (DOR-4212): Remote Access refuses the
@@ -343,7 +359,7 @@ contractSuite('mesh, agent and discovery groups', [
   {
     name: 'GET /api/agents/current refuses a request with no path',
     path: '/api/agents/current',
-    expect: { status: 400, headers: JSON_TYPE, body: { error: 'path query parameter required' } },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: NO_PATH },
   },
   {
     name: 'HEAD /api/agents/current answers the GET’s status with no body',
@@ -354,7 +370,7 @@ contractSuite('mesh, agent and discovery groups', [
   {
     name: 'GET /api/agents/current/ refuses a path outside the boundary with a trailing slash',
     path: '/api/agents/current/?path=/',
-    expect: { status: 403, schema: BOUNDARY_REFUSAL },
+    expect: { status: 403, body: OUTSIDE },
   },
   {
     name: 'GET /api/agents/current answers null for a folder with no agent',
@@ -386,7 +402,7 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'POST',
     path: '/api/agents',
     body: { path: '/', name: 'outside' },
-    expect: { status: 403, schema: BOUNDARY_REFUSAL },
+    expect: { status: 403, body: OUTSIDE },
   },
   {
     name: 'POST /api/agents/ refuses malformed JSON as the chain does, with a trailing slash',
@@ -394,7 +410,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: '/api/agents/',
     headers: { 'content-type': 'application/json' },
     body: '{"path":',
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 400, schema: MALFORMED_JSON },
   },
   {
     name: 'POST /api/agents/create refuses a template and a package together',
@@ -403,7 +419,9 @@ contractSuite('mesh, agent and discovery groups', [
     body: { template: 'x', package: {} },
     expect: {
       status: 400,
-      body: { error: 'Send a template or a package to create the agent from, not both.' },
+      body: problemBody('invalid_request', {
+        detail: 'Send a template or a package to create the agent from, not both.',
+      }),
     },
   },
   {
@@ -426,7 +444,7 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'PATCH',
     path: '/api/agents/current',
     body: { description: 'x' },
-    expect: { status: 400, body: { error: 'path query parameter required' } },
+    expect: { status: 400, body: NO_PATH },
   },
   {
     name: 'PATCH /api/agents/current refuses an agent changing a runtime, before the path',
@@ -441,19 +459,19 @@ contractSuite('mesh, agent and discovery groups', [
     method: 'PATCH',
     path: `/api/agents/current?path=${encodeURIComponent(REPO_ROOT + '/apps')}`,
     body: { description: 'x' },
-    expect: { status: 404, body: { error: 'No agent registered at this path' } },
+    expect: { status: 404, body: NO_AGENT_HERE },
   },
   {
     name: 'POST /api/agents/current/migrate-persona refuses a request with no path',
     method: 'POST',
     path: '/api/agents/current/migrate-persona',
-    expect: { status: 400, body: { error: 'path query parameter required' } },
+    expect: { status: 400, body: NO_PATH },
   },
   {
     name: 'POST /api/agents/current/migrate-persona answers 404 for a folder with no agent',
     method: 'POST',
     path: `/api/agents/current/migrate-persona?path=${encodeURIComponent(REPO_ROOT + '/apps')}`,
-    expect: { status: 404, body: { error: 'No agent registered at this path' } },
+    expect: { status: 404, body: NO_AGENT_HERE },
   },
   {
     name: 'GET /api/agents is the /api 404',
@@ -551,7 +569,7 @@ contractSuite('mesh, agent and discovery groups', [
     headers: AGENT,
     expect: {
       status: 403,
-      body: { error: 'Agents use their own work queue tools.', code: 'NOT_A_PERSON' },
+      body: problemBody('person_only', { detail: 'Agents use their own work queue tools.' }),
     },
   },
   {
@@ -562,7 +580,7 @@ contractSuite('mesh, agent and discovery groups', [
     body: { enabled: true },
     expect: {
       status: 403,
-      body: { error: 'Agents use their own work queue tools.', code: 'NOT_A_PERSON' },
+      body: problemBody('person_only', { detail: 'Agents use their own work queue tools.' }),
     },
   },
   {
@@ -570,7 +588,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
     expect: {
       status: 404,
-      body: { error: 'No agent on the team has that id.', code: 'NOT_FOUND' },
+      body: problemBody('not_found', { detail: 'No agent on the team has that id.' }),
     },
   },
   {
@@ -581,7 +599,7 @@ contractSuite('mesh, agent and discovery groups', [
     body: { stopped: false },
     expect: {
       status: 403,
-      body: { error: 'Only the owner can stop every queue.', code: 'NOT_YOURS' },
+      body: problemBody('owner_only', { detail: 'Only the owner can stop every queue.' }),
     },
   },
   {
@@ -763,8 +781,16 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
       body: { path: dir, name: 'again' },
       expect: {
         status: 409,
+        headers: PROBLEM_TYPE,
         schema: z
-          .object({ error: z.literal('Agent already exists at this path'), agent: MANIFEST })
+          .object({
+            type: z.literal('urn:dorkos:problem:conflict'),
+            title: z.string(),
+            status: z.literal(409),
+            code: z.literal('conflict'),
+            detail: z.literal('An agent already lives in this folder.'),
+            agent: MANIFEST,
+          })
           .strict(),
       },
     });
@@ -960,17 +986,28 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
       method: 'PATCH',
       path: `/api/mesh/agents/${system!.id}`,
       body: { name: 'renamed', description: 'changed' },
-      expect: { status: 403, body: { error: 'Cannot modify name, description on system agents' } },
+      expect: {
+        status: 403,
+        body: problemBody('forbidden', {
+          detail: 'A system agent’s name, description can’t be changed.',
+        }),
+      },
     });
     await check(server, {
       method: 'DELETE',
       path: `/api/mesh/agents/${system!.id}`,
-      expect: { status: 403, body: { error: 'System agents cannot be removed' } },
+      expect: {
+        status: 403,
+        body: problemBody('forbidden', { detail: 'A system agent can’t be removed.' }),
+      },
     });
     await check(server, {
       method: 'DELETE',
       path: `/api/mesh/agents/${system!.id}/data`,
-      expect: { status: 403, body: { error: 'System agents cannot be deleted' } },
+      expect: {
+        status: 403,
+        body: problemBody('forbidden', { detail: 'A system agent can’t be deleted.' }),
+      },
     });
     await check(server, {
       path: `/api/mesh/agents/${system!.id}`,

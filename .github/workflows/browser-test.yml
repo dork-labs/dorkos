@@ -1,9 +1,19 @@
 name: browser-test
 
-# PRs run the @smoke subset on four shards; merge groups and the main canary
-# run the full six-shard suite and the first-run journey. The required
-# browser-test fan-in checks the appropriate jobs on each event, so a failed,
-# cancelled or skipped PR smoke job cannot be a green queue-entry check.
+# PRs and merge-queue entries run the @smoke subset on four shards (scoped to
+# what their change can reach); main, after every merge (`push`, a rolling
+# run), the canary and pull requests into a release branch run the full
+# six-shard suite and the first-run journey. The required browser-test fan-in
+# checks the appropriate jobs on each event, so a failed, cancelled or skipped
+# smoke job cannot be a green PR or queue-entry check.
+#
+# THE FULL SUITE LEFT THE QUEUE (DOR-5130, Dorian Nov 24). It cost 55k
+# runner-minutes a week, set the queue build's length (26 min p50), and a
+# browser break on main ejected every innocent PR behind it. It now runs on
+# main after merge; the daily release ships only a commit whose run is green,
+# and after-merge-alert.yml and auto-revert.yml act on its failures. The
+# paragraphs below describe the earlier shape where they say the queue runs
+# the full suite.
 #
 # The full suite stays in the queue to test the combined tree without paying
 # for every spec on every PR push (ADR 260728-112203). The PR subset catches
@@ -110,18 +120,18 @@ name: browser-test
 # Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
 # commit (decision DOR-4636), and changes reach one only by pull request. Such
 # a pull request is the last gate before npm and the desktop app, and there is
-# no merge queue behind it to run the full suite, so it runs what the queue
-# runs: the full browser-shard matrix and first-run, gated by the fan-in
-# exactly as on `merge_group`. The PR-only browser-smoke leg is skipped there,
-# as it is in the queue.
+# no main-branch run behind it to catch a break after merge, so it runs the
+# full browser-shard matrix and first-run, gated by the fan-in exactly as on a
+# push to main. The browser-smoke leg is skipped there.
 #
 # How: wherever this file said "full on every event but a pull request", it now
 # says "full on every event but a pull request whose base is not a release
 # branch". In `if:` that is
 #
-#   github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+#   (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/')
 #
-# and browser-smoke and its fan-in step read the negation. Keep this in step
+# (merge_group joined the smoke side with DOR-5130) and browser-smoke and its
+# fan-in step read the negation. Keep this in step
 # with test.yml, which spells the same rule.
 #
 # FAILS CLOSED ON THE SIDE OF MORE TESTING: the prefix is `release/`, wider
@@ -130,6 +140,15 @@ name: browser-test
 on:
   pull_request:
   merge_group:
+  # THE ROLLING FULL RUN (DOR-5130, Dorian Nov 24). The full browser suite left
+  # the merge queue (the queue runs the smoke shards) and runs here instead,
+  # after every merge to main. The concurrency group below keys a push on the
+  # ref, so one run is in flight and only the newest main waits behind it: a
+  # rolling run, never a backlog. The daily release ships only a commit whose
+  # full run is green (DOR-5123); after-merge-alert.yml and auto-revert.yml read
+  # this workflow's push runs.
+  push:
+    branches: [main]
   schedule:
     - cron: '41 0 * * *'
   workflow_dispatch:
@@ -144,6 +163,26 @@ on:
         options:
           - '1'
           - '2'
+      # ROLLING BISECT (DOR-5122): rolling-bisect.yml dispatches this workflow
+      # on main with one merge already on main, to find the merge that broke a
+      # rolling push run. Every checkout below takes this commit instead of
+      # main's head, and the run is titled "bisect <sha> for run <id>", which
+      # is how rolling-bisect.sh finds it and how the canary collector leaves it
+      # out. Its checks still post on main's head (a dispatch's head), so
+      # nothing may read a bisect run as a verdict on main: after-merge-alert
+      # and auto-revert read push runs only. Empty on every other run.
+      bisect_sha:
+        description: (rolling-bisect.yml) A merge on main to test instead of main's head
+        required: false
+        type: string
+        default: ''
+      bisect_of:
+        description: (rolling-bisect.yml) The failed push run this bisects
+        required: false
+        type: string
+        default: ''
+
+run-name: ${{ inputs.bisect_sha && format('bisect {0} for run {1}', inputs.bisect_sha, inputs.bisect_of) || '' }}
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
@@ -162,7 +201,11 @@ concurrency:
   # and the two are correlated in time, because the reason to dispatch by hand
   # is usually the reason a round is already running. The suffix is constant
   # for `pull_request` and `merge_group`, so neither changes behaviour.
-  group: browser-test-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate' }}
+  #
+  # A bisect run (inputs.bisect_sha) gets a group of its own per merge, so it
+  # never waits behind, cancels or replaces the rolling push run (`gate`) or a
+  # hand-dispatched canary (`dispatch`).
+  group: browser-test-${{ github.ref }}-${{ inputs.bisect_sha && format('bisect-{0}', inputs.bisect_sha) || (github.event_name == 'workflow_dispatch' && 'dispatch' || 'gate') }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -178,9 +221,9 @@ jobs:
   # exactly those specs on one runner, on `none` it does not run, and the
   # browser-test fan-in accepts that. A pull request that is not text only
   # can still get `none` from the no-browser lane (DOR-5111) when nothing it
-  # changes reaches a browser leg; see that step. A merge queue build always
-  # answers `full`, so browser-shard and first-run run the whole suite as
-  # before.
+  # changes reaches a browser leg; see that step. A merge queue build gets
+  # `full` from the text-only lane and may get `none` from the no-browser
+  # lane, which reads its HEAD^1..HEAD diff (DOR-5130).
   text-only-scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -209,6 +252,8 @@ jobs:
       # Depth 2 so the test-merge commit's first parent is here to diff against.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           fetch-depth: 2
           persist-credentials: false
       # THE TEXT-ONLY LANE (DOR-4834, ledger 261120-043306). Decides, from
@@ -263,7 +308,8 @@ jobs:
           echo "::notice title=Text-only lane::$reason. The test sweep and the browser suites stand down; vitest related and the specs that quote the old text run instead."
           cat "$lane/outputs" >> "$GITHUB_OUTPUT"
       # THE NO-BROWSER LANE (DOR-5111, ledger 261123-194934). A
-      # pull request the text-only lane above left on `full` asks
+      # pull request or merge-queue entry (DOR-5130) the text-only lane above
+      # left on `full` asks
       # scripts/browser-smoke-scope.sh whether any changed path can reach what
       # browser-smoke builds and boots. The script is deny by default: only a
       # path it names as inert (another workflow, a test folder, a fixture
@@ -271,9 +317,9 @@ jobs:
       # closure) lets the smoke stand down, and then this step sets `browser`
       # to `none`, the answer the fan-in already accepts from the text-only
       # lane. No `if:`: every other event, a release pull request included,
-      # changes nothing and the lane above already answered `full` for the
-      # merge queue and the canary, so browser-shard and first-run run the
-      # whole suite exactly as before. The script comes from the BASE commit,
+      # changes nothing and the lane above already answered `full`, so
+      # browser-shard and first-run run the whole suite exactly as before. The
+      # script comes from the BASE commit,
       # never this checkout, and every failure to decide runs the smoke.
       - name: Decide whether a browser can load this change
         id: browserscope
@@ -286,27 +332,37 @@ jobs:
             echo "the browser smoke runs as the text-only lane decided ($1)"
             exit 0
           }
-          [ "$EVENT" = pull_request ] || smoke_runs "a $EVENT run"
+          # A merge-queue entry is one squash commit on top of the entry ahead of
+          # it (or main), so its own change is HEAD^1..HEAD (DOR-5130).
+          case "$EVENT" in
+            pull_request)
+              if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+                smoke_runs 'no test-merge commit to diff'
+              fi
+              ;;
+            merge_group)
+              base=$(git rev-parse --verify --quiet 'HEAD^1') || smoke_runs 'no parent commit to diff'
+              ;;
+            *) smoke_runs "a $EVENT run" ;;
+          esac
           [ "$LANE" = full ] || smoke_runs "the text-only lane answered '$LANE'"
-          if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
-            smoke_runs 'no test-merge commit to diff'
-          fi
           scope=$RUNNER_TEMP/browser-smoke-scope.sh
           git cat-file blob "$base:scripts/browser-smoke-scope.sh" > "$scope" 2>/dev/null ||
             smoke_runs 'the base commit has no scripts/browser-smoke-scope.sh'
           verdict=$(bash "$scope" "$base" HEAD) || smoke_runs 'the scope script failed'
           [ "$verdict" = false ] || smoke_runs 'a browser leg can load this change'
-          echo "::notice title=No-browser lane::nothing a browser leg loads changed, so the PR smoke shards stand down. The merge queue still runs every browser shard and the first-run journey."
+          echo "::notice title=No-browser lane::nothing a browser leg loads changed, so the smoke shards stand down. The full browser suite runs on main after merge (DOR-5130)."
           echo 'browser=none' >> "$GITHUB_OUTPUT"
 
-  # Four PR-only shards, no marketing-site leg and no real-model integration
-  # opt-in. Reuse the suite's projects, isolation, caches and one CI retry.
-  # A text-only pull request (DOR-4834) runs here on one runner, with only the
-  # specs that quote its old text; see text-only-scope. Never in the queue.
+  # Four shards on pull requests and merge-queue entries (DOR-5130), no
+  # marketing-site leg and no real-model integration opt-in. Reuse the suite's
+  # projects, isolation, caches and one CI retry. A text-only pull request
+  # (DOR-4834) runs here on one runner, with only the specs that quote its old
+  # text; see text-only-scope.
   browser-smoke:
     name: browser-smoke (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: [text-only-scope]
-    if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && needs.text-only-scope.outputs.browser != 'none' }}
+    if: ${{ ((github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/')) || github.event_name == 'merge_group') && needs.text-only-scope.outputs.browser != 'none' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -445,7 +501,7 @@ jobs:
     name: browser-shard (${{ matrix.shard }}/${{ strategy.job-total }})
     # Full suite off PRs; browser-smoke supplies the PR-time browser verdict.
     # The text-only lane (DOR-4834) never reaches it: it is a pull-request lane.
-    if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
     # Pinned, every job in this file: `ubuntu-latest` moved to 26.04 on
     # 2026-10-27, and the same tree that passed on 24.04 timed out on six specs
     # there. Lift the pin once the suite is green on 26.04 (ledger 261027-053504).
@@ -673,6 +729,30 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run (DOR-5122) tests one merge that is already on main, or
+      # nothing: its checks post on main's head, so any other tree would be a
+      # verdict on a commit main never had. A no-op on every other run.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       # No saved credential: nothing here pushes or fetches after checkout. The
       # specs make git repositories inside this checkout, and DorkOS's audited
       # git runner reads every settings file above one, refusing an include,
@@ -680,6 +760,8 @@ jobs:
       # 261030-062000).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           persist-credentials: false
 
       # The unit shards log this too (test.yml). The same tests take up to 1.65x
@@ -876,7 +958,8 @@ jobs:
       # deletes the cache and nothing is saved.
       - name: Keep only this run's build entries in the turbo cache
         id: turbo-trim
-        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+        # Never from a bisect run: its tree is not main's head, whose sha keys the save.
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 && !inputs.bisect_sha }}
         run: |
           if bash scripts/keep-build-cache-only.sh; then
             echo 'save=true' >> "$GITHUB_OUTPUT"
@@ -1115,7 +1198,7 @@ jobs:
   # its credits and the model are the in-process test-mode fakes.
   first-run:
     name: first-run
-    if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -1140,8 +1223,32 @@ jobs:
             exit 1
           fi
           echo "canary $EVENT run against $REF."
+      # A bisect run tests a merge on main: browser-shard says why.
+      - name: A bisect run tests a merge on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.bisect_sha }}
+        run: |
+          if [ -z "$SHA" ]; then
+            echo "not a bisect run; nothing to check."
+            exit 0
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Not a bisect of main::bisect_sha '$SHA' is not a full commit sha."
+            exit 1
+          fi
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status) || exit 1
+          case "$status" in
+            ahead | identical) echo "bisecting ${SHA:0:7}, which is on main." ;;
+            *)
+              echo "::error title=Not a bisect of main::${SHA:0:7} is not on main ($status). Nothing was tested."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -1328,7 +1435,7 @@ jobs:
       # The always() fan-in must inspect the PR dependency explicitly: skipped
       # or cancelled smoke is not a successful queue-entry check.
       - name: Refuse a PR whose smoke specs did not pass
-        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && needs.text-only-scope.outputs.browser != 'none' && needs.browser-smoke.result != 'success' }}
+        if: ${{ ((github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/')) || github.event_name == 'merge_group') && needs.text-only-scope.outputs.browser != 'none' && needs.browser-smoke.result != 'success' }}
         run: |
           echo "::error::the PR smoke specs did not pass — browser-smoke reported '${{ needs.browser-smoke.result }}'. Open its shard jobs and browser-smoke-results-* artifacts."
           exit 1
@@ -1337,18 +1444,21 @@ jobs:
       # the full-suite matrix is skipped and `skipped != success` would otherwise
       # turn every PR red here.
       - name: Refuse a run whose shards did not all pass
-        if: ${{ (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) && needs.browser-shard.result != 'success' }}
+        if: ${{ ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/')) && needs.browser-shard.result != 'success' }}
         run: |
           echo "::error::the browser suite did not pass — the browser-shard matrix reported '${{ needs.browser-shard.result }}'. Open the shard jobs above for the failing specs, and the playwright-report-shard-* artifacts for their traces, screenshots and videos."
           exit 1
 
       - name: Refuse a run whose first run did not pass
-        if: ${{ (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) && needs.first-run.result != 'success' }}
+        if: ${{ ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/')) && needs.first-run.result != 'success' }}
         run: |
           echo "::error::the one-minute first run did not pass — the first-run job reported '${{ needs.first-run.result }}'. Open it above for the failing path, and the first-run-results artifact for its trace."
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
+        with:
+          # A bisect run's merge (empty: the event's own commit, as always).
+          ref: ${{ inputs.bisect_sha }}
 
       # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
       # seconds — so it cannot run the engine to read the lane itself. The
@@ -1367,14 +1477,14 @@ jobs:
       # exactly backwards. Each copy carries its own `i/N`, so a missing,
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: quarantine-lane-shard-*
           path: lane
 
       - name: Agree on the lane this build ran under
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
         run: |
           shopt -s nullglob
           lanes=(lane/*/quarantine.txt)
@@ -1416,7 +1526,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect every shard's JSON report
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: browser-results-shard-*
@@ -1446,7 +1556,7 @@ jobs:
       # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
       # that into a message naming the cause.
       - name: Prove the browser suite actually executed
-        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
+        if: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || startsWith(github.base_ref, 'release/') }}
         run: |
           if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
             echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."

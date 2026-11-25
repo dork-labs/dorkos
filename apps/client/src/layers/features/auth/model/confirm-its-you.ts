@@ -8,6 +8,7 @@
  */
 import { PERSON_SESSION_PATH, PersonSessionResponseSchema } from '@dorkos/shared/person-session';
 import { resolveApiBaseUrl, writePersonProof } from '@/layers/shared/lib';
+import { readErrorBody } from '@dorkos/shared/problem';
 
 /** How the step-up ended: confirmed, or what to tell the person. */
 export type ConfirmItsYouResult =
@@ -65,7 +66,7 @@ export async function confirmItsYou(
     code?: unknown;
     retryAfterSeconds?: unknown;
   } | null;
-  const message = typeof body?.error === 'string' ? body.error : 'That didn’t work. Try again.';
+  const { message } = readErrorBody(body, 'That didn’t work. Try again.');
   const known = ['wrong-password', 'too-many-attempts', 'no-password'] as const;
   const reason = known.find((code) => code === body?.code) ?? 'other';
   const retryAfterSeconds =

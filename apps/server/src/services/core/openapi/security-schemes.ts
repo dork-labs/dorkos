@@ -9,7 +9,8 @@
  * - **Open** (`security: []`): a path the session gate lets through with no
  *   credential ({@link isGateExemptPath}, the same function the gate runs) on a
  *   person's computer or a hub: the health probe, the signed-token and ticket
- *   routes, a hub's link path and a computer's passkey return.
+ *   routes (the token or ticket in the URL is the credential), a hub's link path
+ *   and a computer's passkey return (open on a computer, never on a hub).
  * - **The sign-in cookie only**: the Better Auth endpoints under `/api/auth/`.
  *   The gate lets them through so sign-in is reachable, but the documented ones
  *   act on the signed-in person's own account, and Better Auth reads that from
@@ -19,9 +20,11 @@
  *   `PROGRAM_KEY_ROUTES`, which the routers register from that same list.
  * - **The default**, for everything else: the sign-in cookie or a personal API
  *   key ({@link DOCUMENT_SECURITY}). The session gate asks for one from another
- *   device always, and from this computer only when "Ask for a password on this
- *   computer too" is on (`services/core/auth/gate-policy.ts`); the schemes'
- *   descriptions and {@link API_DESCRIPTION} say so.
+ *   device (except an owner-less container's published port under
+ *   `DORKOS_ALLOW_INSECURE_BIND`, `isOwnerlessContainer` in
+ *   `services/core/auth/gate-policy.ts`), and from this computer only when "Ask
+ *   for a password on this computer too" is on; the schemes' descriptions and
+ *   {@link API_DESCRIPTION} say so.
  *
  * A `registerPath` call that sets its own `security` keeps it.
  *
@@ -40,7 +43,9 @@ import { programKeyOperationKeys } from '../../connectors/principal/program-key-
 const LOCAL_CALLS =
   'From this computer, an operation that takes the sign-in cookie or a personal API key needs ' +
   'neither while "Ask for a password on this computer too" is off, which is how DorkOS ' +
-  'installs (`dorkos auth enable` turns it on). A request from another device always needs one.';
+  'installs (`dorkos auth enable` turns it on). A request from another device needs one, ' +
+  'with one exception for now: a browser reaching a Docker container through its published ' +
+  'port, while the container runs with `DORKOS_ALLOW_INSECURE_BIND` and has no owner account yet.';
 
 /** The document's `info.description`. */
 export const API_DESCRIPTION =

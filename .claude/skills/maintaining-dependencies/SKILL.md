@@ -184,9 +184,8 @@ knows the inputs. Ticket it with the rule help attached.
   pre-existing failure; nothing can be validated. Report and stop.
 - A secret-scanning alert is open. Nothing else matters until it is closed.
 - An earlier run's PR for the same lane is open. Tend it; never open a twin.
-- The merge queue is non-empty and the lane's PR is `CLEAN`. Leave arming to
-  `merge-tail`; an entry armed into a busy ALLGREEN queue is the one most
-  likely to be ejected for a neighbour's red.
+- The lane's PR is `CLEAN`. Leave it: `scripts/open-pr.sh` turned on auto-merge
+  at open (`contributing/ci.md`, "Merging"), and nobody arms it.
 
 Doing nothing and saying so is a successful run. Skipping a lane and printing
 a clean summary is the one failure this skill exists to prevent.

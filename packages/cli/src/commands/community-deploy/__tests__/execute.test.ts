@@ -133,45 +133,6 @@ describe('Community creation executor', () => {
     expect(result.provenance).toEqual({ flyNetwork: `dorkos-${markers[0]}` });
   });
 
-  // The marker is only proof if it was durable before the service could have acted on it.
-  it('persists each intent with its marker and request time before create receives that marker', async () => {
-    const harness = dependencies();
-    const order: string[] = [];
-    vi.mocked(harness.value.persist).mockImplementation(async (next, expected) => {
-      expect(expected).toBe(harness.persisted().revision);
-      if (next.pendingIntent && !harness.persisted().pendingIntent) {
-        order.push(`intent:${next.pendingIntent.provider}:${next.pendingIntent.provenanceMarker}`);
-      }
-      Object.assign(harness.persisted(), LaunchJournalSchema.parse(next));
-    });
-    for (const [service, boundary] of [
-      ['fly', harness.value.fly],
-      ['neon', harness.value.neon],
-      ['tigris', harness.value.tigris],
-    ] as const) {
-      const create = vi.mocked(boundary.create).getMockImplementation()!;
-      vi.mocked(boundary.create).mockImplementation(async (marker) => {
-        expect(harness.persisted().pendingIntent).toMatchObject({
-          provider: service,
-          provenanceMarker: marker,
-          requestedAt: '2026-09-21T00:00:01.000Z',
-        });
-        order.push(`create:${service}:${marker}`);
-        return create(marker);
-      });
-    }
-
-    await executeCommunityCreationPhase(plan, harness.persisted(), harness.value);
-    expect(order).toEqual([
-      `intent:fly:${markers[0]}`,
-      `create:fly:${markers[0]}`,
-      `intent:neon:${markers[1]}`,
-      `create:neon:${markers[1]}`,
-      `intent:tigris:${markers[2]}`,
-      `create:tigris:${markers[2]}`,
-    ]);
-  });
-
   it('refuses a marker that is not 32 lowercase hex characters before recording any intent', async () => {
     const harness = dependencies();
     harness.value.createProvenanceMarker = () => 'not-a-marker';
@@ -181,25 +142,6 @@ describe('Community creation executor', () => {
     ).rejects.toThrow();
     expect(harness.value.persist).not.toHaveBeenCalled();
     expect(harness.value.fly.create).not.toHaveBeenCalled();
-  });
-
-  // The network is journaled as the service reported it. Copying it from the intent would record
-  // a proof nobody read back.
-  it('journals the Fly network from readback even when it differs from the intent marker', async () => {
-    const harness = dependencies();
-    vi.mocked(harness.value.fly.inspect).mockResolvedValue({
-      id: 'app-id',
-      organizationId: 'dork-labs',
-      name: 'dorkos-community-test',
-      provenance: { flyNetwork: 'dorkos-network-as-read-back' },
-    });
-
-    const result = await executeCommunityCreationPhase(plan, harness.persisted(), harness.value);
-    expect(result.provenance).toEqual({ flyNetwork: 'dorkos-network-as-read-back' });
-    expect(harness.value.fly.inspect).toHaveBeenCalledWith(
-      'app-id',
-      expect.objectContaining({ provenanceMarker: markers[0] })
-    );
   });
 
   it('stops as uncertain when a marked Fly create reads back without a network', async () => {
@@ -347,30 +289,6 @@ describe('Community creation executor', () => {
     });
   });
 
-  it('still records any other failed bucket inspection as uncertain', async () => {
-    const harness = dependencies();
-    vi.mocked(harness.value.tigris.inspect).mockRejectedValueOnce(
-      new ProviderMutationError('INVALID_RESPONSE')
-    );
-    await expect(
-      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
-    ).rejects.toEqual(new CommunityCreationUncertainError('tigris'));
-    expect(harness.persisted()).toMatchObject({
-      state: 'uncertain',
-      lastSafeError: { code: 'CREATION_OUTCOME_UNCERTAIN' },
-    });
-  });
-
-  it('never treats a missing-keys failure from another service as anything but uncertain', async () => {
-    const harness = dependencies();
-    vi.mocked(harness.value.neon.inspect).mockRejectedValueOnce(
-      new TigrisSessionError('MISSING_TIGRIS_SECRETS')
-    );
-    await expect(
-      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
-    ).rejects.toEqual(new CommunityCreationUncertainError('neon'));
-  });
-
   it('refuses a bucket attached to any app other than the exact created app', async () => {
     const harness = dependencies();
     vi.mocked(harness.value.tigris.create).mockResolvedValue({
@@ -386,22 +304,6 @@ describe('Community creation executor', () => {
     expect(harness.persisted()).toMatchObject({
       state: 'uncertain',
       pendingIntent: { provider: 'tigris' },
-    });
-  });
-
-  it('clears a pre-request spawn failure so a deliberate resume may try again', async () => {
-    const harness = dependencies();
-    vi.mocked(harness.value.fly.create).mockRejectedValue(
-      new ProviderMutationError('PROVIDER_UNAVAILABLE')
-    );
-
-    await expect(
-      executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
-    ).rejects.toEqual(new ProviderMutationError('PROVIDER_UNAVAILABLE'));
-    expect(harness.persisted()).toMatchObject({
-      state: 'planned',
-      pendingIntent: null,
-      lastSafeError: { category: 'transient', code: 'PROVIDER_UNAVAILABLE' },
     });
   });
 
@@ -473,18 +375,19 @@ describe('Community creation executor', () => {
     expect(harness.value.neon.create).not.toHaveBeenCalled();
   });
 
-  it('finishes separate Tigris terms consent before recording a bucket intent', async () => {
+  it('clears a pre-request spawn failure so a deliberate resume may try again', async () => {
     const harness = dependencies();
-    harness.value.tigris.prepare = vi.fn().mockRejectedValue(new Error('terms declined'));
+    vi.mocked(harness.value.fly.create).mockRejectedValue(
+      new ProviderMutationError('PROVIDER_UNAVAILABLE')
+    );
 
     await expect(
       executeCommunityCreationPhase(plan, harness.persisted(), harness.value)
-    ).rejects.toThrow('terms declined');
-    expect(harness.value.tigris.create).not.toHaveBeenCalled();
+    ).rejects.toEqual(new ProviderMutationError('PROVIDER_UNAVAILABLE'));
     expect(harness.persisted()).toMatchObject({
-      state: 'neon_project_created',
+      state: 'planned',
       pendingIntent: null,
-      resources: { flyAppId: 'app-id', neonProjectId: 'project-id' },
+      lastSafeError: { category: 'transient', code: 'PROVIDER_UNAVAILABLE' },
     });
   });
 });

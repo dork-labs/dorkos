@@ -45,7 +45,9 @@ const FIRST_ACTION = 'max-sm:ml-[calc(0.5rem+0.375rem+0.625rem+18px+0.625rem)]';
 
 /** Why Undo was refused: the short line for a stale change, else the server's sentence. */
 function refusalOf(error: Error | null): string {
-  if ((error as { code?: string } | null)?.code === 'UNDO_STALE') return 'Access changed since.';
+  if ((error as { code?: string } | null)?.code === 'precondition_failed') {
+    return 'Access changed since.';
+  }
   return error?.message || 'Not given back.';
 }
 

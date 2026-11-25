@@ -23,7 +23,8 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ExtensionManifest } from '@dorkos/extension-api';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { corsAllowsOrigin } from '../http/cors-policy.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
@@ -76,7 +77,7 @@ const MEDIA_FORCED_HEADERS: Readonly<Record<string, string>> = Object.freeze({
 });
 
 /** One answer for an unknown and an expired ticket, so neither tells them apart. */
-const MEDIA_GONE = { error: 'This video link has expired. Open the app again.' };
+const MEDIA_GONE = 'This video link has expired. Open the app again.';
 
 const MintBodySchema = z.object({ path: z.string().max(4000) });
 
@@ -85,10 +86,10 @@ function bare(status: number): Response {
   return new Response(null, { status, headers: MEDIA_FORCED_HEADERS });
 }
 
-/** A JSON answer with the forced headers. */
-function json(c: Context<ApiEnv>, status: 400 | 403 | 404 | 405, body: object): Response {
+/** A problem document with the forced headers. */
+function refused(c: Context<ApiEnv>, code: ProblemCode, detail: string): Response {
   for (const [name, value] of Object.entries(MEDIA_FORCED_HEADERS)) c.header(name, value);
-  return c.json(body, status);
+  return problem(c, code, { detail });
 }
 
 /**
@@ -140,29 +141,35 @@ export function createExtensionMediaRoutes(deps: ExtensionMediaDeps): Hono<ApiEn
   const router = new Hono<ApiEnv>();
   router.post('/:id/media-tickets', (c) => {
     const id = c.req.param('id');
-    if (!SAFE_EXT_ID.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+    if (!SAFE_EXT_ID.test(id))
+      return problem(c, 'invalid_request', { detail: 'Use a valid extension ID.' });
     const facts = honoRequestFacts(c);
     // A window's own fetch always names its page; a page elsewhere, or an
     // opaque (`null`) one, never mints with the person's cookie.
     const origin = c.req.header('origin');
     if (origin === undefined || origin === 'null' || !corsAllowsOrigin(facts)) {
-      return c.json({ error: 'Only a DorkOS window can ask for this.' }, 403);
+      return problem(c, 'origin_not_allowed', { detail: 'Only a DorkOS window can ask for this.' });
     }
     if (isNotAWindow(facts) || !clearsTheAgentBar(facts)) {
-      return c.json({ error: 'Only a person’s DorkOS window can ask for this.' }, 403);
+      return problem(c, 'person_only', {
+        detail: 'Only a person’s DorkOS window can ask for this.',
+      });
     }
     const stamp = facts.headers[EXTENSION_ID_HEADER];
     if (stamp !== undefined && stamp !== id) {
-      return c.json({ error: 'An app can only ask for its own videos.' }, 403);
+      return problem(c, 'forbidden', { detail: 'An app can only ask for its own videos.' });
     }
     const manifest = deps.manifest(id);
     const running = deps.mediaFetch(id);
     if (!manifest || manifest.clientApiVersion !== 2 || !manifest.capabilities?.http || !running) {
-      return c.json({ error: 'That app is not running, or cannot stream video.' }, 404);
+      return problem(c, 'not_found', {
+        detail: 'That app is not running, or cannot stream video.',
+      });
     }
     const body = MintBodySchema.safeParse(readJsonBody(c));
     const subPath = body.success ? normalizeMediaPath(body.data.path) : null;
-    if (subPath === null) return c.json({ error: 'Use a path inside this app.' }, 400);
+    if (subPath === null)
+      return problem(c, 'invalid_request', { detail: 'Use a path inside this app.' });
     c.header('Cache-Control', 'no-store');
     return c.json({ url: `${MEDIA_URL_PREFIX}${mintMediaTicket(id, subPath, running)}` }, 201);
   });
@@ -171,13 +178,14 @@ export function createExtensionMediaRoutes(deps: ExtensionMediaDeps): Hono<ApiEn
     const method = c.req.method === 'GET' || c.req.method === 'HEAD' ? c.req.method : null;
     if (method === null) {
       c.header('Allow', 'GET, HEAD');
-      return json(c, 405, { error: 'A video link can only be played.' });
+      return refused(c, 'method_not_allowed', 'A video link can only be played.');
     }
     // The ticket alone decides; any query string is ignored.
     const target = resolveMediaTicket(c.req.param('ticket'));
     const fetchVideo = target ? deps.mediaFetch(target.extensionId) : null;
     // Only from the instance it was minted for: a reload or update since ends it.
-    if (!target || !fetchVideo || fetchVideo !== target.instance) return json(c, 404, MEDIA_GONE);
+    if (!target || !fetchVideo || fetchVideo !== target.instance)
+      return refused(c, 'not_found', MEDIA_GONE);
     const headers = new Headers();
     for (const name of COPIED_HEADERS) {
       const value = c.req.header(name);

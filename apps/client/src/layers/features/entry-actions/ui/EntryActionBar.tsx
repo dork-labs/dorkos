@@ -2,7 +2,12 @@ import { Fragment, forwardRef, type KeyboardEvent } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { emojiLabel } from '../lib/emoji-catalog';
-import { ENTRY_ACTION_ORDER, type EntryAction, type EntryActionSlot } from '../lib/entry-actions';
+import {
+  ENTRY_ACTION_ORDER,
+  MENU_ONLY_SLOTS,
+  type EntryAction,
+  type EntryActionSlot,
+} from '../lib/entry-actions';
 import { useRovingButtons, type RovingGroupHandle } from '../model/use-roving-buttons';
 import { EntryReactionPicker } from './EntryReactionPicker';
 import { EntryRunWithMenu, type EntryRunWith } from './EntryRunWithMenu';
@@ -55,7 +60,8 @@ type BarButton =
  *
  * Built from the constant rather than by concatenating two lists, so the
  * capsule's order — reactions leftmost, then reply / copy / mention — has one
- * source. A slot with nothing to put in it simply contributes nothing.
+ * source. A slot with nothing to put in it simply contributes nothing, and a
+ * menu-only slot ({@link MENU_ONLY_SLOTS}) is never drawn here.
  */
 function barButtons(
   actions: EntryAction[],
@@ -74,6 +80,7 @@ function barButtons(
     }
     if (slot === 'react-more') return reactions ? [{ kind: 'picker' as const, slot }] : [];
     if (slot === 'run-with') return runWith ? [{ kind: 'run-with' as const, slot, runWith }] : [];
+    if (MENU_ONLY_SLOTS.has(slot)) return [];
     const action = actions.find((candidate) => candidate.id === slot);
     return action ? [{ kind: 'command' as const, slot, action }] : [];
   });

@@ -64,6 +64,19 @@ describe('portable control contract', () => {
     expect(button.className).toContain('motion-safe:active:scale-[0.97]');
   });
 
+  // `transition-all` animated the md: height swap on every button when a window crossed
+  // 768px; a disabled button dims and leaves the pointer path rather than showing a
+  // not-allowed cursor.
+  it('transitions only colour and scale, and dims a disabled button', () => {
+    const { getByRole } = render(<Button disabled>Save</Button>);
+    const classes = getByRole('button').className;
+    expect(classes).not.toContain('transition-all');
+    expect(classes).toContain('transition-[color,background-color,scale]');
+    expect(classes).toContain('disabled:opacity-50');
+    expect(classes).toContain('disabled:pointer-events-none');
+    expect(classes).not.toContain('cursor-not-allowed');
+  });
+
   // Destructive foreground follows the package theme instead of a host white utility.
   it('uses the namespaced destructive foreground token', () => {
     const { getByRole } = render(<Button variant="destructive">Delete</Button>);

@@ -32,8 +32,19 @@ export function createLocalBrowserMethods(
           cache: 'no-store',
         })
       ),
-    getLocalBrowserState: async (sessionId) =>
-      LocalBrowserPersonStateSchema.parse(await request(selected('/state', sessionId))),
+    getLocalBrowserState: async (sessionId, viewer) =>
+      LocalBrowserPersonStateSchema.parse(
+        await fetchJSON(baseUrl, `/local-browser${selected('/state', sessionId)}`, {
+          cache: 'no-store',
+          headers: viewer
+            ? {
+                'X-Client-Id': clientId(),
+                'X-Viewer-Id': viewer.viewerId,
+                'X-Viewer-Nonce': viewer.nonce,
+              }
+            : undefined,
+        })
+      ),
     getLocalBrowserHandoffState: async () =>
       LocalBrowserPersonStateSchema.parse(await request('/handoff/state')),
     getLocalBrowserCapabilities: async () =>

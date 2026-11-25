@@ -1,7 +1,7 @@
 ---
 number: 73
 title: Split Relay Initialization for meshCore Dependency Ordering
-status: draft
+status: archived
 created: 2026-03-04
 spec: fix-relay-agent-routing-cwd
 superseded-by: null

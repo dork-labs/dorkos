@@ -20,7 +20,6 @@
  * @module routes/canvas-doc-work-review
  */
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import {
   DOC_WORK_REVIEWED_EVENT,
@@ -39,6 +38,7 @@ import {
 import { logger } from '../lib/logger.js';
 import { writerFor } from './canvas-doc-route-controls.js';
 import type { DocChannelHttpSource } from './canvas-doc-events.js';
+import { docRefusalProblem } from './canvas-doc-refusal.js';
 
 const IdSchema = z.string().min(1).max(200);
 
@@ -85,7 +85,7 @@ function failure(c: Context<ApiEnv>, error: unknown): Response {
   if (status === 500) logger.error('[canvas-doc-work-review] request failed', error);
   const message =
     CODE_MESSAGES[code] ?? STATUS_MESSAGES[status] ?? 'The request could not be completed.';
-  return c.json({ error: message, code }, status as ContentfulStatusCode);
+  return docRefusalProblem(c, { status, refusal: code, detail: message });
 }
 
 /**
@@ -121,7 +121,7 @@ export function createCanvasDocWorkReviewRoutes(
     const result = decideAsPerson(honoRequestFacts(c), 'unfinished document work');
     if ('decision' in result) return result.decision;
     const { status, error, code } = result.refusal;
-    return c.json({ error, code }, status as ContentfulStatusCode);
+    return docRefusalProblem(c, { status, refusal: code, detail: error });
   }
 
   /** One line per replay or clear, naming who did it by the permission honesty rule. */

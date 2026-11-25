@@ -247,6 +247,33 @@ describe('the daily report', () => {
     );
   });
 
+  it('leads with merge to release: p50 and p90 hours over the week s releases', () => {
+    const inp = recorded();
+    // A week collected before release contents were recorded says so, not 0.
+    expect(renderDailyReport(inp).html).toContain(`No release recorded in the 7 days to ${DAY}.`);
+    const release = `${DAY}T12:00:00Z`;
+    const merged = (pr: number, hours: number) => ({
+      pr,
+      sha: `m${pr}`,
+      at: new Date(Date.parse(release) - hours * 3_600_000).toISOString().replace('.000Z', 'Z'),
+    });
+    // Merged 2, 4 and 30 hours before the release; the last one on the day before.
+    writeData(inp.dataDir, `snapshots/${addDays(DAY, -1)}.json`, {
+      ...snapshot(addDays(DAY, -1)),
+      merges: [merged(3, 30)],
+    });
+    writeData(inp.dataDir, `snapshots/${DAY}.json`, {
+      ...snapshot(DAY),
+      merges: [merged(1, 2), merged(2, 4)],
+      release_contents: [
+        { tag: 'v2.0.0', published_at: release, base: 'v1.9.0', shas: ['m1', 'm2', 'm3'] },
+      ],
+    });
+    const { html } = renderDailyReport(inp);
+    expect(html).toContain('<strong>p50 4 h</strong> · p90 24.8 h from merge to release.');
+    expect(html).toContain(`3 merged PRs shipped in 1 release, 7 days to ${DAY}.`);
+  });
+
   it('says everything is healthy, in plain words, when nothing fired', () => {
     const inp = recorded();
     const { html, index } = renderDailyReport({

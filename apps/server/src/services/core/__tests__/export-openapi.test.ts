@@ -165,7 +165,7 @@ describe('export-openapi', () => {
 
     expect(Object.keys(updates ?? {}).sort()).toEqual(['get', 'post']);
     // The read takes no body, and the apply names the per-installation result,
-    // the card an agent waits on (202), the refusal when what runs moved (409) and
+    // the card an agent waits on (202), the refusal when what runs moved (412) and
     // the owner's confirmation a person's apply waits for (428, DOR-4355).
     expect(updates?.get?.requestBody).toBeUndefined();
     expect(Object.keys(updates?.post?.responses ?? {}).sort()).toEqual([
@@ -174,7 +174,7 @@ describe('export-openapi', () => {
       '400',
       '403',
       '404',
-      '409',
+      '412',
       '428',
       '502',
     ]);
@@ -207,15 +207,8 @@ describe('export-openapi', () => {
   it('documents additive relay receipts, uniform missing reads and safe availability errors', () => {
     const paths = generateOpenAPISpec().paths ?? {};
     const post = paths['/api/relay/messages']?.post;
-    expect(post?.description).toContain('caller-supplied `from`');
-    expect(Object.keys(post?.responses ?? {}).sort()).toEqual([
-      '200',
-      '400',
-      '401',
-      '403',
-      '422',
-      '503',
-    ]);
+    expect(post?.description).toContain('The server sets its sender.');
+    expect(Object.keys(post?.responses ?? {}).sort()).toEqual(['200', '400', '401', '403', '503']);
     const status = paths['/api/relay/messages/{messageId}/status']?.get;
     expect(Object.keys(status?.responses ?? {}).sort()).toEqual([
       '200',
@@ -225,10 +218,11 @@ describe('export-openapi', () => {
       '503',
     ]);
     expect(status?.responses?.['404']?.description).toContain('other-owner');
-    expect(JSON.stringify(post?.responses?.['503'])).toContain(
-      'RELAY_RECEIPT_RESPONSE_UNAVAILABLE'
-    );
-    expect(JSON.stringify(status?.responses?.['503'])).toContain('RELAY_RECEIPT_OBSERVER_BUSY');
+    // Receipt storage that is busy or gone answers a problem (DOR-4979); after
+    // acceptance it still names the message and where to watch it.
+    expect(JSON.stringify(post?.responses?.['503'])).toContain('temporarily_unavailable');
+    expect(JSON.stringify(post?.responses?.['503'])).toContain('statusUrl');
+    expect(JSON.stringify(status?.responses?.['503'])).toContain('application/problem+json');
     expect(JSON.stringify(status?.responses?.['200'])).toContain('no-store');
     const receipt = generateOpenAPISpec().components?.schemas?.RelayDeliveryReceipt;
     expect(JSON.stringify(receipt)).not.toMatch(/ownerUserId|observerToken|payload|subject/);
@@ -348,8 +342,8 @@ describe('export-openapi', () => {
     // The access rule is the half a reader most needs from the reference, since
     // no request shape reveals it — the route takes no body at all.
     expect(repo?.post?.description).toContain('Any member of the room may call it');
-    expect(repo?.post?.description).toContain('ROOM_REPO_EXISTS');
-    expect(repo?.post?.description).toContain('ROOM_REPOS_DISABLED');
+    expect(repo?.post?.description).toContain('room_repo_exists');
+    expect(repo?.post?.description).toContain('room_repos_disabled');
   });
 });
 

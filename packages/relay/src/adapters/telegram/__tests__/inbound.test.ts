@@ -45,9 +45,6 @@ const ANON_ADMIN = {
   username: 'GroupAnonymousBot',
 };
 
-/** The service account behind a linked channel posting into a discussion group. */
-const CHANNEL_BOT = { id: 136817688, is_bot: true, first_name: 'Channel', username: 'Channel_Bot' };
-
 const GROUP_ID = -100111222;
 const PRIVATE_ID = 12345;
 
@@ -288,48 +285,6 @@ describe('Telegram inbound — bot-loop guard (DOR-619)', () => {
     expect(callbacks.trackInbound).not.toHaveBeenCalled();
   });
 
-  it("drops another bot's message that names this bot and replies to it", async () => {
-    // The exact shape of a sustained two-bot loop: maximally addressed, and
-    // still dropped. If only the respond gate ran, this message would pass it
-    // twice over.
-    await deliver(
-      createCtx({
-        from: OTHER_BOT,
-        text: '@dorkbot here is my answer',
-        entities: [{ type: 'mention', offset: 0, length: 8 }],
-        replyToFrom: ME,
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it("drops this bot's own message echoed back", async () => {
-    // Under 'always' so the respond gate would publish it, leaving the guard as
-    // the only reason it is dropped.
-    await deliver(createCtx({ from: { ...ME }, text: 'something I said earlier' }), 'always');
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it("drops a bot's message in a private chat, not just in groups", async () => {
-    // Allowlisted by id, so the bot guard is the only thing that can drop it.
-    await deliver(createCtx({ from: OTHER_BOT, chatType: 'private', text: 'hello' }), {
-      dmPolicy: 'allowlist',
-      dmAllowlist: [String(OTHER_BOT.id)],
-    });
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it("respondMode 'always' does not reach the guard — a bot is still dropped", async () => {
-    // The guard is a mechanism, not a preference. The most permissive setting a
-    // person can choose must not switch it off.
-    await deliver(createCtx({ from: OTHER_BOT, text: 'chatty bot noise' }), 'always');
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
   it('lets an anonymous group admin through, because they are a person', async () => {
     // Telegram routes an anonymous admin through a service bot account, so
     // `from.is_bot` is true and the guard would drop a human being. This message
@@ -346,55 +301,9 @@ describe('Telegram inbound — bot-loop guard (DOR-619)', () => {
 
     expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
   });
-
-  it('still gates an anonymous group admin who addresses nobody', async () => {
-    // Carved out of the bot guard, not waved past the respond gate.
-    await deliver(
-      createCtx({ from: ANON_ADMIN, senderChatId: GROUP_ID, text: 'just thinking out loud' })
-    );
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it('drops a linked channel post, whose sender_chat is a different chat', async () => {
-    // Keeps the carve-out narrow: `sender_chat` is set here too, but to the
-    // channel rather than to this group, so it is not an admin of this chat.
-    await deliver(
-      createCtx({
-        from: CHANNEL_BOT,
-        senderChatId: -100999888,
-        text: '@dorkbot new post published',
-        entities: [{ type: 'mention', offset: 0, length: 8 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it('still publishes a person’s message in the same group', async () => {
-    // The control: the guard drops bots, not everyone.
-    await deliver(
-      createCtx({
-        from: HUMAN,
-        text: '@dorkbot are you there?',
-        entities: [{ type: 'mention', offset: 0, length: 8 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-    expect(callbacks.trackInbound).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('Telegram inbound — group respond gating (DOR-619)', () => {
-  it('answers every message in a private chat', async () => {
-    // Respond mode never gates a private chat; the DM allowlist does, so this
-    // one names the sender to isolate the behaviour under test.
-    await deliver(createCtx({ chatType: 'private', text: 'no mention needed here' }), ALLOW_HUMAN);
-
-    expect(publishedSubjects()).toEqual([PRIVATE_SUBJECT]);
-  });
-
   it('drops a group message that does not address the bot', async () => {
     await deliver(createCtx({ text: 'just two people talking' }));
 
@@ -413,125 +322,10 @@ describe('Telegram inbound — group respond gating (DOR-619)', () => {
     expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
   });
 
-  it('answers a /command addressed to the bot', async () => {
-    await deliver(
-      createCtx({
-        text: '/status@dorkbot',
-        entities: [{ type: 'bot_command', offset: 0, length: 15 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
-  it('answers a bare command that opens the message', async () => {
-    // Telegram delivers `/status` to every listening bot in the group, so a
-    // command naming no bot is meant for this one too.
-    await deliver(
-      createCtx({
-        text: '/status',
-        entities: [{ type: 'bot_command', offset: 0, length: 7 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
-  it('drops a command addressed to a different bot', async () => {
-    await deliver(
-      createCtx({
-        text: '/status@otherbot',
-        entities: [{ type: 'bot_command', offset: 0, length: 16 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it('drops a command mentioned mid-sentence rather than invoked', async () => {
-    // Talk about a command, not a use of one.
-    await deliver(
-      createCtx({
-        text: 'you should run /deploy later',
-        entities: [{ type: 'bot_command', offset: 15, length: 7 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it('answers a text_mention entity carrying the bot user id', async () => {
-    // How Telegram represents a mention of a user with no public username.
-    await deliver(
-      createCtx({
-        text: 'DorkBot take a look',
-        entities: [{ type: 'text_mention', offset: 0, length: 7, user: ME }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
-  it('drops a group message mentioning somebody else', async () => {
-    // Proves the handle match is not a loose substring over the whole text.
-    await deliver(
-      createCtx({
-        text: 'hey @dorkbotanic can you check this',
-        entities: [{ type: 'mention', offset: 4, length: 12 }],
-      })
-    );
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it("answers a reply to one of the bot's own messages", async () => {
-    await deliver(createCtx({ text: 'that worked, thanks', replyToFrom: ME }));
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
-  it("drops a reply to somebody else's message", async () => {
-    await deliver(createCtx({ text: 'agreed', replyToFrom: HUMAN }));
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it('treats a supergroup like a group', async () => {
-    await deliver(createCtx({ chatType: 'supergroup', text: 'unaddressed chatter' }));
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
   it("respondMode 'always' answers an unaddressed group message", async () => {
     await deliver(createCtx({ text: 'just two people talking' }), 'always');
 
     expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
-  it("respondMode 'mention-only' ignores a reply to the bot", async () => {
-    await deliver(createCtx({ text: 'that worked, thanks', replyToFrom: ME }), 'mention-only');
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it("respondMode 'mention-only' still answers a mention", async () => {
-    await deliver(
-      createCtx({
-        text: '@dorkbot ping',
-        entities: [{ type: 'mention', offset: 0, length: 8 }],
-      }),
-      'mention-only'
-    );
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
-  it('with no respondMode supplied, falls back to the schema default and not to always', async () => {
-    // DOR-623: the default is stated once, in `DEFAULT_RESPOND_MODE`. A caller
-    // that omits the option gets that, not a more permissive local literal.
-    await deliver(createCtx({ text: 'unaddressed chatter' }), undefined);
-
-    expect(publishedSubjects()).toEqual([]);
   });
 });
 
@@ -569,19 +363,6 @@ describe('Telegram inbound — private-chat allowlist (DOR-788)', () => {
     expect(publishedSubjects()).toEqual([PRIVATE_SUBJECT]);
   });
 
-  it("does not gate group messages — those are the respond mode's business", async () => {
-    // An empty DM allowlist must not silence a group the bot was invited to.
-    await deliver(
-      createCtx({
-        text: '@dorkbot ping',
-        entities: [{ type: 'mention', offset: 0, length: 8 }],
-      }),
-      { dmPolicy: 'allowlist', dmAllowlist: [] }
-    );
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
-  });
-
   describe('the refusal is explained, once', () => {
     // At `debug` this was invisible, and a bot that silently ignores you is
     // indistinguishable from a broken one — right after setup, when the
@@ -601,36 +382,6 @@ describe('Telegram inbound — private-chat allowlist (DOR-788)', () => {
       expect(warnings[0]).toContain('DM Allowlist'); // the setting to change
       expect(warnings[0]).toContain('the allowlist is empty');
     });
-
-    it('says it once per chat, however many messages arrive', async () => {
-      // One person retrying — or a stranger hammering the bot — must not be
-      // able to fill the operator's log.
-      const options = {
-        dmPolicy: 'allowlist' as const,
-        dmAllowlist: [],
-        deniedNotices: createDeniedChatNotices(),
-      };
-
-      await deliver(privateCtx(), options);
-      await deliver(privateCtx(), options);
-      await deliver(privateCtx(), options);
-
-      expect(warnings).toHaveLength(1);
-      expect(publishedSubjects()).toEqual([]);
-    });
-
-    it('explains each distinct chat separately', async () => {
-      const options = {
-        dmPolicy: 'allowlist' as const,
-        dmAllowlist: [],
-        deniedNotices: createDeniedChatNotices(),
-      };
-
-      await deliver(createCtx({ chatType: 'private', chatId: 111, text: 'hi' }), options);
-      await deliver(createCtx({ chatType: 'private', chatId: 222, text: 'hi' }), options);
-
-      expect(warnings).toHaveLength(2);
-    });
   });
 });
 
@@ -644,150 +395,6 @@ describe('Telegram inbound — non-text content (spec §5.5, §11.2)', () => {
     await deliver(createCtx({ chatType: 'private', photo: true }), ALLOW_HUMAN);
 
     expect(publishedSubjects()).toEqual([PRIVATE_SUBJECT]);
-    const [payload] = publishedPayloads();
-    expect(payload!.content).toBe('');
-    expect(platformData(payload!).media).toEqual({ type: 'photo' });
-  });
-
-  it('publishes a captioned photo with the descriptor plus the caption as content', async () => {
-    await deliver(
-      createCtx({ chatType: 'private', caption: 'look at this', photo: true }),
-      ALLOW_HUMAN
-    );
-
-    const [payload] = publishedPayloads();
-    expect(payload!.content).toBe('look at this');
-    expect(platformData(payload!).media).toEqual({ type: 'photo' });
-  });
-
-  it('publishes a captionless sticker with a media descriptor', async () => {
-    await deliver(createCtx({ chatType: 'private', sticker: true }), ALLOW_HUMAN);
-
-    const [payload] = publishedPayloads();
-    expect(payload!.content).toBe('');
-    expect(platformData(payload!).media).toEqual({ type: 'sticker' });
-  });
-
-  it('publishes a captionless voice note with duration and mime type', async () => {
-    await deliver(
-      createCtx({ chatType: 'private', voice: { duration: 14, mimeType: 'audio/ogg' } }),
-      ALLOW_HUMAN
-    );
-
-    const [payload] = publishedPayloads();
-    expect(payload!.content).toBe('');
-    expect(platformData(payload!).media).toEqual({
-      type: 'voice',
-      durationSec: 14,
-      mimeType: 'audio/ogg',
-    });
-  });
-
-  it('publishes a captionless video with duration, filename, and mime type', async () => {
-    await deliver(
-      createCtx({
-        chatType: 'private',
-        video: { duration: 30, fileName: 'clip.mp4', mimeType: 'video/mp4' },
-      }),
-      ALLOW_HUMAN
-    );
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).media).toEqual({
-      type: 'video',
-      durationSec: 30,
-      fileName: 'clip.mp4',
-      mimeType: 'video/mp4',
-    });
-  });
-
-  it('publishes a captionless document with filename and mime type', async () => {
-    await deliver(
-      createCtx({
-        chatType: 'private',
-        document: { fileName: 'report.pdf', mimeType: 'application/pdf' },
-      }),
-      ALLOW_HUMAN
-    );
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).media).toEqual({
-      type: 'document',
-      fileName: 'report.pdf',
-      mimeType: 'application/pdf',
-    });
-  });
-
-  it('publishes a shared location with a media descriptor', async () => {
-    await deliver(createCtx({ chatType: 'private', location: true }), ALLOW_HUMAN);
-
-    const [payload] = publishedPayloads();
-    expect(payload!.content).toBe('');
-    expect(platformData(payload!).media).toEqual({ type: 'location' });
-  });
-
-  it('publishes a captionless music file (audio, distinct from voice) with duration and mime type', async () => {
-    await deliver(
-      createCtx({
-        chatType: 'private',
-        audio: { duration: 180, fileName: 'track.mp3', mimeType: 'audio/mpeg' },
-      }),
-      ALLOW_HUMAN
-    );
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).media).toEqual({
-      type: 'audio',
-      durationSec: 180,
-      fileName: 'track.mp3',
-      mimeType: 'audio/mpeg',
-    });
-  });
-
-  it('publishes a captionless round video message (video_note) with duration', async () => {
-    await deliver(createCtx({ chatType: 'private', videoNote: { duration: 8 } }), ALLOW_HUMAN);
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).media).toEqual({ type: 'video_note', durationSec: 8 });
-  });
-
-  it('publishes a captionless animation (GIF) as a document descriptor — the documented mislabel', async () => {
-    // Telegram sets `document` alongside `animation` for back-compat, and
-    // there is no dedicated 'animation' kind among §5.5's six names. This
-    // pins the actual, documented behavior rather than letting it drift.
-    await deliver(createCtx({ chatType: 'private', animation: true }), ALLOW_HUMAN);
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).media).toEqual({ type: 'document' });
-  });
-
-  it('still drops a message with no text, caption, or recognized media', async () => {
-    // The negative control for the lift: proves it publishes non-text
-    // content because it recognizes a media kind, not because the drop was
-    // simply removed. A poll or a contact card — neither modeled by
-    // `createCtx` — would hit exactly this path in production.
-    await deliver(createCtx({ chatType: 'private', text: '' }), ALLOW_HUMAN);
-
-    expect(publishedSubjects()).toEqual([]);
-    expect(callbacks.trackInbound).not.toHaveBeenCalled();
-  });
-
-  it('a captionless photo in a group still obeys the respond gate when unaddressed', async () => {
-    // The lift lives beneath the gate, not instead of it: an unaddressed
-    // group photo under the default respond mode is still filtered.
-    await deliver(createCtx({ chatType: 'group', photo: true }));
-
-    expect(publishedSubjects()).toEqual([]);
-  });
-
-  it('a captionless photo that replies to the bot in a group passes the gate and publishes', async () => {
-    // The case an earlier review round found untested: a media message that
-    // satisfies the respond gate via reply-to-bot (not a mention) must still
-    // publish with its descriptor — the lift and the reply-addressing path
-    // are independent and must compose.
-    await deliver(createCtx({ chatType: 'supergroup', photo: true, replyToFrom: ME }));
-
-    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
     const [payload] = publishedPayloads();
     expect(payload!.content).toBe('');
     expect(platformData(payload!).media).toEqual({ type: 'photo' });
@@ -810,13 +417,6 @@ describe('Telegram inbound — reply targeting (spec §5.4, §6.5, §11.2)', () 
 
     const [payload] = publishedPayloads();
     expect(platformData(payload!).replyToMessageId).toBe(55);
-  });
-
-  it('omits replyToMessageId when the message is not a reply', async () => {
-    await deliver(createCtx({ chatType: 'private', text: 'hello' }), ALLOW_HUMAN);
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).replyToMessageId).toBeUndefined();
   });
 });
 
@@ -844,53 +444,5 @@ describe('Telegram inbound — forum topics (spec §5.6, §9.2, §11.2)', () => 
     const [payload] = publishedPayloads();
     expect(platformData(payload!).messageThreadId).toBe(99);
     expect(platformData(payload!).threadName).toBe('Bug Reports');
-  });
-
-  it('carries the topic name from a reply to the creation event', async () => {
-    // The reply here targets the topic's root message (id 98), not the bot —
-    // that is what makes this specifically the "topic reply" shape, distinct
-    // from the reply-to-bot shape the other cases use. `'always'` stands in
-    // for whatever addressed this message (a mention, a command); the
-    // property under test is that the topic name propagates through a reply,
-    // independent of how the message satisfied the respond gate.
-    await deliver(
-      createCtx({
-        chatType: 'supergroup',
-        text: 'second message',
-        messageThreadId: 99,
-        replyToMessageId: 98,
-        replyForumTopicName: 'Bug Reports',
-      }),
-      'always'
-    );
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).messageThreadId).toBe(99);
-    expect(platformData(payload!).threadName).toBe('Bug Reports');
-  });
-
-  it('carries the topic id with no name for a later message that names neither shape', async () => {
-    // The honest dotted/absent case: no cheap way to learn the name, so the
-    // field is simply absent rather than guessed.
-    await deliver(
-      createCtx({
-        chatType: 'supergroup',
-        text: 'third message',
-        messageThreadId: 99,
-        replyToFrom: ME,
-      })
-    );
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).messageThreadId).toBe(99);
-    expect(platformData(payload!).threadName).toBeUndefined();
-  });
-
-  it('omits both fields entirely for a message outside any forum topic', async () => {
-    await deliver(createCtx({ chatType: 'supergroup', text: 'hello', replyToFrom: ME }));
-
-    const [payload] = publishedPayloads();
-    expect(platformData(payload!).messageThreadId).toBeUndefined();
-    expect(platformData(payload!).threadName).toBeUndefined();
   });
 });

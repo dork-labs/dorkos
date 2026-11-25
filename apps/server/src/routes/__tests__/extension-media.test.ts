@@ -188,7 +188,7 @@ describe('POST /api/extensions/:id/media-tickets', () => {
     for (const id of ['plain', 'legacy', 'idle', 'nobody']) {
       const res = await mintRequest(id, { path: '/a.mp4' });
       expect(res.status, id).toBe(404);
-      expect(typeof res.body.error).toBe('string');
+      expect(res.body).toMatchObject({ code: 'not_found', detail: expect.any(String) });
     }
     // Installed but not running.
     running.clips = null;
@@ -371,6 +371,11 @@ describe('GET /api/extensions/media/:ticket', () => {
     const url = await mintUrl();
     const res = await request(server)[method](url).set('Origin', ownOrigin()).send({});
     expect(res.status).toBe(405);
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'method_not_allowed',
+      detail: 'A video link can only be played.',
+    });
     expect(seen).toHaveLength(0);
   });
 

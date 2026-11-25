@@ -303,7 +303,7 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('extension_not_approved_to_run');
+      expect(res.body.code).toBe('person_only');
       expect(manager.approveToRun).not.toHaveBeenCalled();
       // The decisive assertion: the stored list is untouched, so a refused call
       // leaves nothing behind that a later load could read as consent.
@@ -354,8 +354,8 @@ describe('POST /api/extensions/:id/approve', () => {
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', {
         expectedDigest: `sha256:${'a'.repeat(64)}`,
       });
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
+      expect(res.status).toBe(412);
+      expect(res.body).toMatchObject({ code: 'precondition_failed' });
       expect(state.extensions.approvedToRun).toEqual([]);
     });
 
@@ -370,9 +370,9 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('extension_unpinnable');
+      expect(res.body).toMatchObject({ code: 'conflict' });
       // The reason alone, one short block (app copy: at most 15 words).
-      expect(res.body.error).toBe(UNPINNABLE_SENTENCE);
+      expect(res.body.detail).toBe(UNPINNABLE_SENTENCE);
       expect(UNPINNABLE_SENTENCE.split(/\s+/).length).toBeLessThanOrEqual(15);
     });
   });
@@ -406,7 +406,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // signed in to DorkOS can change this" for every non-cookie caller, whether
       // it is unauthenticated or authenticated by some other means.
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
       expect(manager.approveToRun).not.toHaveBeenCalled();
       expect(state.extensions.approvedToRun).toEqual([]);
     });
@@ -497,7 +497,7 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await request(fixtureServer).post('/api/extensions/my-ext/forget').send({});
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('installed');
+      expect(res.body).toMatchObject({ code: 'conflict' });
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
     });
 
@@ -558,7 +558,7 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await request(fixtureServer).post('/api/extensions/approve-set').send(body);
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('operator_cookie_required');
+      expect(res.body.code).toBe('person_only');
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 
@@ -568,7 +568,7 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await request(fixtureServer).post('/api/extensions/approve-set').send(body);
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('not_in_set');
+      expect(res.body).toMatchObject({ code: 'conflict' });
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
   });
@@ -680,8 +680,8 @@ describe('POST /api/extensions/:id/approve', () => {
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toBe(
-        'This instance does not answer to pages from "null". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
+      expect(res.body.detail).toBe(
+        'This instance does not answer to pages from this address. If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
       );
       expect(manager.approveToRun).not.toHaveBeenCalled();
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -810,8 +810,8 @@ describe('POST /api/extensions/:id/approve', () => {
         .post('/api/extensions/my-ext/approve')
         .send({ ...SHOWN_FILES, permissions: SHOWN });
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
+      expect(res.status).toBe(412);
+      expect(res.body).toMatchObject({ code: 'precondition_failed' });
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 
@@ -848,7 +848,7 @@ describe('POST /api/extensions/:id/approve', () => {
         .post('/api/extensions/my-ext/approve')
         .send({ ...SHOWN_FILES, permissions: SHOWN });
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(412);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
   });
@@ -860,9 +860,9 @@ describe('POST /api/extensions/:id/approve', () => {
         .post('/api/extensions/my-ext/approve')
         .send({ version: '1.0.0' });
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('stale_approval');
-      expect(res.body.error).toBe(
+      expect(res.status).toBe(412);
+      expect(res.body).toMatchObject({ code: 'precondition_failed' });
+      expect(res.body.detail).toBe(
         'This extension changed since you saw it. Nothing was turned on.'
       );
       expect(manager.approveToRun).not.toHaveBeenCalled();
@@ -874,7 +874,7 @@ describe('POST /api/extensions/:id/approve', () => {
         asked_empty,
         'http://localhost:7777'
       );
-      expect(empty.status).toBe(409);
+      expect(empty.status).toBe(412);
     });
 
     it('says in plain words why a copy DorkOS cannot check cannot be turned on', async () => {
@@ -884,12 +884,12 @@ describe('POST /api/extensions/:id/approve', () => {
         .send({});
       const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('extension_unpinnable');
+      expect(res.body).toMatchObject({ code: 'conflict' });
       // The stub's folder is not on disk: DorkOS could not read it, which is
       // its own plain sentence, not the one about links.
-      expect(res.body.error).toBe(UNREADABLE_SENTENCE);
+      expect(res.body.detail).toBe(UNREADABLE_SENTENCE);
       expect(UNREADABLE_SENTENCE.split(/\s+/).length).toBeLessThanOrEqual(15);
-      expect(res.body.error).not.toMatch(/digest/i);
+      expect(res.body.detail).not.toMatch(/digest/i);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 

@@ -28,10 +28,14 @@ import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-s
 import { configManager } from '../services/core/config-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
+import { parseUploads, type UploadedFile } from '../http/uploads.js';
 import { discardStream, errorBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { roomRoute } from './room-route.js';
+import { problem, problemBody } from '@dorkos/http-kit';
+import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
+import { uploadRefusalProblem } from '../http/problems/upload-refusal.js';
+import { UploadTypeRefusedError } from '../services/core/upload-handler.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -90,25 +94,21 @@ router.post('/:id/attachments', (c) =>
           uploadConfig.allowedTypes.includes('*/*') ||
           uploadConfig.allowedTypes.includes(file.mimetype)
             ? undefined
-            : new Error(`File type not allowed: ${file.mimetype}`),
+            : new UploadTypeRefusedError(file.mimetype),
       });
     } catch (err) {
-      if (err instanceof UploadLimitError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
-          return c.json(errorBody(`File too large (max ${megabytes}MB)`, err.code), 413);
-        }
-        return c.json(errorBody(err.message, err.code), 400);
-      }
-      // Every other refusal: the type filter's, or a body the parser could not read.
-      return c.json(errorBody((err as Error).message, 'ATTACHMENT_TYPE_NOT_ALLOWED'), 415);
+      // A refused type is 415; anything the parser or storage threw gets a fixed
+      // sentence, never its own words (they can carry a path).
+      const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
+      return uploadRefusalProblem(c, err, {
+        tooLargeDetail: `File too large (max ${megabytes}MB)`,
+      });
     }
 
     if (files.length === 0) {
-      return c.json(
-        errorBody(`Attach the files as the '${ATTACHMENT_FIELD}' field.`, 'ATTACHMENT_MISSING'),
-        400
-      );
+      return problem(c, 'invalid_request', {
+        detail: `Attach the files as the '${ATTACHMENT_FIELD}' field.`,
+      });
     }
 
     const store = getRoomAttachmentStore();
@@ -178,7 +178,7 @@ router.post('/:id/attachments', (c) =>
         }
       }
       if (storeErr instanceof InvalidRoomAttachmentIdError) {
-        return c.json(errorBody('That file could not be stored.', 'ATTACHMENT_ID_INVALID'), 400);
+        return problem(c, 'invalid_request', { detail: 'That file could not be stored.' });
       }
       throw storeErr;
     }
@@ -205,7 +205,7 @@ router.get('/:id/attachments/:attachmentId', (c) =>
       const caller = resolveCaller();
       const row = getAttachmentRowStore().get(roomId, c.req.param('attachmentId'));
       if (!row || !getRoomService().canReadAttachment(roomId, caller.id, row)) {
-        return c.json(errorBody('No such file.', 'ATTACHMENT_NOT_FOUND'), 404);
+        return problem(c, 'attachment_not_found', { detail: 'No such file.' });
       }
 
       const inline = row.preview === 'image';
@@ -216,7 +216,7 @@ router.get('/:id/attachments/:attachmentId', (c) =>
         // Only a VERIFIED image is served as the type it claims to be.
         inline ? row.mimeType : 'application/octet-stream'
       );
-      if (!stored) return c.json(errorBody('No such file.', 'ATTACHMENT_NOT_FOUND'), 404);
+      if (!stored) return problem(c, 'attachment_not_found', { detail: 'No such file.' });
       const notModified = c.req.header('if-none-match') === stored.etag;
 
       return streamToNodeResponse(c, (res) => {
@@ -255,7 +255,7 @@ router.get('/:id/attachments/:attachmentId', (c) =>
       });
     } catch (err) {
       if (err instanceof InvalidRoomAttachmentIdError) {
-        return c.json(errorBody('That is not a usable file id.', 'ATTACHMENT_ID_INVALID'), 400);
+        return problem(c, 'invalid_request', { detail: 'That is not a usable file id.' });
       }
       throw err;
     }
@@ -263,15 +263,17 @@ router.get('/:id/attachments/:attachmentId', (c) =>
 );
 
 /**
- * Answer a file that could not be read, before any of it was sent: a 500 with
- * the room's JSON refusal, over the headers already set for the file.
+ * Answer a file that could not be read, before any of it was sent: a 500
+ * `internal_error` problem, over the headers already set for the file.
  *
  * @param res - The raw response, nothing written yet.
  */
 function answerReadFailure(res: ServerResponse): void {
-  const body = JSON.stringify(errorBody('Could not read that file.', 'ATTACHMENT_READ_FAILED'));
+  const body = JSON.stringify(
+    problemBody('internal_error', { detail: 'Couldn’t read that file. Try again.' })
+  );
   res.statusCode = 500;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Type', `${PROBLEM_CONTENT_TYPE}; charset=utf-8`);
   res.setHeader('Content-Length', String(Buffer.byteLength(body)));
   res.removeHeader('Content-Disposition');
   res.removeHeader('ETag');

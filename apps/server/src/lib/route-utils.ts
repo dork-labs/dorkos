@@ -6,20 +6,11 @@
  */
 import type { Readable } from 'stream';
 import { z } from 'zod';
+import { problemBody } from '@dorkos/http-kit';
+import type { Problem } from '@dorkos/shared/problem';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from './boundary.js';
 
 const uuidSchema = z.string().uuid();
-
-/**
- * The 400 body for data that failed its schema: a route returns
- * `c.json(validationFailureBody(error), 400)`.
- *
- * @param error - Why the data failed its schema.
- * @returns The body.
- */
-export function validationFailureBody(error: z.ZodError) {
-  return { error: 'Validation failed', details: z.flattenError(error) };
-}
 
 /**
  * Extract a human-readable error message from an unknown caught value.
@@ -86,6 +77,30 @@ export function discardStream(stream: Readable): void {
   stream.destroy();
 }
 
+/**
+ * The problem document for a chat folder the boundary refused: `403
+ * outside_boundary`, or `400 invalid_request` for a path with a NUL byte in
+ * it, the same answers the chain's error handler gives a thrown one. A route
+ * that answers a refused path directly uses `boundaryProblem`
+ * (`http/problems/boundary-refusal.ts`).
+ *
+ * @param err - The refusal.
+ * @returns The problem document.
+ */
+function boundaryProblemBody(err: BoundaryError): Problem {
+  if (err.code === 'OUTSIDE_BOUNDARY') {
+    return problemBody('outside_boundary', {
+      detail: 'This chat is outside the allowed directory.',
+    });
+  }
+  if (err.code === 'NULL_BYTE') {
+    return problemBody('invalid_request', {
+      detail: 'That path has a character paths can’t hold.',
+    });
+  }
+  return problemBody('forbidden', { detail: 'DorkOS isn’t allowed to read that folder.' });
+}
+
 /** Options for {@link boundaryRefusal}. */
 export interface BoundaryRefusalOptions {
   /**
@@ -117,17 +132,17 @@ export interface BoundaryRefusalOptions {
  * With `allowDorkHome`, the `{dorkHome}/agents/*` subtree is additionally
  * accepted for agent-home session cwds (see
  * {@link BoundaryRefusalOptions.allowDorkHome}). A route answers a refusal with
- * `c.json(refusal, 403)`.
+ * `sendProblem(c, refusal)`, the {@link boundaryProblemBody} for it.
  *
  * @param pathToCheck - User-supplied path (skipped if undefined/null)
  * @param opts - Boundary options (e.g. `allowDorkHome` for session cwds)
- * @returns `undefined` if the path is valid or not provided, else the 403 body
+ * @returns `undefined` if the path is valid or not provided, else the problem document
  * @throws Anything the boundary check throws that is not a {@link BoundaryError}.
  */
 export async function boundaryRefusal(
   pathToCheck: string | undefined | null,
   opts: BoundaryRefusalOptions = {}
-): Promise<{ error: string; code: string } | undefined> {
+): Promise<Problem | undefined> {
   if (!pathToCheck) return undefined;
   try {
     if (opts.allowDorkHome) {
@@ -137,7 +152,7 @@ export async function boundaryRefusal(
     }
     return undefined;
   } catch (err) {
-    if (err instanceof BoundaryError) return { error: err.message, code: err.code };
+    if (err instanceof BoundaryError) return boundaryProblemBody(err);
     throw err;
   }
 }

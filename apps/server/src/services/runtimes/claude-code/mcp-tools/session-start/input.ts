@@ -15,6 +15,7 @@ import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
 import type { SessionStartPermission } from '../session-start-permission.js';
 import { CLAIM_KEY_MAX_LENGTH } from '../../../../session/claims/work-claim-service.js';
+import type { SessionAlreadyRunningResult } from '../../../../session/claims/work-claim-start.js';
 
 /** The input `session_start` accepts. */
 export const SessionStartInputShape = {
@@ -96,14 +97,19 @@ export const SessionStartInputShape = {
     .optional()
     .describe(
       'The work the new chat takes on, e.g. a ticket id (DOR-1234), "PR #42" or a branch. The ' +
-        'new chat claims it, so your other chats see it is taken. When another live chat of ' +
-        'yours already holds it, the start is refused and names that chat: leave the work to ' +
-        'it, or set `startAnyway` to start a second chat without the claim.'
+        'new chat claims it, so your other chats see it is taken. Left out, the one ticket or ' +
+        'PR the title or reason names (else the prompt) is claimed. When another live chat of ' +
+        'yours already holds it, nothing starts: you get that chat back (`status: ' +
+        '"already-running"`, even if its turn ended; message it instead), or a refusal when you ' +
+        'cannot read it. A claim lapses after 2 hours with no sign of work. Set `startAnyway` ' +
+        'to start a second chat without the claim.'
     ),
   startAnyway: z
     .boolean()
     .optional()
-    .describe('Start even though another chat of yours holds `claim`. That chat keeps the claim.'),
+    .describe(
+      'Start even though another chat of yours holds the claim. That chat keeps the claim.'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
@@ -125,19 +131,28 @@ export interface SessionStartArgs {
 }
 
 /** The result of a started session. */
-export interface SessionStartResult {
+export interface SessionStartedResult {
   /** The session's canonical id. */
   sessionId: string;
   /** The chat's title, as the sidebar shows it once the rename lands. */
   title: string;
   /** A markdown link that opens the chat, to use instead of its id. */
   link: string;
+  /** Its `dork:chat:` reference, for a `/r/` link, or null when the id cannot be one. */
+  ref: string | null;
   /** The runtime it runs on. */
   runtime: string;
   /** The account it was started on, or `null` when the usual choice decides. */
   account: { id: string; label: string | null } | null;
   /** The permission level it runs at. */
   permission: SessionStartPermission;
-  /** Always `started`: a refusal is an error result instead. */
+  /** Always `started`. A refusal is an error result instead. */
   status: 'started';
 }
+
+/**
+ * What a successful `session_start` answers: the chat it started, or, when one
+ * of the caller's own chats already holds the work (DOR-3690), that chat with
+ * `status: 'already-running'` and nothing new started.
+ */
+export type SessionStartResult = SessionStartedResult | SessionAlreadyRunningResult;

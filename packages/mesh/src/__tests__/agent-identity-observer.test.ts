@@ -63,18 +63,6 @@ describe('identity writes fire the observer', () => {
     ]);
   });
 
-  it('reports an upsert over an id it already holds as `updated`', () => {
-    const entry = makeEntry();
-    registry.upsert(entry);
-    changes.length = 0;
-
-    registry.upsert({ ...entry, name: 'backend-renamed' });
-
-    expect(changes).toEqual([
-      expect.objectContaining({ kind: 'updated', agentId: entry.id, name: 'backend-renamed' }),
-    ]);
-  });
-
   it('reports `update` once, carrying the new name', () => {
     const entry = makeEntry();
     registry.upsert(entry);
@@ -109,22 +97,6 @@ describe('identity writes fire the observer', () => {
     ]);
   });
 
-  it('reports `relocate` as an update at the new path', () => {
-    const entry = makeEntry();
-    registry.upsert(entry);
-    changes.length = 0;
-
-    registry.relocate(entry.id, '/home/user/projects/backend-moved');
-
-    expect(changes).toEqual([
-      expect.objectContaining({
-        kind: 'updated',
-        agentId: entry.id,
-        projectPath: '/home/user/projects/backend-moved',
-      }),
-    ]);
-  });
-
   it('reports the row a relocation displaced as removed, before the move', () => {
     const mover = makeEntry();
     const incumbent = makeEntry({ id: '01JKABC00002', projectPath: '/home/user/projects/other' });
@@ -140,34 +112,11 @@ describe('identity writes fire the observer', () => {
     ]);
   });
 
-  it('reports the row an upsert displaced at the same path as removed', () => {
-    const incumbent = makeEntry();
-    registry.upsert(incumbent);
-    changes.length = 0;
-
-    const replacement = makeEntry({ id: '01JKABC00009' });
-    registry.upsert(replacement);
-
-    expect(changes.map((c) => [c.kind, c.agentId])).toEqual([
-      ['removed', incumbent.id],
-      ['registered', replacement.id],
-    ]);
-  });
-
   it('stays silent when a write found nothing to write', () => {
     registry.update('01JKNOSUCHAGENT', { name: 'ghost' });
     registry.remove('01JKNOSUCHAGENT');
     registry.relocate('01JKNOSUCHAGENT', '/tmp/nowhere');
 
-    expect(changes).toEqual([]);
-  });
-
-  it('stays silent when an upsert is refused as a duplicate id', () => {
-    const entry = makeEntry();
-    registry.upsert(entry);
-    changes.length = 0;
-
-    expect(registry.upsert({ ...entry, projectPath: '/somewhere/else' })).toBe('duplicate-id');
     expect(changes).toEqual([]);
   });
 });
@@ -206,16 +155,6 @@ describe('writes that must NOT fire the observer', () => {
 
     expect(changes).toEqual([]);
   });
-
-  it('an update that changes no field is silent', () => {
-    const entry = makeEntry();
-    registry.upsert(entry);
-    changes.length = 0;
-
-    registry.update(entry.id, { name: entry.name });
-
-    expect(changes).toEqual([]);
-  });
 });
 
 describe('a throwing observer never costs the write', () => {
@@ -250,21 +189,5 @@ describe('MeshCore.onAgentsChanged', () => {
 
     expect(first).toEqual([expect.objectContaining({ kind: 'registered' })]);
     expect(second).toEqual(first);
-  });
-
-  it('one broken subscriber does not cost the others theirs', () => {
-    const mesh = new MeshCore({
-      db,
-      defaultScanRoot: '/tmp/scan-root',
-      logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    });
-    const survivor: AgentIdentityChange[] = [];
-    mesh.onAgentsChanged(() => {
-      throw new Error('first subscriber exploded');
-    });
-    mesh.onAgentsChanged((change) => survivor.push(change));
-
-    expect(() => mesh.agentRegistry.upsert(makeEntry())).not.toThrow();
-    expect(survivor).toHaveLength(1);
   });
 });

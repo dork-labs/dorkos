@@ -7,8 +7,8 @@
 # with `hold:` and says something after it. Fails otherwise, naming the fix.
 # Run by .github/workflows/hold-reason.yml, an advisory check (never required).
 #
-# WHY. merge-tail and the arm script both refuse a held PR, and neither lifts
-# `hold`: only whoever set it can. A hold with no reason names nobody, so
+# WHY. A held PR does not merge (the required not-held check), and nothing
+# lifts `hold` automatically: only whoever set it can. A hold with no reason names nobody, so
 # nobody lifts it. On 2026-11-20 a brief told agents to open security-path PRs
 # with `hold` and 19 PRs sat for 9 hours. scripts/open-pr.sh posts the reason
 # itself (`--hold "<reason>"`); this check covers every other way a hold goes

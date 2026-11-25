@@ -1,11 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import {
-  STALE_APPROVAL_CODE,
-  type ApproveExtensionRequest,
-} from '@dorkos/shared/extension-approval-schemas';
+import type { ApproveExtensionRequest } from '@dorkos/shared/extension-approval-schemas';
 import { extensionQueryKeys, useExtensionList } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { readResponseError } from '@/layers/shared/lib';
 
 /** Response shape from enable/disable endpoints. */
 interface ExtensionActionResponse {
@@ -50,21 +48,14 @@ export function useEnableExtension() {
         // person bar on this route (DOR-1507) answers 403 with a message that
         // says what DorkOS did not do and who can do it; a bare number would
         // throw that away and leave "403" on screen.
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-          error?: string;
-          code?: string;
-        };
+        const body = await readResponseError(
+          res,
+          `Couldn’t turn on ${id}. The server answered ${res.status}.`,
+          { oldMessageFirst: true }
+        );
         // The code rides along, so a cancelled "Confirm it's you" is told
         // apart from a failure and said once (DOR-4909).
-        throw Object.assign(
-          new Error(
-            body.message ??
-              body.error ??
-              `Couldn’t turn on ${id}. The server answered ${res.status}.`
-          ),
-          { code: body.code }
-        );
+        throw Object.assign(new Error(body.message), { code: body.code });
       }
       return res.json() as Promise<ExtensionActionResponse>;
     },
@@ -91,12 +82,12 @@ export function useDisableExtension() {
         // person bar on this route (DOR-1507) answers 403 with a message that
         // says what DorkOS did not do and who can do it; a bare number would
         // throw that away and leave "403" on screen.
-        const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
-        throw new Error(
-          body.message ??
-            body.error ??
-            `Couldn’t turn off ${id}. The server answered ${res.status}.`
+        const body = await readResponseError(
+          res,
+          `Couldn’t turn off ${id}. The server answered ${res.status}.`,
+          { oldMessageFirst: true }
         );
+        throw new Error(body.message);
       }
       return res.json() as Promise<ExtensionActionResponse>;
     },
@@ -126,7 +117,7 @@ export interface RunApprovalTarget {
 
 /**
  * A refused approve or revoke: the server's sentence, and whether the card
- * went out of date while it was on screen (`stale_approval`).
+ * went out of date while it was on screen (`reason: stale_approval`).
  */
 export class RunApprovalError extends Error {
   constructor(
@@ -167,7 +158,7 @@ export function useSetExtensionRunApproval(approve: boolean) {
     mutationFn: async ({ id, version, plugin, permissions, expectedDigest }: RunApprovalTarget) => {
       // Approving binds the copy the card shows — its version and carrying
       // plugin — so a copy that took its place since the card was drawn is
-      // refused with `stale_approval` instead of approved (DOR-2517). The card
+      // refused with `412 precondition_failed` instead of approved (DOR-2517). The card
       // is never told a path; the server compares what it is sent.
       const res = await fetch(
         extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
@@ -185,12 +176,11 @@ export function useSetExtensionRunApproval(approve: boolean) {
           : { method: 'POST' }
       );
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-        throw new RunApprovalError(
-          body.error ?? `Couldn’t update ${id}. The server answered ${res.status}.`,
-          body.code === STALE_APPROVAL_CODE,
-          body.code
+        const body = await readResponseError(
+          res,
+          `Couldn’t update ${id}. The server answered ${res.status}.`
         );
+        throw new RunApprovalError(body.message, body.code === 'precondition_failed', body.code);
       }
       return res.json() as Promise<ExtensionApprovalResponse>;
     },

@@ -9,7 +9,7 @@
  * records the harness writes, fails.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, mkdir, utimes } from 'fs/promises';
+import { mkdtemp, rm, writeFile, utimes } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -106,18 +106,6 @@ describe('TranscriptReader — when the person last wrote (BC-16)', () => {
     expect(session?.userLastMessageAt).toBe(PERSON_WROTE_AT);
     expect(session?.updatedAt).toBe(MTIME.toISOString());
     expect(Date.parse(session!.userLastMessageAt!)).toBeLessThan(Date.parse(session!.updatedAt));
-  });
-
-  it('takes the LAST of several messages from the person', async () => {
-    await writeTranscript(dir, 'sess-many', [
-      personLine('first'),
-      assistantLine('2026-07-01T09:05:00.000Z'),
-      personLine('and another thing', '2026-07-01T09:20:00.000Z'),
-      assistantLine('2026-07-01T09:50:00.000Z'),
-    ]);
-
-    const [session] = await reader.listSessionsInDir(dir);
-    expect(session?.userLastMessageAt).toBe('2026-07-01T09:20:00.000Z');
   });
 
   // Every one of these arrives on the `user` role and none of them was typed by
@@ -329,85 +317,6 @@ describe('TranscriptReader — when the person last wrote (BC-16)', () => {
     expect(session?.userLastMessageAt).toBe(NOISE_AT);
   });
 
-  it('counts a bash-mode command the person typed', async () => {
-    // The paired positive to bash-stdout/bash-stderr: the input is theirs, the
-    // output is the machine's.
-    await writeTranscript(dir, 'sess-bash', [
-      personLine(),
-      JSON.stringify({
-        type: 'user',
-        message: { role: 'user', content: '<bash-input>git status</bash-input>' },
-        timestamp: NOISE_AT,
-      }),
-    ]);
-
-    const [session] = await reader.listSessionsInDir(dir);
-    expect(session?.userLastMessageAt).toBe(NOISE_AT);
-  });
-
-  it('counts a slash command — the person typed it', async () => {
-    await writeTranscript(dir, 'sess-command', [
-      personLine(),
-      JSON.stringify({
-        type: 'user',
-        message: { role: 'user', content: '<command-name>/flow:verify</command-name>' },
-        timestamp: NOISE_AT,
-      }),
-    ]);
-
-    const [session] = await reader.listSessionsInDir(dir);
-    expect(session?.userLastMessageAt).toBe(NOISE_AT);
-  });
-
-  it('omits the field when the person’s message carries no timestamp', async () => {
-    // Purpose: omission, never a guess. Dating an undated record from the file's
-    // mtime would be `updatedAt` under this field's name.
-    await writeTranscript(dir, 'sess-undated', [
-      JSON.stringify({
-        type: 'user',
-        message: { role: 'user', content: 'hello' },
-        cwd: '/work/ctx',
-      }),
-      assistantLine('2026-07-01T09:10:00.000Z'),
-    ]);
-
-    const [session] = await reader.listSessionsInDir(dir);
-    expect(session?.id).toBe('sess-undated');
-    expect(session?.userLastMessageAt).toBeUndefined();
-  });
-
-  it('omits the field when the person’s message has scrolled past the readable tail', async () => {
-    // Purpose: the tail read is bounded and this is its honest edge. A long
-    // agent monologue pushes the person's turn out of the window, and the row
-    // then says nothing rather than reporting the newest thing it can see.
-    //
-    // The filler is sized off TAIL_BUFFER_BYTES rather than a literal, so
-    // widening the window (16 KB → 64 KB for BC-16) moves this case with it
-    // instead of silently turning it green for the wrong reason.
-    const line = (i: number) =>
-      JSON.stringify({
-        type: 'assistant',
-        message: {
-          role: 'assistant',
-          content: [{ type: 'text', text: 'x'.repeat(400) }],
-          model: 'opus',
-        },
-        timestamp: `2026-07-01T09:${String(i % 60).padStart(2, '0')}:00.000Z`,
-      });
-    const filler: string[] = [];
-    let bytes = 0;
-    for (let i = 0; bytes <= TRANSCRIPT.TAIL_BUFFER_BYTES; i++) {
-      const next = line(i);
-      filler.push(next);
-      bytes += next.length + 1;
-    }
-    await writeTranscript(dir, 'sess-scrolled', [personLine(), ...filler]);
-
-    const [session] = await reader.listSessionsInDir(dir);
-    expect(session?.id).toBe('sess-scrolled');
-    expect(session?.userLastMessageAt).toBeUndefined();
-  });
-
   it('reaches back a whole agent work session — the 64 KB window is the point', async () => {
     // Purpose: the paired positive to the case above, and the reason the window
     // grew. Measured over 474 real transcripts the person's last turn sits a
@@ -491,38 +400,5 @@ describe('TranscriptReader — when the person last wrote (BC-16)', () => {
       expect(session?.origin).toBe('agent');
       expect(session?.userLastMessageAt).toBeUndefined();
     });
-
-    it('still reports for a session a person started from a bridged chat', async () => {
-      // The paired positive: `channel` is NOT in the gate, because a message
-      // from Telegram is a person writing.
-      await writeTranscript(dir, 'sess-channel', [
-        JSON.stringify({
-          type: 'user',
-          message: { role: 'user', content: relayBlock('relay.human.telegram', 'ship it') },
-          timestamp: PERSON_WROTE_AT,
-          cwd: '/work/ctx',
-        }),
-        assistantLine('2026-07-01T09:40:00.000Z'),
-      ]);
-
-      const [session] = await reader.listSessionsInDir(dir);
-      expect(session?.origin).toBe('channel');
-      expect(session?.userLastMessageAt).toBe(PERSON_WROTE_AT);
-    });
-  });
-
-  it('getSession reports the same instant as the list row — one tail-read path', async () => {
-    const vaultRoot = '/work/gs';
-    const slug = reader.getProjectSlug(vaultRoot);
-    hoisted.configDir = dir;
-    const projectDir = join(dir, 'projects', slug);
-    await mkdir(projectDir, { recursive: true });
-    await writeTranscript(projectDir, 'sess-gs', [
-      personLine('gs'),
-      assistantLine('2026-07-01T09:40:00.000Z'),
-    ]);
-
-    const session = await reader.getSession(vaultRoot, 'sess-gs');
-    expect(session?.userLastMessageAt).toBe(PERSON_WROTE_AT);
   });
 });

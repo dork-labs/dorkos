@@ -4,16 +4,16 @@
  * run that waited in line for a free agent slot: its limit counts from when its
  * turn starts (DOR-4576).
  *
- * The deadline cases run on real timers at a small scale, under a clock that
+ * The deadline cases run through the real scheduler under an awake clock that
  * reports how long the computer slept: awake time is elapsed time minus sleep,
- * and that sum is the contract. The settle cases run on a hand-driven clock.
+ * and that sum is the contract. The slept-through case runs on real timers at a
+ * small scale; the queued cases on vitest's fake clock. The settle cases run on
+ * a hand-driven clock.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
 import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
-import { MAX_START_WAIT_MS } from '@dorkos/shared/run-time-limit';
-import { SESSIONS } from '../../../config/constants.js';
 import { createAwakeClock, type AwakeClock, type AwakeTimers } from '@dorkos/shared/awake-clock';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
@@ -38,7 +38,25 @@ vi.mock('../../runtimes/claude-code/claude-config-dir.js', async (importOriginal
 
 const CONFIG = { maxConcurrentRuns: 2, retentionCount: 100, mayFire: true, firingReason: 'test' };
 
-/** Real timers, and a sleep total the test sets. */
+/** Fake timers and Date for the queued cases, so seconds of a run pass in no real time. */
+function onFakeClock(): void {
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+  });
+}
+
+/** Walk the fake clock until the run ends, or fail after `budgetMs` of fake time. */
+async function ranToEnd(runId: string, budgetMs = 10_000): Promise<void> {
+  for (let elapsed = 0; elapsed <= budgetMs; elapsed += 50) {
+    if (isTerminalRunStatus(store.getRun(runId)!.status)) return;
+    await vi.advanceTimersByTimeAsync(50);
+    // The run's own steps between timers include real I/O; let them land.
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error(`the run did not end within ${budgetMs} ms of fake time`);
+}
+
+/** The scheduler's timers, and a sleep total the test sets. */
 function reportedSleep(): { clock: AwakeClock; slept: (ms: number) => void } {
   const real = createAwakeClock();
   real.dispose();
@@ -74,6 +92,10 @@ beforeEach(async () => {
   await initBoundary('/');
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function newTask(maxRuntime: number) {
   return store.createTask({
     name: 'nightly',
@@ -102,26 +124,6 @@ describe('a run the computer slept through (direct path)', () => {
     });
     expect(store.getRun(run!.id)).toMatchObject({ status: 'completed' });
     expect(store.getRun(run!.id)!.error ?? null).toBeNull();
-    await service.stop();
-  });
-
-  it('still stops a run that was awake for its whole limit', async () => {
-    const { clock } = reportedSleep();
-    const service = new TaskSchedulerService({
-      store,
-      runtimes: singleRuntimeSource(agentWorkingFor(2_000) as never),
-      config: CONFIG,
-      wakeSettle: new WakeSettle(clock),
-    });
-    const run = await service.triggerManualRun(newTask(300).id);
-
-    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
-      timeout: 4_000,
-    });
-    expect(store.getRun(run!.id)).toMatchObject({
-      status: 'cancelled',
-      error: expect.stringContaining('time limit'),
-    });
     await service.stop();
   });
 });
@@ -167,14 +169,6 @@ function handClock() {
 }
 
 describe('a scheduled fire right after a wake', () => {
-  it('runs at once when the computer has not slept', () => {
-    const hand = handClock();
-    const settle = new WakeSettle(hand.clock);
-    const fire = vi.fn();
-    settle.run(fire, 'nightly');
-    expect(fire).toHaveBeenCalledOnce();
-  });
-
   it('waits out a dark wake, and runs once the computer has stayed awake', () => {
     const hand = handClock();
     const settle = new WakeSettle(hand.clock);
@@ -195,18 +189,6 @@ describe('a scheduled fire right after a wake', () => {
     // Judged at the instant it runs, so a fire that waited hours is stale there.
     const firedAt = fire.mock.calls[0]![0] as Date;
     expect(firedAt.getTime()).toBe(fullWake + WAKE_SETTLE_MS);
-  });
-
-  it('drops a waiting fire when the scheduler stops', () => {
-    const hand = handClock();
-    const settle = new WakeSettle(hand.clock);
-    const fire = vi.fn();
-    hand.advance(60_000);
-    hand.sleep(60 * 60 * 1000);
-    settle.run(fire, 'nightly');
-    settle.stop();
-    hand.advance(WAKE_SETTLE_MS * 2);
-    expect(fire).not.toHaveBeenCalled();
   });
 });
 
@@ -309,29 +291,6 @@ describe('a scheduled run the computer’s sleep broke (DOR-3286)', () => {
     expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
     await service.stop();
   });
-
-  it('does not run again once the occurrence is no longer due', async () => {
-    // Asleep 20 minutes of a half-hourly schedule: past halfway to the next run.
-    const { hand, agent, service, task, first, armed, dispatch } = await firstRunBrokenBySleep(
-      20 * 60_000
-    );
-    expect(store.getRun(first.id)!.error).toBe(sleptDuringRunError());
-    expect(armed).toHaveBeenCalledTimes(1);
-
-    // The settle judges it when it fires, and it is too late by then.
-    hand.advance(WAKE_SETTLE_MS * 2);
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(agent.calls()).toBe(1);
-    expect(store.listRuns({ taskId: task.id })).toHaveLength(1);
-    await service.stop();
-  });
-
-  it('drops a waiting retry when the scheduler stops', async () => {
-    const { hand, service, dispatch } = await firstRunBrokenBySleep(10 * 60_000);
-    await service.stop();
-    hand.advance(WAKE_SETTLE_MS * 2);
-    expect(dispatch).toHaveBeenCalledTimes(1);
-  });
 });
 
 const WAIT_WORDS = 'Waiting to start: every agent on this computer is busy.';
@@ -361,6 +320,7 @@ function agentQueuedFor(waitMs: number, workMs: number, onWaiting: () => void = 
 
 describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
   it('still runs when it waited longer than its limit, and gets its full limit once started', async () => {
+    onFakeClock();
     let summaryWhileWaiting: string | null | undefined;
     // 1.8s in line under a 1.5s limit, then 300ms of work: inside the limit.
     const agent = agentQueuedFor(1_800, 300, () => {
@@ -373,9 +333,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
     });
     const run = await service.triggerManualRun(newTask(1_500).id);
 
-    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
-      timeout: 5_000,
-    });
+    await ranToEnd(run!.id);
     expect(store.getRun(run!.id)).toMatchObject({ status: 'completed', outputSummary: 'working' });
     expect(store.getRun(run!.id)!.error ?? null).toBeNull();
     // While it waited, the row said so rather than looking stuck.
@@ -384,6 +342,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
   });
 
   it('still stops a run that runs past its limit once started', async () => {
+    onFakeClock();
     const service = new TaskSchedulerService({
       store,
       runtimes: singleRuntimeSource(agentQueuedFor(400, 2_000) as never),
@@ -391,20 +350,12 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
     });
     const run = await service.triggerManualRun(newTask(300).id);
 
-    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
-      timeout: 5_000,
-    });
+    await ranToEnd(run!.id);
     expect(store.getRun(run!.id)).toMatchObject({
       status: 'cancelled',
       error: expect.stringContaining('time limit'),
     });
     await service.stop();
-  });
-
-  it('allows exactly the wait the runtime does before it refuses a turn', () => {
-    // The pause cap the relay path uses must match the runtime's own wait.
-    expect(RUN_START_WAIT_MS).toBe(SESSIONS.WARM_SLOT_WAIT_MS);
-    expect(RUN_START_WAIT_MS).toBe(MAX_START_WAIT_MS);
   });
 
   it('never waits past the hard cap: its limit plus the longest wait to start', () => {

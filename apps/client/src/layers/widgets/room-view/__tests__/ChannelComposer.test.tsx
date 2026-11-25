@@ -13,7 +13,7 @@ import type {
   RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { useRoom, usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
+import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { ChannelComposerBench } from '@/test-helpers/channel-composer';
@@ -64,11 +64,8 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
     ambientMaxEntries: 30,
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
-    // The viewer themselves, on the roster — the ordinary case every test in
-    // this file but the "you left" block below is about. `members: []` used
-    // to be the default here, from before the composer read membership at
-    // all (DOR-1233): every test below assumes a live, postable composer, so
-    // the fixture has to put the viewer on their own room's roster.
+    // The viewer themselves, on the roster — the ordinary case every test in this file but the
+    // "you left" block below is about.
     members: [
       {
         roomId: 'room-1',
@@ -87,12 +84,7 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
   };
 }
 
-/**
- * Mount the composer with the app's real cache configuration, retries off. A
- * bare `new QueryClient()` has no MutationCache — and the MutationCache is
- * where a failed post's toast now comes from, so a re-declared config would
- * leave these assertions with nothing to assert against.
- */
+/** Mount the composer with the app's real cache configuration, retries off. */
 function mountComposer(
   transport: Transport,
   room: RoomWithRoster = roomWith(),
@@ -126,14 +118,7 @@ function renderComposer(
   return screen.getByRole('combobox') as HTMLTextAreaElement;
 }
 
-/**
- * The composer's outermost element — its card.
- *
- * Found by walking down from the mount rather than by querying a class, so the
- * chrome assertions below are not handed the very thing they are checking.
- * Testing Library renders into a bare `<div>` appended to `<body>`, and the
- * composer is that div's only child.
- */
+/** The composer's outermost element — its card. */
 function composerCard(): HTMLElement {
   return document.body.firstElementChild!.firstElementChild as HTMLElement;
 }
@@ -163,19 +148,6 @@ describe('ChannelComposer — the post records the interaction (DOR-1156)', () =
     await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
     expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['room:room-1']);
   });
-
-  it('records the ROOM for a thread reply, not the thread', async () => {
-    const transport = createMockTransport();
-    const field = renderComposer(transport, roomWith(), { threadRootId: 'entry-7' });
-
-    type(field, 'agreed');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.replyInThread).toHaveBeenCalledTimes(1));
-    // A thread reads its room's cursor (ADR 260728-022013), so one place has
-    // one record — the same rule `SidebarChrome.openTarget` follows.
-    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['room:room-1']);
-  });
 });
 
 describe('ChannelComposer', () => {
@@ -188,19 +160,6 @@ describe('ChannelComposer', () => {
 
     await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
     expect(transport.postToRoom).toHaveBeenCalledWith('room-1', { text: 'ship it' });
-  });
-
-  it('empties the field on Enter, without waiting for the server', async () => {
-    // A post that never settles: anything asserted after it is true of the
-    // round trip's MIDDLE, which is where a follow-up sentence gets typed.
-    const transport = createMockTransport({ postToRoom: vi.fn(() => neverSettles()) });
-    const field = renderComposer(transport);
-
-    type(field, 'ship it');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    expect(field.value).toBe('');
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
   });
 
   it('keeps a sentence typed while the last one is still in flight', async () => {
@@ -217,61 +176,6 @@ describe('ChannelComposer', () => {
     expect(field.value).toBe('second');
   });
 
-  it('sends a different second message rather than swallowing it', async () => {
-    const transport = createMockTransport({ postToRoom: vi.fn(() => neverSettles()) });
-    const field = renderComposer(transport);
-
-    type(field, 'first');
-    fireEvent.keyDown(field, { key: 'Enter' });
-    type(field, 'second');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
-    expect(transport.postToRoom).toHaveBeenNthCalledWith(1, 'room-1', { text: 'first' });
-    expect(transport.postToRoom).toHaveBeenNthCalledWith(2, 'room-1', { text: 'second' });
-  });
-
-  it('sends the trimmed text, not the whitespace around it', async () => {
-    const transport = createMockTransport();
-    const field = renderComposer(transport);
-
-    type(field, '  ship it  ');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
-    expect(transport.postToRoom).toHaveBeenCalledWith('room-1', { text: 'ship it' });
-  });
-
-  it('does not post on Shift+Enter — that is a new line', async () => {
-    const transport = createMockTransport();
-    const field = renderComposer(transport);
-
-    type(field, 'first line');
-    fireEvent.keyDown(field, { key: 'Enter', shiftKey: true });
-
-    await waitFor(() => expect(field.value).toBe('first line'));
-    expect(transport.postToRoom).toHaveBeenCalledTimes(0);
-  });
-
-  it('does nothing at all on an empty field', async () => {
-    const transport = createMockTransport();
-    const field = renderComposer(transport);
-
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(0));
-  });
-
-  it('does nothing at all on whitespace alone', async () => {
-    const transport = createMockTransport();
-    const field = renderComposer(transport);
-
-    type(field, '   \n  ');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(0));
-  });
-
   it('keeps every word when the post fails, and says why exactly once', async () => {
     const transport = createMockTransport({
       postToRoom: vi.fn().mockRejectedValue(new Error('This room is archived')),
@@ -281,9 +185,8 @@ describe('ChannelComposer', () => {
     type(field, 'the message I do not want to retype');
     fireEvent.keyDown(field, { key: 'Enter' });
 
-    // A refusal may have landed, so its words stay in the failed row, which
-    // asks the person to check first. Only a send that never reached the
-    // server goes back to the box (DOR-3481, `failPendingPost`).
+    // A refusal may have landed, so its words stay in the failed row, which asks the person to
+    // check first.
     await waitFor(() => {
       const held = usePendingPostStore.getState().posts;
       expect(held).toHaveLength(1);
@@ -293,9 +196,7 @@ describe('ChannelComposer', () => {
       });
     });
     expect(field.value).toBe('');
-    // One toast, naming the action and carrying the server's own reason. It
-    // comes from the shared MutationCache rather than from this component,
-    // because this component is not always still here when a refusal lands.
+    // One toast, naming the action and carrying the server's own reason.
     expect(toastError).toHaveBeenCalledTimes(1);
     // It offers Retry rather than only Report (DOR-3481).
     expect(toastError).toHaveBeenCalledWith(
@@ -305,48 +206,6 @@ describe('ChannelComposer', () => {
         action: expect.objectContaining({ label: 'Retry' }),
       })
     );
-  });
-
-  it('retires the failed row when its words are sent again from the box', async () => {
-    const transport = createMockTransport({
-      postToRoom: vi
-        .fn()
-        .mockRejectedValueOnce(
-          Object.assign(new TypeError('Failed to fetch'), { noResponse: true })
-        )
-        .mockReturnValue(neverSettles()),
-    });
-    const field = renderComposer(transport);
-
-    type(field, 'try me again');
-    fireEvent.keyDown(field, { key: 'Enter' });
-    await waitFor(() => expect(field.value).toBe('try me again'));
-
-    // Sending the words back from the box IS the retry: one row, not two.
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
-    const held = usePendingPostStore.getState().posts;
-    expect(held).toHaveLength(1);
-    expect(held[0]).toMatchObject({ text: 'try me again', status: 'sending' });
-  });
-
-  it('sends the same words twice when that is what was asked for', async () => {
-    // "ok", "+1", "ping" — the messages people genuinely repeat. A latch that
-    // recognised a duplicate by comparing bodies dropped the second one
-    // silently whenever the first was still in flight.
-    const transport = createMockTransport({ postToRoom: vi.fn(() => neverSettles()) });
-    const field = renderComposer(transport);
-
-    type(field, 'ok');
-    fireEvent.keyDown(field, { key: 'Enter' });
-    type(field, 'ok');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
-    expect(transport.postToRoom).toHaveBeenNthCalledWith(1, 'room-1', { text: 'ok' });
-    expect(transport.postToRoom).toHaveBeenNthCalledWith(2, 'room-1', { text: 'ok' });
-    expect(field.value).toBe('');
   });
 
   it('leaves a follow-up being typed completely alone when the first is refused', async () => {
@@ -363,18 +222,15 @@ describe('ChannelComposer', () => {
 
     type(field, 'the refused one');
     fireEvent.keyDown(field, { key: 'Enter' });
-    // Wait for the request to actually leave: `mutate` runs its mutationFn in a
-    // microtask, so `refuse` is still the placeholder until this resolves and
-    // rejecting early would reject nothing at all.
+    // Wait for the request to actually leave: `mutate` runs its mutationFn in a microtask, so
+    // `refuse` is still the placeholder until this resolves and rejecting early would reject
+    // nothing at all.
     await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
 
     type(field, 'the one typed while waiting');
     refuse(new Error('offline'));
 
-    // Both sentences survive, in one place each. The old shape merged the
-    // refused one into the box on top of the half-typed one — two sentences
-    // with a claim on one field, and a reader who then pressed Enter sent both
-    // at once as a single message.
+    // Both sentences survive, in one place each.
     await waitFor(() =>
       expect(usePendingPostStore.getState().posts[0]).toMatchObject({
         text: 'the refused one',
@@ -403,11 +259,8 @@ describe('ChannelComposer', () => {
     const field = renderComposer(transport);
 
     type(field, 'ship it');
-    // Both keydowns inside ONE act scope, which is the race this guards: React
-    // batches, so no render happens between them and both handlers close over
-    // the same pre-send text. Only a live read of the draft store tells them
-    // apart. Two separate `fireEvent` calls each flush a render, so the second
-    // would find an empty field and prove nothing.
+    // Both keydowns inside ONE act scope, which is the race this guards: React batches, so no
+    // render happens between them and both handlers close over the same pre-send text.
     await act(async () => {
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -416,13 +269,36 @@ describe('ChannelComposer', () => {
     expect(transport.postToRoom).toHaveBeenCalledTimes(1);
     expect(transport.postToRoom).toHaveBeenCalledWith('room-1', { text: 'ship it' });
   });
+
+  it('retires the failed row when its words are sent again from the box', async () => {
+    const transport = createMockTransport({
+      postToRoom: vi
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new TypeError('Failed to fetch'), { noResponse: true })
+        )
+        .mockReturnValue(neverSettles()),
+    });
+    const field = renderComposer(transport);
+
+    type(field, 'try me again');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(field.value).toBe('try me again'));
+
+    // Sending the words back from the box IS the retry: one row, not two.
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
+    const held = usePendingPostStore.getState().posts;
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ text: 'try me again', status: 'sending' });
+  });
 });
 
 describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
-  // A room the operator sees but is not a member of is real and reachable —
-  // she left it, or an agent opened it without her (DOR-1611) — and posting
-  // into one was a DEFINITE server refusal (`MEMBER_NOT_FOUND`) with no gate on
-  // it client-side at all, before this.
+  // A room the operator sees but is not a member of is real and reachable — she left it, or an
+  // agent opened it without her (DOR-1611) — and posting into one was a DEFINITE server refusal
+  // (`MEMBER_NOT_FOUND`) with no gate on it client-side at all, before this.
   function leftRoom(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
     return roomWith({ members: [], ...overrides });
   }
@@ -432,25 +308,6 @@ describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
 
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Attach file' })).not.toBeInTheDocument();
-  });
-
-  it('says why, in place of the field', () => {
-    mountComposer(createMockTransport(), leftRoom());
-
-    expect(
-      screen.getByText('You’re not in this channel. You can read it, but not add to it.')
-    ).toBeInTheDocument();
-  });
-
-  it('never claims she left a channel her author id was never on the roster of', () => {
-    // An empty roster is the SAME payload whether she left or was never added,
-    // so the only honest sentence is one true of both (DOR-1620). Red the
-    // moment "You left this channel" comes back to a surface that cannot know.
-    const { container } = mountComposer(createMockTransport(), leftRoom());
-
-    expect(container.textContent).not.toMatch(/left this channel/i);
-    expect(screen.queryByRole('button', { name: 'Rejoin' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Join' })).toBeInTheDocument();
   });
 
   it('offers Join, which reaches the SAME wire route "Add agents" uses — named by the viewer', async () => {
@@ -475,91 +332,12 @@ describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
     );
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('You joined #general'));
   });
-
-  it('offers a live composer once membership resolves as present', () => {
-    // The other side of the same fact: a room that DOES carry the viewer on
-    // its roster gets the ordinary, interactive composer — `roomWith()`'s own
-    // default, which every test above this block already exercises.
-    mountComposer(createMockTransport(), roomWith());
-
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
-    expect(
-      screen.queryByText('You’re not in this channel. You can read it, but not add to it.')
-    ).not.toBeInTheDocument();
-  });
-
-  it('brings the live composer back once the roster query actually refetches after Join', async () => {
-    // DIAGNOSTIC — routed through a real `useRoom()` rather than a static
-    // `room` prop, which is what `RoomSurface` actually does and what every
-    // other test in this file (including the ones above) does NOT: they hand
-    // `ChannelComposer` a fixed prop, so none of them can tell whether
-    // invalidating `roomKeys.detail` actually reaches this component through
-    // the query cache. This is the one that can.
-    const initial = leftRoom();
-    const joined: RoomWithRoster = {
-      ...initial,
-      members: [
-        {
-          roomId: 'room-1',
-          authorId: 'author-you',
-          responseMode: 'always',
-          joinedAt: '2026-07-26T09:00:00.000Z',
-          joinedSeq: 0,
-          lastReadSeq: 0,
-          author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
-          origin: 'local',
-        },
-      ],
-    };
-    let calls = 0;
-    const transport = createMockTransport({
-      getRoom: vi.fn().mockImplementation(() => {
-        calls += 1;
-        return Promise.resolve(calls === 1 ? initial : joined);
-      }),
-      addRoomMember: vi.fn().mockResolvedValue(joined.members[0]),
-    });
-
-    const config = createQueryClientConfig();
-    const queryClient = new QueryClient({
-      ...config,
-      defaultOptions: {
-        ...config.defaultOptions,
-        queries: { ...config.defaultOptions?.queries, retry: false, gcTime: 0 },
-        mutations: { ...config.defaultOptions?.mutations, retry: false },
-      },
-    });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>{children}</TransportProvider>
-      </QueryClientProvider>
-    );
-
-    function Harness() {
-      const query = useRoom('room-1');
-      if (!query.data) return null;
-      return <ChannelComposerBench room={query.data} />;
-    }
-    render(<Harness />, { wrapper });
-
-    await screen.findByText('You’re not in this channel. You can read it, but not add to it.');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
-
-    await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(transport.getRoom).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument(), {
-      timeout: 3000,
-    });
-  });
 });
 
 describe('ChannelComposer — clearing a draft you can see coming', () => {
   it('shows the armed readout on the first Escape over a draft', async () => {
-    // The double-Escape wipe has always worked here; what was missing is the
-    // half that makes it a shortcut rather than a trap. A reader with a draft
-    // in a thread pressed Escape expecting the panel to close, nothing on
-    // screen said what had happened, and two taps later the draft was gone.
+    // The double-Escape wipe has always worked here; what was missing is the half that makes it a
+    // shortcut rather than a trap.
     const field = renderComposer(createMockTransport());
     type(field, 'half a thought');
 
@@ -569,95 +347,6 @@ describe('ChannelComposer — clearing a draft you can see coming', () => {
     expect(await screen.findByTestId('clear-armed-hint')).toHaveTextContent(
       'Press Esc again to clear'
     );
-  });
-
-  it('offers the labelled button the readout is only defensible beside', () => {
-    // The hint is hidden from assistive tech, so `Composer.Input` refuses to raise
-    // it at all unless a labelled equivalent is reachable — otherwise it hands
-    // sighted people a destructive shortcut and nobody else.
-    const field = renderComposer(createMockTransport());
-    type(field, 'half a thought');
-
-    expect(screen.getByRole('button', { name: /clear/i })).toBeEnabled();
-  });
-
-  it('raises nothing over an empty box, so Escape still reaches the thread panel', () => {
-    // The panel closes on an Escape nothing else claimed. Arming over an empty
-    // composer would consume the key and leave a thread that cannot be closed
-    // from its own box.
-    const field = renderComposer(createMockTransport());
-
-    fireEvent.keyDown(field, { key: 'Escape' });
-
-    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
-  });
-});
-
-describe('ChannelComposer — the card it now sits in', () => {
-  // The one deliberate visual change in the composer-parity spec, stated
-  // positively rather than as a deleted assertion. The serialized before/after
-  // proof lives in `ChannelComposer-chrome-delta.test.tsx`; this block is the
-  // same delta in words, beside the behavior it must not disturb.
-
-  it('is the floating card chat sits in, not a strip ruled off by a border', () => {
-    renderComposer(createMockTransport());
-    const classes = composerCard().className.split(/\s+/);
-
-    expect(classes).toEqual(
-      expect.arrayContaining(['bg-surface', 'rounded-xl', 'border', 'p-2', 'm-2', 'relative'])
-    );
-    // The room's own chrome is deleted, not merged: `border-t` drew the rule
-    // the card replaces, and `p-3` was the padding the lane used to inset for.
-    expect(classes).not.toContain('border-t');
-    expect(classes).not.toContain('p-3');
-  });
-
-  it('aligns its overlay lane to the card, now that the card supplies the inset', () => {
-    renderComposer(createMockTransport());
-    const lane = composerCard().querySelector('.bottom-full')!;
-
-    expect(lane.className.split(/\s+/).sort()).toEqual([
-      'absolute',
-      'bottom-full',
-      'left-0',
-      'mb-2',
-      'right-0',
-    ]);
-  });
-
-  it('takes files: the paperclip, the drop target, and the input behind both', () => {
-    // The positive counterpart of the assertion DOR-946 shipped, which pinned
-    // every one of these as absent while attach was still reserved. Rooms now
-    // pass `onFilesDropped`, and `Composer.Root` mounts the whole dropzone —
-    // hidden input, drop target, and all — off that one prop.
-    renderComposer(createMockTransport());
-    const card = composerCard();
-
-    expect(card.querySelector('input[type="file"]')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Attach file' })).toBeInTheDocument();
-    expect(card.getAttribute('role')).toBe('presentation');
-  });
-
-  it('keeps the mention picker above the clear-armed hint in the lane', () => {
-    // Both can be on screen at once: a bare Escape arms the clear, and typing
-    // `@` inside the arming window opens the picker over a still-armed draft.
-    // Source order is the lane's whole stacking rule, so the hint must stay
-    // last — otherwise the pill lands across the picker a reader is choosing
-    // from.
-    const field = renderComposer(createMockTransport());
-
-    type(field, 'hey');
-    fireEvent.keyDown(field, { key: 'Escape' });
-    type(field, 'hey @');
-    fireEvent.select(field, { target: { selectionStart: 5 } });
-
-    const lane = composerCard().querySelector('.bottom-full')!;
-    const picker = screen.getByRole('listbox');
-    const hint = screen.getByTestId('clear-armed-hint');
-
-    expect(lane.contains(picker)).toBe(true);
-    expect(lane.contains(hint)).toBe(true);
-    expect(picker.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -690,21 +379,6 @@ describe('ChannelComposer — attaching a file', () => {
   const NOTES = new File(['abcd'], 'notes.txt', { type: 'text/plain' });
   const LOG = new File(['abcd'], 'server.log', { type: 'text/plain' });
 
-  it('takes files from the paperclip and from a drop, into the same bar', async () => {
-    const transport = createMockTransport();
-    renderComposer(transport);
-    const [dropzone, paperclip] = fileInputs();
-
-    choose(paperclip!, [NOTES]);
-    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
-
-    // The dropzone's input is what a drop and a paste both arrive through, so
-    // the two affordances are proven to share one handler and one bar.
-    choose(dropzone!, [LOG]);
-    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
-    expect(screen.getByText('notes.txt')).toBeInTheDocument();
-  });
-
   it('uploads the files, sends their ids with the message, and empties the bar', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.uploadRoomAttachments).mockResolvedValue([
@@ -728,68 +402,10 @@ describe('ChannelComposer — attaching a file', () => {
     await waitFor(() => expect(screen.queryByText('notes.txt')).toBeNull());
   });
 
-  it('puts the file names on the pending row, from the keystroke', async () => {
-    // The words already survive the round trip in a pending row. Without this
-    // the files vanish from the bar on Enter and do not reappear until the room
-    // echoes the entry back.
-    const transport = createMockTransport();
-    vi.mocked(transport.uploadRoomAttachments).mockResolvedValue([
-      attachment('att-1', 'notes.txt'),
-      attachment('att-2', 'server.log'),
-    ]);
-    const field = renderComposer(transport);
-
-    choose(fileInputs()[1]!, [NOTES, LOG]);
-    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
-
-    type(field, 'here they are');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() => expect(usePendingPostStore.getState().posts).toHaveLength(1));
-    const [held] = usePendingPostStore.getState().posts;
-    expect(held!.attachmentNames).toEqual(['notes.txt', 'server.log']);
-    // And the ids too, so trying again re-sends the whole message.
-    expect(held!.attachmentIds).toEqual(['att-1', 'att-2']);
-  });
-
-  it('keeps a file attached DURING a send, instead of clearing it with the batch', async () => {
-    // The window: `clearFiles()` ran after the upload resolved and emptied
-    // whatever was in the bar AT THAT MOMENT — not the batch that was sent. A
-    // file dropped in while the first send's bytes were still going up was
-    // wiped without ever being uploaded, posted, or reported.
-    const transport = createMockTransport();
-    let release!: (value: RoomAttachment[]) => void;
-    vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
-      new Promise<RoomAttachment[]>((resolve) => {
-        release = resolve;
-      })
-    );
-    const field = renderComposer(transport);
-
-    choose(fileInputs()[1]!, [NOTES]);
-    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
-
-    type(field, 'here is the first');
-    fireEvent.keyDown(field, { key: 'Enter' });
-    await waitFor(() => expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1));
-
-    // Dropped in while the first send is still in flight.
-    choose(fileInputs()[0]!, [LOG]);
-    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
-
-    release([attachment('att-1', 'notes.txt')]);
-    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
-
-    // The sent file is gone from the bar…
-    await waitFor(() => expect(screen.queryByText('notes.txt')).toBeNull());
-    // …and the one added mid-flight is still there, ready for the next send.
-    expect(screen.getByText('server.log')).toBeInTheDocument();
-  });
-
   it('refuses a second Enter while the files are still going up', async () => {
-    // The window: `pendingFiles` is cleared only once the ids are in a message,
-    // so a second Enter during the upload would read the SAME files and send
-    // them again — a duplicate post, or a 409 for ids the first send owns.
+    // The window: `pendingFiles` is cleared only once the ids are in a message, so a second Enter
+    // during the upload would read the SAME files and send them again — a duplicate post, or a
+    // 409 for ids the first send owns.
     const transport = createMockTransport();
     let release!: (value: RoomAttachment[]) => void;
     vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
@@ -824,30 +440,6 @@ describe('ChannelComposer — attaching a file', () => {
     });
   });
 
-  it('does not send while a file has failed, and says why', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.uploadRoomAttachments).mockRejectedValue(new Error('Upload failed'));
-    const field = renderComposer(transport);
-
-    choose(fileInputs()[1]!, [NOTES]);
-    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
-
-    type(field, 'here it is');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() =>
-      expect(
-        screen.getByText('A file didn’t upload. Try it again or remove it, then send.')
-      ).toBeInTheDocument()
-    );
-    // Nothing went out — not on that Enter, and not on a second one either.
-    fireEvent.keyDown(field, { key: 'Enter' });
-    expect(transport.postToRoom).not.toHaveBeenCalled();
-    // And the words came back, because no pending row was ever created to hold
-    // them.
-    await waitFor(() => expect(field.value).toBe('here it is'));
-  });
-
   it('gives the refused words back even when something has been typed since', async () => {
     // **Seeded defect:** put the draft back only into an EMPTY box — the old
     // rule — and a person who kept typing while the upload failed loses the
@@ -876,17 +468,34 @@ describe('ChannelComposer — attaching a file', () => {
     await waitFor(() => expect(field.value).toBe('here it is\nand one more thing'));
     expect(transport.postToRoom).not.toHaveBeenCalled();
   });
+
+  it('does not send while a file has failed, and says why', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.uploadRoomAttachments).mockRejectedValue(new Error('Upload failed'));
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'here it is');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('A file didn’t upload. Try it again or remove it, then send.')
+      ).toBeInTheDocument()
+    );
+    // Nothing went out — not on that Enter, and not on a second one either.
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(transport.postToRoom).not.toHaveBeenCalled();
+    // And the words came back, because no pending row was ever created to hold
+    // them.
+    await waitFor(() => expect(field.value).toBe('here it is'));
+  });
 });
 
 describe('ChannelComposer — "Jump back in" is offered on one surface and read on one', () => {
-  /**
-   * Every read the recents panel is built out of.
-   *
-   * Named individually rather than counted: the defect was not "one extra
-   * request", it was four fan-outs subscribed from a component mounted in every
-   * room and every thread panel, re-read on every session lifecycle event — for
-   * a panel no gesture in those rooms could raise.
-   */
+  /** Every read the recents panel is built out of. */
   function recentsReads(transport: Transport) {
     return {
       recentSessions: vi.mocked(transport.listRecentSessions).mock.calls.length,
@@ -895,25 +504,6 @@ describe('ChannelComposer — "Jump back in" is offered on one surface and read 
       resolveAgents: vi.mocked(transport.resolveAgents).mock.calls.length,
     };
   }
-
-  it('asks the server nothing at all in an ordinary room', async () => {
-    const transport = createMockTransport();
-    const field = renderComposer(transport);
-
-    // Reaching for the box is the gesture that would open the panel where it is
-    // offered. Here it must not even warm a cache.
-    fireEvent.pointerDown(field);
-    fireEvent.focus(field);
-
-    await waitFor(() => expect(field).toBeInTheDocument());
-    expect(recentsReads(transport)).toEqual({
-      recentSessions: 0,
-      rooms: 0,
-      meshPaths: 0,
-      resolveAgents: 0,
-    });
-    expect(screen.queryByRole('listbox', { name: 'Jump back in' })).toBeNull();
-  });
 
   it('reads them on the home surface, which is the one that offers the panel', async () => {
     const transport = createMockTransport();

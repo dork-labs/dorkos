@@ -26,7 +26,7 @@ async function freePort(): Promise<number> {
 describe('legName', () => {
   it("reads the leg from Playwright's prefix, dimmed or not", () => {
     expect(legName('[Marketing Site] ▲ Next.js 16')).toBe('Marketing Site');
-    expect(legName('\x1b[2m[Express API] \x1b[22mlistening')).toBe('Express API');
+    expect(legName('\x1b[2m[API server] \x1b[22mlistening')).toBe('API server');
   });
 
   it('groups unprefixed runner output on its own', () => {

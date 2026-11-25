@@ -9,7 +9,10 @@ import {
   dispatchViewerInput,
   type ViewerInputMethod,
 } from '../../../browser-viewers/input-dispatch.js';
-import { readViewerSelection } from '../../../browser-viewers/selection-copy.js';
+import {
+  readViewerSelection,
+  selectionExpression,
+} from '../../../browser-viewers/selection-copy.js';
 import { readPersonSafety } from './person-safety.js';
 
 const coordinate = z.number().finite().min(-100_000).max(100_000);
@@ -63,28 +66,36 @@ export class BrowserPersonInputFlight {
   }
 
   /** Fixed isolated-world read; it never invokes agent observation code. */
-  async readSelection(): Promise<string> {
+  async readSelection(assertOperation?: () => void): Promise<string> {
+    const admit = () => {
+      this.admit();
+      assertOperation?.();
+    };
     if (this.pending)
       throw new LocalBrowserError('busy', 'A browser action is finishing. Wait a moment.');
-    this.admit();
+    admit();
     return this.runOperation(async () => {
       const cdp = await this.cdp();
+      admit();
       const tree = await cdp.send('Page.getFrameTree');
-      this.admit();
+      admit();
       const world = await cdp.send('Page.createIsolatedWorld', {
         frameId: tree.frameTree.frame.id,
         worldName: 'dorkos-person-selection',
         grantUniveralAccess: false,
       });
-      this.admit();
+      admit();
       return readViewerSelection({
         contextId: world.executionContextId,
-        readFixedExpression: (params) =>
-          cdp.send(
-            'Runtime.evaluate',
-            params as { expression: string; contextId: number; returnByValue: boolean }
-          ),
-        assertPersonControl: this.admit,
+        readFixedExpression: (contextId) =>
+          cdp.send('Runtime.evaluate', {
+            expression: selectionExpression,
+            contextId,
+            returnByValue: true,
+            awaitPromise: false,
+            disableBreaks: true,
+          }),
+        assertPersonControl: admit,
       });
     });
   }
@@ -122,7 +133,11 @@ export class BrowserPersonInputFlight {
   }
 
   /** No replay or hidden retry; a timed-out physical operation keeps its slot. */
-  async run(input: BrowserPersonInput, admitted?: () => void): Promise<void> {
+  async run(
+    input: BrowserPersonInput,
+    admitted?: () => void,
+    assertOperation?: () => void
+  ): Promise<void> {
     this.admit();
     const parsed = inputSchema.safeParse(input);
     if (!parsed.success)
@@ -136,8 +151,9 @@ export class BrowserPersonInputFlight {
         this.admit();
         await this.source.recordInput(parsed.data.kind);
         this.admit();
+        assertOperation?.();
         admitted?.();
-        await this.dispatch(parsed.data);
+        await this.dispatch(parsed.data, assertOperation);
         this.admit();
       })
     );
@@ -205,7 +221,8 @@ export class BrowserPersonInputFlight {
     }
   }
 
-  private async dispatch(input: BrowserPersonInput): Promise<void> {
+  private async dispatch(input: BrowserPersonInput, assertOperation?: () => void): Promise<void> {
+    assertOperation?.();
     const { page } = this.source;
     if (
       'type' in input ||
@@ -214,6 +231,7 @@ export class BrowserPersonInputFlight {
     ) {
       const cdp = await this.cdp();
       this.admit();
+      assertOperation?.();
       if (input.kind === 'key') {
         if (input.type === 'keyDown') {
           if (this.protocolKeys.size >= 16 && !this.protocolKeys.has(input.code))
@@ -238,6 +256,7 @@ export class BrowserPersonInputFlight {
         {
           send: (method, params) => {
             this.admit();
+            assertOperation?.();
             return sendPersonInput(cdp, method, params);
           },
         },

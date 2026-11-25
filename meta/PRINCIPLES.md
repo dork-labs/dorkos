@@ -55,7 +55,7 @@ A founder's agents, tools, files and data stay theirs, wherever they run. That s
 _Status: decided 2026-10-07. Built: the new first run, every own-AI choice (an AI app you already sign in to, a key, or a model on your computer) and DorkOS picking the model, with no runtime or model name on the way (DOR-2783, DOR-2784). The browser test reaches DorkBot's first reply in seconds through an AI app sign-in; the key choice is covered by unit tests, and a model on this computer does not reach a first reply yet (DOR-2843). Still waits on DorkOS Cloud: the DorkOS-account path's real card checkout, because Cloud's approval-and-card page isn't built yet — today that path only runs against a test double._
 
 - **No outside subscription needed.** A new person runs on DorkOS: a DorkOS account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app; bringing your own Claude, ChatGPT or OpenRouter sign-in is the second option.
-- **Our own engine.** DorkOS ships its own agent engine before launch. Its developer name is Doe; the app only ever says "Runs on: DorkOS". While getting started, a person never sees a runtime name, a model name or a new concept.
+- **Our own engine.** DorkOS gets its own agent engine (not built yet; see [`ROADMAP.md`](ROADMAP.md)). Its developer name is Doe; the app only ever says "Runs on: DorkOS". While getting started, a person never sees a runtime name, a model name or a new concept.
 - **The account is the default, and it can be skipped.** Free local use with no account stays true.
 - **A card is required for DorkOS's own AI.** There are no free starter credits, so checkout has to be quick.
 - **DorkOS picks the model.** People can change it in Settings and in the agent status bar, where the model item is hidden by default. Hidden is not secret: which model and vendor a person's agents use is always one click away in Settings and named in the docs (principle 7).
@@ -66,10 +66,10 @@ _Status: decided 2026-10-07. Built: the new first run, every own-AI choice (an A
 
 This is the architecture principle. Marketing says "ownership" instead (see [`VOICE.md`](VOICE.md)).
 
-_Status: the local app is built. Your own DorkOS in the cloud, cloud agent computers and team spaces ship at launch; one program for local and hosted, and pushing to another DorkOS, are after launch._
+_Status: the local app is built. Your own DorkOS in the cloud, cloud agent computers and team spaces are not built yet; one program for local and hosted, and pushing to another DorkOS, come later. The order is in [`ROADMAP.md`](ROADMAP.md)._
 
 - Running DorkOS on your own computer is a one-person space. It is free forever, with no required account or fee.
-- Everything is a space. A DorkOS server holds one or many spaces, private ones included: your account's private space lives on your own DorkOS, and team spaces live on a space server. Local and hosted are the same program and the same app (ADR `261015-042933`).
+- Everything is a space. A DorkOS server holds one or many spaces, private ones included: your account's private space lives on your own DorkOS (your own computer when you have one, the cloud when you have none: ADR `261124-194115`), and team spaces live on a space server. Local and hosted are the same program and the same app (ADR `261015-042933`). Inside it there is a space side, which holds a space's data, and a computer side, which runs the work; a computer can be a Mac, a cloud agent computer or any machine you add (ADR `261124-150516`).
 - A DorkOS account adds your own DorkOS in the cloud, made only when you first open the full app on the web. It sleeps when idle and runs no agents (a setting of how we host it); agents run on your computers or on cloud agent computers. A shared space never holds your credentials or a key to your computers.
 - Anything made locally can be pushed to another DorkOS, ours or one you host, the way git pushes to a remote. Only one place runs an agent at a time.
 - DorkOS Cloud is an optional layer on top. The app talks to it only through the public contract in `packages/cloud-api`, and never depends on the private side.
@@ -80,7 +80,7 @@ Never say that something unbuilt works. Every public claim (site, README, docs, 
 
 ## 8. Build for the world that is coming
 
-Design for how work will look in three, five and ten years, when agents are ordinary co-workers, not for today's market. Ask of every choice: would this still be right when agents have jobs, managers, track records and their own accounts? Prompts that make a person approve routine work, agents that speak only when spoken to, and surfaces that treat an agent as a feature rather than a member of the team all fail that test. Today's limits (model cost, what models can do, what people are used to) set the order we build in, never the shape of what we build.
+Design for how work will look in three, five and ten years, when agents are ordinary co-workers, not for today's market. Ask of every choice: would this still be right when agents have jobs, managers, track records and their own accounts? Prompts that make a person approve routine work, agents that speak only when spoken to, and surfaces that treat an agent as a feature rather than a member of the team all fail that test. Today's limits (model cost, what models can do, what people are used to) set the order we build in, never the shape of what we build. We order work by what makes the product best, never by a date (ADR `261124-150515`).
 
 ## 9. The quality bar
 

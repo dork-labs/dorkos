@@ -1,7 +1,7 @@
 ---
 number: 128
 title: Reorder Release Phases — npm Publish Before Tag Push
-status: draft
+status: archived
 created: 2026-03-14
 spec: docker-image-publishing
 superseded-by: null

@@ -1,96 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { noopLogger } from '@dorkos/shared/logger';
-import {
-  EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
-  type SerializedCapability,
-} from '@dorkos/shared/capabilities';
+import { type CapabilitySurfaces, type SerializedCapability } from '@dorkos/shared/capabilities';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { createCapabilityAuthorityBinding } from '../../../connectors/principal/capability-authority-binding.js';
-
 import {
   defineCapability,
   composeRegistry,
   computeCatalogVersion,
   serializeCapability,
-  CapabilityToolError,
-  type CapabilityDeps,
-  type CapabilityDomain,
-  type ExtensionContribution,
-  type ExtensionToolSpec,
 } from '../index.js';
-import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
-import {
-  buildExtensionDefinitions,
-  checkExtensionContribution,
-  extensionDomainName,
-} from '../extension-contribution.js';
-
-const deps: CapabilityDeps = { logger: noopLogger };
-
-/** A representative read capability exercising optionals, enums, and records. */
-const configGet = defineCapability({
-  id: 'config.get',
-  title: 'Get config',
-  description: 'Return the DorkOS config snapshot.',
-  tier: 'observe',
-  area: null,
-  input: z.object({
-    section: z.string().optional(),
-    format: z.enum(['json', 'yaml']),
-    overrides: z.record(z.string(), z.unknown()),
-  }),
-  output: z.object({ ok: z.boolean() }),
-  surfaces: {
-    mcp: {
-      toolName: 'config_get',
-      servers: ['in-session', 'external'],
-      readOnlyCarveOut: true,
-      annotations: { openWorldHint: true, idempotentHint: true },
-    },
-    cli: { verb: 'config', subcommand: 'get' },
-    http: { method: 'get', path: '/api/config' },
-  },
-  invoke: async (_deps, input) => ({ ok: input.format === 'json' }),
-});
-
-/** A representative mutation capability. */
-const configPatch = defineCapability({
-  id: 'config.patch',
-  title: 'Patch config',
-  description: 'Deep-merge a partial config object.',
-  tier: 'act',
-  area: null,
-  input: z.object({ patch: z.record(z.string(), z.unknown()) }),
-  output: z.object({ applied: z.boolean() }),
-  surfaces: {
-    mcp: { toolName: 'config_patch', servers: ['external'] },
-    cli: { verb: 'config', subcommand: 'patch' },
-  },
-  invoke: async () => ({ applied: true }),
-});
-
-const configDomain: CapabilityDomain = {
-  name: 'config',
-  capabilities: [configGet, configPatch],
-};
+import { deps, configGet, configDomain } from './registry/registry.fixtures.js';
 
 describe('composeRegistry — composition', () => {
-  it('registers every capability in registration order', () => {
+  it('registers every capability in order and looks each up by id', () => {
     const registry = composeRegistry([configDomain], deps);
     expect(registry.capabilities.map((c) => c.id)).toEqual(['config.get', 'config.patch']);
-  });
-
-  it('looks up a capability by id', () => {
-    const registry = composeRegistry([configDomain], deps);
     expect(registry.get('config.get')?.title).toBe('Get config');
     expect(registry.get('config.missing')).toBeUndefined();
-  });
-
-  it('freezes the registry and its capability list', () => {
-    const registry = composeRegistry([configDomain], deps);
-    expect(Object.isFrozen(registry)).toBe(true);
-    expect(Object.isFrozen(registry.capabilities)).toBe(true);
   });
 });
 
@@ -212,48 +138,14 @@ describe('composeRegistry — invoke', () => {
     );
   });
 
-  it('validates input against the schema and returns plain typed output', async () => {
+  it('validates input against the schema, throwing a ZodError on invalid input', async () => {
     const registry = composeRegistry([configDomain], deps);
-    const result = await registry.invoke('config.get', {
-      format: 'json',
-      overrides: {},
-    });
-    expect(result).toEqual({ ok: true });
-  });
-
-  it('throws a ZodError on invalid input', async () => {
-    const registry = composeRegistry([configDomain], deps);
+    await expect(registry.invoke('config.get', { format: 'json', overrides: {} })).resolves.toEqual(
+      { ok: true }
+    );
     await expect(
       registry.invoke('config.get', { format: 'xml', overrides: {} })
     ).rejects.toBeInstanceOf(z.ZodError);
-  });
-
-  it('throws on an unknown id', async () => {
-    const registry = composeRegistry([configDomain], deps);
-    await expect(registry.invoke('config.nope', {})).rejects.toThrow(
-      /no capability registered for id "config.nope"/
-    );
-  });
-
-  it('passes the captured deps bag into the handler', async () => {
-    const seen: CapabilityDeps[] = [];
-    const probe = defineCapability({
-      id: 'probe.ping',
-      title: 'Ping',
-      description: 'Records the deps it was invoked with.',
-      tier: 'observe',
-      area: null,
-      input: z.object({}),
-      output: z.object({ pong: z.boolean() }),
-      surfaces: {},
-      invoke: async (d) => {
-        seen.push(d);
-        return { pong: true };
-      },
-    });
-    const registry = composeRegistry([{ name: 'probe', capabilities: [probe] }], deps);
-    await registry.invoke('probe.ping', {});
-    expect(seen).toEqual([deps]);
   });
 });
 
@@ -265,97 +157,61 @@ describe('composeRegistry — startup conflict detection', () => {
     ).toThrow(/duplicate capability id "config.get"/);
   });
 
-  it('throws on a duplicate MCP tool name', () => {
-    const clash = defineCapability({
-      id: 'config.reset',
-      title: 'Reset',
-      description: 'Reset config.',
-      tier: 'destructive',
-      area: null,
-      input: z.object({}),
-      output: z.object({}),
-      surfaces: { mcp: { toolName: 'config_get', servers: ['external'] } },
-    });
-    expect(() =>
-      composeRegistry([{ name: 'config', capabilities: [configGet, clash] }], deps)
-    ).toThrow(/duplicate MCP tool name "config_get"/);
-  });
-
-  it('throws on a duplicate CLI verb+subcommand', () => {
-    const clash = defineCapability({
-      id: 'config.fetch',
-      title: 'Fetch',
-      description: 'Fetch config.',
-      tier: 'observe',
-      area: null,
-      input: z.object({}),
-      output: z.object({}),
-      surfaces: { cli: { verb: 'config', subcommand: 'get' } },
-    });
-    expect(() =>
-      composeRegistry([{ name: 'config', capabilities: [configGet, clash] }], deps)
-    ).toThrow(/duplicate CLI verb "config get"/);
-  });
-
-  it('does not collide distinct subcommands under one verb', () => {
-    expect(() => composeRegistry([configDomain], deps)).not.toThrow();
-  });
-
-  it('throws on a duplicate HTTP route', () => {
-    const clash = defineCapability({
-      id: 'config.snapshot',
-      title: 'Snapshot',
-      description: 'Snapshot config.',
-      tier: 'observe',
-      area: null,
-      input: z.object({}),
-      output: z.object({}),
-      surfaces: { http: { method: 'get', path: '/api/config' } },
-    });
-    expect(() =>
-      composeRegistry([{ name: 'config', capabilities: [configGet, clash] }], deps)
-    ).toThrow(/duplicate HTTP route "GET \/api\/config"/);
-  });
-
-  it('throws when an id is not prefixed with its domain name', () => {
-    const misfiled = defineCapability({ ...configGet, id: 'agent.get', surfaces: {} });
-    expect(() => composeRegistry([{ name: 'config', capabilities: [misfiled] }], deps)).toThrow(
-      /must be prefixed with its domain name "config."/
-    );
-  });
+  it.each([
+    [
+      'config.reset',
+      { mcp: { toolName: 'config_get', servers: ['external'] } },
+      /duplicate MCP tool name "config_get"/,
+    ],
+    [
+      'config.fetch',
+      { cli: { verb: 'config', subcommand: 'get' } },
+      /duplicate CLI verb "config get"/,
+    ],
+    [
+      'config.snapshot',
+      { http: { method: 'get', path: '/api/config' } },
+      /duplicate HTTP route "GET \/api\/config"/,
+    ],
+  ] as const)(
+    'throws when %s claims a surface config.get already holds',
+    (id, surfaces, message) => {
+      const clash = defineCapability({
+        id,
+        title: 'Clash',
+        description: 'Clashes with config.get.',
+        tier: 'observe',
+        area: null,
+        input: z.object({}),
+        output: z.object({}),
+        surfaces: surfaces as CapabilitySurfaces,
+        invoke: async () => ({}),
+      });
+      expect(() =>
+        composeRegistry([{ name: 'config', capabilities: [configGet, clash] }], deps)
+      ).toThrow(message);
+    }
+  );
 });
 
 describe('catalog — serialization', () => {
-  it('serializes every capability without the invoke handler', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const catalog = registry.catalog();
+  it('serializes every capability without the handler, carrying tier and surfaces', () => {
+    const catalog = composeRegistry([configDomain], deps).catalog();
     expect(catalog.capabilities.map((c) => c.id)).toEqual(['config.get', 'config.patch']);
     for (const entry of catalog.capabilities) {
       expect(entry).not.toHaveProperty('invoke');
       expect(entry).not.toHaveProperty('input');
       expect(entry.inputSchema).toBeTypeOf('object');
-      expect(entry.outputSchema).toBeTypeOf('object');
     }
-  });
-
-  it('carries surfaces and tier through unchanged', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const get = registry.catalog().capabilities.find((c) => c.id === 'config.get');
+    const get = catalog.capabilities.find((c) => c.id === 'config.get');
     expect(get?.tier).toBe('observe');
-    expect(get?.surfaces.mcp).toEqual({
-      toolName: 'config_get',
-      servers: ['in-session', 'external'],
-      readOnlyCarveOut: true,
-      annotations: { openWorldHint: true, idempotentHint: true },
-    });
+    expect(get?.surfaces.mcp).toEqual(configGet.surfaces.mcp);
   });
 
   it('carries the declared permission area on every entry, null included', () => {
     // The catalog is where readers and the docs projection read an action's area
-    // from (spec `agent-permissions` D2), so a capability whose area never
-    // reached the wire would be listed under the wrong row. Present on every
-    // entry, `null` for an area-less one, so no reader has to guess what a
-    // missing key means.
+    // from (spec `agent-permissions` D2): present on every entry, `null` for an
+    // area-less one, so no reader has to guess what a missing key means.
     const inArea = defineCapability({
       id: 'config.manage',
       title: 'Manage config',
@@ -373,41 +229,9 @@ describe('catalog — serialization', () => {
     expect(entries.find((c) => c.id === 'config.manage')?.area).toBe('settings');
     expect(entries.find((c) => c.id === 'config.get')?.area).toBeNull();
   });
-
-  it('carries the per-tool MCP annotation hints through unchanged', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const get = registry.catalog().capabilities.find((c) => c.id === 'config.get');
-    expect(get?.surfaces.mcp?.annotations).toEqual({ openWorldHint: true, idempotentHint: true });
-  });
-
-  it('renders optionals, enums, and records as faithful JSON Schema', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const schema = registry.catalog().capabilities.find((c) => c.id === 'config.get')
-      ?.inputSchema as {
-      properties: Record<string, Record<string, unknown>>;
-      required: string[];
-    };
-    // Optional field is omitted from `required`; required fields are present.
-    expect(schema.required).toContain('format');
-    expect(schema.required).toContain('overrides');
-    expect(schema.required).not.toContain('section');
-    // Enum renders its member list.
-    expect(schema.properties.format.enum).toEqual(['json', 'yaml']);
-    // Record renders as an open object with string property names.
-    expect(schema.properties.overrides.type).toBe('object');
-    expect(schema.properties.overrides).toHaveProperty('additionalProperties');
-  });
 });
 
 describe('catalog — content-hash version stability', () => {
-  it('is stable across repeated reads (and independent of generatedAt)', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const a = registry.catalog();
-    const b = registry.catalog();
-    expect(a.catalogVersion).toBe(b.catalogVersion);
-    expect(a.catalogVersion).toMatch(/^[0-9a-f]{12}$/);
-  });
-
   it('does not change when object keys are written in a different order', () => {
     const ordered: SerializedCapability = {
       id: 'x.y',
@@ -438,681 +262,11 @@ describe('catalog — content-hash version stability', () => {
     expect(computeCatalogVersion([ordered])).toBe('10c105deb46e');
   });
 
-  it('does not change when domains (and thus capability order) are composed differently', () => {
-    const alpha: CapabilityDomain = {
-      name: 'alpha',
-      capabilities: [
-        defineCapability({
-          id: 'alpha.one',
-          title: 'One',
-          description: 'First.',
-          tier: 'observe',
-          area: null,
-          input: z.object({}),
-          output: z.object({}),
-          surfaces: {},
-        }),
-      ],
-    };
-    const beta: CapabilityDomain = {
-      name: 'beta',
-      capabilities: [
-        defineCapability({
-          id: 'beta.two',
-          title: 'Two',
-          description: 'Second.',
-          tier: 'observe',
-          area: null,
-          input: z.object({}),
-          output: z.object({}),
-          surfaces: {},
-        }),
-      ],
-    };
-    const forward = composeRegistry([alpha, beta], deps).catalog().catalogVersion;
-    const reverse = composeRegistry([beta, alpha], deps).catalog().catalogVersion;
-    expect(forward).toBe(reverse);
-  });
-
   it('changes when content changes', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const base = registry.catalog();
-    const mutated = serializeCapability(configGet);
-    const bumped = computeCatalogVersion([{ ...mutated, description: 'changed' }]);
+    const base = composeRegistry([configDomain], deps).catalog();
+    const bumped = computeCatalogVersion([
+      { ...serializeCapability(configGet), description: 'changed' },
+    ]);
     expect(bumped).not.toBe(base.catalogVersion);
-  });
-
-  it('changes when an MCP annotation hint changes', () => {
-    const base = serializeCapability(configGet);
-    const flipped: SerializedCapability = {
-      ...base,
-      surfaces: {
-        ...base.surfaces,
-        mcp: { ...base.surfaces.mcp!, annotations: { openWorldHint: false, idempotentHint: true } },
-      },
-    };
-    expect(computeCatalogVersion([flipped])).not.toBe(computeCatalogVersion([base]));
-  });
-
-  it('memoizes the version across reads while keeping generatedAt fresh', () => {
-    const registry = composeRegistry([configDomain], deps);
-    const a = registry.catalog();
-    const b = registry.catalog();
-    // Same memoized content + version, and the same frozen capabilities array.
-    expect(a.catalogVersion).toBe(b.catalogVersion);
-    expect(a.capabilities).toBe(b.capabilities);
-    // generatedAt is a valid ISO timestamp regenerated each read.
-    expect(() => new Date(a.generatedAt).toISOString()).not.toThrow();
-  });
-});
-
-describe('tier presence is enforced by the type system', () => {
-  it('rejects a definition missing its tier at compile time', () => {
-    // @ts-expect-error — `tier` is required on every CapabilityDefinition.
-    const invalid = defineCapability({
-      id: 'config.notier',
-      title: 'No tier',
-      description: 'Missing tier.',
-      input: z.object({}),
-      output: z.object({}),
-      surfaces: {},
-      invoke: async () => ({}),
-    });
-    expect(invalid).toBeDefined();
-  });
-});
-
-/** One extension tool spec, recording calls into `calls` when given. */
-function extensionTool(
-  name: string,
-  overrides: Partial<ExtensionToolSpec> = {},
-  calls: unknown[] = []
-): ExtensionToolSpec {
-  return {
-    name,
-    title: `Tool ${name}`,
-    description: `The ${name} probe tool.`,
-    tier: 'act',
-    input: z.object({ to: z.string() }),
-    approvalDisplayFields: ['to'],
-    invoke: async (input) => {
-      calls.push(input);
-      return { sent: true };
-    },
-    ...overrides,
-  };
-}
-
-/** A contribution from one extension with the given tools. */
-function contribution(
-  owner: string,
-  tools: ExtensionToolSpec[] = [extensionTool('send_message')]
-): ExtensionContribution {
-  return { owner, displayName: `Ext ${owner}`, tools };
-}
-
-describe('extension layer — contribute and remove (DOR-2685)', () => {
-  it('adds tools to get, capabilities and the catalog, and takes them away on remove', () => {
-    // The whole point of the live layer: an extension's tools exist exactly
-    // while it runs, and removing them leaves the catalog byte-identical,
-    // version included, to what it was before.
-    const registry = composeRegistry([configDomain], deps);
-    const original = registry.catalog().catalogVersion;
-
-    const result = registry.contribute(contribution('mail-app'));
-    expect(result.ok).toBe(true);
-    expect(registry.get('ext_mail_app.send_message')?.title).toBe('Tool send_message');
-    expect(registry.capabilities.map((c) => c.id)).toEqual([
-      'config.get',
-      'config.patch',
-      'ext_mail_app.send_message',
-    ]);
-    expect(Object.isFrozen(registry.capabilities)).toBe(true);
-    const during = registry.catalog();
-    expect(during.capabilities.map((c) => c.id)).toContain('ext_mail_app.send_message');
-    expect(during.catalogVersion).not.toBe(original);
-
-    if (result.ok) result.remove();
-    expect(registry.get('ext_mail_app.send_message')).toBeUndefined();
-    expect(registry.capabilities.map((c) => c.id)).toEqual(['config.get', 'config.patch']);
-    expect(registry.catalog().capabilities.map((c) => c.id)).toEqual([
-      'config.get',
-      'config.patch',
-    ]);
-    expect(registry.catalog().catalogVersion).toBe(original);
-  });
-
-  it('refuses an MCP tool name the core already claims, leaving the registry unchanged', () => {
-    // An extension id can never collide with a core id (the ext_ prefix is
-    // reserved), but a core capability's MCP tool name is free-form, so the
-    // claim table must still be consulted.
-    const squatter = defineCapability({
-      id: 'probe.squat',
-      title: 'Squat',
-      description: 'Claims a tool name in the extension namespace.',
-      tier: 'observe',
-      area: null,
-      input: z.object({}),
-      output: z.unknown(),
-      surfaces: { mcp: { toolName: 'ext_mail_app__send_message', servers: ['in-session'] } },
-      invoke: async () => ({}),
-    });
-    const registry = composeRegistry([{ name: 'probe', capabilities: [squatter] }], deps);
-    const before = registry.catalog().catalogVersion;
-
-    const result = registry.contribute(
-      contribution('mail-app', [extensionTool('archive'), extensionTool('send_message')])
-    );
-
-    expect(result).toEqual({ ok: false, reason: expect.stringContaining('already taken') });
-    expect(registry.capabilities.map((c) => c.id)).toEqual(['probe.squat']);
-    expect(registry.get('ext_mail_app.archive')).toBeUndefined();
-    expect(registry.catalog().catalogVersion).toBe(before);
-  });
-
-  it('refuses any name that would make ext_<id>__<tool> readable two ways', () => {
-    // `a--b` + `c` and `a` + `b__c` would both project to `ext_a__b__c`, so
-    // whichever extension started first would own the other's name. Neither
-    // half is allowed: no `--` or trailing `-` in the id, no `__` in a tool.
-    const registry = composeRegistry([configDomain], deps);
-    expect(registry.contribute(contribution('a--b', [extensionTool('c')])).ok).toBe(false);
-    expect(registry.contribute(contribution('a-', [extensionTool('c')])).ok).toBe(false);
-    for (const name of ['b__c', 'b_', '_b', 'b_c_']) {
-      expect(registry.contribute(contribution('a', [extensionTool(name)])).ok, name).toBe(false);
-    }
-    expect(registry.capabilities.map((c) => c.id)).toEqual(['config.get', 'config.patch']);
-    expect(registry.contribute(contribution('a-b', [extensionTool('c_d')])).ok).toBe(true);
-  });
-
-  it('refuses a tool whose MCP name would pass the 64-character limit with its prefix', () => {
-    // A harness sends `mcp__dorkos__<name>`; one name over 64 fails every turn
-    // of every session that lists it, so the cap sits on `ext_<id>__<tool>`.
-    const registry = composeRegistry([configDomain], deps);
-    const owner = 'mail';
-    const room = 51 - 'ext_mail__'.length;
-    expect(registry.contribute(contribution(owner, [extensionTool('a'.repeat(room + 1))])).ok).toBe(
-      false
-    );
-    const fits = registry.contribute(contribution(owner, [extensionTool('a'.repeat(room))]));
-    expect(fits.ok).toBe(true);
-    expect(`mcp__dorkos__${registry.capabilities.at(-1)!.surfaces.mcp!.toolName}`).toHaveLength(64);
-  });
-
-  it('refuses a malformed contribution whole, even when only one tool is wrong', () => {
-    // All-or-nothing applies to validation too: one bad tool means none load.
-    const registry = composeRegistry([configDomain], deps);
-    const result = registry.contribute(
-      contribution('mail-app', [extensionTool('ok_tool'), extensionTool('Bad-Name')])
-    );
-    expect(result.ok).toBe(false);
-    expect(registry.get('ext_mail_app.ok_tool')).toBeUndefined();
-  });
-
-  it('refuses a second contribution from a live owner, and accepts it after remove', () => {
-    // Nothing is ever replaced in place: a restart is remove, then contribute.
-    const registry = composeRegistry([configDomain], deps);
-    const first = registry.contribute(contribution('mail-app'));
-    expect(first.ok).toBe(true);
-
-    const again = registry.contribute(contribution('mail-app', [extensionTool('archive')]));
-    expect(again).toEqual({ ok: false, reason: expect.stringContaining('already has tools') });
-    expect(registry.get('ext_mail_app.archive')).toBeUndefined();
-
-    if (first.ok) first.remove();
-    expect(registry.contribute(contribution('mail-app', [extensionTool('archive')])).ok).toBe(true);
-    expect(registry.get('ext_mail_app.archive')).toBeDefined();
-  });
-
-  it('makes remove idempotent, and a stale handle cannot remove a newer contribution', () => {
-    // Shutdown paths can overlap (a reload racing a disable); calling remove
-    // twice, or on a handle from before a restart, must never take away the
-    // tools the extension registered since.
-    const registry = composeRegistry([configDomain], deps);
-    const versions: number[] = [];
-    registry.onChange((v) => versions.push(v));
-    const first = registry.contribute(contribution('mail-app'));
-    if (!first.ok) throw new Error('expected the first contribution to land');
-    first.remove();
-    first.remove();
-    const second = registry.contribute(contribution('mail-app'));
-    first.remove();
-
-    expect(second.ok).toBe(true);
-    expect(registry.get('ext_mail_app.send_message')).toBeDefined();
-    expect(versions).toEqual([1, 2, 3]);
-  });
-
-  it('fires onChange once per successful change, with increasing versions, until unsubscribed', () => {
-    // Open clients and tool-list builders key off this; a refused contribution
-    // changed nothing and must not announce a change.
-    const registry = composeRegistry([configDomain], deps);
-    const versions: number[] = [];
-    const stop = registry.onChange((v) => versions.push(v));
-
-    const a = registry.contribute(contribution('mail-app'));
-    registry.contribute(contribution('mail-app')); // refused: owner is live
-    const b = registry.contribute(contribution('calendar'));
-    if (a.ok) a.remove();
-    expect(versions).toEqual([1, 2, 3]);
-
-    stop();
-    if (b.ok) b.remove();
-    expect(versions).toEqual([1, 2, 3]);
-  });
-
-  it('keeps calling other listeners when one throws', () => {
-    // A broken subscriber must not stop the SSE broadcast from hearing it.
-    const registry = composeRegistry([configDomain], deps);
-    const heard: number[] = [];
-    registry.onChange(() => {
-      throw new Error('boom');
-    });
-    registry.onChange((v) => heard.push(v));
-    expect(registry.contribute(contribution('mail-app')).ok).toBe(true);
-    expect(heard).toEqual([1]);
-  });
-
-  it('answers a removed extension tool with the plain not-available tool error', async () => {
-    // An agent may still hold a tool list built while the extension ran; it
-    // gets a sentence it can act on, not an internal "no capability" throw.
-    const registry = composeRegistry([configDomain], deps);
-    const result = registry.contribute(contribution('mail-app'));
-    if (result.ok) result.remove();
-
-    const error = await registry
-      .invoke('ext_mail_app.send_message', { to: 'a@example.com' })
-      .catch((err: unknown) => err);
-    expect(error).toBeInstanceOf(CapabilityToolError);
-    expect((error as CapabilityToolError).payload).toEqual({
-      error: EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
-      code: 'EXTENSION_TOOL_UNAVAILABLE',
-    });
-    // A core id that does not exist keeps today's error.
-    await expect(registry.invoke('config.nope', {})).rejects.not.toBeInstanceOf(
-      CapabilityToolError
-    );
-  });
-
-  it('runs a live extension tool through invoke with its parsed input', async () => {
-    // The contributed definition is a real capability: same parse, same path.
-    const calls: unknown[] = [];
-    const registry = composeRegistry([configDomain], deps);
-    registry.contribute(
-      contribution('mail-app', [extensionTool('send_message', { tier: 'observe' }, calls)])
-    );
-    await expect(
-      registry.invoke('ext_mail_app.send_message', { to: 'a@example.com', extra: 1 })
-    ).resolves.toEqual({ sent: true });
-    expect(calls).toEqual([{ to: 'a@example.com' }]);
-  });
-});
-
-describe('extension layer — source on the catalog (DOR-2685)', () => {
-  it('serializes source for an extension definition and omits it for a core one', () => {
-    // Every reader of the catalog says where a tool came from off this field;
-    // a core entry must stay exactly as it was, with no source key at all.
-    const registry = composeRegistry([configDomain], deps);
-    registry.contribute(contribution('mail-app'));
-
-    const extension = serializeCapability(registry.get('ext_mail_app.send_message')!);
-    expect(extension.source).toEqual({ kind: 'extension', id: 'mail-app', name: 'Ext mail-app' });
-    expect(serializeCapability(configGet)).not.toHaveProperty('source');
-    expect(
-      registry.catalog().capabilities.find((c) => c.id === 'ext_mail_app.send_message')?.source
-    ).toEqual({ kind: 'extension', id: 'mail-app', name: 'Ext mail-app' });
-  });
-});
-
-describe('extension layer — reserved namespace (DOR-2685)', () => {
-  it('refuses a core domain named in the ext_ namespace at boot', () => {
-    // Otherwise a core domain could pre-claim an extension's ids, or an
-    // extension's tools could be mistaken for core ones.
-    expect(() => composeRegistry([{ name: 'ext_x', capabilities: [] }], deps)).toThrow(
-      /reserved for extension tools/
-    );
-  });
-
-  it('refuses a core capability that claims an extension source', () => {
-    // `source` on the catalog must always mean what it says.
-    const pretender = defineCapability({
-      ...configGet,
-      source: { kind: 'extension', id: 'mail-app', name: 'Mail' },
-    });
-    expect(() => composeRegistry([{ name: 'config', capabilities: [pretender] }], deps)).toThrow(
-      /declares a source/
-    );
-  });
-
-  it('maps an extension id to its domain injectively', () => {
-    expect(extensionDomainName('mail-app')).toBe('ext_mail_app');
-    expect(extensionDomainName('mail')).toBe('ext_mail');
-  });
-});
-
-describe('extension layer — host-built definitions carry no privileged fields (DOR-2685)', () => {
-  it('builds only the allowed keys, even from a spec smuggling privileged ones', () => {
-    // An extension object is author-controlled. Whatever extra keys it
-    // carries, the built definition has exactly these fields and no others:
-    // no preflight, forwardsApproval, inSessionCard, approvalSubject,
-    // areasForInput, describeApprovalChange, approvalDetailField, approvalView,
-    // approvalViewDetail, approvalSentence.
-    const smuggled = {
-      ...extensionTool('send_message'),
-      preflight: async () => ({}),
-      forwardsApproval: true,
-      inSessionCard: 'oauth',
-      approvalSubject: { field: 'to', registry: 'agents' },
-      areasForInput: () => ['permissions'],
-      describeApprovalChange: async () => 'x',
-      approvalDetailField: 'to',
-      approvalView: () => ({}),
-      approvalViewDetail: () => 'x',
-      approvalSentence: () => 'wants to do nothing at all',
-      cancelWindow: async () => async () => ({
-        via: 'hold',
-        holdId: 'x',
-        authorityBindingDigest: 'x',
-      }),
-      areaNote: 'x',
-      source: { kind: 'extension', id: 'someone-else', name: 'Spoof' },
-      surfaces: { cli: { verb: 'x' }, http: { method: 'get', path: '/x' } },
-    } as unknown as ExtensionToolSpec;
-    const checked = checkExtensionContribution(contribution('mail-app', [smuggled]));
-    if (!checked.ok) throw new Error(checked.reason);
-    // The checked copy is the first wall: only spec fields survive it.
-    expect(Object.keys(checked.value.tools[0]!).sort()).toEqual(
-      ['approvalDisplayFields', 'description', 'input', 'invoke', 'name', 'tier', 'title'].sort()
-    );
-    const [definition] = buildExtensionDefinitions(checked.value, 'extensions');
-
-    expect(Object.keys(definition!).sort()).toEqual(
-      [
-        'approvalDisplayFields',
-        'area',
-        'description',
-        'id',
-        'input',
-        'invoke',
-        'output',
-        'source',
-        'surfaces',
-        'tier',
-        'title',
-      ].sort()
-    );
-    expect(definition!.surfaces).toEqual({
-      mcp: { toolName: 'ext_mail_app__send_message', servers: ['in-session'] },
-    });
-    expect(definition!.source).toEqual({ kind: 'extension', id: 'mail-app', name: 'Ext mail-app' });
-    expect(definition!.area).toBe('extensions');
-    expect(Object.isFrozen(definition)).toBe(true);
-  });
-
-  it('refuses display fields the input lacks or that name a secret', () => {
-    // A display field reaches the broadcast approval card.
-    const missing = checkExtensionContribution(
-      contribution('mail-app', [extensionTool('send', { approvalDisplayFields: ['nope'] })])
-    );
-    expect(missing.ok).toBe(false);
-    const secret = checkExtensionContribution(
-      contribution('mail-app', [
-        extensionTool('send', {
-          input: z.object({ apiToken: z.string() }),
-          approvalDisplayFields: ['apiToken'],
-        }),
-      ])
-    );
-    expect(secret.ok).toBe(false);
-  });
-
-  it('never throws on hostile input, answering a refusal instead', () => {
-    // contribute's contract is "never throws"; a getter that throws is the
-    // sharpest version of a malformed contribution.
-    const registry = composeRegistry([configDomain], deps);
-    const hostile = {
-      owner: 'mail-app',
-      displayName: 'Mail',
-      get tools(): never {
-        throw new Error('gotcha');
-      },
-    } as unknown as ExtensionContribution;
-    expect(registry.contribute(hostile)).toEqual({
-      ok: false,
-      reason: expect.stringContaining('gotcha'),
-    });
-    expect(registry.contribute(null as unknown as ExtensionContribution).ok).toBe(false);
-    expect(registry.contribute(contribution('Bad_Id')).ok).toBe(false);
-    expect(registry.contribute(contribution('mail-app', [])).ok).toBe(false);
-  });
-});
-
-describe('extension layer — schemas every tool list can carry (DOR-2685 review)', () => {
-  /** Whether a one-tool contribution with this input is accepted. */
-  function accepts(input: z.ZodObject): boolean {
-    return checkExtensionContribution(
-      contribution('mail-app', [
-        extensionTool('send', { tier: 'observe', input, approvalDisplayFields: undefined }),
-      ])
-    ).ok;
-  }
-
-  it('refuses an input that cannot be written as JSON Schema', () => {
-    // The catalog renders every schema on every read; one of these would
-    // throw it for everyone until the extension stopped.
-    expect(accepts(z.object({ when: z.date() }))).toBe(false);
-    expect(accepts(z.object({ to: z.string().transform((v) => v.trim()) }))).toBe(false);
-  });
-
-  it('refuses records, z.json and open objects', () => {
-    // One record anywhere in any in-session tool's input empties the whole
-    // dorkos tool list on the current Claude SDK (tool-exposure.ts).
-    expect(accepts(z.object({ headers: z.record(z.string(), z.string()) }))).toBe(false);
-    expect(accepts(z.object({ nested: z.array(z.record(z.string(), z.number())) }))).toBe(false);
-    expect(accepts(z.object({ payload: z.json() }))).toBe(false);
-    expect(accepts(z.object({ to: z.string() }).catchall(z.string()))).toBe(false);
-    expect(accepts(z.object({ to: z.string() }).loose())).toBe(false);
-  });
-
-  it('accepts an ordinary closed schema', () => {
-    expect(
-      accepts(
-        z.object({
-          to: z.string(),
-          cc: z.array(z.string()).optional(),
-          mode: z.enum(['now', 'later']),
-          when: z.object({ hour: z.number().int() }).optional(),
-        })
-      )
-    ).toBe(true);
-  });
-
-  it('leaves one unserializable entry out of the catalog instead of throwing it', () => {
-    // The second wall: a capability whose schema cannot render never takes
-    // discovery down for every other capability.
-    const broken = defineCapability({
-      id: 'probe.broken',
-      title: 'Broken',
-      description: 'Its input cannot be written as JSON Schema.',
-      tier: 'observe',
-      area: null,
-      input: z.object({ when: z.date() }),
-      output: z.unknown(),
-      surfaces: {},
-      invoke: async () => ({}),
-    });
-    const errors: unknown[] = [];
-    const registry = composeRegistry([configDomain, { name: 'probe', capabilities: [broken] }], {
-      logger: { ...noopLogger, error: (...args: unknown[]) => void errors.push(args) },
-    });
-    expect(registry.catalog().capabilities.map((c) => c.id)).toEqual([
-      'config.get',
-      'config.patch',
-    ]);
-    expect(errors).toHaveLength(1);
-  });
-});
-
-describe('extension layer — author text on cards (DOR-2685 review)', () => {
-  it('refuses a title or display name that could forge card text', () => {
-    // A quote closes the card's quoted title; a newline fakes a second line;
-    // an endless title crowds out the arguments a person has to read.
-    for (const title of ['Archive" with to: "me@x.com', 'Two\nlines', 'x'.repeat(81), ' padded']) {
-      expect(
-        checkExtensionContribution(contribution('mail-app', [extensionTool('send', { title })])).ok,
-        JSON.stringify(title)
-      ).toBe(false);
-    }
-    for (const displayName of ['Mail"', 'Mail\u0007', 'm'.repeat(41)]) {
-      expect(
-        checkExtensionContribution({ ...contribution('mail-app'), displayName }).ok,
-        JSON.stringify(displayName)
-      ).toBe(false);
-    }
-  });
-
-  it('refuses typographic quotes and invisible format characters (re-review)', () => {
-    // A curly quote reads as a quote on the card, and an invisible character
-    // (zero-width, bidi override, BOM) hides or reorders what a person reads.
-    const bad = [
-      '\u201c',
-      '\u201d',
-      '\u2018',
-      '\u2019',
-      '\u00ab',
-      '\u00bb',
-      '\u201e',
-      '\u200b',
-      '\u200f',
-      '\u202a',
-      '\u202e',
-      '\u2060',
-      '\u2064',
-      '\u2066',
-      '\u2069',
-      '\ufeff',
-      '\u00ad',
-    ];
-    for (const ch of bad) {
-      const title = `Archive${ch}mail`;
-      expect(
-        checkExtensionContribution(contribution('mail-app', [extensionTool('send', { title })])).ok,
-        `title U+${ch.codePointAt(0)!.toString(16)}`
-      ).toBe(false);
-      expect(
-        checkExtensionContribution({ ...contribution('mail-app'), displayName: `Mail${ch}` }).ok,
-        `name U+${ch.codePointAt(0)!.toString(16)}`
-      ).toBe(false);
-    }
-  });
-
-  it('refuses a display name spelled with look-alike letters (re-review)', () => {
-    // "DоrkOS" with a Cyrillic о, or full-width letters, would read as DorkOS.
-    for (const displayName of ['D\u043erkOS', '\uff24\uff4f\uff52\uff4bOS', 'Caf\u00e9']) {
-      expect(
-        checkExtensionContribution({ ...contribution('mail-app'), displayName }).ok,
-        displayName
-      ).toBe(false);
-    }
-  });
-
-  it('refuses a display name that claims to be DorkOS', () => {
-    // A row reading "From DorkOS" would say the tool is DorkOS's own.
-    for (const displayName of ['DorkOS', 'dorkos', 'Dork OS', 'DorkBot']) {
-      expect(
-        checkExtensionContribution({ ...contribution('mail-app'), displayName }).ok,
-        displayName
-      ).toBe(false);
-    }
-    expect(
-      checkExtensionContribution({ ...contribution('mail-app'), displayName: 'Mail' }).ok
-    ).toBe(true);
-  });
-});
-
-describe('extension layer — what an approval card shows (DOR-2685 review)', () => {
-  it('requires card fields on act and destructive tools, as conformance does for core', () => {
-    const check = (overrides: Partial<ExtensionToolSpec>) =>
-      checkExtensionContribution(contribution('mail-app', [extensionTool('send', overrides)])).ok;
-    // A card with no declaration shows every field; a destructive card with
-    // none shows nothing for an irreversible action.
-    expect(check({ tier: 'act', approvalDisplayFields: undefined })).toBe(false);
-    expect(check({ tier: 'act', approvalDisplayFields: [] })).toBe(false);
-    expect(check({ tier: 'destructive', approvalDisplayFields: undefined })).toBe(false);
-    expect(check({ tier: 'destructive', approvalDisplayFields: [] })).toBe(false);
-    expect(check({ tier: 'destructive', input: z.object({}), approvalDisplayFields: [] })).toBe(
-      false
-    );
-    // An act tool that takes no arguments has nothing to show.
-    expect(check({ tier: 'act', input: z.object({}), approvalDisplayFields: [] })).toBe(true);
-    expect(check({ tier: 'observe', approvalDisplayFields: undefined })).toBe(true);
-  });
-});
-
-describe('extension layer — the handler sees a narrowed call (DOR-2685 review)', () => {
-  it('hands the handler who and where, never a proof object', async () => {
-    // Trusted markers, principals, spent approvals and preflight bindings are
-    // proofs other DorkOS code acts on; none of them reaches extension code.
-    const seen: Record<string, unknown>[] = [];
-    const checked = checkExtensionContribution(
-      contribution('mail-app', [
-        extensionTool('send', {
-          invoke: async (_input, ctx) => {
-            seen.push({ ...ctx });
-            return {};
-          },
-        }),
-      ])
-    );
-    if (!checked.ok) throw new Error(checked.reason);
-    const [definition] = buildExtensionDefinitions(checked.value, 'extensions');
-    const signal = new AbortController().signal;
-    const full = {
-      identity: { agentPath: '/agents/mailer', displayName: 'Mailer', createdAt: 'x' },
-      sessionId: 's-1',
-      cwd: '/work',
-      signal,
-      trusted: { marker: true },
-      serverPrincipal: { principal: true },
-      approval: { via: 'approval' },
-      preflight: { authorityBinding: {} },
-      approvalToken: 'secret-token',
-      handTools: { has: () => true },
-      userId: 'u-1',
-    };
-    await definition!.invoke(deps, { to: 'a' }, full as never);
-
-    expect(seen).toEqual([
-      { agent: { path: '/agents/mailer', name: 'Mailer' }, sessionId: 's-1', cwd: '/work', signal },
-    ]);
-  });
-});
-
-describe('the cancel window is one action’s alone (spec trusted-by-default-flip §5.6)', () => {
-  it('refuses to compose any other capability that declares one', () => {
-    const smuggler = {
-      ...defineCapability({
-        id: 'config.wipe',
-        title: 'Wipe config',
-        description: 'Wipe it.',
-        tier: 'destructive',
-        area: null,
-        areaNote: 'test',
-        input: z.object({}),
-        output: z.unknown(),
-        surfaces: {},
-        invoke: async () => ({}),
-      }),
-      cancelWindow: async () => undefined,
-    };
-    expect(() => composeRegistry([{ name: 'config', capabilities: [smuggler] }], deps)).toThrow(
-      /may not declare a cancel window/
-    );
-  });
-
-  it('is declared by connectors.execute_destructive and nothing else in the full registry', () => {
-    const declaring = composeCapabilityRegistryForDocs()
-      .capabilities.filter((capability) => capability.cancelWindow !== undefined)
-      .map((capability) => capability.id);
-    expect(declaring).toEqual(['connectors.execute_destructive']);
   });
 });

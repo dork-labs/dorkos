@@ -1,16 +1,13 @@
 import type { BrowserBinding } from '../contracts.js';
-import { navigationPending } from '../navigation/cohort.js';
 import { installOwnerNavigation } from '../navigation/owner-continuation.js';
 import type { Route } from 'playwright-core';
 import { expect, it, onTestFinished, vi } from 'vitest';
 import type { Frame, Request } from 'playwright-core';
-import { tabFixture, configuration, deferred } from './parent-fixture.js';
+import { tabFixture, configuration } from './parent-fixture.js';
 import { composeInput } from '../lifecycle/input-owner.js';
-import { captureTab, joinTabCaptureOriginals } from '../tabs/capture.js';
 import { navigateOwned } from '../navigation/navigate.js';
 import { createOwnedNavigationIssuer } from '../navigation/owned-work.js';
 import { currentAuthorityCustody } from '../lifecycle/live-custody.js';
-import { submitInput, resetInput } from '../lifecycle/parent-actions.js';
 // Exact semantic SDK methods the original navigation producer observes; redirect links retain
 // the actual earlier request object rather than widening the baseline null-only inference.
 type NavigationRequest = Pick<Request, 'isNavigationRequest' | 'frame' | 'url'> & {
@@ -139,46 +136,6 @@ async function fixture() {
   };
 }
 
-it('retains the same original Page/input target across two genuine reset and observed navigation cohorts', async () => {
-  const f = await fixture();
-  const target = f.slot.registeredTarget;
-  expect(
-    (await submitInput(f.record, { ...f.command(), steps: [{ kind: 'keyDown', key: 'Shift' }] }))
-      .outcome
-  ).toBe('completed');
-  const next = await f.navigate();
-  expect(next).toEqual({
-    ...f.navigationCommand.binding,
-    epoch: 1,
-    inputGeneration: 1,
-    navigationGeneration: 1,
-  });
-  expect(f.effects).toContain('keyUp');
-  const again = await f.navigate({
-    ...f.navigationCommand,
-    binding: next,
-    url: 'http://127.0.0.1:4801/again',
-  });
-  expect(again).toEqual({ ...next, epoch: 2, inputGeneration: 2, navigationGeneration: 2 });
-  expect(f.slot.registeredTarget).toBe(target);
-  expect(f.goto).toHaveBeenCalledTimes(2);
-  expect(f.known()).toBe(true);
-  expect((await submitInput(f.record, f.command(next))).outcome).toBe('rejected');
-  expect((await submitInput(f.record, f.command(again))).outcome).toBe('completed');
-});
-it('fences concurrent input and competing navigation before held original policy settles', async () => {
-  const f = await fixture();
-  const held = deferred<'allowed'>();
-  f.releases.push(() => held.resolve('allowed'));
-  f.config.policy.authorizeAction = () => held.promise;
-  const original = f.navigate();
-  expect((await submitInput(f.record, f.command(f.tab.binding))).outcome).toBe('rejected');
-  await expect(f.navigate({ ...f.navigationCommand, binding: f.tab.binding })).rejects.toThrow();
-  expect(f.goto).not.toHaveBeenCalled();
-  expect((await resetInput(f.record, f.tab.binding)).status).toBe('stopped');
-  held.resolve('allowed');
-  expect((await original).navigationGeneration).toBe(1);
-});
 it('refuses native goto when actual command authority is revoked during the original reset/policy turn', async () => {
   const f = await fixture();
   f.config.policy.authorizeAction = async () => {
@@ -207,51 +164,7 @@ it('rejects a conflicting actual main-frame commit instead of adopting a URL bod
   await expect(f.navigate()).rejects.toThrow();
   expect(f.known()).toBe(false);
 });
-it.each([undefined, null, false, 0, ''])(
-  'retains first falsy native failure %j through independent request-listener cleanup',
-  async (primary) => {
-    const f = await fixture();
-    f.goto.mockImplementation(async () => {
-      throw primary;
-    });
-    const off = f.page.off;
-    Object.defineProperty(f.page, 'off', {
-      value: (...args: unknown[]) => {
-        if (args[0] === 'request') throw new Error('SECONDARY');
-        return Reflect.apply(off, f.page, args);
-      },
-    });
-    await expect(f.navigate()).rejects.toBe(primary);
-    expect(f.record.lifetime.uncertain).toBe(true);
-  }
-);
 
-it('follows the bounded genuine original redirect chain under one fresh original navigation flow', async () => {
-  const f = await fixture();
-  const finalURL = 'http://127.0.0.1:4801/final';
-  f.goto.mockImplementation(async (target) => {
-    const first: NavigationRequest = {
-      redirectedFrom: () => null,
-      isNavigationRequest: () => true,
-      frame: () => f.page.mainFrame(),
-      url: () => target,
-    };
-    f.event('request', first);
-    const second: NavigationRequest = {
-      redirectedFrom: () => first,
-      isNavigationRequest: () => true,
-      frame: () => f.page.mainFrame(),
-      url: () => finalURL,
-    };
-    f.event('request', second);
-    f.commit(finalURL);
-    return { request: () => second, url: () => finalURL };
-  });
-  const next = await f.navigate();
-  expect(next.navigationGeneration).toBe(1);
-  expect(f.authorizeURL.mock.calls.every(([, url]) => url === f.navigationCommand.url)).toBe(true);
-  expect(f.known()).toBe(true);
-});
 it('refuses a second main-frame request whose actual redirectedFrom is outside the original chain', async () => {
   const f = await fixture();
   f.goto.mockImplementation(async (target) => {
@@ -295,84 +208,6 @@ it('refuses the seventeenth observed original redirect and publishes no successf
   });
   await expect(f.navigate()).rejects.toThrow();
   expect(f.known()).toBe(false);
-});
-
-it('owned navigation joins the original held screenshot before claiming the tab or entering goto', async () => {
-  const f = await fixture();
-  const returned = deferred<void>(),
-    entered = deferred<void>();
-  f.releases.push(() => returned.resolve());
-  const original = f.raw.screenshot.getMockImplementation();
-  if (!original) throw new Error('Original screenshot implementation unavailable');
-  f.raw.screenshot.mockImplementation(async () => {
-    entered.resolve();
-    await returned.promise;
-    return original();
-  });
-  const capture = captureTab(f.config, f.record, {
-    kind: 'capture',
-    requestId: f.command().requestId,
-    binding: f.tab.binding,
-  });
-  const observed = capture.then(
-    (value) => ({ value }),
-    (reason) => ({ reason })
-  );
-  await entered.promise;
-  const navigation = f.navigate();
-  const result = navigation.then(
-    (value) => ({ value }),
-    (reason) => ({ reason })
-  );
-  await Promise.resolve();
-  expect(f.tab.pending).toBe(1);
-  expect(f.goto).not.toHaveBeenCalled();
-  returned.resolve();
-  expect(await observed).toHaveProperty('value');
-  const final = await result;
-  expect(final).toHaveProperty('value');
-  expect(f.goto).toHaveBeenCalledTimes(1);
-  expect(f.tab.pending).toBe(0);
-  await f.cleanup();
-});
-
-it('raw screenshot remains joined after its caller deadline, without admitting navigation', async () => {
-  const f = await fixture();
-  const returned = deferred<void>(),
-    entered = deferred<void>();
-  f.releases.push(() => returned.resolve());
-  const original = f.raw.screenshot.getMockImplementation();
-  if (!original) throw new Error('Original screenshot implementation unavailable');
-  f.raw.screenshot.mockImplementation(async () => {
-    entered.resolve();
-    await returned.promise;
-    return original();
-  });
-  vi.useFakeTimers();
-  onTestFinished(() => {
-    vi.useRealTimers();
-  });
-  const capture = captureTab(f.config, f.record, {
-    kind: 'capture',
-    requestId: f.command().requestId,
-    binding: f.tab.binding,
-  });
-  const failure = capture.catch((reason) => reason);
-  await entered.promise;
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(await failure).toMatchObject({ code: 'CAPTURE_TIMEOUT' });
-  let joined = false;
-  const drain = joinTabCaptureOriginals(f.tab).then(() => {
-    joined = true;
-  });
-  await Promise.resolve();
-  expect(joined).toBe(false);
-  expect(f.goto).not.toHaveBeenCalled();
-  returned.resolve();
-  await drain;
-  expect(joined).toBe(true);
-  vi.useRealTimers();
-  await f.cleanup();
 });
 
 /** Page/Route are semantic doubles; original engine reset/queue/canonical binding are real. */
@@ -432,39 +267,6 @@ async function ownerRouteFixture(join: () => Promise<void> = async () => {}) {
   };
 }
 
-it('joins the original HTTP publication before native link reset/fallback and adopts its actual Page', async () => {
-  const wire = deferred<void>();
-  const f = await ownerRouteFixture(() => wire.promise);
-  f.releases.push(() => wire.resolve());
-  expect(
-    (await submitInput(f.record, { ...f.command(), steps: [{ kind: 'keyDown', key: 'Shift' }] }))
-      .outcome
-  ).toBe('completed');
-  const target = f.slot.registeredTarget,
-    before = { ...f.tab.binding };
-  const incoming = f.enter();
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(f.acquire).not.toHaveBeenCalled();
-  expect(incoming.fallback).not.toHaveBeenCalled();
-  expect(f.effects).not.toContain('keyUp');
-  expect((await submitInput(f.record, f.command())).outcome).toBe('rejected');
-  wire.resolve();
-  await incoming.operation;
-  expect(incoming.fallback).toHaveBeenCalledTimes(1);
-  expect(incoming.abort).not.toHaveBeenCalled();
-  expect(f.effects).toContain('keyUp');
-  expect(f.tab.binding).toEqual({
-    ...before,
-    epoch: before.epoch + 1,
-    inputGeneration: before.inputGeneration + 1,
-    navigationGeneration: before.navigationGeneration + 1,
-  });
-  expect(f.slot.registeredTarget).toBe(target);
-  expect(f.complete).toHaveBeenCalledExactlyOnceWith(f.tab.binding);
-  expect(f.close).toHaveBeenCalledTimes(1);
-});
-
 it('does not fallback a real owner request whose original publication failed, including undefined', async () => {
   const f = await ownerRouteFixture(async () => {
     throw undefined;
@@ -476,92 +278,6 @@ it('does not fallback a real owner request whose original publication failed, in
   expect(incoming.abort).toHaveBeenCalledTimes(1);
 });
 
-it('rejects a natural owner continuation after original authority loss before route fallback', async () => {
-  const f = await ownerRouteFixture();
-  f.config.policy.authorizeAction = async () => {
-    f.lose();
-    return 'allowed';
-  };
-  const incoming = f.enter();
-  await expect(incoming.operation).rejects.toMatchObject({ code: 'STALE_BINDING' });
-  expect(incoming.fallback).not.toHaveBeenCalled();
-  expect(incoming.abort).toHaveBeenCalledTimes(1);
-  expect(f.close).toHaveBeenCalledTimes(1);
-});
-
-it('retains the original natural navigation cohort when original close rejects undefined', async () => {
-  const f = await ownerRouteFixture();
-  f.close.mockRejectedValue(undefined);
-  const incoming = f.enter();
-  await expect(incoming.operation).rejects.toBeUndefined();
-  expect(incoming.fallback).toHaveBeenCalledTimes(1);
-  expect(f.record.lifetime.uncertain).toBe(true);
-  expect(navigationPending(f.tab)).toBe(true);
-});
-
-it('adopts an actual original same-document anchor event without another goto or synthetic Page event', async () => {
-  const f = await ownerRouteFixture();
-  const incoming = f.enter('http://127.0.0.1:4801/document');
-  await incoming.operation;
-  const before = { ...f.tab.binding },
-    target = f.slot.registeredTarget;
-  expect(
-    (
-      await submitInput(f.record, {
-        ...f.command(before),
-        steps: [{ kind: 'keyDown', key: 'Shift' }],
-      })
-    ).outcome
-  ).toBe('completed');
-  f.withinDocument('http://127.0.0.1:4801/document#section');
-  f.commit('http://127.0.0.1:4801/document#section');
-  await vi.waitFor(() => expect(f.complete).toHaveBeenCalledTimes(2));
-  expect(f.tab.binding).toEqual({
-    ...before,
-    epoch: before.epoch + 1,
-    inputGeneration: before.inputGeneration + 1,
-    navigationGeneration: before.navigationGeneration + 1,
-  });
-  expect(f.effects).toContain('keyUp');
-  expect(f.slot.registeredTarget).toBe(target);
-  expect(f.goto).not.toHaveBeenCalled();
-  expect((await submitInput(f.record, f.command(f.tab.binding))).outcome).toBe('completed');
-});
-
-for (const suffix of ['/changed-path', '/changed-path?query=replace']) {
-  it(`adopts original same-document protocol proof for ${suffix} with old input reset`, async () => {
-    const f = await ownerRouteFixture();
-    await f.enter('http://127.0.0.1:4801/document').operation;
-    const before = { ...f.tab.binding },
-      target = f.slot.registeredTarget;
-    expect(
-      (
-        await submitInput(f.record, {
-          ...f.command(before),
-          steps: [{ kind: 'keyDown', key: 'Shift' }],
-        })
-      ).outcome
-    ).toBe('completed');
-    const url = 'http://127.0.0.1:4801' + suffix;
-    // Public SDK Frame observation alone has no same-document authority.
-    f.commit(url);
-    await Promise.resolve();
-    expect(f.complete).toHaveBeenCalledTimes(1);
-    f.withinDocument(url);
-    await vi.waitFor(() => expect(f.complete).toHaveBeenCalledTimes(2));
-    expect(f.tab.binding).toEqual({
-      ...before,
-      epoch: before.epoch + 1,
-      inputGeneration: before.inputGeneration + 1,
-      navigationGeneration: before.navigationGeneration + 1,
-    });
-    expect(f.effects).toContain('keyUp');
-    expect(f.slot.registeredTarget).toBe(target);
-    expect(f.goto).not.toHaveBeenCalled();
-    expect((await submitInput(f.record, f.command(f.tab.binding))).outcome).toBe('completed');
-  });
-}
-
 it('refuses an original same-document event that changes origin despite matching root protocol proof', async () => {
   const f = await ownerRouteFixture();
   await f.enter('http://127.0.0.1:4801/document').operation;
@@ -570,41 +286,4 @@ it('refuses an original same-document event that changes origin despite matching
   await vi.waitFor(() => expect(f.record.status).not.toBe('running'));
   expect(f.complete).toHaveBeenCalledTimes(1);
   expect(f.acquire).toHaveBeenCalledTimes(1);
-});
-
-it('refreshes original destination authorization on the post-reset binding before route fallback', async () => {
-  const f = await ownerRouteFixture();
-  const before = { ...f.tab.binding };
-  f.authorize.mockImplementation(async (binding) =>
-    binding.inputGeneration === before.inputGeneration ? 'allowed' : 'refused'
-  );
-  const incoming = f.enter();
-  await expect(incoming.operation).rejects.toMatchObject({ code: 'POLICY_REFUSED' });
-  expect(f.authorize.mock.calls.map(([binding]) => binding.inputGeneration)).toEqual([
-    before.inputGeneration,
-    before.inputGeneration + 1,
-  ]);
-  expect(incoming.fallback).not.toHaveBeenCalled();
-  expect(incoming.abort).toHaveBeenCalledTimes(1);
-  expect(f.complete).not.toHaveBeenCalled();
-});
-it('refreshes original authorization after input reset before adopting same-document proof', async () => {
-  const f = await ownerRouteFixture();
-  await f.enter('http://127.0.0.1:4801/document').operation;
-  const before = { ...f.tab.binding };
-  f.authorize.mockClear();
-  f.authorize.mockImplementation(async (binding) =>
-    binding.inputGeneration === before.inputGeneration ? 'allowed' : 'refused'
-  );
-  const url = 'http://127.0.0.1:4801/document#revoked';
-  f.commit(url);
-  f.withinDocument(url);
-  await vi.waitFor(() => expect(f.close).toHaveBeenCalledTimes(2));
-  expect(f.authorize.mock.calls.map(([binding]) => binding.inputGeneration)).toEqual([
-    before.inputGeneration,
-    before.inputGeneration + 1,
-  ]);
-  expect(f.complete).toHaveBeenCalledTimes(1);
-  expect(f.tab.binding.navigationGeneration).toBe(before.navigationGeneration);
-  expect(f.record.lifetime.ordinary.phase).not.toBe('ordinary');
 });

@@ -79,18 +79,24 @@ export interface BrowserPersonPaint {
   readonly viewportGeneration: number;
 }
 
-/** One held controller; only a server-verified paint/address pair can enable input. */
+/** One held controller; only a server-verified paint/address pair can enable input.
+ * Operation assertions are server-only receipt/viewport fences, never request-supplied callbacks. */
 export interface BrowserPersonInputLease {
   readonly epoch: number;
   isCurrent(): boolean;
   inputReady(): boolean;
   confirmPaint(paint: BrowserPersonPaint): void;
-  runPerson(input: BrowserPersonInput): Promise<void>;
-  readSelection(): Promise<string>;
+  runPerson(input: BrowserPersonInput, assertOperation?: () => void): Promise<void>;
+  readSelection(assertOperation?: () => void): Promise<string>;
   onFileChooser(
     listener: (ticket: import('@dorkos/shared/browser-viewer-control').BrowserViewerChooser) => void
   ): () => void;
-  chooseFiles(ticketId: string, files: readonly BrowserPersonFile[]): Promise<void>;
+  chooseFiles(
+    ticketId: string,
+    files: readonly BrowserPersonFile[],
+    settled?: () => void,
+    assertOperation?: () => void
+  ): Promise<void>;
   cancelFileChooser(ticketId: string): Promise<void>;
 }
 

@@ -35,9 +35,13 @@ export const REPO_WIDE_SUITES = [
   '__tests__/browser-proof-page.test.ts',
   '__tests__/browser-turbo-build-cache.test.ts',
   '__tests__/build-cache-workflow.test.ts',
+  // Reads docs/api/openapi.json, the route census and the server's hand-written
+  // OpenAPI registry (DOR-4996).
+  '__tests__/check-api-lint.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
+  '__tests__/check-test-ratio.test.ts',
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
@@ -84,7 +88,14 @@ export const REPO_WIDE_SUITES = [
   '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
+  // Imports packages/shared/src/provenance.ts: a change there can turn it red (DOR-5047).
+  'provenance/__tests__/provenance-line.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',
+  // Import packages/cli/scripts/release-branch/rules.ts: the release commit must
+  // pass the release-branch-contents rule, so a change there can turn these red.
+  'release/__tests__/release-commit-cli.test.ts',
+  'release/__tests__/release-commit-git-data.test.ts',
+  'release/__tests__/release-commit.test.ts',
 ] as const;
 
 /**

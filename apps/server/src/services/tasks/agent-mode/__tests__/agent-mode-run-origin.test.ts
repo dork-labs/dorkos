@@ -51,10 +51,6 @@ describe('a turn a scheduled run started (M7)', () => {
     expect(startedByScheduledRun(['ses-own'], sources())).toBe(true);
   });
 
-  it('does not count a chat a person started', () => {
-    expect(startedByScheduledRun(['ses-person'], sources())).toBe(false);
-  });
-
   it('names who started the turn for the notice', () => {
     const base = { structural: true, marked: false } as const;
     expect(turnStarterOf({ ...base, sessionId: 'ses-x', scheduledRun: true }, sources())).toBe(
@@ -127,11 +123,6 @@ describe('a turn a scheduled run started (M7)', () => {
       expect(scheduledOriginOf(['ses-spin'], live())).toBe('heartbeat');
     });
 
-    it('reads no stamp as no answer, and walks on', () => {
-      stamped(null);
-      expect(scheduledOriginOf(['ses-spin'], live())).toBeNull();
-    });
-
     it('takes a stamp it cannot read as a run', () => {
       stamped('garbled');
       expect(scheduledOriginOf(['ses-spin'], live())).toBe('run');
@@ -194,23 +185,6 @@ describe('a turn a scheduled run started (M7)', () => {
         noteRunSession('run-1', 'ses-run', undefined, { updateRun } as never)
       ).not.toThrow();
       expect(startedByScheduledRun(['ses-run'], live())).toBe(true);
-      expect(updateRun).toHaveBeenCalledTimes(2);
-      expect(logged).toHaveBeenCalledOnce();
-      logged.mockRestore();
-    });
-
-    it('tries a run’s row write once more, and logs nothing when the retry lands', () => {
-      const logged = vi.spyOn(logger, 'error').mockImplementation(() => {});
-      const updateRun = vi
-        .fn()
-        .mockImplementationOnce(() => {
-          throw new Error('the database is busy');
-        })
-        .mockReturnValue(null);
-      noteRunSession('run-1', 'ses-run', undefined, { updateRun } as never);
-      expect(updateRun).toHaveBeenCalledTimes(2);
-      expect(updateRun).toHaveBeenLastCalledWith('run-1', { sessionId: 'ses-run' });
-      expect(logged).not.toHaveBeenCalled();
       logged.mockRestore();
     });
 

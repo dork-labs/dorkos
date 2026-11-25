@@ -191,6 +191,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'list_extensions',
       'get_extension_errors',
       'accounts_',
+      // Opening a /r/ link is a read that names nothing new, so it rides here with no words of its
+      // own (DOR-5046): the block has no room left under its token cap.
+      'link.resolve',
     ],
     areas: [],
     gate: 'read only',

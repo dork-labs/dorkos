@@ -27,9 +27,8 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { ConnectorProviderBootstrapper } from '../services/connectors/bootstrap.js';
@@ -49,11 +48,11 @@ export interface ConnectorProvidersRouterDeps {
 const KEY_CHANGE_REFUSAL = {
   'not-a-person': {
     code: 'person_only',
-    error: 'Only you can change the keys DorkOS uses to reach your apps, from the DorkOS app.',
+    detail: 'Only you can change the keys DorkOS uses to reach apps, in the app.',
   },
   'not-the-owner': {
     code: 'owner_only',
-    error: 'Only the owner of this DorkOS can change the keys it uses to reach apps.',
+    detail: 'Only the owner of this DorkOS can change the keys it uses.',
   },
 } as const;
 
@@ -67,7 +66,9 @@ const KEY_CHANGE_REFUSAL = {
  */
 function keyChangeRefusal(c: Context<ApiEnv>): Response | undefined {
   const refusal = refuseUnlessAccountOwner(honoRequestFacts(c));
-  return refusal === undefined ? undefined : c.json(KEY_CHANGE_REFUSAL[refusal], 403);
+  if (refusal === undefined) return undefined;
+  const { code, detail } = KEY_CHANGE_REFUSAL[refusal];
+  return problem(c, code, { detail });
 }
 
 /** Body for `PUT /:provider/credential`. */
@@ -99,12 +100,14 @@ export function createConnectorProvidersRoutes(deps: ConnectorProvidersRouterDep
     const provider = c.req.param('provider');
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
-      return c.json({ error: 'DorkOS doesn’t use a key of this kind. Nothing was saved.' }, 400);
+      return problem(c, 'invalid_request', {
+        detail: 'DorkOS doesn’t use a key of this kind. Nothing was saved.',
+      });
     }
     // An empty PUT has no body — read it as {} so the schema reports the
     // missing `secret` as a validation error, not a crash.
     const parsed = CredentialBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    if (!parsed.success) return validationProblem(c, parsed.error);
     const { secret } = parsed.data;
 
     // A new key waits for the owner to confirm it's them (DOR-4355). The held
@@ -123,10 +126,9 @@ export function createConnectorProvidersRoutes(deps: ConnectorProvidersRouterDep
           // A non-refusal factory error (a genuine bug). Generic on purpose: this
           // path must never echo anything derived from the stored secret.
           logger.error(`[Connectors] Provider reload failed after credential save`, { provider });
-          return c.json(
-            { error: 'The key was saved, but DorkOS couldn’t start using it. Try again.' },
-            500
-          );
+          return problem(c, 'internal_error', {
+            detail: 'The key was saved, but DorkOS couldn’t start using it. Try again.',
+          });
         }
       },
     });
@@ -138,7 +140,9 @@ export function createConnectorProvidersRoutes(deps: ConnectorProvidersRouterDep
     const provider = c.req.param('provider');
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
-      return c.json({ error: 'DorkOS doesn’t use a key of this kind. Nothing was removed.' }, 400);
+      return problem(c, 'invalid_request', {
+        detail: 'DorkOS doesn’t use a key of this kind. Nothing was removed.',
+      });
     }
     // Idempotent: the store's delete is safe when the name is absent, and the
     // reload simply reports unconfigured — a missing key still answers 200.

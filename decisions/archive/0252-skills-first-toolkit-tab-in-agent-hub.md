@@ -1,7 +1,7 @@
 ---
 number: 252
 title: Skills-First Toolkit Tab in Agent Hub
-status: draft
+status: archived
 created: 2026-04-13
 spec: marketplace-scoped-installs
 superseded-by: null

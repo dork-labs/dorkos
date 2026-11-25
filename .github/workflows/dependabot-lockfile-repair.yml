@@ -208,7 +208,7 @@ jobs:
             exit 1
           fi
           if bad=$(grep -vxE '(.+/)?package\.json|pnpm-lock\.yaml' "$files"); then
-            echo "::error::PR #$PR changes files other than package.json and pnpm-lock.yaml; refusing to run pnpm on it:"
+            echo "::error::PR #$PR changes files other than package.json and pnpm-lock.yaml; refusing to install from it:"
             echo "$bad"
             exit 1
           fi

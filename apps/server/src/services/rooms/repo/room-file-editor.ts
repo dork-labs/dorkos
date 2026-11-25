@@ -26,7 +26,7 @@
  * upload the files it was told it may replace.
  *
  * That refusal carries a payload, so it is a RESULT rather than a `RoomError`,
- * exactly as `ROOM_REPO_EXISTS` is. See {@link RoomFileSaveOutcome}.
+ * exactly as `room_repo_exists` is. See {@link RoomFileSaveOutcome}.
  *
  * ## Who the commit is authored as
  *

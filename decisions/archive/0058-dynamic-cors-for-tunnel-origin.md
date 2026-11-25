@@ -1,7 +1,7 @@
 ---
 number: 58
 title: Use Dynamic CORS Callback for Tunnel Origin
-status: draft
+status: archived
 created: 2026-03-01
 spec: tunnel-remote-access-overhaul
 superseded-by: null

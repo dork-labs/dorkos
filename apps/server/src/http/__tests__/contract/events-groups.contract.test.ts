@@ -4,15 +4,14 @@
  * unchanged.
  *
  * The stream is the public integration contract (`docs/integrations/sse-protocol.mdx`)
- * and what the Electron main process reads for its tray count; the browser
- * pins the same two facts in `apps/e2e/tests/streams/sse-contract.spec.ts`.
- * So this file pins the wire bytes, not a parser's reading of them: the exact
- * headers, the `connected` frame first, a live broadcast, the heartbeat, which
- * caller a frame addressed to a person reaches (a read cursor reaches only its
- * own person, never an agent), and that a client leaving frees its place. The
- * global stream has no `Last-Event-ID` replay (only the per-session and
- * per-room streams do) and reads no query, so a query string is checked to
- * change nothing.
+ * and what the Electron main process reads for its tray count, and no browser
+ * spec reads it, so this file is its only guard. It pins the wire bytes, not a
+ * parser's reading of them: the exact headers, the `connected` frame first, a
+ * live broadcast, the heartbeat, which caller a frame addressed to a person
+ * reaches (a read cursor reaches only its own person, never an agent), and
+ * that a client leaving frees its place. The global stream has no
+ * `Last-Event-ID` replay (only the per-session and per-room streams do) and
+ * reads no query, so a query string is checked to change nothing.
  *
  * The WebSocket the cockpit opens on the same path is an upgrade, not a
  * route, and is not in this file.
@@ -36,12 +35,16 @@ import {
   stepUpAt,
   confirmSetupAnswer,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** The global stream's ceiling on concurrent readers (`SSE.MAX_TOTAL_CLIENTS`). */
@@ -272,18 +275,18 @@ contractSuite('the global event stream, login off, the refusals', [
     method: 'POST',
     path: '/api/events',
     body: {},
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'DELETE /api/events does not exist',
     method: 'DELETE',
     path: '/api/events',
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'GET /api/events/anything does not exist',
     path: '/api/events/anything',
-    expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+    expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
   },
   {
     name: 'GET /api/events at a foreign host is refused by the host guard',
@@ -437,8 +440,10 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
       path: '/api/events',
       expect: {
         status: 503,
-        headers: JSON_TYPE,
-        body: { error: 'Too many SSE clients' },
+        headers: PROBLEM_TYPE,
+        body: problemBody('temporarily_unavailable', {
+          detail: 'Too many live connections are open. Try again soon.',
+        }),
       },
     });
 

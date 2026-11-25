@@ -14,8 +14,8 @@ describe('OptionRow', () => {
         <span>Option A</span>
       </OptionRow>
     );
-    expect(screen.getByTestId('radio')).toBeDefined();
-    expect(screen.getByText('Option A')).toBeDefined();
+    expect(screen.getByTestId('radio')).toBeInTheDocument();
+    expect(screen.getByText('Option A')).toBeInTheDocument();
   });
 
   it('applies selected styling when isSelected is true', () => {

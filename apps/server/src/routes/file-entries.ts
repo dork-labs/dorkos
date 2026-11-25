@@ -6,12 +6,9 @@
  * @module routes/file-entries
  */
 import { Hono } from 'hono';
-import { z } from 'zod';
 import crypto from 'crypto';
 import fs from 'fs/promises';
-
 import path from 'path';
-
 import {
   CreateEntryRequestSchema,
   DeleteEntryQuerySchema,
@@ -19,16 +16,21 @@ import {
   CopyEntryRequestSchema,
   RevealEntryRequestSchema,
 } from '@dorkos/shared/schemas';
-
 import { revealInFileManager } from '../lib/reveal-in-file-manager.js';
-import { resolveWithinCwd, pathErrorReply } from '../lib/file-route-guards.js';
-
+import { resolveWithinCwd } from '../lib/file-route-guards.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { NAME_TAKEN, NOT_ALLOWED_TO_CHANGE, pathCheckFailure } from './file-problems.js';
 import { readQuery } from '../http/request-query.js';
 
 const router = new Hono<ApiEnv>();
+
+/** A non-recursive delete of a folder with something in it. */
+const FOLDER_NOT_EMPTY = 'That folder isn’t empty, so nothing was deleted.';
+
+/** A folder copied into itself or into a folder inside it. */
+const INTO_ITSELF = 'A folder can’t be copied into itself.';
 
 /**
  * Create a file or directory inside a session's working directory. Rejects with
@@ -39,7 +41,7 @@ const router = new Hono<ApiEnv>();
 router.post('/', async (c) => {
   const parsed = CreateEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, type, content } = parsed.data;
 
@@ -48,22 +50,18 @@ router.post('/', async (c) => {
   try {
     ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-    logger.error('[files] POST / boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return pathCheckFailure(c, err, 'POST /', { cwd, path: relPath });
   }
 
   if (resolved === validatedCwd) {
-    return c.json(
-      { error: 'Refusing to create over the working-directory root', code: 'REFUSE_ROOT' },
-      400
-    );
+    return problem(c, 'working_folder_root', {
+      detail: 'The chat’s top folder can’t be replaced.',
+    });
   }
 
   try {
     await fs.access(resolved);
-    return c.json({ error: 'Target already exists', code: 'CONFLICT' }, 409);
+    return problem(c, 'already_exists', { detail: NAME_TAKEN });
   } catch {
     // Does not exist — proceed to create.
   }
@@ -85,10 +83,10 @@ router.post('/', async (c) => {
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EACCES') {
-      return c.json({ error: 'Permission denied', code: 'EACCES' }, 403);
+      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
     }
     logger.error('[files] POST / create failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t create that. Try again.' });
   }
 
   return c.json({ ok: true, path: relForResponse }, 201);
@@ -103,7 +101,7 @@ router.post('/', async (c) => {
 router.delete('/', async (c) => {
   const parsed = DeleteEntryQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath, recursive } = parsed.data;
 
@@ -112,17 +110,13 @@ router.delete('/', async (c) => {
   try {
     ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-    logger.error('[files] DELETE / boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return pathCheckFailure(c, err, 'DELETE /', { cwd, path: relPath });
   }
 
   if (resolved === validatedCwd) {
-    return c.json(
-      { error: 'Refusing to delete the working-directory root', code: 'REFUSE_ROOT' },
-      400
-    );
+    return problem(c, 'working_folder_root', {
+      detail: 'The chat’s top folder can’t be deleted.',
+    });
   }
 
   try {
@@ -130,29 +124,23 @@ router.delete('/', async (c) => {
     if (stat.isDirectory() && !recursive) {
       const children = await fs.readdir(resolved);
       if (children.length > 0) {
-        return c.json(
-          { error: 'Directory is not empty; pass recursive', code: 'DIR_NOT_EMPTY' },
-          409
-        );
+        return problem(c, 'folder_not_empty', { detail: FOLDER_NOT_EMPTY });
       }
     }
     await fs.rm(resolved, { recursive, force: false });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return c.json({ error: 'Path not found', code: 'NOT_FOUND' }, 404);
+      return problem(c, 'not_found', { detail: 'That isn’t there anymore.' });
     }
     if (code === 'ENOTEMPTY') {
-      return c.json(
-        { error: 'Directory is not empty; pass recursive', code: 'DIR_NOT_EMPTY' },
-        409
-      );
+      return problem(c, 'folder_not_empty', { detail: FOLDER_NOT_EMPTY });
     }
     if (code === 'EACCES') {
-      return c.json({ error: 'Permission denied', code: 'EACCES' }, 403);
+      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
     }
     logger.error('[files] DELETE / failed', { err, resolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t delete that. Try again.' });
   }
 
   return c.json({ ok: true });
@@ -167,7 +155,7 @@ router.delete('/', async (c) => {
 router.post('/rename', async (c) => {
   const parsed = RenameEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, from, to } = parsed.data;
 
@@ -182,28 +170,24 @@ router.post('/rename', async (c) => {
     // ancestor — a `..` escape and a symlinked parent are both rejected.
     ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-    logger.error('[files] POST /rename boundary failed', { err, cwd, from, to });
-    return c.json({ error: 'Internal server error' }, 500);
+    return pathCheckFailure(c, err, 'POST /rename', { cwd, from, to });
   }
 
   if (fromResolved === validatedCwd || toResolved === validatedCwd) {
-    return c.json(
-      { error: 'Refusing to move the working-directory root', code: 'REFUSE_ROOT' },
-      400
-    );
+    return problem(c, 'working_folder_root', {
+      detail: 'The chat’s top folder can’t be moved.',
+    });
   }
 
   try {
     await fs.access(fromResolved);
   } catch {
-    return c.json({ error: 'Source not found', code: 'NOT_FOUND' }, 404);
+    return problem(c, 'not_found', { detail: 'The item to move isn’t there anymore.' });
   }
 
   try {
     await fs.access(toResolved);
-    return c.json({ error: 'Target already exists', code: 'CONFLICT' }, 409);
+    return problem(c, 'already_exists', { detail: NAME_TAKEN });
   } catch {
     // Target free — proceed.
   }
@@ -213,10 +197,10 @@ router.post('/rename', async (c) => {
     await fs.rename(fromResolved, toResolved);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EACCES') {
-      return c.json({ error: 'Permission denied', code: 'EACCES' }, 403);
+      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
     }
     logger.error('[files] POST /rename failed', { err, fromResolved, toResolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t move that. Try again.' });
   }
 
   return c.json({ ok: true });
@@ -233,7 +217,7 @@ router.post('/rename', async (c) => {
 router.post('/copy', async (c) => {
   const parsed = CopyEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, from, to } = parsed.data;
 
@@ -248,24 +232,20 @@ router.post('/copy', async (c) => {
     // ancestor — a `..` escape and a symlinked parent are both rejected.
     ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-    logger.error('[files] POST /copy boundary failed', { err, cwd, from, to });
-    return c.json({ error: 'Internal server error' }, 500);
+    return pathCheckFailure(c, err, 'POST /copy', { cwd, from, to });
   }
 
   if (fromResolved === validatedCwd || toResolved === validatedCwd) {
-    return c.json(
-      { error: 'Refusing to copy over the working-directory root', code: 'REFUSE_ROOT' },
-      400
-    );
+    return problem(c, 'working_folder_root', {
+      detail: 'The chat’s top folder can’t be copied or replaced.',
+    });
   }
 
   let sourceIsDir: boolean;
   try {
     sourceIsDir = (await fs.stat(fromResolved)).isDirectory();
   } catch {
-    return c.json({ error: 'Source not found', code: 'NOT_FOUND' }, 404);
+    return problem(c, 'not_found', { detail: 'The item to copy isn’t there anymore.' });
   }
 
   // `lstat`, not `access`: `access` follows symlinks, so a DANGLING symlink at
@@ -277,14 +257,14 @@ router.post('/copy', async (c) => {
     .then(() => false)
     .catch(() => true);
   if (!targetWasFree) {
-    return c.json({ error: 'Target already exists', code: 'CONFLICT' }, 409);
+    return problem(c, 'already_exists', { detail: NAME_TAKEN });
   }
 
   if (
     sourceIsDir &&
     (toResolved === fromResolved || toResolved.startsWith(fromResolved + path.sep))
   ) {
-    return c.json({ error: 'Refusing to copy a folder into itself', code: 'COPY_INTO_SELF' }, 400);
+    return problem(c, 'copy_into_self', { detail: INTO_ITSELF });
   }
 
   try {
@@ -298,16 +278,13 @@ router.post('/copy', async (c) => {
     // undo — and deleting THEIR file is exactly the damage the rollback is
     // supposed to prevent.
     if (code === 'ERR_FS_CP_EEXIST') {
-      return c.json({ error: 'Target already exists', code: 'CONFLICT' }, 409);
+      return problem(c, 'already_exists', { detail: NAME_TAKEN });
     }
     // The prefix check above misses a case-insensitive filesystem, where
     // `src` → `SRC/inner` is the same self-copy under a different spelling.
     // Node catches it and says so; answer with the honest reason, not a 500.
     if (code === 'ERR_FS_CP_EINVAL') {
-      return c.json(
-        { error: 'Refusing to copy a folder into itself', code: 'COPY_INTO_SELF' },
-        400
-      );
+      return problem(c, 'copy_into_self', { detail: INTO_ITSELF });
     }
 
     // Only now, having established the destination was free before we started
@@ -317,10 +294,10 @@ router.post('/copy', async (c) => {
       await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
     }
     if (code === 'EACCES') {
-      return c.json({ error: 'Permission denied', code: 'EACCES' }, 403);
+      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
     }
     logger.error('[files] POST /copy failed', { err, fromResolved, toResolved });
-    return c.json({ error: 'Internal server error' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t copy that. Try again.' });
   }
 
   return c.json({ ok: true });
@@ -339,7 +316,7 @@ router.post('/copy', async (c) => {
 router.post('/reveal', async (c) => {
   const parsed = RevealEntryRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid body', details: z.flattenError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const { cwd, path: relPath } = parsed.data;
 
@@ -347,23 +324,20 @@ router.post('/reveal', async (c) => {
   try {
     ({ resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    const pathRefusal = pathErrorReply(err);
-    if (pathRefusal) return c.json(pathRefusal.body, pathRefusal.status);
-    logger.error('[files] POST /reveal boundary failed', { err, cwd, path: relPath });
-    return c.json({ error: 'Internal server error' }, 500);
+    return pathCheckFailure(c, err, 'POST /reveal', { cwd, path: relPath });
   }
 
   try {
     await fs.access(resolved);
   } catch {
-    return c.json({ error: 'Path not found', code: 'NOT_FOUND' }, 404);
+    return problem(c, 'not_found', { detail: 'That isn’t there anymore.' });
   }
 
   try {
     await revealInFileManager(resolved);
   } catch (err) {
     logger.error('[files] POST /reveal failed', { err, resolved });
-    return c.json({ error: "Couldn't open the file manager", code: 'REVEAL_UNAVAILABLE' }, 500);
+    return problem(c, 'internal_error', { detail: 'Couldn’t open the file manager.' });
   }
 
   return c.body(null, 204);

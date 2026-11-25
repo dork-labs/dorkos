@@ -33,22 +33,22 @@ import { hashApprovalInput } from '../services/core/approvals/approval-input-has
 import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
 import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import type { RequestFacts } from '../http/request-facts.js';
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import {
   ApproveExtensionRequestSchema,
   DismissExtensionApprovalRequestSchema,
-  STALE_APPROVAL_CODE,
-  UNPINNABLE_APPROVAL_CODE,
 } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
 import {
   ApprovalRefusedError,
   whyUnpinnable,
+  UNPINNABLE_SENTENCE,
+  UNREADABLE_SENTENCE,
 } from '../services/extensions/pin/extension-content-pin.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -59,10 +59,6 @@ import { listPendingExtensionApprovals } from '../services/extensions/extension-
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { registerExtensionRemovalRoutes } from './extensions-removal.js';
 import { registerExtensionApprovalSetRoutes } from './extensions-approval-set.js';
-import {
-  EXTENSION_NOT_APPROVED_CODE,
-  EXTENSION_NOT_APPROVED_ERROR,
-} from '../services/extensions/extension-load-policy.js';
 
 /**
  * What the two approval routes say when a bar refuses them.
@@ -71,23 +67,40 @@ import {
  * shared with `/enable` and `/disable` on the same router, because all four write
  * a leaf of the same `operator-only` section and a gate that covers two of four
  * is a gate an agent routes around (DOR-1507). What stays here is only the
- * VOCABULARY: approving is a security decision, so it answers with
- * `extension_not_approved_to_run` and says who may make that decision, where
- * turning an extension on answers with the plain operator-only config code.
+ * VOCABULARY: approving is a security decision, so it answers `person_only`
+ * and says who may make that decision, where turning an extension on answers
+ * `operator_only`, the config code.
  */
 const APPROVAL_BAR: PersonBarCopy = {
-  error: EXTENSION_NOT_APPROVED_ERROR,
-  code: EXTENSION_NOT_APPROVED_CODE,
-  subject: 'which extensions may run code inside DorkOS',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Allowing an extension to run code inside DorkOS is something a person does in ` +
-    `their own copy of the app, not something another site can ask for on their behalf.`,
-  agent:
-    `DorkOS changed nothing. Approving an extension to run code inside the DorkOS ` +
-    `server is a decision only a person makes, and you are the code being approved. ` +
-    `Ask the person to open Settings > Extensions in DorkOS and approve it there.`,
+  code: 'person_only',
+  subject: 'which extensions may run',
+  crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Allow extensions in the app.`,
+  agent: 'Nothing changed. Only a person allows an extension to run, in Settings.',
 };
+
+/** The answer for an id outside the router's pattern. */
+const invalidId = (c: Context<ApiEnv>) =>
+  problem(c, 'invalid_request', { detail: 'Use an extension id in lowercase, like my-extension.' });
+
+/** The answer for an extension this computer does not have. */
+const noSuchExtension = (c: Context<ApiEnv>, id: string) =>
+  problem(c, 'not_found', { detail: `No extension named ${id} is installed.` });
+
+/**
+ * A `412 precondition_failed`: the copy changed since the card was drawn, so
+ * the app redraws the card and asks again.
+ */
+const staleCopy = (c: Context<ApiEnv>, detail: string) =>
+  problem(c, 'precondition_failed', { detail });
+
+/** A `409 conflict` for a copy DorkOS cannot check: asking again can't help. */
+const unpinnableCopy = (c: Context<ApiEnv>, detail: string) => problem(c, 'conflict', { detail });
+
+/** What a request without the copy it was shown is told. */
+const SEND_SHOWN = 'Send the path and version of the extension you were shown.';
+
+/** What a stale card is told: nothing ran. */
+const CHANGED = 'This extension changed since you saw it. Nothing was turned on.';
 
 /**
  * Mount the approve and revoke routes onto the extensions router.
@@ -135,7 +148,9 @@ export function registerExtensionApprovalRoutes(
       });
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions waiting for approval', err);
-      return c.json({ error: 'Failed to list extensions waiting for approval' }, 500);
+      return problem(c, 'internal_error', {
+        detail: 'Couldn’t list extensions waiting. Try again.',
+      });
     }
   });
 
@@ -144,20 +159,19 @@ export function registerExtensionApprovalRoutes(
   router.post('/:id/approve', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id)) return invalidId(c);
       const refused = refusedNotAPerson(c, APPROVAL_BAR);
       if (refused) return refused;
 
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
       // Core extensions ship inside DorkOS and are exempt by origin, so there is no
       // approval to record for one. Say so rather than writing a list entry that
       // changes nothing.
       if (record.origin === 'core') {
-        return c.json(
-          { error: `Extension '${id}' ships with DorkOS and does not need approving` },
-          409
-        );
+        return problem(c, 'conflict', {
+          detail: `${id} ships with DorkOS, so it needs no approval.`,
+        });
       }
 
       // The copy the person was shown, when the click came from a row that
@@ -171,19 +185,10 @@ export function registerExtensionApprovalRoutes(
       if (hasBody) {
         const expected = ApproveExtensionRequestSchema.safeParse(body);
         if (!expected.success) {
-          return c.json(
-            { error: 'Send the path and version of the extension you were shown' },
-            400
-          );
+          return problem(c, 'invalid_request', { detail: SEND_SHOWN });
         }
         if (!isExpectedCopy(record, expected.data)) {
-          return c.json(
-            {
-              error: 'This extension changed since you saw it. Nothing was turned on.',
-              code: STALE_APPROVAL_CODE,
-            },
-            409
-          );
+          return staleCopy(c, CHANGED);
         }
         // The files the card showed (DOR-3068): the manager refuses the yes
         // when they changed since, with the live digest read at the click.
@@ -195,15 +200,9 @@ export function registerExtensionApprovalRoutes(
       // A card that named none was drawn for a copy DorkOS could not check, or
       // is out of date; either way the person reads why in plain words.
       if (!record.devLink && expectedDigest === undefined) {
-        return c.json(
-          record.currentDigest
-            ? {
-                error: 'This extension changed since you saw it. Nothing was turned on.',
-                code: STALE_APPROVAL_CODE,
-              }
-            : { error: await whyUnpinnable(record), code: UNPINNABLE_APPROVAL_CODE },
-          409
-        );
+        return record.currentDigest
+          ? staleCopy(c, CHANGED)
+          : unpinnableCopy(c, await whyUnpinnable(record));
       }
 
       const run = async (facts: RequestFacts): Promise<Response> => {
@@ -213,25 +212,21 @@ export function registerExtensionApprovalRoutes(
           current.path !== record.path ||
           current.manifest.version !== record.manifest.version
         )
-          return c.json(
-            { error: 'This mini app changed. Nothing was turned on.', code: STALE_APPROVAL_CODE },
-            409
-          );
+          return staleCopy(c, 'This mini app changed. Nothing was turned on.');
         let extension;
         try {
           extension = await extensionManager.approveToRun(id, { expectedDigest });
         } catch (err) {
           if (!(err instanceof ApprovalRefusedError)) throw err;
-          return c.json(
-            // The reason alone for one that cannot be checked: its own short
-            // block, which the app shows under a title that says nothing ran.
-            err.reason === 'stale'
-              ? { error: `${err.message} Nothing was turned on.`, code: STALE_APPROVAL_CODE }
-              : { error: err.message, code: UNPINNABLE_APPROVAL_CODE },
-            409
-          );
+          // A fixed sentence per case, never the error's own text (it can name
+          // files): one of the two unpinnable sentences, else the unreadable one.
+          logger.warn(`[Extensions] Approval of ${id} refused`, err);
+          if (err.reason === 'stale') return staleCopy(c, CHANGED);
+          const why =
+            err.message === UNPINNABLE_SENTENCE ? UNPINNABLE_SENTENCE : UNREADABLE_SENTENCE;
+          return unpinnableCopy(c, why);
         }
-        if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
+        if (!extension) return noSuchExtension(c, id);
 
         await activity?.emit({
           // Always the person — the bar above refuses any caller naming itself an
@@ -273,7 +268,7 @@ export function registerExtensionApprovalRoutes(
       return held ?? (await run(honoRequestFacts(c)));
     } catch (err) {
       logger.error(`[Extensions] Failed to approve ${id}`, err);
-      return c.json({ error: 'Failed to approve extension' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t allow the extension. Try again.' });
     }
   });
 
@@ -285,7 +280,7 @@ export function registerExtensionApprovalRoutes(
   router.post('/:id/dismiss-approval', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id)) return invalidId(c);
       const refused = refusedNotAPerson(c, APPROVAL_BAR);
       if (refused) return refused;
 
@@ -293,33 +288,26 @@ export function registerExtensionApprovalRoutes(
         readJsonBody(c, { emptyAs: {} })
       );
       if (!body.success) {
-        return c.json({ error: 'Send the path and version of the extension you were shown' }, 400);
+        return problem(c, 'invalid_request', { detail: SEND_SHOWN });
       }
 
       const result = extensionManager.dismissApproval(id, body.data);
       if (!result.ok) {
         if (result.reason === 'not_found') {
-          return c.json({ error: `Extension '${id}' not found` }, 404);
+          return noSuchExtension(c, id);
         }
         if (result.reason === 'core') {
-          return c.json(
-            { error: `Extension '${id}' ships with DorkOS and never asks to be turned on` },
-            409
-          );
+          return problem(c, 'conflict', {
+            detail: `${id} ships with DorkOS and never asks to run.`,
+          });
         }
-        return c.json(
-          {
-            error: 'This extension changed since you saw it. Nothing was changed.',
-            code: STALE_APPROVAL_CODE,
-          },
-          409
-        );
+        return staleCopy(c, 'This extension changed since you saw it. Nothing changed.');
       }
 
       return c.body(null, 204);
     } catch (err) {
       logger.error(`[Extensions] Failed to dismiss the approval for ${id}`, err);
-      return c.json({ error: 'Failed to dismiss extension approval' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t save that. Try again.' });
     }
   });
 
@@ -328,21 +316,18 @@ export function registerExtensionApprovalRoutes(
   router.post('/:id/revoke', async (c) => {
     const id = c.req.param('id');
     try {
-      if (!safeExtId.test(id)) return c.json({ error: 'Invalid extension ID' }, 400);
+      if (!safeExtId.test(id)) return invalidId(c);
       const refused = refusedNotAPerson(c, APPROVAL_BAR);
       if (refused) return refused;
 
       const record = extensionManager.get(id);
-      if (!record) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!record) return noSuchExtension(c, id);
       if (record.origin === 'core') {
-        return c.json(
-          { error: `Extension '${id}' ships with DorkOS and cannot be stopped this way` },
-          409
-        );
+        return problem(c, 'conflict', { detail: `${id} ships with DorkOS. Turn it off instead.` });
       }
 
       const extension = await extensionManager.revokeRunApproval(id);
-      if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
+      if (!extension) return noSuchExtension(c, id);
 
       await activity?.emit({
         // Always the person — the bar above refuses any caller naming itself an
@@ -362,7 +347,7 @@ export function registerExtensionApprovalRoutes(
       return c.json({ extension });
     } catch (err) {
       logger.error(`[Extensions] Failed to revoke approval for ${id}`, err);
-      return c.json({ error: 'Failed to revoke extension approval' }, 500);
+      return problem(c, 'internal_error', { detail: 'Couldn’t stop the extension. Try again.' });
     }
   });
 

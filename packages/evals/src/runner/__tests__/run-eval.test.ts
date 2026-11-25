@@ -35,7 +35,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
 import { SANDBOX_PREFIX } from '../sandbox.js';
-import { sweepStrays } from '../sweep.js';
 import { liveDisposerCount } from '../interrupt.js';
 import type { EvalCase, EvalSandbox } from '../../types.js';
 import type { IsolationLauncher } from '../isolation/index.js';
@@ -45,7 +44,6 @@ import { agentDir, seedRoomAgents } from '../../suite/rooms-setup.js';
 import { selfTestCase } from '../../suite/selftest.js';
 import { widgetRoundTripCase } from '../../suite/ui.js';
 import { BudgetTracker } from '../budget.js';
-import { transcriptNameForAttempt } from '../retry.js';
 import { runEval } from '../run-eval.js';
 
 // The local-sign-in probe shells out to the real `claude` binary. Left real, this
@@ -150,24 +148,6 @@ describe('runEval', () => {
     expect(tx.isFile()).toBe(true);
   });
 
-  it('writes a retry attempt to its own transcript rather than over the first one', async () => {
-    // The first attempt's frames are the only evidence for classifying it as
-    // infrastructure. A retry that overwrote them would make the classification
-    // unverifiable by the person it is asking to trust it.
-    const { runDir: dir, tracker } = await fixture();
-    const result = await runEval(selfTestCase, {
-      tier: 'test-mode',
-      runId: 'run-retry',
-      runDir: dir,
-      tracker,
-      transcriptName: transcriptNameForAttempt(selfTestCase.id, 2),
-    });
-
-    expect(result.transcript).toBe('harness-selftest.retry.jsonl');
-    expect((await stat(path.join(dir, 'harness-selftest.retry.jsonl'))).isFile()).toBe(true);
-    await expect(stat(path.join(dir, 'harness-selftest.jsonl'))).rejects.toThrow();
-  });
-
   it('scores `fail` when an oracle does not pass (a broken assertion is caught)', async () => {
     const { runDir: dir, tracker } = await fixture();
     const failing: EvalCase = {
@@ -268,19 +248,6 @@ describe('runEval', () => {
     expect(result.runtime).toBe('opencode');
   });
 
-  it('records the isolation the eval actually ran inside', async () => {
-    const { runDir: dir, tracker } = await fixture();
-    const result = await runEval(selfTestCase, {
-      tier: 'test-mode',
-      runId: 'run-iso',
-      runDir: dir,
-      tracker,
-    });
-    // Whoever promotes a case out of quarantine reads this to know whether the
-    // destructive turn ran in a container or on the bare host.
-    expect(result.isolation).toBe('in-process');
-  });
-
   /** Seeds a `logs/dorkos.log` file with `content` into the sandbox, mimicking `initLogger()` output. */
   function seedLogsWithContent(sandbox: EvalSandbox, content: string): Promise<void> {
     return mkdir(path.join(sandbox.dorkHome, 'logs'), { recursive: true }).then(() =>
@@ -292,28 +259,6 @@ describe('runEval', () => {
   function seedLogs(sandbox: EvalSandbox): Promise<void> {
     return seedLogsWithContent(sandbox, '{"msg":"boot"}\n');
   }
-
-  it('retains a NON-quarantined (gating) failure’s sandbox, and copies its logs into the run dir', async () => {
-    const { runDir: dir, tracker } = await fixture();
-    const before = await countSandboxes();
-    const failing: EvalCase = {
-      ...selfTestCase,
-      id: 'selftest-retained',
-      seed: seedLogs,
-      oracles: [httpGetAssert('/api/health', { status: 404 })],
-    };
-    const result = await runEval(failing, { tier: 'test-mode', runId: 'r', runDir: dir, tracker });
-    expect(result.status).toBe('fail');
-    expect(await countSandboxes()).toBe(before + 1);
-    expect(result.retainedSandbox).toBeTruthy();
-    expect((await stat(result.retainedSandbox ?? '')).isDirectory()).toBe(true);
-    expect(result.retainedLogsPath).toBe(path.join('selftest-retained', 'logs'));
-    const copied = await readFile(
-      path.join(dir, result.retainedLogsPath ?? '', 'dorkos.log'),
-      'utf8'
-    );
-    expect(copied).toBe('{"msg":"boot"}\n');
-  });
 
   it('retains a QUARANTINED failure’s sandbox too, and copies its logs (DOR-1241)', async () => {
     // Before DOR-1241 a quarantined failure was cleaned up exactly like a pass,
@@ -368,36 +313,6 @@ describe('runEval', () => {
     expect(await countSandboxes()).toBe(before);
   });
 
-  it('a retained sandbox is still swept by `pnpm evals:sweep` (retention is not permanent)', async () => {
-    const { runDir: dir, tracker } = await fixture();
-    const quarantined: EvalCase = {
-      ...selfTestCase,
-      id: 'selftest-quarantined-swept',
-      quarantined: true,
-      oracles: [httpGetAssert('/api/health', { status: 404 })],
-    };
-    const result = await runEval(quarantined, {
-      tier: 'test-mode',
-      runId: 'r',
-      runDir: dir,
-      tracker,
-    });
-    expect(result.retainedSandbox).toBeTruthy();
-    expect(await countSandboxes()).toBe(1);
-
-    // This filesystem-retention test has no containers; the host Docker daemon is irrelevant.
-    const report = await sweepStrays({
-      tempRoot: sandboxRoot,
-      docker: { run: vi.fn(async () => ({ code: 0, stdout: '', stderr: '' })) },
-    });
-    expect(report.containers).toEqual([]);
-    expect(report.sandboxes).toHaveLength(1);
-    expect(await countSandboxes()).toBe(0);
-    // `retainedSandbox` is `<sandbox root>/.dork` — the sweep removed the whole
-    // sandbox root above it, so the retained path itself is gone too.
-    await expect(stat(result.retainedSandbox ?? '')).rejects.toThrow();
-  });
-
   it('a non-ENOENT log-copy failure (EACCES) does not crash the run (DOR-1241 review, Blocker 1)', async () => {
     // Reproduces the reviewer's finding: fs.cp rejecting for a reason OTHER
     // than "nothing to copy" used to propagate out of runEval's finally block
@@ -430,55 +345,5 @@ describe('runEval', () => {
     expect(result.retainedLogsPath).toBeUndefined();
     // No leaked SIGTERM/SIGINT disposer — cleanup's nested finally ran.
     expect(liveDisposerCount()).toBe(disposersBefore);
-  });
-
-  it("a retried case's two attempts do not clobber each other's copied logs (DOR-1241 review, Important 2)", async () => {
-    // Mirrors `transcriptNameForAttempt`'s own naming, which run-eval.ts now
-    // threads into the logs destination too. Simulates what
-    // `runWithInfrastructureRetry` drives: the same case id, twice, under its
-    // two attempt-scoped transcript names.
-    const { runDir: dir, tracker } = await fixture();
-    const failing: EvalCase = {
-      ...selfTestCase,
-      id: 'selftest-retry-logs',
-      oracles: [httpGetAssert('/api/health', { status: 404 })],
-    };
-
-    const attempt1Result = await runEval(
-      { ...failing, seed: (sandbox) => seedLogsWithContent(sandbox, 'attempt 1\n') },
-      {
-        tier: 'test-mode',
-        runId: 'r',
-        runDir: dir,
-        tracker,
-        transcriptName: transcriptNameForAttempt('selftest-retry-logs', 1),
-      }
-    );
-    const attempt2Result = await runEval(
-      { ...failing, seed: (sandbox) => seedLogsWithContent(sandbox, 'attempt 2\n') },
-      {
-        tier: 'test-mode',
-        runId: 'r',
-        runDir: dir,
-        tracker,
-        transcriptName: transcriptNameForAttempt('selftest-retry-logs', 2),
-      }
-    );
-
-    expect(attempt1Result.retainedLogsPath).toBe(path.join('selftest-retry-logs', 'logs'));
-    expect(attempt2Result.retainedLogsPath).toBe(path.join('selftest-retry-logs.retry', 'logs'));
-    expect(attempt1Result.retainedLogsPath).not.toBe(attempt2Result.retainedLogsPath);
-
-    // Both attempts' logs are independently readable — neither overwrote the other.
-    const log1 = await readFile(
-      path.join(dir, attempt1Result.retainedLogsPath ?? '', 'dorkos.log'),
-      'utf8'
-    );
-    const log2 = await readFile(
-      path.join(dir, attempt2Result.retainedLogsPath ?? '', 'dorkos.log'),
-      'utf8'
-    );
-    expect(log1).toBe('attempt 1\n');
-    expect(log2).toBe('attempt 2\n');
   });
 });

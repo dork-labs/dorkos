@@ -43,6 +43,7 @@ import {
 } from '../../audit/session-visibility.js';
 import type { AuditReader } from '../../audit/visibility.js';
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
+import { followChatRekey } from '../turn-identity/follow-chat-rekey.js';
 import {
   onProjectorInteractionChange,
   onProjectorStatusChange,
@@ -329,6 +330,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     mayRead: async (caller, target) => mayReadChat(deps.store, caller, target),
     maySeeTitle: async (caller, target) => maySeeChat(caller, target),
     history: chatHistoryOf,
+    currentId: followChatRekey,
     startupFailure: (sessionId) => getSpinOffStartup()?.failureOf(sessionId) ?? null,
     status: (sessionId) => {
       const projector = peekProjector(sessionId);
@@ -405,7 +407,7 @@ export function reportTargetOf(sessionId: string): { parentSessionId: string } |
  *
  * @param parentSessionId - The chat the spin-off reports to.
  * @param report - The report.
- * @returns True when the seat's turn ran; false when it is no room's seat.
+ * @returns True when the seat's turn ran; false when neither id is a seat that takes it.
  * @throws Error when it is a seat and the report did not reach it.
  */
 export async function deliverToRoomSeat(
@@ -415,19 +417,26 @@ export async function deliverToRoomSeat(
   const seats = getRoomSeatReports();
   if (!seats) return false;
   const canonical = await canonicalChatId(parentSessionId).catch(() => parentSessionId);
-  const seat = [parentSessionId, canonical].find((id) => seats.seatOf(id) !== null);
-  if (seat === undefined) return false;
+  // Both ids are tried in turn: the first can be a seat's old chat that refuses this report. A
+  // saved report goes only to the seat the outbox checked when it saved it.
+  const { seat: checked, ...rest } = report;
+  const candidates = [...new Set([parentSessionId, canonical])].filter((id) => {
+    const seat = seats.seatOf(id);
+    if (seat === null) return false;
+    return !checked || (seat.roomId === checked.roomId && seat.authorId === checked.authorId);
+  });
+  if (candidates.length === 0) return false;
   const fromTitle = await chatTitleOf(report.fromSessionId);
   // A seat that moved checks this against the move (DOR-3753): only the server's record, set
   // last so no start a caller handed in survives.
   const startedAt = reportStartedAtFromStore(getSessionStartedByStore(), report.fromSessionId);
-  const sent = { ...report, fromTitle, startedAt: startedAt ?? undefined };
+  const sent = { ...rest, fromTitle, startedAt: startedAt ?? undefined };
   return new Promise<boolean>((resolve, reject) => {
-    const taken = seats.deliver(seat, sent, (ran) => {
+    const settled = (ran: boolean) => {
       if (ran) resolve(true);
       else reject(new Error('The report did not reach the room seat.'));
-    });
-    if (!taken) resolve(false);
+    };
+    if (!candidates.some((seat) => seats.deliver(seat, sent, settled))) resolve(false);
   });
 }
 

@@ -5,12 +5,13 @@
  *
  * A rule that widens where an account may work waits for the owner to confirm
  * it's them (DOR-4355): letting a project use more accounts, an account work in
- * more projects, or agents move to an account on their own again. Narrowing one
- * stays immediate.
+ * more projects, agents move to an account on their own again, or agents pick
+ * an account by name (DOR-5033). Narrowing one stays immediate.
  *
  * @module routes/account-eligibility-hold
  */
 import type { Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
@@ -19,8 +20,7 @@ import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the person bar says when anything but a person tries to change a rule. */
 export const ACCOUNT_RULES_BAR: PersonBarCopy = {
-  error: 'Only a person can change where an account may be used.',
-  code: 'operator_only_config',
+  code: 'person_only',
   subject: 'where each Claude account may be used',
   crossSite: (origin) =>
     `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
@@ -33,8 +33,7 @@ export const ACCOUNT_RULES_BAR: PersonBarCopy = {
 
 /** What the person bar says when anything but a person flips an account's automatic-move switch. */
 export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
-  error: 'Only a person can choose whether agents move here automatically.',
-  code: 'operator_only_config',
+  code: 'person_only',
   subject: 'whether agents move to each Claude account automatically',
   crossSite: (origin) =>
     `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
@@ -45,26 +44,41 @@ export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
     'decision only a person makes. Ask them to change it in Settings → Runtimes.',
 };
 
+/** What the person bar says when anything but a person flips an account's agents-may-pick switch. */
+export const AGENTS_MAY_PICK_BAR: PersonBarCopy = {
+  code: 'person_only',
+  subject: 'which Claude accounts agents may pick',
+  crossSite: (origin) =>
+    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+    `Which accounts agents may pick is something a person sets in their own copy of the ` +
+    `app, not something another site can change for them.`,
+  agent:
+    'DorkOS changed nothing. Which Claude accounts agents may pick is a decision only a ' +
+    'person makes. Ask them to change it in Settings → Runtimes.',
+};
+
 /** What a failed project account list save says. */
 export const PROJECT_ACCOUNTS_FAILED = 'Could not save which accounts this project may use.';
 
 /** What a failed account project list save says. */
 export const ONLY_PROJECTS_FAILED = 'Could not save which projects this account may use.';
 
+/** What a failed agents-may-pick switch save says. */
+export const AGENTS_MAY_PICK_FAILED = 'Could not save whether agents may pick this account.';
+
 /** What a failed automatic-move switch save says. */
 export const NO_AUTO_MOVE_FAILED = 'Could not save whether agents move to this account.';
 
 /**
- * The 409 for a change judged as narrowing on a rule that has since changed,
+ * The 412 `precondition_failed` for a change judged as narrowing on a rule that has since changed,
  * re-read inside the write (Security S5 on DOR-4355 M3): it would widen now.
  *
  * @param c - The request.
  */
 export function accountRulesChanged(c: Context<ApiEnv>): Response {
-  return c.json(
-    { error: 'Where this account may work changed. Try again.', code: 'ACCOUNT_RULES_CHANGED' },
-    409
-  );
+  return problem(c, 'precondition_failed', {
+    detail: 'Where this account may work changed. Try again.',
+  });
 }
 
 /** One widening of an account rule, held. */
@@ -99,7 +113,7 @@ export function holdAccountWidening(c: Context<ApiEnv>, hold: AccountWidening): 
         return await run(who);
       } catch (err) {
         logger.error('[Runtimes] could not save an account rule', { err: String(err) });
-        return c.json({ error: failure }, 500);
+        return problem(c, 'internal_error', { detail: failure });
       }
     },
   });

@@ -5,7 +5,11 @@ import type {
   LocalBrowserPersonState,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
-import { useLocalBrowser, localBrowserStateKey } from '@/layers/entities/local-browser';
+import {
+  useLocalBrowser,
+  localBrowserStateKey,
+  browserRefusalCode,
+} from '@/layers/entities/local-browser';
 import { cn } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
@@ -54,7 +58,7 @@ export function LocalBrowserPanel({
   const capabilities = capabilityQuery.data;
   const readCode = ((query.error ?? capabilityQuery.error) as { code?: string } | null)?.code;
   const readError =
-    readCode === 'local_only'
+    readCode === 'operator_only'
       ? 'Open DorkOS on your computer to use its browser.'
       : readCode === 'owner_only'
         ? 'Only this DorkOS owner can choose its browser.'
@@ -147,7 +151,7 @@ export function LocalBrowserPanel({
       if (ticket !== operation.current) return false;
       setError(browserErrorMessage(cause));
       // A sign-in started since the last read: show its handoff now, not on the next poll.
-      if ((cause as { code?: string } | null)?.code === 'signing_in')
+      if (browserRefusalCode(cause) === 'signing_in')
         void queryClient.invalidateQueries({ queryKey: stateKey }).then(() => {
           // Waiting for you already says to finish, so the refusal isn't said twice.
           const read = queryClient.getQueryData<LocalBrowserPersonState>(stateKey);
@@ -289,7 +293,7 @@ export function LocalBrowserPanel({
           {error ?? readError}
         </p>
       )}
-      {readFailed && readCode !== 'local_only' && readCode !== 'owner_only' && (
+      {readFailed && readCode !== 'operator_only' && readCode !== 'owner_only' && (
         <Button
           size="sm"
           variant="outline"

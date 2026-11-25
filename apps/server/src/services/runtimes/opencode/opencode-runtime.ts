@@ -115,7 +115,7 @@ import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constan
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
-import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
+import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import {
   assertNoProjectPlugins,
@@ -463,9 +463,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         // Held per ask, like the grants: a turn another agent's post or a
         // stranger's message started is answered at no looser a level than its
         // sender's (spec `trusted-by-default-flip` §4). Stored settings stay as they are.
-        ...(opts?.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
+        permissionCeiling: opts?.permissionCeiling,
+        sendPermissionMode: opts?.permissionMode,
       }
     );
   }
@@ -615,11 +614,20 @@ export class OpenCodeRuntime implements AgentRuntime {
       yield refusal;
       return;
     }
+    // Whose identity this turn carries: the directory's own agent, or the one
+    // a room worktree was handed to — never by prefix, and never another agent
+    // than the room turn names (DOR-2091, `agent-home.ts`). A worktree
+    // looked up exactly hosts nobody, which is how opencode agents in a room
+    // with files used to get no `dorkos` server at all. Looked up when asked,
+    // so the connector check below reads the registry as it is by then.
+    const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
+    const registeredAgent = () => (agentPath ? this.meshCore?.getByPath(agentPath) : undefined);
     let ocSessionId: string, client: OpencodeClient, directory: string;
     try {
       ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
       client = await this.provider.getClient(cwd);
-      await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId);
+      // The shells' chat id, plus its agent and space for signatures (provenance v2).
+      await this.provider.bindSessionEnvironment?.(sessionId, ocSessionId, registeredAgent()?.id);
       directory = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
       // The prompt goes to the session's STORED folder (Security M2, #3764).
       assertNoProjectPlugins(cwd, directory);
@@ -641,7 +649,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     this.activeTurns.set(sessionId, turn);
     const toolTurn = new OpenCodeToolTurnContext(
       () => this.activeTurns.get(sessionId) === turn && turn.phase === 'running',
-      () => this.registry.get(sessionId)?.permissionMode,
+      () => readOpenCodeTurnMode(this.registry, sessionId, opts?.sendPermissionMode),
       opts?.permissionCeiling,
       controller.signal
     );
@@ -667,14 +675,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         turn.phase = 'setup';
       }
 
-      // Whose identity this turn carries: the directory's own agent, or the one
-      // a room worktree was handed to — never by prefix, and never another agent
-      // than the room turn names (DOR-2091, `agent-home.ts`). A worktree
-      // looked up exactly hosts nobody, which is how opencode agents in a room
-      // with files used to get no `dorkos` server at all.
-      const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
-      const meshAgent =
-        opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+      const meshAgent = opts?.connectorTurn ? registeredAgent() : undefined;
       const opened =
         this.connectorRuntimeTools && meshAgent && agentPath
           ? await openTurnOrSkip(

@@ -89,7 +89,7 @@ function renderPicker(
 async function switchToBrowse() {
   fireEvent.click(screen.getByLabelText('Browse folders'));
   await waitFor(() => {
-    expect(screen.getByText('Documents')).toBeDefined();
+    expect(screen.getByText('Documents')).toBeInTheDocument();
   });
 }
 
@@ -113,7 +113,7 @@ describe('DirectoryPicker', () => {
 
   it('renders dialog title', () => {
     renderPicker();
-    expect(screen.getByText('Select working folder')).toBeDefined();
+    expect(screen.getByText('Select working folder')).toBeInTheDocument();
   });
 
   it('shows directory entries after switching to browse view', async () => {
@@ -124,8 +124,8 @@ describe('DirectoryPicker', () => {
     fireEvent.click(screen.getByLabelText('Browse folders'));
 
     await waitFor(() => {
-      expect(screen.getByText('Documents')).toBeDefined();
-      expect(screen.getByText('Projects')).toBeDefined();
+      expect(screen.getByText('Documents')).toBeInTheDocument();
+      expect(screen.getByText('Projects')).toBeInTheDocument();
     });
   });
 
@@ -136,7 +136,7 @@ describe('DirectoryPicker', () => {
     fireEvent.click(screen.getByLabelText('Browse folders'));
 
     await waitFor(() => {
-      expect(screen.getByText('Documents')).toBeDefined();
+      expect(screen.getByText('Documents')).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByText('Use this folder'));
@@ -163,7 +163,7 @@ describe('DirectoryPicker', () => {
         </TransportProvider>
       </QueryClientProvider>
     );
-    await waitFor(() => expect(screen.getByText('Documents')).toBeDefined());
+    await waitFor(() => expect(screen.getByText('Documents')).toBeInTheDocument());
     const field = screen.getByLabelText('Or type a folder path');
     fireEvent.change(field, { target: { value: '/Volumes/Drive' } });
     fireEvent.click(screen.getByRole('button', { name: 'Move here' }));
@@ -178,8 +178,8 @@ describe('DirectoryPicker', () => {
     renderPicker();
 
     // Recent view is default when recentCwds has entries
-    expect(screen.getByText('~/project-a')).toBeDefined();
-    expect(screen.getByText('~/project-b')).toBeDefined();
+    expect(screen.getByText('~/project-a')).toBeInTheDocument();
+    expect(screen.getByText('~/project-b')).toBeInTheDocument();
   });
 
   it('calls onSelect when clicking a recent directory', () => {
@@ -220,7 +220,7 @@ describe('DirectoryPicker', () => {
       renderPicker();
       await switchToBrowse();
 
-      expect(screen.getByLabelText('New folder')).toBeDefined();
+      expect(screen.getByLabelText('New folder')).toBeInTheDocument();
     });
 
     it('shows inline text input when New folder is clicked', async () => {
@@ -245,7 +245,7 @@ describe('DirectoryPicker', () => {
 
       expect(
         screen.getByText('Lowercase letters, numbers, and hyphens only. Must start with a letter.')
-      ).toBeDefined();
+      ).toBeInTheDocument();
     });
 
     it('enables confirm button for valid name', async () => {
@@ -298,7 +298,7 @@ describe('DirectoryPicker', () => {
       await switchToBrowse();
 
       fireEvent.click(screen.getByLabelText('New folder'));
-      expect(screen.getByLabelText('New folder name')).toBeDefined();
+      expect(screen.getByLabelText('New folder name')).toBeInTheDocument();
 
       fireEvent.keyDown(screen.getByLabelText('New folder name'), { key: 'Escape' });
 
@@ -310,7 +310,7 @@ describe('DirectoryPicker', () => {
       await switchToBrowse();
 
       fireEvent.click(screen.getByLabelText('New folder'));
-      expect(screen.getByLabelText('New folder name')).toBeDefined();
+      expect(screen.getByLabelText('New folder name')).toBeInTheDocument();
 
       fireEvent.click(screen.getByLabelText('Cancel new folder'));
 

@@ -52,12 +52,12 @@ import {
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { roomPostBound } from './room-post-bound.js';
 import { renameAuthorHandle } from '../services/rooms/handles/rename-author-handle.js';
-import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
+import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
 import { logger } from '../lib/logger.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import roomAttachmentRoutes from './room-attachments.js';
@@ -145,7 +145,7 @@ router.get('/threads', (c) => {
 router.get('/:id', (c) =>
   roomRoute(c, 'GET /:id', (caller) => {
     const room = getRoomService().getRoom(c.req.param('id'), caller().id);
-    if (!room) return c.json({ error: 'No such room', code: 'ROOM_NOT_FOUND' }, 404);
+    if (!room) return problem(c, 'room_not_found', { detail: 'No such room.' });
     return c.json(room);
   })
 );
@@ -490,7 +490,7 @@ router.patch('/authors/:authorId/handle', (c) => {
     const facts = honoRequestFacts(c);
     const target = service.authorRegistry.getById(authorId);
     if (target && target.kind !== 'human' && isFromWifi(facts) && !facts.connectionEncrypted) {
-      return c.json({ error: PLAIN_WIFI_AGENT_HANDLE_REFUSAL, code: NOT_FROM_WIFI }, 403);
+      return problem(c, 'not_from_wifi', { detail: PLAIN_WIFI_AGENT_HANDLE_REFUSAL });
     }
     return c.json(toAuthorRef(renameAuthorHandle(service, caller().id, authorId, body.handle)));
   });

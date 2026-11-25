@@ -20,7 +20,7 @@ export function useLocalBrowserState(enabled = true, sessionId: string | null = 
     queryFn: () => transport.getLocalBrowserState(sessionId),
     refetchInterval: (query) => {
       const code = (query.state.error as { code?: string } | null)?.code;
-      return code === 'local_only' || code === 'owner_only' ? false : 1000;
+      return code === 'operator_only' || code === 'owner_only' ? false : 1000;
     },
     retry: false,
   });
@@ -34,7 +34,7 @@ const STATE_CACHE: readonly QueryInvalidation[] = [
 /**
  * The person's browser state for surfaces outside the browser panel: one read, then
  * another each time the server says a handoff or sign-in moved. It never polls, so
- * every open chat can hold it. A phone gets `local_only` and shows nothing.
+ * every open chat can hold it. A phone gets `operator_only` and shows nothing.
  */
 export function useLocalBrowserPersonState(sessionId?: string | null) {
   const transport = useTransport();

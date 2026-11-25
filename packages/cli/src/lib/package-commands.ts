@@ -9,7 +9,11 @@ import path from 'node:path';
 import { ApiError } from './api-client.js';
 
 /** The code the app's catch-all stamps on a 404 for an `/api` route it does not have. */
-const UNKNOWN_ROUTE_CODE = 'API_NOT_FOUND';
+/**
+ * The codes the app's catch-all answers an unknown route with: `not_found`
+ * since DOR-4979, `API_NOT_FOUND` on a server from before it.
+ */
+const UNKNOWN_ROUTE_CODES = new Set(['not_found', 'API_NOT_FOUND']);
 
 /**
  * The message for a server that does not have a route this CLI calls: it was
@@ -66,7 +70,8 @@ export function unlinkCommand(name: string, projectPath?: string): string {
 /**
  * Whether an error means the server does not have the route at all — a DorkOS
  * started before this CLI. The app's catch-all answers such a request 404 with
- * `code: 'API_NOT_FOUND'`; a bare 404 with no code is read the same way. A 404
+ * `code: 'not_found'` (`API_NOT_FOUND` before DOR-4979); a bare 404 with no
+ * code is read the same way. A 404
  * carrying any other code is a route's own answer and is not this. Because a
  * code-less 404 counts, call it only for routes that have no 404 of their own
  * (`GET /updates`, `POST /updates` without `names`).
@@ -78,6 +83,6 @@ export function isOlderServer(err: unknown): boolean {
   return (
     err instanceof ApiError &&
     err.status === 404 &&
-    (err.body.code === UNKNOWN_ROUTE_CODE || err.body.code === undefined)
+    (err.code === undefined || UNKNOWN_ROUTE_CODES.has(err.code))
   );
 }

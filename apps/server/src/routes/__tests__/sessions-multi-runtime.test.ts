@@ -388,7 +388,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .send({ content: 'hi', runtime: 'nonexistent-runtime', create: true });
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('UNKNOWN_RUNTIME');
+      expect(res.body.code).toBe('invalid_request');
 
       const row = db
         .select()
@@ -437,8 +437,8 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ permissionMode: 'plan', runtime: 'test-mode' });
       expect(refused.status).toBe(400);
-      expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
-      expect(refused.body.error).toContain("cannot run permission mode 'plan'");
+      expect(refused.body.code).toBe('invalid_request');
+      expect(refused.body.detail).toContain("cannot run permission mode 'plan'");
     });
 
     it('keeps answering settings writes while the session is unbound, and stays unbound', async () => {
@@ -460,7 +460,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ permissionMode: 'retired-mode' });
       expect(refused.status).toBe(400);
-      expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+      expect(refused.body.code).toBe('invalid_request');
 
       const row = db
         .select()
@@ -632,8 +632,8 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const res = await request(testServer).get(`/api/sessions/${CODEX_ORPHAN_SESSION}/messages`);
 
       expect(res.status).toBe(503);
-      expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
-      expect(res.body.runtime).toBe('codex');
+      expect(res.body.code).toBe('runtime_not_available');
+      expect(res.body.detail).toContain('Codex');
     });
   });
 
@@ -724,7 +724,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(404); // TestModeRuntime returns null → FORK_FAILED
-      expect(res.body.code).toBe('FORK_FAILED');
+      expect(res.body.code).toBe('session_not_found');
     });
 
     it('POST /:id/reload-plugins routes to test-mode runtime', async () => {
@@ -738,7 +738,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('NO_ACTIVE_QUERY');
+      expect(res.body.code).toBe('conflict');
     });
 
     it('POST /:id/reload-plugins answers 504, not "send a message first", when the agent never confirms (DOR-1301)', async () => {
@@ -755,8 +755,8 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       );
 
       expect(res.status).toBe(504);
-      expect(res.body.code).toBe('RELOAD_TIMEOUT');
-      expect(res.body.error).toContain('may still apply');
+      expect(res.body.code).toBe('temporarily_unavailable');
+      expect(res.body.detail).toContain('may still apply');
     });
 
     it('POST /:id/messages + GET /:id/events deliver a test-mode turn over the durable path (task #15)', async () => {

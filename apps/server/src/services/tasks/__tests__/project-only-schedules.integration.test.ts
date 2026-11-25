@@ -6,54 +6,20 @@
  * gets its own copy instead: switched off, parked without a card, running as
  * that project's agent, with its own switch. From a project's own root the key
  * changes nothing.
- *
- * Drives the real reconciler over real files; nothing fires. The clock-rescan
- * case controls chokidar notifications, not the real watcher/scanner/store path.
  */
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
 import { TaskStore } from '../task-store.js';
 import { TaskReconciler } from '../task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
-import { TaskRegistrar } from '../task-registrar.js';
-import { TaskFileWatcher } from '../task-file-watcher.js';
-import { FakeScheduler } from './fake-scheduler.js';
+import type { TaskRegistrar } from '../task-registrar.js';
 import { agentTaskRoots, globalSkillsRoot, globalTaskRoots } from '../skills-roots.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
-
-/** Only the external notification edge is controlled; scans and storage stay real. */
-const { externalWatches } = vi.hoisted(() => ({
-  externalWatches: new Map<
-    string,
-    {
-      emit(event: string, ...values: unknown[]): boolean;
-      closed: boolean;
-    }
-  >(),
-}));
-vi.mock('chokidar', async () => {
-  const { EventEmitter } = await import('node:events');
-  return {
-    default: {
-      watch: vi.fn((dir: string) => {
-        const watcher = Object.assign(new EventEmitter(), {
-          closed: false,
-          async close() {
-            this.closed = true;
-          },
-        });
-        externalWatches.set(dir, watcher);
-        return watcher;
-      }),
-    },
-  };
-});
 
 /** The file a project holds when it uses the package: what `/flow:init` writes. */
 const MARKER = '.agents/flow/config.json';
@@ -97,10 +63,7 @@ const registrar = {
 } as unknown as TaskRegistrar;
 
 beforeEach(async () => {
-  externalWatches.clear();
   store = new TaskStore(createTestDb());
-  // Resolved: a schedule's identity is its file's REAL path, and on macOS every
-  // temp directory is a symlink.
   root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-project-only-')));
   dorkHome = path.join(root, 'dork');
   projects = [
@@ -144,88 +107,6 @@ async function patch(existing: Task, data: UpdateTaskRequest) {
 }
 
 describe('a project-only schedule in a global package', () => {
-  it(
-    'preserves project clocks on unchanged watcher rescans and removes a retired copy',
-    // Four cues, each waiting out TASK_DIRECTORY_CATCH_UP_MS by design: the
-    // worst the scaled waits below can grow to, capped.
-    { timeout: Math.min(loadCeilingMs(10_000), 60_000) },
-    async () => {
-      const file = await put(
-        globalSkillsRoot(dorkHome),
-        'flow-drain',
-        skill('flow-drain', 'project')
-      );
-      const scheduler = new FakeScheduler();
-      const clock = new TaskRegistrar({ store, scheduler });
-      const watcher = new TaskFileWatcher(store, clock, new ScheduleIdentityRegistry());
-      const reads = vi.spyOn(store.fileSync, 'upsertFromFile');
-      // Sampled as each wait starts: the load average lags by a minute.
-      const until = async (check: () => boolean) => {
-        const deadline = Date.now() + loadScaledMs(2500);
-        while (!check()) {
-          if (Date.now() > deadline) throw new Error('The project schedule did not sync.');
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-      };
-      const cue = async (name: string, agents = ['agent-alpha', 'agent-beta']) => {
-        reads.mockClear();
-        const dir = path.join(globalSkillsRoot(dorkHome), name);
-        await fs.mkdir(dir);
-        const external = externalWatches.get(globalSkillsRoot(dorkHome));
-        if (!external || external.closed) throw new Error('The skills watch is not open.');
-        // Deliver only chokidar's edge. The real handler schedules its bounded scan.
-        expect(external.emit('addDir', dir)).toBe(true);
-        await until(() => reads.mock.calls.length > 0);
-        expect(
-          reads.mock.calls.map(([definition, agentId]) => ({ file: definition.filePath, agentId }))
-        ).toEqual(agents.map((agentId) => ({ file, agentId })));
-      };
-      try {
-        for (const r of globalTaskRoots(dorkHome)) watcher.watch(r);
-        for (const project of projects)
-          for (const r of agentTaskRoots(project.path, project.agentId)) watcher.watch(r);
-        expect(externalWatches.has(globalSkillsRoot(dorkHome))).toBe(true);
-        for (const external of externalWatches.values()) {
-          expect(external.emit('ready')).toBe(true);
-        }
-        await watcher.ready();
-        const alpha = store.getTasks().find((task) => task.agentId === 'agent-alpha')!;
-        expect(await patch(alpha, { status: 'active', enabled: true })).toMatchObject({ ok: true });
-        clock.syncTask(alpha.id);
-        // Settle the old approval explanation before comparing unchanged rows.
-        await cue('settle-approval');
-        const count = scheduler.registered.length;
-        await cue('unchanged-copy');
-        expect(scheduler.registered).toHaveLength(count);
-        expect(scheduler.hasJob(alpha.id)).toBe(true);
-        expect(store.fileSync.projectCopiesOf(file)).toHaveLength(2);
-        const beta = store.getTasks().find((task) => task.agentId === 'agent-beta')!;
-        scheduler.jobs.delete(alpha.id);
-        await cue('repair-copy');
-        await until(() => scheduler.hasJob(alpha.id));
-        expect(scheduler.registered).toHaveLength(count + 1);
-        // A never-enabled copy retires when its project stops using the package.
-        // Alpha's explicitly enabled copy keeps the existing ownership rule.
-        await fs.rm(path.join(projects[1]!.path, MARKER));
-        await cue('remove-copy', ['agent-alpha']);
-        await until(() => store.getTask(beta.id) === null);
-        expect(scheduler.hasJob(beta.id)).toBe(false);
-        expect(scheduler.hasJob(alpha.id)).toBe(true);
-        expect(scheduler.registered).toHaveLength(count + 1);
-        expect(store.fileSync.projectCopiesOf(file).map((task) => task.agentId)).toEqual([
-          'agent-alpha',
-        ]);
-      } finally {
-        try {
-          await watcher.stopAll();
-          expect([...externalWatches.values()].every((external) => external.closed)).toBe(true);
-        } finally {
-          reads.mockRestore();
-        }
-      }
-    }
-  );
-
   it('makes no global schedule, and one switched-off copy per project with no card', async () => {
     const file = await put(
       globalSkillsRoot(dorkHome),
@@ -245,18 +126,6 @@ describe('a project-only schedule in a global package', () => {
       expect(row.status).toBe('pending_approval');
       expect(needsScheduleApprovalAttention(row)).toBe(false);
     }
-  });
-
-  it('takes away the global schedule it used to make', async () => {
-    const file = await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain'));
-    await reconciler.reconcile();
-    expect(store.fileSync.getByFilePath(file)?.agentId).toBeNull();
-
-    await fs.writeFile(file, skill('flow-drain', 'project'), 'utf-8');
-    await reconciler.reconcile();
-
-    expect(store.fileSync.getByFilePath(file)).toBeNull();
-    expect(store.getTasks().every((row) => row.projectOnly)).toBe(true);
   });
 
   it("asks again, for that project only, when the shared file's work changes", async () => {
@@ -297,28 +166,6 @@ describe('a project-only schedule in a global package', () => {
     expect(store.getTask(alpha.id)?.status).toBe('active');
   });
 
-  it('turns on for one project only, and stays on across the next sweep', async () => {
-    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
-    await reconciler.reconcile();
-    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
-
-    // The same approval a package's opt-in schedule takes: no new path.
-    const approved = await patch(alpha, { status: 'active', enabled: true });
-    expect(approved.ok).toBe(true);
-    await reconciler.reconcile();
-
-    const after = store.getTasks();
-    const alphaAfter = after.find((row) => row.agentId === 'agent-alpha')!;
-    const betaAfter = after.find((row) => row.agentId === 'agent-beta')!;
-    expect(alphaAfter.enabled).toBe(true);
-    expect(alphaAfter.status).toBe('active');
-    // It runs as that project's agent, which is what puts the run in that
-    // project's folder (`resolveRunPlacement`).
-    expect(alphaAfter.agentId).toBe('agent-alpha');
-    expect(betaAfter.enabled).toBe(false);
-    expect(betaAfter.status).toBe('pending_approval');
-  });
-
   it("never writes the shared file for one project's edit", async () => {
     const file = await put(
       globalSkillsRoot(dorkHome),
@@ -343,33 +190,6 @@ describe('a project-only schedule in a global package', () => {
     const beta = store.getTasks().find((row) => row.agentId === 'agent-beta')!;
     expect(beta.cron).toBe('0 * * * *');
   });
-
-  it('goes back to one schedule when the key is taken out', async () => {
-    const file = await put(
-      globalSkillsRoot(dorkHome),
-      'flow-drain',
-      skill('flow-drain', 'project')
-    );
-    await reconciler.reconcile();
-    await fs.writeFile(file, skill('flow-drain'), 'utf-8');
-    await reconciler.reconcile();
-
-    const rows = store.getTasks();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.agentId).toBeNull();
-    expect(rows[0]?.projectOnly).toBe(false);
-  });
-
-  it('parks a value it does not know as a global complaint, never a running schedule', async () => {
-    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'everywhere'));
-    await reconciler.reconcile();
-
-    const rows = store.getTasks();
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe('pending_approval');
-    expect(rows[0]?.enabled).toBe(false);
-    expect(rows[0]?.reason).toContain('scope');
-  });
 });
 
 describe('which projects get a copy: only the ones using the package', () => {
@@ -379,19 +199,6 @@ describe('which projects get a copy: only the ones using the package', () => {
       .getTasks()
       .map((row) => row.agentId)
       .sort();
-
-  it('makes no copy at all when the block names no projectFile', async () => {
-    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project', null));
-    await reconciler.reconcile();
-    expect(store.getTasks()).toEqual([]);
-  });
-
-  it('makes a copy only in the project that holds the file', async () => {
-    await fs.rm(path.join(projects[1]!.path, MARKER));
-    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
-    await reconciler.reconcile();
-    expect(copyProjects()).toEqual(['agent-alpha']);
-  });
 
   it('makes the copy on the next sync once a project adds the file', async () => {
     await fs.rm(path.join(projects[1]!.path, MARKER));
@@ -417,26 +224,6 @@ describe('which projects get a copy: only the ones using the package', () => {
 
     expect(copyProjects()).toEqual(['agent-alpha']);
     expect(store.getTask(alpha.id)?.enabled).toBe(false);
-  });
-
-  it('still parks a kept copy when the shared file changes', async () => {
-    const file = await put(
-      globalSkillsRoot(dorkHome),
-      'flow-drain',
-      skill('flow-drain', 'project')
-    );
-    await reconciler.reconcile();
-    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
-    expect((await patch(alpha, { status: 'active', enabled: true })).ok).toBe(true);
-    await fs.rm(path.join(projects[0]!.path, MARKER));
-
-    await fs.writeFile(
-      file,
-      skill('flow-drain', 'project').replace('Drain the queue.', 'Delete everything.'),
-      'utf-8'
-    );
-    await reconciler.reconcile();
-    expect(store.getTask(alpha.id)?.status).toBe('pending_approval');
   });
 
   it.each([

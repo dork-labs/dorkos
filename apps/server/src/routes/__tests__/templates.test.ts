@@ -142,7 +142,7 @@ describe('Template Routes', () => {
       const res = await request(fixtureServer).post('/api/templates').send({ id: 'incomplete' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Validation failed');
+      expect(res.body.code).toBe('invalid_request');
     });
 
     it('returns 400 when id is empty string', async () => {
@@ -167,7 +167,8 @@ describe('Template Routes', () => {
       });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('built-in');
+      expect(res.body.code).toBe('conflict');
+      expect(res.body.detail).toMatch(/built-in/i);
     });
 
     it('returns 409 on ID conflict with existing user template', async () => {
@@ -182,7 +183,9 @@ describe('Template Routes', () => {
       });
 
       expect(res.status).toBe(409);
-      expect(res.body.error).toContain('already exists');
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body).toMatchObject({ code: 'conflict' });
+      expect(res.body.detail).toContain('already exists');
     });
 
     it('applies default values for optional fields', async () => {
@@ -270,14 +273,16 @@ describe('Template Routes', () => {
       const res = await request(fixtureServer).delete('/api/templates/nextjs');
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('built-in');
+      expect(res.body.code).toBe('forbidden');
+      expect(res.body.detail).toMatch(/built-in/i);
     });
 
     it('returns 404 for non-existent template', async () => {
       const res = await request(fixtureServer).delete('/api/templates/does-not-exist');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toContain('not found');
+      expect(res.body).toMatchObject({ code: 'not_found' });
+      expect(res.body.detail).toContain('No template is called');
     });
   });
 });

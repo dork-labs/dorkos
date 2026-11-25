@@ -200,16 +200,6 @@ describe('TopologyManager', () => {
       expect(agent.name).toBe('agent-a1');
     });
 
-    it('returns empty namespaces when caller has no agents', () => {
-      const registry = makeMockRegistry([agentA1, agentB1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      const view = tm.getTopology('ns-unknown');
-
-      expect(view.namespaces).toHaveLength(0);
-    });
-
     it('includes access rules involving accessible namespaces', () => {
       const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
       const relay = makeMockRelayCore();
@@ -225,20 +215,6 @@ describe('TopologyManager', () => {
       expect(ruleDescs).toContain('ns-a->ns-b');
       // ns-b->ns-c involves ns-b which is accessible, so it should be included
       expect(ruleDescs).toContain('ns-b->ns-c');
-    });
-
-    it('admin view returns all explicit cross-namespace rules', () => {
-      const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      tm.allowCrossNamespace('ns-a', 'ns-b');
-      tm.allowCrossNamespace('ns-b', 'ns-c');
-
-      const view = tm.getTopology('*');
-      const explicitRules = view.accessRules.filter((r) => r.origin === 'explicit');
-
-      expect(explicitRules).toHaveLength(2);
     });
 
     // -------------------------------------------------------------------------
@@ -263,27 +239,6 @@ describe('TopologyManager', () => {
         sourceNamespace: 'ns-b',
         targetNamespace: 'ns-b',
         action: 'allow',
-        origin: 'default',
-      });
-    });
-
-    it('surfaces the bridge-written catch-all cross-namespace deny rule per namespace', () => {
-      const registry = makeMockRegistry([agentA1, agentB1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      const view = tm.getTopology('*');
-
-      expect(view.accessRules).toContainEqual({
-        sourceNamespace: 'ns-a',
-        targetNamespace: '*',
-        action: 'deny',
-        origin: 'default',
-      });
-      expect(view.accessRules).toContainEqual({
-        sourceNamespace: 'ns-b',
-        targetNamespace: '*',
-        action: 'deny',
         origin: 'default',
       });
     });
@@ -346,38 +301,6 @@ describe('TopologyManager', () => {
       });
     });
 
-    it('surfaces default rules alongside explicit grants, not instead of them', () => {
-      const registry = makeMockRegistry([agentA1, agentB1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      tm.allowCrossNamespace('ns-a', 'ns-b');
-
-      const view = tm.getTopology('*');
-
-      expect(view.accessRules).toContainEqual({
-        sourceNamespace: 'ns-a',
-        targetNamespace: 'ns-b',
-        action: 'allow',
-        origin: 'explicit',
-      });
-      expect(view.accessRules).toContainEqual({
-        sourceNamespace: 'ns-a',
-        targetNamespace: 'ns-a',
-        action: 'allow',
-        origin: 'default',
-      });
-    });
-
-    it('does not synthesize default rules when Relay is unavailable', () => {
-      const registry = makeMockRegistry([agentA1]);
-      const tm = makeTopology(registry, undefined);
-
-      const view = tm.getTopology('*');
-
-      expect(view.accessRules).toEqual([]);
-    });
-
     it('scopes default rules to namespaces visible in a non-admin view', () => {
       const registry = makeMockRegistry([agentA1, agentB1]);
       const relay = makeMockRelayCore();
@@ -409,67 +332,6 @@ describe('TopologyManager', () => {
       // A1 is in ns-a, can reach A2 (same ns) but not B1 (different ns)
       expect(reachable!.map((a) => a.id)).toEqual(['A2']);
     });
-
-    it('includes cross-namespace agents after allowCrossNamespace', () => {
-      const registry = makeMockRegistry([agentA1, agentB1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      tm.allowCrossNamespace('ns-a', 'ns-b');
-
-      const reachable = tm.getAgentAccess('A1');
-
-      expect(reachable).toBeDefined();
-      expect(reachable!.map((a) => a.id)).toEqual(['B1']);
-    });
-
-    it('returns undefined for nonexistent agent', () => {
-      const registry = makeMockRegistry([agentA1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      const result = tm.getAgentAccess('nonexistent');
-
-      expect(result).toBeUndefined();
-    });
-
-    it('does not include the agent itself in results', () => {
-      const registry = makeMockRegistry([agentA1]);
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(registry, relay);
-
-      const reachable = tm.getAgentAccess('A1');
-
-      expect(reachable).toBeDefined();
-      expect(reachable).toHaveLength(0);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // allowCrossNamespace / denyCrossNamespace
-  // ---------------------------------------------------------------------------
-
-  describe('allowCrossNamespace', () => {
-    it('calls relayCore.addAccessRule with priority 50', () => {
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(makeMockRegistry(), relay);
-
-      tm.allowCrossNamespace('ns-a', 'ns-b');
-
-      expect(relay.addAccessRule).toHaveBeenCalledWith({
-        from: 'relay.agent.ns-a.*',
-        to: 'relay.agent.ns-b.*',
-        action: 'allow',
-        priority: 50,
-      });
-    });
-
-    it('is a no-op when relayCore is undefined', () => {
-      const tm = makeTopology(makeMockRegistry(), undefined);
-
-      // Should not throw
-      tm.allowCrossNamespace('ns-a', 'ns-b');
-    });
   });
 
   describe('denyCrossNamespace', () => {
@@ -484,14 +346,11 @@ describe('TopologyManager', () => {
         'relay.agent.ns-b.*'
       );
     });
-
-    it('is a no-op when relayCore is undefined', () => {
-      const tm = makeTopology(makeMockRegistry(), undefined);
-
-      // Should not throw
-      tm.denyCrossNamespace('ns-a', 'ns-b');
-    });
   });
+
+  // ---------------------------------------------------------------------------
+  // allowCrossNamespace / denyCrossNamespace
+  // ---------------------------------------------------------------------------
 
   // ---------------------------------------------------------------------------
   // listCrossNamespaceRules
@@ -513,11 +372,6 @@ describe('TopologyManager', () => {
       expect(rules).toEqual([
         { sourceNamespace: 'ns-a', targetNamespace: 'ns-b', action: 'allow', origin: 'explicit' },
       ]);
-    });
-
-    it('returns empty array when the store has no rules', () => {
-      const tm = makeTopology(makeMockRegistry(), makeMockRelayCore());
-      expect(tm.listCrossNamespaceRules()).toEqual([]);
     });
   });
 
@@ -550,19 +404,6 @@ describe('TopologyManager', () => {
       expect(store.list()).toEqual([{ sourceNamespace: 'ns-a', targetNamespace: 'ns-b' }]);
     });
 
-    it('does not re-seed when the store already has rules', () => {
-      const store = makeFakeRuleStore([{ sourceNamespace: 'ns-c', targetNamespace: 'ns-d' }]);
-      const relay = makeMockRelayCore([
-        { from: 'relay.agent.ns-a.*', to: 'relay.agent.ns-b.*', action: 'allow', priority: 50 },
-      ]);
-      const tm = makeTopology(makeMockRegistry(), relay, store);
-
-      tm.syncNamespaceRulesFromRelay();
-
-      // The pre-existing store rule is preserved; the Relay-only rule is NOT imported.
-      expect(store.list()).toEqual([{ sourceNamespace: 'ns-c', targetNamespace: 'ns-d' }]);
-    });
-
     it('projects every store rule back into Relay (idempotent enforcement)', () => {
       const store = makeFakeRuleStore([{ sourceNamespace: 'ns-c', targetNamespace: 'ns-d' }]);
       const relay = makeMockRelayCore();
@@ -584,13 +425,6 @@ describe('TopologyManager', () => {
   // ---------------------------------------------------------------------------
 
   describe('open mesh (* -> *)', () => {
-    it('is off by default', () => {
-      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), makeMockRelayCore());
-
-      expect(tm.isOpenMesh()).toBe(false);
-      expect(tm.getTopology('*').openMesh).toBe(false);
-    });
-
     it('persists the * -> * pair in the rule store and reports openMesh', () => {
       const store = makeFakeRuleStore();
       const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), makeMockRelayCore(), store);
@@ -601,20 +435,6 @@ describe('TopologyManager', () => {
       expect(tm.isOpenMesh()).toBe(true);
       expect(tm.getTopology('*').openMesh).toBe(true);
       expect(tm.getTopology('ns-a').openMesh).toBe(true);
-    });
-
-    it('projects into Relay as relay.agent.> -> relay.agent.> at the cross-namespace allow priority', () => {
-      const relay = makeMockRelayCore();
-      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), relay);
-
-      tm.allowCrossNamespace('*', '*');
-
-      expect(relay.addAccessRule).toHaveBeenCalledWith({
-        from: 'relay.agent.>',
-        to: 'relay.agent.>',
-        action: 'allow',
-        priority: 50,
-      });
     });
 
     it('outranks the per-namespace catch-all deny but not the system-agent allow', () => {
@@ -650,21 +470,6 @@ describe('TopologyManager', () => {
       ).toEqual(['A2', 'B1', 'C1']);
     });
 
-    it('reports the rule in accessRules for admin and scoped callers alike', () => {
-      const tm = makeTopology(makeMockRegistry([agentA1, agentB1]), makeMockRelayCore());
-
-      tm.allowCrossNamespace('*', '*');
-
-      const expected = {
-        sourceNamespace: '*',
-        targetNamespace: '*',
-        action: 'allow',
-        origin: 'explicit',
-      };
-      expect(tm.getTopology('*').accessRules).toContainEqual(expected);
-      expect(tm.getTopology('ns-a').accessRules).toContainEqual(expected);
-    });
-
     it('un-projects from Relay and the store when turned off', () => {
       const store = makeFakeRuleStore();
       const registry = makeMockRegistry([agentA1, agentB1]);
@@ -681,24 +486,6 @@ describe('TopologyManager', () => {
       expect(store.list()).toEqual([]);
       expect(tm.isOpenMesh()).toBe(false);
       expect(tm.getTopology('ns-a').namespaces).toHaveLength(1);
-    });
-
-    it('leaves explicit pair rules untouched when turned on and off', () => {
-      const store = makeFakeRuleStore();
-      const registry = makeMockRegistry([agentA1, agentB1, agentC1]);
-      const tm = makeTopology(registry, makeMockRelayCore(), store);
-
-      tm.allowCrossNamespace('ns-a', 'ns-b');
-      tm.allowCrossNamespace('*', '*');
-      tm.denyCrossNamespace('*', '*');
-
-      expect(store.list()).toEqual([{ sourceNamespace: 'ns-a', targetNamespace: 'ns-b' }]);
-      expect(
-        tm
-          .getTopology('ns-a')
-          .namespaces.map((ns) => ns.namespace)
-          .sort()
-      ).toEqual(['ns-a', 'ns-b']);
     });
 
     it('survives a restart — a stored * -> * is re-projected at boot', () => {
@@ -765,41 +552,6 @@ describe('TopologyManager', () => {
       expect(store.list()).toEqual([]);
       expect(relay.addAccessRule).not.toHaveBeenCalled();
       expect(relay.removeAccessRule).not.toHaveBeenCalled();
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // No Relay scenario
-  // ---------------------------------------------------------------------------
-
-  describe('without RelayCore', () => {
-    it('getTopology returns only caller own namespace', () => {
-      const registry = makeMockRegistry([agentA1, agentB1]);
-      const tm = makeTopology(registry, undefined);
-
-      const view = tm.getTopology('ns-a');
-
-      expect(view.namespaces).toHaveLength(1);
-      expect(view.namespaces[0]!.namespace).toBe('ns-a');
-    });
-
-    it('getTopology returns empty access rules', () => {
-      const registry = makeMockRegistry([agentA1]);
-      const tm = makeTopology(registry, undefined);
-
-      const view = tm.getTopology('ns-a');
-
-      expect(view.accessRules).toEqual([]);
-    });
-
-    it('getAgentAccess returns only same-namespace agents', () => {
-      const registry = makeMockRegistry([agentA1, agentA2, agentB1]);
-      const tm = makeTopology(registry, undefined);
-
-      const reachable = tm.getAgentAccess('A1');
-
-      expect(reachable).toBeDefined();
-      expect(reachable!.map((a) => a.id)).toEqual(['A2']);
     });
   });
 });

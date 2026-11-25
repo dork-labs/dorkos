@@ -36,6 +36,7 @@ import {
   stepUpAt,
   confirmSetupAt,
 } from './harness.js';
+import { problemBody } from '@dorkos/http-kit';
 
 /** A host name the server is told it answers to, which is not this computer. */
 const REMOTE_HOST = 'dorkos.contract.example';
@@ -47,7 +48,10 @@ const BASE_ENV = {
 };
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
+const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json$/ };
+const NOT_FOUND = problemBody('not_found', {
+  detail: 'This server has no API route at that path.',
+});
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const NOT_HERE = { error: 'Setup is only available on this computer.' };
@@ -59,11 +63,10 @@ const NOT_HERE = { error: 'Setup is only available on this computer.' };
 const GATE_REFUSED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const SETUP_REFUSED = (code: string) => ({ error: 'Only the owner can set up DorkOS.', code });
 const CHOOSE = { error: 'Choose how your agents run.' };
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
-const TOO_LARGE = {
-  error: 'That is too large to send in one request.',
-  code: 'REQUEST_TOO_LARGE',
-};
+const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
+const TOO_LARGE = problemBody('request_too_large', {
+  detail: 'That is too large to send in one request.',
+});
 const FINISHED = { error: 'Setup is already finished.', code: 'onboarding_complete' };
 const WELCOME = z.object({ roomId: z.string().min(1), entryId: z.string().min(1) }).strict();
 /** Above the app-wide 1 MB limit. */
@@ -258,7 +261,7 @@ contractSuite(
       path: '/api/onboarding/first-run',
       headers: { 'content-type': 'application/json' },
       body: '{bad',
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 400, schema: MALFORMED_JSON },
     },
     {
       name: 'POST /api/onboarding/first-run refuses a body above the app-wide limit',
@@ -266,7 +269,7 @@ contractSuite(
       path: '/api/onboarding/first-run',
       headers: { 'content-type': 'application/json' },
       body: OVERSIZE,
-      expect: { status: 413, headers: JSON_TYPE, body: TOO_LARGE },
+      expect: { status: 413, headers: PROBLEM_TYPE, body: TOO_LARGE },
     },
     // Keys DorkOS refuses before reading any service.
     pick(
@@ -388,7 +391,7 @@ contractSuite(
     {
       name: 'GET /api/onboarding/first-run is the /api 404',
       path: '/api/onboarding/first-run',
-      expect: { status: 404, headers: JSON_TYPE, body: NOT_FOUND },
+      expect: { status: 404, headers: PROBLEM_TYPE, body: NOT_FOUND },
     },
     {
       name: 'GET /api/onboarding/welcome is the /api 404',

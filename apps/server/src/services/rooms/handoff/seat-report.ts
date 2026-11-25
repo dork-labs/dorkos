@@ -125,6 +125,21 @@ export class RoomSeatReports {
     return resolved !== null && resolved.movedAt === undefined;
   }
 
+  /**
+   * The seat `sessionId` spoke for at `at` (epoch ms): the seat it holds now, or one it held
+   * before the seat moved, when `at` is at or before the move (DOR-3753). Null otherwise, and for
+   * a former seat when `at` is unknown. What a spin-off's report and a schedule's notice ask.
+   *
+   * @param sessionId - The chat.
+   * @param at - When the work it speaks for started, or undefined when unknown.
+   */
+  seatAsOf(sessionId: string, at: number | undefined): SeatOf | null {
+    const resolved = this.resolveSeat(sessionId);
+    if (resolved === null) return null;
+    const { seat, movedAt } = resolved;
+    return movedAt === undefined || spinOffPredatesMove(at, movedAt) ? seat : null;
+  }
+
   /** {@link seatOf}, with when the seat moved off `sessionId` when it is a former seat. */
   private resolveSeat(sessionId: string): { seat: SeatOf; movedAt?: number } | null {
     const binding = this.core.store.sessionLedger.bindingForSession(sessionId);
@@ -163,11 +178,9 @@ export class RoomSeatReports {
    */
   deliver(seatSessionId: string, report: SeatReport, onSettled?: (ran: boolean) => void): boolean {
     if (this.stopped) return false;
-    const resolved = this.resolveSeat(seatSessionId);
-    if (resolved === null) return false;
-    const { seat, movedAt } = resolved;
     // A former seat speaks only for spin-offs it started while it held the seat (DOR-3753).
-    if (movedAt !== undefined && !spinOffPredatesMove(report.startedAt, movedAt)) return false;
+    const seat = this.seatAsOf(seatSessionId, report.startedAt);
+    if (seat === null) return false;
     // A seat starts spin-offs as its own agent; a report from any other agent is not one.
     if (this.core.authors.getById(seat.authorId)?.naturalKey !== report.fromAgentPath) return false;
     const key = agentKey(seat.roomId, seat.authorId);

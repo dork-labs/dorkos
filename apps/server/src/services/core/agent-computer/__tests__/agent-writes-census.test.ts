@@ -72,6 +72,12 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'ALL /api/browser-viewers/*',
       'POST /api/browser-viewers',
       'POST /api/browser-viewers/:viewerId/frame',
+      'POST /api/browser-viewers/:viewerId/take-over',
+      'POST /api/browser-viewers/:viewerId/input',
+      'POST /api/browser-viewers/:viewerId/hand-back',
+      'POST /api/browser-viewers/:viewerId/copy',
+      'POST /api/browser-viewers/:viewerId/paste',
+      'POST /api/browser-viewers/:viewerId/files',
       'DELETE /api/browser-viewers/:viewerId',
     ],
   ],
@@ -480,6 +486,16 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       // Starts the server to read its tools, so it stays the hub's (DOR-4118).
       'POST /api/mcp-servers/:name/tools',
       'PUT /api/mcp-servers/:name',
+      // One agent's own MCP servers (the capability mount): each runs or
+      // changes what that agent's sessions start, so it is the hub's too.
+      'DELETE /api/agents/:agentId/mcp-servers/:name',
+      'PATCH /api/agents/:agentId/mcp-servers/:name',
+      'POST /api/agents/:agentId/mcp-servers',
+      'POST /api/agents/:agentId/mcp-servers/:name/disable',
+      'POST /api/agents/:agentId/mcp-servers/:name/enable',
+      'POST /api/agents/:agentId/mcp-servers/:name/import',
+      'POST /api/agents/:agentId/mcp-servers/:name/test',
+      'PUT /api/agents/:agentId/mcp-servers/:name/client',
       'POST /api/shapes/:name/apply',
       'POST /api/shapes/:name/fork',
       'POST /api/templates',
@@ -495,7 +511,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PATCH /api/agents/current',
       // Pausing stays open (anyone may stop any agent); resuming one a person
       // paused is that person's call, never an agent's.
-      'POST /api/agents/:id/resume',
+      'POST /api/agents/:agentId/resume',
       'PATCH /api/mesh/agents/:id',
       'POST /api/agents',
       'POST /api/agents/create',
@@ -613,6 +629,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/runtimes/claude-code/project-accounts',
       'PUT /api/runtimes/doe/inference',
       'PUT /api/runtimes/claude-code/accounts/:id/no-auto-move',
+      'PUT /api/runtimes/claude-code/accounts/:id/agents-may-pick',
       'ALL /api/runtimes/claude-code/signins/*',
       'DELETE /api/runtimes/claude-code/signins/folders/:id',
       'DELETE /api/runtimes/claude-code/signins/organizations/:id',

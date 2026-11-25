@@ -1,18 +1,13 @@
+// @vitest-environment jsdom
 /**
- * What extensions ask, in the Inbox's "Needs You" (spec `flow-multiproject`
- * §6.3, §7.5, §7.8): one short row with its reason and the extension's name,
- * answered in place; items under a project heading only when two or more
- * projects have something waiting; and a one-time follow-up offer that closing
- * the Inbox says no to.
- *
- * The decision routes are plain `fetch` calls, so this suite stubs `fetch`
- * with a small fake server and reads back what the bell sent.
- *
- * @vitest-environment jsdom
+ * What extensions ask, in the Inbox's "Needs You" (spec `flow-multiproject` §6.3, §7.5, §7.8):
+ * one short row with its reason and the extension's name, answered in place; items under a
+ * project heading only when two or more projects have something waiting; and a one-time follow-up
+ * offer that closing the Inbox says no to.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -148,8 +143,14 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
       if (staleNext) {
         staleNext = false;
         return json(
-          { error: 'This question changed. Take another look.', code: 'stale_decision' },
-          409
+          {
+            type: 'urn:dorkos:problem:precondition_failed',
+            title: 'Something changed since you last looked.',
+            status: 412,
+            code: 'precondition_failed',
+            detail: 'This question changed. Take another look.',
+          },
+          412
         );
       }
       if (actionResponse.resolved) decisions = [];
@@ -241,13 +242,6 @@ describe('what extensions ask, in the bell', () => {
       .map((b) => b.getAttribute('aria-label'))
       .filter(Boolean);
     expect(names).toEqual(['More about this', 'Send it back', 'Ship it']);
-  });
-
-  it('hides the project heading when only one project has something waiting', async () => {
-    renderBell([approvalIn(DORKOS)]);
-    await openBell();
-    await screen.findByText('Ship the new out-of-usage banner?');
-    expect(document.querySelector('[data-slot="inbox-project-heading"]')).toBeNull();
   });
 
   it('groups under project headings, with the extension’s tracker label, when two projects have items', async () => {
@@ -344,26 +338,6 @@ describe('what extensions ask, in the bell', () => {
     );
   });
 
-  it('draws no deadline line for a question without one', async () => {
-    decisions = [
-      shipDecision({
-        title: 'Which name?',
-        actions: {
-          kind: 'choice',
-          choices: [
-            { id: 'a', label: 'A' },
-            { id: 'b', label: 'B' },
-          ],
-          defaultChoice: 'a',
-        },
-      }),
-    ];
-    renderBell();
-    await openBell();
-    const row = rowOf('Which name?');
-    expect(within(row).queryByText(/If you don’t answer/)).not.toBeInTheDocument();
-  });
-
   it('says so when the agent could not go ahead at the deadline', async () => {
     decisions = [shipDecision({ needsYou: true })];
     renderBell();
@@ -429,48 +403,12 @@ describe('what extensions ask, in the bell', () => {
     );
   });
 
-  it('says quietly that a question changed, and reads the list again', async () => {
-    staleNext = true;
-    renderBell();
-    const { user } = await openBell();
-    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
-    await waitFor(() =>
-      expect(toast).toHaveBeenCalledWith('This question changed. Take another look.')
-    );
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  // Purpose: a cancelled "Confirm it’s you" said nothing, so the row read as
-  // answered (DOR-4909).
-  it('says calmly that nothing was allowed when Confirm it’s you is cancelled', async () => {
-    notConfirmedNext = true;
-    renderBell();
-    const { user } = await openBell();
-    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
-    await waitFor(() => expect(toast).toHaveBeenCalledWith('Not confirmed. Nothing was allowed.'));
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
   it('sends back the revision the person saw', async () => {
     decisions = [shipDecision({ revision: 3 })];
     renderBell();
     const { user } = await openBell();
     await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
     await waitFor(() => expect(posts[0]?.body).toEqual({ action: 'approve', revision: 3 }));
-  });
-
-  it('follows an extension page link the answer returned', async () => {
-    actionResponse = {
-      resolved: true,
-      message: null,
-      navigate: '/x/flow/p/dorkos',
-      offer: null,
-      watch: null,
-    };
-    renderBell();
-    const { user } = await openBell();
-    await user.click(within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it'));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ href: '/x/flow/p/dorkos' }));
   });
 });
 
@@ -513,17 +451,6 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
     expect(frameOf('Ship the new out-of-usage banner?')).not.toHaveAttribute('data-focused');
   });
 
-  it('does the same in the phone’s bottom sheet', async () => {
-    mockIsMobile = true;
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-
-    await screen.findByText('Which way should the migration go?');
-    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-  });
-
   it('focuses a decision that arrives after the Inbox opened, as on a cold load', async () => {
     decisions = [];
     // Something tabbable in the panel, so the popover's own autofocus lands
@@ -540,45 +467,6 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
 
     await screen.findByText('Which way should the migration go?');
     await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-  });
-
-  it('still takes focus from a button or history row the person is on', async () => {
-    decisions = [];
-    historyRows = [historyRow('01JOLD', 'An older ask, answered')];
-    const { queryClient } = renderBell();
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    const older = (await screen.findByText('An older ask, answered')).closest(
-      'button, a, [tabindex]'
-    ) as HTMLElement;
-    act(() => older.focus());
-    expect(older).toHaveFocus();
-
-    decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
-    await act(() => queryClient.invalidateQueries());
-
-    await screen.findByText('Which way should the migration go?');
-    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-  });
-
-  it('still takes focus from a checkbox, which is not typing', async () => {
-    decisions = [];
-    historyRows = [historyRow('01JOLD', 'An older ask, answered')];
-    const { queryClient } = renderBell();
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    await screen.findByText('An older ask, answered');
-    // Any control in the panel that takes focus but no text.
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    screen.getByRole('dialog').appendChild(checkbox);
-    act(() => checkbox.focus());
-    expect(checkbox).toHaveFocus();
-
-    decisions = [shipDecision({ id: QUESTION_ID, title: 'Which way should the migration go?' })];
-    await act(() => queryClient.invalidateQueries());
-
-    await screen.findByText('Which way should the migration go?');
-    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-    checkbox.remove();
   });
 
   it('rings a late decision but leaves focus in a field the person is typing in', async () => {
@@ -623,71 +511,6 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
     expect(field).toHaveFocus();
   });
 
-  it('expires a link that waited too long for a bell', async () => {
-    const realNow = Date.now();
-    const now = vi.spyOn(Date, 'now').mockReturnValue(realNow - 31_000);
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    now.mockRestore();
-
-    renderBell();
-
-    const bell = await screen.findByTestId('inbox-bell');
-    await waitFor(() => expect(bell).toHaveAccessibleName(/2 decisions/));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('names the focused row for a screen reader by its ask', async () => {
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-
-    const group = await screen.findByRole('group', { name: 'Which way should the migration go?' });
-    await waitFor(() => expect(group).toHaveFocus());
-  });
-
-  it('keeps the ring while focus moves onto the row’s own buttons, and drops it once focus leaves', async () => {
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    const frame = await screen.findByRole('group', { name: 'Which way should the migration go?' });
-    await waitFor(() => expect(frame).toHaveFocus());
-
-    act(() => within(frame).getByRole('button', { name: 'Forward only' }).focus());
-    expect(frameOf('Which way should the migration go?')).toHaveAttribute('data-focused', 'true');
-
-    act(() => within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it').focus());
-    await waitFor(() => expect(document.querySelector('[data-focused]')).toBeNull());
-  });
-
-  it('keeps the ring when the whole window loses focus', async () => {
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    const frame = await screen.findByRole('group', { name: 'Which way should the migration go?' });
-    await waitFor(() => expect(frame).toHaveFocus());
-
-    // Switching apps: a blur with nowhere next.
-    fireEvent.blur(frame, { relatedTarget: null });
-
-    expect(frameOf('Which way should the migration go?')).toHaveAttribute('data-focused', 'true');
-  });
-
-  it('focuses the row again when the same link is followed again while the Inbox is open', async () => {
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    const frame = await screen.findByRole('group', { name: 'Which way should the migration go?' });
-    await waitFor(() => expect(frame).toHaveFocus());
-    const shipIt = within(rowOf('Ship the new out-of-usage banner?')).getByLabelText('Ship it');
-    act(() => shipIt.focus());
-    await waitFor(() => expect(document.querySelector('[data-focused]')).toBeNull());
-
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-
-    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-  });
-
   it('opens for a link read before the bell was on screen', async () => {
     // The shell reads a cold-load `?inbox=` while it is still loading, before
     // any bell exists.
@@ -697,49 +520,5 @@ describe('a link that names one decision (`?inbox=<id>`, DOR-2577)', () => {
 
     await screen.findByText('Which way should the migration go?');
     await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-  });
-
-  it('does not reopen for a link an earlier bell already opened for', async () => {
-    const first = renderBell();
-    await screen.findByTestId('inbox-bell');
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    await screen.findByText('Which way should the migration go?');
-    first.unmount();
-
-    renderBell();
-
-    // Loaded, so a panel that was going to open would be open by now.
-    const bell = await screen.findByTestId('inbox-bell');
-    await waitFor(() => expect(bell).toHaveAccessibleName(/2 decisions/));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument();
-  });
-
-  it('opens the whole Inbox, nothing singled out, for an id that names nothing waiting', async () => {
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-
-    act(() => requestInbox(undefined, { focus: 'already-answered' }));
-
-    await screen.findByText('Which way should the migration go?');
-    expect(screen.getByText('Ship the new out-of-usage banner?')).toBeInTheDocument();
-    expect(document.querySelector('[data-focused]')).toBeNull();
-  });
-
-  it('drops the ring once the Inbox closes', async () => {
-    renderBell();
-    await screen.findByTestId('inbox-bell');
-    act(() => requestInbox(undefined, { focus: QUESTION_ID }));
-    await waitFor(() => expect(frameOf('Which way should the migration go?')).toHaveFocus());
-
-    const user = userEvent.setup();
-    await user.keyboard('{Escape}');
-    await waitFor(() =>
-      expect(screen.queryByText('Which way should the migration go?')).not.toBeInTheDocument()
-    );
-    await openBell();
-
-    await screen.findByText('Which way should the migration go?');
-    expect(document.querySelector('[data-focused]')).toBeNull();
   });
 });

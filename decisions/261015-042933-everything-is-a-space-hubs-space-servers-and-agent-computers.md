@@ -20,6 +20,10 @@ Accepted (operator decision, #dorkos, 2026-10-15: "lets move forward with your p
 
 **Amended 2026-11-22** by [261122-173853](261122-173853-one-space-model.md) (one space model): there are two kinds of state, not two kinds of place. A space holds its members' data (agents' identity, rules, memory and schedules, conversations, connections, settings, documents, extensions); only execution state (workspaces, runtime transcripts and sign-ins, running processes) stays on the computer that runs turns. A hub is a one-tenant space server, and the private space becomes a tenant on the space store after launch, domain by domain, agents last. "A space server never runs a member's agent" and "a hub never runs an agent" are now a hosting policy read from the role setting (DorkOS's shared hosts register no runtime), not an architectural wall; a self-hoster may run one process in both roles. The wall that stays: a shared host never holds a member's credentials or a key to a member's computer (rules 3 and 5 below), and the permission gate reads the agent's identity on a server its owner trusts. The three roles, the session relay and the account as the door stand.
 
+**Amended by** [261124-150515](261124-150515-sequence-work-for-the-best-product-not-toward-dates.md) (accepted 2026-11-24): every launch date here is retired: "Launch moves to **late January 2027**; a soft launch of the DorkOS Community Space keeps **December 8, 2026**", and the later move to early February 2027. "Launch scope" now reads as "the next set of work, in order". What this record decided to build stands.
+
+**Amended by** [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md) (accepted 2026-11-24): the way the agent computer is built is retired: the whole server started in a sealed role with its features switched off. An agent computer now runs the computer side of DorkOS only, and a role is now "which entries are on". The three roles stand as three ways to run the one program.
+
 "Hub" is an internal word. It never appears in anything a person reads; the app says **Private** for the private space and **space** for everything else.
 
 **Amends** (each stays Accepted):
@@ -27,6 +31,8 @@ Accepted (operator decision, #dorkos, 2026-10-15: "lets move forward with your p
 - [261006-235238](261006-235238-one-dorkos-server-in-every-size.md): keeps "one program in every size" and "only one place runs an agent at a time". Retires the idea that a person's own DorkOS is only ever the Mac: an account may also have a **cloud hub**, made lazily, which runs no agents. Retires "the app connects to any DorkOS server directly" as the way to reach your Mac from the web, replaced by the session relay below. Its after-launch merge order stands, except step 10 ("one window"), which this ADR replaces.
 - [260727-184933](260727-184933-the-community-server-never-runs-a-members-agent.md): retires "hosted agent execution is a separate future product, not scheduled". Cloud agent computers ship at launch. "A space server never runs a member's agent" **stands**, and is joined by "a hub never runs an agent": agents run only on agent computers and on people's own computers.
 - [0319](0319-account-first-cloud-identity-device-link.md): the DorkOS account becomes the door to a person's whole DorkOS, not only to Cloud features. The device link stands, and is how a Mac is linked to its owner's hub.
+
+**Amended by** [261124-194115](261124-194115-your-mac-is-the-home-of-your-private-space.md) (accepted 2026-11-24): "Two hubs (Mac and cloud) are peers that do not sync" is retired. A person's own computer is the home of their private space when they have one; their DorkOS in the cloud is the home only when they have none, and otherwise a way in.
 
 ## Context
 

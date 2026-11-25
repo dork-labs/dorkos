@@ -87,18 +87,18 @@ describe('Files Routes', () => {
       const res = await request(testServer).get('/api/files').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
-    it('GET /api/files rejects null byte paths with 403', async () => {
+    it('GET /api/files rejects null byte paths with 400, as every path route does', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
       const res = await request(testServer).get('/api/files').query({ cwd: '/home/user\0' });
 
-      expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NULL_BYTE');
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('invalid_request');
     });
   });
 
@@ -216,7 +216,7 @@ describe('Files Routes', () => {
       expect(await fs.readFile(file, 'utf8')).toBe(next);
     });
 
-    it('rejects with 409 and returns current content when the file changed underneath', async () => {
+    it('rejects with 412 and returns current content when the file changed underneath', async () => {
       const changed = '# Title\n\nchanged by agent\n';
       await fs.writeFile(file, changed, 'utf8');
 
@@ -224,8 +224,11 @@ describe('Files Routes', () => {
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: 'mine\n', expectedHash: sha(original) });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('CONFLICT');
+      expect(res.status).toBe(412);
+      expect(res.headers['content-type']).toContain('application/problem+json');
+      expect(res.body.code).toBe('precondition_failed');
+      expect(res.body.detail).toBe('This file changed since you opened it.');
+      expect(res.body).not.toHaveProperty('error');
       expect(res.body.currentContent).toBe(changed);
       expect(res.body.currentHash).toBe(sha(changed));
       // The file is left untouched on conflict.
@@ -250,7 +253,7 @@ describe('Files Routes', () => {
         .send({ cwd: dir, path: 'missing.md', content: 'x\n' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('treats identical content as a successful no-op', async () => {
@@ -277,7 +280,7 @@ describe('Files Routes', () => {
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: original, expectedHash: sha('older') });
 
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(412);
       expect(res.body.currentHash).toBe(sha(original));
       expect(res.body).not.toHaveProperty('effect');
       expect(await fs.readFile(file, 'utf8')).toBe(original);
@@ -339,14 +342,14 @@ describe('Files Routes', () => {
       expect(await fs.readFile(file, 'utf8')).toBe(next);
     });
 
-    it('409s when the baseline content no longer matches disk', async () => {
+    it('412s when the baseline content no longer matches disk', async () => {
       await fs.writeFile(file, '# Title\n\nchanged\n', 'utf8');
       const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: 'mine\n', expectedContent: original });
 
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('CONFLICT');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
@@ -366,7 +369,7 @@ describe('Files Routes', () => {
         .send({ cwd: dir, path: '../../etc/passwd', content: 'x\n' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
   });
 
@@ -436,7 +439,7 @@ describe('Files Routes', () => {
         .query({ cwd: dir, path: 'notes.txt' });
 
       expect(res.status).toBe(415);
-      expect(res.body.code).toBe('UNSUPPORTED_TYPE');
+      expect(res.body.code).toBe('unsupported_media_type');
     });
 
     it('returns 404 for a missing file', async () => {
@@ -445,7 +448,7 @@ describe('Files Routes', () => {
         .query({ cwd: dir, path: 'gone.png' });
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe('NOT_FOUND');
+      expect(res.body.code).toBe('not_found');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
@@ -465,7 +468,7 @@ describe('Files Routes', () => {
         .query({ cwd: dir, path: '../../etc/passwd.png' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+      expect(res.body.code).toBe('outside_boundary');
     });
 
     it('rejects a missing path query with 400', async () => {
@@ -534,7 +537,7 @@ describe('Files Routes', () => {
 
       expect(res.status).toBe(416);
       expect(res.headers['content-range']).toBe(`bytes */${mp4Bytes.length}`);
-      expect(res.body.code).toBe('RANGE_NOT_SATISFIABLE');
+      expect(res.body.code).toBe('range_not_satisfiable');
     });
 
     it('ignores a malformed Range header and serves the full body (200)', async () => {
@@ -555,7 +558,7 @@ describe('Files Routes', () => {
         .set('Range', 'bytes=0-1');
 
       expect(res.status).toBe(415);
-      expect(res.body.code).toBe('UNSUPPORTED_TYPE');
+      expect(res.body.code).toBe('unsupported_media_type');
     });
   });
 });

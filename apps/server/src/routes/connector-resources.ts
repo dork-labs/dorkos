@@ -14,9 +14,8 @@ import {
   ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import {
   requestAbortSignal,
   resolveConnectorOperator,
@@ -48,6 +47,14 @@ import { resolveConnectReturnTo } from '../services/connectors/resources/connect
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { logError, logger } from '../lib/logger.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import {
+  APP_ACTIONS_PROBLEM,
+  AUTHENTICATION_FLOW_PROBLEM,
+  LIFECYCLE_PROBLEM,
+  OPERATOR_QUERY_PROBLEM,
+  SESSION_ACCESS_PROBLEM,
+  sendConnectorProblem,
+} from './connector-problems.js';
 import { CONNECTED_APPS } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
@@ -103,24 +110,11 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
  */
 function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ZodError) {
-    return c.json(
-      {
-        error: 'This connection request is invalid. Check the request and try again.',
-        details: error.issues,
-      },
-      400
-    );
+    // The detail names the first field and what it needs (`validationProblem`).
+    return validationProblem(c, error);
   }
   if (error instanceof ConnectorAuthenticationFlowError) {
-    const status =
-      error.code === 'flow_not_found' ||
-      error.code === 'provider_not_found' ||
-      error.code === 'connection_not_found'
-        ? 404
-        : error.code === 'idempotency_conflict'
-          ? 409
-          : 422;
-    return c.json({ error: error.message, code: error.code }, status);
+    return sendConnectorProblem(c, AUTHENTICATION_FLOW_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorAppActionsError) {
     // A listing that failed because the managed cloud refused says which
@@ -129,24 +123,23 @@ function resourceErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
       const managed = managedCloudErrorResponse(c, error.cause);
       if (managed) return managed;
     }
-    return c.json(
-      { error: error.message, code: error.code },
-      error.code === 'provider_not_found' ? 404 : 502
-    );
+    return sendConnectorProblem(c, APP_ACTIONS_PROBLEM[error.code], error);
   }
   if (error instanceof ConnectorSessionAccessError) {
-    return c.json({ error: error.message, code: error.code }, 409);
+    return sendConnectorProblem(c, SESSION_ACCESS_PROBLEM[error.code], error);
   }
-  if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
-    return c.json(
-      { error: error.message, code: error.code },
-      error.code === 'connection_not_disconnected' ? 409 : 404
-    );
+  if (error instanceof ConnectorLifecycleError) {
+    return sendConnectorProblem(c, LIFECYCLE_PROBLEM[error.code], error);
+  }
+  if (error instanceof ConnectorOperatorQueryError) {
+    return sendConnectorProblem(c, OPERATOR_QUERY_PROBLEM[error.code], error);
   }
   const managed = managedCloudErrorResponse(c, error);
   if (managed) return managed;
   logger.error('[Connectors] Connection request failed', logError(error));
-  return c.json({ error: 'DorkOS could not complete this connection request. Try again.' }, 500);
+  return problem(c, 'internal_error', {
+    detail: 'DorkOS couldn’t finish that for this app. Try again.',
+  });
 }
 
 /** Run `run` with a signal that fires if the client goes away first. */
@@ -225,9 +218,8 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
       const logo = await deps.logos.get(c.req.param('serviceSlug'));
       if (!logo) {
         // Briefly cacheable: the server itself waits before trying a failed logo again.
-        return c.json({ error: 'This app has no logo.' }, 404, {
-          'Cache-Control': 'private, max-age=300',
-        });
+        c.header('Cache-Control', 'private, max-age=300');
+        return problem(c, 'not_found', { detail: 'This app has no logo.' });
       }
       return c.body(new Uint8Array(logo.bytes), 200, {
         'Content-Type': logo.contentType,
@@ -260,7 +252,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const body = ConnectorAuthenticationFlowCreateRequestSchema.safeParse(
       readJsonBody(c, { emptyAs: {} })
     );
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const { returnTo: requestedReturnTo, ...request } = body.data;
     const kept = returnTo(requestedReturnTo);
     const start = { ...request, ...(kept && { returnTo: kept }) };
@@ -305,7 +297,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const operator = owner(c);
     if (operator instanceof Response) return operator;
     const body = ConnectorReconnectRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     const parsedId = ConnectionIdSchema.safeParse(c.req.param('connectionId'));
     if (!parsedId.success) return resourceErrorResponse(c, parsedId.error);
     const connectionId = parsedId.data;
@@ -364,7 +356,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const operator = owner(c);
     if (operator instanceof Response) return operator;
     const body = ConnectorConnectionPatchSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       return c.json(deps.lifecycle.rename(operator, c.req.param('connectionId'), body.data.label));
     } catch (error) {
@@ -379,7 +371,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
       .object({})
       .strict()
       .safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       deps.lifecycle.remove(operator, c.req.param('connectionId'));
       return c.body(null, 204);
@@ -453,7 +445,7 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const operator = owner(c);
     if (operator instanceof Response) return operator;
     const body = ConnectorSessionAccessUpdateSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    if (!body.success) return validationProblem(c, body.error);
     try {
       return c.json(
         await deps.sessionAccess.setAccess(

@@ -44,7 +44,7 @@ function roomWithoutFiles(): Transport {
   const transport = createMockTransport();
   transport.readRoomFiles = vi.fn().mockRejectedValue(
     Object.assign(new Error('This room does not have files of its own.'), {
-      code: 'ROOM_HAS_NO_REPO',
+      code: 'room_has_no_repo',
       status: 409,
     })
   );
@@ -137,7 +137,7 @@ describe('RoomFilesSection', () => {
     transport.readRoomFiles = vi
       .fn()
       .mockRejectedValueOnce(
-        Object.assign(new Error('No files'), { code: 'ROOM_HAS_NO_REPO', status: 409 })
+        Object.assign(new Error('No files'), { code: 'room_has_no_repo', status: 409 })
       )
       .mockResolvedValue({
         path: '',
@@ -179,7 +179,7 @@ describe('RoomFilesSection', () => {
     transport.enableRoomRepo = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('disabled'), { code: 'ROOM_REPOS_DISABLED', status: 409 })
+        Object.assign(new Error('disabled'), { code: 'room_repos_disabled', status: 409 })
       );
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -224,7 +224,7 @@ describe('RoomFilesSection', () => {
     transport.readRoomFiles = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE' })
+        Object.assign(new Error('no git here'), { code: 'room_repo_git_unavailable' })
       );
     const { queryErrors } = renderSection(transport);
 
@@ -234,7 +234,7 @@ describe('RoomFilesSection', () => {
     // fails again. What matters is that this one reaches the error path at all,
     // where "no files of its own" must not.
     expect(queryErrors.length).toBeGreaterThan(0);
-    expect((queryErrors[0] as { code?: string }).code).toBe('ROOM_REPO_GIT_UNAVAILABLE');
+    expect((queryErrors[0] as { code?: string }).code).toBe('room_repo_git_unavailable');
   });
 
   it('shows the room its files, with who last touched each one', async () => {
@@ -486,7 +486,7 @@ describe('RoomFilesSection', () => {
     transport.readRoomFiles = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('no git here'), { code: 'ROOM_REPO_GIT_UNAVAILABLE' })
+        Object.assign(new Error('no git here'), { code: 'room_repo_git_unavailable' })
       );
     renderSection(transport);
 
@@ -500,8 +500,8 @@ describe('RoomFilesSection', () => {
 describe('RoomFilesSection, a room whose git settings name a program', () => {
   /** The refusal as the server words it, with an optional command beside the sentence. */
   function refusal(error: string, command?: string) {
-    const body = { error, code: 'ROOM_REPO_CONFIG_UNSAFE', ...(command ? { command } : {}) };
-    return Object.assign(new Error(error), { code: 'ROOM_REPO_CONFIG_UNSAFE', body });
+    const body = { error, code: 'room_repo_config_unsafe', ...(command ? { command } : {}) };
+    return Object.assign(new Error(error), { code: 'room_repo_config_unsafe', body });
   }
 
   it('shows the person who runs DorkOS the settings and a command they can copy as it is', async () => {
@@ -618,7 +618,7 @@ describe('RoomFilesSection previews', () => {
     transport.readRoomFileContent = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(new Error('nope'), { code: 'ROOM_FILE_NOT_READABLE', status: 400 })
+        Object.assign(new Error('nope'), { code: 'room_file_not_readable', status: 400 })
       );
     renderSection(transport);
 

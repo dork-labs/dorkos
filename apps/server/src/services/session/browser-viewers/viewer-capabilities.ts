@@ -9,5 +9,6 @@ export function browserViewerCapabilities(embedded: boolean, host: LocalBrowserH
   return {
     ...localBrowserCapabilities(embedded, host),
     watchStream: env.DORKOS_AGENT_BROWSER_STREAM,
+    watchInput: env.DORKOS_AGENT_BROWSER_STREAM && env.DORKOS_AGENT_BROWSER_INPUT,
   };
 }

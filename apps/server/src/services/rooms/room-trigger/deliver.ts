@@ -11,6 +11,7 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.js';
 import { usageLimitNow } from '../notices/usage-limit.js';
+import { pausedDuringTurnOf } from '../turn-guards/paused-turn.js';
 import { type LateRoomReply, type RoomTurnReply } from '../room-turn-port.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import { takeContinuation } from './reseat.js';
@@ -95,6 +96,14 @@ export function deliver(
   }
   if (reply.unanswered === 'busy' && self.retryWhenFree(room, entry, target)) {
     return reply.unanswered;
+  }
+  // A pause that landed mid-turn ends the turn unanswered, as a stop does. The
+  // room says it was paused, once per pause, never that it broke (DOR-3178).
+  const pausedMidTurn = reply.unanswered === 'failed' ? pausedDuringTurnOf(target.agentPath) : null;
+  if (pausedMidTurn) {
+    self.notices.reportSilence(room, entry, target, 'paused', target.dispatchId, pausedMidTurn);
+    self.receipts.forgetRetry(room.id, target.authorId, entry.id);
+    return 'paused';
   }
   if (reply.unanswered) {
     const gaveUp =

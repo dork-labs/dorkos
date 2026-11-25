@@ -229,7 +229,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', THREE_MB, { filename: 'huge.png', contentType: 'image/png' });
 
       expect(res.status).toBe(413);
-      expect(res.body.code).toBe('AVATAR_TOO_LARGE');
+      expect(res.body.code).toBe('request_too_large');
       await expect(readdir(path.join(dorkHome, 'avatars'))).rejects.toThrow();
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
     });
@@ -255,7 +255,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', SVG, { filename: 'me.png', contentType: 'image/png' });
 
       expect(res.status).toBe(415);
-      expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
+      expect(res.body.code).toBe('avatar_type_unsupported');
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
     });
 
@@ -265,7 +265,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', GIF, { filename: 'me.png', contentType: 'image/png' });
 
       expect(res.status).toBe(415);
-      expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
+      expect(res.body.code).toBe('avatar_type_unsupported');
     });
 
     it('refuses HTML wearing high-bit RIFF/WEBP magic, and stores nothing', async () => {
@@ -274,7 +274,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', HIGH_BIT_RIFF, { filename: 'me.webp', contentType: 'image/webp' });
 
       expect(res.status).toBe(415);
-      expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
+      expect(res.body.code).toBe('avatar_type_unsupported');
       await expect(readdir(path.join(dorkHome, 'avatars'))).rejects.toThrow();
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
     });
@@ -283,7 +283,7 @@ describe('/api/profile/avatar', () => {
       const res = await request(fixtureTarget.mount(app())).post('/api/profile/avatar');
 
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('AVATAR_MISSING');
+      expect(res.body.code).toBe('avatar_missing');
     });
 
     it('never writes the owner’s account record for somebody who is not the owner', async () => {
@@ -328,7 +328,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', PNG, { filename: 'me.png' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(res.body.code).toBe('operator_only');
     });
 
     it('answers 401 when the caller seam refuses the request outright', async () => {
@@ -350,7 +350,7 @@ describe('/api/profile/avatar', () => {
         .attach('avatar', PNG, { filename: 'me.png' });
 
       expect(res.status).toBe(401);
-      expect(res.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      expect(res.body.code).toBe('agent_identity_unverified');
       // And the bytes were never stored: the seam refuses before multer runs.
       expect(res.body).not.toHaveProperty('imageUrl');
     });

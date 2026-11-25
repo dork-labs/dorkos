@@ -327,9 +327,9 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         .send({ description: 'an edit the disk would not take' });
 
       expect(res.status).toBe(500);
-      expect(String(res.body.error)).toMatch(/could not save/i);
-      // A message a person can act on names the file it could not write.
-      expect(String(res.body.error)).toContain('nightly-sweep');
+      expect(res.body.code).toBe('internal_error');
+      // Over HTTP the sentence names no path (DOR-4979); the MCP tools keep the file's name.
+      expect(res.body.detail).toBe('DorkOS couldn’t read or save the task’s file. Try again.');
 
       // The row must not have moved: the file is the source of truth, and a row
       // ahead of its file is reverted by the reconciler minutes later with no
@@ -360,7 +360,8 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         .send({ description: 'an edit that cannot be checked against the file' });
 
       expect(res.status).toBe(500);
-      expect(String(res.body.error)).toMatch(/could not read/i);
+      expect(res.body.code).toBe('internal_error');
+      expect(res.body.detail).toBe('DorkOS couldn’t read or save the task’s file. Try again.');
       expect(store.getTask(notAFile.id)!.description).toBe('points at a directory');
     });
 
@@ -383,8 +384,8 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         .send({ description: 'an edit onto a broken file' });
 
       expect(res.status).toBe(500);
-      expect(String(res.body.error)).toMatch(/could not make sense of/i);
-      expect(String(res.body.error)).toContain('nightly-sweep');
+      expect(res.body.code).toBe('internal_error');
+      expect(res.body.detail).toBe('DorkOS couldn’t read or save the task’s file. Try again.');
 
       const after = store.getTask(id)!;
       expect(after.description).toBe(before.description);
@@ -550,7 +551,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
       });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toContain('permissions');
+    expect(res.body.detail).toContain('permissions');
     // Refused whole: the file is untouched and the schedule is still waiting,
     // where the person can see the complaint.
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);

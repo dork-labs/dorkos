@@ -2,6 +2,66 @@
   "$comment": "Scoped exceptions for banned-terms.json. Each entry suppresses hits on files whose repo-relative path CONTAINS `path` (a plain substring, not a glob). Omit `terms` to allowlist every banned term at that path; scope it to specific terms when the file is legitimate for one wave's word but would be a real hit for a later wave's. Keep entries file- or directory-scoped and explain the domain reason — this file is the audit trail for every 'connection' the gate lets through.",
   "entries": [
     {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "A connection with that name already exists",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "That connection doesn’t exist.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "DorkOS doesn’t know that kind of connection.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "This kind of connection can be added only once.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "A built-in connection can’t be removed.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "Check this connection’s settings",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "DorkOS couldn’t start this connection.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-adapter-http.ts",
+      "terms": ["connection"],
+      "contains": "This connection changed since you looked.",
+      "reason": "A refused chat connection change's problem detail (DOR-4979): a Telegram, Slack or webhook hookup is a connection, the Connections-domain noun the app uses, not network health."
+    },
+    {
+      "path": "apps/server/src/routes/relay-webhooks.ts",
+      "terms": ["connection"],
+      "contains": "This connection posts to an address DorkOS keeps",
+      "reason": "The webhook receiver's refusal for a webhook connection aimed at an address DorkOS keeps (DOR-4979): the connection is the Connections-domain entity whose settings need changing."
+    },
+    {
+      "path": "docs/self-hosting/securing-your-instance.mdx",
+      "terms": ["wi-fi"],
+      "contains": "a phone or tablet on the same Wi-Fi",
+      "reason": "Names Wi-Fi as one of the networks the access switch covers, beside a wired cable and a VPN such as Tailscale (DOR-5135). It is the real wireless network, not the old name for the feature."
+    },
+    {
       "path": "apps/client/src/layers/features/dashboard-sidebar/ui/SidebarSearchPill.tsx",
       "terms": ["conversation"],
       "contains": "Find a conversation",

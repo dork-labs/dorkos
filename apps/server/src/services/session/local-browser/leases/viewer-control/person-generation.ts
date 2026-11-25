@@ -65,30 +65,40 @@ export class BrowserPersonGeneration {
       throw stale();
     this.painted = true;
   }
-  async run(event: BrowserPersonInput): Promise<void> {
+  async run(event: BrowserPersonInput, assertOperation?: () => void): Promise<void> {
     this.admit();
     await this.source.authorize();
     this.admit();
-    await this.input.run(event, () => this.files.admittedInput());
+    assertOperation?.();
+    await this.input.run(event, () => this.files.admittedInput(), assertOperation);
     await this.source.authorize();
     this.admit();
+    assertOperation?.();
   }
-  async readSelection(): Promise<string> {
+  async readSelection(assertOperation?: () => void): Promise<string> {
     this.admit();
     await this.source.authorize();
     this.admit();
-    const text = await this.input.readSelection();
+    assertOperation?.();
+    const text = await this.input.readSelection(assertOperation);
     await this.source.authorize();
     this.admit();
+    assertOperation?.();
     return text;
   }
-  async chooseFiles(id: string, payloads: readonly BrowserPersonFile[]): Promise<void> {
+  async chooseFiles(
+    id: string,
+    payloads: readonly BrowserPersonFile[],
+    settled?: () => void,
+    assertOperation?: () => void
+  ): Promise<void> {
     let reserved = false;
     let started = false;
     const release = () => {
       const remaining = (this.fileOperations.get(this.owner) ?? 1) - 1;
       if (remaining) this.fileOperations.set(this.owner, remaining);
       else this.fileOperations.delete(this.owner);
+      settled?.();
     };
     try {
       this.admit();
@@ -100,7 +110,7 @@ export class BrowserPersonGeneration {
       await this.input.runOperation(async () => {
         started = true;
         try {
-          await this.files.choose(id, payloads);
+          await this.files.choose(id, payloads, assertOperation);
         } finally {
           release();
         }
@@ -109,6 +119,7 @@ export class BrowserPersonGeneration {
       if (!started) {
         if (reserved) release();
         for (const payload of payloads) payload.buffer.fill(0);
+        if (!reserved) settled?.();
       }
     }
   }

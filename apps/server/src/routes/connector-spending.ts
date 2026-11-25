@@ -16,7 +16,7 @@ import {
   type SpendingSummary,
 } from '@dorkos/shared/connector-spending';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
   SPENDING_LIMIT_MAX_MICRO,
@@ -26,7 +26,7 @@ import {
   type SpendingStore,
 } from '../services/connectors/spending/spending-store.js';
 import { SPEND_CURRENCY, limitMoney, money } from '../services/connectors/spending/spend-copy.js';
-import { errorRefusalUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
+import { problemRefusalUnlessOwner, type AccountOwnerWording } from './cloud-owner-bar.js';
 import { holdForStepUp } from './step-up-guard.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -64,7 +64,7 @@ function parseAmount(
   if (raw === null) return null;
   const micro = Number(raw);
   const error = amountError(micro, max);
-  return error === null ? micro : c.json({ error, code: 'INVALID_AMOUNT' }, 400);
+  return error === null ? micro : problem(c, 'invalid_request', { detail: error });
 }
 
 /** What the Spending block reads (spec §2.1); amounts are micro-unit strings. */
@@ -106,7 +106,7 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
   const { spending } = deps;
   const now = deps.now ?? (() => new Date());
   const router = new Hono<ApiEnv>();
-  const refusal = (c: Context<ApiEnv>) => errorRefusalUnlessOwner(honoRequestFacts(c), WORDING);
+  const refusal = (c: Context<ApiEnv>) => problemRefusalUnlessOwner(honoRequestFacts(c), WORDING);
   /** One Activity line for a person's change to spending (spec §9). */
   const record = (caller: RequestFacts, summary: string, eventType: string) =>
     void deps.activity?.emit({
@@ -121,10 +121,10 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
 
   router.put('/limit', async (c) => {
     const refused = refusal(c);
-    if (refused) return c.json(refused, 403);
+    if (refused) return sendProblem(c, refused);
     const parsed = SetSpendingLimitBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success)
-      return c.json({ error: 'Enter an amount, like 40.', code: 'INVALID_AMOUNT' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Enter an amount, like 40.' });
     const next = parseAmount(c, parsed.data.limit, SPENDING_LIMIT_MAX_MICRO);
     if (next instanceof Response) return next;
     const current = spending.limit();
@@ -154,8 +154,8 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
       input: { limitMicro: next },
       reason: `Let agents spend up to ${limitMoney(next)} a month without asking.`,
       commit: async (confirming) => {
-        const stale = errorRefusalUnlessOwner(confirming, WORDING);
-        if (stale) return { status: 403, body: stale };
+        const stale = problemRefusalUnlessOwner(confirming, WORDING);
+        if (stale) return { status: stale.status, body: stale };
         return apply(confirming, true);
       },
     });
@@ -163,13 +163,12 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
 
   router.put('/prices/:toolkit', async (c) => {
     const refused = refusal(c);
-    if (refused) return c.json(refused, 403);
+    if (refused) return sendProblem(c, refused);
     const toolkit = c.req.param('toolkit').toLowerCase();
-    if (!TOOLKIT.test(toolkit))
-      return c.json({ error: 'No such app.', code: 'INVALID_TOOLKIT' }, 400);
+    if (!TOOLKIT.test(toolkit)) return problem(c, 'invalid_request', { detail: 'No such app.' });
     const parsed = SetSpendingPriceBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success)
-      return c.json({ error: 'Enter an amount, like 0.30.', code: 'INVALID_AMOUNT' }, 400);
+      return problem(c, 'invalid_request', { detail: 'Enter an amount, like 0.30.' });
     const next = parseAmount(c, parsed.data.price, SPENDING_LIMIT_MAX_MICRO);
     if (next instanceof Response) return next;
     const current = spending.price(toolkit);
@@ -197,8 +196,8 @@ export function createConnectorSpendingRoutes(deps: ConnectorSpendingRouteDeps):
       input: { toolkit, priceMicro: next },
       reason: `Count each ${toolkit} run as about ${money(next)}.`,
       commit: async (confirming) => {
-        const stale = errorRefusalUnlessOwner(confirming, WORDING);
-        if (stale) return { status: 403, body: stale };
+        const stale = problemRefusalUnlessOwner(confirming, WORDING);
+        if (stale) return { status: stale.status, body: stale };
         return apply(confirming, true);
       },
     });

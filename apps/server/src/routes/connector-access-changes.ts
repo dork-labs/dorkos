@@ -19,7 +19,6 @@ import {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import { validationFailureBody } from '../lib/route-utils.js';
 import {
   findAccessChangeForOwner,
   listAccessChangesForOwner,
@@ -34,6 +33,8 @@ import {
 } from './connector-owner-boundary.js';
 import { CONNECTED_APPS } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { problem, validationProblem } from '@dorkos/http-kit';
+import { NARROWING_PROBLEM, sendConnectorProblem } from './connector-problems.js';
 
 /** What the access-change routes read. */
 export interface ConnectorAccessChangeRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -58,7 +59,7 @@ export function createConnectorAccessChangeRoutes(
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const query = ConnectorAccessChangeListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return c.json(validationFailureBody(query.error), 400);
+    if (!query.success) return validationProblem(c, query.error);
     return c.json(
       ConnectorAccessChangeListSchema.parse({
         changes: listAccessChangesForOwner(deps.db, owner, query.data),
@@ -73,7 +74,7 @@ export function createConnectorAccessChangeRoutes(
     if (owner instanceof Response) return owner;
     const change = findAccessChangeForOwner(deps.db, owner, c.req.param('changeId'));
     if (!change) {
-      return c.json({ error: 'Nothing to show there.', code: 'UNDO_NOT_FOUND' }, 404);
+      return problem(c, 'not_found', { detail: 'Nothing to show there.' });
     }
     return c.json(ConnectorAccessChangeSchema.parse(change));
   });
@@ -96,10 +97,7 @@ export function createConnectorAccessChangeRoutes(
           return c.json(ConnectorAccessChangeUndoSchema.parse({ changeId, undoId }));
         } catch (error) {
           if (error instanceof AccessNarrowingError) {
-            return c.json(
-              { error: error.message, code: error.code },
-              error.code === 'UNDO_STALE' ? 409 : 404
-            );
+            return sendConnectorProblem(c, NARROWING_PROBLEM[error.code], error);
           }
           throw error;
         }

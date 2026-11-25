@@ -101,6 +101,7 @@ export const HELD_WRITES = new Set([
   'put /api/runtimes/claude-code/project-accounts',
   'put /api/runtimes/claude-code/accounts/{id}/only-projects',
   'put /api/runtimes/claude-code/accounts/{id}/no-auto-move',
+  'put /api/runtimes/claude-code/accounts/{id}/agents-may-pick',
   'post /api/community-connections',
   'put /api/community-connections/{ref}/wake-agents-from',
   'put /api/community-connections/{ref}/answer-in',
@@ -198,9 +199,19 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
     if (definition.type !== 'route') continue;
     const route = definition.route;
     if (!HELD_WRITES.has(`${route.method} ${route.path.replace(/\/$/, '')}`)) continue;
+    // What `holdForStepUp` (`routes/step-up-guard.ts`) actually sends: the
+    // step-up body as plain JSON with `Cache-Control: no-store`. It is not a
+    // problem document yet, though `step_up_required` is on the problem code
+    // list; it moves with the step-up routes under DOR-4979.
     route.responses[428] = {
       description:
-        'Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.',
+        'Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.',
+      headers: {
+        'Cache-Control': {
+          description: 'Always `no-store`: the held action is for this request only.',
+          schema: { type: 'string', enum: ['no-store'] },
+        },
+      },
       content: { 'application/json': { schema: StepUpRequiredBodySchema } },
     };
   }

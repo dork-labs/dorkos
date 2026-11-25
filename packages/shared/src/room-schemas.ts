@@ -30,6 +30,7 @@ import { ResponseModeSchema } from './mesh-schemas.js';
 import { SignalTypeSchema } from './relay-envelope-schemas.js';
 import { UiCanvasContentSchema } from './schemas.js';
 import { SessionActivitySchema, type SessionActivity } from './session-stream.js';
+import { stripStrayFlagLetters } from './untrusted-text.js';
 
 extendZodWithOpenApiOnce();
 
@@ -1434,7 +1435,8 @@ export type RoomEntryBody = z.infer<typeof RoomEntryBodySchema>;
  * Sixteen, because the longest emoji anybody actually sends is a family ZWJ
  * sequence with skin tones — four faces, four modifiers, three joiners, eleven
  * code points — and a little headroom above it is cheaper than a cap somebody
- * hits. It is a bound on the column, not a claim about which sequences are real.
+ * hits. A subdivision flag is seven. It is a bound on the column, not a claim
+ * about which sequences are real.
  */
 export const REACTION_EMOJI_MAX_CODE_POINTS = 16;
 
@@ -1455,7 +1457,9 @@ const REACTION_EMOJI_PICTURE = /[\p{Extended_Pictographic}\p{Regional_Indicator}
  * pill row into a second composer — and one nobody can delete a word from.
  * Everything here is about that: pictographs and the pieces emoji are assembled
  * from (joiners, variation selectors, skin-tone modifiers, regional indicators,
- * keycaps), a length bound, and nothing else.
+ * keycaps), a length bound, and nothing else. The letters a subdivision flag is
+ * spelled with are allowed only inside one of the three real ones; anywhere else
+ * they are not an emoji, so the value is refused.
  *
  * **It deliberately is NOT `\p{RGI_Emoji}`**, which would be the exact set an
  * emoji picker offers. That property needs the `v` regex flag, and the flag is a
@@ -1479,6 +1483,7 @@ const REACTION_EMOJI_PICTURE = /[\p{Extended_Pictographic}\p{Regional_Indicator}
 export function isReactionEmoji(value: string): boolean {
   const codePoints = [...value];
   if (codePoints.length === 0 || codePoints.length > REACTION_EMOJI_MAX_CODE_POINTS) return false;
+  if (stripStrayFlagLetters(value) !== value) return false;
   return REACTION_EMOJI_ONLY.test(value) && REACTION_EMOJI_PICTURE.test(value);
 }
 

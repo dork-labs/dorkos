@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { CommandsQuerySchema } from '@dorkos/shared/schemas';
@@ -7,6 +6,7 @@ import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
+import { validationProblem } from '@dorkos/http-kit';
 
 const router = new Hono<ApiEnv>();
 
@@ -27,7 +27,7 @@ const router = new Hono<ApiEnv>();
 router.get('/', async (c) => {
   const parsed = CommandsQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
-    return c.json({ error: 'Invalid query', details: z.treeifyError(parsed.error) }, 400);
+    return validationProblem(c, parsed.error);
   }
   const refresh = parsed.data.refresh === 'true';
   const runtimeParam = parsed.data.runtime;

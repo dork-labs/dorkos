@@ -56,8 +56,8 @@ name: harness-windows
 # A `paths:` FILTER ON `pull_request` ONLY, added on top of that (ledger
 # 261030-193801), because this check is advisory and the runner pool is the
 # team's bottleneck. A pull request that can't reach these suites no longer
-# holds a Windows runner to install and then skip them. `merge_group` stays
-# unfiltered, so the queue still runs every suite on every merge.
+# holds a Windows runner to install and then skip them. Since DOR-5130 it runs
+# after merge on `push` to main with the same filter, not in the queue.
 #
 # apps/client/ is left out on purpose, though the scope step below counts it:
 # `dorkos` depends on the client, but no suite here imports it (it only appears
@@ -66,8 +66,8 @@ name: harness-windows
 #
 # NOT REQUIRED YET, AND NEVER FOLDED INTO `test`. Promoting it takes one edit
 # here, delete the `paths:` below, and then the branch-protection change: a
-# required check that never reports keeps a PR out of the queue. `merge_group:`
-# is in the `on:` list from day one. What it must NEVER become is a Windows leg
+# required check that never reports keeps a PR out of the queue, and restore
+# `merge_group:` to the `on:` list (moved to `push` by DOR-5130 while advisory). What it must NEVER become is a Windows leg
 # of the required `test` check — `test` is sharded and gates every merge, and
 # hanging a second operating system off it makes every merge in the repo wait
 # on the platform this job exists to explore. Two contexts, two failure domains,
@@ -86,7 +86,23 @@ on:
       - 'turbo.json'
       - 'vitest.config.ts'
       - '.github/workflows/harness-windows.yml'
-  merge_group:
+  # After merge, not in the queue (DOR-5130): this check is advisory, so a
+  # queue run gated nothing and held a Windows runner per queue entry.
+  # after-merge-alert.yml tells the author when a merge breaks it on main.
+  push:
+    branches: [main]
+    paths:
+      - 'apps/server/**'
+      - 'packages/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - '.gitattributes'
+      - 'turbo.json'
+      - 'vitest.config.ts'
+      - '.github/workflows/harness-windows.yml'
   # Weekly, on main, ONLY so main holds the Windows pnpm store the queue and
   # pull requests restore (DOR-4190, ledger 261117-170155). Only a run on
   # refs/heads/main saves it (the save step below), and before this nothing on
@@ -96,7 +112,7 @@ on:
   # Windows leg never joins `test`). Monday 02:43 UTC, clear of the four
   # canaries' :29/:33/:37/:41 at 00 UTC and codeql's Monday 06:30. A
   # scheduled run reports on no PR and no queue build, so it blocks nothing;
-  # it runs every suite, as merge_group does. The job reads no secrets.
+  # it runs every suite, as a push to main does. The job reads no secrets.
   schedule:
     - cron: '43 2 * * 1'
   workflow_dispatch:

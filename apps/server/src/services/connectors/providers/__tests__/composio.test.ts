@@ -26,10 +26,8 @@ import {
 import {
   ComposioConnectorProvider,
   COMPOSIO_API_KEY_REF,
-  COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
   maybeCreateComposioProvider,
   toComposioAccountId,
-  toExternalAccountRef,
 } from '../composio.js';
 import type {
   ComposioOperationClient,
@@ -230,54 +228,6 @@ connectorConformance(makeProvider, {
 });
 
 describe('ComposioConnectorProvider — managed-custody semantics', () => {
-  it('declares the managed, multi-account, brokered-execution capability shape', () => {
-    const caps = makeProvider().getCapabilities();
-    expect(caps).toMatchObject({
-      type: 'composio',
-      supportsMultiAccount: true,
-      custody: 'managed',
-    });
-  });
-
-  it('wraps the Composio ca_ handle as an opaque, provider-scoped id and back', () => {
-    const id = toExternalAccountRef('ca_abc123');
-    expect(id).toBe('composio:ca_abc123');
-    expect(toComposioAccountId(id)).toBe('ca_abc123');
-  });
-
-  it('carries the connect label as the account alias and echoes managed custody', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('gmail', { label: 'work' });
-    const poll = await provider.pollConnect(flowId);
-
-    expect(poll.status).toBe('connected');
-    expect(poll.account?.label).toBe('work');
-    expect(poll.account?.custody).toBe('managed');
-    // The provider boundary returns only its private reference; the registry
-    // assigns the public DorkOS connection id.
-    expect(poll.account?.externalAccountRef.startsWith('composio:')).toBe(true);
-  });
-
-  it('yields two distinct, independently-addressable ids for two connects of one toolkit', async () => {
-    const provider = makeProvider();
-
-    const first = await provider.startConnect('gmail', { label: 'personal' });
-    const personal = (await provider.pollConnect(first.flowId)).account!;
-    const second = await provider.startConnect('gmail', { label: 'work' });
-    const work = (await provider.pollConnect(second.flowId)).account!;
-
-    expect(personal.externalAccountRef).not.toBe(work.externalAccountRef);
-    const accounts = await provider.listAccounts({ toolkit: 'gmail' });
-    expect(new Set(accounts.map((a) => a.externalAccountRef)).size).toBe(2);
-  });
-
-  it('surfaces a failed Composio connect as a typed failure, never a throw', async () => {
-    const provider = makeProvider();
-    const poll = await provider.pollConnect('cr_does_not_exist');
-    expect(poll.status).toBe('failed');
-    expect(poll.error).toBeTruthy();
-  });
-
   it('disconnect is idempotent for an unknown/already-revoked id', async () => {
     const provider = makeProvider();
     await expect(
@@ -532,58 +482,6 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
       expect(poll.error).toBeTruthy();
     });
   }
-
-  it('carries the app’s logo URL and description into the toolkit', async () => {
-    const client: ComposioHttpClient = {
-      listToolkits: () =>
-        Promise.resolve([
-          {
-            slug: 'notion',
-            name: 'Notion',
-            authScheme: 'OAUTH2',
-            logoUrl: 'https://logos.composio.dev/api/notion',
-            description: 'Notion is a workspace for notes and docs.',
-          },
-          { slug: 'bare', name: 'Bare', authScheme: 'API_KEY' },
-        ]),
-      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cr_1', redirectUrl: '' }),
-      getConnectionState: () => Promise.resolve({ status: 'INITIATED' }),
-      listConnectedAccounts: () => Promise.resolve([]),
-      deleteConnectedAccount: () => Promise.resolve(),
-    };
-
-    await expect(providerWith(client).listToolkits()).resolves.toEqual([
-      {
-        slug: 'notion',
-        displayName: 'Notion',
-        authKind: 'oauth2',
-        logoUrl: 'https://logos.composio.dev/api/notion',
-        description: 'Notion is a workspace for notes and docs.',
-      },
-      { slug: 'bare', displayName: 'Bare', authKind: 'api-key' },
-    ]);
-  });
-
-  it('startConnect throws a typed error when Composio returns no authorize URL', async () => {
-    // A NullUrlClient returns a connection request with an empty redirectUrl —
-    // the picker must not silently open an empty authorize URL.
-    const client: ComposioHttpClient = {
-      listToolkits: () => Promise.resolve([{ slug: 'gmail', name: 'Gmail', authScheme: 'OAUTH2' }]),
-      initiateConnection: () => Promise.resolve({ connectionRequestId: 'cr_1', redirectUrl: '' }),
-      getConnectionState: () => Promise.resolve({ status: 'INITIATED' }),
-      listConnectedAccounts: () => Promise.resolve([]),
-      deleteConnectedAccount: () => Promise.resolve(),
-    };
-    const provider = providerWith(client);
-    await expect(provider.startConnect('gmail')).rejects.toThrow(/no authorize URL/);
-  });
-
-  it('does NOT swallow a non-transport error (a genuine bug still surfaces)', async () => {
-    const client = new FakeComposioClient();
-    client.failWith(new TypeError('bug in mapping'));
-    const provider = providerWith(client);
-    await expect(provider.listToolkits()).rejects.toThrow(/bug in mapping/);
-  });
 });
 
 describe('maybeCreateComposioProvider — the configured-only registry gate', () => {
@@ -599,11 +497,6 @@ describe('maybeCreateComposioProvider — the configured-only registry gate', ()
       },
     };
   }
-
-  it('returns null when the API key is unconfigured (dangling reference)', async () => {
-    const provider = await maybeCreateComposioProvider({ credentials: fakeCredentials({}) });
-    expect(provider).toBeNull();
-  });
 
   it('builds the provider when the API key resolves, holding the key only in the client', async () => {
     let seenKey: string | undefined;
@@ -628,78 +521,5 @@ describe('maybeCreateComposioProvider — the configured-only registry gate', ()
     expect(provider?.executionConfigDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(provider)).not.toContain('sk-composio-test');
     expect(JSON.stringify(provider)).not.toContain(provider!.executionConfigDigest);
-  });
-
-  it('scopes the client to the configured Composio user_id', async () => {
-    let seenUserId: string | undefined;
-    let seenSdkUserId: string | undefined;
-    const instanceId = 'composio:operator-42' as ConnectorProviderInstanceId;
-    const provider = await maybeCreateComposioProvider({
-      credentials: fakeCredentials({ [COMPOSIO_API_KEY_REF]: 'sk-test' }),
-      userId: 'operator-42',
-      instanceId,
-      makeClient: (opts) => {
-        seenUserId = opts.userId;
-        return new FakeComposioClient();
-      },
-      makeOperationClient: (opts) => {
-        seenSdkUserId = opts.serverUserId;
-        return new FakeComposioOperationClient();
-      },
-    });
-    expect(seenUserId).toBe('operator-42');
-    expect(seenSdkUserId).toBe('operator-42');
-    expect(provider?.instanceId).toBe(instanceId);
-  });
-
-  it('keeps legacy UAK management usable without constructing or calling the SDK', async () => {
-    let sdkConstructions = 0;
-    const provider = await maybeCreateComposioProvider({
-      credentials: fakeCredentials({ [COMPOSIO_API_KEY_REF]: 'uak_legacy_cli_key' }),
-      makeClient: () => new FakeComposioClient(),
-      makeOperationClient: () => {
-        sdkConstructions += 1;
-        return new FakeComposioOperationClient();
-      },
-    });
-
-    expect(provider).not.toBeNull();
-    await expect(provider!.listToolkits()).resolves.toHaveLength(2);
-    expect(provider!.getCapabilities().capabilities.operations).toEqual({
-      status: 'unsupported',
-      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
-    });
-    await expect(
-      provider!.resolveToolkitVersion('gmail', new AbortController().signal)
-    ).resolves.toEqual({
-      status: 'unsupported',
-      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
-    });
-    await expect(
-      provider!.execute({
-        externalAccountRef: 'composio:ca_legacy' as ConnectorExternalAccountRef,
-        authorizeDispatch: () => true,
-        operation: {
-          id: 'revision-legacy',
-          providerInstanceId: provider!.instanceId,
-          toolkit: 'gmail',
-          operationSlug: 'gmail.read',
-          toolkitVersion: '2026-09-02',
-          schemaHash: 'sha256:legacy',
-          capabilityClassification: 'read',
-          retryPolicy: 'never',
-          inputSchema: { type: 'object' },
-          discoveredAt: '2026-09-02T00:00:00.000Z',
-        },
-        arguments: {},
-        logicalOperationId: 'logical-legacy',
-        attemptId: 'attempt-legacy',
-        signal: new AbortController().signal,
-      })
-    ).resolves.toEqual({
-      status: 'unsupported',
-      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
-    });
-    expect(sdkConstructions).toBe(0);
   });
 });

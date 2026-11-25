@@ -1,7 +1,7 @@
 ---
 number: 138
 title: Dedicated tool_progress StreamEvent Type Over Extending tool_call_delta
-status: draft
+status: archived
 created: 2026-03-16
 spec: tool-progress-streaming
 superseded-by: null

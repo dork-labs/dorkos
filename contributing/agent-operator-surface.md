@@ -82,6 +82,8 @@ Everything above used to be hand-registered (a descriptor here, a CLI handler th
 | Marketplace domain capabilities               | `apps/server/src/services/marketplace-mcp/marketplace-capabilities.ts`            |
 | Read-only carve-out (derived + legacy)        | `apps/server/src/services/core/external-mcp/tool-security.ts`                     |
 | Invoke route (`dorkos call` backend)          | `apps/server/src/routes/capabilities-invoke.ts`                                   |
+| REST mount (every `http` surface)             | `apps/server/src/routes/capability-http.ts`                                       |
+| One dispatcher for both HTTP doors            | `apps/server/src/routes/capability-dispatch.ts`                                   |
 | Catalog route                                 | `apps/server/src/routes/capabilities-catalog.ts`                                  |
 | CLI: `capabilities` / `call`                  | `packages/cli/src/commands/{capabilities,call}.ts`                                |
 | CLI: operator verbs                           | `packages/cli/src/commands/{agent,task,activity,version}.ts`                      |
@@ -101,9 +103,9 @@ A `CapabilityDefinition` carries a `surfaces` object with three optional project
 
 - `mcp`: the tool name, which server(s) advertise it (`in-session`, `external`, or both), an optional `readOnlyCarveOut` flag, and the two annotation hints (`openWorldHint`, `idempotentHint`) that a tier alone cannot express. External MCP and principal-bound Claude tools derive the other two hints (`readOnlyHint`, `destructiveHint`) from `tier`; ordinary Claude tools retain their exposure metadata without adding derived annotations.
 - `cli`: a curated operator verb (and optional subcommand). Optional: a capability with no `cli` surface is still reachable through the generic `dorkos call`.
-- `http`: a method + path auto-registered into the OpenAPI document.
+- `http`: a route. The generic mount (`routes/capability-http.ts`) serves it and the OpenAPI projection documents it, both from the one declaration: the method, the path (each `{segment}` fills an input field), and optionally `params`, `query` and `success`. See [Adding a New Endpoint](api-reference.md#adding-a-new-endpoint).
 
-`composeDorkOsCapabilityRegistry` folds every domain into one immutable registry at boot and throws on any structural conflict (a duplicate id, a duplicate tool name, a duplicate CLI verb, a duplicate HTTP route, or an id not prefixed with its domain). The two MCP adapters and the OpenAPI projection then read that one registry, so a capability appears on every surface it declares with zero extra wiring.
+`composeDorkOsCapabilityRegistry` folds every domain into one immutable registry at boot and throws on any structural conflict (a duplicate id, a duplicate tool name, a duplicate CLI verb, a duplicate HTTP route, or an id not prefixed with its domain). The two MCP adapters, the HTTP mount and the OpenAPI projection then read that one registry, so a capability appears on every surface it declares with zero extra wiring.
 
 ### Ordinary MCP input schemas
 
@@ -356,11 +358,11 @@ One declaration, and every surface follows:
 2. **Register the domain** in `dorkos-registry.ts` if it is new (both `composeDorkOsCapabilityRegistry` and `composeCapabilityRegistryForDocs`). An existing domain needs no wiring for a new capability.
 3. **Tests.** Point a unit test at the handler (happy path + each rejection). The [conformance suite](#the-conformance-suite) asserts surface coverage. For input behavior changes, also cross the real SDK and registry with omitted/explicit defaults and rejection cases beside same-handler positives; use the MCP schema and authority suites below instead of fake registration counters.
 
-That is the whole checklist for the generated surfaces: the MCP tools (both servers), the OpenAPI path, and the self-description entry appear with no extra wiring, and the conformance suite fails CI if a declared projection is missing.
+That is the whole checklist for the generated surfaces: the MCP tools (both servers), the served REST path and its OpenAPI entry, and the self-description entry appear with no extra wiring, and the conformance suite fails CI if a declared projection is missing. The route census test also fails if a declared `http` path is not served.
 
-**A `cli` surface is the exception, and it is not generated.** Declaring `cli` freezes the verb name and makes the conformance suite demand a matching entry in the CLI verb map; it does not write the handler. That is why **zero capabilities declare a `cli` surface today**: the curated verbs (`dorkos agent`, `task`, `activity`, `version`) are hand-written commands that predate the registry, and `dorkos call` covers everything else. See [Adding a curated CLI verb](#adding-a-curated-cli-verb) for the manual half.
+**A `cli` surface is the exception, and it is not generated.** Declaring `cli` freezes the verb name and makes the conformance suite demand a matching entry in the CLI verb map; it does not write the handler. Only `agent.pause` and `agent.resume` declare one (`dorkos agent pause|resume`, which call their REST paths); the other curated verbs (`task`, `activity`, `version`) are hand-written commands that predate the registry, and `dorkos call` covers everything else. See [Adding a curated CLI verb](#adding-a-curated-cli-verb) for the manual half.
 
-One more place where "generated" is narrower than it sounds: only **2** capabilities declare an `http` surface (`operator.activity_list` and `capabilities.list`), so 2 of the OpenAPI document's operations come from the registry against 82 hand-written `registerPath` sites. That is not a bug, and it is routinely overstated in prose. Check a claim against the registry before you write it.
+One more place where "generated" is narrower than it sounds: **21** capabilities declare an `http` surface, against roughly 400 hand-written `registerPath` sites. The mount serves 12 of the 21 (the agent's MCP servers and agent pause); the other 9 are still served by older hand routes, listed in `HAND_SERVED_CAPABILITIES` (`routes/capability-http.ts`) until each moves. Check a claim against the registry before you write it.
 
 Tiers are the opposite case: they are **not** registry-only. `defineCapability` declares one for a capability and `MCP_TOOL_TIERS` declares one for each hand-registered tool, and both feed the same gate. A count of tiered things is therefore a count over two tables, not one. Getting that wrong produces the specific error of calling `tasks_delete` and `mesh_unregister` "the two destructive actions" when `marketplace.uninstall`, `marketplace.link`, `operator.update_agent_boundaries`, `operator.update_agent_execution` and `operator.update_agent_config` are on the other table.
 

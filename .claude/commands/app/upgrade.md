@@ -64,9 +64,9 @@ Every rule below holds in `auto` whether or not anyone is watching. They are
 what make a scheduled run safe; do not relax one to get a lane through.
 
 1. **Nothing merges here.** Every change lands as a PR that rides the normal
-   pipeline — automated review, required checks, merge queue. `merge-tail`
-   arms finished PRs; this command arms only when the queue is **empty**
-   (below). A PR is the unit of blast radius, so one lane never shares a PR
+   pipeline — automated review, required checks, merge queue.
+   `scripts/open-pr.sh` turns on auto-merge at open (`contributing/ci.md`, "Merging"), so the PR
+   merges itself when every check is green; this command never merges one by hand. A PR is the unit of blast radius, so one lane never shares a PR
    with another.
 2. **No major bumps, no runtime-SDK families, no `dependabot.yml` family
    edits, no secret-scanning changes.** Those get a plan and a ticket, never a
@@ -74,7 +74,7 @@ what make a scheduled run safe; do not relax one to get a lane through.
    and the "Deliberate pins" table in `contributing/dependency-overrides.md`.
 3. **Idempotent by construction.** Each lane owns a branch prefix. Before
    opening a PR, look for an open one under that prefix; if it exists, tend it
-   (rebase, re-diagnose, re-arm) instead of opening a second. A run on a quiet
+   (rebase, re-diagnose, re-queue once if ejected) instead of opening a second. A run on a quiet
    day changes nothing and says so.
 4. **The ledger is edited in the same commit as the override.** Every override
    and every version hold has its reason in `contributing/dependency-overrides.md`.
@@ -288,10 +288,11 @@ when it goes red it stays red: Dependabot never diagnoses, and the next week's
 run just force-pushes a bigger version of the same problem. This lane lands
 the green part and quarantines the rest.
 
-Skip the lane when the PR is `CLEAN` and either armed or in the queue — that
-is `merge-tail`'s job. A `CLEAN` PR with `autoMergeRequest: null` **and** no
-queue entry after 3 days is a PR nobody armed: arm it (empty-queue rule in the
-landing procedure) and move on.
+Skip the lane when the PR is `CLEAN` and either has auto-merge on or is in the queue. It is
+already on its way. A `CLEAN` PR with `autoMergeRequest: null` **and** no
+queue entry after 3 days lost its auto-merge (an ejection, or opened before
+Nov 24): if the cause is plainly not the PR's, re-queue it once with
+`gh pr merge --auto <n>`, name it in the report and move on.
 
 ### 2.1 Diagnose before touching
 
@@ -317,11 +318,11 @@ gh run view <run-id> --log-failed | grep -E '##\[error\]|ERR_PNPM|error TS' | he
 git checkout -b deps/takeover-$(date +%Y%m%d) origin/main
 git cherry-pick <dependabot-commit-sha>          # the "bump the … group" commit, not the repair commit
 pnpm install                                     # writes the overrides block back — the repair, for free
-pnpm verify                                      # affected typecheck / lint / tests
+pnpm verify                                      # optional: affected typecheck / lint / tests, to find a culprit
 ```
 
-Now peel the culprits, one family at a time, re-running `pnpm verify` after
-each: revert the culprit's spec lines in every `package.json` that bumped it
+Now peel the culprits, one family at a time, re-running `pnpm verify` (or the
+failing check alone) after each: revert the culprit's spec lines in every `package.json` that bumped it
 (edit the file, then `pnpm install`), until the branch is green. Two rounds
 max (contract rule 6); if it is still red, file the ticket with the
 narrowed suspect list and stop the lane.
@@ -418,9 +419,10 @@ version in the same commit.
 
 ### 3.3 Validate and land
 
-`pnpm verify`, then one commit per cluster on one branch
-(`chore(deps): bump <cluster> to <version>`), one PR for the lane. A cluster
-that fails validation is dropped from the PR, not fixed in it — note it in the
+One commit per cluster on one branch
+(`chore(deps): bump <cluster> to <version>`), one PR for the lane; CI judges
+it. A cluster whose commit turns a check red is reverted out of the PR, not
+fixed in it; note it in the
 report; Lane 4's ticket picks it up next month if it keeps failing.
 
 ---
@@ -441,7 +443,7 @@ stays current.
   never to a bump here.
 - Every Lane 1 advisory whose only fix crosses a major, and every advisory
   with no patched version.
-- Every cluster Lane 3 dropped for failing validation.
+- Every cluster Lane 3 dropped because a check went red on it.
 
 ### 4.2 Assess the top three majors (only)
 
@@ -548,14 +550,6 @@ app token when the `MERGE_TAIL_APP_CLIENT_ID` or `MERGE_TAIL_APP_PRIVATE_KEY`
 secret is missing or wrong), that is a headline + notification: every
 Dependabot PR will be red until a person fixes the secret.
 
-### 6.3 merge-tail
-
-```bash
-gh run list --workflow merge-tail --limit 3 --json conclusion,createdAt
-```
-
-Three failures in a row means nothing is arming. Headline + notification.
-
 ---
 
 ## Landing a lane (shared procedure)
@@ -565,9 +559,8 @@ Every lane that produced commits goes through this, in this order. It is the
 added.
 
 ```bash
-# 1. The lockfile is in sync and the tree is green.
+# 1. The lockfile is in sync. CI judges the rest; run `pnpm verify` here only to debug a red check.
 pnpm install --frozen-lockfile
-pnpm verify                                   # scripts tests, root lint, affected typecheck/lint/test
 
 # 2. Formatting — the gate that has blocked more dependency PRs than any defect.
 pnpm exec prettier --check $(git diff --name-only "$BASE"...HEAD | grep -vE 'pnpm-lock\.yaml$')
@@ -576,39 +569,28 @@ pnpm exec prettier --check $(git diff --name-only "$BASE"...HEAD | grep -vE 'pnp
 # 3. Changelog gate — chore(deps) mints no fragment, so this is a no-op unless a fix( commit is present.
 python3 .claude/scripts/changelog_backfill.py --since "$BASE" --validate --changed-only
 
-# 4. Push and open. Dependency PRs are not user-facing: skip-changelog + review:light.
+# 4. Push and open. Write the body to a file first:
+#      <what changed and why: the advisory ids, the culprits held, the ticket ids>
+#      ## Verification
+#      - pnpm install --frozen-lockfile ✓ · pnpm audit: <before> → <after>
+#      - override-masking check: <packages compared> ✓
+#      Opened by /app:upgrade (auto). Ledger: contributing/dependency-overrides.md.
 git push -u origin HEAD
-gh pr create --title "<subject of the first commit>" \
-  --label skip-changelog --label review:light \
-  --body "$(cat <<'EOF'
-<what changed and why — the advisory ids, the culprits held, the ticket ids>
-
-## Verification
-- pnpm install --frozen-lockfile ✓ · pnpm verify ✓ · pnpm audit: <before> → <after>
-- override-masking check: <packages compared> ✓
-
-Opened by /app:upgrade (auto). Ledger: contributing/dependency-overrides.md.
-EOF
-)"
+scripts/open-pr.sh --title "<subject of the first commit>" --body-file <body-file> --extra-label skip-changelog
 ```
 
-A `fix/codeql-` PR drops `review:light` — it is code, and the automated
-review is the point.
+`scripts/open-pr.sh` picks the review depth from the diff. `package.json` and
+`pnpm-lock.yaml` are Security paths (`security-gate.yml`), so a dependency PR
+gets `review:deep` and merges only after Security's pass. Dependency PRs are
+not user-facing, so add `skip-changelog` with `--extra-label`; a `fix/codeql-`
+PR touches code and leaves it off.
 
-### Arming
+### Merging
 
-`merge-tail` arms every finished PR on a 10-minute tick, so arming here is
-an optimisation, not a requirement. Do it only into an **empty** queue: the
-queue's `ALLGREEN` grouping ejects every entry in a batch when one sibling
-fails, with no recorded reason, and a lockfile PR is the entry most likely to
-be blamed for a neighbour's red.
-
-```bash
-gh api graphql -f query='{ repository(owner:"'"${R%/*}"'",name:"'"${R#*/}"'"){ mergeQueue(branch:"main"){ entries(first:1){ totalCount } } } }' \
-  -q '.data.repository.mergeQueue.entries.totalCount'
-# 0 → gh pr merge --auto --squash <n>      (the queue ignores --squash; harmless)
-# >0 → leave it; say "merge-tail will arm" in the report
-```
+Open each PR with `scripts/open-pr.sh`, which turns on auto-merge at open
+(`contributing/ci.md`, "Merging"). The PR merges itself when every check is
+green. `gh pr merge --auto <n>` is only for re-queueing once after an ejection
+that is plainly not the PR's.
 
 A PR already in the queue reports `autoMergeRequest: null` — test
 `mergeQueueEntry` (GraphQL only) before concluding nothing will merge it.
@@ -620,8 +602,8 @@ When 0.2 found an open PR under the lane's prefix:
 - `DIRTY` → rebase onto `origin/main` in the worktree, re-run this procedure,
   `git push --force-with-lease`.
 - red → diagnose with the Lane 2 table; the same signatures apply.
-- `CLEAN`, unarmed, queue empty → arm.
-- `CLEAN`, queued or armed → nothing.
+- `CLEAN`, auto-merge off, queue empty (opened before Nov 24, or an ejection) → `gh pr merge --auto <n>` once.
+- `CLEAN`, queued or auto-merge on → nothing.
 
 Never open a second PR for the same lane while the first is open.
 
@@ -635,11 +617,11 @@ section is non-empty, also send one `PushNotification` with its first line.
 ```markdown
 ## Needs you
 
-- <secret-scanning alert / red baseline / broken updater / three merge-tail failures / a lane that gave up> — one line each, with the link
+- <secret-scanning alert / red baseline / broken updater / a lane that gave up> — one line each, with the link
 
 ## Opened
 
-| PR | Lane | State | Armed |
+| PR | Lane | State | Auto-merge |
 | #1850 chore(deps): patch 6 advisories | security | CLEAN | yes |
 
 ## Tickets
@@ -662,7 +644,7 @@ section is non-empty, also send one `PushNotification` with its first line.
 ## Pipeline
 
 - Dependabot Updates: 5 failures / 7d — 4 structural (transitive, Lane 1 fixed), 1 cosmetic (knip, minimumReleaseAge)
-- lockfile repair: present on #1847 · merge-tail: last 3 green
+- lockfile repair: present on #1847
 ```
 
 `check` and `audit` print only the sections they computed. `plan` /
@@ -679,7 +661,7 @@ nowhere else:
 2. before closing a Dependabot PR (Lane 2.3);
 3. before each major in Lane 4 — Proceed / Defer / More information;
 4. before any alert dismissal (Lane 5);
-5. before `gh pr create` for each lane — open / open as draft / discard branch.
+5. before `scripts/open-pr.sh` for each lane — open / open as draft / discard branch.
 
 A `--major` flag without `interactive` is ignored, with a line in the report.
 
@@ -690,7 +672,7 @@ A `--major` flag without `interactive` is ignored, with a line in the report.
 The unit of rollback is the PR: `gh pr revert` or `git revert <merge-sha>`
 then `pnpm install`. Within a run, a lane branch that went wrong is simply
 reset (`git reset --hard "$BASE"` on that branch — you own it) and the lane
-reported as skipped. Never rewrite a PR that has been armed; open a follow-up.
+reported as skipped. Never rewrite a PR that has auto-merge on; open a follow-up.
 
 Do not use `git checkout main -- package.json pnpm-lock.yaml`: the git guard
 blocks the `checkout -- <path>` spelling because it has destroyed uncommitted
@@ -740,4 +722,4 @@ will serialize` in `auth/index.ts` is that shape's signature. Check for
   evidence.
 - **The ALLGREEN merge queue ejects blameless PRs.** An entry thrown out of a
   batch is still `CLEAN` and reports no reason. Check the neighbours before
-  touching the PR; arm into an empty queue.
+  touching the PR; re-queue once with `gh pr merge --auto <n>`.

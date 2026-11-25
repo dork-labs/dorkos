@@ -32,7 +32,8 @@ import {
   ChatMessageSenderSchema,
   ChatMessageStatusSchema,
 } from '@dorkos/shared/chat-messages';
-import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import {
   defineCapability,
   type CapabilityDeps,
@@ -176,6 +177,7 @@ export const chatDomain: CapabilityDomain = {
           chatId: z.string(),
           chatTitle: z.string().nullable(),
           link: z.string(),
+          chatRef: z.string().nullable(),
           status: ChatMessageStatusSchema,
           position: z.number().int().positive().optional(),
           ahead: z.number().int().nonnegative().optional(),
@@ -213,7 +215,8 @@ export const chatDomain: CapabilityDomain = {
             ok: true as const,
             ...sent,
             chatTitle,
-            link: chatMarkdownLink(sent.chatId, chatTitle),
+            link: chatRefMarkdownLink(sent.chatId, chatTitle),
+            chatRef: dorkReferenceOrNull('chat', sent.chatId),
           };
         });
       },

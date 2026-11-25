@@ -8,26 +8,26 @@ This guide is the one rubric. The `/flow` plugin's `flow create`, triage and gro
 
 MoSCoW maps onto **Linear's own priority field**. Never use a label for it.
 
-| Bucket     | Linear priority                    | Means                                                         | Where it goes                                            |
-| ---------- | ---------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
-| **Must**   | High (Urgent only if broken now)   | Needed for the current milestone or launch. Worked this week. | Its project, **Todo**, once the PM confirms it           |
-| **Should** | Medium                             | Important, but there is a workaround or it can wait a week.   | Its project, **Backlog**, re-checked every Monday        |
-| **Could**  | Low                                | Nice to have.                                                 | Its project, **Backlog**, closed after 60 days untouched |
-| **Won't**  | not filed, or Canceled with reason | Not worth doing. Never kept "just in case".                   | Closed now, with a one-line reason                       |
+| Bucket     | Linear priority                    | Means                                                          | Where it goes                                            |
+| ---------- | ---------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------- |
+| **Must**   | High (Urgent only if broken now)   | Needed for the roadmap item being built now. Worked this week. | Its project, **Todo**, once the coordinator confirms it  |
+| **Should** | Medium                             | Important, but there is a workaround or it can wait a week.    | Its project, **Backlog**, re-checked every Monday        |
+| **Could**  | Low                                | Nice to have.                                                  | Its project, **Backlog**, closed after 60 days untouched |
+| **Won't**  | not filed, or Canceled with reason | Not worth doing. Never kept "just in case".                    | Closed now, with a one-line reason                       |
 
 **Most items are Should.** Must has to stay rare enough to mean something: if more than about one item in five you file is a Must, your bar is too low. When in doubt between two buckets, pick the lower one.
 
 **Urgent** is only for something broken right now: `main` red, an open security hole, data loss, or broken UX that blocks a user with no workaround. Urgent work starts today, not this week.
 
-**A cycle is one week.** **The PM confirms every Must** (the Linear priority, not a Security Must on a PR review, which blocks that PR whatever the priority): a filer may suggest Must (or Urgent); @dorkos-pm confirms it or lowers it. Until then it counts as a Should.
+**A cycle is one week.** **The coordinator confirms every Must** (the Linear priority, not a Security Must on a PR review, which blocks that PR whatever the priority): a filer may suggest Must (or Urgent); the coordinator (DorkOS Code) confirms it or lowers it. Until then it counts as a Should.
 
 ### Must (High)
 
-- A feature in the current launch milestone shows the wrong agent's name on its main card.
+- A feature in the roadmap item being built now shows the wrong agent's name on its main card.
 - A migration that loses rows on upgrade for some installs (Urgent if a release already shipped it).
 - The merge queue ejects every PR on one flaky required check, so nothing lands.
 - A security finding that lets an agent read another agent's connection, on a released build (Urgent).
-- A promised launch-scope item (in `meta/ROADMAP.md`) with no other ticket carrying it.
+- An item `meta/ROADMAP.md` lists as being built now, with no other ticket carrying it.
 
 ### Should (Medium)
 
@@ -67,8 +67,8 @@ Missing any of these means **don't file it yet**: ask the one person who knows, 
 
 ## After triage
 
-- **Must:** its project, Todo, worked this week, once @dorkos-pm confirms it.
-- **Should:** its project, Backlog. Every Monday, @dorkos-pm re-checks the Should list: promote to Must, keep, or drop to Could.
+- **Must:** its project, Todo, worked this week, once the coordinator confirms it.
+- **Should:** its project, Backlog. Every Monday, the coordinator re-checks the Should list: promote to Must, keep, or drop to Could.
 - **Could:** its project, Backlog. The groom closes it as Canceled after **60 days with no update** (flow's `couldExpiryDays` setting, default 60), with a comment saying it closed as a stale Could and can be reopened if it matters. Reopening is cheap; carrying it forever is not. A Could labelled `security` or `needs-security-design` never expires (flow's `neverExpireLabels`): keep that label on every security Could, so a known risk never drops off the list unseen.
 - **Won't:** Canceled now, with a one-line reason.
 
@@ -76,7 +76,7 @@ The expiry applies only to an issue a person or agent deliberately marked Could.
 
 ## Cleaning the existing Backlog: a scalpel, not a hatchet
 
-Each weekly cycle, @dorkos-pm reviews **one** project's Backlog. It closes an issue only with a written reason on that issue: shipped (name the PR), duplicate (set the relation first), or Won't (say why). A ticket that shipped in part is rewritten to what remains, not closed.
+Each weekly cycle, the coordinator reviews **one** project's Backlog. It closes an issue only with a written reason on that issue: shipped (name the PR), duplicate (set the relation first), or Won't (say why). A ticket that shipped in part is rewritten to what remains, not closed.
 
 ## Where this is enforced
 

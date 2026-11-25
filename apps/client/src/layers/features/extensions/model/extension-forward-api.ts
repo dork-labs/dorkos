@@ -23,16 +23,8 @@ import {
 import { resolveStableClientId } from '@/layers/shared/lib/transport';
 import { extensionApiUrl } from './extension-api-url';
 import { requestForwardConsent } from './forward-consent';
-
-/** The codes the server answers with that `api.forward` throws as themselves. */
-const FORWARD_CODES: ReadonlySet<string> = new Set<ForwardErrorCode>([
-  'no_agent',
-  'not_found',
-  'person_required',
-  'extension_off',
-  'invalid_input',
-  'unavailable',
-]);
+import { readErrorBody } from '@dorkos/shared/problem';
+import { sdkRefusalCode } from './sdk-refusal-code';
 
 /** What the server kept when a forward needs the person's Allow first. */
 interface PendingConsent {
@@ -45,21 +37,15 @@ interface PendingConsent {
 }
 
 /** A refused response's body, as a {@link ForwardError}. */
-function refusalOf(status: number, body: { error?: string; code?: string }): ForwardError {
-  const code: ForwardErrorCode =
-    body.code && FORWARD_CODES.has(body.code)
-      ? (body.code as ForwardErrorCode)
-      : status === 404
-        ? 'not_found'
-        : status === 403
-          ? 'person_required'
-          : 'unavailable';
-  return new ForwardError(code, body.error ?? 'DorkOS could not do that. Try again.');
+function refusalOf(status: number, body: unknown): ForwardError {
+  const reading = readErrorBody(body, 'DorkOS could not do that. Try again.');
+  const code = sdkRefusalCode(status, reading.code) as ForwardErrorCode;
+  return new ForwardError(code, reading.message);
 }
 
 /** A refused response, as a {@link ForwardError}. */
 async function refusal(res: Response): Promise<ForwardError> {
-  return refusalOf(res.status, (await res.json().catch(() => ({}))) as { error?: string });
+  return refusalOf(res.status, await res.json().catch(() => undefined));
 }
 
 /**
@@ -140,8 +126,8 @@ export function createExtensionForwardApi(extId: string): ExtensionForwardApi {
         throw new ForwardError('unavailable', 'DorkOS could not be reached. Try again.');
       }
       if (!res.ok) {
+        // A problem document; `no_agent` with a kept comment asks the person first.
         const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
           code?: string;
           consent?: PendingConsent;
         };

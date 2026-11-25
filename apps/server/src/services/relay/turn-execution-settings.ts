@@ -128,6 +128,7 @@ export function createTurnExecutionSettingsResolver(): ExecutionSettingsResolver
  * to spend on an account by saying so. Every request is checked as a `relay`
  * caller, which needs a registered advisor, so with no advisor (Flow not set
  * up) no relay message can move a conversation off the default ladder at all.
+ * Core's own rule for an agent's pick (DOR-5033) never applies to a relay caller.
  * A schedule's own account travels as `accountHint` directly and never comes
  * through here: it is the operator's approved choice.
  *

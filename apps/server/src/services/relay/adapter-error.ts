@@ -26,7 +26,13 @@ export type AdapterErrorCode =
    * A paused connection's owner confirmed a summary that no longer matches it:
    * its references or destinations changed after they looked (DOR-3271).
    */
-  | 'CONFIRMATION_STALE';
+  | 'CONFIRMATION_STALE'
+  /**
+   * A new connection was saved, but starting it failed (a bad token, an
+   * unreachable service). It stays saved, so trying the add again would only
+   * meet `DUPLICATE_ID`.
+   */
+  | 'START_FAILED';
 
 /**
  * Error class for adapter CRUD operations.
@@ -41,11 +47,15 @@ export class AdapterError extends Error {
    * @param code - Machine-readable reason.
    * @param adapterId - The id the refusal is about, when there is one, so a
    *   caller can name it in its own words (e.g. a `DUPLICATE_ID` refusal).
+   * @param fields - For `INVALID_CONFIG`, the config field KEYS that were
+   *   refused (`token`, `inbound.subject`), so a form can mark them. Keys only,
+   *   never a value: this travels to the caller, the message does not.
    */
   constructor(
     message: string,
     public readonly code: AdapterErrorCode,
-    public readonly adapterId?: string
+    public readonly adapterId?: string,
+    public readonly fields?: readonly string[]
   ) {
     super(message);
     this.name = 'AdapterError';

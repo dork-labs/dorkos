@@ -1,11 +1,13 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { ConnectorRuntimeAuthorityError } from '../../../connectors/principal/runtime-principal-service.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { openConnectorTurn, type OpenConnectorTurnRequest } from '../open-connector-turn.js';
 
 import { liveTurnFixture } from '../../../connectors/principal/__tests__/runtime-tool-turn.fixture.js';
 import { clearTestHomes } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
-import { RuntimeToolContextUnavailableError } from '../../../connectors/runtime-principal-port.js';
+import {
+  ConnectorRuntimeAuthorityError,
+  RuntimeToolContextUnavailableError,
+} from '../../../connectors/runtime-principal-port.js';
 
 const BINDING = {
   bindingId: 'binding-1',
