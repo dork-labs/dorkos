@@ -354,21 +354,30 @@ describe('readErrorBody', () => {
     ).toBe(1500);
   });
 
-  it('reads the old `{ error, code, details }` shape', () => {
-    expect(readErrorBody({ error: 'Chat is busy', code: 'SESSION_LOCKED' }, 'HTTP 409')).toEqual({
-      code: 'SESSION_LOCKED',
-      message: 'Chat is busy',
+  it('reads the answers that are not problems on purpose: the login gate and a held action', () => {
+    expect(readErrorBody({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }, 'HTTP 401')).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Unauthorized',
     });
-    const details = { formErrors: ['Bad'], fieldErrors: { cwd: ['Required'] } };
-    expect(readErrorBody({ error: 'Validation failed', details }, 'x')).toEqual({
-      message: 'Validation failed',
-      issues: details,
+    expect(
+      readErrorBody(
+        { error: 'Confirm it’s you to do this.', code: 'step_up_required', heldActionId: 'h1' },
+        'HTTP 428'
+      )
+    ).toEqual({ code: 'step_up_required', message: 'Confirm it’s you to do this.' });
+    expect(readErrorBody({ code: 'PASSKEY_CHECK_REQUIRED', options: {} }, 'HTTP 428')).toEqual({
+      code: 'PASSKEY_CHECK_REQUIRED',
+      message: 'HTTP 428',
     });
   });
 
-  it('reads an old body that says `message` instead of `error`', () => {
+  it('reads no other body: the old `{ error, code }` and `{ message }` shapes are gone', () => {
+    // Purpose: fails if a client could again lean on a body that is not a problem document.
+    expect(readErrorBody({ error: 'Chat is busy', code: 'SESSION_LOCKED' }, 'HTTP 409')).toEqual({
+      message: 'HTTP 409',
+    });
     expect(readErrorBody({ message: 'Denied by policy', status: 'denied' }, 'x')).toEqual({
-      message: 'Denied by policy',
+      message: 'x',
     });
   });
 

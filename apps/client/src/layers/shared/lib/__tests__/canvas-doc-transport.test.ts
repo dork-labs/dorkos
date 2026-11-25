@@ -199,11 +199,7 @@ describe('actual numeric Retry-After error metadata', () => {
       const error = await transport
         .ingestCanvasEvent('doc', input, condition, signal)
         .catch((value: unknown) => value);
-      expect(error).toMatchObject({
-        status: 429,
-        code: 'rate_limited',
-        body: { retryAfterMs: 123 },
-      });
+      expect(error).toMatchObject({ status: 429, body: { retryAfterMs: 123 } });
       expect(Object.hasOwn(error as object, 'retryAfterMs')).toBe(false);
     }
   );

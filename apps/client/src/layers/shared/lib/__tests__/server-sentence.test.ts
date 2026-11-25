@@ -11,22 +11,23 @@ function refused(message: string, code?: string): Error {
 }
 
 describe('awayFromTheComputerSentence', () => {
-  it.each(['not_from_wifi', 'NOT_FROM_WIFI', 'operator_only', 'NEEDS_PERSON_AT_THIS_COMPUTER'])(
-    'passes the sentence of %s',
-    (code) => {
-      expect(
-        awayFromTheComputerSentence(refused('The terminal opens only at this computer.', code))
-      ).toBe('The terminal opens only at this computer.');
-    }
-  );
+  it.each(['not_from_wifi', 'operator_only'])('passes the sentence of %s', (code) => {
+    expect(
+      awayFromTheComputerSentence(refused('The terminal opens only at this computer.', code))
+    ).toBe('The terminal opens only at this computer.');
+  });
 
   it('is null for any other refusal, a bare code, or a non-error', () => {
     expect(
       awayFromTheComputerSentence(refused('Too many terminals.', 'terminal_limit'))
     ).toBeNull();
-    expect(awayFromTheComputerSentence(refused('HTTP 403', 'NOT_FROM_WIFI'))).toBeNull();
+    expect(awayFromTheComputerSentence(refused('HTTP 403', 'not_from_wifi'))).toBeNull();
+    // The old spellings are gone with the routes that sent them (DOR-4979).
+    expect(
+      awayFromTheComputerSentence(refused('Only at this computer.', 'NOT_FROM_WIFI'))
+    ).toBeNull();
     expect(awayFromTheComputerSentence(refused('Forbidden.'))).toBeNull();
-    expect(awayFromTheComputerSentence('NOT_FROM_WIFI')).toBeNull();
+    expect(awayFromTheComputerSentence('not_from_wifi')).toBeNull();
   });
 });
 
@@ -53,9 +54,9 @@ describe('serverSentence', () => {
     expect(serverSentence(answered('DorkOS hit an error on its side.', body, 500))).toBeNull();
   });
 
-  it('passes the older body’s `error` sentence', () => {
-    expect(serverSentence(answered('That name is taken.', { error: 'That name is taken.' }))).toBe(
-      'That name is taken.'
-    );
+  it('passes nothing from a body that is not a problem document', () => {
+    expect(
+      serverSentence(answered('That name is taken.', { error: 'That name is taken.' }))
+    ).toBeNull();
   });
 });

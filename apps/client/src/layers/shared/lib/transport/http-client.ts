@@ -21,8 +21,9 @@ import { errorFromReading, readResponseError } from '../response-error';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
- * The codes the app-wide login gate answers 401 with: today's, and the problem
- * code it moves to under DOR-4979.
+ * The codes a 401 that asks for a sign-in carries: the login gate's own
+ * `AUTH_REQUIRED` (not a problem document, on purpose) and the problem code
+ * `unauthenticated` other routes answer with.
  */
 const LOGIN_GATE_CODES = new Set(['AUTH_REQUIRED', 'unauthenticated']);
 
@@ -82,8 +83,8 @@ async function request(
     throw err;
   }
   if (!res.ok) {
-    // One reader for every failed answer: a problem document first, then the
-    // older `{ error, code }` shape (`shared/lib/response-error`).
+    // One reader for every failed answer: a problem document, or the login gate
+    // and a held action, which are not problems on purpose (`shared/lib/response-error`).
     const reading = await readResponseError(res);
     const err = errorFromReading(reading);
     // A body that was not JSON still leaves an object to read fields off.

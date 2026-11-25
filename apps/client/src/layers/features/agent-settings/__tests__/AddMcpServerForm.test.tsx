@@ -120,14 +120,14 @@ describe('AddMcpServerForm', () => {
     const transport = createMockTransport({
       addAgentMcpServer: vi
         .fn()
-        .mockRejectedValue(Object.assign(new Error(sentence), { code: 'NOT_FROM_WIFI' })),
+        .mockRejectedValue(Object.assign(new Error(sentence), { code: 'not_from_wifi' })),
     });
     renderForm(transport, TRANSPORTS);
     addHttpServer();
     const shown = await screen.findByText(sentence);
     expect(shown.getAttribute('data-tone')).toBe('info');
     expect(shown.className).not.toContain('text-destructive');
-    expect(screen.queryByText(/NOT_FROM_WIFI/)).toBeNull();
+    expect(screen.queryByText(/not_from_wifi/)).toBeNull();
   });
 
   it('on Wi-Fi says no up front and never sends the add (DOR-2969)', async () => {

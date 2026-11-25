@@ -344,7 +344,14 @@ describe('runMarketplaceRefresh', () => {
           fetchedAt: '2026-04-06T00:00:00.000Z',
         })
       )
-      .mockResolvedValueOnce(mockResponse(502, { error: 'Network timeout' }));
+      .mockResolvedValueOnce(
+        mockResponse(502, {
+          title: 'Refused.',
+          status: 502,
+          code: 'upstream_unavailable',
+          detail: 'Network timeout',
+        })
+      );
     vi.stubGlobal('fetch', fetchMock);
 
     const code = await runMarketplaceRefresh({});

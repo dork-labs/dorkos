@@ -133,7 +133,10 @@ describe('the choice', () => {
       'OpenCode is in the middle of a reply. Switch once it finishes, so nothing it is doing is cut off.';
     const { setCloudCreditsDefault } = renderSection('opencode', LINKED);
     setCloudCreditsDefault.mockRejectedValueOnce(
-      Object.assign(new Error(reason), { status: 409, body: { error: reason } })
+      Object.assign(new Error(reason), {
+        status: 409,
+        body: { title: 'This chat is busy.', status: 409, code: 'runtime_busy', detail: reason },
+      })
     );
     await userEvent.click(await screen.findByRole('radio', { name: 'DorkOS credits' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(`Couldn’t change that. ${reason}`);

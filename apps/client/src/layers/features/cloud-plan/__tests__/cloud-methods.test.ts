@@ -67,7 +67,12 @@ describe('the cloud transport methods', () => {
   });
 
   it('still throws a deletion failure that carries no sentence', async () => {
-    stubFetch(500, { error: 'boom' });
+    stubFetch(500, {
+      title: 'DorkOS hit an error on its side.',
+      status: 500,
+      code: 'internal_error',
+      detail: 'boom',
+    });
     await expect(methods.requestCloudAccountDeletion()).rejects.toThrow('boom');
   });
 
