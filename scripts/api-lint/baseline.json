@@ -36,15 +36,15 @@
       "apps/server/src/services/extensions/inbox/extension-decisions-openapi.ts": 8,
       "apps/server/src/services/extensions/removal/extension-removal-openapi.ts": 3,
       "apps/server/src/services/health/account-signin-openapi.ts": 3,
-      "apps/server/src/services/heartbeats/heartbeats-openapi.ts": 3,
+      "apps/server/src/services/heartbeats/heartbeats-openapi.ts": 2,
       "apps/server/src/services/projects/projects-openapi.ts": 2,
       "apps/server/src/services/rooms/direct-chat/direct-chat-openapi.ts": 2,
       "apps/server/src/services/session/asks/session-approval-openapi.ts": 2,
       "apps/server/src/services/session/fleet/continue-openapi.ts": 5,
       "apps/server/src/services/session/local-browser/openapi.ts": 20,
       "apps/server/src/services/session/resolution/session-locations-openapi.ts": 4,
-      "apps/server/src/services/todos/todo-promises-openapi.ts": 4,
-      "apps/server/src/services/todos/todos-openapi.ts": 4
+      "apps/server/src/services/todos/todo-promises-openapi.ts": 2,
+      "apps/server/src/services/todos/todos-openapi.ts": 2
     },
     "list-paging": {
       "agents": 5,

@@ -226,6 +226,18 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     detail: `This queue already has ${WORK_QUEUE_MAX_QUEUED} items waiting.`,
   },
   WORK_ITEM_BAD_CWD: { code: 'invalid_request', detail: 'The folder must be an absolute path.' },
+  // The to-do reads and a person's "add a promise" kept the hand routes' codes and
+  // sentences when they moved onto the mount (`services/todos/todo-http-capabilities.ts`).
+  TODO_NOT_FOUND: { code: 'not_found', detail: 'No to-do has that id.' },
+  TODO_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  TODO_PROMISE_OWNER_ONLY: {
+    code: 'owner_only',
+    detail: 'Only the owner of this agent can change its to-dos.',
+  },
+  TODO_PROMISE_PAST_DUE: {
+    code: 'past_due',
+    detail: 'That due date has passed. Pick a time ahead.',
+  },
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

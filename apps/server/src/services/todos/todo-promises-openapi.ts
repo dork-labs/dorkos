@@ -8,13 +8,10 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
   TodoPromiseSchema,
-  CreateTodoPromiseRequestSchema,
-  ListTodoPromisesQuerySchema,
-  ListTodoPromisesResponseSchema,
   UpdateTodoPromiseRequestSchema,
   ConfirmTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
-import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/problem-openapi.js';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
  * Register the to-do routes.
@@ -22,47 +19,6 @@ import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/proble
  * @param registry - The server's OpenAPI registry.
  */
 export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/todo-promises',
-    tags: ['To-dos'],
-    summary: 'What agents promised',
-    description:
-      "Every agent's promises, readable by anyone in the space: open first (soonest due " +
-      'first), then kept, missed and dropped, newest first. `overdue` is computed on read.',
-    request: { query: ListTodoPromisesQuerySchema },
-    responses: {
-      500: INTERNAL_ERROR_RESPONSE,
-      200: {
-        description: 'The promises',
-        content: { 'application/json': { schema: ListTodoPromisesResponseSchema } },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/agents/{id}/todo-promises',
-    tags: ['To-dos'],
-    summary: 'Add a promise for an agent',
-    description:
-      'A person records something an agent promised. Agents record their own with ' +
-      '`todo_promise_add`, so a caller presenting an agent identity is refused.',
-    request: {
-      params: z.object({ id: z.string() }),
-      body: { content: { 'application/json': { schema: CreateTodoPromiseRequestSchema } } },
-    },
-    responses: {
-      201: {
-        description: 'The new promise',
-        content: { 'application/json': { schema: TodoPromiseSchema } },
-      },
-      400: problemResponse('`invalid_request`: invalid body. `past_due`: a past date'),
-      403: problemResponse('`person_only`: the caller is an agent. `owner_only`: not the owner'),
-      404: problemResponse('`not_found`: no agent has that id'),
-    },
-  });
-
   registry.registerPath({
     method: 'patch',
     path: '/api/todo-promises/{id}',

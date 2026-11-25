@@ -118,6 +118,11 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'todo_promises.add': 'self',
   'todo_promises.update': 'self',
   'todo_promises.list': 'self',
+  // The app's to-do and promise doors (DOR-4978) mark the same way.
+  'todos.view_list': 'self',
+  'todos.view_card': 'self',
+  'todos.view_promises': 'self',
+  'todos.add_promise_for_agent': 'self',
   'connectors.execute_read': 'self',
   // ── Marks when a listed entry came from a third-party package ──────────────
   'marketplace.list_installed': anyInstalledFromOutside,
@@ -223,6 +228,7 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'permissions.change': 'local',
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
+  'heartbeat.wakers_off': 'local',
   // Folder names, workspaces and the template catalog: what is on this
   // computer, written by the team.
   'directory.browse': 'local',

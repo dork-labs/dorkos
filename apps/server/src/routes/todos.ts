@@ -1,11 +1,13 @@
 /**
- * The to-do routes (DOR-3088): list, make and change to-dos at `/api/todos`. Mounted while
- * `DORKOS_TODOS_ENABLED` is on, which it is by default (DOR-5071).
+ * The to-do routes (DOR-3088): make and change to-dos at `/api/todos`. Mounted while
+ * `DORKOS_TODOS_ENABLED` is on, which it is by default (DOR-5071). Reading them is
+ * `todos.view_list` and `todos.view_card`, which the capability mount serves
+ * (`services/todos/todo-http-capabilities.ts`).
  *
  * ## Who is asking
  *
- * - An agent presenting its identity may list. It makes and changes to-dos with `todo_add` and
- *   `todo_update`, which carry its turn's power, so its writes here are refused.
+ * - An agent makes and changes to-dos with `todo_add` and `todo_update`, which carry its turn's
+ *   power, so its writes here are refused.
  * - A person writes with `person` authority only when the request proves it: the owner's own
  *   session cookie (`personProof`). A window of the app with no session yet is asked for the
  *   owner's step-up (`401 person_session_required`) before anything is written, so the person's
@@ -20,11 +22,7 @@
 import { Hono, type Context } from 'hono';
 import { PERSON_APP_HEADER } from '@dorkos/shared/person-session';
 import type { ProblemCode } from '@dorkos/shared/problem';
-import {
-  CreateTodoRequestSchema,
-  ListTodosQuerySchema,
-  UpdateTodoRequestSchema,
-} from '@dorkos/shared/todo-schemas';
+import { CreateTodoRequestSchema, UpdateTodoRequestSchema } from '@dorkos/shared/todo-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import {
   isPersonWithoutSession,
@@ -33,7 +31,6 @@ import {
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { readQuery } from '../http/request-query.js';
 import {
   TodoPromiseError,
   PERSON_ASSIGNER,
@@ -45,8 +42,8 @@ import { titleIsFromSource, type TodoSourceFacts } from '../services/todos/todo-
 
 /** What the routes are built from. */
 export interface TodoRouterDeps {
-  /** Makes, changes and lists to-dos. */
-  todos: Pick<TodoService, 'create' | 'update' | 'list' | 'get'>;
+  /** Makes and changes to-dos. */
+  todos: Pick<TodoService, 'create' | 'update'>;
   /** Whether a request proves the owner in person (`personProof`). */
   personProven(facts: RequestFacts): boolean;
   /** Whether this install has an owner account; when it doesn't, nobody can be proven. */
@@ -58,8 +55,6 @@ export interface TodoRouterDeps {
   heldWifiOwner?(facts: RequestFacts): boolean;
   /** Whether an unproven request is an app window to ask for the step-up ({@link todoNeedsStepUp}). */
   needsStepUp(facts: RequestFacts): boolean;
-  /** The chat a to-do's latest turn ran in, or null; none when turns aren't wired. */
-  workSessionOf?(todoId: string): string | null;
   /** A source message's author and marks, read by the server. */
   readSource(entryId: string): TodoSourceFacts | undefined;
 }
@@ -142,27 +137,13 @@ function personActor(
 }
 
 /**
- * The routes for `/api/todos`.
+ * The write routes for `/api/todos`.
  *
  * @param deps - The service and the lookups.
  * @returns The routes, to mount at `/api/todos`.
  */
 export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
-
-  router.get('/', (c) => {
-    const query = ListTodosQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return validationProblem(c, query.error);
-    return c.json(deps.todos.list(query.data));
-  });
-
-  // One to-do, for its card: read with the same reach as the list, so a card never shows a to-do
-  // the reader's list wouldn't. An id nobody can read answers 404, and the card says so.
-  router.get('/:id', (c) => {
-    const todo = deps.todos.get(c.req.param('id'));
-    if (!todo) return problem(c, 'not_found', { detail: 'No to-do has that id.' });
-    return c.json({ ...todo, workSessionId: deps.workSessionOf?.(todo.id) ?? null });
-  });
 
   router.post('/', (c) => {
     const body = CreateTodoRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));

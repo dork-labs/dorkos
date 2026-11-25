@@ -20,7 +20,7 @@ import { pulseSchedules, type Db } from '@dorkos/db';
 import type { AgentPause } from '@dorkos/shared/mesh-schemas';
 import { resolveHeartbeatSettings, type HeartbeatWake } from '@dorkos/shared/heartbeat-schemas';
 import type { WakerOff, WakersOff } from '@dorkos/shared/waker-schemas';
-import type { WakersOffRouterDeps } from '../../../routes/wakers-off.js';
+import type { WakersOffReader } from './wakers-off-capability.js';
 import type { BeatAgent } from '../beat-runner.js';
 import { frontmatterInForce } from '../beat-plan.js';
 import { readHeartbeatFile } from '../heartbeat-file.js';
@@ -206,11 +206,11 @@ export interface WakersOffReaderParts {
 }
 
 /**
- * The route's reader, over the live server.
+ * The `heartbeat.wakers_off` reader, over the live server.
  *
  * @param parts - What it reads.
  */
-export function wakersOffReader(parts: WakersOffReaderParts): WakersOffRouterDeps {
+export function wakersOffReader(parts: WakersOffReaderParts): WakersOffReader {
   return {
     list: () =>
       listWakersOff({

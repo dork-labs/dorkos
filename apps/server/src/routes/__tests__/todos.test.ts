@@ -24,6 +24,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { todos as todoTable, eq, type Db } from '@dorkos/db';
 import { PERSON_APP_HEADER } from '@dorkos/shared/person-session';
 import { createTodosRoutes } from '../todos.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { todoViewDomain } from '../../services/todos/todo-http-capabilities.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { TodoPromiseService } from '../../services/todos/todo-promise-service.js';
@@ -67,6 +69,13 @@ describe('to-do routes', () => {
     });
     const app = honoGroupListener(
       [
+        // The reads are capabilities the mount serves (DOR-4978).
+        capabilityGroup(todoViewDomain, {
+          todoViewDeps: {
+            todos,
+            workSessionOf: (todoId) => (todoId === workedOn ? 'session-work' : null),
+          },
+        }),
         {
           path: '/api/todos',
           routes: createTodosRoutes({
@@ -74,7 +83,6 @@ describe('to-do routes', () => {
             personProven: () => proven,
             ownerExists: () => state.ownerId !== null,
             heldWifiOwner: () => heldOwner,
-            workSessionOf: (todoId) => (todoId === workedOn ? 'session-work' : null),
             // The app's marker stands in for a window with no session while an owner exists.
             needsStepUp: (facts) =>
               state.ownerId !== null && facts.headers[PERSON_APP_HEADER] !== undefined,
