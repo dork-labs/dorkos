@@ -9,10 +9,17 @@
  * - inside a glob, `[c]` matches the character `c` itself, and a lone `]` is
  *   plain, on macOS (Seatbelt) and in the matcher Linux uses (`globset`);
  * - a scoped key `{ ".": access }` is always an exact path with its subtree,
- *   whatever the path holds (the `.` subpath has no glob characters).
+ *   whatever the path holds (the `.` subpath has no glob characters);
+ * - a backslash in a glob escapes the next character, so `a\b` matches `ab`.
+ *   `\\` matches it on macOS, but Linux searches from the text before the
+ *   first glob character as a real folder (read in codex-rs `split_pattern_for_ripgrep`),
+ *   and `a\\b` is no folder there; `[\\]` misses it on macOS. No spelling
+ *   holds on both, so a glob over such a folder refuses instead.
  *
  * @module services/runtimes/codex/policy/codex-path-keys
  */
+
+import { CodexGitMetadataPolicyError } from './git-metadata.js';
 
 type Access = 'read' | 'deny';
 
@@ -28,8 +35,14 @@ const GLOB_CHARS = /[*?[\]{}]/;
  * `[]]` would be an empty class to Codex's Seatbelt translation.
  *
  * @param literal - A path in Codex's slash spelling, with no glob meant.
+ * @throws {CodexGitMetadataPolicyError} When the path holds a backslash.
  */
 export function codexGlobLiteral(literal: string): string {
+  if (literal.includes('\\'))
+    throw new CodexGitMetadataPolicyError(
+      'backslash-path',
+      new Error(`${literal} has a backslash, which Codex reads as an escape.`)
+    );
   return literal.replace(/[*?[{}]/g, (char) => `[${char}]`);
 }
 

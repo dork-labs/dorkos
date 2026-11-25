@@ -192,6 +192,22 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
     }
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'refuses a folder with a backslash at every level, and not its look-alike',
+    () => {
+      // Codex reads a backslash in a glob as an escape: `a\b/**/.env` would guard `ab`.
+      const cwd = path.join(root, 'a\\b');
+      const lookalike = path.join(root, 'ab');
+      for (const dir of [cwd, lookalike]) fs.mkdirSync(dir);
+      for (const mode of MODES) {
+        expect(() => render(cwd, mode)).toThrow(
+          'Codex can’t protect a folder with a backslash in its path. Choose another folder.'
+        );
+        expect(render(lookalike, mode)[`${key(lookalike)}/**/.env`]).toBe('deny');
+      }
+    }
+  );
+
   it('starts a worktree whose git folder is gone at every level, keeping its pointer read-only', () => {
     const cwd = path.join(root, 'tree');
     fs.mkdirSync(cwd);

@@ -8,9 +8,9 @@ import {
   type ProtectedPathRoots,
 } from '../../../core/protected-paths/protected-path-check.js';
 
-/** Why Codex can't keep a folder's Git files safe. */
+/** Why Codex can't keep a folder's Git or secret files safe. */
 export type GitMetadataRefusal =
-  'inside-git-folder' | 'missing-git-folder' | 'protected-folder' | 'unreadable';
+  'inside-git-folder' | 'missing-git-folder' | 'protected-folder' | 'unreadable' | 'backslash-path';
 
 const REFUSAL_COPY: Record<GitMetadataRefusal, string> = {
   'inside-git-folder': 'Codex can’t work inside a Git folder. Choose the project folder instead.',
@@ -19,9 +19,14 @@ const REFUSAL_COPY: Record<GitMetadataRefusal, string> = {
   'protected-folder':
     'Codex can’t keep Git files safe inside a protected folder on Linux. Choose another folder.',
   unreadable: 'Codex can’t read this folder’s Git files. Choose another folder.',
+  'backslash-path':
+    'Codex can’t protect a folder with a backslash in its path. Choose another folder.',
 };
 
-/** An unsupported metadata policy needs a different folder, not another retry. */
+/**
+ * An unsupported file policy needs a different folder, not another retry: the
+ * folder's Git files, or (`backslash-path`) its secret files, can't be protected.
+ */
 export class CodexGitMetadataPolicyError extends Error {
   /**
    * Build the refusal; its message is the reason's own headline.
