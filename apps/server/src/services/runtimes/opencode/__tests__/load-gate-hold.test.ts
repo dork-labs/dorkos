@@ -128,6 +128,7 @@ function machine(load = 20, gate?: () => LoadGate) {
       sessionId,
       ocSessionId: `ses_${sessionId}`,
       cwd: project.dir,
+      directory: project.dir,
       permissions: {
         pendingPermissionSessions: new Map(
           Object.keys(calls).map((id): [string, string] => [id, `ses_${sessionId}`])
@@ -399,7 +400,9 @@ describe('giving the slot back', () => {
     expect(m.respond).toHaveBeenCalledWith({
       url: '/permission/{requestID}/reply',
       path: { requestID: 'perm-a' },
+      query: { directory: project.dir },
       body: { reply: 'reject', message: STOPPED_WHILE_WAITING_REASON },
+      signal: expect.any(AbortSignal),
     });
     expect(anaBuild.events.at(-1)).toMatchObject({
       type: 'permission_denied',

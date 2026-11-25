@@ -611,8 +611,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       void this.provider.turnSettled?.().catch(() => undefined);
       const refusal = switchPendingEvent(err) ?? creditsRefusalEvent(err);
       if (!refusal) throw err;
-      yield refusal;
-      return;
+      return yield refusal;
     }
     // Whose identity this turn carries: the directory's own agent, or the one
     // a room worktree was handed to — never by prefix, and never another agent
@@ -776,6 +775,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         sessionId,
         ocSessionId,
         cwd,
+        directory,
         permissions: ctx,
         protectedRoots: turnProtectedRoots(cwd, agentPath, this.meshCore),
         // A Stop ends a heavy shell job's wait for the machine's line (DOR-4209).
