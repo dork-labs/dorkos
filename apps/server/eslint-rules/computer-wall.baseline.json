@@ -147,7 +147,7 @@
       "tables": 0
     },
     "src/services/core/streams/session-stream-delivery.ts": {
-      "space": 3,
+      "space": 4,
       "frontDoor": 0,
       "tables": 0
     },
@@ -687,6 +687,16 @@
       "tables": 0
     },
     "src/services/runtimes/codex/native-session-reader.ts": {
+      "space": 3,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/policy/secret-file-activity.ts": {
+      "space": 1,
+      "frontDoor": 0,
+      "tables": 0
+    },
+    "src/services/runtimes/codex/tool-turn/outside-text-reads.ts": {
       "space": 3,
       "frontDoor": 0,
       "tables": 0
