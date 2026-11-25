@@ -284,6 +284,9 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       todoPromiseDeps: todoPromises.capabilityDeps,
       // To-dos (DOR-3088), behind their flag until v1 is complete.
       ...(env.DORKOS_TODOS_ENABLED ? { todoDeps: todoPromises.todoCapabilityDeps } : {}),
+      // The app's to-do and promise reads and a person's "add a promise" (DOR-4978).
+      todoPromiseHttpDeps: todoPromises.promiseHttpDeps,
+      ...(env.DORKOS_TODOS_ENABLED ? { todoViewDeps: todoPromises.todoViewDeps } : {}),
       workQueueDeps: workQueue.capabilityDeps,
       // A person's queue doors, served on the REST paths (DOR-4978).
       workQueuePersonDeps: workQueue.personDeps,

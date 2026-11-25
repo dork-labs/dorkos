@@ -104,6 +104,10 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'todos.add',
     'todos.list',
     'todos.update',
+    // The app's reads, on their REST paths (DOR-4978).
+    'todos.view_promises',
+    'todos.view_list',
+    'todos.view_card',
   ],
   // Chats messaging chats (spec `spin-off-chats`); the relay send, inbox and
   // endpoint tools retired for them.
@@ -187,9 +191,15 @@ describe('permission-area census', () => {
     expect(ids).toEqual(expect.arrayContaining(['todos.add', 'todos.list', 'todos.update']));
   });
 
+  /**
+   * A person's own to-do doors (`http.audience: 'person'`): no agent can call them, so no
+   * agent's To-dos setting is theirs to decide (DOR-4978).
+   */
+  const PERSON_ONLY_DOORS = new Set(['todos.add_promise_for_agent']);
+
   it('puts every to-do tool in the To-dos area, so a new one cannot land outside it', () => {
     const outside = actions
-      .filter((a) => /^todo/.test(a.id) && a.area !== 'todos')
+      .filter((a) => /^todo/.test(a.id) && a.area !== 'todos' && !PERSON_ONLY_DOORS.has(a.id))
       .map((a) => `${a.id} -> ${a.area}`);
     expect(outside).toEqual([]);
   });

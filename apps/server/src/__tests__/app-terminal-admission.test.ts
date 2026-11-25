@@ -329,7 +329,6 @@ describe('main HTTP admission through the real app', () => {
     // 88 -> 89: the empty, sandboxed document every app's screens run in (DOR-3293).
     expect(mounts).toContain('/api/extension-frame');
     // 89 -> 90: every schedule and heartbeat that cannot wake (DOR-3641).
-    expect(mounts).toContain('/api/heartbeats/wakers-off');
     // 90 -> 91: the owner-only browser watch stream (DOR-2667).
     expect(mounts).toContain('/api/browser-viewers');
     // 91 -> 92: the owner's passkeys and authenticator apps (DOR-3647).
@@ -339,7 +338,9 @@ describe('main HTTP admission through the real app', () => {
     // 93 -> 90: the activity feed, the audit reads and every chat running now
     // are capabilities the mount serves (DOR-4978), so they are asked for by
     // hand below. 90 -> 88: a person's work queue doors moved there too.
-    expect(mounts).toHaveLength(88);
+    // 88 -> 86: what cannot wake and a person's "add a promise" moved there
+    // too (DOR-4978).
+    expect(mounts).toHaveLength(86);
     const byHand = [
       '/',
       '/x/fixture',
@@ -356,6 +357,8 @@ describe('main HTTP admission through the real app', () => {
       '/api/sessions/running',
       '/api/agents/admission-fixture/work-queue',
       '/api/work-queues/stop',
+      '/api/heartbeats/wakers-off',
+      '/api/agents/admission-fixture/todo-promises',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

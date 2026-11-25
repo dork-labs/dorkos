@@ -42,6 +42,7 @@ import {
   CapabilityToolError,
   personCaller,
   type CapabilityRegistry,
+  type CapabilityRequestFacts,
 } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
@@ -50,6 +51,10 @@ import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { refuseUnlessAccountOwner, presentsProgramCredential } from '../lib/caller-authority.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { personProof } from '../services/todos/caller.js';
+import type { RequestFacts } from '../http/request-facts.js';
 import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
 
 /** What a request answers while boot has not handed the registry over. */
@@ -142,6 +147,7 @@ export async function dispatchCapability(
       ...(user ? { userId: user.userId } : {}),
       ...(approvalToken ? { approvalToken } : {}),
       ...(person ? { person } : {}),
+      request: capabilityRequestFacts(facts),
       retryChannel: 'http-header',
     });
     const success = dispatch.success ?? 200;
@@ -162,4 +168,33 @@ export async function dispatchCapability(
     logger.error('[capabilities] invoke failed', { id, err });
     return problem(c, 'internal_error', { detail: CAPABILITY_FAILED });
   }
+}
+
+/**
+ * The answers about one request a capability handler may see.
+ *
+ * The dispatcher and the hand routes that share a handler's checks both call
+ * this, so the two cannot drift. Each is worked out only when a handler first reads it, and once: the owner
+ * bar records a request it refused for want of the person's session, which
+ * turns the route's refusal into the step-up (`http/person-session-refusal.ts`),
+ * so it must run only for a handler that actually asks, as the hand routes did.
+ *
+ * @param facts - The request's facts.
+ * @returns The derived answers; no header value is in them.
+ */
+export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFacts {
+  let accountOwner: boolean | undefined;
+  let ownerProven: boolean | undefined;
+  let local: boolean | undefined;
+  return {
+    get accountOwner() {
+      return (accountOwner ??= refuseUnlessAccountOwner(facts) === undefined);
+    },
+    get ownerProven() {
+      return (ownerProven ??= personProof(facts));
+    },
+    get atThisComputerWithoutProgramKey() {
+      return (local ??= isAtThisComputer(facts) && !presentsProgramCredential(facts));
+    },
+  };
 }

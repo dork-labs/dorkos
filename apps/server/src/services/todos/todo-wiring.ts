@@ -7,10 +7,9 @@
  */
 import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
-import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import type { TodoPromiseRouterDeps } from '../../routes/todo-promises.js';
 import { todoNeedsStepUp, type TodoRouterDeps } from '../../routes/todos.js';
-import type { CapabilityDeps } from '../core/capabilities/index.js';
+import type { CapabilityDeps, CapabilityRequestFacts } from '../core/capabilities/index.js';
 import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import { ownerAccountExists } from '../core/auth/gate-policy.js';
 import { heldWifiOwner, personProof } from './caller.js';
@@ -50,16 +49,20 @@ export interface TodoWiring {
   todos: TodoService;
   /** Starts, queues and holds the turns to-dos ask for. */
   todoTurns: TodoTurns;
-  /** What `/api/todos` reads, mounted only behind `DORKOS_TODOS_ENABLED`. */
+  /** What `/api/todos`'s writes read, mounted only behind `DORKOS_TODOS_ENABLED`. */
   todoRouteDeps: TodoRouterDeps;
+  /** The to-do reads' capability deps, registered only behind `DORKOS_TODOS_ENABLED`. */
+  todoViewDeps: NonNullable<CapabilityDeps['todoViewDeps']>;
+  /** The promise read's and a person's "add a promise"'s capability deps. */
+  promiseHttpDeps: NonNullable<CapabilityDeps['todoPromiseHttpDeps']>;
   /** The `todos` capability domain's deps, registered only behind `DORKOS_TODOS_ENABLED`. */
   todoCapabilityDeps: NonNullable<CapabilityDeps['todoDeps']>;
   /** The `todos` capability domain's deps. */
   capabilityDeps: NonNullable<CapabilityDeps['todoPromiseDeps']>;
   /**
    * What the routes read, for boot to hand the Hono `/api` app
-   * (`http/hono-api.ts`), which serves `/api/todo-promises` and
-   * `/api/agents/:id/todo-promises` from it.
+   * (`http/hono-api.ts`), which serves a person's changes under
+   * `/api/todo-promises` from it.
    */
   routeDeps: TodoPromiseRouterDeps;
   /** Disarm every due timer. */
@@ -84,18 +87,16 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
   });
   const agentIdForPath = (agentPath: string) => deps.meshCore()?.getByPath(agentPath)?.id;
   const agentExists = (agentId: string) => deps.meshCore()?.get(agentId) !== undefined;
-  const routerDeps: TodoPromiseRouterDeps = {
-    service,
-    agentExists,
+  const ownerChecks = {
     // The same owner bar the account routes use: a person, never an agent,
     // and with login on, the install's owner.
-    isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
+    isOwner: (request: CapabilityRequestFacts) => request.accountOwner,
     // Only the owner's own session cookie mints `person` authority (DOR-3088).
-    personProven: personProof,
+    personProven: (request: CapabilityRequestFacts) => request.ownerProven,
     // With no owner account nobody can be proven; a failed lookup reads as an owner (DOR-3832).
     ownerExists: ownerAccountExists,
-    confirm,
   };
+  const routerDeps: TodoPromiseRouterDeps = { service, confirm, ...ownerChecks };
   const todoStore = new TodoStore(deps.db);
   const todoTurns = new TodoTurns({ db: deps.db, ...todoTurnSeams(deps) });
   const todos = new TodoService({
@@ -160,8 +161,18 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       ownerExists: ownerAccountExists,
       heldWifiOwner,
       needsStepUp: todoNeedsStepUp,
-      workSessionOf: (todoId) => todoTurns.lastSessionOf(todoId),
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
+    },
+    todoViewDeps: {
+      todos,
+      workSessionOf: (todoId) => todoTurns.lastSessionOf(todoId),
+      carriesOutsideWords: (id) => rowCarriesOutsideWords(todoStore.get(id)),
+    },
+    promiseHttpDeps: {
+      service,
+      agentExists,
+      carriesOutsideWords: (id) => rowCarriesOutsideWords(todoStore.get(id)),
+      ...ownerChecks,
     },
     todoCapabilityDeps: {
       todos,

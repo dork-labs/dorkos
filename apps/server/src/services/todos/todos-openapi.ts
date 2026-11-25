@@ -5,13 +5,10 @@
  * @module services/todos/todos-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/problem-openapi.js';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 import { z } from 'zod';
 import {
   CreateTodoRequestSchema,
-  ListTodosQuerySchema,
-  ListTodosResponseSchema,
-  TodoCardSchema,
   TodoSchema,
   UpdateTodoRequestSchema,
 } from '@dorkos/shared/todo-schemas';
@@ -24,24 +21,6 @@ import {
  * @param registry - The server's OpenAPI registry.
  */
 export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/todos',
-    tags: ['To-dos'],
-    summary: 'To-dos',
-    description:
-      'To-dos for a view (assigned to me by default), open first, with how many done ones the ' +
-      'view hides and the rail badge.',
-    request: { query: ListTodosQuerySchema },
-    responses: {
-      500: INTERNAL_ERROR_RESPONSE,
-      200: {
-        description: 'The to-dos',
-        content: { 'application/json': { schema: ListTodosResponseSchema } },
-      },
-    },
-  });
-
   registry.registerPath({
     method: 'post',
     path: '/api/todos',
@@ -60,24 +39,6 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       401: problemResponse('Step up first'),
       403: problemResponse('An agent'),
       429: problemResponse('Past a daily cap'),
-    },
-  });
-
-  registry.registerPath({
-    method: 'get',
-    path: '/api/todos/{id}',
-    tags: ['To-dos'],
-    summary: 'One to-do',
-    description:
-      'One to-do, read with the same reach as the list, and the chat its latest turn ran in. A ' +
-      "to-do's card in a Direct chat draws from this, never from the card entry itself.",
-    request: { params: z.object({ id: z.string() }) },
-    responses: {
-      200: {
-        description: 'The to-do',
-        content: { 'application/json': { schema: TodoCardSchema } },
-      },
-      404: problemResponse('No such to-do'),
     },
   });
 

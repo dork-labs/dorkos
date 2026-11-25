@@ -6,13 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { createAgentTodoPromisesRoutes, createTodoPromisesRoutes } from '../todo-promises.js';
+import { createTodoPromisesRoutes } from '../todo-promises.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import { todoPromiseHttpDomain } from '../../services/todos/todo-http-capabilities.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TodoPromiseService, TodoPromiseStore } from '../../services/todos/index.js';
 import { TodoConfirm } from '../../services/todos/notice/todo-confirm.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { personProof } from '../../services/todos/caller.js';
+import type { CapabilityRequestFacts } from '../../services/core/capabilities/index.js';
 import { todos, eq, type Db } from '@dorkos/db';
 
 vi.mock('../../lib/logger.js', () => ({
@@ -61,8 +63,9 @@ describe('to-do routes', () => {
     service = new TodoPromiseService({ store: new TodoPromiseStore(db) });
     const deps = {
       isOwner: () => owner,
-      // The real proof: these requests carry no session cookie, as a local program's would not.
-      personProven: personProof,
+      // The real proof, as the server works it out: these requests carry no session cookie, as a
+      // local program's would not.
+      personProven: (request: CapabilityRequestFacts) => request.ownerProven,
       ownerExists: () => ownerAccount,
       confirm: new TodoConfirm({
         store: new TodoPromiseStore(db),
@@ -75,8 +78,9 @@ describe('to-do routes', () => {
     };
     const app = honoGroupListener(
       [
+        // The list and "add a promise" are capabilities the mount serves (DOR-4978).
+        capabilityGroup(todoPromiseHttpDomain, { todoPromiseHttpDeps: deps }),
         { path: '/api/todo-promises', routes: createTodoPromisesRoutes(deps) },
-        { path: '/api/agents/:id/todo-promises', routes: createAgentTodoPromisesRoutes(deps) },
       ],
       {
         // Stand in for the agent-identity step: the header names a home folder,
@@ -180,21 +184,22 @@ describe('to-do routes', () => {
       expect(power(added.body.id)).toEqual({ authority: 'person', marks: '{}' });
     });
 
-    it('never counts a Wi-Fi request as the person: its add stays the stranger bound, its drop needs a note', async () => {
+    it('never counts a Wi-Fi request as the person: its add is refused, its drop needs a note', async () => {
       const given = service.create(
         'agent-ana',
         { what: 'Ship it' },
         { kind: 'person', proven: true }
       );
+      // Adding a promise is done at the computer. In the real app the chain's Wi-Fi rule already
+      // refused this path (`wifi-level.ts`, "Record an agent's promises"), so production is
+      // unchanged; this harness skips that rule, and the mount's own Wi-Fi refusal answers.
       const add = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .set(VIA_WIFI, '1')
         .send({ what: 'Delete the staging bucket' });
-      expect(add.status).toBe(201);
-      expect(power(add.body.id)).toEqual({
-        authority: 'runtime-default',
-        marks: '{"outsider":true}',
-      });
+      expect(add.status).toBe(403);
+      expect(add.body.code).toBe('not_from_wifi');
+      expect(service.list()).toHaveLength(1);
       const drop = await request(fixtureServer)
         .patch(`/api/todo-promises/${given.id}`)
         .set(VIA_WIFI, '1')
@@ -231,15 +236,14 @@ describe('to-do routes', () => {
         { what: 'Ship it' },
         { kind: 'person', proven: true }
       );
+      // The person bar asks another device for a session, so its add never runs.
       const add = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .set(FORWARDED_AFTER_GATE, '203.0.113.7')
         .send({ what: 'Delete the staging bucket' });
-      expect(add.status).toBe(201);
-      expect(power(add.body.id)).toEqual({
-        authority: 'runtime-default',
-        marks: '{"outsider":true}',
-      });
+      expect(add.status).toBe(403);
+      expect(add.body.code).toBe('person_only');
+      expect(service.list()).toHaveLength(1);
       const drop = await request(fixtureServer)
         .patch(`/api/todo-promises/${given.id}`)
         .set(FORWARDED_AFTER_GATE, '203.0.113.7')
@@ -250,15 +254,14 @@ describe('to-do routes', () => {
     });
 
     it('never counts a program sending a credential as the person, even at this computer', async () => {
+      // A bearer is a program, not a person: the person-only door refuses it.
       const add = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .set('authorization', 'Bearer made-up-token')
         .send({ what: 'Delete the staging bucket' });
-      expect(add.status).toBe(201);
-      expect(power(add.body.id)).toEqual({
-        authority: 'runtime-default',
-        marks: '{"outsider":true}',
-      });
+      expect(add.status).toBe(403);
+      expect(add.body.code).toBe('person_only');
+      expect(service.list()).toEqual([]);
     });
 
     it('lets the /api host guard refuse a request naming another host on the network', async () => {
@@ -476,6 +479,25 @@ describe('to-do routes', () => {
     const theirs = await request(fixtureServer).get('/api/todo-promises');
     expect(theirs.body.todoPromises[0].sourceSessionId).toBeNull();
     expect(theirs.body.todoPromises[0].what).toBe('Ship it');
+  });
+
+  it('serves the promise list to an agent whose token no longer resolves, as the plain route did (DOR-4978)', async () => {
+    service.create('agent-ana', { what: 'Ship it', sourceSessionId: 'chat-1' });
+    const res = await request(fixtureServer)
+      .get('/api/todo-promises')
+      .set(AGENT_IDENTITY_HEADER, 'not-a-token');
+    expect(res.status).toBe(200);
+    expect(res.body.todoPromises[0].sourceSessionId).toBeNull();
+  });
+
+  it('reads every promise for an agent too, never with the chat it was made in (DOR-4978)', async () => {
+    service.create('agent-ana', { what: 'Ship it', sourceSessionId: 'chat-1' });
+    const res = await request(fixtureServer)
+      .get('/api/todo-promises')
+      .set(AGENT_IDENTITY_HEADER, '/agents/ana');
+    expect(res.status).toBe(200);
+    expect(res.body.todoPromises[0].what).toBe('Ship it');
+    expect(res.body.todoPromises[0].sourceSessionId).toBeNull();
   });
 
   it('refuses a past due date with PAST_DUE', async () => {

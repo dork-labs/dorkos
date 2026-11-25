@@ -336,6 +336,24 @@ const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
   // A data directory with no user templates, so the list is the built-in ones.
   templateDeps: { dorkHome: '/conformance-no-such-dork-home' },
+  // The to-do and promise reads and a person's "add a promise" serve REST paths
+  // (DOR-4978), so the boot registry carries them for the docs/boot parity check.
+  // Empty lists, no agents and nobody the owner: every call answers on its own.
+  todoViewDeps: {
+    todos: { list: () => ({ todos: [], doneCount: 0, badge: 0 }), get: () => undefined },
+  },
+  todoPromiseHttpDeps: {
+    service: {
+      list: () => [],
+      create: () => {
+        throw new Error('no promise is made in conformance');
+      },
+    },
+    agentExists: () => false,
+    isOwner: () => false,
+    personProven: () => false,
+    ownerExists: () => true,
+  },
   operatorDeps,
   marketplaceDeps,
   connectorDeps,
@@ -703,6 +721,8 @@ capabilityConformance(registry, {
     'agent.resume': { agentId: 'conformance-agent' },
     // A room the operator is in, so the link reaches the real rooms service and opens it.
     'link.resolve': { uri: `dork:room:${CONFORMANCE_ROOM_ID}` },
+    // No such to-do, so the handler answers its own `TODO_NOT_FOUND`.
+    'todos.view_card': { id: 'conformance-no-such-todo' },
     // A folder that is not there, so the handler answers its own `FOLDER_MISSING`.
     'directory.browse': { path: '/conformance-no-such-folder' },
     // Paths outside the boundary, so each answers its own path refusal.

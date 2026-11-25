@@ -18,6 +18,7 @@ export {
   type CapabilityRegistry,
   type ContributeResult,
   type CapabilityHandlerContext,
+  type CapabilityRequestFacts,
   type HandToolReach,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,

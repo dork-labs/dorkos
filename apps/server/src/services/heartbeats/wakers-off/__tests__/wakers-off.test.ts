@@ -2,11 +2,18 @@
  * The team page's list of wakers that cannot wake (DOR-3641): which schedules
  * and heartbeats it names, since when, and who each waits on.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
-import { Hono } from 'hono';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { WakersOffSchema } from '@dorkos/shared/waker-schemas';
-import { createWakersOffRoutes } from '../../../../routes/wakers-off.js';
-import type { ApiEnv } from '../../../../http/api-chain.js';
+import { capabilityGroup } from '../../../../http/__tests__/capability-group.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
+import { heartbeatDomain } from '../../heartbeat-capabilities.js';
+import { setWakersOffReader } from '../wakers-off-capability.js';
+import { initConfigManager } from '../../../core/config-manager.js';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
@@ -23,8 +30,20 @@ const OWNER = 'owner-account';
 const SCOUT = { id: 'agent-scout', name: 'Scout', runtime: 'claude-code', projectPath: '/a/scout' };
 const ATLAS = { id: 'agent-atlas', name: 'Atlas', runtime: 'claude-code', projectPath: '/a/atlas' };
 
+const fixtureTarget = swappableServer();
+
+// The `/api` chain's host guard and session gate read the real config: login off.
+let home: string;
+beforeAll(() => {
+  home = mkdtempSync(join(tmpdir(), 'dorkos-wakers-off-'));
+  initConfigManager(home);
+});
+afterAll(() => rmSync(home, { recursive: true, force: true }));
+
 describe('wakers off (DOR-3641)', () => {
   let db: Db;
+
+  afterEach(() => setWakersOffReader(undefined));
 
   beforeEach(() => {
     db = createTestDb();
@@ -116,18 +135,27 @@ describe('wakers off (DOR-3641)', () => {
     ]);
   });
 
-  it('answers on GET /api/heartbeats/wakers-off', async () => {
+  it('answers on GET /api/heartbeats/wakers-off, served by the capability mount', async () => {
     schedule('switched-off', { enabled: false });
-    const app = new Hono<ApiEnv>();
-    app.route(
-      '/api/heartbeats/wakers-off',
-      createWakersOffRoutes({ list: () => listWakersOff(input()) })
-    );
+    setWakersOffReader({ list: () => listWakersOff(input()) });
+    const server = fixtureTarget.mount(honoGroupListener(capabilityGroup(heartbeatDomain)));
 
-    const response = await app.request('/api/heartbeats/wakers-off');
+    const response = await request(server)
+      .get('/api/heartbeats/wakers-off')
+      .set('X-DorkOS-Agent', 'x');
 
+    // Readable by anyone in the space, an agent included.
     expect(response.status).toBe(200);
-    expect(WakersOffSchema.parse(await response.json()).wakers[0]?.id).toBe('switched-off');
+    expect(WakersOffSchema.parse(response.body).wakers[0]?.id).toBe('switched-off');
+  });
+
+  it('says heartbeats are not running before the server hands the reader over', async () => {
+    const server = fixtureTarget.mount(honoGroupListener(capabilityGroup(heartbeatDomain)));
+
+    const response = await request(server).get('/api/heartbeats/wakers-off');
+
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('temporarily_unavailable');
   });
 
   it('dates a switched-off heartbeat from its file and asks its agent’s person', async () => {

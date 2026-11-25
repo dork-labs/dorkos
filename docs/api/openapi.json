@@ -2081,20 +2081,6 @@
         ],
         "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
       },
-      "ListTodoPromisesResponse": {
-        "type": "object",
-        "properties": {
-          "todoPromises": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TodoPromise"
-            }
-          }
-        },
-        "required": [
-          "todoPromises"
-        ]
-      },
       "TodoPromise": {
         "type": "object",
         "properties": {
@@ -2218,28 +2204,6 @@
           "dropped"
         ]
       },
-      "CreateTodoPromiseRequest": {
-        "type": "object",
-        "properties": {
-          "what": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
-          },
-          "to": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "dueAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "what"
-        ]
-      },
       "UpdateTodoPromiseRequest": {
         "type": "object",
         "properties": {
@@ -2278,28 +2242,6 @@
         },
         "required": [
           "answer"
-        ]
-      },
-      "ListTodosResponse": {
-        "type": "object",
-        "properties": {
-          "todos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Todo"
-            }
-          },
-          "doneCount": {
-            "type": "integer"
-          },
-          "badge": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "todos",
-          "doneCount",
-          "badge"
         ]
       },
       "Todo": {
@@ -2492,15 +2434,6 @@
           }
         ]
       },
-      "TodoView": {
-        "type": "string",
-        "enum": [
-          "mine",
-          "by-me",
-          "agents",
-          "everyone"
-        ]
-      },
       "CreateTodoRequest": {
         "type": "object",
         "properties": {
@@ -2543,27 +2476,6 @@
           "assignee"
         ],
         "additionalProperties": false
-      },
-      "TodoCard": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Todo"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "workSessionId": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "workSessionId"
-            ]
-          }
-        ]
       },
       "UpdateTodoRequest": {
         "type": "object",
@@ -3081,88 +2993,6 @@
         },
         "required": [
           "useCredits"
-        ]
-      },
-      "WakersOff": {
-        "type": "object",
-        "properties": {
-          "wakers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WakerOff"
-            }
-          }
-        },
-        "required": [
-          "wakers"
-        ]
-      },
-      "WakerOff": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "schedule",
-              "heartbeat"
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "agentId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "state": {
-            "$ref": "#/components/schemas/WakerOffState"
-          },
-          "offSince": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "waitingOn": {
-            "type": "object",
-            "properties": {
-              "accountId": {
-                "type": "string"
-              },
-              "name": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "accountId",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "id",
-          "name",
-          "agentId",
-          "state",
-          "offSince",
-          "waitingOn"
-        ]
-      },
-      "WakerOffState": {
-        "type": "string",
-        "enum": [
-          "off",
-          "waiting",
-          "paused"
         ]
       },
       "FileDocumentSaveReceipt": {
@@ -21273,6 +21103,72 @@
           }
         ]
       },
+      "ListTodoPromisesResponse": {
+        "type": "object",
+        "properties": {
+          "todoPromises": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodoPromise"
+            }
+          }
+        },
+        "required": [
+          "todoPromises"
+        ]
+      },
+      "ListTodosResponse": {
+        "type": "object",
+        "properties": {
+          "todos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Todo"
+            }
+          },
+          "doneCount": {
+            "type": "integer"
+          },
+          "badge": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "todos",
+          "doneCount",
+          "badge"
+        ]
+      },
+      "TodoView": {
+        "type": "string",
+        "enum": [
+          "mine",
+          "by-me",
+          "agents",
+          "everyone"
+        ]
+      },
+      "TodoCard": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Todo"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "workSessionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "workSessionId"
+            ]
+          }
+        ]
+      },
       "WorkQueue": {
         "type": "object",
         "properties": {
@@ -22049,6 +21945,88 @@
               "agentId"
             ]
           }
+        ]
+      },
+      "WakersOff": {
+        "type": "object",
+        "properties": {
+          "wakers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WakerOff"
+            }
+          }
+        },
+        "required": [
+          "wakers"
+        ]
+      },
+      "WakerOff": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "heartbeat"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/WakerOffState"
+          },
+          "offSince": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "waitingOn": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "accountId",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "agentId",
+          "state",
+          "offSince",
+          "waitingOn"
+        ]
+      },
+      "WakerOffState": {
+        "type": "string",
+        "enum": [
+          "off",
+          "waiting",
+          "paused"
         ]
       },
       "BrowseDirectoryResponse": {
@@ -26644,140 +26622,6 @@
         "operationId": "keepAwake.get"
       }
     },
-    "/api/todo-promises": {
-      "get": {
-        "tags": [
-          "To-dos"
-        ],
-        "summary": "What agents promised",
-        "description": "Every agent's promises, readable by anyone in the space: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is computed on read.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "agentId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "$ref": "#/components/schemas/TodoState"
-            },
-            "required": false,
-            "name": "state",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "to",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The promises",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListTodoPromisesResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "todoPromises.list"
-      }
-    },
-    "/api/agents/{id}/todo-promises": {
-      "post": {
-        "tags": [
-          "To-dos"
-        ],
-        "summary": "Add a promise for an agent",
-        "description": "A person records something an agent promised. Agents record their own with `todo_promise_add`, so a caller presenting an agent identity is refused.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTodoPromiseRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "The new promise",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TodoPromise"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: invalid body. `past_due`: a past date",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`person_only`: the caller is an agent. `owner_only`: not the owner",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`not_found`: no agent has that id",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.createTodoPromises"
-      }
-    },
     "/api/todo-promises/{id}": {
       "patch": {
         "tags": [
@@ -26931,105 +26775,6 @@
       }
     },
     "/api/todos": {
-      "get": {
-        "tags": [
-          "To-dos"
-        ],
-        "summary": "To-dos",
-        "description": "To-dos for a view (assigned to me by default), open first, with how many done ones the view hides and the rail badge.",
-        "parameters": [
-          {
-            "schema": {
-              "$ref": "#/components/schemas/TodoView"
-            },
-            "required": false,
-            "name": "view",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "agentId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "roomId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "overdue",
-                "today",
-                "week",
-                "none"
-              ]
-            },
-            "required": false,
-            "name": "due",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            },
-            "required": false,
-            "name": "showDone",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "due",
-                "rank"
-              ]
-            },
-            "required": false,
-            "name": "sort",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 500
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The to-dos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListTodosResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "todos.list"
-      },
       "post": {
         "tags": [
           "To-dos"
@@ -27098,38 +26843,195 @@
           }
         },
         "operationId": "todos.create"
-      }
-    },
-    "/api/todos/{id}": {
+      },
       "get": {
+        "operationId": "todos.view_list",
         "tags": [
-          "To-dos"
+          "Todos"
         ],
-        "summary": "One to-do",
-        "description": "One to-do, read with the same reach as the list, and the chat its latest turn ran in. A to-do's card in a Direct chat draws from this, never from the card entry itself.",
+        "summary": "Open a to-do list",
+        "description": "To-dos for a view (assigned to the person by default), open first, with how many done ones the view hides and the rail badge.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/TodoView"
             },
-            "required": true,
-            "name": "id",
-            "in": "path"
+            "required": false,
+            "name": "view",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "roomId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "overdue",
+                "today",
+                "week",
+                "none"
+              ]
+            },
+            "required": false,
+            "name": "due",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "Include done and declined ones."
+            },
+            "required": false,
+            "description": "Include done and declined ones.",
+            "name": "showDone",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due",
+                "rank"
+              ]
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "The to-do",
+            "description": "Open a to-do list result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TodoCard"
+                  "$ref": "#/components/schemas/ListTodosResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No such to-do",
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27138,9 +27040,10 @@
               }
             }
           }
-        },
-        "operationId": "todos.get"
-      },
+        }
+      }
+    },
+    "/api/todos/{id}": {
       "patch": {
         "tags": [
           "To-dos"
@@ -27229,6 +27132,139 @@
           }
         },
         "operationId": "todos.update"
+      },
+      "get": {
+        "operationId": "todos.view_card",
+        "tags": [
+          "Todos"
+        ],
+        "summary": "Open a to-do",
+        "description": "One to-do, read with the same reach as the list, and the chat its latest turn ran in. A to-do's card in a Direct chat draws from this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The to-do."
+            },
+            "required": true,
+            "description": "The to-do.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open a to-do result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoCard"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/agents/{id}/heartbeat": {
@@ -27365,31 +27401,6 @@
           }
         },
         "operationId": "heartbeats.updateTriageCredits"
-      }
-    },
-    "/api/heartbeats/wakers-off": {
-      "get": {
-        "tags": [
-          "Heartbeats"
-        ],
-        "summary": "Every schedule and heartbeat that cannot wake",
-        "description": "Each schedule that is switched off, waiting for approval or paused, each heartbeat set to off, each paused agent, and heartbeats as a whole when they are off. Each says since when, when DorkOS knows, and the person who can turn it back on. Longest off first.",
-        "responses": {
-          "200": {
-            "description": "The wakers that cannot wake",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WakersOff"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "heartbeats.getWakersOff"
       }
     },
     "/api/onboarding/first-run": {
@@ -104537,6 +104548,329 @@
         }
       }
     },
+    "/api/todo-promises": {
+      "get": {
+        "operationId": "todos.view_promises",
+        "tags": [
+          "Todos"
+        ],
+        "summary": "Open what agents promised",
+        "description": "Every agent's promises: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is worked out on read. Only the owner sees the chat each was made in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/TodoState"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open what agents promised result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListTodoPromisesResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/todo-promises": {
+      "post": {
+        "operationId": "todos.add_promise_for_agent",
+        "tags": [
+          "Todos"
+        ],
+        "summary": "Add a promise for an agent",
+        "description": "The owner records something an agent promised: what, to whom, and when it is due. Agents record their own with `todo_promise_add`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent that promised it."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent that promised it.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "what": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "to": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "dueAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "what"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Add a promise for an agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoPromise"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agents/{id}/work-queue": {
       "get": {
         "operationId": "work-queue.view_queue",
@@ -107577,6 +107911,128 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/heartbeats/wakers-off": {
+      "get": {
+        "operationId": "heartbeat.wakers_off",
+        "tags": [
+          "Heartbeat"
+        ],
+        "summary": "List what cannot wake",
+        "description": "Every schedule and heartbeat that cannot wake now: why, since when, and who it waits on.",
+        "responses": {
+          "200": {
+            "description": "List what cannot wake result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WakersOff"
                 }
               }
             }

@@ -6,12 +6,10 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { HeartbeatStatusSchema, TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
-import { WakersOffSchema } from '@dorkos/shared/waker-schemas';
-import { INTERNAL_ERROR_RESPONSE, problemResponse } from '../core/openapi/problem-openapi.js';
+import { problemResponse } from '../core/openapi/problem-openapi.js';
 
 /**
- * Register `GET /api/agents/{id}/heartbeat`, `PUT /api/heartbeats/triage-credits` and
- * `GET /api/heartbeats/wakers-off`.
+ * Register `GET /api/agents/{id}/heartbeat` and `PUT /api/heartbeats/triage-credits`.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -66,23 +64,6 @@ export function registerHeartbeatsOpenApi(registry: OpenAPIRegistry): void {
       403: problemResponse(
         '`owner_only` or `person_only`: only the owner of this DorkOS can answer, in the app'
       ),
-    },
-  });
-  registry.registerPath({
-    method: 'get',
-    path: '/api/heartbeats/wakers-off',
-    tags: ['Heartbeats'],
-    summary: 'Every schedule and heartbeat that cannot wake',
-    description:
-      'Each schedule that is switched off, waiting for approval or paused, each heartbeat set ' +
-      'to off, each paused agent, and heartbeats as a whole when they are off. Each says since ' +
-      'when, when DorkOS knows, and the person who can turn it back on. Longest off first.',
-    responses: {
-      500: INTERNAL_ERROR_RESPONSE,
-      200: {
-        description: 'The wakers that cannot wake',
-        content: { 'application/json': { schema: WakersOffSchema } },
-      },
     },
   });
 }

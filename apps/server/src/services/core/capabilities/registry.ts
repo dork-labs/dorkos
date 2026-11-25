@@ -196,6 +196,17 @@ export interface CapabilityInvocationContext {
    * that hands back words a stranger may have chosen leaves them out.
    */
   narrowedReads?: true;
+  /**
+   * What the server worked out about the HTTP request this call arrived on
+   * (`capabilityRequestFacts` in `routes/capability-dispatch.ts`): whether the caller clears the owner bar,
+   * proves the owner in person, and is at this computer with no program key.
+   * Never a header, so no cookie or key reaches a handler. Set by the HTTP
+   * dispatcher (`routes/capability-dispatch.ts`), so on a capability's own
+   * REST path, `POST /api/capabilities/{id}/invoke` and `dorkos call`; absent
+   * on MCP, in-session and in-process calls, where a handler that needs it
+   * fails closed. Never logged or returned; the gate never reads it.
+   */
+  request?: CapabilityRequestFacts;
   /** Process-authenticated caller resolved by a server-owned boundary. */
   /**
    * Which MCP server's tool list this call arrived through, set by the MCP
@@ -281,6 +292,32 @@ export interface HandToolReach {
 }
 
 /**
+ * What a capability handler may learn about the HTTP request it was called on
+ * (DOR-4978): a few answers the server worked out from the request, never the
+ * request itself. A handler never sees a header, so a session cookie, an API
+ * key or an `Authorization` value cannot reach it, its logs or its answer.
+ * Worked out by `capabilityRequestFacts` (`routes/capability-dispatch.ts`).
+ */
+export interface CapabilityRequestFacts {
+  /**
+   * Whether the caller clears the account owner bar: a person, never an
+   * agent, and with a person's session required, the install's owner
+   * (`refuseUnlessAccountOwner`).
+   */
+  readonly accountOwner: boolean;
+  /**
+   * Whether the request proves the owner in person: their own session
+   * cookie, and not a Wi-Fi request the Wi-Fi hold holds (`personProof`).
+   */
+  readonly ownerProven: boolean;
+  /**
+   * Whether the request comes from this computer (`isAtThisComputer`) and
+   * carries no program credential (a key, token or bearer).
+   */
+  readonly atThisComputerWithoutProgramKey: boolean;
+}
+
+/**
  * What a capability's handler receives — who is calling, and what the gate
  * already concluded about this exact call.
  *
@@ -355,6 +392,8 @@ export interface CapabilityHandlerContext {
   cwd?: string;
   /** See {@link CapabilityInvocationContext.narrowedReads}. */
   narrowedReads?: true;
+  /** See {@link CapabilityInvocationContext.request}. */
+  request?: CapabilityRequestFacts;
   /** Process-authenticated caller resolved by the server boundary. */
   /** See {@link CapabilityInvocationContext.mcpServer}. */
   mcpServer?: McpServerId;
@@ -815,6 +854,7 @@ export function composeRegistry(
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
         ...(supplied.narrowedReads ? { narrowedReads: true as const } : {}),
+        ...(supplied.request ? { request: supplied.request } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
         ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),
