@@ -428,6 +428,9 @@ runtimeConformance(
       ? 'CodexRuntime (LIVE codex binary) — AgentRuntime conformance'
       : 'CodexRuntime (scripted event transport) — AgentRuntime conformance',
     projectDir,
+    // Spec `turns-survive-restarts` §7.2: declared `false` until T19a's measured run.
+    restartContinueUnprovenReason:
+      'the thread resumes after a restart, but what a half-written Codex turn leaves in its rollout is unmeasured; T19a flips this with a measured run',
     // Codex is a stateless adapter: conformance drains sendMessage directly
     // (no feedProjector), so native history is [] by design — completed
     // history lives in the DorkOS-owned EventLog (ADR-0263).
@@ -761,6 +764,9 @@ runtimeConformance(
       ? 'CodexRuntime on app-server (LIVE codex binary) — AgentRuntime conformance'
       : 'CodexRuntime on app-server (fake app-server) — AgentRuntime conformance',
     projectDir,
+    // Spec `turns-survive-restarts` §7.2: declared `false` until T19a's measured run.
+    restartContinueUnprovenReason:
+      'the thread resumes after a restart, but what a half-written Codex turn leaves in its rollout is unmeasured; T19a flips this with a measured run',
     expectHistory: false,
     durableHistory: (runtime, sessionId, content) =>
       driveDurableTurn(runtime, sessionId, content, projectDir),

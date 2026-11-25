@@ -54,6 +54,12 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,
+  // Background work is tracked in memory (`app-server/background-work.ts`), so
+  // a restart leaves no record to wake a chat from.
+  wakesForLostBackgroundWork: false,
+  // The thread resumes after a restart, but what a half-written turn leaves in
+  // the rollout is unmeasured (T19a flips it).
+  continuesInterruptedTurn: false,
   nativeContext: [],
   // History reconstructs from the DorkOS EventLog (no thread-read API), so the
   // platform persists it to the durable session-event store (DOR-189).
