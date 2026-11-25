@@ -24,10 +24,12 @@
 #
 # WHICH TICKETS. Only ones it is sure of, because a link is never removed:
 #   - a Linear issue link (https://linear.app/<team>/issue/DOR-1234);
-#   - a key on a line that starts Refs, Closes, Fixes or Resolves;
-#   - a bare key whose prefix this repo declares (TICKET_PREFIXES).
-# HTML comments (the provenance line) and fenced code are skipped, and so is
-# every other ticket-shaped word: COVID-19 and HTTP-2 are never tickets here.
+#   - a key whose prefix this repo declares (TICKET_PREFIXES), anywhere,
+#     including a list after Closes, Fixes, Refs or Resolves.
+# A Refs, Closes, Fixes or Resolves line vouches for nothing more: "Fixes
+# UTF-8 decoding" names no ticket. HTML comments (the provenance line) and
+# fenced code are skipped, and so is every other ticket-shaped word: COVID-19,
+# HTTP-2, SHA-256 and ISO-8601 are never tickets here.
 #
 # Environment: OPEN_PR_DORKOS (the dorkos CLI; default `dorkos` on PATH, and
 # an empty value means none), OPEN_PR_CURL (default curl), DORKOS_AGENT_TOKEN,
@@ -71,9 +73,8 @@ tickets=$(node --input-type=module -e '
   const add = (key) => { if (!found.includes(key)) found.push(key); };
   for (const line of text.split("\n")) {
     for (const m of line.matchAll(/https:\/\/linear\.app\/[A-Za-z0-9_-]+\/issue\/([A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,6})(?![A-Za-z0-9_])/g)) add(m[1]);
-    const named = /^[\s>*_-]*(refs?|closes?|closed|fix(es|ed)?|resolves?|resolved)\b/i.test(line);
     for (const m of line.replace(/https?:\/\/\S+/g, " ").matchAll(KEY))
-      if (named || declared.has(m[1].split("-")[0])) add(m[1]);
+      if (declared.has(m[1].split("-")[0])) add(m[1]);
   }
   process.stdout.write(found.slice(0, Number(max)).join("\n"));
 ' "$body_file" "$TICKET_PREFIXES" "$MAX_TICKETS" 2>/dev/null) || {

@@ -13,7 +13,7 @@ field-changes: []
 DOR-5264: after a PR exists, `scripts/open-pr.sh` runs a new step 6,
 `scripts/open-pr-work-links.sh`. It tells the DorkOS server that started this chat's turn
 that the chat opened the PR, and works on the tickets the body names for sure (Linear issue
-links, keys on a Refs / Closes / Fixes line, and bare `DOR-` keys; never words like `COVID-19`).
+links and `DOR-` keys, a Fixes line included; never words like `COVID-19`, `HTTP-2` or `UTF-8`).
 It names no chat: the server reads it off the chat's own identity token and refuses unless
 that chat is mid-turn. It goes through `dorkos call work-graph.record-pr`, with the token in the
 environment and the input on stdin. With no CLI it falls back to curl, and only to a loopback

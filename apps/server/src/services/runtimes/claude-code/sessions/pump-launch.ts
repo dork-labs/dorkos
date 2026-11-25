@@ -40,6 +40,7 @@ import { fireLaunchProbes } from '../messaging/launch-probes.js';
 import { noteLaunchedAppend } from '../messaging/turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
 import { startHeavyJobsProcess } from '../tool-gate/load-gate-hook.js';
+import { forgetTokenChatOf } from '../../../core/agent-identity/agent-token-env.js';
 import type { MessageSenderOpts, ResolvedLaunch } from '../messaging/message-sender-shared.js';
 import { captureLaunchFingerprint } from './launch-fingerprint.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
@@ -149,6 +150,24 @@ export function pumpLaunchCallbacks(slot: LiveProcessSlot): PumpLaunchCallbacks 
 }
 
 /**
+ * A persistent process is starting with `options`. What it holds is given back
+ * when THIS process exits, never when another process of its chat does: its
+ * heavy-job slots (DOR-4209), and the chat its identity token names (DOR-5264),
+ * so a restart's new process keeps its own token's chat however late the old
+ * process's exit lands. Never throws.
+ *
+ * @param options - The options the process is launched with.
+ * @returns What to call when this process exits.
+ */
+export function startLaunchedProcess(options: Pick<Options, 'hooks' | 'env'>): () => void {
+  const releaseHeavyJobs = startHeavyJobsProcess(options);
+  return () => {
+    releaseHeavyJobs();
+    forgetTokenChatOf(options.env);
+  };
+}
+
+/**
  * Build the launcher for one session's pump.
  *
  * The returned function boots the process around the pump's held prompt and
@@ -193,7 +212,7 @@ export function createPumpLauncher(
       options: {
         ...plan.sdkOptions,
         spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger(), () =>
-          startHeavyJobsProcess(plan.sdkOptions)
+          startLaunchedProcess(plan.sdkOptions)
         ),
       },
       session,

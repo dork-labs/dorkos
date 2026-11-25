@@ -15,9 +15,11 @@
  * A launch mints a token per dispatch, but a warm Claude Code process keeps the
  * one from its first launch for every later turn (the launch fingerprint pins
  * the identity, not the token). So an entry lives while the process that holds
- * the token can: until the chat's process is disposed, the chat is removed, its
- * agent's tokens are revoked, the server restarts, or the map is full and it is
- * the oldest. An entry is not a pass on its own: the one reader,
+ * the token can: until THAT process ends (forgotten by its own token, never by
+ * chat, so a restart's new process keeps its entry however the old one's exit
+ * lands), its agent's tokens are revoked, the server restarts, or the map is
+ * full and it is the oldest. A chat that is deleted ends its process, and so
+ * its entry. An entry is not a pass on its own: the one reader,
  * `work-graph.record-pr`, also needs a live run of that chat right now.
  *
  * No launch knows its run id yet, so an entry names a chat. C18 (DOR-5278,
@@ -76,13 +78,12 @@ export class TokenChats {
   }
 
   /**
-   * Drop every entry for these chats: their process was disposed or the chat is gone.
+   * Drop the entries for these tokens: the process that held them has ended.
    *
-   * @param chatIds - Every id the chat is known by.
+   * @param tokenHashes - The tokens' stored digests.
    */
-  forgetChat(chatIds: readonly string[]): void {
-    const ids = new Set(chatIds);
-    for (const [hash, entry] of this.entries) if (ids.has(entry.chatId)) this.entries.delete(hash);
+  forgetTokens(tokenHashes: readonly string[]): void {
+    for (const hash of tokenHashes) this.entries.delete(hash);
   }
 
   /**

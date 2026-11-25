@@ -24,6 +24,7 @@ import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
 import {
+  getAgentIdentityService,
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
@@ -658,9 +659,12 @@ describe('work-graph.record-pr over HTTP (DOR-5264): the chat is the token’s',
 
   const pr = 'https://github.com/dork-labs/dorkos/pull/4242';
 
-  it('records on the chat the token was minted for, whatever the query names', async () => {
-    const res = await request(fixtureServer)
-      .post(`/api/capabilities/work-graph.record-pr/invoke?sessionId=${OTHER}`)
+  const invoke = () => request(fixtureServer).post('/api/capabilities/work-graph.record-pr/invoke');
+  const written = () =>
+    links.from({ kind: 'chat', id: CHAT }).concat(links.from({ kind: 'chat', id: OTHER }));
+
+  it('records on the chat the token was minted for', async () => {
+    const res = await invoke()
       .set('X-DorkOS-Agent', token)
       .send({ pr, tickets: ['DOR-5264'] });
     expect(res.status).toBe(200);
@@ -668,19 +672,33 @@ describe('work-graph.record-pr over HTTP (DOR-5264): the chat is the token’s',
     expect(links.from({ kind: 'chat', id: OTHER })).toEqual([]);
   });
 
-  it('refuses a chat in the body, and a caller with no token', async () => {
-    const named = await request(fixtureServer)
-      .post('/api/capabilities/work-graph.record-pr/invoke')
-      .set('X-DorkOS-Agent', token)
-      .send({ pr, chat: OTHER });
-    expect(named.status).toBe(400);
-    const anonymous = await request(fixtureServer)
-      .post('/api/capabilities/work-graph.record-pr/invoke')
-      .send({ pr });
-    expect(anonymous.status).toBe(403);
-    expect(anonymous.body).toMatchObject({ code: 'forbidden' });
-    expect(
-      links.from({ kind: 'chat', id: CHAT }).concat(links.from({ kind: 'chat', id: OTHER }))
-    ).toEqual([]);
+  it.each(['chat', 'chatId', 'sessionId'])(
+    'refuses a differing chat id sent as `%s`, and writes nothing',
+    async (field) => {
+      const res = await invoke()
+        .set('X-DorkOS-Agent', token)
+        .send({ pr, [field]: OTHER });
+      expect(res.status).toBe(400);
+      expect(written()).toEqual([]);
+    }
+  );
+
+  it('never falls back to another chat: a token whose chat is idle is refused while another runs', async () => {
+    const idle = await getAgentIdentityService()!.mint({
+      agentPath: '/agents/ana',
+      displayName: 'Ana',
+      chatId: '0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b',
+    });
+    const res = await invoke().set('X-DorkOS-Agent', idle).send({ pr });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(written()).toEqual([]);
+  });
+
+  it('refuses a caller with no token', async () => {
+    const res = await invoke().send({ pr });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'forbidden' });
+    expect(written()).toEqual([]);
   });
 });

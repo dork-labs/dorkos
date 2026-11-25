@@ -19,7 +19,11 @@ import { credentialRef } from '../../audit/account-ids.js';
 import { readManifest } from '@dorkos/shared/manifest';
 
 import { logger } from '../../../lib/logger.js';
-import { getAgentIdentityService, type AgentIdentity } from './agent-identity-service.js';
+import {
+  forgetAgentTokens,
+  getAgentIdentityService,
+  type AgentIdentity,
+} from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
 import { homeOf, type HomeResolution } from './agent-home.js';
 
@@ -89,6 +93,20 @@ export async function resolveAgentTokenEnv(
     });
     return {};
   }
+}
+
+/**
+ * The process launched with `env` has ended: its token names no chat any more
+ * (DOR-5264). Only its own token, so a process that replaced it keeps its own.
+ * Never throws.
+ *
+ * @param env - The environment the ended process was launched with.
+ */
+export function forgetTokenChatOf(
+  env: Readonly<Record<string, string | undefined>> | undefined
+): void {
+  const token = env?.[AGENT_TOKEN_ENV_VAR];
+  if (token) forgetAgentTokens(token);
 }
 
 /**

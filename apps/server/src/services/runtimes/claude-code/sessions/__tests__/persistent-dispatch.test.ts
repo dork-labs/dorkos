@@ -213,6 +213,12 @@ import { recordToolSurface } from '../../mcp-tools/tool-surface.js';
 import { BackgroundWorkLedger } from '../../messaging/background-work-ledger.js';
 import { shutdownSessionPumps } from '../session-pump-registry.js';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { resolveAgentTokenEnv } from '../../../../core/agent-identity/index.js';
+import { resolveAgentTokenEnv as realTokenEnv } from '../../../../core/agent-identity/agent-token-env.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../../../core/agent-identity/agent-identity-service.js';
 import { setTurnContextStore } from '../../../../session/turn-context/record-turn-context.js';
 import { TurnContextStore } from '../../../../session/turn-context/turn-context-store.js';
 
@@ -1181,6 +1187,34 @@ describe('what a warm process must be re-checked for', () => {
     expect(cli.launches).toBe(2);
     expect(cli.processes[0]!.ended).toBe(true);
     expect(cli.processes[1]!.options.systemPrompt).toMatchObject({ append: '<env>MOVED</env>' });
+  });
+
+  it('keeps the new process\u2019s token on its chat through a restart (DOR-5264)', async () => {
+    // The real mint, so the new process's token is bound to the chat as in
+    // production; the old one's teardown must not take that binding with it.
+    const identities = initAgentIdentityService(createTestDb());
+    vi.mocked(resolveAgentTokenEnv).mockImplementation((_path, name, chatId) =>
+      realTokenEnv('/agents/pump', name ?? 'Pump', chatId)
+    );
+    try {
+      const sessionId = nextSession();
+      await turn(sessionId);
+      const { buildSystemPromptAppend } = await import('../../messaging/context-builder.js');
+      vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+        text: '<env>MOVED AGAIN</env>',
+        stable: '<env>MOVED AGAIN</env>',
+      });
+      await turn(sessionId, 'after the change');
+
+      expect(cli.launches).toBe(2);
+      expect(cli.processes[0]!.ended).toBe(true);
+      const token = cli.processes[1]!.options.env?.DORKOS_AGENT_TOKEN;
+      expect(token).toEqual(expect.any(String));
+      expect((await identities.resolve(token!))?.chatId).toBe(sessionId);
+    } finally {
+      vi.mocked(resolveAgentTokenEnv).mockResolvedValue({});
+      resetAgentIdentityService();
+    }
   });
 
   it('moves a live pin on the running process instead of replacing it', async () => {

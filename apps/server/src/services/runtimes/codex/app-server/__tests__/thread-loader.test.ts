@@ -405,6 +405,35 @@ describe('DOR-5264: the token a load mints names its chat until the thread goes'
       );
     }
   );
+
+  it('an old process exiting after a new one loaded the chat forgets only its own token', async () => {
+    const identities = initAgentIdentityService(createTestDb());
+    const { loader, input, pool, host } = await setup();
+    const minted: string[] = [];
+    const tools: CodexTurnTools = {
+      ...NO_TOOLS,
+      mintAgentToken: async (chatId) => {
+        const env = await resolveAgentTokenEnv('/agents/ana', 'Ana', chatId);
+        minted.push(env.DORKOS_AGENT_TOKEN!);
+        return env;
+      },
+    };
+    await loader.ensureLoaded(input({ tools }));
+    // Another home, so the pool keeps the first process running until it exits below.
+    const replacement = await pool.acquire({
+      binary: '/opt/codex',
+      codexHome: `${HOME}-next`,
+      env: { CODEX_HOME: `${HOME}-next` },
+    });
+    await loader.ensureLoaded(input({ process: replacement, tools }));
+    expect(minted).toHaveLength(2);
+
+    host.home(HOME).processes[0]!.exit(1);
+    await vi.waitFor(async () =>
+      expect((await identities.resolve(minted[0]!))?.chatId).toBeUndefined()
+    );
+    expect((await identities.resolve(minted[1]!))?.chatId).toBe('s1');
+  });
 });
 
 describe('review fixes: fingerprint and identity', () => {

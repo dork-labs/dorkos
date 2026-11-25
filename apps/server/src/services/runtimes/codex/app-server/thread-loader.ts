@@ -27,7 +27,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
-import { forgetChatTokens } from '../../../core/agent-identity/agent-identity-service.js';
+import { forgetAgentTokens } from '../../../core/agent-identity/agent-identity-service.js';
+import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/agent-token-env.js';
 import type { ConnectorThreadKeyPort } from '../../../connectors/runtime-principal-port.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
@@ -136,6 +137,13 @@ export interface CodexThreadLoaderOptions {
 /** Loads threads, one record per (process, thread). */
 export class CodexThreadLoader {
   private readonly byProcess = new Map<string, Map<string, LoadedRecord>>();
+  /**
+   * The identity tokens loads minted, by process and then chat, so each names
+   * its chat only while its thread is loaded in that process (DOR-5264). Keyed
+   * by the process itself, not its pool key, which a replacement reuses, so an
+   * old process's late exit never forgets a new one's.
+   */
+  private readonly loadTokens = new WeakMap<CodexAppServerProcess, Map<string, string[]>>();
   private readonly realpath: (path: string) => string;
 
   /**
@@ -522,7 +530,9 @@ export class CodexThreadLoader {
     if (!record) return;
     records!.delete(threadId);
     if (record.keyId) this.options.threadKeys()?.revoke(record.keyId, 'thread_unloaded');
-    forgetChatTokens(record.sessionId);
+    const tokens = this.loadTokens.get(process);
+    forgetAgentTokens(...(tokens?.get(record.sessionId) ?? []));
+    tokens?.delete(record.sessionId);
   }
 
   /**
@@ -583,7 +593,8 @@ export class CodexThreadLoader {
       process.onExit(() => {
         if (this.byProcess.get(process.key) === created) this.byProcess.delete(process.key);
         this.options.threadKeys()?.revokeProcess(process.key, 'process_exited');
-        forgetChatTokens(...[...created.values()].map((record) => record.sessionId));
+        forgetAgentTokens(...[...(this.loadTokens.get(process)?.values() ?? [])].flat());
+        this.loadTokens.delete(process);
       });
     }
     return records;
@@ -603,6 +614,18 @@ export class CodexThreadLoader {
     });
   }
 
+  /** Mint this load's identity token, naming its chat, and remember it for its thread's end. */
+  private async mintForLoad(input: ThreadLoadInput): Promise<Record<string, string>> {
+    const env = await input.tools.mintAgentToken!(input.sessionId);
+    const token = env[AGENT_TOKEN_ENV_VAR];
+    if (token) {
+      const byChat = this.loadTokens.get(input.process) ?? new Map<string, string[]>();
+      this.loadTokens.set(input.process, byChat);
+      byChat.set(input.sessionId, [...(byChat.get(input.sessionId) ?? []), token]);
+    }
+    return env;
+  }
+
   /** The load params, with real secrets, for the wire, and the load's line for the model. */
   private async overrides(
     input: ThreadLoadInput,
@@ -614,7 +637,7 @@ export class CodexThreadLoader {
     // every turn: a loaded thread keeps the one it loaded with (spec §9).
     const agentTokenEnv =
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
-        ? await input.tools.mintAgentToken(input.sessionId)
+        ? await this.mintForLoad(input)
         : input.tools.agentTokenEnv;
     const params = buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },

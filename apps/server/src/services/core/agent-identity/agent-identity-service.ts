@@ -428,14 +428,15 @@ export function getAgentIdentityService(): AgentIdentityService | undefined {
 }
 
 /**
- * Forget which chat this process's tokens were minted for, for one chat: its
- * process was disposed or the chat is gone (DOR-5264, `token-chats.ts`). The
- * tokens themselves stay valid; they just name no chat any more.
+ * Forget which chat these tokens were minted for: the process that held them
+ * has ended (DOR-5264, `token-chats.ts`). Only these tokens, never every token
+ * of their chat, so a process that replaced them keeps its own. The tokens
+ * themselves stay valid; they just name no chat any more.
  *
- * @param chatIds - Every id the chat is known by.
+ * @param tokens - The tokens the ended process held.
  */
-export function forgetChatTokens(...chatIds: string[]): void {
-  service?.chats.forgetChat(chatIds);
+export function forgetAgentTokens(...tokens: string[]): void {
+  service?.chats.forgetTokens(tokens.map(hashToken));
 }
 
 /**

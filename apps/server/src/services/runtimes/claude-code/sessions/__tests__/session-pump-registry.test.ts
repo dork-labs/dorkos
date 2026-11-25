@@ -1,9 +1,4 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { createTestDb } from '@dorkos/test-utils/db';
-import {
-  initAgentIdentityService,
-  resetAgentIdentityService,
-} from '../../../../core/agent-identity/agent-identity-service.js';
 
 import {
   SessionPumpRegistry,
@@ -218,31 +213,6 @@ describe('SessionPumpRegistry', () => {
     expect(queries[0]!.closed).toBe(1);
     expect(registry.size).toBe(0);
     expect(registry.warmth('s1')).toBe('cold');
-  });
-});
-
-describe('DOR-5264: a pump that goes takes its chat off its tokens', () => {
-  afterEach(() => resetAgentIdentityService());
-
-  it.each(['reaped', 'evicted'] as const)('when it is %s', async (how) => {
-    const identities = initAgentIdentityService(createTestDb());
-    const token = await identities.mint({
-      agentPath: '/agents/ana',
-      displayName: 'Ana',
-      chatId: 's1',
-    });
-    const kept = await identities.mint({
-      agentPath: '/agents/ana',
-      displayName: 'Ana',
-      chatId: 's2',
-    });
-    const registry = new SessionPumpRegistry(identity);
-    await registry.acquire('s1', launchOpts([])).warm();
-    expect((await identities.resolve(token))?.chatId).toBe('s1');
-    if (how === 'reaped') await registry.reap('s1');
-    else await registry.evict('s1', 'stop');
-    expect((await identities.resolve(token))?.chatId).toBeUndefined();
-    expect((await identities.resolve(kept))?.chatId).toBe('s2');
   });
 });
 

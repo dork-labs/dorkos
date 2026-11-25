@@ -5,6 +5,7 @@
  * refused. Real stores throughout: the link store, the identity service and
  * the run record over one test database, and the live turn marks.
  */
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { noopLogger } from '@dorkos/shared/logger';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -209,8 +210,8 @@ describe('work-graph.record-pr', () => {
       [
         'a chat whose process was disposed',
         async () => {
-          const { identity } = await tokenFor(CHAT);
-          identities.chats.forgetChat([CHAT]);
+          const { token, identity } = await tokenFor(CHAT);
+          identities.chats.forgetTokens([createHash('sha256').update(token).digest('hex')]);
           return contextOf(await identity());
         },
       ],
